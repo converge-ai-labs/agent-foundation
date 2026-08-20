@@ -2,13 +2,13 @@
 
 ## Design Position
 
-`HarnessEvent` and `HarnessRunResultEvent` are stable process-local output seams. `AbstractCapability[AgentContext]` adapters produce Harness-owned observations, while a single-consumer `HarnessRunStream` orders those events and produces a terminal result event for each handled outcome whose complete run-scoped teardown succeeds, without importing Pydantic AI private graph nodes.
+`HarnessEvent` and `HarnessRunResultEvent` are stable process-local output seams. `AbstractCapability[AgentContext]` adapters produce Harness-owned observations, ordered Harness plugin middleware can transform or suppress non-terminal events and replace the complete result candidate, and one single-consumer `HarnessRunStream` preserves ordering and produces a terminal result event only after final validation and complete run-scoped teardown succeed.
 
 Pydantic AI public events remain the source for model and tool execution and enqueue delivery; its `RunCancelled` is the source terminal signal for both explicit native cancellation and complete-boundary safe pause. The Harness classifies it as suspended only when safe-pause state was committed before native cancellation; every other first-party `RunCancelled` remains cancelled. It adds only context, state, active-run wrapper, safe-suspend, delegation, model-usage observation, and diagnostic events that Pydantic AI does not own. Pydantic AI `RequestUsage`, `RunUsage`, and `UsageLimits` remain authoritative for model-request usage, accumulation, and supported limits.
 
 OpenTelemetry uses Pydantic AI's `Instrumentation` Capability plus spans for Harness-owned operations. Durable event delivery, cross-run usage aggregation, valuation, billing, and lifecycle facts belong to the host.
 
-Event and observability plugins use Pydantic capability hooks with `RunContext[AgentContext]`; they do not install a parallel callback lifecycle, background event broker, usage pipeline, or broadcast system.
+Event and observability behavior inside model, node, or tool execution uses Pydantic Capability hooks with `RunContext[AgentContext]`. A first-class Harness plugin can observe the outer canonical stream and result through `wrap_run`, but it does not install a background event broker, second public stream, usage accumulator, durable log, or broadcast system.
 
 ## Boundary
 
@@ -49,6 +49,7 @@ sequenceDiagram
     participant PAI as Pydantic AI
     participant Capability
     participant Emitter as HarnessEventEmitter
+    participant Plugins as Harness plugins
     participant Stream as HarnessRunStream
     participant Host
 
@@ -58,7 +59,10 @@ sequenceDiagram
     Capability->>Emitter: validated inline-child HarnessEvent
     Emitter-->>Stream: forwarded child observation
     Stream->>Stream: sequence root events, validate child envelopes, and redact
+    Stream->>Plugins: ordered event and result-candidate unwind
+    Plugins-->>Stream: transformed observations and candidate
     Stream-->>Host: HarnessEvent values with backpressure
+    Stream->>Stream: validate candidate and finish teardown
     Stream-->>Host: final HarnessRunResultEvent with RunUsage snapshot
 ```
 
@@ -90,7 +94,7 @@ class HarnessEventEmitter(Protocol):
     ) -> None: ...
 ```
 
-The Harness creates one emitter for each process-local run and places it on `AgentContext` for Capability authors. `emit()` creates a run-local extension event and assigns its envelope fields. `forward_child()` accepts only an event from a validated inline-child stream, preserves its child run correlation, and verifies lineage before forwarding. The emitter feeds the same ordered `HarnessRunStream` as adapted Pydantic events; it is not supplied by the host and is not a general delivery service.
+The Harness creates one emitter for each process-local run and places it on `AgentContext` for Capability authors. `emit()` creates a run-local extension event and assigns its envelope fields. `forward_child()` accepts only an event from a validated inline-child stream, preserves its child run correlation, and verifies lineage before forwarding. The emitter feeds the same ordered internal path as adapted Pydantic events. Harness plugin middleware sees those values before public delivery; already delivered values cannot be retracted. The emitter is not supplied by the host and is not a general delivery service.
 
 `HarnessRunStream` is class-based, lazily starts on first iteration, has exactly one consumer, and applies natural backpressure. It provides no replay or fan-out. An embedded application consumes it directly. A hosted worker consumes it once and projects events to any broker, SSE connection, WebSocket, log, or durable store selected by the host. Foundation Service's replayable lifecycle log is a separate Host contract: it atomically records bounded committed lifecycle facts and can selectively reference Harness observations without making every process-local delta durable.
 
@@ -98,7 +102,7 @@ Leaving the stream context before its terminal item cancels and drains the proce
 
 The harness redacts extension payloads before emission. Credentials, grants, transient prompt overlays, quarantined content, and provider-native secret fields are absent. Prompt, argument, and result bodies are excluded by default and included only under explicit content policy.
 
-A state event or terminal `HarnessRunResultEvent` remains a process-local observation. The result event is emitted only after run-scoped teardown succeeds, but it is still not a committed host lifecycle transition or durable checkpoint. Teardown failure raises `RunCleanupError` with any frozen primary outcome and produces no terminal event.
+A state event or terminal `HarnessRunResultEvent` remains a process-local observation. Plugin middleware can replace a candidate but cannot grant Host durability, forge external side-effect evidence, or retract prior events. The result event is emitted only after final candidate validation and run-scoped teardown succeed, but it is still not a committed host lifecycle transition or durable checkpoint. Teardown failure raises `RunCleanupError` with any frozen primary outcome and produces no terminal event.
 
 ## OpenTelemetry
 
@@ -239,7 +243,7 @@ The event envelope and extension-event schemas evolve independently. Pydantic ev
 01. One event sequence belongs to one process-local run; each Harness-handled root outcome whose teardown succeeds ends with exactly one result event, while early exit, external cancellation, cleanup failure, and unhandled errors do not synthesize one.
 02. Forwarded inline-child events preserve child correlation and never grant child result or control authority to the outer consumer.
 03. Each `HarnessRunStream` has one consumer; replay and fan-out belong to the host.
-04. Event and observability extensions are `AbstractCapability[AgentContext]` implementations.
+04. Model-, node-, and tool-level event extensions are `AbstractCapability[AgentContext]` implementations; outer stream/result transforms are ordered Harness plugins.
 05. Pydantic public events remain authoritative for model/tool event shape.
 06. Harness events and OTel are not host lifecycle authority.
 07. `RunUsage` is the only process-local usage accumulator; the Harness result stores a terminal copy.

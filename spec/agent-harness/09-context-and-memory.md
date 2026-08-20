@@ -4,7 +4,7 @@
 
 Model context is assembled by Pydantic AI from Agent instructions, Capability instructions, Toolset instructions, prior messages, ordinary user content, and Capability history/model-request hooks. The Harness defines no parallel prompt language. It standardizes only `ContextInputPart` placement at the user-content prefix or suffix so semantic input factories, Environment changes, and host input use one cache-conscious content seam.
 
-Working state, compaction, memory, Environment context, skills, media normalization, and message injection are ordinary `AbstractCapability[AgentContext]` implementations. Each Capability owns its configuration, state, ordering, and failure behavior.
+Working state, compaction, Environment context, skills, media normalization, and behavior inside the Pydantic Agent loop are ordinary `AbstractCapability[AgentContext]` implementations. Query-dependent context retrieval that must inspect and modify the complete semantic run input can instead be a first-class Harness plugin, which may contribute those Capabilities. Each plugin or Capability owns its typed configuration, ordering, and failure behavior; recoverable state remains Capability- or Host-owned.
 
 ## Context Layers
 
@@ -218,9 +218,9 @@ The original history remains active until structured summary validation and mess
 
 Compaction state contains only data not already represented by the compacted messages, such as a bounded prior-response reference or compaction counter. Model clients and callbacks remain process-local.
 
-## Memory Capability
+## Memory Integration
 
-Long-term memory is an optional Capability backed by a narrow provider.
+Long-term memory is an optional integration backed by a narrow provider. Its placement follows the boundary it needs rather than forcing retrieval, model tools, and observation into one lifecycle type.
 
 ```python
 class MemoryProvider(Protocol):
@@ -235,11 +235,11 @@ class MemoryProvider(Protocol):
     ) -> None: ...
 ```
 
-The Capability derives memory scope from trusted Agent Identity and actor bindings, performs recall at configured request boundaries, and contributes bounded advisory content. It can observe pre-compaction history, a validated summary, or terminal messages.
+A query-dependent recall plugin derives memory scope from trusted Agent Identity and actor bindings, inspects the canonical semantic input after `RunInputFactory`, asks the provider for bounded relevant items, and appends them as provenance-preserving `ContextInputPart` values before content resolution. Its selected catalog registration can capture an authority-neutral `MemoryProvider` port; every provider call receives the trusted scope derived from the shared `AgentContext`, while the provider remains responsible for live policy and credentials. The factory itself carries no current-run authority. Its plugin-contributed Capability or Toolset can expose explicit model-directed memory search and update tools, request-level context behavior, or versioned continuation metadata. Result middleware or a Capability can observe validated output, pre-compaction history, a validated summary, or terminal messages according to the selected policy.
 
 Memory items retain source and scope metadata. They are untrusted context and cannot carry grants, credentials, delegation authority, or Environment handles.
 
-Provider writes can be inline when required for consistency or emitted as host work. Durable extraction, consolidation, retention, and scheduling belong to the host or memory provider. No background memory task is allowed to outlive a process-local harness run without explicit host ownership.
+Provider writes can be inline when required for consistency or emitted as host work. A plugin result hook observes only a process-local result candidate and does not make the write durable by observation alone. Durable extraction, consolidation, retention, and scheduling belong to the host or memory provider. No background memory task is allowed to outlive a process-local harness run without explicit host ownership.
 
 ## State Ownership
 
@@ -250,13 +250,13 @@ Provider writes can be inline when required for consistency or emitted as host w
 | Provider-backed task data and scope         | Host task provider; Working State exports only an optional observed cursor  |
 | Loaded skills or discovered tools           | Owning discovery Capability                                                 |
 | Compaction-only metadata                    | Compaction Capability                                                       |
-| Long-term memory records                    | Memory provider                                                             |
+| Long-term memory records                    | Memory provider; plugin instances own no durable namespace                  |
 | Recoverable multi-Environment state         | Environment Capability entry; native resources remain provider-owned        |
 | Host delivery, counters, and scheduler work | Host                                                                        |
 
 ## Resume and Delegation
 
-A resumed run imports messages and Capability state, then resolves dynamic Environment, working-state, skill, and memory content again. Rendered Environment topology context is not restored as authority. The next ordinary user turn receives a fresh user-suffix snapshot; if execution continues without one and the topology version changed, a bounded startup change notice enters through native enqueue before the next model request. Fresh policy can remove access that existed in an earlier run.
+A resumed run imports messages and Capability state, then resolves dynamic Environment, working-state, skill, and memory content again through fresh Capabilities and fresh run-bound plugins. Rendered Environment topology context is not restored as authority. The next ordinary user turn receives a fresh user-suffix snapshot; if execution continues without one and the topology version changed, a bounded startup change notice enters through native enqueue before the next model request. Fresh policy can remove access that existed in an earlier run.
 
 A child run receives an explicit context seed and a fresh `AgentContext`. Parent messages or summaries transfer only when delegation policy selects them. The Delegation Capability stores each child's private `HarnessState`, including its independent message history, for later resume. Parent and child never share mutable message lists, a whole `AgentContextState`, or a whole `AgentContext`; only the Working State task cell can cross the inline state boundary.
 
@@ -275,13 +275,14 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 
 ## Boundaries
 
-| Concern                                        | Owner                               |
-| ---------------------------------------------- | ----------------------------------- |
-| Instruction and history composition            | Pydantic AI and owning Capabilities |
-| Active messages and namespaced run state       | Harness                             |
-| Long-term memory storage and consolidation     | Memory provider or host             |
-| Application conversation and display history   | Host                                |
-| Provider context limits and request acceptance | Model provider                      |
+| Concern                                             | Owner                                        |
+| --------------------------------------------------- | -------------------------------------------- |
+| Semantic-input memory recall and result observation | [Harness Plugin System](05-plugin-system.md) |
+| Instruction and history composition                 | Pydantic AI and owning Capabilities          |
+| Active messages and namespaced run state            | Harness                                      |
+| Long-term memory storage and consolidation          | Memory provider or host                      |
+| Application conversation and display history        | Host                                         |
+| Provider context limits and request acceptance      | Model provider                               |
 
 ## Trade-offs
 

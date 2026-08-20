@@ -8,7 +8,7 @@ The Harness is the reusable process-local execution layer that turns a durable o
 
 ## Design Position
 
-The Harness is a cohesive layer over Pydantic AI public primitives. Every reusable Agent plugin and lifecycle component is an `AbstractCapability[AgentContext]`. Capabilities contribute instructions, model behavior, Toolsets, lifecycle behavior, state, and host integrations; trusted native Pydantic models, tools, and Toolsets can also enter the process-local resolved build plan without becoming another plugin model. The Harness contributes a canonical materialized `AgentDefinition`, trusted `AgentContext`, identity-bound dynamically composable multi-Environment access, typed client-side external-tool deferral, semantic Environment-ready input production, resumable State-backed inline delegation over immutable built children, normalized events, and terminal snapshots of native Pydantic `RunUsage`.
+The Harness is a cohesive layer over Pydantic AI public primitives. First-class Harness plugins wrap the semantic-input-to-complete-result path and can contribute `AbstractCapability[AgentContext]` instances to the Agent build. Capabilities remain the sole extension model inside the Pydantic Agent loop and contribute instructions, model behavior, Toolsets, per-node lifecycle behavior, state, and host integrations; trusted native Pydantic models, tools, and Toolsets can also enter the process-local resolved build plan without becoming plugin middleware. The Harness contributes a canonical materialized `AgentDefinition`, trusted `AgentContext`, identity-bound dynamically composable multi-Environment access, typed client-side external-tool deferral, semantic Environment-ready input production, resumable State-backed inline delegation over immutable built children, normalized events, and terminal snapshots of native Pydantic `RunUsage`.
 
 Embedded applications and hosted execution workers call the same build and run interfaces. Durability differences remain in the host.
 
@@ -22,7 +22,7 @@ The harness does not define:
 - product authentication, organization membership, or business authorization;
 - billing, credit, invoices, or subscription policy;
 - a Sandbox implementation, skill registry, model gateway, telemetry backend, or secret manager;
-- a second Agent loop or generic callback system beside Pydantic AI Capability hooks and the semantic input-factory seam.
+- a second Agent loop, a duplicate per-node hook system beside Pydantic AI Capabilities, or generic unordered callback registry.
 
 ## System Architecture
 
@@ -41,8 +41,9 @@ flowchart TB
 
     subgraph Harness[agent-harness harness]
         Builder[Agent builder]
-        Context[AgentContext]
-        Capabilities[Capability graph]
+        Plugins[Harness plugin graph]
+        Context[AgentContext and BoundPluginContext]
+        Capabilities[Pydantic Capability graph]
         Run[Harness run and stream]
         State[HarnessState export]
     end
@@ -63,9 +64,9 @@ flowchart TB
     Caller --> ProductPolicy --> Launcher
     Launcher --> Resolve
     Launcher --> Context
-    Resolve --> Builder
-    Builder --> Capabilities --> Agent
-    Context --> Run --> Agent
+    Resolve --> Builder --> Plugins
+    Plugins --> Capabilities --> Agent
+    Plugins --> Context --> Run --> Agent
     Agent --> Toolsets
     Agent --> Models --> ModelProvider
     Toolsets --> Tools
@@ -78,18 +79,19 @@ The trusted launcher may be an embedded application or a hosted execution worker
 
 ## Major Components
 
-| Component                | Responsibility                                                                                                                                                               | Explicit boundary                                                                                               |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Agent builder            | Consume one Host-resolved `ResolvedAgentDefinition`, or materialize the code-first convenience, and construct a Pydantic AI Agent.                                           | Host materializes Presets and resolves versions, artifacts, providers, and trusted native components.           |
-| Capability graph         | Compose every Agent component, including instructions, models, tools, lifecycle behavior, context processing, state storage integration, and cross-cutting wrappers.         | Uses Pydantic AI composition semantics.                                                                         |
-| `AgentContext`           | Carry trusted run bindings, the multi-Environment facade, and Capability-namespaced state.                                                                                   | Capability-specific interaction uses Pydantic AI run-bound capabilities; provider collaborators remain private. |
-| Run facade               | Coordinate one process-local Pydantic AI execution through `run()` or single-consumer `HarnessRunStream`.                                                                    | Is not a host-owned durable execution, attempt, event broker, or lease.                                         |
-| State coordinator        | Export and restore `HarnessState` as `message_history` plus all Capability-owned `AgentContextState`, including Environment and delegation.                                  | Host owns durable snapshots and checkpoint selection.                                                           |
-| Tool invocation pipeline | Preserve native Pydantic Toolsets and apply Identity, authorization, credentials, retry, and result safety when Harness metadata opts a function tool into managed dispatch. | Unannotated in-process tools remain trusted plugin code; provider-side policy remains authoritative.            |
-| Client-tool boundary     | Map typed default or permitted per-run schemas to native `ExternalToolset` and deferred values.                                                                              | External executor and Host own side effects, durability, authenticated delivery, and feedback.                  |
-| Environment adapter      | Present identity-bound file, shell, process, and port operations with atomic live multi-binding topology.                                                                    | Host owns topology selection; provider owns native state and enforcement.                                       |
-| Delegation coordinator   | Expose immutable built children and provide State-backed blocking inline execution with fresh narrowed authority and lineage.                                                | Async child scheduling, durable lifecycle, and delivery belong to a Host Capability and Host services.          |
-| Event and result output  | Emit typed process-local events, attributed response-usage observations, and live plus terminal Pydantic `RunUsage`, with normal-path custom pricing and explicit coverage.  | Delivery, durable per-response records, cross-run aggregation, billing, and payment belong to the Host.         |
+| Component                | Responsibility                                                                                                                                                               | Explicit boundary                                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Agent builder            | Consume one Host-resolved `ResolvedAgentDefinition`, or materialize the code-first convenience, and construct a Pydantic AI Agent.                                           | Host materializes Presets and resolves versions, artifacts, providers, and trusted native components.   |
+| Plugin graph             | Construct, order, and freshly bind definition-selected input-to-result middleware; contribute Capabilities to Agent construction.                                            | Host selects installed artifacts and catalog; per-node/model/tool hooks remain Pydantic Capabilities.   |
+| Capability graph         | Compose Agent-loop instructions, models, tools, lifecycle behavior, context processing, state integration, and cross-cutting wrappers.                                       | Uses Pydantic AI composition semantics.                                                                 |
+| `AgentContext`           | Carry trusted run bindings, the multi-Environment facade, `BoundPluginContext`, and Capability-namespaced state.                                                             | Plugin lookup is typed ID-and-type access; Capability interaction uses Pydantic run-bound capabilities. |
+| Run facade               | Coordinate one process-local Pydantic AI execution through `run()` or single-consumer `HarnessRunStream`.                                                                    | Is not a host-owned durable execution, attempt, event broker, or lease.                                 |
+| State coordinator        | Export and restore `HarnessState` as `message_history` plus all Capability-owned `AgentContextState`, including Environment and delegation.                                  | Host owns durable snapshots and checkpoint selection.                                                   |
+| Tool invocation pipeline | Preserve native Pydantic Toolsets and apply Identity, authorization, credentials, retry, and result safety when Harness metadata opts a function tool into managed dispatch. | Unannotated in-process tools remain trusted plugin code; provider-side policy remains authoritative.    |
+| Client-tool boundary     | Map typed default or permitted per-run schemas to native `ExternalToolset` and deferred values.                                                                              | External executor and Host own side effects, durability, authenticated delivery, and feedback.          |
+| Environment adapter      | Present identity-bound file, shell, process, and port operations with atomic live multi-binding topology.                                                                    | Host owns topology selection; provider owns native state and enforcement.                               |
+| Delegation coordinator   | Expose immutable built children and provide State-backed blocking inline execution with fresh narrowed authority and lineage.                                                | Async child scheduling, durable lifecycle, and delivery belong to a Host Capability and Host services.  |
+| Event and result output  | Emit typed process-local events, attributed response-usage observations, and live plus terminal Pydantic `RunUsage`, with normal-path custom pricing and explicit coverage.  | Delivery, durable per-response records, cross-run aggregation, billing, and payment belong to the Host. |
 
 ## End-to-End Execution Flow
 
@@ -103,15 +105,16 @@ sequenceDiagram
 
     Caller->>Host: request Agent work
     Host->>Host: authenticate, authorize, select materialized revision, and resolve build plan
-    Host->>Harness: ResolvedAgentDefinition and run bindings
-    Harness->>Pydantic: construct Agent from AgentSpec and resolved native inputs
+    Host->>Harness: ResolvedAgentDefinition with plugin catalog and run bindings
+    Harness->>Harness: construct and order definition plugins
+    Harness->>Pydantic: construct Agent with plugin-contributed Capabilities and resolved native inputs
     Host->>Harness: run or stream input with optional prior state and shared RunUsage
-    Harness->>Harness: restore message history and Agent Context state
+    Harness->>Harness: restore state, bind fresh plugins, and transform semantic input
     Harness-->>Host: ordered HarnessEvent values when streaming
     Pydantic->>Provider: model and authorized tool operations
     Provider-->>Pydantic: results and provider usage
     Pydantic-->>Harness: output or resumable boundary
-    Harness->>Harness: export message history and Agent Context state
+    Harness->>Harness: unwind plugin result middleware, validate, and export state
     Harness-->>Host: HarnessRunResult or final HarnessRunResultEvent
     Host->>Host: commit hosted lifecycle or application state
     Host-->>Caller: host-owned result or delivery
@@ -123,8 +126,8 @@ The following boundaries are independent:
 
 | Boundary                        | Meaning                                                                                                                                                                           | Authority                       |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| Pydantic run completion         | The process-local Agent loop produced an output or raised a terminal error.                                                                                                       | Pydantic AI and harness adapter |
-| Harness result and state export | The process-local adapter finalized output, a `RunUsage` snapshot, and optional continuation state.                                                                               | Harness                         |
+| Pydantic inner completion       | When reached, the process-local Agent loop produced an output or raised a terminal error; a plugin short-circuit has no such boundary.                                            | Pydantic AI and harness adapter |
+| Harness result and state export | The plugin chain or inner Agent path finalized a validated output, a `RunUsage` snapshot, and optional continuation state.                                                        | Harness                         |
 | Harness stream completion       | Run-scoped teardown succeeded and the consumer received the final result event, or early exit completed quiet cleanup; teardown failure raises with any primary outcome retained. | Harness and stream consumer     |
 | Host completion                 | An embedded application or hosted service committed durable state, delivery, or lifecycle.                                                                                        | Host and downstream owners      |
 
@@ -135,10 +138,12 @@ A harness terminal result says nothing about completion of a host-owned durable 
 ```mermaid
 flowchart LR
     AgentDefinition --> Plan[Resolved Agent build plan]
-    Catalog[Resolved Capability catalog] --> Plan
+    Catalog[Resolved Harness plugin catalog] --> Plan
     Native[Resolved model, tools, and Toolsets] --> Plan
-    Plan --> Capability
+    Plan --> Plugin[Ordered Harness plugins]
+    Plugin --> Capability
     HostConfig[Host configuration] --> ProviderAdapter[Subsystem adapter]
+    Plugin --> RunPath[Input-to-result middleware]
     Capability --> PydanticAgent[Pydantic AI Agent]
     Capability --> Toolset[Contributed toolsets]
     Toolset --> PydanticAgent
@@ -146,13 +151,13 @@ flowchart LR
     Capability --> AgentContext
 ```
 
-| Extension type      | Selected by                                        | Produces                                                                                 | Trust boundary                                      |
-| ------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Capability plugin   | Materialized Agent definition and selected catalog | Pydantic Capabilities with optional Toolset and state contributions                      | Trusted in-process code                             |
-| Native build input  | Host resolver or embedded application              | Pydantic model, tool, or Toolset object in `ResolvedAgentDefinition`                     | Trusted process-local object                        |
-| Host capability     | Host configuration                                 | Checkpointing, Environment, policy, credentials, telemetry, or another Agent integration | Operator or protocol trust boundary                 |
-| Remote provider     | Host or capability configuration                   | Protocol-backed operations                                                               | Authenticated protocol and provider policy boundary |
-| Product integration | Application                                        | Inputs, actor references, policy decisions, delivery                                     | Outside harness core                                |
+| Extension type      | Selected by                                    | Produces                                                                                 | Trust boundary                                      |
+| ------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Harness plugin      | Materialized plugin specs and selected catalog | Ordered input/event/result middleware and optional Pydantic Capability contributions     | Trusted in-process code                             |
+| Native build input  | Host resolver or embedded application          | Pydantic model, tool, or Toolset object in `ResolvedAgentDefinition`                     | Trusted process-local object                        |
+| Host capability     | Host configuration                             | Checkpointing, Environment, policy, credentials, telemetry, or another Agent integration | Operator or protocol trust boundary                 |
+| Remote provider     | Host or capability configuration               | Protocol-backed operations                                                               | Authenticated protocol and provider policy boundary |
+| Product integration | Application                                    | Inputs, actor references, policy decisions, delivery                                     | Outside harness core                                |
 
 ## Stable Design Principles
 
@@ -161,7 +166,7 @@ flowchart LR
 03. One-to-one wrappers without additional harness semantics are avoided.
 04. A resolved definition remains fixed for the lifetime of an executable Agent and its runs; only variability explicitly declared by that definition, such as a permitted whole-run external client-tool replacement, can enter a run binding.
 05. Trusted identity enters through the host and is propagated by the harness; model-controlled data cannot establish authority.
-06. Capabilities are the reusable Agent plugin and lifecycle model; native Pydantic model, tool, and Toolset values remain explicit trusted build inputs, while capabilities retain narrow provider collaborators.
+06. Harness plugins own reusable input-to-result middleware; Pydantic Capabilities own reusable behavior inside the Agent loop; native model, tool, and Toolset values remain explicit trusted build inputs.
 07. Metadata-aware function tools use one managed wrapper path; native Pydantic tools remain usable without inferred Harness guarantees, while client tools remain native external deferrals.
 08. Environment routing, live topology selection, and Environment authorization are separate steps.
 09. Process-local state, host durable state, live event delivery, telemetry, and billing are separate facts.

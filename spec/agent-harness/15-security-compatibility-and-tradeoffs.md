@@ -12,7 +12,7 @@ In-process plugins and unannotated native Pydantic tools share the harness trust
 flowchart LR
     Untrusted[User input, model output, remote content]
     Host[Trusted host<br/>identity, policy, installed plugins]
-    Harness[Harness process<br/>Pydantic AI + trusted capabilities]
+    Harness[Harness process<br/>trusted plugins + Pydantic AI capabilities]
     Provider[Provider boundary<br/>tool, model, Environment]
     Client[External client-tool executor]
     State[Host state store]
@@ -28,21 +28,21 @@ flowchart LR
     Harness -. sanitized projection .-> Telemetry
 ```
 
-| Boundary                                  | Design                                                                                                                                                                                                         |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Host to Harness                           | The Host supplies one `ResolvedAgentDefinition` for build, then fresh `RunBindings` carrying Agent Identity, Environment, policy, credentials, any provider-backed task-state cell, and opaque run references. |
-| Model to tool                             | Every tool uses Pydantic dispatch; metadata-aware tools additionally cross the Harness-managed authorization and result path.                                                                                  |
-| Harness to Environment                    | `BoundEnvironment` carries the selected binding and execution identity; the provider rechecks native resource policy.                                                                                          |
-| Tool authorization to credential provider | The authorization capability uses a narrow collaborator to request an audience-scoped lease for one action.                                                                                                    |
-| Host to external client-tool executor     | The Host exposes only a durably committed pending external call; the client separately authorizes its action and returns an exact-parent result.                                                               |
-| Harness to state store                    | The harness exports `HarnessState`; the host decides durability, encryption, retention, and checkpoint ownership.                                                                                              |
-| Harness to telemetry                      | Events and spans are sanitized projections, not execution or billing facts.                                                                                                                                    |
+| Boundary                                  | Design                                                                                                                                                                                                                                          |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host to Harness                           | The Host supplies one `ResolvedAgentDefinition` with the selected plugin catalog for build, then fresh `RunBindings` carrying Agent Identity, Environment, policy, credentials, any provider-backed task-state cell, and opaque run references. |
+| Model to tool                             | Every tool uses Pydantic dispatch; metadata-aware tools additionally cross the Harness-managed authorization and result path.                                                                                                                   |
+| Harness to Environment                    | `BoundEnvironment` carries the selected binding and execution identity; the provider rechecks native resource policy.                                                                                                                           |
+| Tool authorization to credential provider | The authorization capability uses a narrow collaborator to request an audience-scoped lease for one action.                                                                                                                                     |
+| Host to external client-tool executor     | The Host exposes only a durably committed pending external call; the client separately authorizes its action and returns an exact-parent result.                                                                                                |
+| Harness to state store                    | The harness exports `HarnessState`; the host decides durability, encryption, retention, and checkpoint ownership.                                                                                                                               |
+| Harness to telemetry                      | Events and spans are sanitized projections, not execution or billing facts.                                                                                                                                                                     |
 
 ## Identity and Authority
 
 `AgentIdentityRef` identifies the workload principal. `AgentInstanceContext` adds the current root or child instance, delegation lineage, actor, and opaque host references.
 
-The host constructs this context before the run. User input, model output, tool arguments, plugin-returned metadata, and shell environment variables cannot replace it.
+The host constructs this context before the run. User input, model output, tool arguments, plugin specs, plugin-transformed input or results, plugin-returned metadata, restored state, and shell environment variables cannot replace it. `BoundPluginContext` contains only Harness-validated run-bound instances from the selected definition and catalog; an ID or restored value cannot add a plugin or grant authority.
 
 The fixed invocation dispatcher is always present, but authority is not implicit. Run assembly accepts exactly one reserved-role invocation-policy Capability; if the host supplies none, `DenyManagedToolsCapability` rejects every metadata-aware function-tool invocation. The Harness constructs its Environment Capability from the entered `EnvironmentRunBinding`, so a host cannot accidentally install a second Environment authority path.
 
@@ -85,7 +85,9 @@ Process handles include Environment identity, generation, binding, and Agent own
 
 ## Plugin Trust
 
-The minimal plugin model treats selected Python plugin distributions and directly supplied native Toolsets as operator-trusted code. Artifact identity and configuration are resolved before Agent construction. Package metadata, Harness tool metadata, and Pydantic schemas describe behavior but do not make code safe.
+The plugin model treats selected Python plugin distributions and directly supplied native Toolsets as operator-trusted code. The Host verifies installation and artifact identity and passes the selected catalog and exact materialized specs; a catalog registration factory may capture only a typed authority-neutral provider collaborator. The Harness invokes the factory, validates its output, and constructs, orders, and freshly binds plugins. Current-run authority still derives from the shared `AgentContext`, fresh `RunBindings`, and provider enforcement rather than factory possession. Package metadata, Harness tool metadata, typed plugin specs, ordering checks, result validation, and Pydantic schemas describe or constrain boundary values but do not make arbitrary Python safe.
+
+A plugin can inspect or transform semantic input, stream events, errors, and the complete process-local result candidate. That access does not authorize external side effects, make a result durable, override Host Identity or provider policy, or retract already emitted events. Run-bound instances and `BoundPluginContext` are never restored from `HarnessState`, inherited by a child, or reused across sibling runs.
 
 This design avoids an in-process sandbox abstraction that Python cannot reliably provide. A host can require Harness metadata for every model-visible function tool as an explicit strict profile, but metadata does not constrain direct Python behavior. Output tools remain output validation, while provider-native tools require provider policy or a managed function-tool adapter. Remote or user-authored extensions use an out-of-process managed provider surface and receive only the scoped context required by that protocol.
 
@@ -130,9 +132,9 @@ The harness depends on documented Pydantic AI public APIs. Compatibility is eval
 
 ### Agent definitions and plugins
 
-The Host pins an immutable materialized definition revision and its selected Preset and plugin dependency locks, while the Harness consumes one process-local build plan containing the resolved model, tools, Toolsets, and Capabilities. Semantic equivalence between Host definition revisions remains a Host concern; a matching logical definition digest does not make different executable artifact locks equivalent.
+The Host pins an immutable materialized definition revision and its selected Preset and plugin dependency locks, while the Harness consumes one process-local build plan containing the selected plugin catalog plus the resolved model, tools, Toolsets, and Capabilities. Plugin compatibility has independent spec-codec, registration-factory, artifact, ordering, run-binding, contributed-Capability, and result/state-envelope axes. Semantic equivalence between Host definition revisions remains a Host concern; a matching logical definition digest does not make different executable artifact locks equivalent.
 
-Behaviorally incompatible Capability changes require a Host-selected definition revision or migration. Logical plugin, Preset, or Capability names do not imply artifact or state compatibility.
+Behaviorally incompatible plugin or Capability changes require a Host-selected definition revision, compatible artifact closure, or explicit owning state migration. Logical plugin, Preset, or Capability names do not imply artifact, middleware, binding, or state compatibility.
 
 ### Harness state
 
@@ -144,23 +146,25 @@ Event type meaning is stable. Additive payload fields are safe for consumers tha
 
 ## Failure Semantics
 
-| Failure                                  | Design outcome                                                                                                        |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Missing trusted identity or binding      | Run or invocation stops before dispatch.                                                                              |
-| Policy denial                            | Typed denied outcome; no broader fallback.                                                                            |
-| Invalid or unauthorized client feedback  | Reject without changing the pending batch or starting a continuation.                                                 |
-| Plugin build conflict                    | Agent construction fails before model execution.                                                                      |
-| `HarnessState` incompatibility           | Restore fails without mutating the stored state.                                                                      |
-| Provider timeout before dispatch         | Retry follows provider policy.                                                                                        |
-| Provider timeout after possible dispatch | Outcome remains unknown unless idempotent reconciliation is available.                                                |
-| Cleanup failure                          | `RunCleanupError` retains any frozen primary outcome and cleanup uncertainty; no normal terminal result is delivered. |
-| Telemetry failure                        | Execution continues unless the host has selected a fail-closed audit adapter.                                         |
+| Failure                                                     | Design outcome                                                                                                        |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Missing trusted identity or binding                         | Run or invocation stops before dispatch.                                                                              |
+| Policy denial                                               | Typed denied outcome; no broader fallback.                                                                            |
+| Invalid or unauthorized client feedback                     | Reject without changing the pending batch or starting a continuation.                                                 |
+| Plugin catalog, spec, ID, requirement, or ordering conflict | Agent construction fails before an executable becomes visible.                                                        |
+| Plugin run binding or replacement mismatch                  | Run setup fails before middleware or model work.                                                                      |
+| Invalid plugin-transformed input, event, or result          | Harness structural validation rejects it; no invalid terminal event is delivered.                                     |
+| `HarnessState` incompatibility                              | Restore fails without mutating the stored state.                                                                      |
+| Provider timeout before dispatch                            | Retry follows provider policy.                                                                                        |
+| Provider timeout after possible dispatch                    | Outcome remains unknown unless idempotent reconciliation is available.                                                |
+| Cleanup failure                                             | `RunCleanupError` retains any frozen primary outcome and cleanup uncertainty; no normal terminal result is delivered. |
+| Telemetry failure                                           | Execution continues unless the host has selected a fail-closed audit adapter.                                         |
 
 ## Trade-offs
 
 ### Trusted plugins and native tools
 
-Trusted in-process plugins and native Pydantic Toolsets keep the programming model simple and fast. They can opt into Harness-managed invocation metadata without inheriting from a Harness class, but neither metadata nor wrappers isolate malicious Python code. Out-of-process providers are the isolation boundary rather than a second plugin runtime.
+Trusted first-class Harness plugins and native Pydantic Toolsets keep the programming model direct and fast. Plugin packages can contribute ordinary Capabilities and tools that opt into Harness-managed invocation metadata, but neither the plugin base contract, metadata, nor wrappers isolate malicious Python code. Out-of-process providers are the isolation boundary rather than a second plugin runtime.
 
 ### Frozen definition, live deny
 

@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Every reusable component that changes Agent behavior or participates after a Pydantic Agent run starts is a Pydantic AI `AbstractCapability[AgentContext]`. This is the concrete generic specialization used by core, optional, plugin, and host-integration Capabilities; the Harness does not accept `AbstractCapability[Any]` or a second dependency type. Immediate input and the semantic pre-run `RunInputFactory` remain input-boundary values rather than artificial Capabilities. Trusted native Pydantic model, tool, and Toolset objects can enter `ResolvedAgentDefinition` as direct process-local build inputs, but they define no second reusable plugin, configuration, lifecycle, or state model. A Capability can contribute instructions, model selection and settings, Toolsets, validation, lifecycle behavior, state transitions, events, or host integration.
+Every reusable component whose behavior is inside a Pydantic Agent run is a Pydantic AI `AbstractCapability[AgentContext]`. This is the concrete generic specialization used by core, optional, plugin-contributed, and host-integration Capabilities; the Harness does not accept `AbstractCapability[Any]` or a second Pydantic dependency type. Immediate input and the semantic pre-run `RunInputFactory` remain input-boundary values. A first-class Harness plugin can wrap the semantic-input-to-complete-result boundary and contribute ordinary Capabilities, but it does not duplicate model-, node-, request-, or tool-level Capability hooks. Trusted native Pydantic model, tool, and Toolset objects can enter `ResolvedAgentDefinition` as direct process-local build inputs. A Capability can contribute instructions, model selection and settings, Toolsets, validation, Pydantic lifecycle behavior, state transitions, events, or host integration.
 
-`AgentContext` is the single dependency supplied through `RunContext[AgentContext]`. Every Capability hook, instruction provider, Toolset, and run binding therefore observes the same trusted Identity, stable multi-Environment facade, and mutable continuation state. `EnvironmentCapability` contributes Environment lifecycle and state behavior over that exact facade; it does not own a second binding collection. Pydantic AI remains responsible for Capability composition and execution.
+`AgentContext` is the single dependency supplied through `RunContext[AgentContext]`. Every Capability hook, instruction provider, Toolset, and run binding therefore observes the same trusted Identity, stable multi-Environment facade, ordered run-bound plugin context, and mutable continuation state. `EnvironmentCapability` contributes Environment lifecycle and state behavior over that exact facade; it does not own a second binding collection. Pydantic AI remains responsible for Capability composition and execution.
 
 ```mermaid
 flowchart TB
@@ -17,7 +17,7 @@ flowchart TB
     RunContext --> Loop
 ```
 
-The Harness does not define a second generic hook system, Toolset lifecycle, dependency solver, or Capability registry. Pydantic AI public run and per-node hooks remain available to Capability authors. Direct native tools and Toolsets retain their upstream lifecycle and trusted-process boundary; portable declarative tool features use the owning Capability spec. The Harness adds only the semantic pre-run input-factory seam owned by the input contract because it must execute after Environment binding and compatible state restore and before a Pydantic run receives its prompt. An input factory that needs a provisioned Environment operation explicitly awaits the typed readiness contract rather than relying on a global ready-all barrier.
+The Harness does not define a second per-node hook system, Toolset lifecycle, or Capability registry. Its separate plugin middleware chain governs only the outer input-to-result boundary and is owned by [Harness Plugin System](05-plugin-system.md). Pydantic AI public run and per-node hooks remain available to Capability authors. Direct native tools and Toolsets retain their upstream lifecycle and trusted-process boundary; portable declarative tool features use the owning Capability spec. The Harness adds only the semantic pre-run input-factory seam owned by the input contract because it must execute after Environment binding and compatible state restore and before a Pydantic run receives its prompt. An input factory that needs a provisioned Environment operation explicitly awaits the typed readiness contract rather than relying on a global ready-all barrier.
 
 ## Native Composition
 
@@ -40,19 +40,21 @@ Hosts do not receive a list of generic callback slots. Agent-affecting lifecycle
 | Need                                                      | Integration                                                                 |
 | --------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Create input from entered Environment resources           | Semantic `RunInputFactory` from the input contract                          |
+| Transform semantic input or the complete Harness result   | Harness plugin `wrap_run` around the canonical run path                     |
 | Create an isolated Capability instance for one run        | Pydantic Capability `for_run`; no sibling setup dependency                  |
 | Validate or observe before Agent nodes                    | Pydantic Capability `before_run` and `CapabilityOrdering`                   |
 | Acquire and scope run resources with teardown             | Pydantic Capability `wrap_run` or Toolset async context manager             |
 | Observe or act before and after public Agent nodes        | Pydantic Capability per-node hooks                                          |
 | Check authority or publish checkpoints at safe boundaries | Dedicated Capability that translates nodes into its semantic boundary model |
-| Observe model, tool, enqueue, and result activity         | Pydantic events and `HarnessRunStream`                                      |
+| Observe model, tool, and enqueue activity                 | Pydantic events and `HarnessRunStream`                                      |
+| Transform stream events before terminal delivery          | Harness plugin `wrap_run`; already emitted events are irreversible          |
 | Transform history or a model request                      | Pydantic history and request Capabilities                                   |
 
 Per-node hooks remain an advanced Capability-author surface because checkpointing, safe suspension, usage collection, and host authority checks can require exact execution boundaries. A host collaborator passed to such a Capability receives semantic values such as a checkpoint boundary or authority decision request, not a raw graph node. The public `run()` and `stream()` methods therefore do not reproduce the former `pre_node_hook`, `post_node_hook`, `pre_event_hook`, or `post_event_hook` argument set.
 
 Pydantic may call sibling `for_run()` methods concurrently, so `for_run()` derives a run-bound copy or binding and must not wait for another Capability's setup. Harness preparation has already bound and entered the Environment before the Pydantic run. An Environment-dependent Capability can directly await `ctx.deps.environment.ensure_ready(requirement)` in its own `for_run()`, then return an immutable run-bound replacement containing the instructions, Toolsets, or other model-surface values materialized from that ready resource. Pydantic re-extracts those contributions from the replacement before its first model request. The replacement performs no later discovery I/O, and its model-visible values remain stable for the run.
 
-`before_run()` remains an ordered observe-only seam for validation, state acceptance, and notifications that acquire no run-scoped resource. It is too late to select instructions or tool definitions because run contributions have already been assembled. A Capability that acquires a connection, lease, task, or other scoped collaborator uses `wrap_run()` or its Toolset context manager, with `CapabilityOrdering` controlling wrapper nesting and teardown. Input production uses `RunInputFactory` because a prompt must exist before Pydantic can start the Agent run; a factory that needs readiness calls the same `BoundEnvironment.ensure_ready()` contract itself because it runs before Capability `for_run()`. Completion behavior uses Capability lifecycle or consumes the terminal Harness result; the Harness does not add `on_agent_start` and `on_agent_complete` callbacks beside those paths.
+`before_run()` remains an ordered observe-only seam for validation, state acceptance, and notifications that acquire no run-scoped resource. It is too late to select instructions or tool definitions because run contributions have already been assembled. A Capability that acquires a connection, lease, task, or other scoped collaborator uses `wrap_run()` or its Toolset context manager, with `CapabilityOrdering` controlling wrapper nesting and teardown. Input production uses `RunInputFactory` because a prompt must exist before Pydantic can start the Agent run; a factory that needs readiness calls the same `BoundEnvironment.ensure_ready()` contract itself because it runs before Capability `for_run()`. Completion behavior inside the Pydantic run uses Capability lifecycle. Complete-result transformation or observation uses the ordered Harness plugin chain; the Harness does not add independent `on_agent_start` and `on_agent_complete` callback registries beside those paths.
 
 ## Capability Categories
 
@@ -60,7 +62,7 @@ The categories describe ownership, not subclasses.
 
 | Category             | Examples                                                        | Typical contribution                                        |
 | -------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
-| Core                 | Identity, invocation authorization, context state, events       | Always-active hooks and wrapper Toolsets                    |
+| Core                 | Identity, invocation authorization, context state, events       | Always-active Pydantic hooks and wrapper Toolsets           |
 | Agent feature        | Compaction, delegation, working state, media, code execution    | Instructions, Toolsets, hooks, optional feature-owned state |
 | Provider integration | Environment, model gateway, MCP, skill source                   | Provider binding plus instructions or Toolsets              |
 | Host integration     | Checkpoint storage, policy, credential broker, telemetry export | Typed collaborator and lifecycle hooks                      |
@@ -76,6 +78,7 @@ class AgentContext:
     instance: AgentInstanceContext
     state: AgentContextState
     environment: BoundEnvironment
+    plugins: BoundPluginContext
     events: HarnessEventEmitter
     metadata: Mapping[str, JsonValue]
 
@@ -97,16 +100,17 @@ class EnvironmentCapability(AbstractCapability[AgentContext]):
 - `instance` is the trusted Agent Identity and lineage binding;
 - `state` is the complete recoverable Agent Context state, including capability namespaces and Environment state;
 - `environment` is the run-bound multi-Environment facade used by filesystem, shell, process, port, and Environment-state operations;
+- `plugins` is the read-only stable handle whose ordered index becomes available after this run's plugin binding phase;
 - the internal `events` emitter is a small run-local facade installed by its core capability;
 - `metadata` is non-authoritative correlation data.
 
-The corresponding Environment and event components are still `AbstractCapability[AgentContext]` implementations. Their facades are placed on `AgentContext` because tools use them frequently and the values form one cohesive run dependency. `EnvironmentCapability` is a public core Capability class so another Capability can declare a real lifecycle dependency through Pydantic ordering or capability lookup. Ordinary filesystem, shell, process, and port access does not require that lookup: tools and Capabilities use `ctx.deps.environment`, which is the same `BoundEnvironment` instance observed by `EnvironmentCapability`.
+The `plugins` property cannot be reassigned. Its `BoundPluginContext` handle exists when `AgentContext` is created, rejects reads while ordered `for_run(context)` binding is in progress, and atomically exposes the complete immutable index before middleware or Pydantic Capability behavior starts. The corresponding Environment and event components are still `AbstractCapability[AgentContext]` implementations. Their facades and `BoundPluginContext` are placed on `AgentContext` because tools and contributed Capabilities need them and the values form one cohesive run dependency. `EnvironmentCapability` is a public core Capability class so another Capability can declare a real lifecycle dependency through Pydantic ordering or capability lookup. Ordinary filesystem, shell, process, and port access does not require that lookup: tools and Capabilities use `ctx.deps.environment`, which is the same `BoundEnvironment` instance observed by `EnvironmentCapability`.
 
 The Harness enters `EnvironmentRunBinding` before the Pydantic run, obtains one stable facade, places it on `AgentContext`, and installs the run-bound `EnvironmentCapability` over it. The Capability handles imported Environment state acceptance, export, bounded model context, and topology-change notices. Neither side exposes or mutates a shared Python list. The facade's private routing coordinator publishes immutable topology snapshots, while the Host-retained controller replaces those snapshots atomically.
 
 Pydantic `RunContext.usage` remains the sole live usage accumulator, `RunContext.usage_limits` exposes the native limits selected for the run, and `RunContext.enqueue()` and `RunContext.cancel()` are the internal active-run control primitives; none needs a second `AgentContext` field. The Harness constructs the event emitter and a run-specific `ActiveRunCapability` for the canonical `HarnessRunStream`; its run-local bridge connects the wrapper to the live `RunContext` without becoming an `AgentContext` field. The host does not inject an event, usage sink, or generic control object. `BoundEnvironment` always represents a set of bindings; a single Environment is the one-binding case. Provider clients, credential material, storage clients, model wrappers, callbacks, and host lifecycle objects remain private to the owning Capability.
 
-`AgentContext` is not a general service locator. Capability-specific interaction inside a run uses the public Pydantic AI `RunContext.capabilities` mapping and an explicit capability ID. A host that constructs a Capability retains its typed instance or its collaborator; the execution facade does not add a generic Capability lookup API.
+`AgentContext` is not a general service locator. Capability-specific interaction inside a run uses the public Pydantic AI `RunContext.capabilities` mapping and an explicit Capability ID. A Capability contributed by a Harness plugin resolves the same run-bound plugin used by middleware through `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)`; the ID-and-type lookup is intentionally limited to first-class plugins and is not a generic services or Capability registry. A host that constructs a Capability retains its typed instance or collaborator.
 
 ## Capability State
 
@@ -160,14 +164,15 @@ Capability entries are reserved for continuation semantics that messages cannot 
 
 ## Capability Interaction
 
-Capabilities use one of four interaction paths:
+Capabilities use one of five interaction paths:
 
 1. Pydantic AI composition for instructions, models, Toolsets, and hooks.
 2. `RunContext[AgentContext]` for messages, usage, usage limits, tools, and shared run bindings.
 3. `RunContext.capabilities[id]` when one Capability explicitly depends on another run-bound Capability.
-4. A typed collaborator passed to a host-integration Capability constructor.
+4. `ctx.deps.plugins.require(id, type)` when a plugin-contributed Capability needs its owning run-bound Harness plugin.
+5. A typed collaborator passed to a host-integration Capability constructor.
 
-`CapabilityOrdering.requires` declares required Capability types. Direct lookup is appropriate only when behavior genuinely depends on a peer Capability; shared data does not justify a new interface by itself. In particular, a Capability reads the shared Environment through `ctx.deps.environment`; it depends on or looks up `EnvironmentCapability` only when it needs that Capability's lifecycle behavior rather than file or shell access.
+`CapabilityOrdering.requires` declares required Capability types. Direct Capability lookup is appropriate only when behavior genuinely depends on a peer Capability; shared data does not justify a new interface by itself. Harness plugin ordering and typed plugin lookup follow their separate outer-boundary contract and do not change Capability ordering. In particular, a Capability reads the shared Environment through `ctx.deps.environment`; it depends on or looks up `EnvironmentCapability` only when it needs that Capability's lifecycle behavior rather than file or shell access.
 
 Application dependencies follow the same rule without extending `AgentContext`. A tool used in one place closes over its typed client or repository. A coordinated group of tools is contributed by an application Capability that captures those collaborators in its constructor. Another Capability reads that dependency through the public run-bound Capability mapping only when there is a real Capability dependency. The Harness provides examples and type-checkable helpers for these patterns but no `services: Mapping[str, Any]`, arbitrary context subclass, or dynamically populated dependency container.
 
@@ -184,6 +189,7 @@ sequenceDiagram
     PAI-->>Harness: process-local Agent
     Host->>Harness: run with RunBindings and optional prior state
     Harness->>Context: create context and install run bindings
+    Harness->>Harness: call ordered plugin for_run with that context and freeze context.plugins
     Harness->>PAI: run with AgentContext and build plus run Capabilities
     PAI->>Capability: for_run RunContext
     Capability->>Context: validate and read own state namespace
@@ -264,7 +270,7 @@ Identity, invocation authorization, context state, and any Capability needed to 
 | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
 | Capability lifecycle, ordering, and Toolset composition                        | Pydantic AI                                              |
 | `AgentContext`, capability state namespaces, and Environment state aggregation | Harness                                                  |
-| Plugin package discovery                                                       | [`05-plugin-system.md`](05-plugin-system.md)             |
+| Harness plugin discovery, binding, ordering, middleware, and typed context     | [`05-plugin-system.md`](05-plugin-system.md)             |
 | Harness state envelope                                                         | [`10-snapshot-and-resume.md`](10-snapshot-and-resume.md) |
 | Durable checkpoint selection, storage generation, fencing, and recovery        | Host                                                     |
 

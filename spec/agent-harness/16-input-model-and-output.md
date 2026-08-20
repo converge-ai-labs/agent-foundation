@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The harness adapts code-first native Pydantic AI input or a Host `RunInput` envelope into one Pydantic run input, lets Pydantic AI own model selection, profile-aware request preparation, and execution, and adapts upstream stream and result values into Harness events and results. A semantic `RunInputFactory` can create that value after the current Environment is entered and can explicitly await only the scoped Environment operations it needs. The Harness adds no parallel model request state machine, model-profile system, prompt language, or output type system.
+The harness adapts code-first native Pydantic AI input or a Host `RunInput` envelope into one canonical semantic input, lets ordered Harness plugins transform that value before content resolution, lets Pydantic AI own model selection, profile-aware request preparation, and execution, and lets the same plugin chain transform stream events and the complete result candidate before public terminal delivery. A semantic `RunInputFactory` can create input after the current Environment is entered and can explicitly await only the scoped Environment operations it needs. The Harness adds no parallel model request state machine, model-profile system, prompt language, or output type system.
 
 ```mermaid
 flowchart LR
@@ -10,14 +10,18 @@ flowchart LR
     Code[Native string or UserContent sequence] --> Select
     Factory[RunInputFactory after Environment entry] --> Select
     None[No new input] --> Select
-    Select --> Validate[Validate provenance and placement]
+    Select --> Normalize[Canonical semantic input]
+    Normalize --> Plugins[Harness plugin chain]
+    Plugins --> Validate[Validate provenance and placement]
     Validate --> Resolve[Resolve referenced content when present]
     Resolve --> Content[Pydantic AI user content and deferred results]
     Content --> Agent[Pydantic AI Agent]
     Agent --> Stream[Pydantic AI stream events]
     Agent --> Output[Pydantic AI validated output]
     Stream --> Events[HarnessEvent adapter]
-    Output --> Result[Harness run result]
+    Output --> Candidate[Harness result candidate]
+    Events & Candidate --> Plugins
+    Plugins --> Result[Validated result and public terminal delivery]
 ```
 
 Caller authentication, trusted actor identity, durable input acceptance, host commands, and media storage remain host concerns. The trusted actor comes from `AgentInstanceContext`, never from model input.
@@ -60,7 +64,15 @@ class RunInputFactory(Protocol):
 
 `run()` and `stream()` accept an immediate input value or `input_factory`; supplying both fails before resource entry. Omitting both is valid and passes no new user content to Pydantic AI, which is useful when imported message history already contains the request to continue. During stream context entry, the Harness invokes a supplied factory exactly once after the current run binding is entered and compatible imported Environment state is restored, but before input reference resolution and before the lazy Pydantic event handle is created. Binding entry establishes trustworthy identities, descriptors, routing, and readiness paths; it does not globally await every advertised operation resource. The restricted preparation context exposes trusted Identity, correlation metadata, and the entered Environment, so a factory that needs an operation calls `ensure_ready(EnvironmentReadinessRequirement(...))` for that scope. It exposes no `AgentContextState`, Harness events, run-bound Capabilities, or active-run control. Non-Environment Capability entries are accepted by their owners only when the Pydantic run starts, so a factory cannot inspect or act on an entry that has not passed its owning Capability's version check. `run()` consumes this same prepared stream path internally.
 
-The factory is an input-production seam, not a general callback lifecycle. A Capability whose initial instructions or tool surface depends on Environment content awaits its scoped readiness in `for_run()`, materializes the model-visible value once, and returns an immutable run-bound replacement before the first request. Ordered validation or observation that acquires no resource uses `before_run()`; resource acquisition and its teardown use `wrap_run()` or a Toolset context manager, and per-node work remains a Pydantic Capability hook. The Harness adds no generic prepare lifecycle or sibling-Capability readiness event. A factory failure becomes an `InputError` with the original exception retained as a protected cause, and every resource already entered for preparation still closes.
+The factory is an input-production seam, not a general callback lifecycle. After it returns, the Harness normalizes the selected value and invokes the ordered Harness plugin chain; the factory itself neither selects nor invokes plugins. A Capability whose initial instructions or tool surface depends on Environment content awaits its scoped readiness in `for_run()`, materializes the model-visible value once, and returns an immutable run-bound replacement before the first request. Ordered validation or observation that acquires no resource uses `before_run()`; resource acquisition and its teardown use `wrap_run()` or a Toolset context manager, and per-node work remains a Pydantic Capability hook. The Harness adds no generic prepare lifecycle or sibling-Capability readiness event. A factory failure becomes an `InputError` with the original exception retained as a protected cause, and every resource already entered for preparation still closes.
+
+### Canonical Semantic Input
+
+Before reference resolution or Pydantic mapping, the Harness normalizes an immediate value or the optional factory result into one immutable `SemanticRunInput`. This is a process-local plugin-authoring value, not another durable input envelope. It preserves the source `input_id`, metadata, content policy, provenance, classification, ordered Harness `InputPart` values, and any already-native Pydantic `UserContent` values through typed native-content parts. Omitting new input remains distinct from an empty `RunInput`.
+
+The ordered Harness plugin chain receives this value after Environment entry and compatible Environment-state restore. A plugin can inspect or replace parts and use typed helpers to append a bounded `ContextInputPart`; it cannot erase provenance requirements or convert metadata into authority. The final transformed value is revalidated, then content references are authorized and resolved and ordinary parts are mapped to Pydantic values. A plugin can instead short-circuit with a typed `HarnessRunResult` candidate, in which case no content resolver, Pydantic run, model request, or tool call occurs.
+
+`SemanticRunInput` exists so immediate input, factory-produced input, and plugin transforms share one ordering and validation boundary. It is not serialized in `HarnessState`, and live enqueue continues to use its explicitly narrower mapping rather than replaying the initial plugin chain.
 
 ### Part Mapping
 
@@ -119,6 +131,7 @@ sequenceDiagram
     participant Environment
     participant Factory as Optional input factory
     participant Resolver as ContentResolver
+    participant Plugins as Harness plugins
     participant PAI as Pydantic AI
 
     Harness->>Environment: enter bindings and restore state
@@ -126,6 +139,9 @@ sequenceDiagram
         Harness->>Factory: create RunInputValue
         Factory-->>Harness: RunInput or native input
     end
+    Harness->>Harness: normalize canonical semantic input
+    Harness->>Plugins: transform input or short-circuit
+    Plugins-->>Harness: transformed input
     opt Referenced content present
         Harness->>Resolver: authorized reference and policy ref
         Resolver-->>Harness: URL content or bounded bytes
@@ -213,21 +229,23 @@ Provider-specific self-healing remains in a matching, narrowly scoped error-reco
 
 Pydantic AI `AgentSpec.output_schema`, output types, validators, and `AgentRunResult` own output shape and validation. The harness adds no output modes or parallel validation policy.
 
-The process-local result exposed by [`14-public-api-and-packaging.md`](14-public-api-and-packaging.md) contains the upstream validated output or deferred tool requests together with harness correlation, state, usage, and a normalized terminal error. `stream()` emits it as the final `HarnessRunResultEvent`; `run()` returns it directly. `DeferredToolRequests.calls` represents external execution, including client-side tools, while `.approvals` represents permission to execute a separate server tool; their result maps remain distinct. A later run restores deferred results through the Pydantic AI deferred-tool contract, the previous `HarnessState`, the same selected definition, and any exact client-tool surface required by the pending call.
+The process-local result exposed by [`14-public-api-and-packaging.md`](14-public-api-and-packaging.md) contains the upstream validated output or deferred tool requests together with harness correlation, state, usage, and a normalized terminal error. The inner execution path first produces a `HarnessRunResult` candidate. Harness plugin middleware can observe or replace that complete candidate, including state and usage, and the Harness then revalidates all status combinations, state provenance, the Harness-state envelope and message codec, run correlation, and limits. A replacement state must come from the inner candidate or `PluginRunExchange.export_current_state()`, which supplies the Harness-owned current complete message view to `AgentContext.export_state()`, so Capability-private entry validation remains with its owner rather than being duplicated in the middleware layer. A replacement cannot retract already emitted events or establish a Host completion fact. Only after the middleware chain and every run-scoped resource close successfully does `stream()` emit the final `HarnessRunResultEvent` or `run()` return the result. `DeferredToolRequests.calls` represents external execution, including client-side tools, while `.approvals` represents permission to execute a separate server tool; their result maps remain distinct. A later run restores deferred results through the Pydantic AI deferred-tool contract, the previous `HarnessState`, the same selected definition, and any exact client-tool surface required by the pending call.
 
-Absence of final output remains distinguishable from an empty valid output. Cancellation, failure, deferred work, and successful no-value output retain distinct terminal semantics supplied by the run API.
+Absence of final output remains distinguishable from an empty valid output. Cancellation, failure, deferred work, short-circuit completion, and successful no-value output retain distinct terminal semantics supplied by the run API. Typed plugin result builders construct valid combinations, but trusted plugin freedom does not weaken final Harness validation.
 
 ## Failure Semantics
 
 | Failure                                                                       | Boundary outcome                                                                                                     |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Invalid input part                                                            | The run stops before content enters Pydantic AI                                                                      |
+| Invalid input part or invalid plugin-transformed semantic input               | The run stops before content enters Pydantic AI                                                                      |
 | Content reference denied or unavailable                                       | The affected input is not substituted with guessed text or another artifact                                          |
 | Unsupported content for the selected model                                    | A typed content error identifies the source part                                                                     |
 | Hosted logical model unresolved, denied, or outside its locked route envelope | The integration-owned resolver raises a typed failure before provider dispatch; ambient inference is never attempted |
 | Provider or model failure                                                     | Pydantic AI retry and capability behavior applies; the harness normalizes the terminal error                         |
 | Output validation failure                                                     | Pydantic AI output-validation behavior applies                                                                       |
 | Deferred tool request                                                         | The run exports Pydantic deferred data and `HarnessState`; exact client-tool and Host waiting state remain external  |
+| Plugin short-circuit or result replacement is structurally invalid            | Harness validation rejects it and emits no terminal result event                                                     |
+| Plugin middleware or cleanup fails after an inner candidate exists            | `RunCleanupError` retains the immutable candidate and terminal delivery is withheld                                  |
 
 Provider codes and safe details remain attached as attributed causes. Secret values, raw credential metadata, and private content URLs stay outside public errors and events.
 
@@ -239,6 +257,7 @@ Provider codes and safe details remain attached as attributed causes. Secret val
 | Trusted actor and Agent Identity                                             | [`02-domain-model.md`](02-domain-model.md)                                     | Comes through `AgentInstanceContext`, not input       |
 | Model selection, settings, profiles, adapters, requests, retries, and output | Pydantic AI                                                                    | Used through public Model, Capability, and Agent APIs |
 | Hosted logical model integration and profile construction lock               | Host model-integration catalog                                                 | Produces the native Model; no Agent-level patch       |
+| Harness semantic-input and complete-result middleware                        | [`05-plugin-system.md`](05-plugin-system.md)                                   | Wraps this document's canonical mapping path          |
 | Context assembly and compaction                                              | [`09-context-and-memory.md`](09-context-and-memory.md)                         | Consumes mapped content                               |
 | Deferred tools                                                               | [`07-tool-execution.md`](07-tool-execution.md) and Pydantic AI                 | Uses native deferred values                           |
 | Events and usage                                                             | [`12-events-observability-and-usage.md`](12-events-observability-and-usage.md) | Adapts upstream observations                          |

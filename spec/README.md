@@ -34,8 +34,9 @@ flowchart TB
     subgraph Harness[agent-harness]
         Plan[ResolvedAgentDefinition]
         Builder[HarnessBuilder]
+        Plugins[Harness plugin graph]
         Bindings[RunBindings]
-        Context[AgentContext]
+        Context[AgentContext and BoundPluginContext]
         Capabilities[Pydantic AI Capabilities]
         Run[Harness run and stream]
         State[HarnessState]
@@ -67,11 +68,11 @@ flowchart TB
     Control --> Lifecycle
     Scheduler --> Lifecycle
     ServicePlugins --> Service
-    Execution --> Plan --> Builder --> Capabilities
+    Execution --> Plan --> Builder --> Plugins --> Capabilities
     Execution --> Bindings
     Identity --> Bindings
-    Bindings --> Context & Capabilities
-    Context & Capabilities --> Run --> State
+    Bindings --> Plugins & Context & Capabilities
+    Plugins & Context & Capabilities --> Run --> State
     Capabilities --> Models & Tools
     Run -. deferred client calls .-> Clients
     Context --> Bound
@@ -88,7 +89,7 @@ The dependency direction is one-way: a host such as `foundation-service` embeds 
 
 | Component            | Owns                                                                                                                                                                                                                                                                                                                                                                                                                            | Does not own                                                                                                                                                                                           |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent-harness`      | Canonical materialized Agent definition contract, resolved process-local build plan, Capability composition, Agent Identity propagation, execution, first-class direct-local and EIP-backed multi-Environment access including direct EIP adaptation, client-side external-tool deferral, context state, delegation, events, usage, and continuation state                                                                      | Preset catalogs, immutable Host revisions, durable execution lifecycle, low-level EIP transport/codecs, client handler execution, queues, worker leases, product authentication, or billing settlement |
+| `agent-harness`      | Canonical materialized Agent definition contract, resolved process-local build plan, first-class plugin construction and input-to-result middleware, Capability composition, Agent Identity propagation, execution, first-class direct-local and EIP-backed multi-Environment access including direct EIP adaptation, client-side external-tool deferral, context state, delegation, events, usage, and continuation state      | Preset catalogs, immutable Host revisions, durable execution lifecycle, low-level EIP transport/codecs, client handler execution, queues, worker leases, product authentication, or billing settlement |
 | `agent-envd-client`  | Generated Python EIP models, codecs, method metadata, typed stubs, and bounded stdio/HTTP/WebSocket session runtime                                                                                                                                                                                                                                                                                                             | Harness routing and model policy, provider provisioning, daemon resource enforcement, or Host lifecycle                                                                                                |
 | `agent-envd`         | Shared EIP JSON-RPC semantics over stdio, authenticated HTTP, and authenticated WebSocket; generated Rust protocol/dispatch surface; daemon-side files, processes, handles, bounded retained output, recoverable state, generation, provider receipts, and fail-closed or explicitly delegated command containment                                                                                                              | Direct-local operator implementation, outer sandbox provisioning, Agent loop, durable execution lifecycle, model policy, or product workflow                                                           |
 | `foundation-service` | Hosted definition sources, typed Agent/Model/Toolset Presets, model-integration catalog revisions, immutable materialized definition revisions and dependency locks, durable root and asynchronous child executions, client-tool pending and child-result delivery lifecycles, accepted inputs, scheduling, worker coordination, durable state, webhooks, memory jobs, model-usage records, pricing revisions, and service APIs | Pydantic Agent-loop, `ModelProfile`, or adapter-rendering semantics; client-side effects; a platform Sandbox resource; or interpretation of provider-native Environment state                          |
@@ -99,14 +100,14 @@ The dependency direction is one-way: a host such as `foundation-service` embeds 
 The Harness is built directly on Pydantic AI 2:
 
 - one canonical materialized `AgentDefinition` and code-first native `AgentSpec` input produce the same process-local `ResolvedAgentDefinition` contract;
-- every reusable Agent plugin and lifecycle component is an `AbstractCapability[AgentContext]`;
-- portable Toolsets are contributed by Capabilities, while trusted native models, tools, and Toolsets can remain explicit resolved build inputs without forming a second plugin system;
-- `AgentContext` is the single run dependency, contains the multi-Environment facade, and coordinates Capability-namespaced recoverable state;
+- first-class Harness plugins wrap the semantic-input-to-complete-result path and can contribute ordinary `AbstractCapability[AgentContext]` instances;
+- Pydantic Capabilities remain the sole reusable model/node/tool lifecycle inside the Agent loop, while trusted native models, tools, and Toolsets can remain explicit resolved build inputs;
+- `AgentContext` is the single Pydantic run dependency, contains the multi-Environment facade and `BoundPluginContext`, and coordinates Capability-namespaced recoverable state;
 - Pydantic AI owns the Agent loop, messages, `ModelSettings`, native `ModelProfile` resolution and adapter rendering, outputs, Toolsets, external and approval deferred tools, events, usage, and Capability lifecycle;
 - `HarnessRunStream` is the single-consumer observation and control facade for one process-local execution;
 - `HarnessState` is portable continuation state, not a host durable execution snapshot.
 
-Capability packages provide Agent features and Host integrations. Pydantic `CapabilitySpec` and Capability `from_spec` are the portable behavior-configuration mechanism; they do not duplicate native `ModelProfile` compatibility facts. Host Preset, model-integration, definition-revision, provider, and artifact schemas remain independently typed. Native Pydantic tools and Toolsets remain usable through the resolved build plan, while metadata-aware tools opt into Harness Identity, policy, credential, retry, and result guarantees. Reentrant behavior with no current-run authority can enter as a build Capability. The locked model resolver receives current Identity, policy, credentials, and any continuation route pin through its fresh run Capability; it and the run Capabilities for checkpointing, credential brokerage, Environment integration, inline child binding, Host-owned asynchronous child submission, telemetry correlation, and other execution-scoped work enter through fresh `RunBindings`.
+Harness plugin packages provide outer run middleware and can contribute Agent features; Capability packages provide Agent-loop features and Host integrations. Definition-level `PluginSpec` plus plugin `from_spec` configure Harness middleware, while Pydantic `CapabilitySpec` and Capability `from_spec` configure Pydantic-run behavior; they do not duplicate native `ModelProfile` compatibility facts. Host Preset, model-integration, definition-revision, provider, and artifact schemas remain independently typed. Native Pydantic tools and Toolsets remain usable through the resolved build plan, while metadata-aware tools opt into Harness Identity, policy, credential, retry, and result guarantees. Reentrant behavior with no current-run authority can enter as a build Capability. The locked model resolver receives current Identity, policy, credentials, and any continuation route pin through its fresh run Capability; it and the run Capabilities for checkpointing, credential brokerage, Environment integration, inline child binding, Host-owned asynchronous child submission, telemetry correlation, and other execution-scoped work enter through fresh `RunBindings`.
 
 The complete Harness design is indexed in [agent-harness/README.md](agent-harness/README.md).
 
@@ -136,7 +137,7 @@ flowchart LR
     Durable --> Scheduler[Memory and maintenance scheduler]
 ```
 
-The control plane materializes inline or typed Preset input, binds each logical model selection to an exact model-integration revision, commits an immutable Agent definition revision with dependency locks, durably accepts one `Execution` against a selected revision, and schedules monotonic fenced `Attempt` generations. Build resolution produces a process-local `ResolvedAgentDefinition` with authority-neutral model-integration descriptors and only attested credential-free Models. At run start, fresh `RunBindings` supply exactly one locked integration Capability per node together with Identity, any continuation route pin, policy, credentials, model pricing, checkpointing, observability correlation, and selected direct-local, EIP-backed, or mixed Environment binding. The integration then constructs an allowed native Model with its effective Pydantic `ModelProfile` or fails closed before the worker consumes the Attempt's `HarnessRunStream`; it never delegates to ambient inference. A stale Attempt cannot commit a checkpoint, event, waiting boundary, or outcome.
+The control plane materializes inline or typed Preset input, binds each logical model selection to an exact model-integration revision, commits an immutable Agent definition revision with dependency locks, durably accepts one `Execution` against a selected revision, and schedules monotonic fenced `Attempt` generations. Build resolution produces a process-local `ResolvedAgentDefinition` with authority-neutral model-integration descriptors and only attested credential-free Models. At build, the service supplies the exact operator-selected plugin catalog and unchanged materialized plugin specs; the Harness constructs and orders the plugin graph. At run start, fresh `RunBindings` supply exactly one locked integration Capability per node together with Identity, any continuation route pin, policy, credentials, model pricing, checkpointing, observability correlation, and selected direct-local, EIP-backed, or mixed Environment binding; the Harness derives fresh run-bound plugins. The integration then constructs an allowed native Model with its effective Pydantic `ModelProfile` or fails closed before the worker consumes the Attempt's `HarnessRunStream`; it never delegates to ambient inference. A stale Attempt cannot commit a checkpoint, event, waiting boundary, or outcome.
 
 The hosted service architecture is indexed in [foundation-service/README.md](foundation-service/README.md); [Agent Definitions and Presets](foundation-service/01-agent-definitions-and-presets.md) owns source, Preset, revision, materialization, and provenance semantics.
 
@@ -180,14 +181,19 @@ This relationship supports workload identity: external systems bind policy or sh
 ```mermaid
 flowchart TB
     Presets[Typed Host Presets] --> Definition[Materialized AgentDefinition]
+    Definition --> PluginSpec[Harness PluginSpec]
+    PluginCatalog[Selected plugin catalog] --> HarnessPlugin[Harness plugin]
+    PluginSpec --> HarnessPlugin
     Definition --> AgentSpec[Agent CapabilitySpec]
     AgentSpec --> AgentCap[Agent feature Capability]
+    HarnessPlugin --> AgentCap
     ModelCatalog[Locked model integration] --> ModelPlan[Authority-neutral model plan]
     ModelPlan --> NativeModel[Native Model and ModelProfile]
     RunAuthority[Fresh run authority and optional route pin] --> NativeModel
     NativeModel --> Harness
     HostConfig[Host configuration] --> HostCap[Host integration Capability]
     ServiceConfig[Hosted service configuration] --> ServicePlugin[Hosted service plugin]
+    HarnessPlugin --> Harness
     AgentCap --> Harness
     HostCap --> Harness
     ServicePlugin --> Service[Hosted service]
@@ -197,12 +203,13 @@ flowchart TB
 | Extension                   | Boundary                                                                                                         |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Model integration           | Locked logical-model plan plus fail-closed run-time native model/provider/adapter construction and profile input |
+| Harness plugin              | Semantic-input, stream-event, error, and complete-result middleware plus optional Capability contribution        |
 | Agent feature Capability    | Instructions, request settings, Toolsets, public request hooks, and Capability state                             |
 | Host integration Capability | Environment, checkpoint storage, policy, credentials, telemetry, or another run collaborator                     |
 | Hosted service plugin       | Ingress, storage, scheduler, lifecycle projection, connector, or hosted policy behavior outside the Agent loop   |
 | Provider adapter            | Model, Environment, MCP, skill registry, memory, secret, telemetry, or external operation                        |
 
-Installed Python Capability plugins are trusted in-process code. Untrusted or separately governed behavior stays behind a tool or provider protocol. The core defines no universal remote-plugin RPC system.
+Installed Python Harness plugins, plugin-contributed Capabilities, and native Toolsets are trusted in-process code. Untrusted or separately governed behavior stays behind a tool or provider protocol. The core defines no universal remote-plugin RPC system.
 
 Enterprise packages can add SSO, audit retention, centralized policy, advanced connectors, and fine-grained skill/tool control through the same open-source boundaries.
 
@@ -232,7 +239,7 @@ Input acceptance, Harness completion, Host durable execution commit, external de
 01. Reuse Pydantic AI, OpenTelemetry, databases, streams, and provider ecosystems instead of rebuilding them.
 02. Keep one authority for every durable fact.
 03. Use native Pydantic `ModelProfile` for compatibility facts and Capability for reusable Agent behavior while retaining native model, tool, and Toolset build inputs.
-04. Keep `AgentContext` cohesive and stateful without turning it into a service locator.
+04. Keep `AgentContext` cohesive and stateful, with typed `BoundPluginContext` lookup rather than a service locator.
 05. Keep host durability outside process-local Harness state.
 06. Bind Identity at the host boundary and propagate it through every side-effect path.
 07. Enforce Environment authority again at the provider.

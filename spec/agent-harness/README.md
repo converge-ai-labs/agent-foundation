@@ -4,30 +4,30 @@
 
 This directory defines the current design of `agent-harness`, the Pydantic AI-based harness used by embedded applications and hosted execution workers.
 
-The Harness is a process-local execution boundary. It owns the canonical materialized `AgentDefinition`, code-first materialization, resolved-plan validation and construction, Capability composition, typed execution context, model and tool loop integration, dynamic multi-Environment access, context management, continuation state, delegation, normalized events, and native Pydantic usage exposure. Hosted definition sources, typed Presets, immutable revisions, durable acceptance, product policy, deployment coordination, and business billing remain Host concerns.
+The Harness is a process-local execution boundary. It owns the canonical materialized `AgentDefinition`, code-first materialization, resolved-plan validation and construction, first-class plugin construction and input-to-result middleware, Pydantic Capability composition, typed execution context, model and tool loop integration, dynamic multi-Environment access, context management, continuation state, delegation, normalized events, and native Pydantic usage exposure. Hosted definition sources, typed Presets, immutable revisions, durable acceptance, product policy, deployment coordination, and business billing remain Host concerns.
 
 ## Document Catalog
 
-| Document                                                                                 | Owning contract                                                                                                                        |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md)                                                         | Scope, system architecture, authority, execution flow, completion boundaries, and design principles                                    |
-| [01-pydantic-ai-foundation.md](01-pydantic-ai-foundation.md)                             | Pydantic AI primitive mapping, latest-version policy, native ModelProfile boundary, and harness-owned extensions                       |
-| [02-domain-model.md](02-domain-model.md)                                                 | Core entities, identities, references, version axes, and relationship invariants                                                       |
-| [03-agent-definition-and-build.md](03-agent-definition-and-build.md)                     | Canonical materialized Agent definition, process-local resolved build plan, validation, and final Agent construction                   |
-| [04-capability-model.md](04-capability-model.md)                                         | Native Capability composition, AgentContext, namespaced state, interaction, and checkpoint integration                                 |
-| [05-plugin-system.md](05-plugin-system.md)                                               | Capability package exports, discovery, trust, and native configuration                                                                 |
-| [06-execution-context-and-lifecycle.md](06-execution-context-and-lifecycle.md)           | Typed execution context, run-stream lifecycle, control input, and completion                                                           |
-| [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, authorization, approval, credentials, invocation, and deferred results  |
-| [08-environment-integration.md](08-environment-integration.md)                           | Multi-binding Bound Environment, dynamic topology, model-facing routing, recoverable state, and provider enforcement                   |
-| [09-context-and-memory.md](09-context-and-memory.md)                                     | History, context assembly, guidance, compaction, memory boundary, and token budgets                                                    |
-| [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `message_history` plus namespaced Agent Context state, semantic checkpoints, restore, resume, fork, and host state boundary            |
-| [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Complete child declarations, immutable built collection, State-backed inline delegation, shared tasks, and Host async boundary         |
-| [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Canonical event stream, terminal result, telemetry, native accumulation and limits, custom pricing, and per-response usage observation |
-| [13-hosting-contract.md](13-hosting-contract.md)                                         | Embedded and hosted execution integration contracts                                                                                    |
-| [14-public-api-and-packaging.md](14-public-api-and-packaging.md)                         | Stable durable and code-first API, package layers, optional capabilities, and compatibility policy                                     |
-| [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, security model, compatibility strategy, and design trade-offs                                                        |
-| [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native and hosted input, content resolution, ModelSettings/ModelProfile/Capability layering, model resolution, streaming, and output   |
-| [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | First-party Capability catalog entries, dependencies, state, and security boundaries                                                   |
+| Document                                                                                 | Owning contract                                                                                                                                 |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                                         | Scope, system architecture, authority, execution flow, completion boundaries, and design principles                                             |
+| [01-pydantic-ai-foundation.md](01-pydantic-ai-foundation.md)                             | Pydantic AI primitive mapping, latest-version policy, native ModelProfile boundary, and harness-owned extensions                                |
+| [02-domain-model.md](02-domain-model.md)                                                 | Core entities, identities, references, version axes, and relationship invariants                                                                |
+| [03-agent-definition-and-build.md](03-agent-definition-and-build.md)                     | Canonical materialized Agent definition, process-local resolved build plan, validation, and final Agent construction                            |
+| [04-capability-model.md](04-capability-model.md)                                         | Native Capability composition, AgentContext, namespaced state, interaction, and checkpoint integration                                          |
+| [05-plugin-system.md](05-plugin-system.md)                                               | First-class plugin specs, exports, catalog, construction, ordering, run binding, middleware, Capability contribution, context, state, and trust |
+| [06-execution-context-and-lifecycle.md](06-execution-context-and-lifecycle.md)           | Typed execution context, run-stream lifecycle, control input, and completion                                                                    |
+| [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, authorization, approval, credentials, invocation, and deferred results           |
+| [08-environment-integration.md](08-environment-integration.md)                           | Multi-binding Bound Environment, dynamic topology, model-facing routing, recoverable state, and provider enforcement                            |
+| [09-context-and-memory.md](09-context-and-memory.md)                                     | History, context assembly, guidance, compaction, memory boundary, and token budgets                                                             |
+| [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `message_history` plus namespaced Agent Context state, semantic checkpoints, restore, resume, fork, and host state boundary                     |
+| [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Complete child declarations, immutable built collection, State-backed inline delegation, shared tasks, and Host async boundary                  |
+| [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Canonical event stream, terminal result, telemetry, native accumulation and limits, custom pricing, and per-response usage observation          |
+| [13-hosting-contract.md](13-hosting-contract.md)                                         | Embedded and hosted execution integration contracts                                                                                             |
+| [14-public-api-and-packaging.md](14-public-api-and-packaging.md)                         | Stable durable and code-first API, package layers, optional capabilities, and compatibility policy                                              |
+| [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, security model, compatibility strategy, and design trade-offs                                                                 |
+| [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native and hosted input, content resolution, ModelSettings/ModelProfile/Capability layering, model resolution, streaming, and output            |
+| [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | First-party Capability catalog entries, dependencies, state, and security boundaries                                                            |
 
 ## Reading Paths
 
@@ -54,7 +54,7 @@ Read the relevant owning contract and finish with `15`.
 ## Authority Rules
 
 - This directory owns process-local harness semantics.
-- Pydantic AI owns its Agent loop and public capability, toolset, model, output, and run contracts.
+- Pydantic AI owns its Agent loop and public Capability, Toolset, model, output, and inner run contracts; the Harness owns the outer plugin lifecycle and terminal validation.
 - The host owns trusted execution identity issuance, durable acceptance, durable storage, provider installation, and product policy.
 - The Harness owns provider-neutral Environment semantics, virtual routing, and the direct EIP adapter over `converge-agent-envd-client`; the client owns generated wire and transport/session behavior, while EIP and `agent-envd` own daemon-backed methods, processes, handles, cursors, retained output, generation, and native enforcement. Direct `LocalFileOperator` and `LocalShell` enforce configured local access without envd.
 - A telemetry backend owns exported observations but is never an execution-state authority.

@@ -2,20 +2,22 @@
 
 ## Design Position
 
-First-party harness behavior is packaged as ordinary Pydantic AI capabilities and toolsets. This catalog names those capability entries, shows their upstream composition primitive, and points to the document that owns their semantics. A catalog entry is not a second class hierarchy, lifecycle, descriptor, profile, or version system.
+First-party behavior inside the Pydantic Agent loop is packaged as ordinary Pydantic AI Capabilities and Toolsets. This catalog names those Capability entries, shows their upstream composition primitive, and points to the document that owns their semantics. It does not own the separate Harness plugin catalog, `PluginSpec`, input-to-result middleware lifecycle, descriptor, profile, or version system.
 
 ```mermaid
 flowchart TB
     Definition[Materialized AgentDefinition] --> Plan[ResolvedAgentDefinition]
-    Catalog[Host-selected Capability catalog] --> Plan
+    PluginCatalog[Host-selected Harness plugin catalog] --> Plan
     Native[Resolved native components] --> Plan
+    Plan --> Plugins[Harness plugins]
     Plan --> Optional[Configured and build Capabilities]
+    Plugins --> Optional
     Core[Mandatory Harness Capabilities] --> Compose[CombinedCapability and Toolsets]
     Optional --> Compose
     Compose --> Agent[Pydantic AI Agent]
 ```
 
-Capability identity comes from the configured Pydantic AI capability `id`, its serialization type, and the host-resolved plugin source. Pydantic AI owns construction, dependency resolution, ordering, deferred loading, and middleware behavior.
+Capability identity comes from the configured Pydantic AI Capability `id`, its serialization type, and its resolved artifact source. Pydantic AI owns Capability construction, dependency resolution, ordering, deferred loading, and Pydantic-run middleware behavior. The Harness owns plugin construction, ordering, fresh run binding, and the outer run chain defined in [Harness Plugin System](05-plugin-system.md).
 
 ## Mandatory Core
 
@@ -36,7 +38,7 @@ The builder installs fixed core behavior. At each run, the Harness constructs ex
 
 ## Optional Capability Catalog
 
-Portable optional Agent features enter through `AgentDefinition.agent.capabilities` and the resolved Capability catalog. Trusted native tools or Toolsets that are intentionally process-local can enter through `ResolvedAgentComponents`; they remain upstream build inputs rather than another catalog or plugin framework. Reentrant build behavior whose possession grants no current-run authority can enter through resolved build Capabilities. Identity, Environment, invocation policy, credential, checkpoint, telemetry, and every other privileged or run-specific binding enter through `RunBindings` and run Capabilities. Deployments install only the packages they use.
+Portable optional Agent-loop features enter through `AgentDefinition.agent.capabilities`, a first-class plugin's Capability contribution, or explicit resolved build Capabilities. Trusted native tools or Toolsets that are intentionally process-local can enter through `ResolvedAgentComponents`; they remain upstream build inputs rather than another catalog or middleware framework. Reentrant build behavior whose possession grants no current-run authority can enter through resolved build Capabilities. Identity, Environment, invocation policy, credential, checkpoint, telemetry, and every other privileged or run-specific binding enter through `RunBindings` and run Capabilities. Deployments install only the packages they use.
 
 | Capability entry                | Upstream primitive                                                                                | Owning document                                                                                                          | State and security boundary                                                                                                              |
 | ------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,7 +48,7 @@ Portable optional Agent features enter through `AgentDefinition.agent.capabiliti
 | Skills                          | Deferred `Capability` with instructions and resources                                             | [`04-capability-model.md`](04-capability-model.md), [`05-plugin-system.md`](05-plugin-system.md)                         | Skill content is data; executable capability code resolves separately as a trusted plugin                                                |
 | Guidance and repository context | `Capability` instructions or history preparation                                                  | [`09-context-and-memory.md`](09-context-and-memory.md)                                                                   | Bounded content with provenance; file reads use `BoundEnvironment`                                                                       |
 | Compaction                      | Pydantic AI compaction/history capability                                                         | [`09-context-and-memory.md`](09-context-and-memory.md), [`10-snapshot-and-resume.md`](10-snapshot-and-resume.md)         | Produces provider-valid message history; durable acceptance stays with the host                                                          |
-| Memory integration              | Capability instructions and toolset                                                               | [`09-context-and-memory.md`](09-context-and-memory.md)                                                                   | External memory remains authoritative; scope derives from Agent Identity                                                                 |
+| Memory integration              | Plugin-contributed Capability instructions and Toolset                                            | [`09-context-and-memory.md`](09-context-and-memory.md), [`05-plugin-system.md`](05-plugin-system.md)                     | Query-dependent recall can use plugin input middleware; external memory remains authoritative and scope derives from Agent Identity      |
 | Planning and working state      | `Capability` plus owned state and optional fresh task-provider binding                            | [`09-context-and-memory.md`](09-context-and-memory.md), [`10-snapshot-and-resume.md`](10-snapshot-and-resume.md)         | Local task snapshots stay parent-owned; provider mode keeps task data and CAS authority Host-owned                                       |
 | Delegation and subagents        | Capability-owned inline delegation toolset over `SubagentCollection`                              | [`11-delegation-and-subagents.md`](11-delegation-and-subagents.md)                                                       | Stable child IDs, nested child State, shared task projection, and fresh narrowed authority; async lifecycle belongs to Host Capabilities |
 | Code orchestration              | Capability-owned toolset over an isolated evaluator                                               | [`07-tool-execution.md`](07-tool-execution.md)                                                                           | Only explicitly eligible tools; evaluator has no implicit harness-process authority                                                      |
@@ -55,7 +57,7 @@ Portable optional Agent features enter through `AgentDefinition.agent.capabiliti
 | Web and remote server tools     | Pydantic AI Web/MCP capabilities or ordinary Toolsets                                             | [`07-tool-execution.md`](07-tool-execution.md)                                                                           | Native Toolsets remain usable; metadata-aware adapters opt into Harness-managed authorization                                            |
 | Client-side external tools      | Client Tools Capability plus per-run Pydantic `ExternalToolset`                                   | [`07-tool-execution.md`](07-tool-execution.md), [`14-public-api-and-packaging.md`](14-public-api-and-packaging.md)       | Exact schemas defer to an external executor; definition policy gates any whole-run replacement and grants no server authority            |
 | A2A dispatch                    | Capability-owned Toolset over a host or provider adapter                                          | [`07-tool-execution.md`](07-tool-execution.md), [`13-hosting-contract.md`](13-hosting-contract.md)                       | Remote task lifecycle stays with the A2A provider or host                                                                                |
-| Digest and title                | Capability or application utility over Pydantic structured output                                 | [`16-input-model-and-output.md`](16-input-model-and-output.md)                                                           | Post-processing observation; does not modify run completion                                                                              |
+| Digest and title                | Capability, Harness result middleware, or application utility over structured output              | [`16-input-model-and-output.md`](16-input-model-and-output.md), [`05-plugin-system.md`](05-plugin-system.md)             | A plugin can replace a validated result candidate; Host durable completion remains separate                                              |
 | Provider compatibility          | Native `ModelProfile` and adapter first; scoped Capability only for residual public-hook behavior | [`16-input-model-and-output.md`](16-input-model-and-output.md)                                                           | No duplicate profile facts or private adapter patching; retries only verified replay-safe failures                                       |
 | Checkpoint storage              | `CheckpointCapability` with a host-provided `CheckpointStore`                                     | [`04-capability-model.md`](04-capability-model.md), [`13-hosting-contract.md`](13-hosting-contract.md)                   | Capability saves portable candidates; host calls `load()` and owns selection, generations, durability, and fencing                       |
 
@@ -67,7 +69,7 @@ Provider compatibility is profile-first. Stable support and rendering facts use 
 
 Catalog membership describes an intended first-party integration surface. It does not install a package, enable a capability, grant authority, or imply that every host supports the entry.
 
-The materialized Agent definition records configured Capability specs. The process-local resolved build plan supplies their Pydantic AI types plus any trusted native components and Host-constructed Capability instances. Availability failures therefore appear during Host resolution or definition build, before model execution.
+The materialized Agent definition records configured Capability specs and Harness plugin specs. The process-local resolved build plan supplies permitted Capability types, the selected Harness plugin catalog, and trusted native components and build Capability instances. The Harness constructs plugins and obtains their Capability contributions. Availability failures therefore appear during Host resolution or definition build, before model execution.
 
 Catalog names are documentation labels. Serialized configuration uses the capability's Pydantic AI serialization name and explicit `id`; compatibility follows the capability type, resolved Agent definition, and capability-owned state versions rather than a catalog version.
 
@@ -90,20 +92,21 @@ Stateful optional capabilities use namespaced `AgentContextState` from [`04-capa
 
 ## Boundaries
 
-| Concern                                                 | Owner                                                                                            | Catalog relationship                                                 |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| Capability lifecycle and ordering                       | Pydantic AI                                                                                      | Referenced directly, not redefined                                   |
-| Descriptor and plugin registration                      | [`04-capability-model.md`](04-capability-model.md), [`05-plugin-system.md`](05-plugin-system.md) | Supplies identity and resolved type                                  |
-| Host integrations                                       | Their owning subsystem and host                                                                  | Injected as ordinary `AbstractCapability[AgentContext]` instances    |
-| Capability-specific behavior                            | Linked owning document                                                                           | Not repeated here                                                    |
-| Host definition revision, Presets, and plugin selection | Host                                                                                             | Produces the materialized definition and process-local resolved plan |
-| Enterprise policy and audit                             | Host or enterprise extension                                                                     | Outside the mandatory open-source core                               |
+| Concern                                                  | Owner                                              | Catalog relationship                                                  |
+| -------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| Capability lifecycle and ordering                        | Pydantic AI                                        | Referenced directly, not redefined                                    |
+| Capability descriptor and serialization                  | [`04-capability-model.md`](04-capability-model.md) | Supplies Capability identity and resolved type                        |
+| Harness plugin catalog, construction, binding, and chain | [`05-plugin-system.md`](05-plugin-system.md)       | Can contribute entries from this catalog; lifecycle is not owned here |
+| Host integrations                                        | Their owning subsystem and host                    | Injected as ordinary `AbstractCapability[AgentContext]` instances     |
+| Capability-specific behavior                             | Linked owning document                             | Not repeated here                                                     |
+| Host definition revision, Presets, and plugin selection  | Host                                               | Produces the materialized definition and process-local resolved plan  |
+| Enterprise policy and audit                              | Host or enterprise extension                       | Outside the mandatory open-source core                                |
 
 ## Trade-offs
 
 ### Catalog vs. a Second Framework
 
-A catalog provides a shared vocabulary without adding factories, lifecycle hooks, dependency solvers, or catalog-level versions. Detailed behavior is distributed across owning documents, so readers follow links instead of finding every feature in one file.
+This Capability catalog provides a shared vocabulary without adding factories, lifecycle hooks, dependency solvers, or catalog-level versions. The separate Harness plugin system has its own typed construction and middleware lifecycle; this document does not duplicate it. Detailed behavior remains in the linked owners.
 
 ### Small Mandatory Core vs. Uniform Feature Set
 
