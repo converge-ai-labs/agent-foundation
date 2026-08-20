@@ -31,7 +31,10 @@ The system adds no package manager, remote-plugin RPC protocol, generic mutable 
 
 ```python
 class PluginSpec(BaseModel):
-    """Conceptual tagged base for a concrete plugin-owned spec."""
+    model_config = ConfigDict(frozen=True)
+
+    type: str
+    id: str
 
 
 class PluginFactory(Protocol):
@@ -57,11 +60,21 @@ class ResolvedPluginCatalog:
     ) -> tuple[type[AbstractHarnessPlugin], ...]: ...
 ```
 
-The schemas are conceptual Python contracts, not a serialized universal plugin wire format. Each concrete plugin type provides a stable serialization name, typed `from_spec` construction, and a stable instance `plugin_id`. The definition stores portable behavior configuration and typed logical references, never a Python import path, distribution location, live client, credential, or current-run authority.
+The schemas are conceptual Python contracts. `PluginSpec` is durable Agent-definition data: each concrete spec narrows `type` to the plugin's literal serialization name, retains the explicit stable `id`, and adds its own typed fields directly rather than an untyped `config` bag. The Harness builds the exact tagged union from the selected catalog. `from_spec` receives the matching concrete spec, and every configured, Agent-bound, and run-bound instance keeps `plugin_id == spec.id`.
+
+```yaml
+plugins:
+  - type: memory
+    id: primary-memory
+    provider_ref: memory/default
+    max_items: 8
+```
+
+The definition stores portable behavior configuration and typed logical references, never a Python import path, distribution location, live client, credential, or current-run authority.
 
 `export_id` identifies one selected package export for diagnostics and Host policy. Distribution name, version, wheel digest, signature, installation source, artifact lock, and rollout remain Host metadata. One distribution can export multiple plugin registrations and ordinary Pydantic Capability types. A self-hosted deployment installs those distributions in its image and includes only operator-selected registrations in the catalog passed to the Harness. With no custom factory, the Harness calls `plugin_type.from_spec()`. A Host-resolved factory can capture a typed authority-neutral provider collaborator, but the Harness still invokes it and validates its output. A factory cannot retain current-run Identity, credentials, policy decisions, or another live authority.
 
-Catalog assembly validates that every advertised value is an `AbstractHarnessPlugin` type, every serialization name is non-empty and unique, export IDs are unique, and each registration has at most one factory. Construction validates that the factory or `from_spec()` returns the declared concrete type with the expected serialization name and stable configured ID. The Harness rejects an unknown plugin spec, duplicate plugin ID, or spec/type mismatch before an executable becomes visible. Catalog presence makes construction possible; it does not activate a plugin absent from the exact definition.
+Catalog assembly validates that every advertised value is an `AbstractHarnessPlugin` type, every serialization name is non-empty and unique, export IDs are unique, and each registration has at most one factory. Construction validates that the factory or `from_spec()` returns the declared concrete type with `get_serialization_name() == spec.type` and `plugin_id == spec.id`. The Harness rejects an unknown plugin spec, duplicate plugin ID, or spec/type mismatch before an executable becomes visible. Catalog presence makes construction possible; it does not activate a plugin absent from the exact definition.
 
 The base API accepts explicit registrations. A packaging adapter can read a standard Python entry-point group, but discovery never scans a working directory, imports arbitrary module paths from Agent input, fetches packages, installs code, or automatically activates every installed entry point.
 
