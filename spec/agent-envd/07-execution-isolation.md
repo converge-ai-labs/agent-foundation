@@ -74,16 +74,16 @@ The isolation manager returns a backend-neutral execution object to the sole com
 
 Required isolation starts from deny-by-default filesystem authority.
 
-| Root class                                                                       | Payload access                                                                                                              |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Command `cwd` mount                                                              | The complete selected mount, read-only or read-write according to its trusted ceiling; no other EIP mount is exposed        |
-| Private execution home                                                           | Read-write; distinct from the daemon or host user's home                                                                    |
-| Private execution temporary root                                                 | Read-write and presented through forced temporary-directory environment values                                              |
-| Curated immutable platform runtime                                               | Read and executable mapping only as required for shells, loaders, tools, certificates, locale, and basic account resolution |
-| Explicit extra read-only root                                                    | Read and executable mapping, after trusted startup validation                                                               |
-| Minimal devices and inherited stdio                                              | Backend-specific minimum for null, random, terminal, and pipe behavior                                                      |
-| Envd daemon state, transport, retention, helper, config, logs, and control roots | Denied                                                                                                                      |
-| Host home, unrelated workspaces, credentials, sockets, and everything else       | Denied                                                                                                                      |
+| Root class                                                                                          | Payload access                                                                                                              |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Command `cwd` mount                                                                                 | The complete selected mount, read-only or read-write according to its trusted ceiling; no other EIP mount is exposed        |
+| Private execution home                                                                              | Read-write; distinct from the daemon or host user's home                                                                    |
+| Private execution temporary root                                                                    | Read-write and presented through forced temporary-directory environment values                                              |
+| Curated immutable platform runtime                                                                  | Read and executable mapping only as required for shells, loaders, tools, certificates, locale, and basic account resolution |
+| Explicit extra read-only root                                                                       | Read and executable mapping, after trusted startup validation                                                               |
+| Minimal devices and inherited stdio                                                                 | Backend-specific minimum for null, random, terminal, and pipe behavior                                                      |
+| Envd daemon state, per-mount staging, transport, retention, helper, config, logs, and control roots | Denied                                                                                                                      |
+| Host home, unrelated workspaces, credentials, sockets, and everything else                          | Denied                                                                                                                      |
 
 Runtime roots are narrow reviewed paths, not whatever appears in `PATH`. The daemon does not recursively expose `/`, a host home, `/opt`, `/usr/local`, or package-manager mutable state merely for compatibility. Platform-owned shell, loader, library, certificate, locale, and compiler roots can be curated per supported target. User-managed toolchains require explicit extra read-only roots and never receive implicit write authority.
 
@@ -91,7 +91,7 @@ Required isolation grants executable mapping only where code execution is intend
 
 ### Protected paths and overlap
 
-Protected paths include daemon configuration and credentials, `AGENT_ENVD_RUNTIME_DIR` except an exact dedicated execution-home child, retained-output storage, transport sockets, logs, install and helper roots, service definitions, isolation control data, and probe sentinels.
+Protected paths include daemon configuration and credentials, `AGENT_ENVD_RUNTIME_DIR` except an exact dedicated execution-home child, every private per-mount staging root, retained-output storage, transport sockets, logs, install and helper roots, service definitions, isolation control data, and probe sentinels. A staging root is configured outside every logical mount and command grant; envd never relies on nested allow/deny precedence to hide an upload candidate inside a writable payload mount.
 
 Protected denial has absolute precedence. Every root is canonicalized and identity checked. A selected mount, runtime root, or extra root is rejected when it:
 
@@ -107,7 +107,7 @@ This symmetric rule avoids relying on platform-specific nested allow/deny preced
 
 In `disabled` mode, envd still validates the requested cwd, executable policy, command schema, and EIP file operations. It does not claim that the child is restricted to configured mounts. The payload can access every path, process, device, IPC endpoint, and network resource made visible by its outer container/VM or the native host OS user.
 
-The outer host must also prevent payloads from inspecting envd memory, its original process environment, service configuration, or trusted proxy headers; otherwise a payload can steal `AGENT_ENVD_API_KEY` and bypass the EIP boundary. A distinct final payload UID/GID, outer process/PID isolation, protected process filesystems, and removal of debugger/root capability are valid mechanisms. Explicit `disabled` mode accepts the outer boundary only when it provides that separation, not merely because a container exists.
+The outer host must also prevent payloads from inspecting envd memory, its original process environment, service configuration, trusted proxy headers, retained output, or private per-mount staging roots; otherwise a payload can steal `AGENT_ENVD_API_KEY`, alter a sealed candidate, or bypass the EIP boundary. A distinct final payload UID/GID, outer mount and process/PID isolation, protected process filesystems, and removal of debugger/root capability are valid mechanisms. Explicit `disabled` mode accepts the outer boundary only when it provides that separation, not merely because a container exists.
 
 The descriptor therefore reports envd inner filesystem, process, and network isolation as false. An outer provider can separately report its own sandbox posture through Host-owned provider metadata; envd never conflates the two.
 
@@ -224,7 +224,7 @@ The bounded probe proves:
 - helper/system-launcher identity and executable integrity;
 - allowed read and configured mount write behavior;
 - read-only mount denial;
-- protected and random host sentinel denial;
+- protected, staging-root, and random host sentinel denial;
 - symlink containment;
 - execution home and temporary root behavior;
 - child environment secret and descriptor hygiene;

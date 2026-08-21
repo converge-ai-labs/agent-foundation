@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Every envd output producer applies a finite effective EIP `OutputPolicy` while bytes or structured items are produced. A request can provide a narrower policy; when it omits one, envd uses the generous finite hard limits advertised in its descriptor with `overflow="truncate"`. The policy determines what can remain inline, whether overflow fails, truncates, or uses a daemon-owned retained reference, and the maximum bytes that can be captured for one operation. Daemon-global and per-object safety limits bound aggregate retained storage and object count.
+Every envd retained-output producer applies a finite effective EIP `OutputPolicy` while bytes or structured items are produced. A request can provide a narrower policy; when it omits one, envd uses the generous finite hard limits advertised in its descriptor with `overflow="truncate"`. The policy determines what can remain inline, whether overflow fails, truncates, or uses a daemon-owned retained reference, and the maximum bytes that can be captured for one operation. Daemon-global and per-object safety limits bound aggregate retained storage and object count.
 
 The Harness owns [`ToolOutputPolicy`](../agent-harness/07-tool-execution.md#tool-metadata) as a model-result policy. Envd does not deserialize Harness tool metadata, tool identity, or Pydantic objects. The EIP adapter maps an explicitly narrower Harness decision into the protocol-native `OutputPolicy`; otherwise it can omit the field and use the advertised envd default. Envd understands and enforces the effective provider contract at the producer.
 
@@ -13,7 +13,8 @@ The Harness owns [`ToolOutputPolicy`](../agent-harness/07-tool-execution.md#tool
 | Tool-level inline/total policy, overflow selection, and managed redaction   | Harness `ToolOutputPolicy` and result-safety path | Computes a model-result ceiling before provider dispatch       |
 | Protocol-native optional per-operation output policy and result disposition | This document                                     | Omitted for the advertised daemon default or sent to narrow it |
 | Daemon-global aggregate retained quotas                                     | `agent-envd`                                      | Non-disableable hard ceilings                                  |
-| Native output production and stream identity                                | File, command, process, list, or search owner     | Supplies bytes/items incrementally                             |
+| Native retained-output production and stream identity                       | Command, process, list, or search owner           | Supplies bytes/items incrementally                             |
+| Native file readers and staged writers                                      | [Resource Operations](04-resource-operations.md)  | Use the raw transfer plane, not an `OutputReference`           |
 | Host artifact storage or durable checkpoint                                 | Host                                              | Not implied by an envd retained object                         |
 
 EIP output policy grants no filesystem, process, or content authority. Redaction remains a Harness concern because envd does not know model-facing tool semantics or all secret classes. Envd still removes its own transport and bootstrap secrets before production and never writes them into retained output itself.
@@ -63,7 +64,7 @@ When Harness policy is no narrower than the advertised envd default and uses tru
 
 ## Encoded Bytes and Dispositions
 
-Binary data uses this serialized shape:
+Bounded binary values that inherently remain in JSON control or retained-output methods use this serialized shape:
 
 ```python
 class EncodedBytes(BaseModel):
@@ -141,7 +142,7 @@ When output crosses `max_inline_bytes`, envd:
 4. if the initiating EIP operation is still active, returns `output_limit_exceeded` with `dispatch_stage`, captured/dropped counts, command status where known, and a side-effect receipt when applicable;
 5. if `process.start` already returned, records the later background-process failure as `phase="failed"` and `termination_reason="output_limit"`, while `process.inspect` and `process.wait` expose the bounded output counts and cleanup outcome.
 
-The already successful `process.start` response is never rewritten. Failure does not roll back file reads already observed or command side effects that occurred before termination. A mutating operation therefore can fail its result policy while its receipt reports dispatched or completed effects. Clients reconcile before retry.
+The already successful `process.start` response is never rewritten. Failure does not roll back output bytes already observed or command side effects that occurred before termination. A mutating operation therefore can fail its result policy while its receipt reports dispatched or completed effects. Clients reconcile before retry.
 
 `fail` creates no general retained output object. A bounded safe preview can appear in error data only when content policy permits it; by default the error contains counts and references to side-effect evidence, not output content.
 
@@ -172,7 +173,7 @@ flowchart LR
     Drop --> Result
 ```
 
-Command stdout and stderr are drained concurrently. File reads use bounded chunks. Directory and search producers encode complete bounded items incrementally. Cross-mount copy streams from source to destination without routing full content through a JSON result. No default implementation can call an unbounded “read all” API and apply the EIP policy afterward.
+Command stdout and stderr are drained concurrently. Text convenience reads enforce their own bounded page contract, while directory listings and search producers encode complete bounded items incrementally. Raw file readers and writers use the independently bounded binary transfer plane, and cross-mount copy streams from source to destination without routing full content through a JSON result or retained object. No default implementation can call an unbounded “read all” API and apply policy afterward.
 
 A producer can keep a bounded head/tail preview using fixed buffers. Retained storage records stream identity and logical offsets. For command output, stdout and stderr have independent offset domains and cursors while sharing the operation's total captured-byte and object quotas; interleaving timestamps are observations and not a deterministic total order unless a method explicitly provides a merged stream.
 
@@ -187,7 +188,7 @@ Per-operation limits do not prevent many small objects from exhausting a daemon.
 | Daemon global        | Bounds total disk/memory and object metadata across all sessions        |
 | Process or operation | Applies `max_output_bytes`, cursor count, and method-specific retention |
 
-Quota accounts cover retained file bytes, command output, structured-result pages, cursors, previews stored outside the response, process output, and equivalent daemon-owned objects. Metadata overhead has its own bounded accounting and cannot be made unbounded with zero-byte objects.
+Quota accounts cover retained command/output bytes, structured-result pages, cursors, previews stored outside the response, process output, and equivalent daemon-owned output objects. Private file-writer staging uses the separate aggregate transfer-staging quota; it cannot consume or hide inside retained-output capacity. Metadata overhead has its own bounded accounting and cannot be made unbounded with zero-byte objects.
 
 Reservation is atomic and precedes object creation or growth. Streaming growth reserves in bounded increments before writing. Failure keeps the prior valid object unchanged and applies the selected overflow behavior. Envd never oversubscribes, evicts an independently retained object to satisfy another allocation, or counts sparse file logical size as free. Process-owned output follows the explicitly bounded process-record lifetime rather than becoming a second detached object lifecycle.
 
@@ -271,9 +272,9 @@ Harness translation is tested independently from EIP wire fixtures. Cross-transp
 
 ## Trade-offs
 
-### Explicit references over large transport responses
+### Explicit references for produced output, raw streams for native files
 
-References and cursors add lifecycle and storage accounting. They keep HTTP, WebSocket, stdio, Harness memory, and model results bounded and allow chunked continuation within one daemon generation without making one transport special.
+References and cursors add lifecycle and storage accounting for command output and resumable structured results. They keep result envelopes, Harness memory, and model values bounded. Native file download/upload instead uses a session-scoped raw reader or staged writer because treating a file as retained output would add redundant storage, base64, and cursor lifecycle.
 
 ### Provider enforcement plus Harness redaction
 
@@ -285,7 +286,7 @@ Atomic quota reservation can truncate an operation even when disk has incidental
 
 ## Invariants
 
-01. Every output-producing EIP method accepts an optional finite valid `OutputPolicy`; omission uses the descriptor's generous finite hard maxima with `overflow="truncate"`.
+01. Every retained-output-producing EIP method accepts an optional finite valid `OutputPolicy`; omission uses the descriptor's generous finite hard maxima with `overflow="truncate"`. Raw file transfer follows its separate finite transfer contract.
 02. Envd applies output bounds while consuming the producer, never after unbounded materialization.
 03. Harness `ToolOutputPolicy` maps to EIP policy without serializing Harness metadata or redaction configuration.
 04. Inline output contains a complete value only when every byte fits both inline and response ceilings.

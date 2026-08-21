@@ -327,7 +327,10 @@ image-check: images ## Build and smoke-check all container images
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(SANDBOX_IMAGE)")" = "sandbox"
 	@docker run --rm --entrypoint sh "$(FOUNDATION_SERVICE_IMAGE)" -c 'test -r /app/web/index.html && ! command -v node'
 	@docker run --rm --entrypoint python "$(FOUNDATION_SERVICE_IMAGE)" -c 'from converge_foundation_service.asgi import app; assert str(app.state.settings.web_dist_dir) == "/app/web"'
-	@docker run --rm --entrypoint agent-envd "$(SANDBOX_IMAGE)"
+	@docker run --rm \
+		--env AGENT_ENVD_ENVIRONMENT_ID=image-check \
+		--env AGENT_ENVD_EXECUTION_ISOLATION=disabled \
+		--entrypoint agent-envd "$(SANDBOX_IMAGE)"
 
 .PHONY: python-check
 python-check: lint typecheck test ## Run the fast Python workspace gate

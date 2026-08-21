@@ -18,11 +18,11 @@ The host selects bindings. The harness performs binding selection, lexical valid
 | Process-local multi-Environment facade, virtual filesystem routing, live topology observation, and state aggregation | Harness                                                                                                                               |
 | Agent Identity and lineage                                                                                           | `AgentContext`                                                                                                                        |
 | Direct local path and process enforcement                                                                            | `LocalFileOperator`, `LocalShell`, and embedding OS                                                                                   |
-| EIP canonical resources, generations, handles, cursors, and retained output                                          | `agent-envd` and its [resource](../agent-envd/04-resource-operations.md) and [output](../agent-envd/06-output-retention.md) contracts |
+| EIP canonical resources, text operations, raw file transfers, generations, handles, cursors, and retained output     | `agent-envd` and its [resource](../agent-envd/04-resource-operations.md) and [output](../agent-envd/06-output-retention.md) contracts |
 | EIP initialization, methods, payloads, errors, cancellation, and receipts                                            | [EIP Protocol](../agent-envd/02-eip-protocol.md)                                                                                      |
 | Generated EIP models, codecs, typed stubs, and transport/session runtime                                             | [`converge-agent-envd-client`](../agent-envd/08-protocol-source-client-and-generation.md)                                             |
 | EIP-to-provider-neutral Environment adaptation                                                                       | Harness                                                                                                                               |
-| EIP framing, authentication, and session lifecycle                                                                   | [Transports and Sessions](../agent-envd/03-transports-and-sessions.md)                                                                |
+| EIP control/data framing, transfer attachment, authentication, and session lifecycle                                 | [Transports and Sessions](../agent-envd/03-transports-and-sessions.md)                                                                |
 | Vendor provision, attach, suspend, and destroy lifecycle                                                             | Host provider adapter                                                                                                                 |
 | Envd inner command isolation                                                                                         | [Execution Isolation](../agent-envd/07-execution-isolation.md), in `required` or explicit `disabled` mode                             |
 | Outer container, VM, and provider resource enforcement                                                               | Selected sandbox provider                                                                                                             |
@@ -185,7 +185,7 @@ An already published binding that later becomes unavailable can retain its last 
 
 Harness Environment continuation exposes backend-local state rather than provider lifecycle resources. A versioned, opaque adapter lifecycle record for an optional local daemon, Docker container, E2B environment, or another vendor resource belongs to Host launch/attempt continuation and is consumed before a fresh `EnvironmentRunBinding` is constructed. It never enters `EnvironmentState`.
 
-After the selected backend is entered, it can expose narrower recoverable state when that backend defines a durable continuation contract. The EIP 1.0 backend contributes no recoverable entry: `agent-envd` process handles, operations, receipts, output references, cursors, and spool data are volatile within one daemon generation, while files remain native provider Environment state. A direct-local backend normally also has no recoverable entry unless it explicitly defines one. Other provider backends can expose a versioned workspace snapshot or opaque durable reference without importing its implementation names into the Harness contract.
+After the selected backend is entered, it can expose narrower recoverable state when that backend defines a durable continuation contract. The EIP 1.0 backend contributes no recoverable entry: `agent-envd` file reader/writer handles, process handles, operations, receipts, output references, cursors, and spool data are volatile within one session or daemon generation, while files remain native provider Environment state. A direct-local backend normally also has no recoverable entry unless it explicitly defines one. Other provider backends can expose a versioned workspace snapshot or opaque durable reference without importing its implementation names into the Harness contract.
 
 ```python
 class EnvironmentBindingState(BaseModel):
@@ -232,7 +232,7 @@ class EnvironmentPath(BaseModel):
 
 `path` is absolute within the selected provider root; it is never a host filesystem path. The harness validates selector shape, virtual-root membership, relative-path syntax, declared limits, and obvious traversal. It does not resolve provider-internal mounts, symlinks, provider aliases, case folding, or remote filesystem state.
 
-Cross-Environment copy is an explicit source read followed by a destination write, with separate authorization and limits. It is not implicitly atomic.
+Cross-Environment copy opens an independently authorized source reader and destination writer, pumps bounded raw chunks under backpressure, and commits the destination only after terminal source count/digest verification and successful close. `stability="changed"` fails before destination commit. `stability="unverified"` is allowed by the general copy path but is preserved in the copy outcome rather than described as a source snapshot; `require_stable_source=true` rejects it before commit, and an expected revision additionally selects the exact source version when supported. Failure before destination commit aborts its private candidate and leaves the target unchanged. The two-Environment operation is not globally atomic, and an ambiguous destination commit is reconciled through that provider's receipt rather than replaying the source blindly.
 
 ## Route, Authorize, Execute
 
@@ -251,10 +251,15 @@ sequenceDiagram
     Bound->>Backend: bounded semantic operation
     alt Direct local backend
         Backend->>Resource: canonicalize and execute under configured local roots
-    else EIP backend
-        Backend->>Resource: JSON-RPC operation with optional output policy and call context
+    else EIP control operation
+        Backend->>Resource: JSON-RPC control with optional output policy and call context
+    else EIP raw file transfer
+        Backend->>Resource: open reader or staged writer
+        Backend->>Resource: bounded raw upload chunks under backpressure
+        Resource-->>Backend: bounded raw download chunks under backpressure
+        Backend->>Resource: verified close, commit, or abort
     end
-    Resource-->>Backend: bounded result, receipt, reference, or typed error
+    Resource-->>Backend: bounded result, completion, receipt, reference, or typed error
     Backend-->>Bound: provider-neutral outcome
 ```
 
@@ -271,13 +276,194 @@ The public semantic protocols retain the useful SDK split:
 - `Shell` is the provider-neutral command and process contract;
 - `LocalShell` and `EIPShell` are direct and daemon-backed first-class implementations.
 
-`VirtualFileOperator` preserves longest-prefix virtual mount routing, read-only mounts, explicit backend availability, path-escape rejection, streaming cross-mount copy, and stable-instance topology replacement from the prior SDK. It deliberately drops native-absolute fallback, exposed mutable mount lists, and instruction rendering from the low-level operator. Mount snapshots are immutable; an operation captures one snapshot before routing. Empty, one-mount, and mixed local/remote configurations use the same type.
+The file contract separates caller intent instead of returning a text-or-bytes union from one dynamic method. The following values are Harness-owned immutable provider-neutral models, not aliases or imports from generated EIP wire types:
 
-The facade exposes only operations negotiated by the descriptor and permitted by the binding ceiling. Unsupported operations stop before backend dispatch. File mutations express create, overwrite, append, or upsert semantics, optional compare-and-swap input, bounds, and provider idempotency identity. Reads, writes, search, copy, and result spill are chunked; a default implementation cannot collect an unbounded stream merely to emulate a streaming method. Cursors remain opaque and scoped to binding, generation, operation, request shape, and provider authorization.
+```python
+type FileWriteMode = Literal["create", "replace", "upsert", "append"]
+type FileReadStability = Literal["verified", "unverified"]
+
+
+class FileRevision(RootModel[str]):
+    model_config = ConfigDict(frozen=True)
+
+
+class FileTextCursor(RootModel[str]):
+    model_config = ConfigDict(frozen=True)
+
+
+class FileByteRange(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    offset: int = 0
+    length: int | None = None
+
+
+class FileTextPosition(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    line: int
+    byte_column: int
+
+
+class FileTextPage(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    path: str
+    revision: FileRevision | None
+    text: str
+    start: FileTextPosition
+    end: FileTextPosition
+    next_cursor: FileTextCursor | None
+    content_complete: bool
+    truncated: bool
+
+
+class FileContentDigest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    algorithm: Literal["sha256"]
+    value: str
+
+
+class FileReadCompletion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    range_start: int
+    range_end: int
+    bytes_read: int
+    digest: FileContentDigest
+    source_eof_at_end: bool
+    stability: FileReadStability
+
+
+class EnvironmentOperationReceipt(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    binding_id: str
+    operation_id: str
+    stage: Literal[
+        "accepted", "dispatched", "exec_confirmed", "completed", "unknown"
+    ]
+    outcome: Literal[
+        "succeeded", "failed", "cancelled", "timed_out", "unknown"
+    ] | None
+
+
+class FileWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    path: str
+    revision: FileRevision | None
+    bytes_written: int
+    receipt: EnvironmentOperationReceipt
+
+
+class FilePatchResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    path: str
+    revision: FileRevision | None
+    hunks_applied: int
+    receipt: EnvironmentOperationReceipt
+
+
+class FileCopyResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    path: str
+    revision: FileRevision | None
+    bytes_copied: int
+    atomic_destination: bool
+    source_stability: FileReadStability
+    receipt: EnvironmentOperationReceipt
+
+
+class AsyncFileReader(Protocol):
+    def __aiter__(self) -> AsyncIterator[bytes]: ...
+
+    @property
+    def completion(self) -> FileReadCompletion | None: ...
+
+
+class AsyncFileWriter(Protocol):
+    async def write(self, chunk: bytes) -> None: ...
+    async def commit(self) -> FileWriteResult: ...
+    async def abort(self) -> None: ...
+
+
+class FileOperator(Protocol):
+    async def read_text(
+        self,
+        path: str,
+        *,
+        cursor: FileTextCursor | None = None,
+        start_line: int | None = None,
+        max_lines: int | None = None,
+        max_bytes: int | None = None,
+        expected_revision: FileRevision | None = None,
+    ) -> FileTextPage: ...
+    async def write_text(
+        self,
+        path: str,
+        text: str,
+        *,
+        mode: FileWriteMode,
+        expected_revision: FileRevision | None = None,
+    ) -> FileWriteResult: ...
+    async def patch_text(
+        self,
+        path: str,
+        patch: str,
+        *,
+        expected_revision: FileRevision,
+    ) -> FilePatchResult: ...
+
+    def open_reader(
+        self,
+        path: str,
+        *,
+        byte_range: FileByteRange | None = None,
+        expected_revision: FileRevision | None = None,
+    ) -> AbstractAsyncContextManager[AsyncFileReader]: ...
+
+    def open_writer(
+        self,
+        path: str,
+        *,
+        mode: FileWriteMode,
+        expected_revision: FileRevision | None = None,
+    ) -> AbstractAsyncContextManager[AsyncFileWriter]: ...
+
+    async def copy(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected_source_revision: FileRevision | None = None,
+        expected_destination_revision: FileRevision | None = None,
+        replace: bool = False,
+        require_atomic_destination: bool = True,
+        require_stable_source: bool = False,
+    ) -> FileCopyResult: ...
+```
+
+`read_text`, `write_text`, and `patch_text` are strict UTF-8, revision-aware, bounded conveniences for Agent and editor semantics. `open_reader` and `open_writer` carry exact raw bytes for any file type, including a text file being downloaded or uploaded. Ordinary callers never manage EIP transfer handles, frame offsets, attachment messages, or digest bookkeeping. A reader iterator terminates normally only after terminal count/digest verification; `completion` then contains a required digest and either honest `verified` or `unverified` stability. An EIP `changed` close maps to `conflict` rather than a provider-neutral successful completion. Writer context exit without successful `commit()` aborts. Direct-local and EIP adapters preserve those same observable rules even though only EIP needs a wire carrier.
+
+The EIP adapter constructs these Harness models field by field: it maps the logical path, wraps provider revision and text-cursor values as frozen opaque Harness scalars, maps only a complete non-null EIP read digest into `FileReadCompletion`, wraps normalized receipt evidence with the selected Harness `binding_id`, and maps typed EIP errors separately without exposing `ReceiptRef` or a transfer handle. `VirtualFileOperator` routes by path; the selected backend remains authoritative for revision/cursor Environment, generation, request-shape, and resource scope, so a foreign opaque value fails as a typed conflict or invalid cursor rather than granting authority. `LocalFileOperator` constructs the same models from direct filesystem observations and its process-local operation evidence. Equal names or fields do not make generated EIP models part of the Harness core contract.
+
+`FileOperator.copy` is the one provider-neutral copy surface. `VirtualFileOperator` captures one topology snapshot and routes both paths. When one backend implements a semantically equivalent native copy, it can delegate and preserves `atomic_destination` and `source_stability`; otherwise it composes one reader and one staged writer under backpressure. A cross-binding copy always publishes through the destination writer's atomic commit and therefore returns `atomic_destination=true`. With `require_stable_source=true`, `unverified` completion aborts before commit; `changed` always fails. Without that requirement, `unverified` is returned honestly. The operation never promises global atomicity across source and destination.
+
+`VirtualFileOperator` also preserves longest-prefix virtual mount routing, read-only mounts, explicit backend availability, path-escape rejection, and stable-instance topology replacement from the prior SDK. It deliberately drops native-absolute fallback, exposed mutable mount lists, and instruction rendering from the low-level operator. Mount snapshots are immutable; an operation captures one snapshot before routing. Empty, one-mount, and mixed local/remote configurations use the same type.
+
+The facade exposes only operations negotiated by the descriptor and permitted by the binding ceiling. Unsupported operations stop before backend dispatch. File mutations express create, replace, append, or upsert semantics, optional compare-and-swap input, bounds, and provider idempotency identity. Text pages and search results are bounded; raw reads, writes, and cross-binding copy are truly streamed end to end. A default implementation cannot collect an unbounded stream merely to emulate `open_reader`, `open_writer`, or copy. Text/traversal cursors remain opaque and scoped to binding, generation, operation, request shape, and provider authorization; EIP raw transfer handles remain inside the low-level client and never enter Harness state or model-visible values.
 
 Shell execution uses structured executable and argument arrays by default. Shell text selects an explicit shell profile. Working directory, timeout, output budgets, environment projection, and network request are explicit data. Direct and EIP shells use the same per-call and aggregate bounded retained-output semantics and never require the Harness to materialize complete stdout or stderr before applying limits. Direct-local spools use a private binding retention root with finite total bytes and object count, atomic reservation, explicit release/expiry, and cleanup on binding close. EIP backends negotiate and enforce the equivalent daemon-side retention budget, whose objects remain generation-scoped rather than binding-owned.
 
 Credential projection is disabled by default. A compatibility profile can project a short-lived audience-bound credential while retaining output and telemetry redaction. Ambient host credentials never become a fallback.
+
+### Media consumers
+
+File transfer is not a model-media API. A consumer that wants to supply an Environment image to a model reads through `open_reader`, applies a separate bounded spool or buffer limit, sniffs and validates media type, decodes or compresses under its own policy, and only then constructs provider-supported `BinaryContent` or a trusted URL. Small media can be collected within the model/provider ceiling; larger media remains in bounded spool storage while transformed or uploaded. Envd never receives model capability, prompt, MIME-trust, vision, or token-budget semantics, and the Harness never asks it to base64 a complete file into JSON.
 
 ## Processes and Opaque Handles
 
@@ -325,9 +511,10 @@ Transport loss after a mutation is unknown unless `agent-envd` can replay the sa
 09. Any adapter lifecycle record is consumed before binding construction; `EnvironmentState` restores only explicitly durable backend-local behavior into fresh, already reachable bindings and never restores authority or topology. EIP daemon-generation selectors are never included.
 10. Desired topology requests contain no observed descriptor; only successful initialization publishes a new `EnvironmentBinding`, while later authenticated status observation can mark an existing binding unavailable.
 11. `LocalFileOperator` and `LocalShell` are first-class direct backends; EIP-backed sandbox and remote backends are first-class peers, and neither is a compatibility fallback for the other.
-12. `VirtualFileOperator` routes recursively immutable mount snapshots without native-path fallback; direct and EIP operations preserve one provider-neutral file and shell contract.
+12. `VirtualFileOperator` routes recursively immutable mount snapshots without native-path fallback; direct and EIP operations preserve one provider-neutral file and shell contract with separate bounded text conveniences and raw async readers/writers.
 13. Direct and EIP retained outputs obey finite aggregate bytes and object counts in addition to per-call limits; allocation, release, expiry, binding teardown, and daemon teardown cannot bypass those ceilings or change the owning lifetime model.
 14. For EIP-backed bindings, stdio, HTTP, and WebSocket do not change method semantics.
 15. Binding entry establishes trustworthy identity, descriptors, routing, and readiness paths; it does not imply that unrelated operation resources are already provisioned.
 16. Scoped readiness is typed, idempotent, generation-bound, requires non-empty aggregate operation coverage across a non-empty selected binding set, and never restores or grants authority.
-17. The Harness owns direct EIP Environment adaptation but delegates generated wire models, JSON-RPC, authentication/session carriers, and transport framing to `converge-agent-envd-client`.
+17. The Harness owns direct EIP Environment adaptation but delegates generated wire models, JSON-RPC, raw-transfer attachment/framing, authentication, sessions, integrity bookkeeping, and transport cleanup to `converge-agent-envd-client`.
+18. Environment file transfer is client-neutral and model-agnostic; model media conversion and product browser delivery are downstream policies, not envd behavior.
