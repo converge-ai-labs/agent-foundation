@@ -52,7 +52,9 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 COPY --from=web-builder --chown=app:app /web/dist /app/web
 COPY --chown=app:app scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && mkdir -p /app/var/files /app/var/objects \
+    && chown -R app:app /app/var
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONFAULTHANDLER=1 \
@@ -62,6 +64,10 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     FOUNDATION_PORT=8000 \
     FOUNDATION_ROLE=all \
     FOUNDATION_DATABASE_BACKEND=postgresql \
+    FOUNDATION_REDIS_BACKEND=redis \
+    FOUNDATION_OBJECT_BACKEND=local \
+    FOUNDATION_OBJECT_LOCAL_ROOT=/app/var/objects \
+    FOUNDATION_FILESYSTEM_ROOT=/app/var/files \
     FOUNDATION_AUTO_MIGRATE=true \
     FOUNDATION_LOG_FORMAT=json \
     FOUNDATION_BUILD_VERSION="${BUILD_VERSION}" \

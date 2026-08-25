@@ -200,7 +200,7 @@ The hosted service boundary is defined in [Foundation Service](foundation-servic
 | Minimal service     | SQLite and in-memory coordination                   | Control and execution together              |
 | Distributed service | PostgreSQL durable authority and Redis coordination | Separately scalable control/execution roles |
 
-The internal relational, Redis-compatible, object, and mounted-filesystem surfaces for these profiles are defined by [Foundation Storage Capabilities](foundation-service/01-storage.md). Foundation Service's single relational metadata and migration authority is defined by the [Relational Schema Lifecycle](foundation-service/02-relational-schema.md).
+The internal relational, Redis-compatible, object, and mounted-filesystem surfaces for these profiles are defined by [Foundation Storage Capabilities](foundation-service/02-storage.md). Foundation Service's single relational metadata and migration authority is defined by the [Relational Schema Lifecycle](foundation-service/03-relational-schema.md).
 
 Coordination streams and queues do not become durable lifecycle authority.
 

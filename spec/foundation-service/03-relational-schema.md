@@ -4,7 +4,7 @@
 
 Foundation Service owns one relational schema and one ordered migration history for every domain table stored in its service database. A domain owns the meaning, invariants, and compatibility intent of its models. The service owns the combined metadata, revision ordering, and transition of a deployed database from one accepted schema state to another.
 
-This lifecycle is separate from the generic [relational storage capability](01-storage.md#relational-storage). Storage constructs SQLAlchemy engines and short asynchronous sessions; it does not discover domain models, create tables, choose a revision, or mutate a deployed schema.
+This lifecycle is separate from the generic [relational storage capability](02-storage.md#relational-storage). Storage constructs SQLAlchemy engines and short asynchronous sessions; it does not discover domain models, create tables, choose a revision, or mutate a deployed schema.
 
 ## Boundaries
 

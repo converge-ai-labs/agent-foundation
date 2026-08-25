@@ -16,6 +16,7 @@ class PostgreSQLConfig(_Config):
     pool_size: int = Field(default=10, ge=1, le=1000)
     max_overflow: int = Field(default=10, ge=0, le=1000)
     pool_timeout_seconds: float = Field(default=10, gt=0, le=300)
+    pool_recycle_seconds: int = Field(default=3600, ge=0)
     connect_timeout_seconds: int = Field(default=10, ge=1, le=300)
     statement_timeout_seconds: float = Field(default=30, gt=0, le=3600)
     cleanup_timeout_seconds: float = Field(default=5, gt=0, le=60)

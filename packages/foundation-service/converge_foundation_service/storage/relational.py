@@ -49,6 +49,7 @@ def create_sql_engine(config: PostgreSQLConfig | SQLiteConfig) -> AsyncEngine:
             pool_size=config.pool_size,
             max_overflow=config.max_overflow,
             pool_timeout=config.pool_timeout_seconds,
+            pool_recycle=config.pool_recycle_seconds,
             connect_args={
                 "connect_timeout": config.connect_timeout_seconds,
                 "options": f"-c statement_timeout={int(config.statement_timeout_seconds * 1000)}",

@@ -1,6 +1,6 @@
-# Foundation Service Infrastructure
+# Foundation Service
 
-This package contains Foundation Service's internal, async-first storage substrate and its service-owned relational schema lifecycle. It is a workspace package, not a public SDK or an independently distributed provider library.
+This package contains the hosted Foundation Service executable, its internal async-first storage substrate, and its service-owned relational schema lifecycle. It is a workspace package, not a public SDK or an independently distributed provider library.
 
 The substrate exposes capability-specific interfaces instead of one generic storage facade:
 
@@ -13,7 +13,9 @@ Backend selection happens once during process startup. A failed network backend 
 
 ## Runtime
 
-Executable settings code builds the frozen `StorageSettings` model and owns environment-variable mapping. The storage package accepts typed configuration and does not read process environment variables itself.
+`ServiceSettings` owns the `FOUNDATION_*` environment contract and maps it to the frozen `StorageSettings` model. The storage package accepts typed configuration and does not read process environment variables itself. `foundation-service serve` constructs all selected providers once in FastAPI lifespan, publishes the resulting `StorageResources` on `app.state.storage`, and closes the resources during shutdown.
+
+The default service profile keeps the existing PostgreSQL and Redis endpoints and uses separate local roots for objects and files. Set `FOUNDATION_OBJECT_BACKEND=s3` and `FOUNDATION_OBJECT_BUCKET` for a multi-process deployment; the local object adapter supports only one writing process. `FOUNDATION_FILESYSTEM_ROOT` may be an ordinary local directory or an NFS mount prepared by deployment.
 
 ```python
 from pathlib import Path
@@ -87,7 +89,7 @@ Generic relational storage and service schema ownership are deliberately separat
 
 The Alembic environment does not read process settings or create an engine. The runner supplies one validated connection, so CLI settings, lock policy, and schema comparison have distinct owners.
 
-Set an explicit database backend, then use the stable repository commands:
+Select the database backend, then use the stable service CLI or repository commands:
 
 ```bash
 FOUNDATION_DATABASE_BACKEND=postgresql
@@ -98,6 +100,8 @@ make db-current
 make db-check
 make db-history
 ```
+
+The corresponding executable commands are `foundation-service db upgrade`, `foundation-service db current --check-heads`, `foundation-service db history`, and `foundation-service db migrate "description"`. There is one process CLI; migration implementation remains in `database/migration.py` rather than introducing a second database-only settings or command layer.
 
 For the zero-service profile, set `FOUNDATION_DATABASE_BACKEND=sqlite` and `FOUNDATION_DATABASE_SQLITE_PATH=var/foundation.sqlite3`. The same accepted history is applied to both backends. A domain requiring PostgreSQL-only schema behavior must reject SQLite explicitly.
 

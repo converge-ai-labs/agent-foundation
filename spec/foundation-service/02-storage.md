@@ -19,7 +19,7 @@ Storage capabilities contain no Agent, Execution, lifecycle-event, work-queue, w
 | Coordination and delivery              | Supplies Redis commands, including Streams                                 | Defines queue, lease, notification, and replay policy            |
 | Deployment resources                   | Accepts configured endpoints, credentials, roots, and mounts               | Deployment creates databases, buckets, Redis, and NFS mounts     |
 
-The storage substrate does not own consumer schemas, migration history, domain repositories, serialization formats, retention policy, data residency, backup policy, or cross-resource transactions. Foundation Service owns its relational schema lifecycle through the [Relational Schema Lifecycle](02-relational-schema.md). Foundation's durable lifecycle and API contracts remain owned by [Foundation Service](README.md). Platform identifiers and persisted timestamps follow [Platform Data Conventions](../data-conventions.md).
+The storage substrate does not own consumer schemas, migration history, domain repositories, serialization formats, retention policy, data residency, backup policy, or cross-resource transactions. Foundation Service owns its relational schema lifecycle through the [Relational Schema Lifecycle](03-relational-schema.md). Foundation's durable lifecycle and API contracts remain owned by [Foundation Service](README.md). Platform identifiers and persisted timestamps follow [Platform Data Conventions](../data-conventions.md).
 
 ## Capability Model
 
@@ -75,7 +75,7 @@ The portable relational subset includes ordinary transactions, constraints, inde
 
 The canonical engine and session factory are constructed once per process. Each operation opens a short-lived session and transaction. An `AsyncSession` is neither shared across concurrent tasks nor retained across agent execution, network I/O, sleeps, background work, or streaming responses. Cancellation and exceptions roll back the active transaction, and cleanup is allowed to finish before cancellation propagates.
 
-Foundation Service's ordered migration history is the schema authority for both relational backends. Domains own the meaning of their relational models and schema changes, while the service owns their aggregation into one history. Revision ordering, backend portability, application ownership, and failure behavior are defined by the [Relational Schema Lifecycle](02-relational-schema.md). Runtime `create_all` calls never replace migration history.
+Foundation Service's ordered migration history is the schema authority for both relational backends. Domains own the meaning of their relational models and schema changes, while the service owns their aggregation into one history. Revision ordering, backend portability, application ownership, and failure behavior are defined by the [Relational Schema Lifecycle](03-relational-schema.md). Runtime `create_all` calls never replace migration history.
 
 ## Redis-Compatible Data Structures
 

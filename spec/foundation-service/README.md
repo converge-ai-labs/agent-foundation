@@ -12,8 +12,8 @@ It does not redefine the code-first Harness `AgentDefinition`, plugin lifecycle,
 
 | Document                                               | Owns                                                                                                                               |
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| [Foundation Storage Capabilities](01-storage.md)       | Internal relational, Redis-compatible, object, and mounted-filesystem capability boundaries; local and network backend equivalence |
-| [Relational Schema Lifecycle](02-relational-schema.md) | Service-wide relational metadata, migration authority, compatibility, application, and failure semantics                           |
+| [Foundation Storage Capabilities](02-storage.md)       | Internal relational, Redis-compatible, object, and mounted-filesystem capability boundaries; local and network backend equivalence |
+| [Relational Schema Lifecycle](03-relational-schema.md) | Service-wide relational metadata, migration authority, compatibility, application, and failure semantics                           |
 
 Read this overview first. Read the storage contract before adding a persistence, cache, coordination, object, or shared-filesystem dependency to Foundation Service. Read the relational schema contract before adding or changing a durable relational model. Domain schemas, repositories, queues, and event models remain in their owning domain specifications rather than the generic storage substrate.
 
@@ -21,10 +21,15 @@ Read this overview first. Read the storage contract before adding a persistence,
 
 The accepted ownership boundary is reflected by two stable internal package roots:
 
-| Package root                                                        | Architectural role                                                               |
-| ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `packages/foundation-service/converge_foundation_service/storage/`  | Generic backend configuration, construction, lifecycle, and capability semantics |
-| `packages/foundation-service/converge_foundation_service/database/` | Combined service metadata and the single ordered relational migration history    |
+| Path                                                                            | Architectural role                                                                     |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `packages/foundation-service/converge_foundation_service/settings.py`           | Maps the process environment into typed provider and migration configuration           |
+| `packages/foundation-service/converge_foundation_service/app.py`                | Owns FastAPI lifespan, constructs one storage resource set, and exposes readiness      |
+| `packages/foundation-service/converge_foundation_service/storage/`              | Generic backend configuration, construction, lifecycle, and capability semantics       |
+| `packages/foundation-service/converge_foundation_service/database/metadata.py`  | Explicit registry of all service-owned relational models                               |
+| `packages/foundation-service/converge_foundation_service/database/migration.py` | Programmatic Alembic runner and bounded migration coordination                         |
+| `packages/foundation-service/converge_foundation_service/database/migrations/`  | Single ordered revision history                                                        |
+| `packages/foundation-service/converge_foundation_service/cli.py`                | Stable `foundation-service serve` and `foundation-service db ...` executable interface |
 
 These roots are architectural boundaries, not a requirement that every capability become a subpackage. Small capabilities remain focused modules; a capability gains a subdirectory only when it owns several cohesive implementations or contracts. Runnable configuration, migration commands, and complete usage examples live in the [Foundation Service package guide](../../packages/foundation-service/README.md).
 

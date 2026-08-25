@@ -28,15 +28,15 @@ if [ "${1:-}" = "foundation-service" ] && [ "${2:-}" = "serve" ]; then
         all | control)
             if [ "${FOUNDATION_AUTO_MIGRATE:-false}" = "true" ]; then
                 echo "Running advisory-locked database migrations before service startup."
-                python -m converge_foundation_service.database upgrade
+                foundation-service db upgrade
             else
                 echo "Auto migration disabled: checking schema heads without mutation."
-                python -m converge_foundation_service.database current --check-heads
+                foundation-service db current --check-heads
             fi
             ;;
         execution)
             echo "Execution role: checking schema heads without running migrations."
-            python -m converge_foundation_service.database current --check-heads
+            foundation-service db current --check-heads
             ;;
         *)
             echo "Invalid FOUNDATION_ROLE: $role" >&2

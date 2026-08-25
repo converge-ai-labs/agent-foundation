@@ -38,11 +38,11 @@ VERSIONS_DIR="$ROOT_DIR/packages/foundation-service/converge_foundation_service/
 
 echo "Replaying migration history in disposable database $DATABASE_NAME..."
 FOUNDATION_DATABASE_BACKEND=postgresql FOUNDATION_DATABASE_URL="$DATABASE_URL" \
-    uv run --locked python -m converge_foundation_service.database upgrade
+    uv run --locked foundation-service db upgrade
 
 echo "Generating migration: $MESSAGE"
 FOUNDATION_DATABASE_BACKEND=postgresql FOUNDATION_DATABASE_URL="$DATABASE_URL" \
-    uv run --locked python -m converge_foundation_service.database revision "$MESSAGE"
+    uv run --locked foundation-service db migrate "$MESSAGE"
 
 uv run --locked ruff format "$VERSIONS_DIR"
 uv run --locked ruff check --fix "$VERSIONS_DIR"

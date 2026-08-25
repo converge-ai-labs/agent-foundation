@@ -75,7 +75,7 @@ setup: sync ## Start local PostgreSQL and Redis
 
 .PHONY: dev
 dev: setup foundation-web-sync ## Upgrade the schema and run Foundation Service with Foundation Web
-	@uv run --locked python -m converge_foundation_service.database upgrade
+	@uv run --locked foundation-service db upgrade
 	@bash scripts/dev.sh
 
 .PHONY: dev-down
@@ -427,23 +427,23 @@ db-migrate: sync ## Generate a migration (usage: make db-migrate msg="descriptio
 
 .PHONY: db-upgrade
 db-upgrade: sync ## Upgrade the local foundation-service database to all heads
-	@uv run --locked python -m converge_foundation_service.database upgrade
+	@uv run --locked foundation-service db upgrade
 
 .PHONY: db-downgrade
 db-downgrade: sync ## Downgrade the local database by one reviewed revision
-	@uv run --locked python -m converge_foundation_service.database downgrade
+	@uv run --locked foundation-service db downgrade
 
 .PHONY: db-current
 db-current: sync ## Show the current foundation-service database revision
-	@uv run --locked python -m converge_foundation_service.database current
+	@uv run --locked foundation-service db current
 
 .PHONY: db-check
 db-check: sync ## Fail unless the foundation-service database is at all heads
-	@uv run --locked python -m converge_foundation_service.database current --check-heads
+	@uv run --locked foundation-service db current --check-heads
 
 .PHONY: db-history
 db-history: sync ## Show foundation-service migration history
-	@uv run --locked python -m converge_foundation_service.database history
+	@uv run --locked foundation-service db history
 
 .PHONY: release-check
 release-check: ## Validate a component version (component=harness|agent-ui|foundation|agent-envd|foundation-cli|sdk-<language> version=X.Y.Z or X.Y.Z-rc.N)
