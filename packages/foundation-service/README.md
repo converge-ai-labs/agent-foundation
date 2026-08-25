@@ -1,144 +1,157 @@
-# foundation-service
+# Foundation Service Storage
 
-`foundation-service` is the hosted control and execution service for Agent Foundation. The initial service skeleton provides FastAPI process lifecycle, async SQLAlchemy infrastructure, Alembic migrations, shared pretty/JSON logging through `converge-logging`, local PostgreSQL and Redis, and one container image for all deployment roles.
+This package currently contains Foundation Service's internal, async-first storage substrate. It is a workspace package, not a public SDK or an independently distributed provider library.
 
-## What Is Ready
+The substrate exposes capability-specific interfaces instead of one generic storage facade:
 
-- `foundation-service serve` starts FastAPI with `all`, `control`, or `execution` role selection.
-- Product-facing HTTP routes, OpenAPI, and interactive API docs use the `/api` namespace.
-- `/healthz` is process liveness; `/readyz` verifies database access.
-- The shared image serves the private Foundation Web application from `/` for `all` and `control` roles.
-- One lifespan-owned async engine and session factory are shared by the process.
-- Service HTTP integrations and ASGI tests use `httpx2`.
-- `short_session()` and `transaction()` provide short database scopes with bounded cancellation cleanup.
-- Alembic uses service metadata, a dedicated unpooled sync connection, bounded PostgreSQL timeouts, and a session advisory lock.
-- Local PostgreSQL 17 and Redis 7 are defined in `dev/compose.yaml`.
-- `make db-migrate` generates revisions from a disposable database inside the local PostgreSQL service.
-- The production image runs as non-root and selects `all`, `control`, or `execution` at runtime.
+- SQL uses SQLAlchemy's async `AsyncEngine` and `AsyncSession` APIs with PostgreSQL or SQLite.
+- Redis-compatible data structures use `redis.asyncio.Redis` with Redis or process-local fakeredis.
+- Objects use the small Foundation-owned `ObjectStore` protocol with S3-compatible or local-directory adapters.
+- Local files and deployment-mounted NFS use the same confined `pathlib` and AnyIO helpers.
 
-Business APIs, durable models, schedulers, queues, and execution workers are intentionally not stubbed. Add them as end-to-end capabilities rather than placeholder abstractions.
+Backend selection happens once during process startup. A failed network backend never falls back to local state.
 
-## Local Development
+## Runtime
 
-Start PostgreSQL and Redis, apply migrations, and run Foundation Service together with the Foundation Web development server:
-
-```bash
-make dev
-```
-
-`make dev` runs the setup and upgrade steps, then supervises both local processes until either exits or you press Ctrl-C. Use `make setup` or `make db-upgrade` separately when only that operation is needed.
-
-The default development endpoints are:
-
-```text
-Foundation Web:    http://127.0.0.1:5173/
-API schema:         http://127.0.0.1:8000/api/openapi.json
-API documentation: http://127.0.0.1:8000/api/docs
-Liveness:          http://127.0.0.1:8000/healthz
-Readiness:         http://127.0.0.1:8000/readyz
-```
-
-Browser code always uses relative `/api` URLs. Vite proxies that namespace and both probes to the backend during development; the production image serves the browser application and API from one origin.
-
-Stop local infrastructure and remove its volumes when a clean database is needed:
-
-```bash
-make dev-down
-```
-
-## Add an ORM Model
-
-1. Add a model under `converge_foundation_service/db/models/` using the shared `Base`.
-
-2. Import the model from `db/models/__init__.py` so Alembic metadata includes it.
-
-3. Generate a revision from a disposable database:
-
-   ```bash
-   make db-migrate msg="add conversation table"
-   ```
-
-4. Review `upgrade()` and `downgrade()` for names, constraints, indexes, locks, rolling compatibility, and rerun behavior.
-
-5. Apply and verify it locally:
-
-   ```bash
-   make db-upgrade
-   make db-check
-   make test
-   ```
-
-The generator starts local PostgreSQL if necessary, creates an isolated temporary database, replays all existing revisions, autogenerates the model diff, formats the new file, and drops the temporary database in `finally`. It never compares models with the normal development database.
-
-Do not create revision files manually. The empty `versions/.gitkeep` is intentional until the first durable model is accepted.
-
-## Database Usage
-
-Import shared infrastructure from `converge_foundation_service.db`:
+Executable settings code builds the frozen `StorageSettings` model and owns environment-variable mapping. The storage package accepts typed configuration and does not read process environment variables itself.
 
 ```python
-async with transaction(session_factory) as session:
-    session.add(record)
+from pathlib import Path
+
+from converge_foundation_service.storage import StorageSettings, open_storage
+
+settings = StorageSettings.model_validate(
+    {
+        "database": {"backend": "sqlite", "path": Path("var/foundation.sqlite3")},
+        "redis": {"backend": "memory"},
+        "objects": {"backend": "local", "root": Path("var/objects")},
+        "filesystem": {"root": Path("var/files")},
+    }
+)
+
+async with open_storage(settings) as storage:
+    # Inject `storage` into application-owned services here.
+    ...
 ```
 
-A transaction covers one database unit of work. Do not hold it across HTTP calls, model or tool execution, queue waits, sleeps, background tasks, or streaming responses. Repositories may flush; the application service owns the transaction boundary.
+`open_storage()` constructs one engine, session factory, Redis client, object store, and filesystem boundary. It checks required capabilities before yielding and closes all resources in reverse order.
 
-Streaming routes must finish database-backed authentication and initial reads before constructing the response. Pass immutable values to the generator and open a fresh short session only for a bounded read or write.
+A network deployment selects the corresponding backends without changing consumer code:
 
-## Commands
+```python
+network_settings = StorageSettings.model_validate(
+    {
+        "database": {
+            "backend": "postgresql",
+            "url": "postgresql://foundation:password@postgres/foundation",
+        },
+        "redis": {"backend": "redis", "url": "redis://redis:6379/0"},
+        "objects": {
+            "backend": "s3",
+            "bucket": "foundation-objects",
+            "region": "us-east-1",
+        },
+        "filesystem": {"root": Path("/mnt/foundation-files")},
+    }
+)
+```
+
+The S3 client uses the standard AWS credential chain. Set `endpoint_url` and `force_path_style` only for a compatible non-AWS endpoint. The deployment mounts NFS at the configured filesystem root before the process starts.
+
+## Relational Usage
+
+Consumers use SQLAlchemy directly. Generic storage does not define `get`, `insert`, or `do` wrappers.
+
+```python
+from sqlalchemy import select
+
+from converge_foundation_service.storage import transaction
+
+async with transaction(storage.sessions) as session:
+    result = await session.execute(select(Record).where(Record.id == record_id))
+    record = result.scalar_one_or_none()
+```
+
+Each operation gets a short session. Never retain a session or transaction across external I/O, agent execution, sleeps, background work, or a streaming response.
+
+PostgreSQL is the distributed-service backend. SQLite is intended for a single-process, zero-service profile and must not be placed on NFS.
+
+## Redis Usage
+
+The injected async redis-py client exposes strings, hashes, lists, sets, sorted sets, Streams, pipelines, transactions, and Pub/Sub without local/network branches.
+
+```python
+await storage.redis.hset(b"run:1", mapping={b"status": b"running"})
+await storage.redis.rpush(b"run:1:steps", b"step-1")
+await storage.redis.xadd(b"run-events", {b"payload": payload})
+```
+
+Response decoding is disabled for binary safety. The fakeredis backend is process-local and non-durable; use a real Redis service for multiple processes, persistence, modules, or exact server failure behavior.
+
+## Object Usage
+
+Object keys are opaque names rather than filesystem paths. `put` supports unconditional, create-only, and expected-version publication.
+
+```python
+from converge_foundation_service.storage import ByteRange, ObjectConflict
+
+created = await storage.objects.put(
+    "artifacts/result.json",
+    payload,
+    content_type="application/json",
+    metadata={"trace": trace_id},
+    if_none_match=True,
+)
+
+async with storage.objects.open("artifacts/result.json", byte_range=ByteRange(0, 64)) as reader:
+    prefix = b"".join([chunk async for chunk in reader])
+
+try:
+    updated = await storage.objects.put(
+        "artifacts/result.json",
+        new_payload,
+        if_match=created.version,
+    )
+except ObjectConflict:
+    # Re-read and make a new domain decision.
+    ...
+```
+
+S3 endpoints must support AWS-compatible conditional writes and deletes, range reads, head requests, and ordered `ListObjectsV2` pagination. Startup rejects endpoints that silently ignore these conditions. The local adapter provides the common behavior for exactly one writing service process.
+
+Metadata keys are normalized to lowercase and, like S3 REST metadata, keys and values must be ASCII. Keys must also be valid HTTP field names. Returned metadata mappings are immutable.
+
+## Filesystem Usage
+
+Deployment mounts NFS before process startup. Application code receives the mounted root and uses the same helpers as a local directory; there is no Python NFS provider.
+
+```python
+import anyio
+
+from converge_foundation_service.storage.filesystem import atomic_write, resolve_under_root
+
+destination = await resolve_under_root(
+    storage.files_root,
+    "exports/result.json",
+    limiter=storage.file_limiter,
+)
+await atomic_write(destination, chunks, limiter=storage.file_limiter)
+
+async with await anyio.open_file(destination, "rb") as file:
+    prefix = await file.read(64 * 1024)
+```
+
+Confined resolution rejects absolute paths, parent traversal, and symlink escape. Atomic replacement is guaranteed only within one filesystem.
+
+## Verification
+
+Run the storage suite and package checks from the repository root:
 
 ```bash
-make setup
-make dev
-make dev-down
-make db-migrate msg="description"
-make db-upgrade
-make db-downgrade
-make db-current
-make db-check
-make db-history
-make foundation-web-check
-make foundation-web-build
-make image-foundation-service
+uv run --package converge-foundation-service pytest packages/foundation-service/tests/storage -q
+make lint
+make typecheck
+uv build --package converge-foundation-service
 ```
 
-The underlying CLI is also available through `uv run foundation-service --help`.
-
-## Configuration
-
-All settings use the `FOUNDATION_` prefix. See the root `.env.example` for a local template.
-
-| Setting                                                 | Default  | Purpose                                                       |
-| ------------------------------------------------------- | -------- | ------------------------------------------------------------- |
-| `FOUNDATION_ROLE`                                       | `all`    | `all`, `control`, or `execution` process role                 |
-| `FOUNDATION_WEB_DIST_DIR`                               | unset    | Trusted production asset directory; the image uses `/app/web` |
-| `FOUNDATION_AUTO_MIGRATE`                               | `false`  | Allow a migration-owning container to upgrade before serve    |
-| `FOUNDATION_DATABASE_CONNECT_TIMEOUT_SECONDS`           | `10`     | Maximum PostgreSQL connection establishment time              |
-| `FOUNDATION_DATABASE_STATEMENT_TIMEOUT_SECONDS`         | `30`     | Maximum normal application statement duration                 |
-| `FOUNDATION_DATABASE_READINESS_TIMEOUT_SECONDS`         | `3`      | Maximum readiness database check duration                     |
-| `FOUNDATION_MIGRATION_ADVISORY_LOCK_TIMEOUT_SECONDS`    | `900`    | Maximum wait to serialize migration runners                   |
-| `FOUNDATION_MIGRATION_LOCK_TIMEOUT_SECONDS`             | `3`      | Maximum DDL lock wait                                         |
-| `FOUNDATION_MIGRATION_STATEMENT_TIMEOUT_SECONDS`        | `900`    | Maximum duration of a migration statement                     |
-| `FOUNDATION_MIGRATION_IDLE_TRANSACTION_TIMEOUT_SECONDS` | `30`     | Maximum idle time in a migration transaction                  |
-| `FOUNDATION_LOG_FORMAT`                                 | `pretty` | Rich-backed `pretty` locally or `json` when deployed          |
-
-Database and Redis URLs are intentionally omitted from the table because they may contain credentials; use `.env.example` for their local forms and secret-backed deployment configuration for real environments.
-
-## Container Roles and Migrations
-
-Build the shared image from the root `Dockerfile`:
-
-```bash
-make image-foundation-service
-```
-
-A dedicated Node.js build stage installs the private Foundation Web application from its lock file and copies only immutable production assets into `/app/web`; Node.js and npm are absent from the runtime image. The Python wheel remains API-only and does not contain browser assets. The image installs Debian's CA bundle, verifies it during build, and sets `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt` for `httpx2`. Keep that setting unless a replacement path provides the complete deployment trust set.
-
-The image defaults to `FOUNDATION_AUTO_MIGRATE=true` for `all` and `control`; PostgreSQL advisory locking serializes concurrent rollout replicas. Set it to `false` when a dedicated migration job owns schema changes. Configure the container port through `FOUNDATION_PORT` so the service and healthcheck use the same value. Startup behavior is fail-closed:
-
-- `execution` never changes schema and only checks that all Alembic heads are applied;
-- `all` and `control` run `upgrade head` when auto migration is enabled;
-- otherwise the process performs the same non-mutating head check;
-- a failed migration or compatibility check prevents the service from starting.
-
-A dedicated singleton migration job with auto migration disabled on normal replicas is preferred for distributed production deployments.
+Container-owned integration tests exercise PostgreSQL, Redis, and S3 HTTP behavior. The S3 startup-probe test also demonstrates that an endpoint missing required conditional-delete semantics is rejected rather than silently accepted.

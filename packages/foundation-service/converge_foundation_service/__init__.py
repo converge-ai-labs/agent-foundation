@@ -1,4 +1,4 @@
-"""Agent Foundation hosted control and execution service."""
+"""Internal Foundation Service components."""
 
 from importlib.metadata import PackageNotFoundError, version
 

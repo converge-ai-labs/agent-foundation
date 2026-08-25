@@ -1,28 +1,22 @@
 [project]
 name = "converge-foundation-service"
 version = "0.0.0"
-description = "Hosted control and execution service for Agent Foundation"
+description = "Internal storage capabilities for Agent Foundation services"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
-    "alembic>=1.17.1,<2",
+    "aiobotocore[httpx2]>=3.9,<4",
+    "aiosqlite>=0.21,<1",
     "anyio>=4,<5",
-    "click>=8.2,<9",
-    "converge-logging",
-    "fastapi>=0.116,<1",
-    "httpx2>=2.5,<3",
+    "botocore>=1.43.3,<1.43.57",
+    "fakeredis>=2.31,<3",
     "pydantic>=2.12,<3",
-    "pydantic-settings>=2.10,<3",
     "psycopg[binary]>=3.2,<4",
+    "redis>=8,<9",
     "sqlalchemy[asyncio]>=2.0.41,<3",
-    "starlette>=1.6,<2",
-    "uvicorn>=0.35,<1",
 ]
-
-[project.scripts]
-foundation-service = "converge_foundation_service.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -33,9 +27,8 @@ packages = ["converge_foundation_service"]
 
 [tool.deptry]
 known_first_party = ["converge_foundation_service"]
-package_module_name_map = { "converge-logging" = "converge_logging", "httpx2" = "httpx2", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "sqlalchemy" = "sqlalchemy" }
 
-# httpx2 is the service-wide outbound client contract; psycopg is loaded by
-# SQLAlchemy from the configured URL rather than imported directly.
+# Database drivers are loaded by SQLAlchemy from the selected backend.
 [tool.deptry.per_rule_ignores]
-DEP002 = ["httpx2", "psycopg"]
+DEP002 = ["aiosqlite", "psycopg"]
