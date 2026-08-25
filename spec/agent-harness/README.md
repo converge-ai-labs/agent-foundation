@@ -37,7 +37,7 @@ Read `00`, `01`, and `02`, then follow the owner for the concern being changed.
 
 ### Build an Agent or Plugin
 
-Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Foundation Service Agent Definitions and Presets](../foundation-service/01-agent-definitions-and-presets.md).
+Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Foundation Service](../foundation-service/README.md).
 
 ### Understand Models and Recovery
 
@@ -45,7 +45,7 @@ Read `06`, `10`, and `16`. Provider transport retry, exact history repair, seman
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service Client-Side Tools](../foundation-service/02-client-side-tools.md).
+Read `07`, `08`, `13`, and `15`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
 
 ### Implement Hosting or Persistence
 

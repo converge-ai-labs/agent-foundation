@@ -189,7 +189,7 @@ One durable Foundation Attempt starts one logical Harness run. Internal Harness 
 
 Client-side tools use native Pydantic deferred values. Foundation durably commits pending calls and approvals, authenticates external feedback, and starts a later run with fresh bindings. Asynchronous children use independent Executions and result-delivery ledgers rather than Pydantic deferred spawn calls.
 
-The complete hosted design is indexed in [foundation-service/README.md](foundation-service/README.md).
+The hosted service boundary is defined in [Foundation Service](foundation-service/README.md).
 
 ## Deployment Profiles
 
@@ -297,10 +297,4 @@ Acceptance, inner attempt completion, Harness terminal delivery, Host durable co
 | Agent UI architecture and sessions    | [agent-ui/00-overview.md](agent-ui/00-overview.md), [agent-ui/02-local-sessions-and-state.md](agent-ui/02-local-sessions-and-state.md) |
 | agent-envd catalog                    | [agent-envd/README.md](agent-envd/README.md)                                                                                           |
 | EIP architecture and protocol         | [agent-envd/00-overview.md](agent-envd/00-overview.md), [agent-envd/02-eip-protocol.md](agent-envd/02-eip-protocol.md)                 |
-| Foundation Service catalog            | [foundation-service/README.md](foundation-service/README.md)                                                                           |
-| Hosted definitions and Presets        | [foundation-service/01-agent-definitions-and-presets.md](foundation-service/01-agent-definitions-and-presets.md)                       |
-| Hosted client-side tools              | [foundation-service/02-client-side-tools.md](foundation-service/02-client-side-tools.md)                                               |
-| Durable execution lifecycle           | [foundation-service/03-execution-lifecycle.md](foundation-service/03-execution-lifecycle.md)                                           |
-| Foundation Client API and events      | [foundation-service/04-execution-api-and-events.md](foundation-service/04-execution-api-and-events.md)                                 |
-| Usage accounting                      | [foundation-service/05-usage-accounting.md](foundation-service/05-usage-accounting.md)                                                 |
-| Environment provider integrations     | [foundation-service/06-environment-providers.md](foundation-service/06-environment-providers.md)                                       |
+| Foundation Service boundary           | [foundation-service/README.md](foundation-service/README.md)                                                                           |

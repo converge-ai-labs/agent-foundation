@@ -19,7 +19,7 @@ The adapter is not an execution wrapper. It never calls a model, constructs an A
 | Rendered components and ephemeral view state | WebUI or TUI renderer            | May filter or aggregate display, but cannot rewrite source protocol facts                                |
 | Foundation durable event replay              | Foundation Service               | Remains authoritative; AG-UI is a live or retained presentation projection                               |
 
-The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local sessions](../agent-ui/02-local-sessions-and-state.md) own local retention, while [Foundation execution events](../foundation-service/04-execution-api-and-events.md) own hosted durable replay.
+The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local sessions](../agent-ui/02-local-sessions-and-state.md) own local retention, while [Foundation Service](../foundation-service/README.md) owns hosted durable replay.
 
 ## Dependency Direction
 

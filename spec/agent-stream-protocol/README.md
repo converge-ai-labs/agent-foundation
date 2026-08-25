@@ -24,7 +24,7 @@ Read `00`, then [Agent UI Runtime Subagents and Surfaces](../agent-ui/03-runtime
 
 ### Add Hosted AG-UI Delivery
 
-Read `00`, then [Foundation Execution API and Durable Events](../foundation-service/04-execution-api-and-events.md). Foundation durable events and replay cursors remain authoritative even when AG-UI is the live presentation codec.
+Read `00`, then [Foundation Service](../foundation-service/README.md) for hosted durability boundaries. Foundation durable events and replay cursors remain authoritative even when AG-UI is the live presentation codec.
 
 ## Authority Rules
 

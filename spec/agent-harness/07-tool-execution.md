@@ -156,7 +156,7 @@ Exact surface identity is a Host obligation. Pydantic message history retains ca
 
 Argument schemas guide the model but do not authorize a client action. Because upstream `ExternalToolset` does not execute the function body, the external executor validates the received arguments against the accepted schema before any side effect and applies its own authentication, user confirmation, timeout, audit, and rollback policy. The Harness never claims that an external result proves how the client produced it.
 
-Foundation Service durability, delivery, idempotent feedback, and exact-parent fencing are owned by [Client-Side Tools](../foundation-service/02-client-side-tools.md). Embedded Hosts can implement the same stop-and-resume contract without a service.
+Foundation Service durability, delivery, idempotent feedback, and exact-parent fencing remain Host-owned as summarized by [Foundation Service](../foundation-service/README.md). Embedded Hosts can implement the same stop-and-resume contract without a service.
 
 ## Invocation Context
 
