@@ -8,6 +8,14 @@ Foundation owns durable managed Secrets, Agent authoring schemas, typed Presets,
 
 It does not redefine the code-first Harness `AgentDefinition`, plugin lifecycle, Pydantic Agent loop, Harness result/state semantics, or provider-native Environment state. Platform-owned data and service APIs follow [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md).
 
+## Specification Index
+
+| Document                                         | Owns                                                                                                                               |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [Foundation Storage Capabilities](01-storage.md) | Internal relational, Redis-compatible, object, and mounted-filesystem capability boundaries; local and network backend equivalence |
+
+Read this overview first. Read the storage contract before adding a persistence, cache, coordination, object, or shared-filesystem dependency to Foundation Service. Domain schemas, repositories, queues, and event models remain in their owning domain specifications rather than this storage substrate.
+
 ## Authority Rules
 
 - The control plane owns source acceptance, typed Presets, model-integration revisions, immutable definition revisions, dependency locks, and durable Executions.
