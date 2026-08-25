@@ -19,7 +19,7 @@ Storage capabilities contain no Agent, Execution, lifecycle-event, work-queue, w
 | Coordination and delivery              | Supplies Redis commands, including Streams                                 | Defines queue, lease, notification, and replay policy            |
 | Deployment resources                   | Accepts configured endpoints, credentials, roots, and mounts               | Deployment creates databases, buckets, Redis, and NFS mounts     |
 
-The storage substrate does not own migrations for consumer schemas, domain repositories, serialization formats, retention policy, data residency, backup policy, or cross-resource transactions. Foundation's durable lifecycle and API contracts remain owned by [Foundation Service](README.md). Platform identifiers and persisted timestamps follow [Platform Data Conventions](../data-conventions.md).
+The storage substrate does not own consumer schemas, migration history, domain repositories, serialization formats, retention policy, data residency, backup policy, or cross-resource transactions. Foundation Service owns its relational schema lifecycle through the [Relational Schema Lifecycle](02-relational-schema.md). Foundation's durable lifecycle and API contracts remain owned by [Foundation Service](README.md). Platform identifiers and persisted timestamps follow [Platform Data Conventions](../data-conventions.md).
 
 ## Capability Model
 
@@ -49,6 +49,22 @@ flowchart LR
 
 Backend selection occurs while the process starts. Consumers receive the selected capability and do not branch on backend type. A failed network backend never causes an implicit switch to a local backend because that would create a second, divergent state system.
 
+The following internal Python shape is representative of the consumer contract:
+
+```python
+async with transaction(storage.sessions) as session:
+    await session.execute(statement)
+
+await storage.redis.hset(key, mapping={b"status": b"ready"})
+await storage.objects.put(object_key, payload, content_type="application/octet-stream")
+
+path = await resolve_under_root(storage.files_root, logical_path)
+async with await anyio.open_file(path, "rb") as file:
+    chunk = await file.read(64 * 1024)
+```
+
+`storage` is lifecycle-owned wiring, not a uniform operation facade. SQL and Redis retain their upstream interfaces, objects use the Foundation protocol, and mounted files use ordinary path/file operations after root confinement.
+
 ## Relational Storage
 
 SQLAlchemy's asynchronous `AsyncEngine`, `AsyncSession`, Core, and ORM APIs are the relational interface. Foundation does not wrap these APIs with generic `get`, `insert`, or `do` methods. A repository may add domain-specific queries, but a repository does not become part of the generic storage substrate.
@@ -59,7 +75,7 @@ The portable relational subset includes ordinary transactions, constraints, inde
 
 The canonical engine and session factory are constructed once per process. Each operation opens a short-lived session and transaction. An `AsyncSession` is neither shared across concurrent tasks nor retained across agent execution, network I/O, sleeps, background work, or streaming responses. Cancellation and exceptions roll back the active transaction, and cleanup is allowed to finish before cancellation propagates.
 
-The owning domain's ordered migration history is the schema authority for both relational backends. Revisions in the portable subset are verified on SQLite and PostgreSQL; a PostgreSQL-only revision makes that domain unavailable in the SQLite profile. PostgreSQL revisions are generated and reviewed through the repository migration workflow. A migration job, control process, or all-in-one process applies migrations before dependent traffic is accepted; execution-only processes do not migrate. Runtime `create_all` calls never replace migration history.
+Foundation Service's ordered migration history is the schema authority for both relational backends. Domains own the meaning of their relational models and schema changes, while the service owns their aggregation into one history. Revision ordering, backend portability, application ownership, and failure behavior are defined by the [Relational Schema Lifecycle](02-relational-schema.md). Runtime `create_all` calls never replace migration history.
 
 ## Redis-Compatible Data Structures
 

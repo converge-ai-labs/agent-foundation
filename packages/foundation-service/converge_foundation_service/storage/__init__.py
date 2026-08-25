@@ -14,8 +14,8 @@ from .object_store import (
     ObjectStoreUnavailable,
     ObjectSummary,
 )
+from .relational import short_session, transaction
 from .runtime import StorageResources, StorageStartupError, open_storage
-from .sql import short_session, transaction
 
 __all__ = [
     "ByteRange",

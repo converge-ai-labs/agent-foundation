@@ -110,7 +110,7 @@ A push to `main` that changes a development image input builds and smoke-checks 
 
 ## Database Changes
 
-Database changes follow the migration contract in [DEVELOPMENT.md](DEVELOPMENT.md#schema-migrations).
+Database changes follow the migration contract in [DEVELOPMENT.md](DEVELOPMENT.md#migrations).
 
 Do not create Alembic revision files manually or autogenerate against an existing developer or shared database. Generate every `foundation-service` revision through the stable repository target:
 

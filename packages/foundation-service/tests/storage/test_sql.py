@@ -4,10 +4,12 @@ from pathlib import Path
 import anyio
 import pytest
 from converge_foundation_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from converge_foundation_service.storage.sql import (
+from converge_foundation_service.storage.relational import (
+    async_database_url,
     create_session_factory,
     create_sql_engine,
     short_session,
+    sync_database_url,
     transaction,
 )
 from sqlalchemy import Column, Integer, MetaData, String, Table, insert, select
@@ -95,3 +97,13 @@ async def test_concurrent_tasks_use_independent_sessions(sql_resources) -> None:
 def test_postgresql_config_rejects_non_postgresql_url() -> None:
     with pytest.raises(ValueError, match="PostgreSQL backend"):
         create_sql_engine(PostgreSQLConfig(url="mysql://example/database"))
+
+
+def test_database_urls_select_sync_and_async_drivers(tmp_path: Path) -> None:
+    sqlite = SQLiteConfig(path=tmp_path / "database.sqlite3")
+    postgresql = PostgreSQLConfig(url="postgresql://user:secret@example.test/database")
+
+    assert async_database_url(sqlite).drivername == "sqlite+aiosqlite"
+    assert sync_database_url(sqlite).drivername == "sqlite"
+    assert async_database_url(postgresql).drivername == "postgresql+psycopg"
+    assert sync_database_url(postgresql).drivername == "postgresql+psycopg"

@@ -1,6 +1,6 @@
-# Foundation Service Storage
+# Foundation Service Infrastructure
 
-This package currently contains Foundation Service's internal, async-first storage substrate. It is a workspace package, not a public SDK or an independently distributed provider library.
+This package contains Foundation Service's internal, async-first storage substrate and its service-owned relational schema lifecycle. It is a workspace package, not a public SDK or an independently distributed provider library.
 
 The substrate exposes capability-specific interfaces instead of one generic storage facade:
 
@@ -76,6 +76,41 @@ Each operation gets a short session. Never retain a session or transaction acros
 
 PostgreSQL is the distributed-service backend. SQLite is intended for a single-process, zero-service profile and must not be placed on NFS.
 
+## Relational Schema and Migrations
+
+Generic relational storage and service schema ownership are deliberately separate:
+
+- `storage/relational.py` constructs async engines and short sessions for application I/O.
+- `database/metadata.py` aggregates every service-owned ORM model.
+- `database/migrations/` contains one linear Alembic history for the complete service database.
+- `database/migration.py` owns the dedicated synchronous migration connection, bounded PostgreSQL advisory locking, and Alembic invocation.
+
+The Alembic environment does not read process settings or create an engine. The runner supplies one validated connection, so CLI settings, lock policy, and schema comparison have distinct owners.
+
+Set an explicit database backend, then use the stable repository commands:
+
+```bash
+FOUNDATION_DATABASE_BACKEND=postgresql
+FOUNDATION_DATABASE_URL=postgresql+psycopg://foundation:foundation@127.0.0.1:5432/foundation
+
+make db-upgrade
+make db-current
+make db-check
+make db-history
+```
+
+For the zero-service profile, set `FOUNDATION_DATABASE_BACKEND=sqlite` and `FOUNDATION_DATABASE_SQLITE_PATH=var/foundation.sqlite3`. The same accepted history is applied to both backends. A domain requiring PostgreSQL-only schema behavior must reject SQLite explicitly.
+
+### Add an ORM Model
+
+1. Define the model beside its owning domain using `converge_foundation_service.database.Base`.
+2. Import that domain model module explicitly in `database/metadata.py`; there is no package scanning or plugin discovery.
+3. Run `make db-migrate msg="describe the schema change"`. The target rebuilds accepted history in a disposable PostgreSQL database before autogeneration.
+4. Review the generated revision for names, constraints, data loss, lock behavior, rolling compatibility, interruption safety, and downgrade or forward repair.
+5. Run the database tests on SQLite and PostgreSQL plus `make db-check` against an upgraded database.
+
+Do not create revision files by hand and do not use runtime `metadata.create_all()` as schema bootstrap. Application request paths use async SQLAlchemy; migrations use a separate synchronous `NullPool` connection because they run before traffic or in a dedicated deployment job.
+
 ## Redis Usage
 
 The injected async redis-py client exposes strings, hashes, lists, sets, sorted sets, Streams, pipelines, transactions, and Pub/Sub without local/network branches.
@@ -145,10 +180,10 @@ Confined resolution rejects absolute paths, parent traversal, and symlink escape
 
 ## Verification
 
-Run the storage suite and package checks from the repository root:
+Run the infrastructure suites and package checks from the repository root:
 
 ```bash
-uv run --package converge-foundation-service pytest packages/foundation-service/tests/storage -q
+uv run --package converge-foundation-service pytest packages/foundation-service/tests/storage packages/foundation-service/tests/database -q
 make lint
 make typecheck
 uv build --package converge-foundation-service

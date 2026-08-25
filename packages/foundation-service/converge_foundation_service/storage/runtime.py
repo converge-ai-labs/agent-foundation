@@ -20,7 +20,7 @@ from .config import LocalObjectConfig, S3ObjectConfig, SQLiteConfig, StorageSett
 from .filesystem import prepare_root
 from .object_store import LocalObjectStore, ObjectStore, S3ObjectStore
 from .redis import check_redis, open_redis
-from .sql import check_database, create_session_factory, create_sql_engine
+from .relational import check_database, create_session_factory, create_sql_engine
 
 if TYPE_CHECKING:
     from types_aiobotocore_s3.client import S3Client

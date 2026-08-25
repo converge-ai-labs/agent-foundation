@@ -1,4 +1,4 @@
-"""Async SQLAlchemy construction and short session scopes."""
+"""Async relational storage construction and short session scopes."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from anyio import fail_after, move_on_after
-from sqlalchemy import event, text
+from sqlalchemy import URL, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -25,14 +25,26 @@ class _Connection(Protocol):
     def cursor(self) -> _Cursor: ...
 
 
+def async_database_url(config: PostgreSQLConfig | SQLiteConfig) -> URL:
+    """Return the validated SQLAlchemy URL for asynchronous application I/O."""
+
+    if isinstance(config, PostgreSQLConfig):
+        return _postgresql_url(config).set(drivername="postgresql+psycopg")
+    return URL.create("sqlite+aiosqlite", database=_sqlite_database(config.path))
+
+
+def sync_database_url(config: PostgreSQLConfig | SQLiteConfig) -> URL:
+    """Return the validated SQLAlchemy URL for synchronous migration I/O."""
+
+    if isinstance(config, PostgreSQLConfig):
+        return _postgresql_url(config).set(drivername="postgresql+psycopg")
+    return URL.create("sqlite", database=_sqlite_database(config.path))
+
+
 def create_sql_engine(config: PostgreSQLConfig | SQLiteConfig) -> AsyncEngine:
     if isinstance(config, PostgreSQLConfig):
-        url = make_url(config.url.get_secret_value())
-        if url.drivername not in {"postgresql", "postgresql+psycopg"}:
-            raise ValueError("PostgreSQL backend requires a postgresql or postgresql+psycopg URL")
-        url = url.set(drivername="postgresql+psycopg")
         return create_async_engine(
-            url,
+            async_database_url(config),
             pool_pre_ping=True,
             pool_size=config.pool_size,
             max_overflow=config.max_overflow,
@@ -43,13 +55,11 @@ def create_sql_engine(config: PostgreSQLConfig | SQLiteConfig) -> AsyncEngine:
             },
         )
 
-    path = config.path
-    if str(path) == ":memory:":
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=StaticPool)
+    if str(config.path) == ":memory:":
+        engine = create_async_engine(async_database_url(config), poolclass=StaticPool)
     else:
-        absolute_path = path.absolute()
-        engine = create_async_engine(f"sqlite+aiosqlite:///{absolute_path}")
-    _configure_sqlite(engine, config.busy_timeout_seconds, path)
+        engine = create_async_engine(async_database_url(config))
+    _configure_sqlite(engine, config.busy_timeout_seconds, config.path)
     return engine
 
 
@@ -92,6 +102,17 @@ async def check_database(engine: AsyncEngine, *, timeout_seconds: float = 3) -> 
     with fail_after(timeout_seconds):
         async with engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
+
+
+def _postgresql_url(config: PostgreSQLConfig) -> URL:
+    url = make_url(config.url.get_secret_value())
+    if url.drivername not in {"postgresql", "postgresql+psycopg"}:
+        raise ValueError("PostgreSQL backend requires a postgresql or postgresql+psycopg URL")
+    return url
+
+
+def _sqlite_database(path: Path) -> str:
+    return ":memory:" if str(path) == ":memory:" else str(path.absolute())
 
 
 def _configure_sqlite(engine: AsyncEngine, busy_timeout_seconds: float, path: Path) -> None:
