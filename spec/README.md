@@ -204,6 +204,8 @@ Coordination streams and queues do not become durable lifecycle authority.
 
 ## Identity and Version Boundaries
 
+The platform-wide identity, versioning, naming, ownership, and compatibility rules are defined by [Platform Data Conventions](data-conventions.md). Concrete subsystems own their object catalogs, schemas, and explicitly scoped or external identifiers within those rules.
+
 The platform distinguishes:
 
 - caller/actor identity;
@@ -215,6 +217,10 @@ The platform distinguishes:
 - credential binding and invocation grant.
 
 A Host definition revision contains only serializable Host data and exact locks. It contains no plugin/Capability class, native Model, Toolset, output Python type, callable, client, plaintext credential, or process-local object. An execution reconstructs those values without mutating the selected revision.
+
+## Service API Boundaries
+
+Foundation-owned resource-oriented JSON APIs and their first-party SDKs follow [Platform API Conventions](api-conventions.md). The shared contract owns HTTP resource shape, JSON representation, pagination, errors, mutation safety, and compatibility. Process-local APIs, EIP, Agent Stream Protocol profiles, provider APIs, and external webhook schemas retain their defining contracts.
 
 ## Extension Model
 
@@ -275,6 +281,8 @@ Acceptance, inner attempt completion, Harness terminal delivery, Host durable co
 | Area                                  | Document                                                                                                                               |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository content and workflow model | [repository-model.md](repository-model.md)                                                                                             |
+| Platform data conventions             | [data-conventions.md](data-conventions.md)                                                                                             |
+| Platform API conventions              | [api-conventions.md](api-conventions.md)                                                                                               |
 | Harness catalog                       | [agent-harness/README.md](agent-harness/README.md)                                                                                     |
 | Harness architecture                  | [agent-harness/00-overview.md](agent-harness/00-overview.md)                                                                           |
 | Harness definition/build              | [agent-harness/03-agent-definition-and-build.md](agent-harness/03-agent-definition-and-build.md)                                       |
