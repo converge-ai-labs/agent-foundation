@@ -2,9 +2,11 @@
 
 ## Design Position
 
-Model context is assembled by Pydantic AI from Agent instructions, Capability instructions, Toolset instructions, prior messages, ordinary user content, native enqueue input, and public Capability history/model-request hooks. The Harness defines no parallel prompt language or custom user-content part. Dynamic first-party context uses the public `before_model_request(ctx, ModelRequestContext)` boundary or `RunContext.enqueue()` according to whether it augments an eligible request or creates trusted follow-up input.
+Pydantic AI assembles the stable model prefix from Agent, Capability, and Toolset instructions and owns active `ModelMessage` history. The Harness adds one typed request-overlay mechanism for dynamic model context. It does not define another instruction language, allow context middleware to edit messages directly, or treat rendered context as authoritative state.
 
-Working state, compaction, skills, media normalization, and behavior inside the Pydantic Agent loop are ordinary `AbstractCapability[AgentContext]` implementations. `DynamicEnvironmentCapability` is the optional model projection of the fixed Harness Environment resource; it is not the resource owner. Query-dependent context retrieval that must inspect and modify the complete semantic run input can instead be a first-class Harness plugin, which may contribute Capabilities. Each plugin or Capability owns its typed configuration, ordering, and failure behavior; portable Environment state remains core-owned, ordinary feature state remains Capability-owned, and durable provider launch state remains Host-owned.
+The mandatory `ModelContextCoordinatorCapability` is the only Harness Capability that commits a `ModelContextProjection` to `ModelRequestContext` as a request overlay. Before ordinary history hooks run, it removes prior Harness-owned overlays from the active view. At the final model-request wrapper boundary, after those hooks and content filters, it recognizes an eligible request kind, evaluates one middleware chain, validates the result, and places the resulting blocks. The terminal source is `AgentContext.project_model_context()`, which combines the default Agent runtime/conversation projection with `BoundEnvironment.project_model_context()`. A fresh Host binding is semantically outermost; selected or plugin-contributed `AbstractModelContextCapability` instances compose between the Host and terminal source in Pydantic's already-finalized Capability order.
+
+Working state, file context, skills, memory, and other Agent-loop behavior remain ordinary `AbstractCapability[AgentContext]` implementations. A feature that augments dynamic context implements the narrow model-context subtype rather than independently appending `UserPromptPart` values. `DynamicEnvironmentCapability` still owns the optional model tools, stable Environment guidance, and topology-change enqueue behavior; the Environment resource owns its provider-neutral current-topology projection and no Capability owns Environment lifecycle or authority. Query-dependent retrieval that must transform the complete semantic run input remains a Harness plugin concern, and that plugin may also contribute an ordinary model-context Capability.
 
 ## Context Layers
 
@@ -15,21 +17,26 @@ flowchart TB
     Toolset[Toolset instructions] --> PAI
     Messages[Prior ModelMessage history] --> History[Capability history hooks]
     History --> PAI
-    Dynamic[Enqueue and public request hooks] --> User[Bounded user content]
-    User --> PAI
-    PAI --> Request[Provider-valid model request]
+    Enqueue[Native enqueue input] --> PAI
+    PAI --> Coordinator[ModelContextCoordinatorCapability]
+    Host[Fresh Host binding] --> Chain[Ordered context middleware]
+    Chain --> Base[AgentContext terminal projection]
+    Base --> Commit[Harness structural commit]
+    Coordinator --> Host
+    Commit --> Request[Provider-valid model request]
 ```
 
-| Layer                    | Owner                                                                           | Representation                                          |
-| ------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Authored Agent behavior  | `AgentSpec`                                                                     | Pydantic instructions                                   |
-| Feature guidance         | Owning Capability                                                               | Capability instructions                                 |
-| Tool usage guidance      | Owning Toolset or Capability                                                    | Toolset or Capability instructions                      |
-| Interaction continuation | Pydantic AI                                                                     | `ModelMessage` history                                  |
-| Dynamic run context      | Owning Capability or Environment projection                                     | Public model-request hook or native enqueue input       |
-| Provider compatibility   | Native `ModelProfile` and adapter; scoped Capability only for residual behavior | Profile rendering or bounded public-hook transformation |
+| Layer                    | Owner                                                                           | Representation                                           |
+| ------------------------ | ------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Authored Agent behavior  | `AgentSpec`                                                                     | Pydantic instructions                                    |
+| Feature guidance         | Owning Capability                                                               | Capability instructions                                  |
+| Tool usage guidance      | Owning Toolset or Capability                                                    | Toolset or Capability instructions                       |
+| Interaction continuation | Pydantic AI                                                                     | `ModelMessage` history                                   |
+| Trusted follow-up input  | Harness/Host through Pydantic                                                   | Native enqueue input                                     |
+| Dynamic request overlay  | Harness coordinator, Host, AgentContext, Environment, and owning Capabilities   | Typed `ModelContextProjection` committed as user content |
+| Provider compatibility   | Native `ModelProfile` and adapter; scoped Capability only for residual behavior | Profile rendering or bounded public-hook transformation  |
 
-Instruction ordering follows Pydantic AI Capability composition. A Capability declares only the dependencies required for correctness through `CapabilityOrdering`.
+Instruction and context-middleware ordering both inherit Pydantic AI's finalized Capability composition. `CapabilityOrdering.wraps` and `wrapped_by` determine nesting, while `requires` only guarantees presence. The Harness does not introduce a context-specific priority, registration order, or second topological sort.
 
 ## Request Preparation
 
@@ -45,25 +52,118 @@ The list defines expected ordering relationships for first-party Capabilities. N
 
 Dynamic content is data under the trust level of its source. Retrieved text, file content, tool output, topology notice, or a skill document cannot establish Identity, policy, credentials, or Environment authority.
 
-## Cache-stable Context Injection
+## Model Context Projection Contract
+
+The public values are immutable and detached from `ModelRequestContext`:
+
+```python
+class ModelContextRequestKind(StrEnum):
+    INPUT = "input"
+    TOOL_RESULTS = "tool_results"
+
+
+class ModelContextInputOrigin(StrEnum):
+    USER = "user"
+    ENQUEUE = "enqueue"
+
+
+class ModelContextPlacement(StrEnum):
+    INPUT_PREAMBLE = "input_preamble"
+    REQUEST_EPILOGUE = "request_epilogue"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelContextProjectionRequest:
+    kind: ModelContextRequestKind
+    input_origin: ModelContextInputOrigin | None = None
+    tool_call_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ModelContextBlock:
+    source_id: str
+    placement: ModelContextPlacement
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
+class ModelContextProjection:
+    blocks: tuple[ModelContextBlock, ...] = ()
+
+
+type ModelContextNext = Callable[
+    [ModelContextProjectionRequest],
+    Awaitable[ModelContextProjection],
+]
+
+
+class AbstractModelContextCapability(
+    AbstractCapability[AgentContext],
+):
+    async def wrap_model_context(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection: ...
+
+
+class ModelContextRunBinding(Protocol):
+    async def wrap_model_context(
+        self,
+        ctx: AgentContext,
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection: ...
+```
+
+A model-context Capability normally awaits `handler(request)` and returns a transformed immutable projection. It can append its own stable source block, replace selected blocks, or intentionally short-circuit the inner chain. A Host binding has the same call-next, transform, replace, and short-circuit semantics and occupies the semantic outermost position. It is a fresh single-run collaborator in `RunBindings.model_context`, not a Capability, declarative value, persisted callback, or message hook. Plugin context contribution uses the existing `AbstractHarnessPlugin.get_capabilities()` path and the explicit Capability subtype; plugins receive no parallel context hook or ordering plane.
+
+Pydantic's finalized run Capability mapping is the only source of middleware order. The coordinator selects values with `isinstance(value, AbstractModelContextCapability)` without dynamic method discovery, preserves that finalized order, and constructs the native wrapper nesting. The fixed semantic chain is:
+
+1. fresh Host binding, when present;
+2. finalized model-context Capabilities in native wrapper order;
+3. `AgentContext.project_model_context(request)` as the terminal projection.
+
+The terminal projection calls `BoundEnvironment.project_model_context(request)` and combines its ordered blocks with the bounded default Agent run/conversation projection. Environment contributes `INPUT_PREAMBLE` blocks only for an `INPUT` request. Agent run/conversation context contributes one `REQUEST_EPILOGUE` block for both `INPUT` and ordinary `TOOL_RESULTS` requests, using a more compact tool-results form. Current time, request usage, selected Host metadata, working tasks, notes, and other Capability-owned state remain projected by their owning model-context Capabilities rather than exposing opaque `AgentContextState` namespaces to the terminal source.
+
+`ModelContextBlock.source_id` is stable, non-blank, bounded provenance, not ordering or authority. Contents are bounded text and retain the trust level of their source. Middleware never receives mutable messages. The final Harness commit, which no Host or Capability can bypass, validates source IDs, block counts, per-block and aggregate UTF-8 byte limits, and the two fixed placements; records Harness ownership metadata; and rejects malformed output before model dispatch. Limits apply after the complete outer chain, so replacement or short-circuit cannot bypass them.
+
+## Eligible Requests and Placement
+
+The coordinator classifies the complete final `ModelRequest`, after ordinary history transformation and content filtering, into one of these cases:
+
+| Request kind                                  | Projection behavior                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Ordinary user input                           | `INPUT`, `input_origin=USER`; both placements eligible                                           |
+| Harness-accepted enqueue or startup notice    | `INPUT`; `input_origin=ENQUEUE` only with explicit producer provenance; both placements eligible |
+| Ordinary complete tool-result batch           | `TOOL_RESULTS`; only `REQUEST_EPILOGUE` is eligible                                              |
+| Output validation/tool retry                  | No projection and no message mutation                                                            |
+| Deferred-tool exact resume                    | No projection or cleanup before the exact continuation advances                                  |
+| Provider-suspended exact continuation         | No projection or cleanup before the exact continuation advances                                  |
+| Any ambiguous or structurally invalid request | Fail through the existing request-integrity boundary rather than guessing a context request kind |
+
+For `INPUT`, every `INPUT_PREAMBLE` block is inserted immediately before the first original input part and every `REQUEST_EPILOGUE` block is appended after the complete original request content. For `TOOL_RESULTS`, every original tool-result part in the batch remains contiguous and in original order; `REQUEST_EPILOGUE` blocks are appended only after the final result. Context is never inserted between tool calls and results, between sibling tool results, or into a provider-suspended/deferred exact tail. An `INPUT_PREAMBLE` result for `TOOL_RESULTS` is invalid.
+
+On each non-exact preparation, the coordinator removes every previously committed Harness-owned overlay from the active message view before handoff, compaction, and other history transformation, without recognizing text markers or deleting caller content. At the final eligible boundary it resolves and commits one fresh projection. This cleanup is centralized: Environment, default, first-party, plugin, and Host middleware never scan or rewrite messages themselves. Dynamic context therefore behaves as a request overlay, is omitted from compaction summaries, is not exported as authoritative state, and is recomputed from fresh run bindings after resume.
+
+Pydantic's ordinary text request shape does not reliably distinguish user input from enqueue input. When no producer-owned provenance is present, the coordinator classifies that shape as `input_origin=USER`; `USER` and `ENQUEUE` have identical placement and eligibility semantics. Implementations do not infer origin from text, timestamps, or run identifiers.
+
+## Cache-stable Context Projection
 
 Model-facing data has three cache classes:
 
 - build-static behavior, including tool purpose, generic routing syntax, safety constraints, and provider-independent usage guidance, remains in the stable instruction and tool prefix;
 - run-frozen model surface, such as an Environment-backed skill catalog required for the first request, is materialized once by the owning Capability's `for_run()` after scoped readiness, deterministically ordered, and immutable for that Harness run;
-- request-dynamic context, including current Environment aliases, mounts, availability, working state, background results, and topology changes, enters through native enqueue or an owning public history/model-request hook after the stable prefix.
+- request-dynamic context, including current Environment aliases, mounts, availability, runtime and working state, file references, background results, and topology changes, enters only through the typed overlay or native enqueue input after the stable prefix.
 
 A run-frozen Capability returns a replacement whose `get_instructions()` and tool discovery read only frozen in-memory values and perform no provider, filesystem, or registry I/O. Pydantic re-extracts that replacement's contributions before the first model request. A provider cache breakpoint can separate the build-static prefix from a run-frozen catalog when the provider supports one; readiness and deterministic ordering prevent placeholder-to-real or mid-run mutations but do not claim a cross-run cache hit when catalog bytes differ.
 
-Request-dynamic data never mutates instructions or tool schemas. A Capability that intentionally supports hot reload observes an explicit dynamic revision and injects a bounded notice; it does not silently rescan and alter a cacheable prefix. Ordinary operation readiness stays inside the selected Environment operation and does not force unrelated model-surface preparation.
+Request-dynamic data never mutates instructions or tool schemas. A Capability that intentionally supports hot reload observes an explicit dynamic revision and enqueues one bounded trusted notice; the next eligible boundary receives a fresh overlay. Ordinary operation readiness stays inside the selected Environment operation and does not force unrelated model-surface preparation. Content that transforms history for correctness, including compaction and handoff, remains in the owning native history/model-request hook and executes before the coordinator's structural commit.
 
-For an eligible request containing ordinary user content, `DynamicEnvironmentCapability.before_model_request()` appends bounded current topology through `ModelRequestContext` after the caller's content without changing the stable instruction/tool prefix. When topology changes while an inner run can accept input, the Capability uses native `RunContext.enqueue()` for one coalesced trusted notice. Working state, file references, and similar Capabilities can use the same public request hook when their data belongs to a user turn; content that transforms history for correctness remains in an owning Pydantic history Capability.
+Every logical Harness run projects fresh Agent and Environment context at its first eligible input boundary even when restored and live topology versions match. A replacement `ExecutionAttempt` can materialize different descriptors, permissions, availability, generations, runtime usage, or working state under the same durable version, so cross-run equality never reuses rendered context. Within one entered run, every eligible input receives the current Environment block; later topology changes can additionally cause a coalesced trusted enqueue notice before that fresh projection. Provider-suspended and deferred exact continuations remain untouched until they advance, after which the first ordinary eligible boundary receives current context.
 
-Context injection runs only on a request containing ordinary user content or a trusted semantic notice. It does not append the full Environment snapshot to tool-return-only or output-retry requests, which would destabilize provider caching and repeat unchanged content. The Environment core exposes the successfully imported value only as `BoundEnvironment.restored_state_topology_version`; the optional projection reads that non-authoritative observation without owning an Environment state namespace.
-
-Every new logical Harness run contributes one fresh bounded Environment snapshot at its first eligible ordinary model boundary, even when the restored and live topology version numbers match. A replacement Attempt can materialize different effective descriptors, permissions, availability, or provider generations under the same durable desired version, so cross-run version equality never suppresses current context. A fresh no-input run can create one trusted startup boundary for this snapshot. Within that entered run, unchanged same-version boundaries do not repeat it, and later topology changes produce bounded notices. Provider-suspended history is the exception: it resumes without inserting a request ahead of the suspended provider continuation. The first later ordinary turn receives the latest fresh live snapshot rather than persisted rendered instructions from `HarnessState`.
-
-`DynamicEnvironmentCapability` can be omitted or configured by its Host. Environment lifecycle, programmatic operations, and dynamic topology remain available without it; only model tools, rendered routing context, and notices disappear. With no model-visible binding its stable tool surface can report typed unavailability and later become usable after a Host mount. There is no global boolean that mutates unrelated Toolset instructions and no callback list for arbitrary prompt rewriting.
+`DynamicEnvironmentCapability` can be omitted or configured by its Host. Environment lifecycle and the bounded provider-neutral Environment block remain available through the default terminal projection; the Capability adds model tools, stable routing guidance, live observation, and coalesced topology-change notices. With no model-visible binding, stable tools can report typed unavailability and later become usable after a Host mount. There is no global callback list, source priority, or arbitrary prompt-rewriting switch.
 
 ## Active Messages
 
@@ -81,13 +181,13 @@ An explicit file reference carries only a model-facing logical path and a bounde
 
 Compaction and explicit `summarize` requests use the same validated history-replacement path. A handoff preserves current user intent, relevant file references, and enough provenance to distinguish summarized history from new input. A pending `DeferredToolRequests` boundary is not part of the replaceable prefix: its exact suspended message tail, call IDs, categories, and message identity remain unchanged through authoritative resume validation until matching results are incorporated. Provider-suspended continuation receives the same protection. Only after those exact continuations advance can a validated replacement become ordinary active messages and reintroduce pending handoff guidance once.
 
-Context-window estimates guide compaction but never replace provider enforcement. A configured recent-turn tail is protected continuation context, not an optional trimming pool. If validated compaction cannot produce a provider-valid request within the configured budget while retaining that tail, the request fails explicitly rather than silently dropping current intent or unresolved work.
+Context-window estimates guide compaction but never replace provider enforcement. A configured recent-turn tail is protected continuation context, not an optional trimming pool. If validated compaction cannot produce a provider-valid request within the configured budget while retaining that tail, the request fails explicitly rather than silently dropping current intent or unresolved work. [`Events, Observability, and Usage`](12-events-observability-and-usage.md#first-party-event-contracts) owns the bounded context snapshots and operation observations for this path.
 
 ## Working State Capability
 
 Tasks and notes form one optional Working State Capability. It owns their model tools, bounded request-time presentation, and one versioned `AgentContextState` namespace; it is coordination context rather than execution authority, a scheduler, or a durable business workflow.
 
-Task references use concise scope-local `task-{N}` values allocated monotonically by the authoritative task store. Creation, claims, dependencies, and updates share one internal revision boundary so concurrent Agents cannot reuse an ID or silently overwrite newer state. Ordinary model tools expose intent-level create, start, update, and complete operations without requiring the Agent to orchestrate claims or compare-and-swap revisions. Completed tasks remain available through explicit task reads but leave bounded request-time context. Notes remain private to one Agent instance.
+Task references use concise scope-local `task-{N}` values allocated monotonically by the authoritative task store. Creation, claims, dependencies, and updates share one internal revision boundary so concurrent Agents cannot reuse an ID or silently overwrite newer state. Ordinary model tools expose intent-level create, start, update, and complete operations without requiring the Agent to orchestrate claims or compare-and-swap revisions. Completed tasks remain available through explicit task reads but leave bounded request-time context. Notes remain private to one Agent instance. Committed task changes produce only the bounded deltas owned by [`Events, Observability, and Usage`](12-events-observability-and-usage.md#first-party-event-contracts).
 
 The definition fixes one task mode:
 
@@ -109,15 +209,15 @@ Small operational behaviors remain separate when their state and lifecycle diffe
 | Capability          | Behavior                                                                 | State                                                                                            |
 | ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | Enqueue/messaging   | Uses Pydantic enqueue to deliver accepted steering or follow-up input    | Delivery acceptance stays with Host; incorporated IDs only when needed for duplicate suppression |
-| Monitored process   | Starts through `BoundEnvironment` and injects a bounded completion       | Live observation and completion routing stay with a fresh Host collaborator                      |
+| Monitored process   | Starts through `BoundEnvironment` and delivers a bounded completion      | Live observation and completion routing stay with a fresh Host collaborator                      |
 | File reference      | Tells the Agent which explicit files require inspection                  | Bounded pending logical paths only                                                               |
 | Dynamic Environment | Composes File/Shell tools with current topology context and live notices | Recomputed from `BoundEnvironment`; owns no continuation namespace                               |
 | Skill               | Supplies selected skill instructions and resources                       | Loaded skill IDs only when needed for continuation                                               |
 | Media               | Normalizes media count, size, format, and provider representation        | No raw provider URL credential state                                                             |
 
-These Capabilities use native instructions, history/request hooks, native enqueue, or Toolsets. A global context-injection switch is unnecessary; a Host enables, disables, or configures the owning Capability without rewriting other instruction sources.
+These Capabilities use native instructions, history/request hooks, native enqueue, Model Context Projection, or Toolsets. A global projection switch is unnecessary; a Host enables, disables, or configures the owning Capability without rewriting other instruction sources.
 
-A monitored-process Capability requires the finalized `DynamicEnvironmentCapability`, shares its single run-local compact-reference domain, and composes `MonitoredProcessToolset` to start work only through the live `BoundEnvironment`. One fresh `MonitoredProcessRunCapability` supplies the typed Host collaborator; a missing or incompatible projection or collaborator fails before model exposure. The Toolset gives the exact bound process value to that collaborator, which owns waiting, wake-up, bounded completion retention, duplicate suppression, and accepted delivery. The Capability owns run binding, lifecycle hooks, and injection of accepted completions rather than duplicating per-call tool semantics. Process status exposes only processes already started or observed in that scoped model surface and is not provider-wide or operating-system process discovery.
+A monitored-process Capability requires the finalized `DynamicEnvironmentCapability`, shares its single run-local compact-reference domain, and composes `MonitoredProcessToolset` to start work only through the live `BoundEnvironment`. One fresh `MonitoredProcessRunCapability` supplies the typed Host collaborator; a missing or incompatible projection or collaborator fails before model exposure. The Toolset gives the exact bound process value to that collaborator, which owns waiting, wake-up, bounded completion retention, duplicate suppression, and accepted delivery. The Capability owns run binding, lifecycle hooks, and delivery of accepted completions rather than duplicating per-call tool semantics. Process status exposes only processes already started or observed in that scoped model surface and is not provider-wide or operating-system process discovery.
 
 Live observation cannot outlive the entered Environment. Run termination cancels and drains process-local monitoring before Environment close. A Host can deliver an already completed bounded record to a later Harness run, but it cannot restore or reattach a run-local compact reference from `HarnessState`. A durable Host that deliberately owns work beyond one run must also own a separate provider attachment and completion ledger outside the Harness.
 
@@ -149,7 +249,7 @@ Compaction replaces an eligible history prefix with a smaller provider-valid mes
 class CompactionPolicy(BaseModel):
     trigger_tokens: int
     target_tokens: int
-    preserve_recent_turns: int
+    preserve_recent_user_turns: int
     model: str | None = None
 ```
 

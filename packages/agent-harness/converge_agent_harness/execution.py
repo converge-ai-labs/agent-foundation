@@ -29,6 +29,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
 from typing_extensions import is_typeddict
 
+from converge_agent_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
 from converge_agent_harness.capabilities.context import (
     COMPACTION_CAPABILITY_ID,
     FILE_CONTEXT_CAPABILITY_ID,
@@ -39,6 +40,12 @@ from converge_agent_harness.capabilities.context import (
     HandoffCapability,
     RuntimeContextCapability,
 )
+from converge_agent_harness.capabilities.delegation import (
+    DELEGATION_CAPABILITY_ID,
+    DELEGATION_RUN_CAPABILITY_ID,
+    DelegationCapability,
+    DelegationRunCapability,
+)
 from converge_agent_harness.capabilities.documents import (
     DOCUMENTS_CAPABILITY_ID,
     DOCUMENTS_RUN_CAPABILITY_ID,
@@ -48,6 +55,10 @@ from converge_agent_harness.capabilities.documents import (
 from converge_agent_harness.capabilities.interaction import (
     USER_INTERACTION_CAPABILITY_ID,
     UserInteractionCapability,
+)
+from converge_agent_harness.capabilities.lifecycle import (
+    LIFECYCLE_EVENT_CAPABILITY_ID,
+    LifecycleEventCapability,
 )
 from converge_agent_harness.capabilities.media import (
     MEDIA_CAPABILITY_ID,
@@ -98,9 +109,11 @@ from converge_agent_harness.errors import (
 )
 from converge_agent_harness.events import (
     HarnessEvent,
+    HarnessEventEmitter,
     HarnessExtensionEvent,
     HarnessRunResultEvent,
-    HarnessStreamItem,
+    HarnessStreamEvent,
+    _ChildEventForwarder,
     _RunEventEmitter,
 )
 from converge_agent_harness.filters.integrity import (
@@ -113,6 +126,10 @@ from converge_agent_harness.input import (
     RunPreparationContext,
     SemanticRunInput,
     normalize_input,
+)
+from converge_agent_harness.model_context import (
+    MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
+    ModelContextCoordinatorCapability,
 )
 from converge_agent_harness.models import resolve_run_model, wrap_self_healing_model
 from converge_agent_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
@@ -481,6 +498,8 @@ class HarnessBuilder:
         capabilities = (
             ToolExecutionBoundaryCapability(),
             MessageIntegrityFilterCapability(),
+            LifecycleEventCapability(),
+            ModelContextCoordinatorCapability(),
             ResolveModelId(resolve_model),
             *definition.capabilities,
             *plugin_capabilities,
@@ -704,7 +723,7 @@ class ExecutableAgent[OutputT]:
             await child.executable.close()
 
 
-class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
+class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     """One lazy Pydantic AgentRunEvents stream plus Harness middleware and teardown."""
 
     def __init__(
@@ -720,17 +739,18 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
         usage: RunUsage | None,
         usage_limits: UsageLimits | None,
     ) -> None:
-        self.run_id = str(uuid4())
         self._executable = executable
         self._input = input
         self._input_factory = input_factory
         self._bindings = bindings
         self._previous_state = previous_state.model_copy(deep=True) if previous_state is not None else HarnessState()
+        self.thread_id = self._previous_state.thread_id
+        self.run_id = f"run-{uuid4().hex}"
         self._deferred_resume = deferred_resume
         self._run_reserved_capability_ids = run_reserved_capability_ids
         self._usage = usage if usage is not None else RunUsage()
         self._usage_limits = usage_limits
-        self._emitter = _RunEventEmitter(self.run_id)
+        self._emitter = _RunEventEmitter(self.thread_id, self.run_id)
         self._environment_ready: asyncio.Future[BoundEnvironment] | None = None
         self._environment_close_requested = asyncio.Event()
         self._environment_lifecycle_task: asyncio.Task[None] | None = None
@@ -782,6 +802,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
         """Return the live Pydantic AI usage accumulator."""
         return self._usage
 
+    def _bind_parent_event_forwarder(self, parent: HarnessEventEmitter) -> _ChildEventForwarder:
+        """Bind this exact stream as a validated child of one active parent emitter."""
+        if not isinstance(parent, _RunEventEmitter):
+            raise RunError("Inline child parent emitter is invalid.", code="child_event_invalid")
+        return parent.bind_child(self._emitter)
+
     async def __aenter__(self) -> HarnessRunStream[OutputT]:
         if self._entered:
             raise RunError("HarnessRunStream cannot be entered more than once.", code="run_stream_reused")
@@ -812,10 +838,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
             )
             context = AgentContext(
                 run_id=self.run_id,
+                thread_id=self._previous_state.thread_id,
                 instance=self._bindings.instance,
                 state=AgentContextState(self._previous_state.agent_context_state),
                 environment=environment,
                 model_binding=self._bindings.model_binding,
+                model_context=self._bindings.model_context,
                 plugins=plugin_context,
                 subagents=self._executable.subagents,
                 events=self._emitter,
@@ -929,7 +957,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
         self._iterated = True
         return self
 
-    async def __anext__(self) -> HarnessStreamItem[OutputT]:
+    async def __anext__(self) -> HarnessStreamEvent[OutputT]:
         if not self._entered or self._terminal_yielded or (self._closed and self._pending_terminal_result is None):
             raise StopAsyncIteration
         if self._next_active:
@@ -943,7 +971,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
         finally:
             self._next_active = False
 
-    async def _next_item(self) -> HarnessStreamItem[OutputT]:
+    async def _next_item(self) -> HarnessStreamEvent[OutputT]:
         assert self._response is not None
         try:
             self._start_logical_event_mux()
@@ -958,6 +986,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                     self._result = result
                     self._terminal_yielded = True
                     return HarnessRunResultEvent(
+                        thread_id=self.thread_id,
                         run_id=self.run_id,
                         sequence=self._next_public_sequence(),
                         occurred_at=datetime.now(UTC),
@@ -1168,6 +1197,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
     def _public_event(self, item: Any) -> HarnessEvent:
         if isinstance(item, HarnessExtensionEvent):
             item = HarnessEvent(
+                thread_id=self.thread_id,
                 run_id=self.run_id,
                 sequence=0,
                 occurred_at=datetime.now(UTC),
@@ -1190,18 +1220,20 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                 code="plugin_event_invalid",
             ) from exc
         if item.run_id != self.run_id:
-            if not self._emitter.is_registered_child(item.run_id):
+            if not self._emitter.is_registered_child(item.run_id, item.thread_id):
                 raise PluginError(
                     "Plugin emitted an event for an unregistered child run.",
                     code="plugin_event_run_mismatch",
                 )
             return HarnessEvent(
+                thread_id=item.thread_id,
                 run_id=item.run_id,
                 sequence=item.sequence,
                 occurred_at=item.occurred_at,
                 event=event,
             )
         return HarnessEvent(
+            thread_id=self.thread_id,
             run_id=self.run_id,
             sequence=self._next_public_sequence(),
             occurred_at=datetime.now(UTC),
@@ -1524,7 +1556,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                 deferred_tool_results=(
                     self._deferred_resume.results if attempt_index == 0 and self._deferred_resume is not None else None
                 ),
-                run_id=str(uuid4()),
+                run_id=f"model-attempt-{uuid4().hex}",
                 deps=self.context,
                 usage=self._usage,
                 usage_limits=self._usage_limits,
@@ -1555,6 +1587,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                                         exchange.context._managed_tool_ids,
                                     )
                                     candidate = HarnessRunResult(
+                                        thread_id=self.thread_id,
                                         run_id=self.run_id,
                                         status="suspended",
                                         output=None,
@@ -1567,6 +1600,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                                     )
                                 else:
                                     candidate = HarnessRunResult(
+                                        thread_id=self.thread_id,
                                         run_id=self.run_id,
                                         status="completed",
                                         output=result.output,
@@ -1588,6 +1622,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                         state = await exchange.context.export_state(messages) if exc.run_id is not None else None
                         yield self._record_inner_candidate(
                             HarnessRunResult(
+                                thread_id=self.thread_id,
                                 run_id=self.run_id,
                                 status="cancelled",
                                 output=None,
@@ -1624,6 +1659,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                             state = await exchange.context.export_state(messages) if messages else None
                             yield self._record_inner_candidate(
                                 HarnessRunResult(
+                                    thread_id=self.thread_id,
                                     run_id=self.run_id,
                                     status="cancelled",
                                     output=None,
@@ -1667,6 +1703,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
                 state = await exchange.context.export_state(self._latest_messages) if self._latest_messages else None
                 yield self._record_inner_candidate(
                     HarnessRunResult(
+                        thread_id=self.thread_id,
                         run_id=self.run_id,
                         status="cancelled",
                         output=None,
@@ -1694,6 +1731,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
         state = await self.context.export_state(self._latest_messages)
         return self._record_inner_candidate(
             HarnessRunResult(
+                thread_id=self.thread_id,
                 run_id=self.run_id,
                 status="failed",
                 output=None,
@@ -1722,6 +1760,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
         self,
         candidate: HarnessRunResult[OutputT],
     ) -> HarnessRunResult[OutputT]:
+        if candidate.thread_id != self.thread_id:
+            raise PluginError(
+                "Plugin result thread_id does not match the active Thread.",
+                code="plugin_result_thread_mismatch",
+            )
         if candidate.run_id != self.run_id:
             raise PluginError(
                 "Plugin result run_id does not match the active run.",
@@ -1734,6 +1777,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
             if new_message_index < 0 or messages[new_message_index:] != new_messages:
                 raise ValueError("new messages are not a suffix of all messages")
             validated = HarnessRunResult(
+                thread_id=candidate.thread_id,
                 run_id=candidate.run_id,
                 status=candidate.status,
                 output=candidate.output,
@@ -1760,6 +1804,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamItem[OutputT]]):
 
     def _adapt_event(self, event: AgentStreamEvent) -> HarnessEvent:
         envelope = HarnessEvent(
+            thread_id=self.thread_id,
             run_id=self.run_id,
             sequence=self._source_sequence,
             occurred_at=datetime.now(UTC),
@@ -1923,15 +1968,20 @@ def _validate_built_capability_tree(
     seen_ids: dict[str, str] = {}
     execution_boundary_count = 0
     message_integrity_count = 0
+    lifecycle_event_count = 0
+    model_context_coordinator_count = 0
     usage_count = 0
     reserved_ids = {
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
         MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
+        LIFECYCLE_EVENT_CAPABILITY_ID,
+        MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
         MODEL_COST_RUN_CAPABILITY_ID,
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
+        CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
@@ -1949,6 +1999,8 @@ def _validate_built_capability_tree(
         WEB_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
         TASK_STATE_RUN_CAPABILITY_ID,
+        DELEGATION_CAPABILITY_ID,
+        DELEGATION_RUN_CAPABILITY_ID,
     }
     for capability in leaves:
         if not isinstance(capability, AbstractCapability):
@@ -1994,6 +2046,22 @@ def _validate_built_capability_tree(
                     code="capability_scope_invalid",
                 )
             continue
+        if type(capability) is LifecycleEventCapability:
+            lifecycle_event_count += 1
+            if capability_id != LIFECYCLE_EVENT_CAPABILITY_ID:
+                raise DefinitionError(
+                    "The mandatory lifecycle event Capability has an invalid ID.",
+                    code="capability_scope_invalid",
+                )
+            continue
+        if type(capability) is ModelContextCoordinatorCapability:
+            model_context_coordinator_count += 1
+            if capability_id != MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID:
+                raise DefinitionError(
+                    "The mandatory model context coordinator Capability has an invalid ID.",
+                    code="capability_scope_invalid",
+                )
+            continue
         if type(capability) is UsageCapability:
             usage_count += 1
             if capability_id != USAGE_CAPABILITY_ID:
@@ -2007,6 +2075,7 @@ def _validate_built_capability_tree(
             type(capability)
             in (
                 ClientToolsCapability,
+                CodeActCapability,
                 DynamicEnvironmentCapability,
                 RuntimeContextCapability,
                 FileContextCapability,
@@ -2019,6 +2088,7 @@ def _validate_built_capability_tree(
                 DocumentsCapability,
                 WebCapability,
                 WorkingStateCapability,
+                DelegationCapability,
             )
             and capability_id in definition_reserved_ids
         )
@@ -2046,6 +2116,16 @@ def _validate_built_capability_tree(
             "The built Agent must contain exactly one mandatory message-integrity Filter Capability.",
             code="capability_scope_invalid",
         )
+    if lifecycle_event_count != 1:
+        raise DefinitionError(
+            "The built Agent must contain exactly one mandatory lifecycle event Capability.",
+            code="capability_scope_invalid",
+        )
+    if model_context_coordinator_count != 1:
+        raise DefinitionError(
+            "The built Agent must contain exactly one mandatory model context coordinator Capability.",
+            code="capability_scope_invalid",
+        )
     if usage_count != 1:
         raise DefinitionError(
             "The built Agent must contain exactly one mandatory Usage Capability.",
@@ -2068,6 +2148,7 @@ def _validate_capability_source(
         WebRunCapability,
         TaskStateRunCapability,
         ModelCostRunCapability,
+        DelegationRunCapability,
     )
     leaves: list[AbstractCapability[AgentContext]] = []
     for capability in capabilities:
@@ -2092,11 +2173,13 @@ def _validate_capability_source(
     reserved_ids = {
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
         MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
+        MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
         MODEL_COST_RUN_CAPABILITY_ID,
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
+        CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
@@ -2114,6 +2197,8 @@ def _validate_capability_source(
         WEB_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
         TASK_STATE_RUN_CAPABILITY_ID,
+        DELEGATION_CAPABILITY_ID,
+        DELEGATION_RUN_CAPABILITY_ID,
     }
     accepted: set[str] = set()
     for capability in leaves:
@@ -2128,6 +2213,7 @@ def _validate_capability_source(
             and type(capability)
             in (
                 ClientToolsCapability,
+                CodeActCapability,
                 DynamicEnvironmentCapability,
                 RuntimeContextCapability,
                 FileContextCapability,
@@ -2140,17 +2226,20 @@ def _validate_capability_source(
                 DocumentsCapability,
                 WebCapability,
                 WorkingStateCapability,
+                DelegationCapability,
             )
         ) or (source == "run" and type(capability) in run_types)
         reserved_type = isinstance(
             capability,
             ToolExecutionBoundaryCapability
             | MessageIntegrityFilterCapability
+            | ModelContextCoordinatorCapability
             | InvocationPolicyCapability
             | UsageCapability
             | ModelCostRunCapability
             | ClientToolsCapability
             | ClientToolsRunCapability
+            | CodeActCapability
             | DynamicEnvironmentCapability
             | RuntimeContextCapability
             | FileContextCapability
@@ -2167,7 +2256,9 @@ def _validate_capability_source(
             | WebCapability
             | WebRunCapability
             | WorkingStateCapability
-            | TaskStateRunCapability,
+            | TaskStateRunCapability
+            | DelegationCapability
+            | DelegationRunCapability,
         )
         if reserved_type or capability.id in reserved_ids:
             if not allowed:

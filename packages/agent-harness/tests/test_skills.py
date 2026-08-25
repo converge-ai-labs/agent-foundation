@@ -192,8 +192,6 @@ async def _run_single_view(
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),
@@ -307,8 +305,6 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),
@@ -422,8 +418,6 @@ async def test_selected_skill_markdown_uses_relaxed_full_read_budget(tmp_path: P
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),
@@ -497,8 +491,6 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),

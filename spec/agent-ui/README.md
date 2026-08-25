@@ -4,7 +4,7 @@
 
 This directory defines `agent-ui`, the local single-user Host distributed as `converge-agent-ui`. It embeds `agent-harness`, persists local Agent profiles and sessions, manages foreground runs and process-local background subagents, and exposes the same application behavior through a bundled browser application and a terminal UI.
 
-Agent UI is not a reduced Foundation Service. It owns local Host lifecycle and presentation, while the Harness remains the process-local Agent runtime and the shared [Agent Stream Protocol projection](../agent-stream-protocol/README.md) remains the presentation protocol boundary.
+Agent UI is not a reduced Foundation Service. It implements the shared [`Session`, `Thread`, `Turn`, and `Item` interaction model](../interaction-model.md) for a local Host and owns local lifecycle and presentation, while the Harness remains the process-local Agent runtime and the shared [Agent Stream Protocol projection](../agent-stream-protocol/README.md) remains the presentation protocol boundary.
 
 ## Document Catalog
 
@@ -41,6 +41,8 @@ Read `03`, then the [Agent Stream Protocol specification](../agent-stream-protoc
 ## Specification Conventions
 
 - Python-like schemas are conceptual unless explicitly identified as serialized local documents.
-- A session is a local Host record and is not a Foundation `Execution`, browser connection, Pydantic run, or model-provider session.
-- A turn is one foreground Host invocation against a selected session checkpoint; internal Harness model attempts remain process-local details.
+- A Session is a local Host interaction tree and is not a Foundation `Execution`, browser connection, Pydantic run, or model-provider session.
+- A Thread is one independently advancing history whose complete continuation is carried by `HarnessState.thread_id`.
+- A Turn is one accepted advancement of a Thread and can span zero or more Harness Runs; internal Harness `ModelAttempt` values remain process-local details.
+- An Item is a semantic user-visible unit projected for presentation, not a generic Harness stream envelope.
 - Background child jobs are process-local Host work. They are not Harness inline delegation state or Foundation child Executions.

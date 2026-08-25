@@ -487,8 +487,10 @@ python-check: lint typecheck ## Run Python workspace lint and type checks
 python-check-all: python-check test python-build docs-build ## Run the complete Python and documentation gate
 
 .PHONY: check
-check: ## Check formatting, lint, and types without rewriting repository sources
-	@printf '\n==> [1/11] Lint repository and check Python/Markdown formatting\n'
+check: ## Apply formatting, then check lint and types
+	@printf '\n==> Format repository sources with pre-commit hooks\n'
+	@$(MAKE) --no-print-directory format
+	@printf '\n==> [1/11] Lint repository and verify Python/Markdown formatting\n'
 	@$(MAKE) --no-print-directory lint
 	@printf '\n==> [2/11] Type-check Python workspace with Pyright\n'
 	@$(MAKE) --no-print-directory typecheck
@@ -510,7 +512,7 @@ check: ## Check formatting, lint, and types without rewriting repository sources
 	@$(MAKE) --no-print-directory sdk-typescript-check
 	@printf '\n==> [11/11] Check Foundation CLI with rustfmt and Clippy\n'
 	@$(MAKE) --no-print-directory foundation-cli-check
-	@printf '\n==> Check completed without rewriting repository sources\n'
+	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
 check-all: eip-check examples-check-all foundation-web-check-all harness-ui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate

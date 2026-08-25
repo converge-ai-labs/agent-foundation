@@ -2,22 +2,22 @@
 
 ## Design Position
 
-An Agent UI session is the local Host authority for one interactive Agent lineage. It pins one resolved Agent profile snapshot, stores user and Host turn records, selects the latest complete Harness checkpoint, retains bounded AG-UI display replay, and associates process-local background job records with the lineage. It supports local restart and presentation reconnect without turning UI data into Agent continuation state.
+An Agent UI Session is the local Host authority for one interaction tree. It pins one resolved Agent profile snapshot, owns one root Thread, groups child Threads, stores Host Turn records, selects the latest complete root checkpoint, retains bounded AG-UI display replay, and associates process-local background job records with the Session. It supports local restart and presentation reconnect without turning UI data into Agent continuation state.
 
-A session is neither a Pydantic provider session nor a Foundation `Execution`. Its persistence is designed for one local user, one machine-visible store, and one writer per lineage. Foundation lifecycle, worker failover, multi-tenant authorization, and durable distributed child execution are outside this contract.
+The shared [`Session`, `Thread`, `Turn`, and `Item` model](../interaction-model.md) owns those public concepts. A Session is neither a Pydantic provider session nor a Foundation `Execution`. Its persistence is designed for one local user, one machine-visible store, and one writer per advancing Thread. Foundation lifecycle, worker failover, multi-tenant authorization, and durable distributed child execution are outside this contract.
 
 ## Boundaries
 
-| Concern                                  | Owner                                    | Session relationship                                                                              |
-| ---------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Conversation and Capability continuation | Harness `HarnessState`                   | Stores complete selected values without interpreting private namespaces                           |
-| Profile composition                      | Resolved Agent UI snapshot               | Pins exact snapshot identity and digest                                                           |
-| Local turn acceptance and checkpoint     | Agent UI session store                   | Serializes one lineage and atomically selects complete state                                      |
-| Display replay                           | Agent Stream Protocol plus Agent UI Host | Retains bounded projection envelopes; never reconstructs `HarnessState`                           |
-| Active model/tool work                   | Harness run                              | Process-local and not made durable by a `running` turn record                                     |
-| Background child execution               | Agent UI job monitor                     | Persists bounded metadata and terminal output; live task remains process-local                    |
-| Model-facing session browsing            | Read-only Session Capability             | Uses a fresh current-session attachment and returns bounded safe projections                      |
-| Filesystem atomicity and locking         | Agent UI store implementation            | Provides cross-process exclusion, atomic replacement, durability policy, and corruption detection |
+| Concern                              | Owner                                    | Session relationship                                                                              |
+| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Thread and Capability continuation   | Harness `HarnessState`                   | Stores complete selected values without interpreting private namespaces                           |
+| Profile composition                  | Resolved Agent UI snapshot               | Pins exact snapshot identity and digest                                                           |
+| Local Turn acceptance and checkpoint | Agent UI session store                   | Serializes one Thread and atomically selects complete state                                       |
+| Display replay                       | Agent Stream Protocol plus Agent UI Host | Retains bounded projection envelopes; never reconstructs `HarnessState`                           |
+| Active model/tool work               | Harness run                              | Process-local and not made durable by a `running` turn record                                     |
+| Background child execution           | Agent UI job monitor                     | Persists bounded metadata and terminal output; live task remains process-local                    |
+| Model-facing session browsing        | Read-only Session Capability             | Uses a fresh current-session attachment and returns bounded safe projections                      |
+| Filesystem atomicity and locking     | Agent UI store implementation            | Provides cross-process exclusion, atomic replacement, durability policy, and corruption detection |
 
 ## Session Record
 
@@ -27,7 +27,7 @@ The following Python-like schema is a conceptual serialized local contract:
 class LocalSession(BaseModel):
     schema_version: str
     session_id: str
-    lineage_id: str
+    root_thread_id: str
     revision: int
     created_at: datetime
     updated_at: datetime
@@ -42,7 +42,8 @@ class LocalSession(BaseModel):
 
 class CheckpointRecord(BaseModel):
     checkpoint_id: str
-    turn_id: str
+    thread_id: str
+    turn_id: str | None
     harness_state: HarnessState
     state_digest: str
     committed_at: datetime
@@ -50,16 +51,24 @@ class CheckpointRecord(BaseModel):
 
 class TurnRecord(BaseModel):
     turn_id: str
+    thread_id: str
     input: StoredRunInput
     state: Literal[
         "accepted",
         "running",
+        "waiting",
         "completed",
         "failed",
         "cancelled",
         "interrupted",
     ]
+    waiting_reason: Literal[
+        "deferred_tool",
+        "approval",
+        "external_input",
+    ] | None
     base_checkpoint_id: str | None
+    run_ids: tuple[str, ...]
     result_projection: JsonValue | None
     failure: SafeFailure | None
     checkpoint_id: str | None
@@ -67,7 +76,7 @@ class TurnRecord(BaseModel):
     finished_at: datetime | None
 ```
 
-`session_id`, `lineage_id`, turn IDs, checkpoint IDs, and job references are compact local identifiers and grant no authority. Stored input and result projections are bounded and pass the Host's local content policy. Secret credentials, live clients, current bindings, native plugin objects, task objects, locks, and open streams are never serialized.
+`session_id`, `root_thread_id`, Turn IDs, checkpoint IDs, Run IDs, and job references are compact identifiers and grant no authority. When a root checkpoint is selected, `root_thread_id` equals its `HarnessState.thread_id`; every checkpoint must satisfy `checkpoint.thread_id == checkpoint.harness_state.thread_id`. Stored input and result projections are bounded and pass the Host's local content policy. Secret credentials, live clients, current bindings, native plugin objects, task objects, locks, and open streams are never serialized.
 
 Each revision selects at most one checkpoint. A completed turn references the complete checkpoint produced by its terminal Harness result. A failed Harness result may select a complete returned state only when the Harness contract supplies one and Host policy explicitly chooses it; otherwise the previous checkpoint remains selected. Cancelled and interrupted records never synthesize a newer state from partial messages, AG-UI events, or provider history.
 
@@ -80,7 +89,7 @@ The store owns a versioned root namespace, immutable or content-addressed profil
 - every checkpoint and replay segment carries a digest or equivalent corruption check;
 - replacing the selected checkpoint and completing its turn is one logical atomic commit;
 - old complete checkpoints remain available until retention safely removes every reference;
-- a single-writer lock protects one session lineage across local processes;
+- a single-writer lock protects one advancing Thread across local processes;
 - readers either observe the prior complete revision or the next complete revision, never a half-written mixture.
 
 The implementation flushes and synchronizes according to its declared local durability profile. Atomic rename alone does not claim resilience against storage-device failure. A failed publication leaves recoverable staged data unselected and cleanup-safe.
@@ -94,6 +103,10 @@ stateDiagram-v2
     [*] --> accepted
     accepted --> running
     accepted --> cancelled
+    running --> waiting
+    waiting --> running
+    waiting --> cancelled
+    waiting --> interrupted
     running --> completed
     running --> failed
     running --> cancelled
@@ -106,7 +119,7 @@ stateDiagram-v2
     interrupted --> [*]
 ```
 
-One application-service command creates the accepted record only after validating session identity, expected revision, profile availability, input limits, and absence of another advancing turn. It then starts a Harness run from the selected checkpoint with fresh bindings. `running` records an observation that the process entered the run; it is not durable ownership of work and does not make that work restartable.
+One application-service command creates the accepted record only after validating Session identity, target `thread_id`, expected revision, profile availability, input limits, and absence of another advancing Turn for that Thread. It can then start a Harness Run from the selected checkpoint with fresh bindings. `running` records an observation that the process entered a Run; it is not durable ownership of work and does not make that work restartable. `waiting` records that the same Turn awaits deferred tool results, approval, or external input. `waiting_reason` is present exactly in that state. Resumption appends a fresh `run_id` to the same Turn; `run_ids` are non-authoritative correlation and Run identity never replaces Turn identity.
 
 At terminal Harness delivery, Agent UI validates the result and complete state, writes any checkpoint and replay material, and atomically completes the turn plus advances the session revision. If commit fails after model or tool work, the turn outcome remains unknown from the selected session revision. Recovery preserves the last committed checkpoint and marks the uncommitted turn interrupted or records a reconciliation diagnostic; it never reruns automatically and never infers rollback of external effects.
 
@@ -114,9 +127,9 @@ A user can explicitly submit a later turn from the last complete checkpoint afte
 
 ## Concurrency and Forking
 
-A session lineage has at most one foreground turn in `accepted` or `running`. The application service holds an in-process guard and the store verifies the expected revision under its cross-process lock before starting. Two stale callers cannot both advance one checkpoint. Another local process encountering an owned live lock reports a conflict rather than stealing it.
+A Thread has at most one foreground Turn in `accepted`, `running`, or `waiting`. The application service holds an in-process guard and the store verifies the expected revision under its cross-process lock before starting. Two stale callers cannot both advance one checkpoint. Another local process encountering an owned live lock reports a conflict rather than stealing it.
 
-Independent lineages can execute concurrently. A fork creates a new session and lineage from one complete source checkpoint:
+Independent Threads can execute concurrently. A Session fork creates a new Session and root Thread from the source's empty baseline or one complete source checkpoint. It creates a fresh `HarnessState` for an empty source and applies `HarnessState.fork()` when a checkpoint exists:
 
 ```python
 class SessionForkRef(BaseModel):
@@ -126,7 +139,7 @@ class SessionForkRef(BaseModel):
     source_profile_digest: str
 ```
 
-The fork can retain the source profile snapshot or select another already resolved snapshot. The source remains unchanged. Selecting another profile records both digests and requires explicit compatibility validation or a Host-approved history-only seed; private Capability state is never passed to an incompatible definition merely because message history is readable. A fork gets independent future checkpoints, replay, jobs, and active-run guards.
+The fork can retain the source profile snapshot or select another already resolved snapshot. The source remains unchanged. Selecting another profile records both digests and requires explicit compatibility validation or a Host-approved history-only seed; private Capability state is never passed to an incompatible definition merely because message history is readable. The new Session records the source reference, receives a new `session_id` and `root_thread_id`, and gets independent future checkpoints, replay, jobs, and active-Run guards. The source remains selected by its original Session and Thread.
 
 ## Presentation Replay
 
@@ -145,7 +158,7 @@ Retention may compact token deltas into complete semantic messages and remove ol
 
 ## Read-Only Session Capability
 
-Agent UI offers an optional definition-selected Session Capability for model-assisted browsing of the current session. It is read-only and receives one fresh `SessionReadRunCapability` bound to the exact current session, lineage, expected revision, content policy, and repository collaborator.
+Agent UI offers an optional definition-selected Session Capability for model-assisted browsing of the current session. It is read-only and receives one fresh `SessionReadRunCapability` bound to the exact current Session, root Thread, expected revision, content policy, and repository collaborator.
 
 Its first-party tools provide bounded variants of:
 
@@ -203,7 +216,7 @@ Selecting only complete Harness state avoids inventing a Pydantic partial tool-b
 
 ### Single writer vs. concurrent turns
 
-Serializing one lineage gives deterministic checkpoint selection and avoids state merging. Parallel exploration uses explicit forks or independent sessions rather than racing writes to one history.
+Serializing one Thread gives deterministic checkpoint selection and avoids state merging. Parallel exploration uses explicit forks or independent sessions rather than racing writes to one history.
 
 ### Read-only model browsing
 
@@ -213,10 +226,10 @@ Read-only current-session tools provide useful recall without letting model cont
 
 01. One session pins one resolved profile snapshot and selects zero or one complete checkpoint at a revision; only a session with a committed checkpoint can resume Harness state.
 02. `HarnessState` is the only stored Agent continuation authority; AG-UI replay, transcripts, indexes, and turn projections are not substitutes.
-03. One lineage has at most one advancing foreground turn, enforced both in process and under the store lock.
-04. A commit publishes turn completion and checkpoint selection atomically or leaves the prior revision selected.
+03. One Thread has at most one advancing foreground Turn, enforced both in process and under the store lock.
+04. A commit publishes Turn completion and checkpoint selection atomically or leaves the prior revision selected.
 05. Process loss preserves unknown external effects and never automatically reruns interrupted foreground or background work.
-06. A fork creates an independent lineage from an exact complete source revision and never mutates its source.
+06. A Session fork creates a new Session and root Thread from an exact complete source revision and never mutates its source.
 07. The model-facing Session Capability can list, search, and read only safe current-session projections and cannot mutate Host state.
 08. Local identifiers and persisted state grant no fresh run, child, repository, model, Environment, credential, or plugin authority.
 09. Retention never removes a selected checkpoint or leaves a retained reference dangling.

@@ -170,6 +170,10 @@ async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() ->
         assert calls
         assert isinstance(items[-1], HarnessRunResultEvent)
         assert all(isinstance(item, HarnessEvent) for item in items[:-1])
+        assert all(item.thread_id == stream.thread_id for item in items)
+        assert all(item.run_id == stream.run_id for item in items)
+        assert items[-1].result.thread_id == stream.thread_id
+        assert items[-1].result.run_id == stream.run_id
         assert [item.sequence for item in items] == list(range(len(items)))
         assert stream.result is items[-1].result
 
@@ -222,6 +226,7 @@ async def test_run_consumes_the_canonical_stream_and_state_resumes_a_rebuilt_age
     first = await first_executable.run("first", bindings=RunBindings.local())
     assert first.output == "turn-1"
     assert first.state is not None
+    first_thread_id = first.state.thread_id
 
     encoded_state = first.state.model_dump_json()
     restored_state = HarnessState.model_validate_json(encoded_state)
@@ -239,6 +244,12 @@ async def test_run_consumes_the_canonical_stream_and_state_resumes_a_rebuilt_age
     assert len(second.new_messages()) == 2
     assert second.state is not None
     assert second.state.message_history == second.all_messages()
+    assert first.thread_id == first_thread_id
+    assert second.thread_id == first_thread_id
+    assert second.state.thread_id == first_thread_id
+    assert first.run_id.startswith("run-")
+    assert second.run_id.startswith("run-")
+    assert second.run_id != first.run_id
     assert first_executable.definition is not rebuilt_executable.definition
 
 
@@ -617,6 +628,24 @@ async def test_every_run_gets_a_fresh_context() -> None:
     assert contexts[0].state is not contexts[1].state
     assert contexts[0].plugins is not contexts[1].plugins
     assert contexts[0].run_id != contexts[1].run_id
+    assert contexts[0].thread_id != contexts[1].thread_id
+
+
+async def test_context_restores_state_owned_thread_identity() -> None:
+    executable = _build(_turn_model([]))
+    previous = HarnessState()
+
+    async with executable.stream(
+        "continue",
+        bindings=RunBindings.local(),
+        previous_state=previous,
+    ) as stream:
+        assert stream.context.thread_id == previous.thread_id
+        terminal = [item async for item in stream][-1]
+
+    assert isinstance(terminal, HarnessRunResultEvent)
+    assert terminal.result.state is not None
+    assert terminal.result.state.thread_id == previous.thread_id
 
 
 async def test_input_factory_runs_once_after_noop_environment_entry() -> None:
@@ -699,8 +728,11 @@ async def test_started_stream_closes_the_model_when_the_caller_stops_early() -> 
     executable = _build(FunctionModel(stream_function=open_stream))
 
     async with executable.stream("start", bindings=RunBindings.local()) as stream:
-        item = await stream.__anext__()
-        assert isinstance(item, HarnessEvent)
+        while True:
+            item = await stream.__anext__()
+            assert isinstance(item, HarnessEvent)
+            if not isinstance(item.event, HarnessExtensionEvent):
+                break
 
     await asyncio.wait_for(closed.wait(), timeout=2)
 
@@ -717,6 +749,11 @@ async def test_concurrent_next_is_rejected_without_closing_the_active_stream() -
     executable = _build(FunctionModel(stream_function=blocking_stream))
 
     async with executable.stream("hello", bindings=RunBindings.local()) as stream:
+        lifecycle = await stream.__anext__()
+        assert isinstance(lifecycle, HarnessEvent)
+        assert isinstance(lifecycle.event, HarnessExtensionEvent)
+        assert lifecycle.event.payload["type"] == "model_request_started"
+
         active_next = asyncio.create_task(stream.__anext__())
         await started.wait()
         with pytest.raises(RunError) as exc_info:
@@ -763,7 +800,7 @@ async def test_recognized_pydantic_run_failure_becomes_a_failed_result() -> None
 
 
 async def test_event_consumer_stop_wakes_a_blocked_topology_event_producer() -> None:
-    emitter = _RunEventEmitter("run-1", capacity=1)
+    emitter = _RunEventEmitter("thread-1", "run-1", capacity=1)
     event = HarnessExtensionEvent(kind="context", payload={"type": "environment_topology_changed"})
     emitter.start_consuming()
     await emitter.emit(event)

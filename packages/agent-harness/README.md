@@ -23,8 +23,6 @@ capabilities = (
             shell_tools=True,
             process_tools=True,
             port_tools=False,
-            max_topology_bindings=16,
-            max_topology_bytes=64 * 1024,
             max_reference_entries=1_024,
         )
     ),
@@ -41,7 +39,9 @@ Embedding code supplies current Environment and provider collaborators through `
 
 Every built Agent includes one outer `ToolExecutionBoundaryCapability` and one innermost `MessageIntegrityFilterCapability`; application definitions do not install either boundary manually. First-party Toolsets own semantic progressive disclosure and can use the shared typed helper to save a fuller redacted result in a run-private model-readable file. The execution boundary preserves ordinary Pydantic dispatch and remains the sole mandatory final validation, redaction, and larger hard-size fallback for locally executable function-tool text/JSON results. Complete trusted `HarnessToolMetadata` additionally selects managed authorization, credentials, grants, retry, and invocation events.
 
-Request/history filters live in `converge_agent_harness.filters`. Message integrity is mandatory; `ContentFilterCapability` and `ColdStartFilterCapability` are optional definition-selected filters for native multimodal request compatibility and cold-cache reduction of already-consumed tool-result strings. Model-specific one-shot history repair remains in `SelfHealingModel`, and interrupted-stream semantic retry remains in Harness recovery rather than either filter.
+Request/history filters live in `converge_agent_harness.filters`. Message integrity is mandatory; `ContentFilterCapability` and `ColdStartFilterCapability` are optional definition-selected filters for native multimodal request compatibility and cold-cache reduction of already-consumed tool-result strings. Model-specific one-shot history repair remains in `SelfHealingModel`, and interrupted-stream `ModelAttempt` recovery remains in the Harness rather than either filter.
+
+Every `HarnessState` carries the stable `thread_id` of one independently advancing history. Resume preserves that ID, `HarnessState.fork()` creates a new one, and each process-local `HarnessRunStream`, event, and result pairs it with a fresh `run_id`. The stream's public union is `HarnessStreamEvent`.
 
 ## Runnable examples and guides
 

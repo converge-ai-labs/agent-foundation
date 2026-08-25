@@ -7,11 +7,16 @@ from typing import Any
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset
 
 from converge_agent_harness.context import AgentContext
 from converge_agent_harness.errors import DefinitionError
+from converge_agent_harness.model_context import (
+    AbstractModelContextCapability,
+    ModelContextNext,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
+)
 from converge_agent_harness.tools.metadata import ToolResourceResolver
 from converge_agent_harness.toolsets.files import FileToolset
 from converge_agent_harness.toolsets.shell import ShellProcessProjector, ShellToolset
@@ -27,7 +32,7 @@ DYNAMIC_ENVIRONMENT_CAPABILITY_ID = "converge.dynamic-environment"
 
 
 @dataclass(init=False)
-class DynamicEnvironmentCapability(AbstractCapability[AgentContext]):
+class DynamicEnvironmentCapability(AbstractModelContextCapability):
     """Own dynamic Environment context and run-scoped Toolset composition."""
 
     id = DYNAMIC_ENVIRONMENT_CAPABILITY_ID
@@ -127,12 +132,13 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Any) -> Any:
         return await self._dynamic_context.wrap_run(ctx, handler=handler)
 
-    async def before_model_request(
+    async def wrap_model_context(
         self,
         ctx: RunContext[AgentContext],
-        request_context: ModelRequestContext,
-    ) -> ModelRequestContext:
-        return await self._dynamic_context.before_model_request(ctx, request_context)
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection:
+        return await self._dynamic_context.wrap_model_context(ctx, request, handler)
 
     # Package-private seams used by focused authorization tests.
     def _resource_resolver(self, tool_id: str) -> ToolResourceResolver:

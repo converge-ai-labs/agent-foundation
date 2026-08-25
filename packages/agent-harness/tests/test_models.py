@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from converge_agent_harness import (
     HarnessBuilder,
+    HarnessState,
     ModelResolutionError,
     ModelRunBinding,
     RunBindings,
@@ -35,14 +36,14 @@ pytestmark = pytest.mark.anyio
 class RecordingModelBinding(ModelRunBinding):
     def __init__(self, model: Model) -> None:
         self.model = model
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, str]] = []
 
     async def resolve_model(
         self,
         context: ModelResolutionContext,
         model_id: str,
     ) -> Model:
-        self.calls.append((context.deps.run_id, model_id))
+        self.calls.append((context.deps.run_id, context.deps.thread_id, model_id))
         return self.model
 
 
@@ -63,7 +64,51 @@ async def test_logical_model_is_resolved_from_the_fresh_run_binding() -> None:
     )
 
     assert result.output_or_raise() == "resolved"
-    assert binding.calls == [(result.run_id, "logical:primary")]
+    assert result.state is not None
+    assert binding.calls == [
+        (result.run_id, result.state.thread_id, "logical:primary"),
+    ]
+
+
+async def test_model_binding_observes_state_owned_identity_across_continuation_and_fork() -> None:
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "resolved"
+
+    binding = RecordingModelBinding(FunctionModel(stream_function=stream))
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:primary"),
+        output_type=str,
+    )
+    previous = HarnessState()
+
+    first = await executable.run(
+        "first",
+        bindings=RunBindings.local(model_binding=binding),
+        previous_state=previous,
+    )
+    second = await executable.run(
+        "second",
+        bindings=RunBindings.local(model_binding=binding),
+        previous_state=previous,
+    )
+    forked = await executable.run(
+        "forked",
+        bindings=RunBindings.local(model_binding=binding),
+        previous_state=previous.fork(),
+    )
+
+    assert first.state is not None
+    assert second.state is not None
+    assert forked.state is not None
+    assert first.state.thread_id == previous.thread_id
+    assert second.state.thread_id == previous.thread_id
+    assert forked.state.thread_id != previous.thread_id
+    assert [call[1] for call in binding.calls] == [
+        previous.thread_id,
+        previous.thread_id,
+        forked.state.thread_id,
+    ]
 
 
 async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None:

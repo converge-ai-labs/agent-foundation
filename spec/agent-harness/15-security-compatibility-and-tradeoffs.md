@@ -33,6 +33,7 @@ flowchart LR
 | Model to native tool                  | Pydantic dispatch under trusted process composition                                         |
 | Model to managed tool                 | Metadata-aware authorization, credentials, result safety, and provider enforcement          |
 | Harness to Environment                | Identity-bound `BoundEnvironment`; provider repeats native checks                           |
+| Restricted CodeAct to Host            | No ambient authority; only typed eligible callbacks through the current final `ToolManager` |
 | Host to external client-tool executor | Durable pending fact, authenticated action/result, exact continuation correlation           |
 | Harness to state store                | Harness exports detached state; Host owns persistence, encryption, retention, and selection |
 | Harness to telemetry                  | Sanitized observation only; never lifecycle or billing authority                            |
@@ -86,6 +87,10 @@ Interrupted-history normalization states that no result was recorded and that th
 
 Client-side external tools have a separate boundary: the Harness produces native deferred values; the Host commits and authenticates pending/result facts; the external client authorizes and performs the action. Model arguments remain untrusted even when schema-valid.
 
+Optional CodeAct executes model-authored source in Monty's restricted Python runtime rather than the trusted Harness interpreter. The sandbox receives no filesystem mount, network/process/environment/credential/clock callback, or arbitrary Python object. A typed owner policy selects eligible tools, and every nested call returns through the active final Pydantic `ToolManager`, so ordinary validation, Capability hooks, managed policy, owning Toolset, output safety, and usage accounting remain authoritative. Eligibility alone is not approval, idempotency, or a replay guarantee.
+
+CodeAct does not sandbox trusted tool implementations after dispatch. An eligible native tool still runs with its normal in-process authority, and an Environment tool still relies on the current Environment/provider policy. Resource limits bound the interpreter and bridge, while the deployment boundary remains responsible for a hostile or non-cooperative trusted callback. Timeout, cancellation, and failure do not roll back completed or possibly accepted effects; unresolved deferred work terminates the runner without retaining an interpreter frame. The complete contract belongs to [Restricted CodeAct Orchestration](18-codeact.md).
+
 ## Environment Enforcement
 
 Routing selects a binding; it does not grant access. The Host alone retains the process-local topology controller, and model content cannot invoke it. Every added or refreshed entry is a fresh trusted provider binding prepared before atomic publication. Environment providers own logical resource authentication, path normalization, mount policy, symlink behavior, resource ceilings, handle visibility, process ownership, port policy, generation fencing, output retention, and native command isolation.
@@ -124,7 +129,7 @@ State restores no Identity, credential, policy decision, desired topology, Envir
 
 A concrete Model bypasses logical-ID resolution. A string model reaches the thin `ResolveModelId`; a fresh `ModelRunBinding` returns a native Model or raises. When no binding exists, the Harness deliberately returns `None` and Pydantic native inference continues. A hosted profile that requires fail-closed aliases must enforce presence of its binding during worker setup.
 
-Provider model-session and prompt-cache affinity are correlation and performance inputs, not authority. The model integration isolates every independently advancing root, child, or fork history and preserves the same affinity only when fresh bindings continue the same stable `AgentInstanceRef`. It does not use transient run IDs as the continuation key or reuse a broader product-conversation key across parent and child histories. Provider affinity remains absent from `HarnessState`; a non-derivable opaque selector is protected and retained by the Host like other provider-specific continuation data.
+Provider model-session and prompt-cache affinity are correlation and performance inputs, not authority. The Harness isolates every independently advancing root, child, or fork history with `HarnessState.thread_id`, restores it as a read-only `AgentContext` value, and accepts no run-binding or metadata override. The model integration derives affinity from that value rather than transient run IDs, `AgentInstanceRef`, or a broader product-conversation key shared across parent and child histories. Rendered provider affinity remains absent from `HarnessState`; an additional non-derivable opaque selector is protected and retained by the Host like other provider-specific continuation data. The State-owned ID itself is not a credential, checkpoint authority, or cryptographic integrity mechanism; trusted plugins and Host State transformations remain inside the existing trust boundary.
 
 Recovery layers remain bounded and separate:
 

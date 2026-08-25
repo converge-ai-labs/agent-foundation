@@ -4,7 +4,7 @@
 
 `converge-agent-stream-protocol` is the shared protocol adapter between Agent Foundation execution observations and Agent User Interaction Protocol clients. It accepts validated public Harness events, Host-approved snapshots, and terminal outcomes; emits a strictly ordered standard AG-UI stream; validates supported client input; and provides replay-safe envelope utilities. It lets browser, terminal, and hosted presentation adapters share one interpretation of an Agent run.
 
-The adapter is not an execution wrapper. It never calls a model, constructs an Agent, selects `HarnessState`, authorizes a tool, commits a session or Foundation `Execution`, or owns a transport. A Host supplies authoritative run and lineage correlation and remains responsible for persistence, authorization, backpressure policy, and reconnection.
+The adapter is not an execution wrapper. It never calls a model, constructs an Agent, selects `HarnessState`, authorizes a tool, commits a session or Foundation `Execution`, or owns a transport. A Host supplies authoritative Session, Thread, Turn, and Run correlation and remains responsible for persistence, authorization, backpressure policy, and reconnection.
 
 ## Boundaries
 
@@ -59,12 +59,20 @@ The following Python-like types are conceptual process-local contracts, not anot
 
 ```python
 @dataclass(frozen=True, slots=True)
+class HostScopeRef:
+    kind: Literal["session", "execution"]
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectionContext:
     stream_id: str
+    host_scope: HostScopeRef | None
+    thread_id: str
+    turn_id: str | None
     run_id: str
     parent_run_id: str | None
     agent_instance_ref: str
-    session_or_execution_ref: str | None
     protocol_profile: str
 
 
@@ -76,7 +84,7 @@ class ProjectedEvent:
     source_observation_id: str | None
 ```
 
-The Host provides correlation from trusted records. `agent_instance_ref` and session or Execution references are safe opaque correlation values selected for the client; they are never bearer credentials. `sequence` is strictly increasing within one projection stream. `event_id` is stable for one retained projection record and supports subscriber deduplication; it does not become a Foundation durable event ID unless a Foundation adapter explicitly maps and labels the two identities.
+The Host provides correlation from trusted records. `host_scope`, `thread_id`, optional `turn_id`, `run_id`, and `agent_instance_ref` are safe correlation values selected for the client; they are never bearer credentials. The shared [interaction model](../interaction-model.md) owns Session, Thread, Turn, and Item meaning. A projection requires one `thread_id`; `turn_id` is optional for embedded or non-interactive work. `host_scope` distinguishes a local Session from a durable Foundation Execution instead of combining both into an ambiguous string. `sequence` is strictly increasing within one projection stream. `event_id` is stable for one retained projection record and supports subscriber deduplication; it does not become a Foundation durable event ID unless a Foundation adapter explicitly maps and labels the two identities.
 
 A replay-capable Host stores the validated `ProjectedEvent` envelope or enough public semantic input to reproduce it under the same profile. It does not persist a renderer's DOM, terminal widget graph, unvalidated provider frame, private exception, or arbitrary Python object.
 
@@ -122,7 +130,7 @@ A source gap, duplicate conflicting identity, invalid lifecycle transition, or i
 AG-UI client input is presentation input, not continuation authority. The adapter validates the selected upstream request schema, bounded messages and attachments, advertised client tools, shared-state values, and protocol version. It returns a normalized value to the Host. The Host then:
 
 - authenticates the caller where required;
-- selects the profile, session or Execution, checkpoint, and expected revision;
+- selects the profile, Host scope, Thread, optional Turn, checkpoint, and expected revision;
 - decides which user-authored content enters `RunInput`;
 - authorizes client-side tools through the Harness or Foundation owning contract;
 - supplies fresh Identity, model, Environment, credential, and run Capabilities.
@@ -145,7 +153,7 @@ sequenceDiagram
     Run-->>Renderer: new ordered projected events
 ```
 
-A Host cursor is opaque and scoped to its session or Execution, projection profile, filter, and retention generation. Duplicate delivery is allowed; clients deduplicate by event ID. A cursor older than retained data returns an explicit gap and a fresh Host-approved message/state snapshot when available. It never silently starts at the newest event.
+A Host cursor is opaque and scoped to its typed Host scope, Thread, optional Turn, projection profile, filter, and retention generation. Duplicate delivery is allowed; clients deduplicate by event ID. A cursor older than retained data returns an explicit gap and a fresh Host-approved message/state snapshot when available. It never silently starts at the newest event.
 
 Presentation replay reconstructs visible messages, activities, and state. It does not rerun model or tool work, recreate a live run, prove that omitted deltas never occurred, or select a continuation checkpoint. A Host can discard token-level deltas after retaining complete semantic messages and still report the gap honestly.
 
@@ -167,7 +175,7 @@ Transport disconnect is an observation failure and does not cancel execution. A 
 
 ## Foundation Service Use
 
-Foundation may use this package to project a live Harness stream and selected retained semantic data. Its durable lifecycle log, Execution snapshot, Attempt fence, checkpoint, and replay cursor remain owned by Foundation. An AG-UI transport labels which envelopes are backed by Foundation durable events, retained semantic projections, or live-only observations. It never exposes an Agent UI local session type or claims that all token-level AG-UI events are durable.
+Foundation may use this package to project a live Harness stream and selected retained semantic data. Its durable lifecycle log, Execution snapshot, `ExecutionAttempt` fence, checkpoint, and replay cursor remain owned by Foundation. An AG-UI transport labels which envelopes are backed by Foundation durable events, retained semantic projections, or live-only observations. It never exposes an Agent UI local session type or claims that all token-level AG-UI events are durable.
 
 ## Compatibility
 

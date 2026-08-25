@@ -28,8 +28,9 @@ Read `00`, then [Foundation Service](../foundation-service/README.md) for hosted
 
 ## Authority Rules
 
+- The shared [interaction model](../interaction-model.md) owns Session, Thread, Turn, and Item meaning.
 - Pydantic AI and the Harness own run execution, messages, tool semantics, final results, and `HarnessState`.
-- A Host owns input acceptance, session or Execution identity, authorization, checkpoint selection, retention, and transport lifecycle.
+- A Host owns input acceptance, typed Host scope, Session, Thread, Turn, authorization, checkpoint selection, retention, and transport lifecycle.
 - Agent Stream Protocol owns deterministic projection, protocol validation, ordering checks, replay-safe display envelopes, and namespaced extension policy.
 - A renderer owns ephemeral view state only.
 - AG-UI event delivery is observation. It never commits execution, proves external side effects, grants tool authority, or becomes continuation state.

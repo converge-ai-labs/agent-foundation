@@ -2,7 +2,7 @@
 
 from converge_host_example.application import HostDemoResult, run_host_demo
 from converge_host_example.store import (
-    AttemptLease,
+    ExecutionAttemptLease,
     HostCheckpointRecord,
     HostExecutionRecord,
     HostStoreError,
@@ -10,7 +10,7 @@ from converge_host_example.store import (
 )
 
 __all__ = [
-    "AttemptLease",
+    "ExecutionAttemptLease",
     "HostCheckpointRecord",
     "HostDemoResult",
     "HostExecutionRecord",

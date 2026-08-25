@@ -73,7 +73,7 @@ Recovery ownership is intentionally split:
 - Pydantic owns provider-suspended continuation and output validation retries;
 - provider/client configuration owns transport retry;
 - `SelfHealingModel` owns one exact replay after an effective history repair;
-- the Harness coordinates bounded semantic attempts after recoverable model interruption.
+- the Harness coordinates bounded `ModelAttempt` recovery after recoverable model interruption.
 
 ## Plugin and Capability Mapping
 
@@ -105,7 +105,7 @@ flowchart LR
 
 `AgentContext` carries the current Harness run ID, trusted Agent instance, mutable `AgentContextState`, entered `BoundEnvironment`, optional `ModelRunBinding`, immutable run-bound plugin index, immutable child collection, and non-authoritative metadata.
 
-The same context is supplied to every Pydantic attempt inside one logical Harness run. `RunBindings.capabilities`, one `RunUsage`, and optional `UsageLimits` are passed to every attempt under native Pydantic rules.
+The same context is supplied to every `ModelAttempt` inside one logical Harness run. `RunBindings.capabilities`, one `RunUsage`, and optional `UsageLimits` are passed to every attempt under native Pydantic rules.
 
 ## Run Flow
 
@@ -116,13 +116,13 @@ The same context is supplied to every Pydantic attempt inside one logical Harnes
 05. Create `AgentContext` from fresh bindings and copied Capability state.
 06. Bind run plugins and freeze `BoundPluginContext`.
 07. Start the plugin chain lazily on first iteration.
-08. Run one Pydantic attempt with a unique inner run ID.
+08. Run one `ModelAttempt` with a unique model-attempt ID.
 09. On a recoverable model interruption, normalize public history and repeat within the total attempt budget while the Environment controller remains active.
 10. On output, deferred work, cancellation, failure, or hard stop, build one terminal candidate.
 11. Unwind trusted result middleware.
 12. Establish the terminal fence and close all run resources before terminal delivery.
 
-Provider-suspended continuation and deferred/HITL values are native Pydantic boundaries and never trigger the Harness semantic attempt loop.
+Provider-suspended continuation and deferred/HITL values are native Pydantic boundaries and never trigger the Harness `ModelAttempt` recovery loop.
 
 ## Boundary with the Host
 

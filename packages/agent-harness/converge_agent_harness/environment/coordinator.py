@@ -10,9 +10,9 @@ from collections.abc import AsyncGenerator, Coroutine, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from hashlib import sha256
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
 from converge_agent_harness._json import dump_json_bytes
 from converge_agent_harness.identity import AgentInstanceContext
@@ -82,7 +82,36 @@ from .retention import (
 from .topology import DynamicTopologyController, DynamicTopologyObserver
 from .virtual_files import VirtualFileOperator, _PreparedFile
 
+if TYPE_CHECKING:
+    from converge_agent_harness.model_context import ModelContextProjection, ModelContextProjectionRequest
+
 _MAX_ENVIRONMENT_EXTENSION_ID_LENGTH = 200
+_MAX_MODEL_CONTEXT_BINDINGS = 64
+_MAX_MODEL_CONTEXT_BYTES = 64 * 1024
+
+
+def _bounded_topology_json(payload: dict[str, JsonValue], max_bytes: int) -> str:
+    bindings = cast(list[JsonValue], payload["bindings"])
+    while True:
+        encoded = dump_json_bytes(payload, sort_keys=True)
+        if len(encoded) <= max_bytes:
+            return encoded.decode("utf-8")
+        if bindings:
+            bindings.pop()
+            payload["truncated"] = True
+            continue
+        minimal: dict[str, JsonValue] = {
+            "topology_version": payload["topology_version"],
+            "bindings": [],
+            "truncated": True,
+        }
+        encoded = dump_json_bytes(minimal, sort_keys=True)
+        if len(encoded) > max_bytes:
+            raise EnvironmentError(
+                "Environment topology byte limit cannot encode a minimal snapshot.",
+                code="environment_projection_limit_invalid",
+            )
+        return encoded.decode("utf-8")
 
 
 @dataclass(frozen=True, slots=True)
@@ -570,6 +599,88 @@ class CompositeBoundEnvironment(BoundEnvironment):
     @property
     def files(self) -> FileOperator:
         return self._files
+
+    async def project_model_context(
+        self,
+        request: ModelContextProjectionRequest,
+    ) -> ModelContextProjection:
+        from converge_agent_harness.model_context import (
+            ModelContextBlock,
+            ModelContextPlacement,
+            ModelContextProjection,
+            ModelContextRequestKind,
+        )
+
+        if request.kind is not ModelContextRequestKind.INPUT:
+            return ModelContextProjection()
+        topology = self.topology
+        selected = topology.bindings[:_MAX_MODEL_CONTEXT_BINDINGS]
+        default = next((item for item in topology.bindings if item.binding_id == topology.default_binding_id), None)
+        bindings: list[dict[str, JsonValue]] = []
+        for binding in selected:
+            availability = "unavailable"
+            ready: list[str] = []
+            reason: str | None = None
+            try:
+                observation = await self.describe(binding.binding_id)
+                availability = observation.availability.status
+                ready = sorted(observation.availability.ready_families)
+                reason = observation.availability.reason_code
+            except EnvironmentError:
+                pass
+            operations = sorted(
+                {
+                    ENVIRONMENT_ACTION_DISPATCH[action].family
+                    for action in binding.permission_ceiling.operations
+                    if ENVIRONMENT_ACTION_DISPATCH[action].family != "state"
+                }
+            )
+            projected: dict[str, JsonValue] = {
+                "alias": binding.alias,
+                "root": (
+                    "/workspace"
+                    if binding.binding_id == topology.default_binding_id
+                    else f"/environment/{binding.alias}"
+                ),
+                "operations": cast(JsonValue, operations),
+                "availability": availability,
+                "ready": cast(JsonValue, ready),
+                "read_only": not any(
+                    action.value.startswith(("environment.file.write", "environment.file.patch"))
+                    or action.value
+                    in {
+                        "environment.file.mkdir",
+                        "environment.file.move",
+                        "environment.file.remove",
+                        "environment.file.copy_destination",
+                    }
+                    for action in binding.permission_ceiling.operations
+                ),
+            }
+            if reason is not None:
+                projected["reason"] = reason
+            bindings.append(projected)
+        payload: dict[str, JsonValue] = {
+            "topology_version": topology.topology_version,
+            "restored_state_topology_version": self.restored_state_topology_version,
+            "default_alias": default.alias if default is not None else None,
+            "bindings": cast(JsonValue, bindings),
+            "truncated": len(selected) < len(topology.bindings),
+        }
+        prefix = "Current Environment topology (trusted dynamic context):\n"
+        content = prefix + _bounded_topology_json(
+            payload,
+            _MAX_MODEL_CONTEXT_BYTES - len(prefix.encode("utf-8")),
+        )
+        return ModelContextProjection(
+            blocks=(
+                ModelContextBlock(
+                    source_id="converge.environment-topology",
+                    placement=ModelContextPlacement.INPUT_PREAMBLE,
+                    content=content,
+                ),
+            )
+        )
 
     def select_files(self, path: str) -> FileScopeSelection:
         selected = self.resolve_path(path)

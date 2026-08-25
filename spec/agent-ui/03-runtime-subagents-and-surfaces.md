@@ -15,7 +15,7 @@ The application service can also own an optional process-local envd attachment r
 | Complete root and child executable graph     | Harness build                    | Borrows exact `SubagentCollection`; never rebuilds a child from parent internals                   |
 | Blocking inline child invocation and state   | Harness Delegation Capability    | Uses normal tool call, nested child `HarnessState`, shared usage, and parent checkpoint boundary   |
 | Background tool presentation                 | Agent UI behavior Capability     | Reads exact built children and exposes bounded spawn/status/steer/cancel tools selected by profile |
-| Current background submission authority      | Fresh Agent UI run Capability    | Binds current session, parent lineage, job monitor, child-binding factory, and policy              |
+| Current background submission authority      | Fresh Agent UI run Capability    | Binds current Session, parent Thread, job monitor, child-binding factory, and policy               |
 | Live task scheduling and synchronization     | Agent UI background monitor      | Owns supervised tasks, queues, wake-up, terminal retention, and process-generation state           |
 | Child Agent loop, events, state, and cleanup | Same Harness API as root         | Calls child `ExecutableAgent.stream()` with fresh bindings                                         |
 | AG-UI event mapping                          | `converge-agent-stream-protocol` | Projects root and exposed child streams once                                                       |
@@ -57,20 +57,20 @@ sequenceDiagram
     Registry->>Envd: initialize
     Envd-->>Registry: validated identity, generation, and descriptor
     Registry-->>App: attachment available
-    User->>App: select attachment, alias, permissions, and target lineage
+    User->>App: select attachment, alias, permissions, and target Thread
     App->>Harness: fresh binding or controller.apply()
     Harness-->>App: topology publication
 ```
 
 Creating an invitation is an explicit local Host operation. It allocates a compact process-local attachment reference, expected Environment identity, finite expiry and capacity, and admission policy. Its short-lived credential is delivered through a protected operator bootstrap path and never through an ordinary browser projection, URL, profile, session, replay event, model context, or log. The browser can observe safe states such as waiting, available, bound, unavailable, expired, or closed; those observations grant no Environment authority.
 
-After carrier authentication, Agent UI sends the first `initialize` request and validates protocol version, Environment identity, daemon generation, descriptor, required methods, and configured limits. A successful initialization creates an available attachment in the registry, not a run binding. A later explicit application command selects the attachment, model-facing alias, permission ceiling, and target session lineage. The registry then creates one single-use EIP-backed `EnvironmentProviderBinding` and transfers ownership exactly once:
+After carrier authentication, Agent UI sends the first `initialize` request and validates protocol version, Environment identity, daemon generation, descriptor, required methods, and configured limits. A successful initialization creates an available attachment in the registry, not a run binding. A later explicit application command selects the attachment, model-facing alias, permission ceiling, and target Session Thread. The registry then creates one single-use EIP-backed `EnvironmentProviderBinding` and transfers ownership exactly once:
 
 - if the target foreground run is active, Agent UI submits a higher complete topology request through that run's retained `EnvironmentTopologyController`;
 - if no turn is active, Agent UI can retain the bounded selection in memory until the next turn constructs fresh `RunBindings`;
 - expiry, cancellation, process shutdown, or failure before transfer closes the carrier and discards the candidate.
 
-One initialized EIP session is claimed by at most one run binding. It is never shared concurrently between root runs, session lineages, or background children. A root attachment is not inherited by a child; every child still receives independently authorized fresh bindings. After a run releases its provider scope, envd can reconnect into the application registry and initialize a fresh EIP session for another explicit selection.
+One initialized EIP session is claimed by at most one run binding. It is never shared concurrently between root runs, Session Threads, or background children. A root attachment is not inherited by a child; every child still receives independently authorized fresh bindings. After a run releases its provider scope, envd can reconnect into the application registry and initialize a fresh EIP session for another explicit selection.
 
 A transient carrier loss within the same selected Environment identity and daemon generation can be handled as bounded provider-private reconnect and typed availability change. It does not resume transfers, replay requests, or prove that an in-flight mutation was not dispatched. A changed daemon generation requires a fresh candidate and higher Harness binding revision; Agent UI never silently retargets an existing binding, cursor, handle, or operation.
 
@@ -88,7 +88,7 @@ The profile-selected Agent UI Background Capability has stable configuration and
 @dataclass(frozen=True, slots=True)
 class AgentUiBackgroundRunCapability(AbstractCapability[AgentContext]):
     session_id: str
-    lineage_id: str
+    parent_thread_id: str
     parent_turn_id: str
     parent_run_id: str
     monitor: BackgroundJobService
@@ -114,7 +114,7 @@ class BackgroundControlRequest(BaseModel):
     subagent_ref: str
 ```
 
-`spawn` returns an ordinary bounded result after the monitor accepts ownership. It is never a Pydantic deferred call. Status, bounded wait, steer, and cancel resolve `subagent_ref` together with trusted current parent/session lineage. A compact ref cannot address another session or root Agent instance and never substitutes for the monitor's internal job ID.
+`spawn` returns an ordinary bounded result after the monitor accepts ownership. It is never a Pydantic deferred call. Status, bounded wait, steer, and cancel resolve `subagent_ref` together with trusted current parent Session and Thread. A compact ref cannot address another Session or parent Thread and never substitutes for the monitor's internal job ID.
 
 Steering is optional bounded input delivered to a running child through a Host-owned message seam supported by that child composition. Acceptance means the monitor queued or delivered the message to the exact live job; it does not mean the child incorporated it into a model request. A child without a compatible steering seam returns an unsupported outcome. Agent UI never mutates private Pydantic history or a live `AgentContext` to simulate steering.
 
@@ -155,6 +155,10 @@ A conceptual retained record is:
 ```python
 class BackgroundJobRecord(BaseModel):
     job_id: str
+    session_id: str
+    parent_thread_id: str
+    parent_turn_id: str
+    child_thread_id: str | None
     subagent_ref: str
     subagent_name: str
     child_definition_id: str
@@ -168,7 +172,6 @@ class BackgroundJobRecord(BaseModel):
         "interrupted",
     ]
     delivery: Literal["unavailable", "retained", "delivered"]
-    parent_turn_id: str
     child_run_id: str | None
     safe_result: JsonValue | None
     safe_failure: SafeFailure | None
@@ -177,7 +180,7 @@ class BackgroundJobRecord(BaseModel):
     finished_at: datetime | None
 ```
 
-Terminal result, bounded complete child state, and safe failure can be retained after the child stream and resources close. They support later model input, status, and diagnostic display but do not recreate fresh authority. Retention size, count, and age are bounded per session. Advancing `delivery` never erases or rewrites `outcome`.
+Terminal result, bounded complete child state, and safe failure can be retained after the child stream and resources close. When child state exists, `child_thread_id` is required and equals `child_state.thread_id`; every child Harness Event and result carries that same Thread identity. They support later model input, status, and diagnostic display but do not recreate fresh authority. Retention size, count, and age are bounded per session. Advancing `delivery` never erases or rewrites `outcome`.
 
 A process-generation mismatch turns a record whose outcome is `accepted` or `running` into `interrupted` during recovery. Its delivery remains `unavailable` because no complete child outcome was selected. Agent UI does not restart it automatically. A process-local background child therefore has no crash-recovery guarantee; work requiring independent durable retry or failover uses a Foundation child Execution.
 
@@ -197,7 +200,7 @@ The monitor never completes the original spawn tool-call ID after spawn acceptan
 
 ## Fresh Child Bindings
 
-Every background start requests fresh bindings using trusted parent session and job lineage, exact built edge, authored context policy, effective limits, and current Host policy. It does not retain or copy the parent `RunBindings`, plugin graph, `BoundPluginContext`, Environment, client connection, credential, message list, event queue, usage accumulator, or borrowed local task cell after the parent run.
+Every background start requests fresh bindings using trusted parent Session, parent Thread, and job identity, exact built edge, authored context policy, effective limits, and current Host policy. It does not retain or copy the parent `RunBindings`, plugin graph, `BoundPluginContext`, Environment, client connection, credential, message list, event queue, usage accumulator, or borrowed local task cell after the parent run.
 
 For task sharing, the local Host can retain its own session-scoped task store and supply a fresh identity-bound child view under the Harness Working State contract. It cannot keep a parent-run borrowed cell beyond that cell's documented lifetime. Other Capability state remains child-private. A background child's complete `HarnessState` lives in the Host job record rather than the inline Delegation Capability's parent state.
 
@@ -205,7 +208,7 @@ The child runs through its ordinary `ExecutableAgent.stream()` path with a disti
 
 ## Cancellation, Shutdown, and Failure
 
-A model-facing cancel resolves the trusted job, marks a cancellation request, and asks the monitor to cancel and drain the child stream. Success means the process-local task reached a cancelled terminal observation; it does not roll back provider, tool, Environment, or external effects. A stale parent run attachment cannot control jobs after its run closes unless a later fresh attachment is explicitly authorized for that same session lineage.
+A model-facing cancel resolves the trusted job, marks a cancellation request, and asks the monitor to cancel and drain the child stream. Success means the process-local task reached a cancelled terminal observation; it does not roll back provider, tool, Environment, or external effects. A stale parent run attachment cannot control jobs after its run closes unless a later fresh attachment is explicitly authorized for that same Session and parent Thread.
 
 Application shutdown stops accepting jobs and envd attachments, fences active Environment topology control, requests cancellation for active jobs, drains within the configured bound, closes child streams, Environment bindings, EIP sessions, and unclaimed carriers, and records remaining unknown outcomes as interrupted or unavailable. It then closes the foreground coordinator and stores before exiting. A terminal result is retained only after complete child cleanup reaches the Host's record-selection boundary.
 
@@ -213,7 +216,7 @@ Application shutdown stops accepting jobs and envd attachments, fences active En
 | ----------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Unknown or hidden child name                    | Tool validation failure before acceptance                                              |
 | Missing, duplicate, or stale run attachment     | Fail closed before monitor submission                                                  |
-| Compact ref belongs to another lineage          | Not found or authorization failure without disclosing target                           |
+| Compact ref belongs to another Thread           | Not found or authorization failure without disclosing target                           |
 | Fresh child binding denied or invalid           | Job fails before child dispatch with bounded failure                                   |
 | Child run fails with complete result state      | Safe failure and eligible child state retained under Host policy                       |
 | Cleanup outcome unknown                         | Job interrupted; prior terminal record is not invented                                 |

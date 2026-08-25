@@ -211,8 +211,6 @@ def _definition_capabilities():
                 shell_tools=True,
                 process_tools=True,
                 port_tools=True,
-                max_topology_bindings=8,
-                max_topology_bytes=4096,
                 max_reference_entries=64,
             )
         ),
@@ -220,7 +218,7 @@ def _definition_capabilities():
         FileContextCapability(FileContextConfiguration(paths=("/workspace/AGENTS.md",), required=True)),
         HandoffCapability(),
         CompactionCapability(
-            CompactionPolicy(trigger_tokens=1_000_000, target_tokens=500_000, preserve_recent_turns=1)
+            CompactionPolicy(trigger_tokens=1_000_000, target_tokens=500_000, preserve_recent_user_turns=1)
         ),
         SkillsCapability(skill_manager),
         WorkingStateCapability(),

@@ -126,7 +126,7 @@ Agent UI-owned model-visible behavior follows the Harness two-layer Capability p
 - a definition-selected declarative behavior Capability contributes stable tools, instructions, configuration, and portable namespaced state;
 - a fresh run Capability in `RunBindings` supplies the current Agent UI application-service collaborator and authority.
 
-This applies to background-child tools and the read-only session Capability. The behavior Capability cannot capture the application service, profile repository, session store, or child monitor while building an Agent. An attempted operation fails before side effects when the expected fresh run Capability is missing, duplicated, incompatible, or bound to another session lineage.
+This applies to background-child tools and the read-only session Capability. The behavior Capability cannot capture the application service, profile repository, session store, or child monitor while building an Agent. An attempted operation fails before side effects when the expected fresh run Capability is missing, duplicated, incompatible, or bound to another Session or Thread.
 
 ## Profile Changes and Executable Lifetime
 

@@ -5,7 +5,7 @@ This standalone application demonstrates how an embedding Host persists and resu
 The example intentionally separates:
 
 - the portable continuation value exported by the Harness;
-- the Host-owned Execution, Attempt, fence, selected checkpoint, and terminal result;
+- the Host-owned Execution, ExecutionAttempt, fence, selected checkpoint, and terminal result;
 - fresh Identity, policy, model, and Environment bindings reconstructed for every Harness run.
 
 The normative contracts are [Harness State and Resume](../../spec/agent-harness/10-snapshot-and-resume.md), [Harness Hosting Contract](../../spec/agent-harness/13-hosting-contract.md), and [Foundation Durable Execution Lifecycle](../../spec/foundation-service/03-execution-lifecycle.md). This application is teaching code, not an additional public API.
@@ -44,21 +44,21 @@ sequenceDiagram
     participant Harness
 
     Host->>Store: create Execution
-    Host->>Store: acquire Attempt 1 and opaque fence
+    Host->>Store: acquire ExecutionAttempt 1 and opaque fence
     Host->>Harness: run with fresh bindings
     Harness-->>Host: interrupted failure and safe HarnessState candidate
     Note over Harness,Host: partial text retained; unfinished thinking excluded
     Host->>Store: persist checkpoint 1, then select it
-    Host->>Store: invalidate Attempt 1 without terminal commit
-    Host->>Store: acquire Attempt 2 with checkpoint 1 and a new fence
-    Host->>Store: reject stale Attempt 1 checkpoint write
+    Host->>Store: invalidate ExecutionAttempt 1 without terminal commit
+    Host->>Store: acquire ExecutionAttempt 2 with checkpoint 1 and a new fence
+    Host->>Store: reject stale ExecutionAttempt 1 checkpoint write
     Host->>Harness: new run with fresh bindings and previous_state
     Harness-->>Host: replacement result and HarnessState candidate
     Host->>Store: persist and select checkpoint 2
     Host->>Store: fenced terminal commit
 ```
 
-The first model stream emits one finalized thinking block, visible answer text, and then an unfinished thinking block before raising a simulated transport failure. The Harness result is failed, but its continuation candidate retains the answer text and finalized thinking while excluding unfinished thinking. The Host deliberately selects that candidate without committing the failure as the Host terminal result. The replacement Attempt creates a new Harness run, receives fresh bindings, and resumes from only the explicitly selected state.
+The first model stream emits one finalized thinking block, visible answer text, and then an unfinished thinking block before raising a simulated transport failure. The Harness result is failed, but its continuation candidate retains the answer text and finalized thinking while excluding unfinished thinking. The Host deliberately selects that candidate without committing the failure as the Host terminal result. The replacement ExecutionAttempt creates a new Harness run, receives fresh bindings, and resumes from only the explicitly selected state.
 
 A real Host does not manufacture a recovery prompt blindly after an uncertain external mutation. It first reconciles the owning provider or relies on an operation-specific idempotency contract.
 
@@ -78,24 +78,25 @@ A real Host does not manufacture a recovery prompt blindly after an uncertain ex
 
 `execution.json` is the local authority pointer. It contains:
 
-| Field                     | Meaning                                                                      |
-| ------------------------- | ---------------------------------------------------------------------------- |
-| `definition_revision_ref` | Exact Host definition revision reconstructed for every Attempt               |
-| `agent_instance_id`       | Stable, non-authoritative Agent instance identity for the logical Execution  |
-| `state` and `version`     | Host lifecycle projection and optimistic transition version                  |
-| `current_attempt`         | Current generation, Attempt ID, starting checkpoint, and opaque-fence digest |
-| `selected_checkpoint_ref` | The only checkpoint selected for later resume                                |
-| `terminal_output`         | Host-committed terminal projection, independent of Harness completion        |
+| Field                       | Meaning                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------- |
+| `definition_revision_ref`   | Exact Host definition revision reconstructed for every ExecutionAttempt               |
+| `agent_instance_id`         | Stable, non-authoritative Agent instance identity for the logical Execution           |
+| `state` and `version`       | Host lifecycle projection and optimistic transition version                           |
+| `current_execution_attempt` | Current generation, ExecutionAttempt ID, starting checkpoint, and opaque-fence digest |
+| `selected_checkpoint_ref`   | The only checkpoint selected for later resume                                         |
+| `terminal_output`           | Host-committed terminal projection, independent of Harness completion                 |
 
 Each immutable checkpoint contains:
 
-| Field                                 | Meaning                                                                         |
-| ------------------------------------- | ------------------------------------------------------------------------------- |
-| Execution/Attempt/generation/sequence | Producing provenance checked by the Host                                        |
-| `harness_run_id`                      | Correlation with the process-local run that exported the candidate              |
-| `harness_state`                       | Detached portable continuation value                                            |
-| `effective_environment_topology_ref`  | Optional Host evidence for the topology actually published by that run          |
-| `launch_state_ref`                    | Optional reference to separately protected provider launch or reattachment data |
+| Field                                          | Meaning                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| Execution/ExecutionAttempt/generation/sequence | Producing provenance checked by the Host                                        |
+| `thread_id`                                    | Stable Thread correlation matching `harness_state.thread_id`                    |
+| `harness_run_id`                               | Correlation with the process-local Run that exported the candidate              |
+| `harness_state`                                | Detached portable continuation value                                            |
+| `effective_environment_topology_ref`           | Optional Host evidence for the topology actually published by that run          |
+| `launch_state_ref`                             | Optional reference to separately protected provider launch or reattachment data |
 
 The example has no remote provider and therefore leaves both optional references empty. It does not invent a generic launch-state payload: each Host/provider integration owns that schema, protection, compatibility, and reconstruction logic.
 
@@ -110,6 +111,7 @@ restored = HarnessState.model_validate_json(payload)
 
 `HarnessState` contains only:
 
+- one stable `thread_id` for the independently advancing history;
 - public Pydantic AI message history;
 - versioned JSON values owned by stable Capability IDs;
 - optional portable Environment backend state for already selected compatible bindings.
@@ -120,14 +122,14 @@ It deliberately excludes:
 - Agent Identity authority, actor authentication, policy, grants, or credentials;
 - Model, Toolset, Capability, plugin, provider client, or Python callable objects;
 - desired Environment topology, live bindings, controllers, sandbox reachability, or launch authority;
-- Execution state, Attempt generation, lease fence, queue, pending delivery, or terminal commit;
+- Execution state, ExecutionAttempt generation, lease fence, queue, pending delivery, or terminal commit;
 - durable task maps, long-term memory records, artifacts, lifecycle events, or usage accounting.
 
-The tests inspect the stored checkpoint and verify that Execution, Attempt, definition, Agent instance, and fence facts did not leak into the nested Harness payload.
+The tests inspect the stored checkpoint and verify that Execution, ExecutionAttempt, definition, Agent instance, and fence facts did not leak into the nested Harness payload.
 
 ## Fresh Bindings on Resume
 
-`application.py` reconstructs a new `RunBindings` object for each Attempt. It deliberately preserves the stable Host-selected Agent instance ID while replacing the process-local binding and Environment objects:
+`application.py` reconstructs a new `RunBindings` object for each ExecutionAttempt. It deliberately preserves the stable Host-selected Agent instance ID while replacing the process-local binding and Environment objects:
 
 ```python
 bindings = RunBindings(
@@ -136,7 +138,7 @@ bindings = RunBindings(
         agent_instance_id=record.agent_instance_id,
         host_refs={
             "execution": record.execution_id,
-            "attempt": lease.attempt_id,
+            "execution_attempt": lease.execution_attempt_id,
         },
     ),
     environment=materialize_current_environment(),
@@ -160,10 +162,10 @@ Portable state cannot create a binding, select a provider, attach a sandbox, or 
 The local store demonstrates three important properties:
 
 1. **Payload before authority:** it atomically writes an immutable checkpoint file before atomically replacing the `selected_checkpoint_ref`. On POSIX filesystems that honor file and directory `fsync` plus atomic rename, a crash between the writes leaves an unselected candidate rather than a pointer to missing bytes.
-2. **Fresh Attempt fence and starting point:** Attempt acquisition freezes the currently selected checkpoint in the Attempt record and returns that exact immutable payload with a new high-entropy opaque fence. The store persists only the fence digest and rejects a stale or mismatched lease before selecting later state or committing completion.
+2. **Fresh ExecutionAttempt fence and starting point:** ExecutionAttempt acquisition freezes the currently selected checkpoint in the ExecutionAttempt record and returns that exact immutable payload with a new high-entropy opaque fence. The store persists only the fence digest and rejects a stale or mismatched lease before selecting later state or committing completion.
 3. **Terminal separation:** a valid Harness result is still only a candidate until the Host performs its own fenced terminal transition.
 
-`JsonFileHostStore` deliberately supports one live store instance for one root in one event loop. Its `asyncio.Lock` is instance-local; multiple instances, event loops, threads, or processes targeting the same root are outside this teaching implementation. Cancellation does not release that lock until an in-flight local write has joined. The helper persists file and directory metadata on POSIX; on other platforms it demonstrates process-local write ordering and atomic replacement rather than claiming power-loss durability. A production Host must make current-Attempt validation, starting-checkpoint selection, lifecycle mutation, and its matching durable event one transactional authority operation. Queue or Redis ownership is not a substitute.
+`JsonFileHostStore` deliberately supports one live store instance for one root in one event loop. Its `asyncio.Lock` is instance-local; multiple instances, event loops, threads, or processes targeting the same root are outside this teaching implementation. Cancellation does not release that lock until an in-flight local write has joined. The helper persists file and directory metadata on POSIX; on other platforms it demonstrates process-local write ordering and atomic replacement rather than claiming power-loss durability. A production Host must make current-ExecutionAttempt validation, starting-checkpoint selection, lifecycle mutation, and its matching durable event one transactional authority operation. Queue or Redis ownership is not a substitute.
 
 The local JSON layout is not prescribed by the Harness or Foundation architecture. An adopter may keep bounded state inline in its authority store or place immutable bytes in an object store and select a verified reference. The observable requirements are ownership, fencing, complete-boundary selection, compatibility, and recoverability—not a particular database or blob technology.
 
@@ -185,7 +187,7 @@ A Host must not select:
 
 - arbitrary raw model deltas instead of the Harness-produced safe state;
 - a state export that failed or exceeded its bounds;
-- a candidate from a stale Attempt;
+- a candidate from a stale ExecutionAttempt;
 - a checkpoint whose referenced Host launch state is missing or incompatible;
 - an observation that has not incorporated an accepted input it claims to contain.
 
@@ -199,7 +201,7 @@ Keep these records outside `HarnessState`:
 
 | Concern                                         | Durable owner                  |
 | ----------------------------------------------- | ------------------------------ |
-| Application conversation and display history    | Product or Host projection     |
+| Session, Turn, Item, and display history        | Product or Host projection     |
 | Definition revisions and artifact locks         | Host definition control        |
 | Desired topology and provider launch state      | Host/provider integration      |
 | Client-side pending calls and feedback receipts | Host delivery lifecycle        |
@@ -214,7 +216,7 @@ Keep these records outside `HarnessState`:
 An embedded application can replace only `JsonFileHostStore` and keep the same Harness call path. A distributed service additionally needs:
 
 - durable acceptance before scheduling;
-- one current fenced Attempt generation;
+- one current fenced ExecutionAttempt generation;
 - immutable definition and provider integration revision selection;
 - authoritative checkpoint selection and terminal compare-and-swap;
 - explicit pending-delivery and side-effect reconciliation state;

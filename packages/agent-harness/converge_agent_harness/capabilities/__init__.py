@@ -1,5 +1,6 @@
 """First-party optional Agent Harness Capabilities."""
 
+from .codeact import CodeActCapability, CodeActConfig
 from .context import (
     CompactionCapability,
     CompactionPolicy,
@@ -8,6 +9,14 @@ from .context import (
     HandoffCapability,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
+)
+from .delegation import (
+    DelegationCapability,
+    DelegationConfiguration,
+    DelegationRunCapability,
+    DelegationState,
+    InlineDelegationBinder,
+    InlineSubagentState,
 )
 from .documents import (
     DocumentAsset,
@@ -88,9 +97,15 @@ from .working_state import (
 
 __all__ = [
     "AskUserQuestionRequest",
+    "CodeActCapability",
+    "CodeActConfig",
     "CompactionCapability",
     "CompactionPolicy",
     "CreateTask",
+    "DelegationCapability",
+    "DelegationConfiguration",
+    "DelegationRunCapability",
+    "DelegationState",
     "DocumentAsset",
     "DocumentConversionError",
     "DocumentConversionRequest",
@@ -106,6 +121,8 @@ __all__ = [
     "FileContextConfiguration",
     "HandoffCapability",
     "InProcessMonitoredProcessMonitor",
+    "InlineDelegationBinder",
+    "InlineSubagentState",
     "MediaCapability",
     "MediaConfiguration",
     "MediaKind",

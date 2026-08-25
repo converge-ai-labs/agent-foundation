@@ -8,8 +8,12 @@ import converge_agent_harness.tools as tools
 import converge_agent_harness.toolsets as toolsets
 
 
-def test_block_five_root_facade_exports_documented_capabilities_and_toolsets() -> None:
+def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
     expected = {
+        "CodeActCapability",
+        "CodeActConfig",
+        "CodeActPolicyToolset",
+        "CodeActToolPolicy",
         "CompactionCapability",
         "DocumentsCapability",
         "DocumentsRunCapability",
@@ -48,10 +52,16 @@ def test_block_five_root_facade_exports_documented_capabilities_and_toolsets() -
 
     assert expected <= set(harness.__all__)
     assert all(hasattr(harness, name) for name in expected)
+    assert "HarnessStreamEvent" in harness.__all__
+    assert hasattr(harness, "HarnessStreamEvent")
+    assert "HarnessStreamItem" not in harness.__all__
+    assert not hasattr(harness, "HarnessStreamItem")
 
 
-def test_block_five_feature_facades_export_documented_families() -> None:
+def test_feature_facades_export_documented_families() -> None:
     expected_capabilities = {
+        "CodeActCapability",
+        "CodeActConfig",
         "CompactionCapability",
         "DocumentsCapability",
         "DocumentsRunCapability",
@@ -70,6 +80,11 @@ def test_block_five_feature_facades_export_documented_families() -> None:
         "WorkingStateCapability",
     }
     expected_toolsets = {
+        "ClientToolsToolset",
+        "CodeActPolicyToolset",
+        "CodeActToolPolicy",
+        "DelegateResult",
+        "DelegationToolset",
         "DocumentsToolset",
         "FILE_VIEW_RULES",
         "FileToolset",
@@ -111,7 +126,7 @@ def test_block_five_feature_facades_export_documented_families() -> None:
     assert expected_filters == set(filters.__all__)
 
 
-def test_block_five_environment_and_managed_tool_import_routes_are_public() -> None:
+def test_environment_and_managed_tool_import_routes_are_public() -> None:
     expected_environment = {
         "DirectLocalEnvironmentConfiguration",
         "DirectLocalEnvironmentProviderBinding",

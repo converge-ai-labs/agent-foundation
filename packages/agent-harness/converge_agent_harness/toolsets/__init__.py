@@ -1,6 +1,9 @@
 """Pure model-facing tool implementations composed by Harness Capabilities."""
 
+from .client import ClientToolsToolset
+from .codeact import CodeActPolicyToolset, CodeActToolPolicy
 from .context import HandoffToolset
+from .delegation import DelegateResult, DelegationToolset
 from .documents import DocumentsToolset
 from .files import FILE_VIEW_RULES, FileToolset, FileViewRule
 from .interaction import UserInteractionToolset
@@ -32,6 +35,11 @@ __all__ = [
     "FILE_VIEW_RULES",
     "FINAL_TOOL_OUTPUT_HARD_CHARS",
     "MAX_TOOL_OUTPUT_SPILL_BYTES",
+    "ClientToolsToolset",
+    "CodeActPolicyToolset",
+    "CodeActToolPolicy",
+    "DelegateResult",
+    "DelegationToolset",
     "DocumentsToolset",
     "FileToolset",
     "FileViewRule",

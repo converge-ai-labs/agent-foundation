@@ -98,7 +98,7 @@ Input acceptance, Harness start, Harness terminal result, local checkpoint commi
 
 One process owns one application-service instance and its supervised async lifetime. It acquires profile and session repositories before accepting commands, retains entered foreground run and background-job tasks as children of that lifetime, and closes surfaces before releasing repositories. Shutdown requests cancellation, drains run and child cleanup, and then records any job or turn whose terminal outcome remains unknown as interrupted rather than successful.
 
-Only one foreground turn advances a given session lineage at a time. Independent sessions can run concurrently subject to Host policy and configured limits. A stale expected session revision conflicts before dispatch rather than selecting a newer checkpoint implicitly.
+Only one foreground Turn advances a given Thread at a time. Independent sessions can run concurrently subject to Host policy and configured limits. A stale expected session revision conflicts before dispatch rather than selecting a newer checkpoint implicitly.
 
 The optional envd attachment registry is another child of the application-service lifetime. It owns pending invitations, accepted reverse-WebSocket carriers, and unclaimed provider-binding candidates only in memory. Selecting a candidate for an active run transfers it through that run's retained `EnvironmentTopologyController`; selecting one for a later turn contributes to fresh `RunBindings`. Process restart invalidates invitations and closes attachments rather than restoring network authority from session files.
 

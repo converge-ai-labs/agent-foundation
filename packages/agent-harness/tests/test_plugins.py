@@ -168,6 +168,7 @@ class ShortCircuitPlugin(AbstractHarnessPlugin):
         async def iterate():
             self.calls.append("short-circuit")
             yield HarnessRunResult(
+                thread_id=exchange.context.thread_id,
                 run_id=exchange.context.run_id,
                 status="completed",
                 output="cached",

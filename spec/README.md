@@ -29,7 +29,7 @@ flowchart TB
     subgraph Service[foundation-service]
         Control[Control plane]
         Definitions[Host-owned definition revisions]
-        Lifecycle[Durable Executions and Attempts]
+        Lifecycle[Durable Executions and ExecutionAttempts]
         Worker[Execution worker]
         Reconstruct[Trusted reconstruction adapters]
     end
@@ -101,17 +101,17 @@ Dependency direction is one-way: Hosts embed the Harness; Agent UI and hosted tr
 
 ## Component Responsibilities
 
-| Component               | Owns                                                                                                                                                                        | Does not own                                                                                                 |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `agent-harness`         | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                   | Durable Agent authoring schemas, local sessions, presentation protocols, worker lifecycle, delivery, billing |
-| `agent-stream-protocol` | Standard AG-UI projection profiles, validation, ordering, replay envelopes, and namespaced extension policy                                                                 | Agent execution, Host acceptance, sessions, durable events, HTTP/SSE, or rendering                           |
-| `agent-ui`              | Local profiles, sessions, foreground orchestration, process-local background children, application service, WebUI, and TUI                                                  | Distributed execution, multi-tenant authorization, or another Agent loop                                     |
-| `agent-envd-client`     | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                | Harness routing, product-user authorization, provider provisioning, Host lifecycle                           |
-| `agent-envd`            | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment              | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy             |
-| Foundation SDKs         | Language-typed access to the public Foundation Service `/api` contract                                                                                                      | Service internals, product policy, or durable lifecycle authority                                            |
-| `agent-foundation`      | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                      | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control |
-| `foundation-service`    | Managed Secrets, Host-owned definition/Presets/revisions, reconstruction locks, Executions/Attempts, client tools, APIs, events, usage records, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning         |
-| Product                 | Caller authentication, business policy, user experience, and final delivery                                                                                                 | Harness internals and provider implementation                                                                |
+| Component               | Owns                                                                                                                                                                                 | Does not own                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `agent-harness`         | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                            | Durable Agent authoring schemas, local sessions, presentation protocols, worker lifecycle, delivery, billing |
+| `agent-stream-protocol` | Standard AG-UI projection profiles, validation, ordering, replay envelopes, and namespaced extension policy                                                                          | Agent execution, Host acceptance, sessions, durable events, HTTP/SSE, or rendering                           |
+| `agent-ui`              | Local profiles, sessions, foreground orchestration, process-local background children, application service, WebUI, and TUI                                                           | Distributed execution, multi-tenant authorization, or another Agent loop                                     |
+| `agent-envd-client`     | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                         | Harness routing, product-user authorization, provider provisioning, Host lifecycle                           |
+| `agent-envd`            | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                       | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy             |
+| Foundation SDKs         | Language-typed access to the public Foundation Service `/api` contract                                                                                                               | Service internals, product policy, or durable lifecycle authority                                            |
+| `agent-foundation`      | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                               | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control |
+| `foundation-service`    | Managed Secrets, Host-owned definition/Presets/revisions, reconstruction locks, Executions/ExecutionAttempts, client tools, APIs, events, usage records, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning         |
+| Product                 | Caller authentication, business policy, user experience, and final delivery                                                                                                          | Harness internals and provider implementation                                                                |
 
 ## Harness Foundation
 
@@ -121,9 +121,9 @@ The Harness is built directly on Pydantic AI 2:
 - Capability is the only top-level feature-behavior plane; each feature Capability owns its tools, Toolsets, instructions, settings, and hooks;
 - `HarnessBuilder` resolves an explicit or disabled-by-default ambient plugin Build Context, creates fresh configured instances, binds all trusted plugins, authorizes custom Capability types, and calls `Agent.from_spec()` once;
 - `RunBindings` supplies fresh Agent instance, Environment, optional `ModelRunBinding`, run Capabilities, and metadata;
-- one logical Harness run owns one context, Environment, plugin graph, state coordinator, usage accumulator, and public run ID;
-- bounded model recovery can start several Pydantic inner attempts with unique inner run IDs inside that logical run;
-- `HarnessState` carries public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired topology, provider incarnation envelope, and launch payload remain Host-owned;
+- one logical Harness Run owns one context, Environment, plugin graph, state coordinator, usage accumulator, public `run_id`, and stable Thread correlation;
+- bounded model recovery can start several `ModelAttempt` values with unique upstream model-attempt IDs inside that Run;
+- `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired topology, provider incarnation envelope, and launch payload remain Host-owned;
 - Pydantic AI owns native Model profiles, transport/output retries, provider-suspended continuation, deferred external calls/approvals, Toolsets, messages, events, and usage.
 
 Harness middleware plugins are trusted concrete objects, and the Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `converge_agent_harness.plugins` factories and append fresh concrete plugins during each definition build. `converge_agent_harness.environments` remains a caller-selected catalog because Environment topology and lifecycle are run-scoped. A Host owns serializable Agent schemas, artifact locks, package trust, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
@@ -145,7 +145,7 @@ The complete local Host design is indexed in [agent-ui/README.md](agent-ui/READM
 | Provider-suspended continuation     | Pydantic AI                                |
 | Provider transport retry            | Provider/client and Pydantic `RetryConfig` |
 | Exact provider-history repair       | Harness `SelfHealingModel`                 |
-| Interrupted model semantic attempts | Harness run coordinator                    |
+| Interrupted `ModelAttempt` recovery | Harness run coordinator                    |
 | Worker crash and durable recovery   | Host                                       |
 | External side-effect reconciliation | Provider and Host                          |
 
@@ -185,7 +185,7 @@ flowchart LR
 
 Foundation definitions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. A worker verifies exact dependency/artifact locks, reconstructs native Pydantic/Harness objects, resolves operator-approved Environment providers, materializes current desired topology from encrypted launch-envelope entries, durably advances an unrepresented replacement resource's binding/topology incarnation revisions, and supplies fresh `RunBindings` to the same public API as an embedded application. The worker retains the paired Environment controller only for that active logical run.
 
-One durable Foundation Attempt starts one logical Harness run. Internal Harness model attempts are not durable Attempt generations. Authorized desired Environment topology can advance during that run and is reconciled through the retained controller with separate effective publication. Worker or lease loss creates a new fenced Attempt, fresh provider bindings, and a fresh Harness run from authoritative selected Host and Harness state.
+One durable Foundation `ExecutionAttempt` starts one logical Harness Run. Internal Harness `ModelAttempt` values are not durable `ExecutionAttempt` generations. Authorized desired Environment topology can advance during that Run and is reconciled through the retained controller with separate effective publication. Worker or lease loss creates a new fenced `ExecutionAttempt`, fresh provider bindings, and a fresh Harness Run from authoritative selected Host and Harness state.
 
 Client-side tools use native Pydantic deferred values. Foundation durably commits pending calls and approvals, authenticates external feedback, and starts a later run with fresh bindings. Asynchronous children use independent Executions and result-delivery ledgers rather than Pydantic deferred spawn calls.
 
@@ -204,15 +204,16 @@ Coordination streams and queues do not become durable lifecycle authority.
 
 ## Identity and Version Boundaries
 
-The platform-wide identity, versioning, naming, ownership, and compatibility rules are defined by [Platform Data Conventions](data-conventions.md). Concrete subsystems own their object catalogs, schemas, and explicitly scoped or external identifiers within those rules.
+The shared [`Session`, `Thread`, `Turn`, and `Item` interaction model](interaction-model.md) defines public interaction identity and relationships. Platform-wide versioning, naming, ownership, and compatibility rules are defined by [Platform Data Conventions](data-conventions.md). Concrete subsystems own their object catalogs, schemas, and explicitly scoped or external identifiers within those rules.
 
 The platform distinguishes:
 
 - caller/actor identity;
 - stable Agent workload Identity and Agent instance;
+- Host-owned `Session`, `Thread`, `Turn`, and `Item` identities;
 - Host-owned immutable definition revision and dependency locks;
-- process-local Harness run and inner Pydantic attempt;
-- Host durable Execution and Attempt;
+- process-local Harness Run and `ModelAttempt`;
+- Host durable `Execution` and `ExecutionAttempt`;
 - Environment identity and generation;
 - credential binding and invocation grant.
 
@@ -261,7 +262,7 @@ flowchart LR
     Run -. projection .-> Telemetry[Telemetry]
 ```
 
-Acceptance, inner attempt completion, Harness terminal delivery, Host durable commit, usage recording, telemetry export, external delivery, billing, and payment are independent facts.
+Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn or Execution commit, usage recording, telemetry export, external delivery, billing, and payment are independent facts.
 
 ## Design Principles
 
@@ -281,6 +282,7 @@ Acceptance, inner attempt completion, Harness terminal delivery, Host durable co
 | Area                                  | Document                                                                                                                               |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository content and workflow model | [repository-model.md](repository-model.md)                                                                                             |
+| Platform interaction model            | [interaction-model.md](interaction-model.md)                                                                                           |
 | Platform data conventions             | [data-conventions.md](data-conventions.md)                                                                                             |
 | Platform API conventions              | [api-conventions.md](api-conventions.md)                                                                                               |
 | Harness catalog                       | [agent-harness/README.md](agent-harness/README.md)                                                                                     |

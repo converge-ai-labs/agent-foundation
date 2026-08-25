@@ -22,6 +22,11 @@ if TYPE_CHECKING:
     from converge_agent_harness.environment.providers import BoundEnvironment, EnvironmentRunBinding
     from converge_agent_harness.events import HarnessEventEmitter
     from converge_agent_harness.execution import AgentDefinition, ExecutableAgent, SubagentDefinition
+    from converge_agent_harness.model_context import (
+        ModelContextProjection,
+        ModelContextProjectionRequest,
+        ModelContextRunBinding,
+    )
     from converge_agent_harness.models import ModelRunBinding
     from converge_agent_harness.plugins import BoundPluginContext
     from converge_agent_harness.tools.deferred import DeferredToolResume
@@ -111,6 +116,7 @@ class RunBindings:
     model_binding: ModelRunBinding | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
+    model_context: ModelContextRunBinding | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
@@ -123,6 +129,7 @@ class RunBindings:
         identity: AgentIdentityRef | None = None,
         environment: EnvironmentRunBinding | None = None,
         model_binding: ModelRunBinding | None = None,
+        model_context: ModelContextRunBinding | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         metadata: Mapping[str, JsonValue] | None = None,
     ) -> RunBindings:
@@ -137,6 +144,7 @@ class RunBindings:
             ),
             environment=environment or NoopEnvironmentRunBinding(),
             model_binding=model_binding,
+            model_context=model_context,
             capabilities=tuple(capabilities),
             metadata=metadata or {},
         )
@@ -240,6 +248,7 @@ class AgentContext:
     """The one dependency object shared across a Pydantic AI run."""
 
     run_id: str
+    thread_id: str
     instance: AgentInstanceContext
     state: AgentContextState
     environment: BoundEnvironment
@@ -250,6 +259,7 @@ class AgentContext:
     usage_attribution: RunUsageLedger = field(repr=False)
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
+    model_context: ModelContextRunBinding | None = None
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
     tool_metadata: ToolRuntimeMetadata = field(default_factory=ToolRuntimeMetadata, compare=False)
     _capability_provenance: _CapabilityProvenance = field(default_factory=_CapabilityProvenance, repr=False)
@@ -349,9 +359,46 @@ class AgentContext:
             tool_call_id=tool_call_id,
         )
 
+    async def project_model_context(
+        self,
+        request: ModelContextProjectionRequest,
+    ) -> ModelContextProjection:
+        """Project bounded default Agent and Environment context without editing messages."""
+        from converge_agent_harness._json import dump_json_bytes
+        from converge_agent_harness.model_context import (
+            ModelContextBlock,
+            ModelContextPlacement,
+            ModelContextProjection,
+            ModelContextRequestKind,
+        )
+
+        environment = await self.environment.project_model_context(request)
+        payload: dict[str, JsonValue] = {
+            "run_id": self.run_id,
+            "thread_id": self.thread_id,
+        }
+        if request.kind is ModelContextRequestKind.TOOL_RESULTS:
+            payload.pop("thread_id", None)
+        content = (
+            '<agent-context source="converge-harness">\n'
+            f"{dump_json_bytes(payload, sort_keys=True).decode('utf-8')}\n"
+            "</agent-context>"
+        )
+        return ModelContextProjection(
+            blocks=(
+                *environment.blocks,
+                ModelContextBlock(
+                    source_id="converge.agent-context",
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=content,
+                ),
+            )
+        )
+
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope without persistence side effects."""
         return HarnessState(
+            thread_id=self.thread_id,
             message_history=tuple(message_history),
             agent_context_state=await self.state.snapshot(),
             environment_state=await self.environment.export_state(),

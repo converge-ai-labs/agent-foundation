@@ -13,7 +13,7 @@ from secrets import token_hex, token_urlsafe
 from typing import Literal
 
 from converge_agent_harness import HarnessState
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 _ID_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 
@@ -22,17 +22,17 @@ class HostStoreError(RuntimeError):
     """A durable Host transition could not be applied."""
 
 
-class HostAttemptRecord(BaseModel):
+class ExecutionAttemptRecord(BaseModel):
     """Persisted ownership metadata; the opaque fence itself is never stored."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    attempt_id: str
+    execution_attempt_id: str
     generation: int = Field(ge=1)
     fence_digest: str = Field(min_length=64, max_length=64)
     starting_checkpoint_ref: str | None = None
 
-    @field_validator("attempt_id", "starting_checkpoint_ref")
+    @field_validator("execution_attempt_id", "starting_checkpoint_ref")
     @classmethod
     def _validate_identifiers(cls, value: str | None, info: ValidationInfo) -> str | None:
         if value is None:
@@ -53,9 +53,9 @@ class HostExecutionRecord(BaseModel):
     agent_instance_id: str
     state: Literal["accepted", "running", "completed", "failed"] = "accepted"
     version: int = Field(default=0, ge=0)
-    next_attempt_generation: int = Field(default=1, ge=1)
+    next_execution_attempt_generation: int = Field(default=1, ge=1)
     next_checkpoint_sequence: int = Field(default=1, ge=1)
-    current_attempt: HostAttemptRecord | None = None
+    current_execution_attempt: ExecutionAttemptRecord | None = None
     selected_checkpoint_ref: str | None = None
     terminal_output: str | None = None
 
@@ -82,9 +82,10 @@ class HostCheckpointRecord(BaseModel):
     schema_version: Literal["1"] = "1"
     checkpoint_ref: str
     execution_id: str
-    attempt_id: str
-    attempt_generation: int = Field(ge=1)
+    execution_attempt_id: str
+    execution_attempt_generation: int = Field(ge=1)
     sequence: int = Field(ge=1)
+    thread_id: str
     harness_run_id: str = Field(min_length=1)
     harness_state: HarnessState
     effective_environment_topology_ref: str | None = None
@@ -93,7 +94,8 @@ class HostCheckpointRecord(BaseModel):
     @field_validator(
         "checkpoint_ref",
         "execution_id",
-        "attempt_id",
+        "execution_attempt_id",
+        "thread_id",
         "effective_environment_topology_ref",
         "launch_state_ref",
     )
@@ -105,13 +107,19 @@ class HostCheckpointRecord(BaseModel):
             raise ValueError("Identifier field name is unavailable")
         return _validated_id(value, info.field_name)
 
+    @model_validator(mode="after")
+    def _validate_thread_correlation(self) -> HostCheckpointRecord:
+        if self.thread_id != self.harness_state.thread_id:
+            raise ValueError("Checkpoint thread_id must match HarnessState.thread_id")
+        return self
+
 
 @dataclass(frozen=True, slots=True)
-class AttemptLease:
+class ExecutionAttemptLease:
     """Process-local proof and atomically selected starting checkpoint."""
 
     execution_id: str
-    attempt_id: str
+    execution_attempt_id: str
     generation: int
     fence: str
     starting_checkpoint: HostCheckpointRecord | None
@@ -154,24 +162,24 @@ class JsonFileHostStore:
         async with self._lock:
             return await self._read_execution(execution_id)
 
-    async def acquire_attempt(self, execution_id: str) -> AttemptLease:
+    async def acquire_execution_attempt(self, execution_id: str) -> ExecutionAttemptLease:
         async with self._lock:
             record = await self._read_execution(execution_id)
             if record.state in {"completed", "failed"}:
                 raise HostStoreError(f"Execution {execution_id!r} is terminal")
-            if record.current_attempt is not None:
-                raise HostStoreError(f"Execution {execution_id!r} already has a current Attempt")
+            if record.current_execution_attempt is not None:
+                raise HostStoreError(f"Execution {execution_id!r} already has a current ExecutionAttempt")
 
-            generation = record.next_attempt_generation
-            attempt_id = f"attempt-{generation}"
+            generation = record.next_execution_attempt_generation
+            execution_attempt_id = f"execution-attempt-{generation}"
             fence = token_urlsafe(32)
             starting_checkpoint = (
                 await self._read_checkpoint(execution_id, record.selected_checkpoint_ref)
                 if record.selected_checkpoint_ref is not None
                 else None
             )
-            attempt = HostAttemptRecord(
-                attempt_id=attempt_id,
+            execution_attempt = ExecutionAttemptRecord(
+                execution_attempt_id=execution_attempt_id,
                 generation=generation,
                 fence_digest=_fence_digest(fence),
                 starting_checkpoint_ref=(
@@ -182,14 +190,14 @@ class JsonFileHostStore:
                 update={
                     "state": "running",
                     "version": record.version + 1,
-                    "next_attempt_generation": generation + 1,
-                    "current_attempt": attempt,
+                    "next_execution_attempt_generation": generation + 1,
+                    "current_execution_attempt": execution_attempt,
                 }
             )
             await self._write_model(self._execution_path(execution_id), updated)
-            return AttemptLease(
+            return ExecutionAttemptLease(
                 execution_id=execution_id,
-                attempt_id=attempt_id,
+                execution_attempt_id=execution_attempt_id,
                 generation=generation,
                 fence=fence,
                 starting_checkpoint=starting_checkpoint,
@@ -197,7 +205,7 @@ class JsonFileHostStore:
 
     async def commit_checkpoint(
         self,
-        lease: AttemptLease,
+        lease: ExecutionAttemptLease,
         *,
         harness_run_id: str,
         harness_state: HarnessState,
@@ -206,16 +214,17 @@ class JsonFileHostStore:
     ) -> HostCheckpointRecord:
         async with self._lock:
             record = await self._read_execution(lease.execution_id)
-            self._require_current_attempt(record, lease)
+            self._require_current_execution_attempt(record, lease)
 
             sequence = record.next_checkpoint_sequence
             checkpoint_ref = f"checkpoint-{sequence}"
             checkpoint = HostCheckpointRecord(
                 checkpoint_ref=checkpoint_ref,
                 execution_id=lease.execution_id,
-                attempt_id=lease.attempt_id,
-                attempt_generation=lease.generation,
+                execution_attempt_id=lease.execution_attempt_id,
+                execution_attempt_generation=lease.generation,
                 sequence=sequence,
+                thread_id=harness_state.thread_id,
                 harness_run_id=harness_run_id,
                 harness_state=harness_state,
                 effective_environment_topology_ref=effective_environment_topology_ref,
@@ -239,17 +248,17 @@ class JsonFileHostStore:
             await self._write_model(self._execution_path(lease.execution_id), selected)
             return checkpoint
 
-    async def abandon_attempt_for_recovery(self, lease: AttemptLease) -> HostExecutionRecord:
+    async def abandon_execution_attempt_for_recovery(self, lease: ExecutionAttemptLease) -> HostExecutionRecord:
         """Demonstrate the Host invalidating one owner before replacement."""
 
         async with self._lock:
             record = await self._read_execution(lease.execution_id)
-            self._require_current_attempt(record, lease)
+            self._require_current_execution_attempt(record, lease)
             updated = record.model_copy(
                 update={
                     "state": "accepted",
                     "version": record.version + 1,
-                    "current_attempt": None,
+                    "current_execution_attempt": None,
                 }
             )
             await self._write_model(self._execution_path(lease.execution_id), updated)
@@ -263,22 +272,25 @@ class JsonFileHostStore:
                 return None
             return await self._read_checkpoint(execution_id, checkpoint_ref)
 
-    async def commit_completed(self, lease: AttemptLease, *, output: str) -> HostExecutionRecord:
+    async def commit_completed(self, lease: ExecutionAttemptLease, *, output: str) -> HostExecutionRecord:
         async with self._lock:
             record = await self._read_execution(lease.execution_id)
-            self._require_current_attempt(record, lease)
+            self._require_current_execution_attempt(record, lease)
             checkpoint_ref = record.selected_checkpoint_ref
             if checkpoint_ref is None:
                 raise HostStoreError("Terminal completion requires a selected checkpoint")
             checkpoint = await self._read_checkpoint(lease.execution_id, checkpoint_ref)
-            if checkpoint.attempt_id != lease.attempt_id or checkpoint.attempt_generation != lease.generation:
-                raise HostStoreError("Terminal completion requires a checkpoint from the current Attempt")
+            if (
+                checkpoint.execution_attempt_id != lease.execution_attempt_id
+                or checkpoint.execution_attempt_generation != lease.generation
+            ):
+                raise HostStoreError("Terminal completion requires a checkpoint from the current ExecutionAttempt")
 
             completed = record.model_copy(
                 update={
                     "state": "completed",
                     "version": record.version + 1,
-                    "current_attempt": None,
+                    "current_execution_attempt": None,
                     "terminal_output": output,
                 }
             )
@@ -304,16 +316,16 @@ class JsonFileHostStore:
             raise HostStoreError("Selected checkpoint belongs to another Execution")
         return checkpoint
 
-    def _require_current_attempt(self, record: HostExecutionRecord, lease: AttemptLease) -> None:
-        attempt = record.current_attempt
+    def _require_current_execution_attempt(self, record: HostExecutionRecord, lease: ExecutionAttemptLease) -> None:
+        execution_attempt = record.current_execution_attempt
         if (
-            attempt is None
+            execution_attempt is None
             or lease.execution_id != record.execution_id
-            or lease.attempt_id != attempt.attempt_id
-            or lease.generation != attempt.generation
-            or not hmac.compare_digest(_fence_digest(lease.fence), attempt.fence_digest)
+            or lease.execution_attempt_id != execution_attempt.execution_attempt_id
+            or lease.generation != execution_attempt.generation
+            or not hmac.compare_digest(_fence_digest(lease.fence), execution_attempt.fence_digest)
         ):
-            raise HostStoreError("Attempt lease is stale or invalid")
+            raise HostStoreError("ExecutionAttempt lease is stale or invalid")
 
     async def _write_model(self, path: Path, value: BaseModel) -> None:
         payload = value.model_dump_json(indent=2)

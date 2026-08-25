@@ -12,7 +12,7 @@ from converge_agent_harness import (
     SafeFailure,
     StateError,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.usage import RunUsage
 
@@ -54,6 +54,31 @@ async def test_capability_state_namespaces_are_typed_and_detached() -> None:
     assert (await state.read("counter", CounterState, version="1")) == CounterState(value=2)
 
 
+def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
+    state = HarnessState()
+    copied = state.model_copy(deep=True)
+    restored = HarnessState.model_validate_json(state.model_dump_json())
+    forked = state.fork()
+
+    assert state.schema_version == "2"
+    assert state.thread_id.startswith("thread-")
+    assert copied.thread_id == state.thread_id
+    assert restored.thread_id == state.thread_id
+    assert forked.thread_id != state.thread_id
+    assert forked.message_history == state.message_history
+    assert forked.agent_context_state == state.agent_context_state
+    assert forked.environment_state == state.environment_state
+
+
+def test_independent_states_receive_distinct_thread_identities() -> None:
+    assert HarnessState().thread_id != HarnessState().thread_id
+
+
+def test_legacy_state_version_is_not_silently_imported() -> None:
+    with pytest.raises(ValidationError):
+        HarnessState.model_validate({"schema_version": "1", "message_history": []})
+
+
 async def test_state_and_result_views_do_not_expose_mutable_aliases() -> None:
     source_data: dict[str, Any] = {"items": [1]}
     capability = CapabilityState(version="1", data=source_data)
@@ -75,6 +100,7 @@ async def test_state_and_result_views_do_not_expose_mutable_aliases() -> None:
     source_usage = RunUsage(requests=1, details={"cached": 2})
     cast(Any, source_usage).extension = {"nested": [1]}
     result = HarnessRunResult(
+        thread_id=state.thread_id,
         run_id="run-1",
         status="completed",
         output=source_output,
@@ -110,13 +136,27 @@ async def test_state_and_result_views_do_not_expose_mutable_aliases() -> None:
     assert failure.details == {"items": [1]}
 
 
+async def test_result_rejects_mismatched_thread_state() -> None:
+    with pytest.raises(ValueError, match=r"state\.thread_id"):
+        HarnessRunResult(
+            thread_id="thread-other",
+            run_id="run-1",
+            status="completed",
+            output="done",
+            state=HarnessState(),
+            usage=RunUsage(),
+        )
+
+
 async def test_result_rejects_inconsistent_terminal_fields() -> None:
+    state = HarnessState()
     with pytest.raises(ValueError, match="Invalid HarnessRunResult"):
         HarnessRunResult(
+            thread_id=state.thread_id,
             run_id="run-1",
             status="suspended",
             output=None,
-            state=HarnessState(),
+            state=state,
             usage=RunUsage(),
             suspend_reason="deferred",
         )

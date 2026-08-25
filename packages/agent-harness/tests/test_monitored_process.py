@@ -48,8 +48,6 @@ _PROCESS_EXECUTABLE = Path(sys.executable).resolve()
 
 def _configuration(*, max_reference_entries: int = 64) -> DynamicEnvironmentConfiguration:
     return DynamicEnvironmentConfiguration(
-        max_topology_bindings=8,
-        max_topology_bytes=4096,
         max_reference_entries=max_reference_entries,
     )
 
