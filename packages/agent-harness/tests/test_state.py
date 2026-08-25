@@ -33,7 +33,7 @@ def test_environment_state_rejects_non_finite_json(value: float) -> None:
         },
     )
     with pytest.raises(ValueError, match="finite canonical JSON"):
-        HarnessState(environment_state=environment)
+        HarnessState.new(environment_state=environment)
 
 
 class CounterState(BaseModel):
@@ -55,12 +55,12 @@ async def test_capability_state_namespaces_are_typed_and_detached() -> None:
 
 
 def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
-    state = HarnessState()
+    state = HarnessState.new()
     copied = state.model_copy(deep=True)
     restored = HarnessState.model_validate_json(state.model_dump_json())
     forked = state.fork()
 
-    assert state.schema_version == "2"
+    assert state.schema_version == "1"
     assert state.thread_id.startswith("thread-")
     assert copied.thread_id == state.thread_id
     assert restored.thread_id == state.thread_id
@@ -71,12 +71,38 @@ def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
 
 
 def test_independent_states_receive_distinct_thread_identities() -> None:
-    assert HarnessState().thread_id != HarnessState().thread_id
+    assert HarnessState.new().thread_id != HarnessState.new().thread_id
 
 
-def test_legacy_state_version_is_not_silently_imported() -> None:
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"schema_version": "1", "message_history": []},
+        {
+            "thread_id": "thread-0123456789abcdef0123456789abcdef",
+            "message_history": [],
+        },
+    ],
+)
+def test_import_requires_explicit_schema_version_and_thread_identity(payload: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
-        HarnessState.model_validate({"schema_version": "1", "message_history": []})
+        HarnessState.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "thread_id",
+    [
+        "",
+        "thread-",
+        "conversation-0123456789abcdef0123456789abcdef",
+        "thread-0123456789abcdef0123456789abcde",
+        "thread-0123456789abcdef0123456789abcdef0",
+        "thread-0123456789ABCDEF0123456789ABCDEF",
+    ],
+)
+def test_state_rejects_malformed_thread_identities(thread_id: str) -> None:
+    with pytest.raises(ValidationError):
+        HarnessState(schema_version="1", thread_id=thread_id)
 
 
 async def test_state_and_result_views_do_not_expose_mutable_aliases() -> None:
@@ -89,7 +115,7 @@ async def test_state_and_result_views_do_not_expose_mutable_aliases() -> None:
     assert capability.data == {"items": [1]}
 
     message = ModelRequest(parts=[UserPromptPart(content="hello")])
-    state = HarnessState(message_history=(message,))
+    state = HarnessState.new(message_history=(message,))
     message.parts.append(UserPromptPart(content="source mutation"))
     assert len(state.message_history[0].parts) == 1
     returned_messages = state.message_history
@@ -143,13 +169,13 @@ async def test_result_rejects_mismatched_thread_state() -> None:
             run_id="run-1",
             status="completed",
             output="done",
-            state=HarnessState(),
+            state=HarnessState.new(),
             usage=RunUsage(),
         )
 
 
 async def test_result_rejects_inconsistent_terminal_fields() -> None:
-    state = HarnessState()
+    state = HarnessState.new()
     with pytest.raises(ValueError, match="Invalid HarnessRunResult"):
         HarnessRunResult(
             thread_id=state.thread_id,

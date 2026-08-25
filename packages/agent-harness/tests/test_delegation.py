@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
 import converge_agent_harness.toolsets.delegation as delegation_toolset_module
 import pytest
 from converge_agent_harness import (
+    AbstractHarnessPlugin,
     AgentDefinition,
     AgentIdentityRef,
     AgentInstanceContext,
@@ -23,6 +25,10 @@ from converge_agent_harness import (
     ModelCostInput,
     ModelCostRunCapability,
     NoopEnvironmentRunBinding,
+    PluginError,
+    PluginRunExchange,
+    PluginRunNext,
+    PluginRunResponse,
     RunBindings,
     SubagentDefinition,
     WorkingState,
@@ -131,13 +137,20 @@ def _child_definition(*, working_state: bool = False) -> AgentDefinition[str]:
     )
 
 
-def _parent_definition(child: AgentDefinition[str], model: FunctionModel, *, working_state: bool = False):
+def _parent_definition(
+    child: AgentDefinition[str],
+    model: FunctionModel,
+    *,
+    working_state: bool = False,
+    plugins: tuple[AbstractHarnessPlugin, ...] = (),
+):
     return AgentDefinition(
         agent=AgentSpec(model="logical:parent"),
         output_type=str,
         definition_id="parent-definition-v1",
         model=model,
         capabilities=(DelegationCapability(), WorkingStateCapability()) if working_state else (DelegationCapability(),),
+        plugins=plugins,
         subagents=(
             SubagentDefinition(
                 name="reviewer",
@@ -185,7 +198,7 @@ def _bindings_factory(
     )
 
 
-async def test_inline_delegation_persists_child_conversation_and_forwards_events() -> None:
+async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
     async def parent_stream(
         messages: list[ModelMessage],
         info: AgentInfo,
@@ -294,10 +307,83 @@ async def test_inline_delegation_persists_child_conversation_and_forwards_events
     )
     assert second.output_or_raise() == "parent-done"
     assert second.state is not None
+    assert second.state.thread_id == first.state.thread_id
     continued = DelegationState.model_validate(second.state.agent_context_state.entries[DELEGATION_CAPABILITY_ID].data)
     assert set(continued.children) == {child_id}
     assert continued.children[child_id].state.thread_id == child_record.state.thread_id
+    assert continued.children[child_id].state.thread_id != second.state.thread_id
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
+
+
+class ChildEventMutationPlugin(AbstractHarnessPlugin):
+    def __init__(self, mutation: str) -> None:
+        self.mutation = mutation
+
+    @property
+    def plugin_id(self) -> str:
+        return f"child-event-{self.mutation}"
+
+    def wrap_run(
+        self,
+        exchange: PluginRunExchange,
+        call_next: PluginRunNext,
+    ) -> PluginRunResponse:
+        async def iterate():
+            async for item in call_next(exchange):
+                if isinstance(item, HarnessEvent) and item.run_id != exchange.context.run_id:
+                    if self.mutation == "thread":
+                        item = replace(item, thread_id=exchange.context.thread_id)
+                    else:
+                        item = replace(item, sequence=item.sequence + 1)
+                yield item
+
+        return PluginRunResponse(iterate())
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error_code"),
+    [
+        ("thread", "plugin_event_run_mismatch"),
+        ("sequence", "plugin_event_sequence_invalid"),
+    ],
+)
+async def test_plugin_cannot_change_forwarded_child_event_provenance(
+    mutation: str,
+    error_code: str,
+) -> None:
+    async def parent_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if not _returns_after_latest_user(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps(
+                        {
+                            "subagent": "reviewer",
+                            "task": {"request": "inspect"},
+                        }
+                    ),
+                    tool_call_id="delegate-1",
+                )
+            }
+            return
+        yield "parent-done"
+
+    executable = HarnessBuilder().build(
+        _parent_definition(
+            _child_definition(),
+            FunctionModel(stream_function=parent_stream),
+            plugins=(ChildEventMutationPlugin(mutation),),
+        )
+    )
+
+    with pytest.raises(PluginError) as exc_info:
+        await executable.run("start", bindings=_bindings_factory())
+
+    assert exc_info.value.code == error_code
 
 
 async def test_nested_inline_delegation_forwards_descendant_events() -> None:

@@ -30,7 +30,8 @@ Use `gh` rather than browser automation, raw GitHub API calls, `curl`, or anothe
 
 ### 2. Inspect the repository
 
-- Read `AGENTS.md` and follow repository-specific instructions.
+- Read `AGENTS.md` and follow repository-specific instructions, including any linked contribution or workflow documents that it marks as required.
+- Read the repository's contribution guide when present, such as `CONTRIBUTING.md`, and identify its pull-request requirements.
 - Run `git status --short --branch`, inspect the relevant diff, and check the configured remotes.
 - Use `gh repo view --json nameWithOwner,url,defaultBranchRef` to resolve GitHub repository metadata and the base branch when available.
 - Identify the intended change scope from the conversation and repository state. Do not stage unrelated user changes.
@@ -93,9 +94,11 @@ git push -u origin HEAD
 ### 7. Create or update the pull request with `gh`
 
 - Run `gh pr view --json number,url,state,isDraft,reviewRequests` to check whether the current branch already has a pull request. A not-found result means a new PR may be created; it is not an execution failure.
-- If an open pull request exists, do not create a duplicate. Push the commit and continue with reviewer discovery for that pull request.
+- If an open pull request exists, do not create a duplicate. Push the commit, verify that its title and body still satisfy the repository requirements, and update them only when needed without discarding meaningful existing content.
 - Otherwise, create the pull request with `gh pr create`, setting the base and head branches explicitly when they are not unambiguous.
-- Use an English title and a body containing:
+- Before drafting the body, discover the repository's pull-request template in the standard root, `docs/`, and `.github/` locations, including multiple-template directories. Prefer the template and contribution requirements from the base branch so the pull request cannot relax its own review contract. Fall back to the working-tree versions for an initial repository or when the base has none, and report that fallback.
+- Use an English title and follow the selected repository template instead of replacing it with a generic body. Preserve its required headings and checklist items, replace or remove placeholders, and mark a checkbox complete only when the condition is actually satisfied. Link the relevant issue when one exists; never leave an incomplete reference such as `Closes #` in the body.
+- If the repository has no pull-request template, use this fallback:
 
 ```markdown
 ## Summary
@@ -105,10 +108,10 @@ git push -u origin HEAD
 
 ## Testing
 
-- `<command>`
+- `<command and outcome>`
 ```
 
-Keep the body factual. Mention skipped or failing checks and their reasons instead of implying they passed. Use a temporary body file when needed and do not leave it in the repository.
+Keep the body factual and satisfy any additional requirements from the contribution guide. Report exact validation commands and outcomes, and mention skipped or failing checks and their reasons instead of implying they passed. Use a temporary body file when needed and do not leave it in the repository.
 
 #### Route reviewers from `MAINTAINERS.md`
 

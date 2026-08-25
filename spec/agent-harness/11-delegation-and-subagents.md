@@ -201,7 +201,7 @@ sequenceDiagram
 
 Native parent cancellation cancels and drains the active delegation tool task. That task closes the child `HarnessRunStream`, whose underlying `AgentRunEvents.aclose()` cancels and drains the child run. Child output is validated and bounded before entering the parent result. Raw exceptions, private messages, and state are not returned to the model.
 
-Parent and child events use separate run IDs and Agent instance lineage. `forward_child()` projects validated child events into the parent stream while the Delegation Capability consumes the terminal child result internally. Passing the parent's live `RunContext.usage` makes the root result accumulate usage from the complete inline descendant tree. Child results contain cumulative snapshots rather than child-only deltas; child-correlated messages, events, and telemetry retain per-response attribution.
+Parent and child events use separate Thread IDs, Run IDs, and Agent instance lineage. The Harness binds a private forwarder to the exact child stream and projects validated child events into the parent stream while the Delegation Capability consumes the terminal child result internally. Forwarding preserves the child's Thread, Run, and source sequence through plugin processing. Passing the parent's live `RunContext.usage` makes the root result accumulate usage from the complete inline descendant tree. Child results contain cumulative snapshots rather than child-only deltas; child-correlated messages, events, and telemetry retain per-response attribution.
 
 ## Parent Checkpoint and Crash Boundary
 

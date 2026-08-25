@@ -398,6 +398,7 @@ class AgentContext:
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope without persistence side effects."""
         return HarnessState(
+            schema_version="1",
             thread_id=self.thread_id,
             message_history=tuple(message_history),
             agent_context_state=await self.state.snapshot(),

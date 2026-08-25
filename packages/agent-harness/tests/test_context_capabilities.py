@@ -153,7 +153,7 @@ async def test_compaction_forces_same_agent_summarize_tool_and_reuses_handoff_pa
         else:
             yield "done"
 
-    previous = HarnessState(
+    previous = HarnessState.new(
         message_history=(
             ModelRequest(
                 parts=[UserPromptPart(content="Original long task")],
@@ -280,7 +280,7 @@ async def test_compaction_validates_target_after_dynamic_context_assembly(tmp_pa
         else:
             pytest.fail("oversized restored request reached the provider")
 
-    previous = HarnessState(
+    previous = HarnessState.new(
         message_history=(
             ModelRequest(parts=[UserPromptPart(content="Original task")]),
             ModelResponse(

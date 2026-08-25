@@ -139,7 +139,7 @@ class DelegationToolset:
                 if len(self._state.children) + len(self._active_new_children) >= self._configuration.max_children:
                     raise ToolFailed("Inline child state limit reached.")
                 reserved_id = self._allocate_child_id(subagent)
-                baseline = HarnessState()
+                baseline = HarnessState.new()
                 selected_state = baseline.model_copy(deep=True)
                 self._active_new_children.add(reserved_id)
             self._active_children.add(reserved_id)

@@ -666,18 +666,41 @@ def render_codeact_runner_description(
 ) -> str:
     base = _RUN_PROGRAM_DESCRIPTION if program else _RUN_CODE_DESCRIPTION
     catalog = _build_catalog(tools)
-    aliases = [
-        (canonical, sandbox)
-        for sandbox, canonical in sorted(catalog.sandbox_to_canonical.items())
-        if sandbox != canonical
-    ]
-    if not aliases:
-        return base
-    return (
-        base
-        + "\n\nCodeAct callable aliases:\n"
-        + "\n".join(f"- {canonical} -> {sandbox}" for canonical, sandbox in aliases)
-    )
+    if not catalog.definitions:
+        return base + "\n\nNo host tools are callable from CodeAct in this run step."
+
+    entries: list[str] = []
+    for sandbox_name, definition in sorted(catalog.definitions.items()):
+        canonical_name = catalog.sandbox_to_canonical[sandbox_name]
+        heading = f"- `{sandbox_name}(**kwargs)`"
+        if canonical_name != sandbox_name:
+            heading += f" (tool `{canonical_name}`)"
+        details = [heading]
+        if definition.description:
+            details.append(f"  {definition.description}")
+        details.append(
+            "  Arguments JSON Schema: "
+            + json.dumps(
+                definition.parameters_json_schema,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+        )
+        if definition.return_schema is not None:
+            details.append(
+                "  Return JSON Schema: "
+                + json.dumps(
+                    definition.return_schema,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                )
+            )
+        entries.append("\n".join(details))
+    return base + "\n\nCodeAct callable host tools:\n" + "\n".join(entries)
 
 
 def _sanitize_name(name: str) -> str:

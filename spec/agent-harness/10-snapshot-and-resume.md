@@ -33,20 +33,23 @@ class AgentContextStateSnapshot(BaseModel):
 
 
 class HarnessState(BaseModel):
-    schema_version: Literal["2"] = "2"
-    thread_id: str = default_factory(new_thread_id)
+    schema_version: Literal["1"]
+    thread_id: str
     message_history: tuple[ModelMessage, ...] = ()
     agent_context_state: AgentContextStateSnapshot = (
         AgentContextStateSnapshot()
     )
     environment_state: EnvironmentState | None = None
+
+    @classmethod
+    def new(...) -> HarnessState: ...
 ```
 
 `HarnessState` and its nested values are frozen detached envelopes. Pydantic message history is round-tripped through `ModelMessagesTypeAdapter`; Capability and Environment payload data are round-tripped through Pydantic `JsonValue`. Public accessors decode fresh copies, so mutable aliases do not cross the state boundary.
 
-`thread_id` is a bounded non-blank Harness-generated opaque correlation value with the `thread-` prefix. Constructing a new State generates it; serialization, ordinary copies, exports, and resume preserve it exactly. The field is not accepted through `RunBindings`, metadata, or a run argument. `HarnessState.fork()` copies the messages and portable State payloads into a new envelope with a newly generated ID, which is the required core path for intentionally creating an independently advancing history from an existing checkpoint. Trusted plugins and Host state transformations remain able to construct complete State under the existing trust boundary; the ID is not cryptographic integrity or authority.
+`thread_id` is a Harness-generated opaque correlation value consisting of the `thread-` prefix and 32 lowercase hexadecimal characters. `HarnessState.new()` creates a new Thread and generates its ID; direct envelope validation requires the field. Serialization, ordinary copies, exports, and resume preserve it exactly. The field is not accepted through `RunBindings`, metadata, or a run argument. `HarnessState.fork()` copies the messages and portable State payloads into a new envelope with a newly generated ID, which is the required core path for intentionally creating an independently advancing history from an existing checkpoint. Trusted plugins and Host state transformations remain able to construct complete State under the existing trust boundary; the ID is not cryptographic integrity or authority.
 
-`schema_version` versions only the Harness envelope. Version `2` introduces the required Thread identity. Version `1` state has no stable Thread identity and is not silently accepted as version `2`; a Host that retains version `1` checkpoints creates and persists one complete version `2` checkpoint before continuation so repeated imports cannot generate different IDs. Each Capability entry has an independent non-blank version owned by that Capability's codec; each Environment binding entry has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#environment-state) owns its schema and authority boundary.
+`schema_version` versions only the Harness envelope and is `1` for this contract. Import requires the exact supported envelope version and a valid required `thread_id`; validation never invents a replacement identity for malformed input. Each Capability entry has an independent non-blank version owned by that Capability's codec; each Environment binding entry has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#environment-state) owns its schema and authority boundary.
 
 ## AgentContextState
 

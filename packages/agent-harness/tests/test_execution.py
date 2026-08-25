@@ -189,7 +189,7 @@ async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() ->
 async def test_environment_state_restores_before_input_factory_and_exports_fresh_state() -> None:
     calls: list[tuple[ModelMessage, ...]] = []
     executable = _build(_turn_model(calls))
-    previous = HarnessState(
+    previous = HarnessState.new(
         environment_state=EnvironmentState(observed_topology_version=0, bindings={}),
     )
 
@@ -633,7 +633,7 @@ async def test_every_run_gets_a_fresh_context() -> None:
 
 async def test_context_restores_state_owned_thread_identity() -> None:
     executable = _build(_turn_model([]))
-    previous = HarnessState()
+    previous = HarnessState.new()
 
     async with executable.stream(
         "continue",

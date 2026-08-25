@@ -59,8 +59,9 @@ sequenceDiagram
     PAI-->>Stream: public AgentStreamEvent
     Capability->>Emitter: HarnessExtensionEvent
     Emitter-->>Stream: run-local extension
-    Capability->>Emitter: validated inline-child HarnessEvent
-    Emitter-->>Stream: forwarded child observation
+    Capability->>Emitter: bind exact inline-child stream
+    Capability->>Emitter: forward through private bound child seam
+    Emitter-->>Stream: validated child observation
     Stream->>Stream: sequence root events, validate child envelopes, and redact
     Stream->>Plugins: ordered event and result-candidate unwind
     Plugins-->>Stream: transformed observations and candidate
@@ -119,14 +120,9 @@ class HarnessEventEmitter(Protocol):
         self,
         event: HarnessExtensionEvent,
     ) -> None: ...
-
-    async def forward_child(
-        self,
-        event: HarnessEvent,
-    ) -> None: ...
 ```
 
-The Harness creates one emitter for each process-local run and places it on `AgentContext` for Capability authors. `emit()` creates a run-local extension event and assigns its envelope fields. `forward_child()` accepts only an event from a validated inline-child stream, preserves its child run correlation, and verifies lineage before forwarding. The emitter feeds the same ordered internal path as adapted Pydantic events. Harness plugin middleware sees those values before public delivery; already delivered values cannot be retracted. The emitter is not supplied by the host and is not a general delivery service.
+The Harness creates one emitter for each process-local run and places only its `emit()` surface on `AgentContext` for Capability authors. `emit()` creates a run-local extension event and assigns its envelope fields. Inline delegation uses a private Harness-owned child-forwarding seam bound to one exact parent and child stream; arbitrary Capability or plugin code cannot submit a foreign child envelope through the public emitter. The seam preserves child Thread, Run, and source sequence, validates nested descendant registration and monotonic sequence, and seals that provenance through plugin processing. Plugins may transform or suppress the child event payload but cannot change its child correlation or source sequence. The emitter feeds the same ordered internal path as adapted Pydantic events. Harness plugin middleware sees those values before public delivery; already delivered values cannot be retracted. The emitter is not supplied by the Host and is not a general delivery service.
 
 `HarnessRunStream` is class-based, lazily starts on first iteration, has exactly one consumer, and applies natural backpressure. It provides no replay or fan-out. An embedded application consumes it directly. A hosted worker consumes it once and projects events to any broker, SSE connection, WebSocket, log, or durable store selected by the host. Foundation Service's replayable lifecycle log is a separate Host contract: it atomically records bounded committed lifecycle facts and can selectively reference Harness observations without making every process-local delta durable.
 

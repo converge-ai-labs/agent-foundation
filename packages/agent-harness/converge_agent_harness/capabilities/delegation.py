@@ -214,6 +214,7 @@ def _validate_delegation_state(
     context: AgentContext,
     configuration: DelegationConfiguration,
 ) -> None:
+    _validate_delegation_thread_identities(state, parent_thread_id=context.thread_id)
     if len(state.children) > configuration.max_children:
         raise StateError(
             "Delegation State contains too many inline children.",
@@ -240,6 +241,43 @@ def _validate_delegation_state(
             "Delegation State exceeds its encoded size limit.",
             code="delegation_state_limit_exceeded",
         )
+
+
+def _validate_delegation_thread_identities(
+    state: DelegationState,
+    *,
+    parent_thread_id: str,
+) -> None:
+    seen = {parent_thread_id}
+    pending = [state]
+    while pending:
+        current = pending.pop()
+        for child_id, record in current.children.items():
+            thread_id = record.state.thread_id
+            if thread_id in seen:
+                raise StateError(
+                    "Delegation State reuses a Thread identity.",
+                    code="delegation_state_incompatible",
+                    details={"child_instance_id": child_id},
+                )
+            seen.add(thread_id)
+            entry = record.state.agent_context_state.entries.get(DELEGATION_CAPABILITY_ID)
+            if entry is None:
+                continue
+            if entry.version != _DELEGATION_STATE_VERSION:
+                raise StateError(
+                    "Nested Delegation State has an unsupported version.",
+                    code="delegation_state_incompatible",
+                    details={"child_instance_id": child_id},
+                )
+            try:
+                pending.append(DelegationState.model_validate(entry.data))
+            except ValueError as exc:
+                raise StateError(
+                    "Nested Delegation State is invalid.",
+                    code="delegation_state_incompatible",
+                    details={"child_instance_id": child_id},
+                ) from exc
 
 
 __all__ = [

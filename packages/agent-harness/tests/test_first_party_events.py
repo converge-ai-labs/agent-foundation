@@ -176,7 +176,7 @@ async def test_compaction_events_share_operation_identity_and_snapshot_request_i
         else:
             yield "done"
 
-    previous = HarnessState(
+    previous = HarnessState.new(
         message_history=(
             ModelRequest(
                 parts=[UserPromptPart(content="Original long task")],

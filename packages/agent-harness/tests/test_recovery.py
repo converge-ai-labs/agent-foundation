@@ -996,7 +996,7 @@ async def test_upstream_history_cleanup_removes_stale_tool_results_before_retry(
     result = await executable.run(
         "continue",
         bindings=RunBindings.local(),
-        previous_state=HarnessState(message_history=history),
+        previous_state=HarnessState.new(message_history=history),
     )
 
     assert result.output_or_raise() == "continued"
@@ -1047,7 +1047,7 @@ async def test_saved_interrupted_tool_history_is_repaired_before_rerun() -> None
     result = await executable.run(
         "continue",
         bindings=RunBindings.local(),
-        previous_state=HarnessState(message_history=history),
+        previous_state=HarnessState.new(message_history=history),
     )
 
     assert result.output_or_raise() == "continued safely"

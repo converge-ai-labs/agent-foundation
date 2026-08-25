@@ -477,7 +477,7 @@ async def test_provider_mode_requires_fresh_binding_and_discards_mismatched_curs
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(capability,),
     )
-    previous = HarnessState(
+    previous = HarnessState.new(
         agent_context_state=AgentContextStateSnapshot(
             entries={
                 WORKING_STATE_CAPABILITY_ID: CapabilityState(

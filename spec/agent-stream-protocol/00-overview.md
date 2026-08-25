@@ -59,15 +59,10 @@ The following Python-like types are conceptual process-local contracts, not anot
 
 ```python
 @dataclass(frozen=True, slots=True)
-class HostScopeRef:
-    kind: Literal["session", "execution"]
-    id: str
-
-
-@dataclass(frozen=True, slots=True)
 class ProjectionContext:
     stream_id: str
-    host_scope: HostScopeRef | None
+    session_id: str | None
+    execution_id: str | None
     thread_id: str
     turn_id: str | None
     run_id: str
@@ -80,11 +75,12 @@ class ProjectionContext:
 class ProjectedEvent:
     sequence: int
     event_id: str
+    item_id: str | None
     agui_event: AguiEvent
     source_observation_id: str | None
 ```
 
-The Host provides correlation from trusted records. `host_scope`, `thread_id`, optional `turn_id`, `run_id`, and `agent_instance_ref` are safe correlation values selected for the client; they are never bearer credentials. The shared [interaction model](../interaction-model.md) owns Session, Thread, Turn, and Item meaning. A projection requires one `thread_id`; `turn_id` is optional for embedded or non-interactive work. `host_scope` distinguishes a local Session from a durable Foundation Execution instead of combining both into an ambiguous string. `sequence` is strictly increasing within one projection stream. `event_id` is stable for one retained projection record and supports subscriber deduplication; it does not become a Foundation durable event ID unless a Foundation adapter explicitly maps and labels the two identities.
+The Host provides correlation from trusted records. Optional `session_id`, optional `execution_id`, `thread_id`, optional `turn_id`, `run_id`, and `agent_instance_ref` are safe correlation values selected for the client; they are never bearer credentials. The shared [interaction model](../interaction-model.md) owns Session, Thread, Turn, and Item meaning. A projection requires one `thread_id`; `turn_id` is optional for embedded or non-interactive work. `session_id` and `execution_id` are independent because an interactive hosted Run can belong to both a Session and a durable Execution. A local projection can carry only `session_id`, standalone durable work can carry only `execution_id`, and a directly embedded projection can carry neither. `sequence` is strictly increasing within one projection stream. `event_id` is stable for one retained projection record and supports subscriber deduplication; it does not become a Foundation durable event ID unless a Foundation adapter explicitly maps and labels the two identities. `item_id` is present only when the event contributes to one materialized semantic Item.
 
 A replay-capable Host stores the validated `ProjectedEvent` envelope or enough public semantic input to reproduce it under the same profile. It does not persist a renderer's DOM, terminal widget graph, unvalidated provider frame, private exception, or arbitrary Python object.
 
@@ -109,6 +105,34 @@ Provider-native frames and private Harness internals are not automatically proje
 
 An inline child emits its own run correlation. A Host-managed background child also emits a distinct run stream if the Host exposes child details. A surface may collapse, hide, or group those details, but a background result routed into the parent is later parent input and is never projected as the delayed `TOOL_CALL_RESULT` of the original spawn call.
 
+## Item Materialization and Identity
+
+The projection layer materializes a semantic Item only when the Host supplies the owning `thread_id` and `turn_id`. A Run without Turn correlation can still produce AG-UI presentation events, but those events do not claim canonical Item identity. Child observations likewise become Items only when the Host supplies the child Thread and Turn correlation rather than inheriting the parent's Turn implicitly.
+
+```python
+@dataclass(frozen=True, slots=True)
+class ProjectedItem:
+    item_id: str
+    thread_id: str
+    turn_id: str
+    kind: Literal[
+        "user_message",
+        "agent_message",
+        "reasoning",
+        "tool_call",
+        "command",
+        "file_change",
+        "plan",
+        "error",
+    ]
+    status: Literal["in_progress", "completed", "failed"]
+    projection: JsonValue
+```
+
+The Host or projection adapter allocates `item_id` before publishing the first event for the unit. Every lifecycle event, retained snapshot, and later status replacement for that same semantic unit carries the same `item_id`; completion or failure updates the existing Item instead of allocating another identity. A new semantically distinct message, tool call, command, file change, plan update, reasoning unit, or error receives a new ID even when it is emitted by the same Run.
+
+`ProjectedEvent.item_id` links transport observations to the materialized Item. One Item can produce many projected events, and events such as Run start, Run completion, replay gaps, or display-state synchronization can have no Item. `event_id`, projection `sequence`, replay cursor, Harness event sequence, provider message ID, and tool-call ID never substitute for `item_id`. A replay-capable Host retains the latest validated `ProjectedItem` value or enough validated lifecycle input to reproduce it with the same ID; replay and delta compaction do not renumber Items.
+
 ## Ordering and Terminal Rules
 
 One projection instance consumes one source stream serially. It assigns sequence numbers after validation and before publishing. Concurrent producer activity is serialized by the owning Host at the adapter boundary; subscribers never race to assign order.
@@ -130,7 +154,7 @@ A source gap, duplicate conflicting identity, invalid lifecycle transition, or i
 AG-UI client input is presentation input, not continuation authority. The adapter validates the selected upstream request schema, bounded messages and attachments, advertised client tools, shared-state values, and protocol version. It returns a normalized value to the Host. The Host then:
 
 - authenticates the caller where required;
-- selects the profile, Host scope, Thread, optional Turn, checkpoint, and expected revision;
+- selects the profile, optional Session, optional Execution, Thread, optional Turn, checkpoint, and expected revision;
 - decides which user-authored content enters `RunInput`;
 - authorizes client-side tools through the Harness or Foundation owning contract;
 - supplies fresh Identity, model, Environment, credential, and run Capabilities.
@@ -153,7 +177,7 @@ sequenceDiagram
     Run-->>Renderer: new ordered projected events
 ```
 
-A Host cursor is opaque and scoped to its typed Host scope, Thread, optional Turn, projection profile, filter, and retention generation. Duplicate delivery is allowed; clients deduplicate by event ID. A cursor older than retained data returns an explicit gap and a fresh Host-approved message/state snapshot when available. It never silently starts at the newest event.
+A Host cursor is opaque and scoped to its optional Session, optional Execution, Thread, optional Turn, projection profile, filter, and retention generation. Duplicate delivery is allowed; clients deduplicate by event ID. A cursor older than retained data returns an explicit gap and a fresh Host-approved message/state snapshot when available. It never silently starts at the newest event.
 
 Presentation replay reconstructs visible messages, activities, and state. It does not rerun model or tool work, recreate a live run, prove that omitted deltas never occurred, or select a continuation checkpoint. A Host can discard token-level deltas after retaining complete semantic messages and still report the gap honestly.
 

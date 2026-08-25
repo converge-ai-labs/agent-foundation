@@ -76,7 +76,7 @@ def test_execution_attempt_freezes_its_selected_starting_checkpoint(tmp_path: Pa
         checkpoint_1 = await store.commit_checkpoint(
             first,
             harness_run_id="run-1",
-            harness_state=HarnessState(),
+            harness_state=HarnessState.new(),
         )
         await store.abandon_execution_attempt_for_recovery(first)
 
@@ -90,12 +90,52 @@ def test_execution_attempt_freezes_its_selected_starting_checkpoint(tmp_path: Pa
         checkpoint_2 = await store.commit_checkpoint(
             second,
             harness_run_id="run-2",
-            harness_state=HarnessState(),
+            harness_state=second.starting_checkpoint.harness_state.model_copy(deep=True),
         )
         selected = await store.load_selected_checkpoint("execution-1")
         assert selected is not None
         assert selected.checkpoint_ref == checkpoint_2.checkpoint_ref
+        assert selected.thread_id == checkpoint_1.thread_id
         assert second.starting_checkpoint.checkpoint_ref == checkpoint_1.checkpoint_ref
+
+        record = await store.read_execution("execution-1")
+        assert record.thread_id == checkpoint_1.thread_id
+
+    asyncio.run(exercise())
+
+
+def test_store_rejects_checkpoint_from_another_thread(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        store = JsonFileHostStore(tmp_path)
+        await store.create_execution(
+            execution_id="execution-1",
+            definition_revision_ref="definition-1",
+            agent_instance_id="agent-1",
+        )
+        first = await store.acquire_execution_attempt("execution-1")
+        checkpoint = await store.commit_checkpoint(
+            first,
+            harness_run_id="run-1",
+            harness_state=HarnessState.new(),
+        )
+        execution_path = tmp_path / "executions" / "execution-1" / "execution.json"
+        payload = json.loads(execution_path.read_text(encoding="utf-8"))
+        payload.pop("thread_id")
+        execution_path.write_text(json.dumps(payload), encoding="utf-8")
+        await store.abandon_execution_attempt_for_recovery(first)
+
+        replacement = await store.acquire_execution_attempt("execution-1")
+        assert replacement.starting_checkpoint is not None
+        assert replacement.starting_checkpoint.thread_id == checkpoint.thread_id
+        with pytest.raises(HostStoreError, match="Execution Thread"):
+            await store.commit_checkpoint(
+                replacement,
+                harness_run_id="run-2",
+                harness_state=HarnessState.new(),
+            )
+
+        selected = await store.load_selected_checkpoint("execution-1")
+        assert selected == checkpoint
 
     asyncio.run(exercise())
 
@@ -158,13 +198,13 @@ def test_store_rejects_invalid_or_stale_fences(tmp_path: Path) -> None:
             await store.commit_checkpoint(
                 invalid,
                 harness_run_id="run-1",
-                harness_state=HarnessState(),
+                harness_state=HarnessState.new(),
             )
 
         await store.commit_checkpoint(
             lease,
             harness_run_id="run-1",
-            harness_state=HarnessState(),
+            harness_state=HarnessState.new(),
         )
         await store.abandon_execution_attempt_for_recovery(lease)
         await store.acquire_execution_attempt("execution-1")
@@ -172,7 +212,7 @@ def test_store_rejects_invalid_or_stale_fences(tmp_path: Path) -> None:
             await store.commit_checkpoint(
                 lease,
                 harness_run_id="run-1",
-                harness_state=HarnessState(),
+                harness_state=HarnessState.new(),
             )
 
     asyncio.run(exercise())

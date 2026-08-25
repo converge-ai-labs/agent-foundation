@@ -36,6 +36,7 @@ class LocalSession(BaseModel):
     parent_fork: SessionForkRef | None
     selected_checkpoint: CheckpointRef | None
     turns: tuple[TurnRecord, ...]
+    items: tuple[ProjectedItem, ...]
     jobs: tuple[BackgroundJobRecord, ...]
     replay: PresentationReplayIndex
 
@@ -76,7 +77,7 @@ class TurnRecord(BaseModel):
     finished_at: datetime | None
 ```
 
-`session_id`, `root_thread_id`, Turn IDs, checkpoint IDs, Run IDs, and job references are compact identifiers and grant no authority. When a root checkpoint is selected, `root_thread_id` equals its `HarnessState.thread_id`; every checkpoint must satisfy `checkpoint.thread_id == checkpoint.harness_state.thread_id`. Stored input and result projections are bounded and pass the Host's local content policy. Secret credentials, live clients, current bindings, native plugin objects, task objects, locks, and open streams are never serialized.
+`session_id`, `root_thread_id`, Turn IDs, Item IDs, checkpoint IDs, Run IDs, and job references are compact identifiers and grant no authority. When a root checkpoint is selected, `root_thread_id` equals its `HarnessState.thread_id`; every checkpoint must satisfy `checkpoint.thread_id == checkpoint.harness_state.thread_id`. Every retained [`ProjectedItem`](../agent-stream-protocol/00-overview.md#item-materialization-and-identity) references an existing Turn in the Session and uses that Turn's `thread_id`; its `item_id` remains stable across status updates and retained replay. Stored input, Item values, and result projections are bounded and pass the Host's local content policy. Secret credentials, live clients, current bindings, native plugin objects, task objects, locks, and open streams are never serialized.
 
 Each revision selects at most one checkpoint. A completed turn references the complete checkpoint produced by its terminal Harness result. A failed Harness result may select a complete returned state only when the Harness contract supplies one and Host policy explicitly chooses it; otherwise the previous checkpoint remains selected. Cancelled and interrupted records never synthesize a newer state from partial messages, AG-UI events, or provider history.
 
@@ -143,7 +144,7 @@ The fork can retain the source profile snapshot or select another already resolv
 
 ## Presentation Replay
 
-The session retains [ordered `ProjectedEvent` envelopes](../agent-stream-protocol/00-overview.md#projection-context-and-envelope) in bounded segments plus complete Host-approved message or state snapshots needed to resynchronize a renderer. Each segment records the AG-UI protocol profile, sequence range, event identities, and retention generation.
+The session retains [ordered `ProjectedEvent` envelopes](../agent-stream-protocol/00-overview.md#projection-context-and-envelope) in bounded segments, the latest bounded value for each retained semantic Item, and complete Host-approved message or state snapshots needed to resynchronize a renderer. Each segment records the AG-UI protocol profile, sequence range, event identities, Item identities where present, and retention generation. Compaction can replace Item deltas with a complete Item projection but preserves `item_id`.
 
 Replay is a display projection. It can reconstruct visible text, tool observations, child activity, and terminal status but cannot:
 
@@ -162,11 +163,11 @@ Agent UI offers an optional definition-selected Session Capability for model-ass
 
 Its first-party tools provide bounded variants of:
 
-- `list_session_items` for current-session turn, message, and retained job summaries;
-- `search_session` over indexed current-session user-visible content;
-- `read_session_item` for one exact current-session item reference.
+- `list_session_items` for current-session retained semantic Item summaries, each with its canonical `item_id`;
+- `search_session` over indexed current-session user-visible Item content, returning canonical Item IDs;
+- `read_session_item` for one exact current-session `item_id`.
 
-The model never supplies a filesystem path or another session ID. Results are safe projections and exclude private Capability state, raw `HarnessState`, credentials, hidden model/provider frames, plugin data, internal receipts, and unapproved child detail. Search ranking is an observation and does not reorder checkpoints.
+The model never supplies a filesystem path or another session ID. `read_session_item` resolves only an ID present in the current Session's retained Item index; Turn IDs, event IDs, replay cursors, provider IDs, and job IDs are not accepted as substitutes. Results are safe projections and exclude private Capability state, raw `HarnessState`, credentials, hidden model/provider frames, plugin data, internal receipts, and unapproved child detail. Search ranking is an observation and does not reorder checkpoints.
 
 The Capability cannot create, select, switch, rename, fork, delete, compact, or export a session; change its profile; select a checkpoint; modify messages; submit input; control a run or child; rewrite a plugin; or mutate retention. Those remain explicit user/Host application commands. A missing or stale fresh attachment fails before a repository read.
 

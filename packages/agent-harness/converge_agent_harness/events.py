@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, runtime_checkable
+from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
 from pydantic_ai.messages import AgentStreamEvent
@@ -278,6 +279,25 @@ class HarnessEvent:
             raise ValueError("Harness event correlation is invalid")
 
 
+@dataclass(eq=False, slots=True, weakref_slot=True)
+class _ChildEventProvenanceToken:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class _ChildEventProvenance:
+    thread_id: str
+    run_id: str
+    sequence: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ForwardedChildEvent(HarnessEvent):
+    """Private child envelope carrying an opaque provenance lookup token."""
+
+    _child_provenance_token: _ChildEventProvenanceToken = field(repr=False, compare=False)
+
+
 @dataclass(frozen=True, slots=True)
 class HarnessRunResultEvent[OutputT]:
     """The sole terminal stream event, emitted only after teardown succeeds."""
@@ -366,6 +386,9 @@ class _RunEventEmitter:
         self.run_id = run_id
         self._queue: asyncio.Queue[HarnessExtensionEvent | HarnessEvent] = asyncio.Queue(maxsize=capacity)
         self._child_runs: dict[str, str] = {}
+        self._child_provenance_by_token: WeakKeyDictionary[_ChildEventProvenanceToken, _ChildEventProvenance] = (
+            WeakKeyDictionary()
+        )
         self._consumer_started = False
         self._producer_stopped = asyncio.Event()
         self._producer_stopped.set()
@@ -405,7 +428,27 @@ class _RunEventEmitter:
         elif not source.is_registered_child(event.run_id, event.thread_id):
             raise RunError("Forwarded child event is invalid.", code="child_event_invalid")
         self._child_runs[event.run_id] = event.thread_id
-        await self._put(event)
+        token = _ChildEventProvenanceToken()
+        self._child_provenance_by_token[token] = _ChildEventProvenance(
+            thread_id=event.thread_id,
+            run_id=event.run_id,
+            sequence=event.sequence,
+        )
+        await self._put(
+            _ForwardedChildEvent(
+                thread_id=event.thread_id,
+                run_id=event.run_id,
+                sequence=event.sequence,
+                occurred_at=event.occurred_at,
+                event=event.event,
+                _child_provenance_token=token,
+            )
+        )
+
+    def take_child_provenance(self, event: HarnessEvent) -> _ChildEventProvenance | None:
+        if not isinstance(event, _ForwardedChildEvent):
+            return None
+        return self._child_provenance_by_token.pop(event._child_provenance_token, None)
 
     def is_registered_child(self, run_id: str, thread_id: str) -> bool:
         return self._child_runs.get(run_id) == thread_id
@@ -456,6 +499,7 @@ class _RunEventEmitter:
     def close(self) -> None:
         self._closed = True
         self._consumer_started = False
+        self._child_provenance_by_token.clear()
         self._producer_stopped.set()
 
     def envelope(self, event: HarnessExtensionEvent, *, sequence: int) -> HarnessEvent:

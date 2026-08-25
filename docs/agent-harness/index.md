@@ -61,9 +61,48 @@ Definition-selected Capabilities own Agent-loop lifecycle and compose reusable T
 | Media                    | `MediaToolset`                  | Fresh `MediaRunCapability` and `MediaReader`                    |
 | Documents                | `DocumentsToolset`              | Fresh `DocumentsRunCapability` and `DocumentConverter`          |
 | Web                      | `WebToolset`                    | Fresh `WebRunCapability`, live `WebPolicy`, and provider ports  |
+| Inline delegation        | `DelegationToolset`             | Declared child Agents and fresh `DelegationRunCapability`       |
+| CodeAct                  | `CodeActToolset`                | Run-local Monty runtime and typed eligible-tool policy          |
 | Usage                    | None                            | Native `RunUsage`, `RunUsageLedger`, and optional model pricing |
 
 Provider-backed clients are fresh trusted run attachments. They do not enter definitions or `HarnessState`, and the Harness core does not depend on vendor SDKs.
+
+## Inline Delegation and CodeAct
+
+`DelegationCapability` exposes one blocking `delegate` tool over the finite `SubagentDefinition` collection. Each invocation runs the selected child through its canonical `ExecutableAgent.stream()` path and waits for a complete result. The Host supplies fresh child authority with `DelegationRunCapability`; a returned `child_instance_id` can continue only that child's private nested `HarnessState`.
+
+Background submission, workers, receipts, waiting, cancellation routing, and durable delivery remain Host responsibilities. The Harness does not expose a background scheduler or background-delegation protocol.
+
+`CodeActCapability` optionally exposes `run_code` and `run_program`. Eligible host tools must be published explicitly by their owner through a typed policy:
+
+```python
+from converge_agent_harness import (
+    CodeActCapability,
+    CodeActPolicyToolset,
+    CodeActToolPolicy,
+)
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+
+def double(value: int) -> int:
+    return value * 2
+
+
+codeact_tools = Capability(
+    id="math-tools",
+    toolsets=[
+        CodeActPolicyToolset(
+            wrapped=FunctionToolset([double], id="math-functions"),
+            policy=CodeActToolPolicy(tools={"double": True}),
+            reject_unknown_tools=True,
+        )
+    ],
+)
+capabilities = (codeact_tools, CodeActCapability())
+```
+
+Restricted code receives no ambient filesystem, network, process, environment, credentials, or clock access. Nested calls validate and execute through the active final Pydantic AI `ToolManager`, so ordinary Capability hooks, the Harness tool-execution boundary, policy, events, and usage remain authoritative. `run_code` state lasts only for the current logical run and can be cleared with `restart=True`; `run_program` rereads a `*.codeact.py` file through the current Environment and uses a fresh interpreter session.
 
 ## Mandatory Boundaries and Optional Filters
 

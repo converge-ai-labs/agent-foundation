@@ -100,11 +100,10 @@ class HarnessState(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["1"]
     thread_id: str = Field(
-        default_factory=_new_thread_id,
-        min_length=1,
-        max_length=128,
+        pattern=r"^thread-[a-f0-9]{32}$",
+        max_length=39,
     )
     message_history_json: bytes | Sequence[ModelMessage] = Field(
         default=_EMPTY_MESSAGES_JSON,
@@ -119,6 +118,25 @@ class HarnessState(BaseModel):
         exclude=True,
         repr=False,
     )
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        message_history: Sequence[ModelMessage] = (),
+        agent_context_state: AgentContextStateSnapshot | None = None,
+        environment_state: EnvironmentState | None = None,
+    ) -> HarnessState:
+        """Create the initial continuation envelope for a new Thread."""
+        return cls(
+            schema_version="1",
+            thread_id=_new_thread_id(),
+            message_history=message_history,
+            agent_context_state=(
+                agent_context_state if agent_context_state is not None else AgentContextStateSnapshot()
+            ),
+            environment_state=environment_state,
+        )
 
     @field_validator("environment_state_json", mode="before")
     @classmethod
@@ -155,7 +173,7 @@ class HarnessState(BaseModel):
 
     def fork(self) -> HarnessState:
         """Copy portable continuation data into a distinct Thread."""
-        return HarnessState(
+        return HarnessState.new(
             message_history=self.message_history,
             agent_context_state=self.agent_context_state,
             environment_state=self.environment_state,

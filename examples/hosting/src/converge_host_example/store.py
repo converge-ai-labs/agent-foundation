@@ -51,6 +51,7 @@ class HostExecutionRecord(BaseModel):
     execution_id: str
     definition_revision_ref: str
     agent_instance_id: str
+    thread_id: str | None = None
     state: Literal["accepted", "running", "completed", "failed"] = "accepted"
     version: int = Field(default=0, ge=0)
     next_execution_attempt_generation: int = Field(default=1, ge=1)
@@ -63,6 +64,7 @@ class HostExecutionRecord(BaseModel):
         "execution_id",
         "definition_revision_ref",
         "agent_instance_id",
+        "thread_id",
         "selected_checkpoint_ref",
     )
     @classmethod
@@ -178,6 +180,7 @@ class JsonFileHostStore:
                 if record.selected_checkpoint_ref is not None
                 else None
             )
+            self._require_execution_thread(record, starting_checkpoint)
             execution_attempt = ExecutionAttemptRecord(
                 execution_attempt_id=execution_attempt_id,
                 generation=generation,
@@ -216,6 +219,15 @@ class JsonFileHostStore:
             record = await self._read_execution(lease.execution_id)
             self._require_current_execution_attempt(record, lease)
 
+            selected_checkpoint = (
+                await self._read_checkpoint(lease.execution_id, record.selected_checkpoint_ref)
+                if record.selected_checkpoint_ref is not None
+                else None
+            )
+            execution_thread_id = self._require_execution_thread(record, selected_checkpoint)
+            if execution_thread_id is not None and harness_state.thread_id != execution_thread_id:
+                raise HostStoreError("Checkpoint Thread does not match the Execution Thread")
+
             sequence = record.next_checkpoint_sequence
             checkpoint_ref = f"checkpoint-{sequence}"
             checkpoint = HostCheckpointRecord(
@@ -243,6 +255,7 @@ class JsonFileHostStore:
                     "version": record.version + 1,
                     "next_checkpoint_sequence": sequence + 1,
                     "selected_checkpoint_ref": checkpoint_ref,
+                    "thread_id": harness_state.thread_id,
                 }
             )
             await self._write_model(self._execution_path(lease.execution_id), selected)
@@ -270,7 +283,9 @@ class JsonFileHostStore:
             checkpoint_ref = record.selected_checkpoint_ref
             if checkpoint_ref is None:
                 return None
-            return await self._read_checkpoint(execution_id, checkpoint_ref)
+            checkpoint = await self._read_checkpoint(execution_id, checkpoint_ref)
+            self._require_execution_thread(record, checkpoint)
+            return checkpoint
 
     async def commit_completed(self, lease: ExecutionAttemptLease, *, output: str) -> HostExecutionRecord:
         async with self._lock:
@@ -280,6 +295,7 @@ class JsonFileHostStore:
             if checkpoint_ref is None:
                 raise HostStoreError("Terminal completion requires a selected checkpoint")
             checkpoint = await self._read_checkpoint(lease.execution_id, checkpoint_ref)
+            self._require_execution_thread(record, checkpoint)
             if (
                 checkpoint.execution_attempt_id != lease.execution_attempt_id
                 or checkpoint.execution_attempt_generation != lease.generation
@@ -315,6 +331,17 @@ class JsonFileHostStore:
         if checkpoint.execution_id != execution_id:
             raise HostStoreError("Selected checkpoint belongs to another Execution")
         return checkpoint
+
+    @staticmethod
+    def _require_execution_thread(
+        record: HostExecutionRecord,
+        checkpoint: HostCheckpointRecord | None,
+    ) -> str | None:
+        if checkpoint is None:
+            return record.thread_id
+        if record.thread_id is not None and record.thread_id != checkpoint.thread_id:
+            raise HostStoreError("Selected checkpoint Thread does not match the Execution Thread")
+        return checkpoint.thread_id
 
     def _require_current_execution_attempt(self, record: HostExecutionRecord, lease: ExecutionAttemptLease) -> None:
         execution_attempt = record.current_execution_attempt

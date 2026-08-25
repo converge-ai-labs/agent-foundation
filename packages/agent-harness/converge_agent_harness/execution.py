@@ -743,7 +743,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._input = input
         self._input_factory = input_factory
         self._bindings = bindings
-        self._previous_state = previous_state.model_copy(deep=True) if previous_state is not None else HarnessState()
+        self._previous_state = (
+            previous_state.model_copy(deep=True) if previous_state is not None else HarnessState.new()
+        )
         self.thread_id = self._previous_state.thread_id
         self.run_id = f"run-{uuid4().hex}"
         self._deferred_resume = deferred_resume
@@ -775,6 +777,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._new_message_index = len(self._latest_messages)
         self._source_sequence = 0
         self._public_sequence = 0
+        self._last_public_child_sequence_by_run: dict[str, int] = {}
         self._last_valid_outcome: HarnessRunResult[OutputT] | None = None
         self._result: HarnessRunResult[OutputT] | None = None
         self._entered = False
@@ -1219,12 +1222,30 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 "Plugin emitted an invalid Harness event.",
                 code="plugin_event_invalid",
             ) from exc
+        provenance = self._emitter.take_child_provenance(item)
+        if provenance is not None and (item.thread_id != provenance.thread_id or item.run_id != provenance.run_id):
+            raise PluginError(
+                "Plugin changed forwarded child event provenance.",
+                code="plugin_event_run_mismatch",
+            )
+        if provenance is not None and item.sequence != provenance.sequence:
+            raise PluginError(
+                "Plugin changed forwarded child event sequence.",
+                code="plugin_event_sequence_invalid",
+            )
         if item.run_id != self.run_id:
-            if not self._emitter.is_registered_child(item.run_id, item.thread_id):
+            if provenance is None or not self._emitter.is_registered_child(item.run_id, item.thread_id):
                 raise PluginError(
                     "Plugin emitted an event for an unregistered child run.",
                     code="plugin_event_run_mismatch",
                 )
+            previous = self._last_public_child_sequence_by_run.get(item.run_id)
+            if previous is not None and item.sequence <= previous:
+                raise PluginError(
+                    "Plugin emitted an out-of-order child event.",
+                    code="plugin_event_sequence_invalid",
+                )
+            self._last_public_child_sequence_by_run[item.run_id] = item.sequence
             return HarnessEvent(
                 thread_id=item.thread_id,
                 run_id=item.run_id,

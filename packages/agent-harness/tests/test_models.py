@@ -80,7 +80,7 @@ async def test_model_binding_observes_state_owned_identity_across_continuation_a
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
-    previous = HarnessState()
+    previous = HarnessState.new()
 
     first = await executable.run(
         "first",
