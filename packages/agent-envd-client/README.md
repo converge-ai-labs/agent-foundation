@@ -9,10 +9,12 @@ The package currently provides:
 - generated EIP 1.0 Pydantic wire models, canonical codecs, method metadata, and typed `EIPClient` methods for the complete protocol surface;
 - `RequestCoordinator` for bounded request IDs, concurrent response correlation, data-frame routing, typed errors, and no automatic ambiguous retry;
 - `StdioTransport` for multiplexed content-length control and binary data frames over trusted parent-supplied asyncio process pipes;
+- `HttpTransport` for authenticated Host-dialed control requests and raw streaming transfer bodies over HTTP(S);
+- `AcceptedWebSocketTransport` for EIP framing over an already-authenticated reverse-WebSocket `ServerConnection` accepted by the Host;
 - `EIPSession` for initialization, exact required-method/generation/descriptor validation, monotonic method-and-limit refresh that rejects topology/posture/feature changes or widening, and session close;
 - high-level `EIPFileReader` and `EIPFileWriter` async context managers, exposed by `EIPSession.open_reader()` and `EIPSession.open_writer()`, for bounded streaming file transfer.
 
-Configured daemons can expose resource reads, atomic mutations, find, search, receipts, and port observation through the generated client. Trusted stdio is the currently implemented carrier; the accepted outbound reverse-WebSocket profile is not implemented yet, and inbound HTTP/WebSocket transports are not part of the target contract. Provider process creation and lifecycle policy remain outside this package; a Host adapter or test fixture launches `agent-envd` and supplies its private pipes.
+Configured daemons can expose resource reads, atomic mutations, find, search, receipts, and port observation through the generated client. Trusted stdio, Host-dialed HTTP(S), and Host-accepted reverse WebSocket carry the same EIP method/session contract. Provider process creation, HTTP credential issuance, reverse-WebSocket listener authentication, and lifecycle policy remain outside this package.
 
 ## Example
 

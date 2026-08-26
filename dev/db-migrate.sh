@@ -34,15 +34,17 @@ fi
     -c "CREATE DATABASE \"$DATABASE_NAME\";" >/dev/null
 
 DATABASE_URL="postgresql+psycopg://foundation:foundation@127.0.0.1:${POSTGRES_PORT}/${DATABASE_NAME}"
-VERSIONS_DIR="$ROOT_DIR/packages/foundation-service/converge_foundation_service/db/migrations/versions"
+VERSIONS_DIR="$ROOT_DIR/packages/foundation-service/converge_foundation_service/database/migrations/versions"
 
 echo "Replaying migration history in disposable database $DATABASE_NAME..."
-FOUNDATION_DATABASE_URL="$DATABASE_URL" uv run --locked foundation-service db upgrade
+FOUNDATION_DATABASE_BACKEND=postgresql FOUNDATION_DATABASE_URL="$DATABASE_URL" \
+    uv run --locked foundation-service db upgrade
 
 echo "Generating migration: $MESSAGE"
-FOUNDATION_DATABASE_URL="$DATABASE_URL" uv run --locked foundation-service db migrate "$MESSAGE"
+FOUNDATION_DATABASE_BACKEND=postgresql FOUNDATION_DATABASE_URL="$DATABASE_URL" \
+    uv run --locked foundation-service db migrate "$MESSAGE"
 
 uv run --locked ruff format "$VERSIONS_DIR"
 uv run --locked ruff check --fix "$VERSIONS_DIR"
 
-echo "Generated migration in packages/foundation-service/converge_foundation_service/db/migrations/versions/."
+echo "Generated migration in packages/foundation-service/converge_foundation_service/database/migrations/versions/."

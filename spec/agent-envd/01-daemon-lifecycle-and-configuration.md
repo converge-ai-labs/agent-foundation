@@ -4,7 +4,7 @@
 
 `agent-envd` is one authority-bearing daemon for one user, one Environment identity, and one process generation. It validates trusted bootstrap configuration, creates fresh generation-private runtime state, initializes resource owners and command isolation, and admits EIP only after every required enforcement component is usable.
 
-A daemon uses either trusted stdio or outbound reverse WebSocket. In the network profile envd is a dialer: it actively connects to a trusted control-service listener and never binds an inbound EIP, HTTP, health, or readiness endpoint.
+A daemon uses trusted stdio, Host-dialed HTTP, or outbound reverse WebSocket. HTTP binds one dedicated authenticated EIP listener; reverse WebSocket makes envd the carrier dialer. Neither network profile exposes a browser, generic HTTP, inbound WebSocket, health, or readiness API.
 
 Bootstrap configuration is operator or provider-adapter input. EIP requests can use only configured mounts, methods, profiles, limits, and isolation posture. They cannot change Environment identity, native roots, carrier endpoint/credentials, hard quotas, isolation mode, protected paths, or daemon generation.
 
@@ -12,33 +12,37 @@ Bootstrap configuration is operator or provider-adapter input. EIP requests can 
 
 | Concern                                                                                                                | Owner                                                    | Relationship                                  |
 | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------- |
-| Provider resource creation, lifecycle credential, endpoint routing, and envd attachment credential issuance            | Host provider adapter                                    | Completes trusted bootstrap and refresh       |
+| Provider resource lifecycle, current credential use, endpoint routing, and envd attachment-token issuance              | Environment Provider package and Host                    | Completes trusted bootstrap                   |
 | Envd executable, configuration, private bootstrap channel, and process lifecycle                                       | Operator or provider adapter                             | Launches envd inside the selected Environment |
 | Configuration validation, generation, resource owners, isolation probe, local readiness, connector, drain, and cleanup | `agent-envd`                                             | One daemon lifecycle                          |
-| Carrier framing, reverse-WebSocket handshake/reconnect, and EIP session                                                | [Transports and Sessions](03-transports-and-sessions.md) | Begins only after local readiness             |
+| Carrier framing, HTTP listener, reverse-WebSocket handshake/reconnect, and EIP session                                 | [Transports and Sessions](03-transports-and-sessions.md) | Begins only after local readiness             |
 | Harness run and durable execution lifecycle                                                                            | Harness and Host                                         | Independent of daemon process lifetime        |
 
-One ready daemon can serve sequential stdio work or a sequence of reconnecting reverse-WebSocket sessions and can own concurrent generation resources within daemon-global ceilings. A session is a protocol carrier, not a tenant, principal, or run. Another user or mutually untrusted workload requires another daemon instance, runtime root, bootstrap binding, and provider resource boundary.
+One ready daemon admits at most one active initialized EIP session and can then serve fresh sequential sessions over its selected carrier while retaining generation-owned resources. A session is a protocol carrier, not a tenant, principal, or run. Another user, mutually untrusted workload, or concurrent independent session requires another daemon instance, runtime root, bootstrap binding, and provider resource boundary.
 
 ## Trusted Configuration
 
 The following conceptual schema defines stable configuration classes. It is not the CLI parser or EIP wire shape.
 
 ```python
-type TransportMode = Literal["stdio", "reverse_websocket"]
+type TransportMode = Literal["stdio", "http", "reverse_websocket"]
 type ExecutionIsolationMode = Literal["required", "disabled"]
 type ExecutionNetworkMode = Literal["host", "deny"]
 
 
-class AttachmentCredentialProvider(BaseModel):
-    bootstrap_channel: SecretBootstrapChannel
+class HttpListenerConfig(BaseModel):
+    bind_host: str
+    bind_port: int
+    credential_file: str
+    tls_certificate_file: str | None = None
+    tls_private_key_file: str | None = None
+    plaintext_scope: Literal["loopback", "provider_private_link"] | None = None
 
 
 class ReverseWebSocketConfig(BaseModel):
     endpoint: str
-    subprotocol_major_versions: tuple[int, ...] = (1,)
-    credential_provider: AttachmentCredentialProvider
-    tls_trust_roots: tuple[str, ...] = ()
+    credential_file: str
+    tls_ca_file: str | None = None
 
 
 class DaemonLimits(BaseModel):
@@ -59,6 +63,7 @@ class DaemonConfig(BaseModel):
     environment_id: str
     runtime_directory: str
     transport: TransportMode
+    http: HttpListenerConfig | None
     reverse_websocket: ReverseWebSocketConfig | None
     root_mount_id: str | None
     mounts: tuple[TrustedMountConfig, ...]
@@ -92,32 +97,44 @@ The executable accepts trusted configuration from an operator-selected file, exp
 
 Stable non-secret environment configuration includes:
 
-| Variable                                                | Values/requirement                              | Meaning                                           |
-| ------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------- |
-| `AGENT_ENVD_ENVIRONMENT_ID`                             | Required                                        | Stable provider Environment identity              |
-| `AGENT_ENVD_TRANSPORT`                                  | `stdio` or `reverse_websocket`; default `stdio` | Selects the carrier profile                       |
-| `AGENT_ENVD_REVERSE_WS_URL`                             | Required only for reverse WebSocket             | Normalized outbound `wss://` endpoint             |
-| `AGENT_ENVD_RUNTIME_DIR`                                | Required absolute path                          | Parent for fresh generation-private runtime state |
-| `AGENT_ENVD_EXECUTION_ISOLATION`                        | `required` or `disabled`; default `required`    | Selects envd inner command isolation              |
-| `AGENT_ENVD_EXECUTION_NETWORK`                          | `host` or `deny`; default `host`                | Selects required-backend network ceiling          |
-| `AGENT_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS`            | JSON array; default `[]`                        | Adds trusted command runtime roots                |
-| `AGENT_ENVD_EXECUTION_UID` / `AGENT_ENVD_EXECUTION_GID` | Optional paired positive Linux IDs              | Selects trusted final Linux payload identity      |
+| Variable                                                         | Values/requirement                                                 | Meaning                                                             |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `AGENT_ENVD_ENVIRONMENT_ID`                                      | Required                                                           | Stable provider Environment identity                                |
+| `AGENT_ENVD_TRANSPORT`                                           | `stdio`, `http`, or `reverse_websocket`; default `stdio`           | Selects the carrier profile                                         |
+| `AGENT_ENVD_HTTP_BIND`                                           | Required only for HTTP                                             | Dedicated listener host and port                                    |
+| `AGENT_ENVD_HTTP_CREDENTIAL_FILE`                                | Required only for HTTP                                             | Protected bootstrap Bearer-token file                               |
+| `AGENT_ENVD_HTTP_TLS_CERT_FILE` / `AGENT_ENVD_HTTP_TLS_KEY_FILE` | Optional paired PEM files                                          | Envd-native custom HTTPS identity                                   |
+| `AGENT_ENVD_HTTP_PLAINTEXT_SCOPE`                                | `loopback` or `provider_private_link`; required without native TLS | Permits a trusted plaintext listener, including behind provider TLS |
+| `AGENT_ENVD_REVERSE_WS_URL`                                      | Required only for reverse WebSocket                                | Normalized outbound `ws://` or `wss://` endpoint                    |
+| `AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE`                          | Required only for reverse WebSocket                                | Absolute path to the protected Bearer token file                    |
+| `AGENT_ENVD_REVERSE_WS_CA_FILE`                                  | Optional absolute PEM file for `wss`                               | Additional operator-trusted certificate roots                       |
+| `AGENT_ENVD_RUNTIME_DIR`                                         | Required absolute path                                             | Parent for fresh generation-private runtime state                   |
+| `AGENT_ENVD_EXECUTION_ISOLATION`                                 | `required` or `disabled`; default `required`                       | Selects envd inner command isolation                                |
+| `AGENT_ENVD_EXECUTION_NETWORK`                                   | `host` or `deny`; default `host`                                   | Selects required-backend network ceiling                            |
+| `AGENT_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS`                     | JSON array; default `[]`                                           | Adds trusted command runtime roots                                  |
+| `AGENT_ENVD_EXECUTION_UID` / `AGENT_ENVD_EXECUTION_GID`          | Optional paired positive Linux IDs                                 | Selects trusted final Linux payload identity                        |
 
 The runtime parent is required on every platform and carrier profile because generation-private spool, control, probe, and connector state is unconditional. Envd does not derive an authority-bearing parent from the ambient current directory, user home, or platform temporary-directory environment. The provider creates and protects the parent before launch; envd creates a fresh unpredictable generation child and validates ownership, permissions or ACLs, and no-link/reparse shape before use.
 
-Reverse WebSocket requires a provider-owned short-lived attachment credential source on a protected bootstrap channel. The channel can be an inherited private descriptor/handle, service-manager secret facility with refresh IPC, or equivalent provider mechanism. Its platform representation is not EIP and is never caller-selectable. A one-shot secret source is valid only when the provider explicitly treats expiry/authentication failure as generation-fatal and restarts envd with a fresh generation.
+Each network profile requires a provider-owned short-lived attachment token stored in the regular file selected by its profile-specific `*_CREDENTIAL_FILE` setting. The path is non-secret trusted bootstrap configuration; it is absolute and must identify a non-symlink regular file. Envd reads one bounded non-empty token before network admission or a connection attempt, removes one optional trailing line ending, and rejects whitespace or control characters. A missing, unreadable, empty, malformed, or oversized configured token is generation-fatal. The provider can replace the protected reverse-WebSocket token file before a later reconnect attempt, but an upgrade `401` or `403` is immediately generation-fatal rather than triggering unauthenticated retry or an in-process refresh protocol.
 
-Secrets are not accepted through CLI arguments or endpoint URLs. Attachment credentials, lifecycle credentials, bootstrap-channel identities, and their digests are absent from EIP, descriptors, readiness, argv, normal process environment, command environment, logs, metrics, traces, and errors. Envd keeps only the current and, during atomic refresh, next credential in protected memory and discards expired values.
+The token is not accepted directly through a CLI argument, normal process-environment value, or endpoint URL. Attachment tokens, lifecycle credentials, and their digests are absent from EIP, descriptors, readiness, argv, command environments, logs, metrics, traces, and errors. Configured credential-file paths are never copied into ordinary observability. `AGENT_ENVD_API_KEY` is unsupported: each network profile uses its mandatory protected token file rather than a long-lived environment secret or an unauthenticated listener.
 
 `AGENT_ENVD_*` names are reserved and cannot be set or unset by a command request. Child environments are rebuilt rather than inheriting the daemon environment wholesale.
 
+## HTTP TLS Policy
+
+The HTTP listener can terminate TLS itself with the optional paired certificate and private-key files. Those files are an optional deployment feature, not a requirement to operate the HTTP profile. When they are absent, the listener is plaintext and `plaintext_scope` must explicitly restrict it to loopback or a trusted provider-private link. A provider can terminate ordinary platform-managed HTTPS outside envd and route that private hop to the scoped plaintext listener.
+
+The requester-facing endpoint uses HTTPS with ordinary certificate-chain and hostname validation whenever it is public or provider-routed across an untrusted link. Clients use platform trust roots by default and can add an explicitly configured deployment CA without replacing the platform trust store. Custom server certificates and custom CAs are never mandatory when platform/provider TLS already supplies the required identity and confidentiality. Verification is never disabled.
+
 ## Reverse-WebSocket Endpoint Policy
 
-The configured URL must be `wss://`, contain no user information, fragment, or secret query component, and normalize to one fixed endpoint. Envd performs ordinary certificate-chain and hostname validation against platform roots plus optional explicit operator trust roots. It never follows redirects, disables verification, downgrades to plaintext, or accepts caller-controlled forwarding metadata as identity.
+The configured URL must use `ws://` or `wss://`, contain no user information, query, or fragment, and normalize to one fixed endpoint. `wss` performs ordinary certificate-chain and hostname validation against platform roots plus the optional configured PEM CA file. It never follows redirects, disables verification, or accepts caller-controlled forwarding metadata as identity. `ws` remains an explicit deployment choice for loopback, a private tunnel, or an outer network boundary that already supplies confidentiality; because the Bearer token and EIP content are plaintext on that hop, cross-host and production deployments should use `wss`.
 
-The connector presents the short-lived attachment credential as an `Authorization: Bearer` upgrade header and offers supported `eip.v<major>` subprotocols. The control service must select exactly one offered protocol. Authentication binds the attachment to the provider's expected Environment before the EIP requester sends `initialize`.
+The connector presents the mandatory short-lived attachment token as an `Authorization: Bearer` upgrade header and offers exactly `eip.v1`. The control service validates the token to the provider's expected Environment before accepting the upgrade and must select exactly `eip.v1`. Authentication at the HTTP upgrade authenticates the resulting WebSocket; the token is not repeated in WebSocket messages or EIP params.
 
-Invalid TLS, hostname, endpoint policy, redirect, or subprotocol is non-recoverable for the generation. Authentication failure requests credential refresh when available; a provider-classified nonrefreshable failure is generation-fatal. Transient DNS, connect, remote-unavailable, and liveness failures use capped exponential backoff with full jitter as owned by [Transports and Sessions](03-transports-and-sessions.md).
+Invalid TLS or hostname for `wss`, endpoint policy, redirect, subprotocol, token rejection, or malformed upgrade is non-recoverable for the generation. Missing token configuration fails before any connection attempt. Transient DNS, connect, remote-unavailable, and liveness failures use capped exponential backoff with full jitter as owned by [Transports and Sessions](03-transports-and-sessions.md).
 
 ## Environment Identity and Generation
 
@@ -160,11 +177,14 @@ stateDiagram-v2
     [*] --> Starting
     Starting --> LocallyReady: config, owners, runtime, and required isolation probe succeed
     Starting --> Failed: required startup step fails
+    LocallyReady --> Listening: HTTP listener selected
     LocallyReady --> CarrierConnecting: reverse WebSocket selected
     LocallyReady --> Serving: trusted stdio initialize succeeds
+    Listening --> Serving: authenticated HTTP initialize succeeds
     CarrierConnecting --> Serving: WebSocket upgrade and initialize succeed
     CarrierConnecting --> CarrierConnecting: recoverable reconnect
     CarrierConnecting --> Draining: generation-fatal attachment failure
+    Serving --> Listening: HTTP session closes
     Serving --> CarrierConnecting: reverse-WebSocket carrier loss
     Serving --> Draining: shutdown or fatal ownership fault
     LocallyReady --> Draining: stdio parent loss
@@ -183,10 +203,10 @@ Startup order is:
 5. Create the operation ledger, transfer/process records, and command-output spool.
 6. Initialize the selected execution backend.
 7. In `required` mode, run the native production probe for Linux, macOS, or Windows.
-8. Reserve stdio framing, or initialize the outbound connector and credential source.
+8. Reserve stdio framing, bind the scoped authenticated HTTP listener, or initialize the outbound connector and credential source.
 9. Publish local readiness to the trusted provider lifecycle boundary and begin carrier admission.
 
-No stdio frame is accepted and no reverse-WebSocket attempt begins before the required isolation probe succeeds. Envd never binds an inbound listening socket for EIP.
+No stdio frame is accepted, HTTP listener begins admission, or reverse-WebSocket attempt begins before the required isolation probe succeeds. Only the selected HTTP profile binds an inbound EIP socket.
 
 ## Readiness
 
@@ -197,7 +217,7 @@ Readiness has two distinct facts:
 
 In stdio mode, successful `initialize` is the usable readiness boundary. Stdout contains only framed EIP messages; startup diagnostics use stderr and process exit.
 
-In reverse-WebSocket mode, the provider observes local readiness through the same trusted launch/bootstrap control boundary that owns envd, while the control service observes carrier readiness from the initialized connection. There is no readiness JSON line to discover a listener and no `/healthz` or `/readyz` route. Consumers dispatch only after carrier readiness. Losing carrier readiness leaves local generation-owned resources intact while reconnect is recoverable.
+In HTTP mode, the provider obtains the configured listener address through its trusted launch boundary and the client observes carrier readiness only after authenticated initialization. In reverse-WebSocket mode, the provider observes local readiness through that launch boundary while the control service observes carrier readiness from the initialized connection. There is no readiness JSON line and no `/healthz` or `/readyz` route. Consumers dispatch only after carrier readiness. Losing carrier readiness leaves local generation-owned resources intact while a fresh session can be established.
 
 Readiness never contains credentials, native roots, protected paths, helper locations, command content, or private runtime names.
 
@@ -249,8 +269,9 @@ The EIP descriptor exposes only non-secret client-actionable limits, exact avail
 | Runtime subtree cannot be created fresh and private                      | Exit nonzero before admission                                             |
 | Required isolation backend/probe fails                                   | Exit nonzero; no carrier admission or fallback                            |
 | Stdio framing setup fails                                                | Exit nonzero before initialization                                        |
+| HTTP bind, credential, native TLS, or plaintext-scope validation fails   | Exit nonzero before listener admission                                    |
 | Reverse-WebSocket endpoint/TLS/subprotocol is invalid                    | Generation-fatal drain and nonzero exit                                   |
-| Attachment credential expires or is rejected                             | Refresh and reconnect, or generation-fatal when nonrefreshable            |
+| Network-profile token is missing, malformed, unreadable, or rejected     | Generation-fatal drain and nonzero exit                                   |
 | Transient DNS/connect/liveness failure                                   | Capped jittered reconnect; generation-owned state remains                 |
 | Runtime admission exhausted                                              | Typed pre-dispatch `busy`; no native work                                 |
 | Transfer/staging/spool quota exhausted                                   | Typed `busy` or `quota_exceeded`; no unbounded allocation                 |
@@ -268,8 +289,8 @@ Provider configuration changes restart envd and create a new generation. Live EI
 ## Invariants
 
 01. Envd becomes locally ready only after trusted configuration, fresh generation-private runtime state, bounded owners, and required platform isolation probe succeed.
-02. Envd supports trusted stdio or outbound reverse WebSocket and never binds an inbound EIP/HTTP/WebSocket/health listener.
-03. Reverse-WebSocket attachment uses a protected short-lived credential source with refresh or explicit generation-fatal expiry behavior; credentials never enter URLs, EIP, argv, child environments, or observability.
+02. Envd supports trusted stdio, Host-dialed HTTP, or outbound reverse WebSocket; only HTTP binds a dedicated inbound EIP listener, and no profile exposes browser, generic HTTP, inbound WebSocket, health, or readiness routes.
+03. Every network profile requires its protected short-lived token file and Bearer authentication; missing configured tokens are generation-fatal, reverse-WebSocket upgrade rejection is generation-fatal, and tokens never enter URLs, EIP, argv, child environments, or observability.
 04. Authority-bearing configuration is immutable for one generation; sessions observe only configured mounts and exact available methods.
 05. Every request, response, queue, operation, transfer, staging, process, spool, and shutdown resource is finitely bounded.
 06. One operation ledger owns running admission and retained terminal replay/receipt evidence for effectful methods; response-waiter loss cannot erase accepted mutation evidence.

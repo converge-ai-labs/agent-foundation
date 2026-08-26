@@ -30,7 +30,6 @@ def _run_entrypoint(
         capture_output=True,
         text=True,
     )
-
     return calls.read_text().splitlines()
 
 

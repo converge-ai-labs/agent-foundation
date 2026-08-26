@@ -1,0 +1,84 @@
+name: Agent Environment Provider CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-agent-environment-provider.yml"
+      - ".github/workflows/release-harness.yml"
+      - "deploy/containers/sandbox/Dockerfile"
+      - "packages/agent-environment-provider/**"
+      - "packages/agent-harness/pyproject.toml"
+      - "pyproject.toml"
+      - "scripts/check-agent-distributions.py"
+      - "scripts/release_version.py"
+      - "scripts/tests/test_check_agent_distributions.py"
+      - "scripts/tests/test_prepare_release_version.py"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-agent-environment-provider.yml"
+      - ".github/workflows/release-harness.yml"
+      - "deploy/containers/sandbox/Dockerfile"
+      - "packages/agent-environment-provider/**"
+      - "packages/agent-harness/pyproject.toml"
+      - "pyproject.toml"
+      - "scripts/check-agent-distributions.py"
+      - "scripts/release_version.py"
+      - "scripts/tests/test_check_agent_distributions.py"
+      - "scripts/tests/test_prepare_release_version.py"
+      - "uv.lock"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  provider:
+    name: Agent Environment Provider (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            runner: ubuntu-24.04
+          - name: Windows
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Synchronize Python workspace
+        run: uv sync --locked --all-packages
+
+      - name: Type-check Agent Environment Provider
+        if: matrix.name == 'Linux'
+        run: uv run --locked pyright packages/agent-environment-provider/converge_agent_environment_provider
+
+      - name: Test Agent Environment Provider
+        run: uv run --locked python -m pytest packages/agent-environment-provider/tests
+
+      - name: Build Agent Environment Provider distribution
+        run: uv build --package converge-agent-environment-provider --out-dir dist/provider

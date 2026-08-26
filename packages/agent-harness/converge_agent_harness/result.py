@@ -63,6 +63,7 @@ class HarnessRunResult[OutputT]:
         "_state",
         "_status",
         "_suspend_reason",
+        "_thread_id",
         "_usage",
         "_usage_records",
     )
@@ -70,6 +71,7 @@ class HarnessRunResult[OutputT]:
     def __init__(
         self,
         *,
+        thread_id: str,
         run_id: str,
         status: RunStatus,
         output: OutputT | None,
@@ -82,12 +84,16 @@ class HarnessRunResult[OutputT]:
         _messages: tuple[ModelMessage, ...] = (),
         _new_message_index: int = 0,
     ) -> None:
+        if not isinstance(thread_id, str) or not thread_id.strip():
+            raise ValueError("thread_id must be a non-blank string")
         if not isinstance(run_id, str) or not run_id.strip():
             raise ValueError("run_id must be a non-blank string")
         if status not in {"completed", "suspended", "failed", "cancelled"}:
             raise ValueError(f"Unsupported Harness run status: {status!r}")
         if state is not None and not isinstance(state, HarnessState):
             raise TypeError("state must be HarnessState or None")
+        if state is not None and state.thread_id != thread_id:
+            raise ValueError("state.thread_id must match thread_id")
         if not isinstance(usage, RunUsage):
             raise TypeError("usage must be RunUsage")
         if not all(isinstance(record, ModelUsageRecord | ProviderUsageRecord) for record in usage_records):
@@ -120,6 +126,7 @@ class HarnessRunResult[OutputT]:
         if not valid:
             raise ValueError(f"Invalid HarnessRunResult field combination for status {status!r}.")
 
+        self._thread_id = thread_id
         self._run_id = run_id
         self._status = status
         self._output = deepcopy(output)
@@ -131,6 +138,10 @@ class HarnessRunResult[OutputT]:
         self._deferred = deepcopy(deferred)
         self._messages_json = messages_json
         self._new_message_index = _new_message_index
+
+    @property
+    def thread_id(self) -> str:
+        return self._thread_id
 
     @property
     def run_id(self) -> str:
@@ -189,8 +200,9 @@ class HarnessRunResult[OutputT]:
         deferred: Any = _UNSET,
         status: Any = _UNSET,
     ) -> HarnessRunResult[Any]:
-        """Create a detached replacement candidate while preserving run correlation and messages."""
+        """Create a detached replacement candidate while preserving Thread and Run correlation."""
         return HarnessRunResult(
+            thread_id=self.thread_id,
             run_id=self.run_id,
             status=cast(RunStatus, self.status if status is _UNSET else status),
             output=self.output if output is _UNSET else output,
@@ -227,7 +239,10 @@ class HarnessRunResult[OutputT]:
         return cast(OutputT, self.output)
 
     def __repr__(self) -> str:
-        return f"HarnessRunResult(run_id={self.run_id!r}, status={self.status!r}, output={self.output!r})"
+        return (
+            f"HarnessRunResult(thread_id={self.thread_id!r}, run_id={self.run_id!r}, "
+            f"status={self.status!r}, output={self.output!r})"
+        )
 
 
 def _copy_usage(usage: RunUsage) -> RunUsage:

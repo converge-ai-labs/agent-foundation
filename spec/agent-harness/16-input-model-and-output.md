@@ -57,7 +57,7 @@ class DeferredToolResume:
     results: DeferredToolResults
 ```
 
-`requests` is the exact terminal pending value returned by the prior Harness run or accepted by the Host, not a value reconstructed from message metadata. `run()` and `stream()` accept it through `deferred_resume=` together with prior `HarnessState` and fresh bindings. The Harness verifies request/result categories, complete coverage, pending message identity, and the current assembled surface before forwarding only `results` through Pydantic AI's native `deferred_tool_results=` parameter on the first inner attempt. A later semantic attempt uses the already incorporated public message history and receives no deferred results again. Both nested values are defensively detached. The envelope carries no authority and is not stored in `HarnessState`; the full validation and Host boundary is owned by [Tool Execution](07-tool-execution.md#approval-and-deferred-calls).
+`requests` is the exact terminal pending value returned by the prior Harness run or accepted by the Host, not a value reconstructed from message metadata. `run()` and `stream()` accept it through `deferred_resume=` together with prior `HarnessState` and fresh bindings. The Harness verifies request/result categories, complete coverage, pending message identity, and the current assembled surface before forwarding only `results` through Pydantic AI's native `deferred_tool_results=` parameter on the first `ModelAttempt`. A later `ModelAttempt` uses the already incorporated public message history and receives no deferred results again. Both nested values are defensively detached. The envelope carries no authority and is not stored in `HarnessState`; the full validation and Host boundary is owned by [Tool Execution](07-tool-execution.md#approval-and-deferred-calls).
 
 ## Model Resolution
 
@@ -94,22 +94,23 @@ Pydantic AI retains the complete layering:
 
 The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. A hosted model-integration adapter may own a durable configuration, but it constructs a native Model before returning from `ModelRunBinding`.
 
-## Model Conversation Affinity
+## Thread Affinity
 
-One Agent instance owns one independently advancing Pydantic message history. The root Agent, every inline child instance, every Host-managed child, and every explicit fork are therefore separate model conversations even when a Host groups them under one product Thread or trace. Continuing the same Agent instance from its selected `HarnessState` continues the same model conversation through a fresh logical Harness run.
+One independently advancing Pydantic message history is one Thread. `HarnessState.thread_id` is its provider-neutral stable identity, and every fresh `AgentContext` restores that ID from the selected State. The root, every inline child's nested State, every Host-managed child's State, and every explicit `HarnessState.fork()` therefore have separate Threads even when a Host groups them under one workload instance, Session, or trace.
 
-A selected model integration can map that stable conversation identity to provider-specific routing, session, thread, or prompt-cache settings. For example, an OpenAI-compatible integration can set `openai_prompt_cache_key`, which the provider renders as `prompt_cache_key`. These values are provider integration details rather than Harness fields or a portable wire schema.
+A selected model integration reads `AgentContext.thread_id` and can map it to provider-specific routing, session, thread, or prompt-cache settings. For example, an OpenAI-compatible integration can set `openai_prompt_cache_key`, which the provider renders as `prompt_cache_key`. Those rendered values remain provider integration details rather than additional Harness fields or a portable wire schema.
 
 The mapping follows these rules:
 
-1. Distinct independently advancing message histories receive distinct provider model-session and prompt-cache affinity. A child never inherits its parent's value, and sibling children never share one merely because they have the same definition, product Thread, Host Turn, or Environment.
-2. A continuation of the same `AgentInstanceRef` preserves the same affinity on a best-effort basis across fresh Harness runs, worker replacement, and reconstructed model bindings. Every internal semantic attempt in one logical run uses that same affinity.
-3. A transient Harness `run_id`, Pydantic inner run ID, tool-call ID, or parent product-conversation ID is not the default affinity source. Those values rotate too often or group distinct message histories and would reduce cache reuse or mix unrelated cache/session scopes.
-4. The fresh `ModelRunBinding` derives or looks up the value from the stable `AgentInstanceRef`, selected model/provider namespace, and Host policy. A provider that needs an opaque non-derivable continuation selector keeps it in the Host's provider-specific envelope and reattaches it when constructing the fresh binding.
-5. `HarnessState`, `AgentContextState`, and Delegation State store messages and portable continuation data, not a provider session, route, credential, or prompt-cache key. Restoring state supplies the conversation data; fresh trusted bindings restore the same Agent instance and reconstruct current provider affinity.
-6. Affinity improves provider cache locality and best-effort continuation or retry behavior. It grants no authority, does not select a checkpoint, and cannot make an interrupted request or side effect exactly once.
+1. Distinct independently advancing message histories have distinct `thread_id` values and receive distinct provider model-session and prompt-cache affinity. A child never inherits its parent's value, and sibling children never share one merely because they have the same definition, `AgentInstanceRef`, Session, Host Execution, or Environment.
+2. A continuation selected from the same `HarnessState` preserves the exact ID across fresh Harness runs, worker replacement, and reconstructed model bindings. Every internal `ModelAttempt` in one logical run uses the same ID.
+3. A transient Harness `run_id`, model-attempt ID, tool-call ID, `AgentInstanceRef`, or Host `session_id` is not the affinity source. Those values rotate independently or group histories under other policy domains.
+4. The fresh `ModelRunBinding` reads the stable ID from `ModelResolutionContext.deps`, combines it only with its selected model/provider namespace and current policy as needed, and returns a native Model configured with matching affinity. No fresh binding can replace the context's ID. A provider that needs an additional opaque non-derivable continuation selector keeps it in the Host's provider-specific envelope associated with the matching State.
+5. `HarnessState` stores the provider-neutral ID, messages, and portable continuation data, but no provider session, route, credential, or rendered prompt-cache key. `AgentContextState` and Delegation State do not duplicate the ID; a nested child `HarnessState` carries its own.
+6. `HarnessState.fork()` copies portable continuation data while generating a new ID. Ordinary state copies, serialization, checkpoint selection, and export preserve the ID. A Host or trusted plugin remains able to perform an intentional complete-state transformation inside the existing trust boundary.
+7. The ID and derived affinity improve provider cache locality and best-effort continuation or retry behavior. They grant no authority, do not select a checkpoint, and cannot make an interrupted request or side effect exactly once.
 
-A concrete build-time Model remains valid for embedded use. When one reusable executable can serve several Agent instances and the provider supports conversation affinity, trusted composition supplies request-dynamic native settings or uses a logical model with `ModelRunBinding`; one static cache or session value cannot be shared across those independent histories. Native explicit setting precedence remains owned by Pydantic and the provider integration, but the resulting value must preserve the conversation isolation above.
+A concrete build-time Model remains valid for embedded use. When one reusable executable can serve several Agent instances and the provider supports provider-native affinity, trusted composition supplies request-dynamic native settings or uses a logical model with `ModelRunBinding`; one static cache or session value cannot be shared across those independent histories. Native explicit setting precedence remains owned by Pydantic and the provider integration, but the resulting value must preserve the Thread isolation above.
 
 ## Request and History Filters
 
@@ -151,7 +152,7 @@ Former global history processors resolve to one current owner:
 | Media acquisition, transformation, or upload                            | Optional Media Capability/provider integration          |
 | System instructions and provider request rendering                      | `AgentSpec`, native Model profile, and provider adapter |
 | Exact provider-history rejection repair                                 | `SelfHealingModel`                                      |
-| Interrupted-history normalization and semantic retry                    | Harness state recovery and `HarnessRunStream`           |
+| Interrupted-history normalization and `ModelAttempt` recovery           | Harness state recovery and `HarnessRunStream`           |
 
 Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses `SelfHealingModel` or a narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
 
@@ -167,7 +168,7 @@ For one non-streaming request, the wrapper:
 4. retries the request once only when the repair changed at least one value;
 5. otherwise re-raises the original exception.
 
-For streaming, only stream establishment can replay. Once a stream has been yielded, emitted content cannot be retracted; a later interruption belongs to the Harness semantic attempt loop.
+For streaming, only stream establishment can replay. Once a stream has been yielded, emitted content cannot be retracted; a later interruption belongs to the `ModelAttempt` recovery loop.
 
 Default rules are narrow tested provider repairs:
 
@@ -183,9 +184,9 @@ The wrapper does not retry generic transport, rate-limit, tool, output-validatio
 
 Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request.
 
-## Semantic Attempt Recovery
+## ModelAttempt Recovery
 
-`ModelRecoveryPolicy` owns recovery after an inner Pydantic attempt fails at a recoverable model boundary. It is disabled by default.
+`ModelRecoveryPolicy` owns recovery after an inner `ModelAttempt` fails at a recoverable model boundary. It is disabled by default.
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -202,7 +203,7 @@ class ModelRecoveryPolicy:
 
 Recoverable failures are narrowly classified model API errors, non-output-exhaustion `UnexpectedModelBehavior`, and public history showing an interrupted model-request boundary. Harness errors, cancellation, usage limits, exhausted output validation, tool failures, and native deferred/HITL results are hard stops.
 
-Each retry uses normalized interrupted history and new semantic input while preserving one outer Harness run, context, Environment, plugin graph, and `RunUsage`. Each Pydantic attempt receives a unique inner run ID. Detailed lifecycle semantics are owned by [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery).
+Each retry uses normalized interrupted history and new semantic input while preserving one outer Harness run, context, Environment, plugin graph, and `RunUsage`. Each `ModelAttempt` receives a unique model-attempt ID. Detailed lifecycle semantics are owned by [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#model-attempt-recovery).
 
 Provider-suspended continuation is not attempt recovery. Pydantic owns the public suspended message semantics; the Harness does not append a generic route pin or force a special hosted resolver contract.
 
@@ -225,7 +226,7 @@ Exactly one build-time source is valid:
 
 Neither source silently defaults to text. Callers request text explicitly with `output_type=str`. Supplying both sources is ambiguous and fails with `output_contract_conflict`; supplying neither fails with `output_contract_missing`. Native Pydantic validation rejects a non-object or otherwise invalid declarative schema.
 
-A business output that directly or transitively includes `DeferredToolRequests` or a subclass through a parameterized collection, structured `BaseModel`/`RootModel`, dataclass or `TypedDict` field, union, `Annotated` value, PEP 695 type alias, output marker, or callable return type is rejected at definition construction; that native value is reserved as the Harness suspension control outcome. Completed candidate validation recursively enforces the same reservation across supported structured Python instances and built-in containers. At build time the Harness forms `[effective_business_output, DeferredToolRequests]` and supplies that complete contract once to `Agent.from_spec()`. Every inner attempt uses the built Agent contract without a run override, preserving suspension support, Agent-level output validators, and one stable output Toolset across recovery.
+A business output that directly or transitively includes `DeferredToolRequests` or a subclass through a parameterized collection, structured `BaseModel`/`RootModel`, dataclass or `TypedDict` field, union, `Annotated` value, PEP 695 type alias, output marker, or callable return type is rejected at definition construction; that native value is reserved as the Harness suspension control outcome. Completed candidate validation recursively enforces the same reservation across supported structured Python instances and built-in containers. At build time the Harness forms `[effective_business_output, DeferredToolRequests]` and supplies that complete contract once to `Agent.from_spec()`. Every `ModelAttempt` uses the built Agent contract without a run override, preserving suspension support, Agent-level output validators, and one stable output Toolset across recovery.
 
 The Harness builds one matching process-local output adapter from the effective build-time contract, including return annotations of synchronous, `Awaitable`, and `Coroutine` output functions, and uses it to validate plugin-produced completed output. If Pydantic cannot generate a schema for an otherwise valid arbitrary process-local code-first return type, the adapter permits arbitrary types rather than rejecting the upstream output contract. Declarative output uses the schema-derived `StructuredDict` adapter and therefore accepts only string-keyed JSON-object values under native semantics.
 
@@ -235,34 +236,34 @@ Trusted plugins may replace the complete result candidate, including output, usa
 
 ## Failure Semantics
 
-| Failure                                         | Outcome                                                      |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| Invalid immediate or factory input              | Typed input/run error before model work                      |
-| Invalid or uncorrelated deferred continuation   | Typed run/deferred error before new model or tool work       |
-| Binding raises or returns a non-Model           | `ModelResolutionError`                                       |
-| No binding for a logical string                 | Delegate to native Pydantic inference                        |
-| Exact self-healing repair succeeds              | Replay the same request once                                 |
-| Exact repair does not match or changes nothing  | Propagate the original Model error                           |
-| Recoverable model interruption with budget      | Start another inner attempt after cancellation-aware backoff |
-| Recovery budget exhausted                       | Failed result with `model_recovery_exhausted`                |
-| Missing or conflicting build-time output source | `DefinitionError` before Agent construction                  |
-| Invalid declarative object JSON Schema          | `DefinitionError` retaining the native validation cause      |
-| Output validation retries exhausted             | No Harness semantic retry                                    |
-| Native deferred/HITL output                     | Suspended result with native `DeferredToolRequests`          |
-| Invalid plugin-completed output                 | `PluginError(code="plugin_result_invalid")`                  |
+| Failure                                         | Outcome                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------- |
+| Invalid immediate or factory input              | Typed input/run error before model work                       |
+| Invalid or uncorrelated deferred continuation   | Typed run/deferred error before new model or tool work        |
+| Binding raises or returns a non-Model           | `ModelResolutionError`                                        |
+| No binding for a logical string                 | Delegate to native Pydantic inference                         |
+| Exact self-healing repair succeeds              | Replay the same request once                                  |
+| Exact repair does not match or changes nothing  | Propagate the original Model error                            |
+| Recoverable model interruption with budget      | Start another `ModelAttempt` after cancellation-aware backoff |
+| Recovery budget exhausted                       | Failed result with `model_recovery_exhausted`                 |
+| Missing or conflicting build-time output source | `DefinitionError` before Agent construction                   |
+| Invalid declarative object JSON Schema          | `DefinitionError` retaining the native validation cause       |
+| Output validation retries exhausted             | No Harness `ModelAttempt` recovery                            |
+| Native deferred/HITL output                     | Suspended result with native `DeferredToolRequests`           |
+| Invalid plugin-completed output                 | `PluginError(code="plugin_result_invalid")`                   |
 
 ## Boundaries
 
-| Concern                                  | Owner                                              |
-| ---------------------------------------- | -------------------------------------------------- |
-| Native input, Model, profile, output     | Pydantic AI                                        |
-| Semantic input and thin resolution       | Harness                                            |
-| Model-conversation and provider affinity | Stable Agent instance, Host, and model integration |
-| Exact one-shot history repair            | `SelfHealingModel`                                 |
-| Interrupted semantic attempt loop        | Harness run coordinator                            |
-| Provider transport retry                 | Provider/client and Pydantic AI                    |
-| Hosted model catalog and policy          | Host adapter                                       |
-| Durable deferred execution               | Host                                               |
+| Concern                               | Owner                                                 |
+| ------------------------------------- | ----------------------------------------------------- |
+| Native input, Model, profile, output  | Pydantic AI                                           |
+| Semantic input and thin resolution    | Harness                                               |
+| Thread identity and provider affinity | `HarnessState`, `AgentContext`, and model integration |
+| Exact one-shot history repair         | `SelfHealingModel`                                    |
+| Interrupted `ModelAttempt` recovery   | Harness run coordinator                               |
+| Provider transport retry              | Provider/client and Pydantic AI                       |
+| Hosted model catalog and policy       | Host adapter                                          |
+| Durable deferred execution            | Host                                                  |
 
 ## Trade-offs
 

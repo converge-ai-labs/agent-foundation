@@ -13,11 +13,13 @@ from .errors import (
     EIPTransportError,
 )
 from .file_transfer import EIPFileReader, EIPFileWriter
+from .http import HttpTransport
 from .output import EIPOutputPage, EIPOutputReader
 from .requester import RequestCoordinator
 from .session import EIPSession
 from .stdio import StdioTransport
 from .transport import ControlFrame, EIPTransport, EIPTransportFrame
+from .websocket import AcceptedWebSocketTransport
 
 try:
     __version__ = version("converge-agent-envd-client")
@@ -25,6 +27,7 @@ except PackageNotFoundError:  # pragma: no cover - source-tree imports without i
     __version__ = "0.0.0"
 
 __all__ = [
+    "AcceptedWebSocketTransport",
     "ControlFrame",
     "EIPClientError",
     "EIPFileReader",
@@ -41,6 +44,7 @@ __all__ = [
     "EIPTransportClosedError",
     "EIPTransportError",
     "EIPTransportFrame",
+    "HttpTransport",
     "RequestCoordinator",
     "StdioTransport",
     "__version__",

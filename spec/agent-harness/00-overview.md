@@ -71,22 +71,22 @@ The trusted Host reconstructs Python objects from its own configuration and depe
 
 ## Major Components
 
-| Component                       | Responsibility                                                                                                                                        | Explicit boundary                                                 |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `AgentDefinition`               | Hold native `AgentSpec`, one build-time output, Model, top-level Capabilities, plugins, child definitions, and recovery policy                        | Process-local Python value only                                   |
-| `HarnessBuilder`                | Resolve an explicit or opted-in ambient plugin context, bind plugins, authorize Capability types, and call `Agent.from_spec()` once                   | Ambient I/O and discovery occur only when explicitly enabled      |
-| Plugin graph                    | Deterministic ordering, fresh run binding, outer middleware, and Capability contribution                                                              | Trusted code; Pydantic owns inner hooks                           |
-| Plugin configuration            | Validate the narrow JSON envelope and create fresh configured instances through selected factories                                                    | Not an Agent or Environment configuration language                |
-| `RunBindings`                   | Carry fresh Agent instance, Environment aggregate, optional model binding, run Capabilities, and metadata                                             | No durable state or generic service locator                       |
-| Environment provider factories  | Discover installed metadata and load only explicitly selected provider factories into an immutable catalog                                            | Availability is not Host authorization                            |
-| Environment extension factories | Discover installed metadata and load only explicitly selected aggregate-extension factories into an immutable catalog                                 | No Harness-owned configuration document                           |
-| Environment run extensions      | Enter ordered aggregate-wide scopes after state restore and exit them before provider teardown                                                        | Trusted code; no model or controller access                       |
-| Environment core                | Enter provider scopes, publish immutable routing, coordinate readiness/state, and serve Host topology updates                                         | Not a Capability, provider factory, or durable command API        |
-| `AgentContext`                  | Share run Identity, Environment facade, state, plugins, child collection, model binding, and metadata                                                 | One context per logical Harness run                               |
-| `HarnessRunStream`              | Lazy single-consumer events, cancellation, state export, model attempts, results, and cleanup                                                         | Not a Host Turn, worker lease generation, queue, or replay stream |
-| `HarnessState`                  | Detached messages, JSON Capability namespaces, and optional portable Environment data                                                                 | Host chooses persistence and checkpoint selection                 |
-| Tool execution boundary         | Mandatory outer wrapper for function dispatch and text/JSON results; managed authority activates only from complete trusted metadata and fresh policy | Native unannotated tools remain trusted in-process code           |
-| Message integrity Filter        | Mandatory innermost request hook that removes orphan or duplicate ordinary function-tool results                                                      | Not provider rendering or interrupted-history recovery            |
+| Component                       | Responsibility                                                                                                                                        | Explicit boundary                                                       |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `AgentDefinition`               | Hold native `AgentSpec`, one build-time output, Model, top-level Capabilities, plugins, child definitions, and recovery policy                        | Process-local Python value only                                         |
+| `HarnessBuilder`                | Resolve an explicit or opted-in ambient plugin context, bind plugins, authorize Capability types, and call `Agent.from_spec()` once                   | Ambient I/O and discovery occur only when explicitly enabled            |
+| Plugin graph                    | Deterministic ordering, fresh run binding, outer middleware, and Capability contribution                                                              | Trusted code; Pydantic owns inner hooks                                 |
+| Plugin configuration            | Validate the narrow JSON envelope and create fresh configured instances through selected factories                                                    | Not an Agent or Environment configuration language                      |
+| `RunBindings`                   | Carry fresh Agent instance, Environment aggregate, optional model binding, run Capabilities, and metadata                                             | No durable state or generic service locator                             |
+| Environment attachment adapter  | Convert a fresh shared-package Direct Local or EIP attachment into one single-use Harness provider binding                                            | No provider create, resume, pause, destroy, or resource-state ownership |
+| Environment extension factories | Discover installed metadata and load only explicitly selected aggregate-extension factories into an immutable catalog                                 | No Harness-owned configuration document                                 |
+| Environment run extensions      | Enter ordered aggregate-wide scopes after state restore and exit them before provider teardown                                                        | Trusted code; no model or controller access                             |
+| Environment core                | Enter provider scopes, publish immutable routing, coordinate readiness/state, and serve Host topology updates                                         | Not a Capability, provider factory, or durable command API              |
+| `AgentContext`                  | Share run Identity, Environment facade, state, plugins, child collection, model binding, and metadata                                                 | One context per logical Harness run                                     |
+| `HarnessRunStream`              | Lazy single-consumer events, cancellation, state export, model attempts, results, and cleanup                                                         | Not a Host durable `ExecutionAttempt`, queue, replay stream, or lease   |
+| `HarnessState`                  | Detached messages, JSON Capability namespaces, and optional portable Environment data                                                                 | Host chooses persistence and checkpoint selection                       |
+| Tool execution boundary         | Mandatory outer wrapper for function dispatch and text/JSON results; managed authority activates only from complete trusted metadata and fresh policy | Native unannotated tools remain trusted in-process code                 |
+| Message integrity Filter        | Mandatory innermost request hook that removes orphan or duplicate ordinary function-tool results                                                      | Not provider rendering or interrupted-history recovery                  |
 
 ## End-to-End Flow
 
@@ -108,8 +108,8 @@ sequenceDiagram
     Host->>Harness: run or stream with fresh RunBindings and optional state
     Harness->>Harness: enter Environment, restore portable state, enter run extensions, activate controller, and create context
     Harness->>Plugins: bind fresh run plugins
-    loop one or more bounded model attempts
-        Harness->>PAI: run with a unique inner run ID
+    loop one or more bounded ModelAttempts
+        Harness->>PAI: run with a unique model-attempt ID
         PAI->>Provider: model and tool work
         Provider-->>PAI: responses, usage, or failure
         PAI-->>Harness: events, messages, output, or deferred work
@@ -127,16 +127,16 @@ sequenceDiagram
 | Provider-suspended continuation        | Pydantic AI                                |
 | Transport retry                        | Provider/client and Pydantic `RetryConfig` |
 | Exact provider-history repair          | `SelfHealingModel`                         |
-| Interrupted model semantic attempts    | `HarnessRunStream`                         |
+| Interrupted `ModelAttempt` recovery    | `HarnessRunStream`                         |
 | Worker crash, durable replay, delivery | Host                                       |
 
-A Harness semantic retry remains inside one logical run and shares context, Environment, plugins, state, and usage. A Host retry creates a fresh Harness run and fresh bindings.
+`ModelAttempt` recovery remains inside one logical Run and shares context, Environment, plugins, state, and usage. A Host retry creates a fresh Harness run and fresh bindings.
 
 ## Completion Boundaries
 
 | Boundary                  | Meaning                                                        | Authority                   |
 | ------------------------- | -------------------------------------------------------------- | --------------------------- |
-| Inner Pydantic attempt    | One Agent loop ended or was interrupted                        | Pydantic AI                 |
+| Inner `ModelAttempt`      | One Agent loop ended or was interrupted                        | Pydantic AI                 |
 | Logical Harness result    | Plugins produced a structurally valid terminal candidate       | Harness                     |
 | Harness terminal delivery | All run-scoped cleanup succeeded and the result event was sent | Harness and stream consumer |
 | Durable completion        | Host committed its lifecycle transition                        | Host                        |
@@ -146,17 +146,19 @@ These facts are independent. A result candidate retained by `RunCleanupError` is
 
 ## Extension Taxonomy
 
-| Extension                      | Selection                                                                                | Trust boundary                              |
-| ------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------- |
-| Harness plugin                 | Direct concrete object, or builder-local configured factory result appended during build | Trusted in-process Python                   |
-| Pydantic Capability            | `AgentSpec`, definition, plugin, or run contribution                                     | Pydantic lifecycle plus caller trust        |
-| Native Model/tool/Toolset      | Concrete `AgentDefinition` field                                                         | Trusted in-process object                   |
-| Run-scoped model resolver      | Fresh `ModelRunBinding`                                                                  | Host/provider policy                        |
-| Environment provider binding   | Fresh process-local `EnvironmentRunBinding` inputs                                       | Host selection and provider enforcement     |
-| Environment run extension      | Direct object or Host-selected factory result registered on the aggregate                | Trusted aggregate-wide resource scope       |
-| Dynamic Environment Capability | Optional Agent-loop context and Toolset composition                                      | No provider lifecycle or topology authority |
+| Extension                      | Selection                                                                                | Trust boundary                                  |
+| ------------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Harness plugin                 | Direct concrete object, or builder-local configured factory result appended during build | Trusted in-process Python                       |
+| Pydantic Capability            | `AgentSpec`, definition, plugin, or run contribution                                     | Pydantic lifecycle plus caller trust            |
+| Native Model/tool/Toolset      | Concrete `AgentDefinition` field                                                         | Trusted in-process object                       |
+| Run-scoped model resolver      | Fresh `ModelRunBinding`                                                                  | Host/provider policy                            |
+| Environment managed resource   | Reusable Host scope from `converge-agent-environment-provider`                           | Provider lifecycle and resource-state authority |
+| Environment runtime attachment | Fresh single-use Direct Local or EIP attachment from that managed resource               | Host selection and provider enforcement         |
+| Environment provider binding   | Fresh process-local `EnvironmentRunBinding` inputs adapted from an attachment            | Harness run topology and operation scope        |
+| Environment run extension      | Direct object or Host-selected factory result registered on the aggregate                | Trusted aggregate-wide resource scope           |
+| Dynamic Environment Capability | Optional Agent-loop context and Toolset composition                                      | No provider lifecycle or topology authority     |
 
-A hosted system can persist the Harness-owned plugin document and maintain artifact locks without implementing plugin reconstruction itself. Artifact trust, durable revisions, and Environment configuration remain Host contracts. Installed Harness plugin, Environment provider, and Environment run-extension entry-point metadata represent availability only, and importing the Harness activates no extension. The Harness owns no configuration document for Environment run extensions.
+A hosted system can persist the Harness-owned plugin document and maintain artifact locks without implementing plugin reconstruction itself. Artifact trust, durable revisions, and Environment configuration remain Host contracts. Installed Harness plugin and Environment run-extension entry-point metadata represent availability only, and importing the Harness activates no extension. The Harness owns no configuration document for Environment run extensions. Provider specifications, catalogs, Managers, built-ins, resource state, and runtime attachments belong to the separate [Environment Provider package](../agent-environment-provider/README.md) and remain inert until explicitly selected.
 
 ## Stable Principles
 

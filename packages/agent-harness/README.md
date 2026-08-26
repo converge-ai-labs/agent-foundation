@@ -23,8 +23,6 @@ capabilities = (
             shell_tools=True,
             process_tools=True,
             port_tools=False,
-            max_topology_bindings=16,
-            max_topology_bytes=64 * 1024,
             max_reference_entries=1_024,
         )
     ),
@@ -41,7 +39,9 @@ Embedding code supplies current Environment and provider collaborators through `
 
 Every built Agent includes one outer `ToolExecutionBoundaryCapability` and one innermost `MessageIntegrityFilterCapability`; application definitions do not install either boundary manually. First-party Toolsets own semantic progressive disclosure and can use the shared typed helper to save a fuller redacted result in a run-private model-readable file. The execution boundary preserves ordinary Pydantic dispatch and remains the sole mandatory final validation, redaction, and larger hard-size fallback for locally executable function-tool text/JSON results. Complete trusted `HarnessToolMetadata` additionally selects managed authorization, credentials, grants, retry, and invocation events.
 
-Request/history filters live in `converge_agent_harness.filters`. Message integrity is mandatory; `ContentFilterCapability` and `ColdStartFilterCapability` are optional definition-selected filters for native multimodal request compatibility and cold-cache reduction of already-consumed tool-result strings. Model-specific one-shot history repair remains in `SelfHealingModel`, and interrupted-stream semantic retry remains in Harness recovery rather than either filter.
+Request/history filters live in `converge_agent_harness.filters`. Message integrity is mandatory; `ContentFilterCapability` and `ColdStartFilterCapability` are optional definition-selected filters for native multimodal request compatibility and cold-cache reduction of already-consumed tool-result strings. Model-specific one-shot history repair remains in `SelfHealingModel`, and interrupted-stream `ModelAttempt` recovery remains in the Harness rather than either filter.
+
+Every `HarnessState` carries the stable `thread_id` of one independently advancing history. Resume preserves that ID, `HarnessState.fork()` creates a new one, and each process-local `HarnessRunStream`, event, and result pairs it with a fresh `run_id`. The stream's public union is `HarnessStreamEvent`.
 
 ## Runnable examples and guides
 
@@ -51,6 +51,6 @@ The [Agent Harness user guide](../../docs/agent-harness/index.md) covers install
 
 ## Versioning
 
-Agent Harness and `converge-agent-stream-protocol` form the Harness release group. A `release/harness-v<version>` tag publishes both distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. The published Stream Protocol artifact pins this exact Harness version; Agent UI releases independently and selects a Harness release explicitly.
+Agent Harness, `converge-agent-environment-provider`, and `converge-agent-stream-protocol` form the Harness release group. A `release/harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently and selects a Harness release explicitly.
 
 The accepted architecture and public contract are defined in the [Agent Harness specification](../../spec/agent-harness/README.md).

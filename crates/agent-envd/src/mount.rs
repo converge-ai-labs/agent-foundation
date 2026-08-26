@@ -3,10 +3,7 @@ use std::{
     error::Error,
     fmt, fs,
     path::{Component, Path, PathBuf},
-    sync::{
-        Arc, Mutex, PoisonError,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, PoisonError},
 };
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -17,7 +14,7 @@ use std::os::unix::{ffi::OsStrExt, io::AsRawFd};
 use cap_std::{ambient_authority, fs::Dir};
 
 use crate::{
-    config::{Config, TrustedMountConfig},
+    config::{Config, TransportConfig, TrustedMountConfig},
     eip::{EIPPath, MountDescriptor},
 };
 
@@ -49,7 +46,7 @@ pub(crate) struct Mount {
     pub(crate) allow_command_execution: bool,
     pub(crate) max_file_bytes: u64,
     allowed_operations: BTreeSet<String>,
-    cleanup_fault: AtomicBool,
+    protected_roots: Vec<PathBuf>,
     staging_quota: StagingQuota,
 }
 
@@ -130,6 +127,7 @@ impl MountRegistry {
             if mounts.contains_key(&prepared.mount_id) {
                 return Err(MountInitError::new("mount_id values must be unique"));
             }
+            let protected_roots = protected_roots_for_mount(config, &prepared.native_root)?;
             let root = open_capability_directory(&prepared.native_root)?;
             let mount = Arc::new(Mount {
                 mount_id: prepared.mount_id.clone(),
@@ -139,7 +137,7 @@ impl MountRegistry {
                 allow_command_execution: prepared.allow_command_execution,
                 max_file_bytes: prepared.max_file_bytes,
                 allowed_operations: prepared.allowed_operations,
-                cleanup_fault: AtomicBool::new(false),
+                protected_roots,
                 staging_quota: staging_quota.clone(),
             });
             mounts.insert(prepared.mount_id, mount);
@@ -195,11 +193,7 @@ impl MountRegistry {
         if !mount.allow_command_execution || !mount.allows("command_cwd") {
             return Err(MountPathError::Denied);
         }
-        let relative = mount.relative_path(path)?;
-        let canonical = mount
-            .root
-            .canonicalize(&relative)
-            .map_err(MountPathError::from_io)?;
+        let canonical = mount.resolve_followed_relative(path)?;
         let metadata = mount
             .root
             .metadata(&canonical)
@@ -218,12 +212,7 @@ impl MountRegistry {
         if !mount.allow_command_execution || !mount.allows("executable_source") {
             return Err(MountPathError::Denied);
         }
-        let relative = mount.relative_path(path)?;
-        let canonical = mount
-            .root
-            .canonicalize(relative)
-            .map_err(MountPathError::from_io)?;
-        validate_canonical_relative(&canonical)?;
+        let canonical = mount.resolve_followed_relative(path)?;
         let metadata = mount
             .root
             .metadata(&canonical)
@@ -240,6 +229,13 @@ impl MountRegistry {
         }
         Ok(mount.native_root.join(canonical))
     }
+}
+
+fn subtree_contains_protected(protected_roots: &[PathBuf], relative: &Path) -> bool {
+    let relative = relative.strip_prefix(Path::new(".")).unwrap_or(relative);
+    protected_roots
+        .iter()
+        .any(|protected| protected == relative || protected.starts_with(relative))
 }
 
 fn validate_canonical_relative(path: &Path) -> Result<(), MountPathError> {
@@ -358,10 +354,6 @@ impl Drop for StagingReservation {
 }
 
 impl Mount {
-    pub(crate) fn cleanup_faulted(&self) -> bool {
-        self.cleanup_fault.load(Ordering::Acquire)
-    }
-
     pub(crate) fn allows(&self, operation: &str) -> bool {
         self.allowed_operations.contains(operation)
     }
@@ -389,11 +381,7 @@ impl Mount {
         &self,
         path: &EIPPath,
     ) -> Result<EIPPath, MountPathError> {
-        let relative = self.relative_path(path)?;
-        let canonical = self
-            .root
-            .canonicalize(relative)
-            .map_err(MountPathError::from_io)?;
+        let canonical = self.resolve_followed_relative(path)?;
         if canonical == Path::new(".") {
             return Err(MountPathError::Denied);
         }
@@ -418,7 +406,7 @@ impl Mount {
     }
 
     pub(crate) fn open_regular(&self, path: &EIPPath) -> Result<OpenedFile, MountPathError> {
-        let relative = self.relative_path(path)?;
+        let relative = self.resolve_followed_relative(path)?;
         let file = self
             .root
             .open(&relative)
@@ -428,9 +416,6 @@ impl Mount {
         if !metadata.is_file() {
             return Err(MountPathError::NotRegular);
         }
-        if metadata.len() > self.max_file_bytes {
-            return Err(MountPathError::Limit);
-        }
         Ok(OpenedFile { file, metadata })
     }
 
@@ -439,7 +424,11 @@ impl Mount {
         path: &EIPPath,
         follow_symlinks: bool,
     ) -> Result<cap_std::fs::Metadata, MountPathError> {
-        let relative = self.relative_path(path)?;
+        let relative = if follow_symlinks {
+            self.resolve_followed_relative(path)?
+        } else {
+            self.resolve_nofollow_relative(path)?
+        };
         if follow_symlinks {
             self.root.metadata(relative)
         } else {
@@ -448,19 +437,87 @@ impl Mount {
         .map_err(MountPathError::from_io)
     }
 
+    pub(crate) fn resolve_followed_relative(
+        &self,
+        path: &EIPPath,
+    ) -> Result<PathBuf, MountPathError> {
+        let relative = self.relative_path(path)?;
+        let canonical = self
+            .root
+            .canonicalize(relative)
+            .map_err(MountPathError::from_io)?;
+        validate_canonical_relative(&canonical)?;
+        self.ensure_unprotected(&canonical)?;
+        Ok(canonical)
+    }
+
+    pub(crate) fn resolve_nofollow_relative(
+        &self,
+        path: &EIPPath,
+    ) -> Result<PathBuf, MountPathError> {
+        let relative = self.relative_path(path)?;
+        if relative == Path::new(".") {
+            self.ensure_unprotected(&relative)?;
+            return Ok(relative);
+        }
+        let name = relative.file_name().ok_or(MountPathError::Denied)?;
+        let parent = relative
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let canonical_parent = self
+            .root
+            .canonicalize(parent)
+            .map_err(MountPathError::from_io)?;
+        validate_canonical_relative(&canonical_parent)?;
+        self.ensure_unprotected(&canonical_parent)?;
+        let resolved = if canonical_parent == Path::new(".") {
+            PathBuf::from(name)
+        } else {
+            canonical_parent.join(name)
+        };
+        self.ensure_unprotected(&resolved)?;
+        Ok(resolved)
+    }
+
+    pub(crate) fn ensure_unprotected(&self, relative: &Path) -> Result<(), MountPathError> {
+        let relative = relative.strip_prefix(Path::new(".")).unwrap_or(relative);
+        if self
+            .protected_roots
+            .iter()
+            .any(|protected| relative == protected || relative.starts_with(protected))
+        {
+            Err(MountPathError::Denied)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn ensure_subtree_unprotected(&self, relative: &Path) -> Result<(), MountPathError> {
+        if subtree_contains_protected(&self.protected_roots, relative) {
+            Err(MountPathError::Denied)
+        } else {
+            Ok(())
+        }
+    }
+
     pub(crate) fn create_dir(&self, relative: &Path) -> Result<(), MountPathError> {
+        self.ensure_unprotected(relative)?;
         self.root
             .create_dir(relative)
             .map_err(MountPathError::from_io)
     }
 
     pub(crate) fn remove_file(&self, relative: &Path) -> Result<(), MountPathError> {
+        self.ensure_unprotected(relative)?;
         self.root
             .remove_file(relative)
             .map_err(MountPathError::from_io)
     }
 
     pub(crate) fn remove_dir(&self, relative: &Path) -> Result<(), MountPathError> {
+        self.ensure_unprotected(relative)?;
+        self.ensure_subtree_unprotected(relative)?;
         self.root
             .remove_dir(relative)
             .map_err(MountPathError::from_io)
@@ -472,7 +529,8 @@ impl Mount {
         destination: &EIPPath,
         replace: bool,
     ) -> Result<(), MountPathError> {
-        let source = self.relative_path(source)?;
+        let source = self.resolve_nofollow_relative(source)?;
+        self.ensure_subtree_unprotected(&source)?;
         if source == Path::new(".") {
             return Err(MountPathError::Denied);
         }
@@ -518,9 +576,21 @@ impl Mount {
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
+        let canonical_parent = self
+            .root
+            .canonicalize(parent)
+            .map_err(MountPathError::from_io)?;
+        validate_canonical_relative(&canonical_parent)?;
+        self.ensure_unprotected(&canonical_parent)?;
+        let destination = if canonical_parent == Path::new(".") {
+            PathBuf::from(&name)
+        } else {
+            canonical_parent.join(&name)
+        };
+        self.ensure_unprotected(&destination)?;
         let directory = self
             .root
-            .open_dir(parent)
+            .open_dir(canonical_parent)
             .map_err(MountPathError::from_io)?;
         Ok((directory, name))
     }
@@ -529,9 +599,6 @@ impl Mount {
         self: &Arc<Self>,
         destination: &EIPPath,
     ) -> Result<StagedCandidate, MountPathError> {
-        if self.cleanup_faulted() {
-            return Err(MountPathError::Internal);
-        }
         let (parent, destination_name) = self.open_parent(destination)?;
         let reservation = self.staging_quota.reserve_object()?;
         for _ in 0..32 {
@@ -571,25 +638,34 @@ impl Mount {
         if candidate.mount().mount_id != self.mount_id || candidate.destination != *destination {
             return Err(MountPathError::Denied);
         }
-        let source = Path::new(&candidate.name);
-        let target = Path::new(&candidate.destination_name);
+        let source = PathBuf::from(&candidate.name);
+        let target = PathBuf::from(&candidate.destination_name);
+        let held =
+            cap_std::fs::Metadata::from_file(&candidate.file).map_err(MountPathError::from_io)?;
         let named = candidate
             .parent
-            .symlink_metadata(source)
+            .symlink_metadata(&source)
             .map_err(MountPathError::from_io)?;
-        if !named.is_file() || named.is_symlink() {
+        if !named.is_file() || named.is_symlink() || !same_cap_file(&held, &named) {
             return Err(MountPathError::Denied);
         }
         if replace {
             candidate
                 .parent
-                .rename(source, &candidate.parent, target)
+                .rename(&source, &candidate.parent, &target)
                 .map_err(MountPathError::from_io)?;
         } else {
-            rename_no_replace(&candidate.parent, source, &candidate.parent, target)
+            rename_no_replace(&candidate.parent, &source, &candidate.parent, &target)
                 .map_err(MountPathError::from_io)?;
         }
         candidate.mark_removed();
+        let published = candidate
+            .parent
+            .symlink_metadata(&target)
+            .map_err(|_| MountPathError::UnknownOutcome)?;
+        if !published.is_file() || published.is_symlink() || !same_cap_file(&held, &published) {
+            return Err(MountPathError::UnknownOutcome);
+        }
         sync_directory(&candidate.parent).map_err(|_| MountPathError::UnknownOutcome)?;
         Ok(())
     }
@@ -604,12 +680,32 @@ impl StagedCandidate {
         self.reservation.reserve_bytes(bytes)
     }
 
+    pub(crate) fn verify_complete(&self, expected_size: u64) -> Result<bool, MountPathError> {
+        self.file.sync_all().map_err(MountPathError::from_io)?;
+        let metadata = self.file.metadata().map_err(MountPathError::from_io)?;
+        Ok(metadata.len() == expected_size && !file_has_multiple_links(&metadata))
+    }
+
     pub(crate) fn mark_removed(&mut self) {
         self.removed = true;
         self.reservation.release();
     }
 
+    fn named_identity_matches(&self) -> Result<bool, MountPathError> {
+        let held = cap_std::fs::Metadata::from_file(&self.file).map_err(MountPathError::from_io)?;
+        let named = self
+            .parent
+            .symlink_metadata(&self.name)
+            .map_err(MountPathError::from_io)?;
+        Ok(named.is_file() && !named.is_symlink() && same_cap_file(&held, &named))
+    }
+
     pub(crate) fn delete(mut self) -> Result<(), MountPathError> {
+        if !self.named_identity_matches()? {
+            self.removed = true;
+            self.reservation.retain();
+            return Err(MountPathError::UnknownOutcome);
+        }
         let result = self
             .parent
             .remove_file(&self.name)
@@ -619,7 +715,6 @@ impl StagedCandidate {
             self.reservation.release();
         } else {
             self.reservation.retain();
-            self.mount.cleanup_fault.store(true, Ordering::Release);
         }
         result
     }
@@ -628,11 +723,12 @@ impl StagedCandidate {
 impl Drop for StagedCandidate {
     fn drop(&mut self) {
         if !self.removed {
-            if self.parent.remove_file(&self.name).is_ok() {
+            if matches!(self.named_identity_matches(), Ok(true))
+                && self.parent.remove_file(&self.name).is_ok()
+            {
                 self.reservation.release();
             } else {
                 self.reservation.retain();
-                self.mount.cleanup_fault.store(true, Ordering::Release);
             }
         }
     }
@@ -726,13 +822,45 @@ fn validate_private_runtime_separation(
         return Ok(());
     };
     for mount in mounts {
-        if overlaps(&mount.native_root, runtime.parent()) {
+        if mount.native_root.starts_with(runtime.parent()) {
             return Err(MountInitError::new(
-                "native mount roots must not overlap the protected envd runtime parent",
+                "native mount roots must not be inside the protected envd runtime parent",
             ));
         }
     }
     Ok(())
+}
+
+fn protected_roots_for_mount(
+    config: &Config,
+    mount_root: &Path,
+) -> Result<Vec<PathBuf>, MountInitError> {
+    let mut protected_paths = Vec::new();
+    if let Some(runtime) = &config.runtime {
+        protected_paths.push(runtime.parent());
+    }
+    if let TransportConfig::ReverseWebSocket(websocket) = &config.transport {
+        protected_paths.push(websocket.credential_file.as_path());
+    }
+
+    let mut roots = Vec::new();
+    for protected in protected_paths {
+        if !protected.starts_with(mount_root) {
+            continue;
+        }
+        let relative = protected
+            .strip_prefix(mount_root)
+            .map_err(|_| MountInitError::new("cannot derive protected envd path"))?;
+        if relative.as_os_str().is_empty() {
+            return Err(MountInitError::new(
+                "native mount root must not equal a protected envd path",
+            ));
+        }
+        roots.push(relative.to_path_buf());
+    }
+    roots.sort();
+    roots.dedup();
+    Ok(roots)
 }
 
 fn logical_to_relative(path: &str) -> Result<PathBuf, MountPathError> {
@@ -824,6 +952,44 @@ fn valid_mount_id(value: &str) -> bool {
 }
 
 #[cfg(unix)]
+fn same_cap_file(left: &cap_std::fs::Metadata, right: &cap_std::fs::Metadata) -> bool {
+    use cap_std::fs::MetadataExt;
+    left.dev() == right.dev() && left.ino() == right.ino()
+}
+
+#[cfg(windows)]
+fn same_cap_file(left: &cap_std::fs::Metadata, right: &cap_std::fs::Metadata) -> bool {
+    use cap_primitives::fs::_WindowsByHandle;
+    match (
+        left.volume_serial_number(),
+        left.file_index(),
+        right.volume_serial_number(),
+        right.file_index(),
+    ) {
+        (Some(left_volume), Some(left_index), Some(right_volume), Some(right_index)) => {
+            left_volume == right_volume && left_index == right_index
+        }
+        _ => false,
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn same_cap_file(_left: &cap_std::fs::Metadata, _right: &cap_std::fs::Metadata) -> bool {
+    false
+}
+
+#[cfg(unix)]
+fn file_has_multiple_links(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    metadata.nlink() != 1
+}
+
+#[cfg(not(unix))]
+fn file_has_multiple_links(_metadata: &fs::Metadata) -> bool {
+    false
+}
+
+#[cfg(unix)]
 fn set_private_file_permissions(file: &fs::File) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     file.set_permissions(fs::Permissions::from_mode(0o600))
@@ -903,7 +1069,17 @@ fn rename_no_replace(
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(windows)]
+fn rename_no_replace(
+    source_dir: &Dir,
+    source: &Path,
+    destination_dir: &Dir,
+    destination: &Path,
+) -> std::io::Result<()> {
+    source_dir.rename(source, destination_dir, destination)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn rename_no_replace(
     _source_dir: &Dir,
     _source: &Path,
@@ -923,7 +1099,6 @@ pub(crate) enum MountPathError {
     NotFound,
     AlreadyExists,
     NotRegular,
-    Limit,
     Quota,
     Unsupported,
     UnknownOutcome,
@@ -970,9 +1145,23 @@ impl Error for MountInitError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{logical_to_relative, valid_candidate_name, valid_mount_id};
     #[cfg(unix)]
-    use super::{open_capability_directory, random_candidate_name};
+    use super::{MountRegistry, open_capability_directory, random_candidate_name};
+    use super::{
+        logical_to_relative, subtree_contains_protected, valid_candidate_name, valid_mount_id,
+    };
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn protected_descendants_prevent_ancestor_subtree_moves() {
+        let protected = vec![PathBuf::from("secrets/attachment-token")];
+        assert!(subtree_contains_protected(&protected, Path::new("secrets")));
+        assert!(subtree_contains_protected(
+            &protected,
+            Path::new("secrets/attachment-token")
+        ));
+        assert!(!subtree_contains_protected(&protected, Path::new("public")));
+    }
 
     #[test]
     fn validates_logical_paths_without_normalizing_authority() {
@@ -1027,5 +1216,62 @@ mod tests {
         fs::remove_dir_all(&root).expect("remove test directory");
 
         assert!(result.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_candidate_cleanup_retains_only_its_own_quota() {
+        use std::fs;
+
+        use crate::{
+            config::{Config, TrustedMountConfig},
+            eip::EIPPath,
+        };
+
+        let root = std::env::temp_dir().join(
+            random_candidate_name()
+                .expect("random test directory name")
+                .replace(".eip-stage-", "agent-envd-cleanup-"),
+        );
+        fs::create_dir(&root).expect("create mount root");
+        let mut config = Config::for_test("env-cleanup-test");
+        config.limits.max_staged_file_objects = 2;
+        config.limits.max_staged_file_bytes = 32;
+        config.mounts.push(TrustedMountConfig {
+            mount_id: "workspace".to_owned(),
+            native_root: root.clone(),
+            writable: true,
+            allow_command_execution: false,
+            max_file_bytes: 32,
+            allowed_operations: Vec::new(),
+        });
+        let mounts = MountRegistry::initialize_scoped(&config).expect("initialize mount");
+        let mount = mounts.get("workspace").expect("workspace mount");
+        let destination = EIPPath {
+            mount_id: "workspace".to_owned(),
+            path: "/target.bin".to_owned(),
+        };
+
+        let mut failed = mount
+            .create_candidate(&destination)
+            .expect("create first candidate");
+        failed.reserve_bytes(4).expect("reserve candidate bytes");
+        let failed_name = failed.name.clone();
+        fs::remove_file(root.join(&failed_name)).expect("remove candidate name externally");
+        fs::create_dir(root.join(&failed_name)).expect("replace candidate name with directory");
+        assert!(failed.delete().is_err());
+
+        let next = mount
+            .create_candidate(&destination)
+            .expect("one retained charge does not poison the mount");
+        drop(next);
+        let later = mount
+            .create_candidate(&destination)
+            .expect("released candidates remain available");
+        drop(later);
+
+        fs::remove_dir(root.join(failed_name)).expect("remove replacement directory");
+        drop(mounts);
+        fs::remove_dir(&root).expect("remove mount root");
     }
 }

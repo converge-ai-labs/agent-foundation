@@ -82,6 +82,8 @@ Every string, collection, script, environment entry, stdin body, and limit is fi
 - `ExecutableName` is one bare name with no path separator. Envd resolves it only through trusted configured search roots, never ambient or request-controlled `PATH`.
 - `ExecutablePath` is an `EIPPath` under a configured mount that permits executable-source use. It cannot contain a native host path.
 
+Envd canonicalizes the selected executable, validates that it is an executable regular file under the selected configured authority, and passes the resulting native path to the platform launcher. As with ordinary `posix_spawn`, `execve`, and `CreateProcess` pathname launch, this admission check does not create an immutable executable snapshot or promise portable descriptor-based execution. Another native actor with independent write authority can replace authorized path content between validation and OS launch; envd neither treats that race as pathname compare-and-swap nor adds a private copy, hard link, wrapper script, or retry path. A missing or unlaunchable final path fails command start.
+
 Operator configuration uses this non-EIP shape:
 
 ```python
@@ -110,7 +112,7 @@ class ShellProfileDescriptor(BaseModel):
 
 ### Working directory and environment
 
-`cwd` must be an existing directory under a configured mount that permits command use. Its read/write posture constrains the isolation projection. Selecting a cwd does not grant another mount or a daemon-private path.
+`cwd` must resolve at admission to an existing directory under a configured mount that permits command use. Its canonical native path is passed to the platform launcher, and its read/write posture constrains the isolation projection. Selecting a cwd does not grant another mount or a daemon-private path. Envd does not promise an immutable cwd object against an independent native actor that can replace authorized path content before OS launch.
 
 The payload environment starts from a small daemon-owned compatibility allowlist and the selected shell profile, then applies authorized binding values and request changes. Envd forces trusted `PATH` and private `HOME`/temporary roots. It never inherits the daemon environment wholesale. Attachment credentials, `AGENT_ENVD_*`, control-channel values, dynamic-loader injection values, and ambient service credentials are removed. Request values reach only the final payload, not an isolation helper or supervisor.
 

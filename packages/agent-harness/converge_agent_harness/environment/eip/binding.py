@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from converge_agent_envd_client import EIPSession
 from converge_agent_envd_client.eip import v1 as eip
+from converge_agent_environment_provider import EIPSessionSource
 
 from ..models import (
     EnvironmentAction,
@@ -25,8 +26,6 @@ from .processes import (
     EIPShellOperations,
     _ProcessConversions,
 )
-
-type EIPSessionFactory = Callable[[], Awaitable[EIPSession]]
 
 _METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
     "file.stat": (EnvironmentAction.FILE_STAT,),
@@ -63,12 +62,14 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
         self,
         *,
         environment_id: str,
-        session_factory: EIPSessionFactory,
+        session_source: EIPSessionSource,
     ) -> None:
         if not environment_id:
             raise ValueError("environment_id must not be empty")
         self._environment_id = environment_id
-        self._session_factory = session_factory
+        self._session_source = session_source
+        self._scope_created = False
+        self._entry_started = False
         self._discarded = False
 
     @property
@@ -88,8 +89,9 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
         binding_revision: int,
     ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
         del run_id, instance
-        if self._discarded or not self._claim_transfer():
+        if self._discarded or self._scope_created:
             raise EnvironmentError("EIP provider binding was already consumed", code="environment_conflict")
+        self._scope_created = True
         return self._bind(binding_id=binding_id, binding_revision=binding_revision)
 
     @asynccontextmanager
@@ -98,29 +100,32 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
         *,
         binding_id: str,
         binding_revision: int,
-    ) -> AsyncIterator[BoundEnvironmentProvider]:
-        session = await self._session_factory()
-        if session.descriptor.environment_id != self._environment_id:
-            await session.abort()
-            raise EnvironmentError(
-                "EIP session returned a different environment identity",
-                code="environment_stale_binding",
+    ) -> AsyncGenerator[BoundEnvironmentProvider]:
+        self._entry_started = True
+        async with self._session_source.open_session(
+            expected_environment_id=self._environment_id,
+            required_methods=frozenset({"environment.describe", "session.close"}),
+        ) as session:
+            if session.descriptor.environment_id != self._environment_id:
+                raise EnvironmentError(
+                    "EIP session returned a different environment identity",
+                    code="environment_stale_binding",
+                )
+            provider = _BoundEIPProvider(
+                session=session,
+                environment_id=self._environment_id,
+                binding_id=binding_id,
+                binding_revision=binding_revision,
             )
-        provider = _BoundEIPProvider(
-            session=session,
-            environment_id=self._environment_id,
-            binding_id=binding_id,
-            binding_revision=binding_revision,
-        )
-        try:
-            yield provider
-        finally:
             try:
-                await provider.close()
+                yield provider
             finally:
-                await session.close()
+                await provider.close()
 
     async def discard(self) -> None:
+        if self._discarded or self._entry_started:
+            return
+        await self._session_source.discard()
         self._discarded = True
 
 

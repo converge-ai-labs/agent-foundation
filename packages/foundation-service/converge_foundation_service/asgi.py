@@ -1,4 +1,4 @@
-"""Environment-configured ASGI application for external servers."""
+"""ASGI entry point for Foundation Service."""
 
 from converge_foundation_service.app import create_app
 

@@ -386,6 +386,7 @@ async def _require_policy_allow(
 
 def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> None:
     """Reject protected Capability replacement after native for_run finalization."""
+    from converge_agent_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
     from converge_agent_harness.capabilities.context import (
         COMPACTION_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
@@ -397,6 +398,13 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         RuntimeContextCapability,
         _FileContextRunCapability,
     )
+    from converge_agent_harness.capabilities.delegation import (
+        DELEGATION_CAPABILITY_ID,
+        DELEGATION_RUN_CAPABILITY_ID,
+        DelegationCapability,
+        DelegationRunCapability,
+        _DelegationActiveCapability,
+    )
     from converge_agent_harness.capabilities.documents import (
         DOCUMENTS_CAPABILITY_ID,
         DOCUMENTS_RUN_CAPABILITY_ID,
@@ -406,6 +414,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
     from converge_agent_harness.capabilities.interaction import (
         USER_INTERACTION_CAPABILITY_ID,
         UserInteractionCapability,
+    )
+    from converge_agent_harness.capabilities.lifecycle import (
+        LIFECYCLE_EVENT_CAPABILITY_ID,
+        _LifecycleEventActiveCapability,
     )
     from converge_agent_harness.capabilities.media import (
         MEDIA_CAPABILITY_ID,
@@ -469,6 +481,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (MessageIntegrityFilterCapability,),
             None,
         ),
+        LIFECYCLE_EVENT_CAPABILITY_ID: (
+            (_LifecycleEventActiveCapability,),
+            None,
+        ),
         INVOCATION_POLICY_CAPABILITY_ID: (
             (InvocationPolicyCapability,),
             provenance.run_ids,
@@ -488,6 +504,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         CLIENT_TOOLS_RUN_CAPABILITY_ID: (
             (ClientToolsRunCapability,),
             provenance.run_ids,
+        ),
+        CODEACT_CAPABILITY_ID: (
+            (CodeActCapability,),
+            provenance.definition_ids,
         ),
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID: (
             (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
@@ -557,6 +577,14 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (TaskStateRunCapability,),
             provenance.run_ids,
         ),
+        DELEGATION_CAPABILITY_ID: (
+            (DelegationCapability, _DelegationActiveCapability),
+            provenance.definition_ids,
+        ),
+        DELEGATION_RUN_CAPABILITY_ID: (
+            (DelegationRunCapability,),
+            provenance.run_ids,
+        ),
     }
     reserved_types = tuple(capability_type for item in expected.values() for capability_type in item[0])
     for capability_id, capability in ctx.capabilities.items():
@@ -576,11 +604,13 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         if capability_id in {
             TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
             MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
+            LIFECYCLE_EVENT_CAPABILITY_ID,
             USAGE_CAPABILITY_ID,
         }:
             mandatory_type = {
                 TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID: ToolExecutionBoundaryCapability,
                 MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID: MessageIntegrityFilterCapability,
+                LIFECYCLE_EVENT_CAPABILITY_ID: _LifecycleEventActiveCapability,
                 USAGE_CAPABILITY_ID: _UsageActiveCapability,
             }[capability_id]
             if type(capability) is not mandatory_type:
@@ -658,6 +688,19 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
                 f"{label}Capability requires one fresh run attachment.",
                 code=binding_code,
             )
+
+    delegation_owner = ctx.capabilities.get(DELEGATION_CAPABILITY_ID)
+    delegation_attachment = ctx.capabilities.get(DELEGATION_RUN_CAPABILITY_ID)
+    if delegation_attachment is not None and delegation_owner is None:
+        raise DefinitionError(
+            "A Delegation run attachment requires its definition owner.",
+            code="delegation_owner_missing",
+        )
+    if delegation_owner is not None and delegation_attachment is None:
+        raise DefinitionError(
+            "DelegationCapability requires one fresh run attachment.",
+            code="delegation_binding_missing",
+        )
 
     working_state_owner = ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID)
     task_state_attachment = ctx.capabilities.get(TASK_STATE_RUN_CAPABILITY_ID)

@@ -166,8 +166,6 @@ def test_stream_prefixes_do_not_split_valid_utf8_characters() -> None:
 
 def _configuration(**updates: Any) -> DynamicEnvironmentConfiguration:
     return DynamicEnvironmentConfiguration(
-        max_topology_bindings=8,
-        max_topology_bytes=4096,
         max_reference_entries=64,
         **updates,
     )
@@ -262,10 +260,13 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         await started.wait()
         await aggregate.controller.apply(request)
         item = await asyncio.wait_for(pending, timeout=2)
-        assert isinstance(item, HarnessEvent)
-        assert isinstance(item.event, HarnessExtensionEvent)
-        assert item.event.kind == "context"
-        assert item.event.payload["type"] == "environment_topology_changed"
+        while not (
+            isinstance(item, HarnessEvent)
+            and isinstance(item.event, HarnessExtensionEvent)
+            and item.event.kind == "context"
+            and item.event.payload.get("type") == "environment_topology_changed"
+        ):
+            item = await asyncio.wait_for(run.__anext__(), timeout=2)
         assert item.event.payload["current_version"] == 1
         finish.set()
         terminal = [event async for event in run][-1]
@@ -320,7 +321,7 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_s
     ]
     assert len(topology_parts) == 1
     assert '"bindings":[]' in topology_parts[0]
-    assert len(topology_parts[0].encode()) < _configuration().max_topology_bytes
+    assert len(topology_parts[0].encode()) < 64 * 1024
     assert executable.definition.agent.tool_timeout is None
 
 
@@ -1473,6 +1474,7 @@ class _TransformTopologyEventsPlugin(AbstractHarnessPlugin):
                     self.seen += 1
                     self.order.append("event")
                     item = HarnessEvent(
+                        thread_id=item.thread_id,
                         run_id=item.run_id,
                         sequence=item.sequence,
                         occurred_at=item.occurred_at,

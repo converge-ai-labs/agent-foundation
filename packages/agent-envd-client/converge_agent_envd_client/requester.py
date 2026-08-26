@@ -28,7 +28,12 @@ from converge_agent_envd_client.errors import (
     EIPTransportClosedError,
     EIPTransportError,
 )
-from converge_agent_envd_client.transport import ControlFrame, EIPTransport
+from converge_agent_envd_client.transport import (
+    ControlFrame,
+    EIPTransport,
+    HttpTransferLifecycle,
+    TransferDirection,
+)
 
 _MAX_JSONRPC_ID = 2**63 - 1
 _TRANSFER_TEARDOWN_TIMEOUT = 5.0
@@ -309,7 +314,13 @@ class RequestCoordinator(EIPRequester):
             max_transfer_frame_bytes=max_transfer_frame_bytes,
         )
 
-    def register_transfer(self, handle: str, *, inbound_frames: int = 8) -> TransferChannel:
+    def register_transfer(
+        self,
+        handle: str,
+        *,
+        direction: TransferDirection = "read",
+        inbound_frames: int = 8,
+    ) -> TransferChannel:
         if self._closed or self._terminal_error is not None:
             raise EIPTransportClosedError("EIP requester is closed") from self._terminal_error
         if handle in self._transfers:
@@ -322,6 +333,8 @@ class RequestCoordinator(EIPRequester):
         if len(self._transfers) >= self._max_transfer_channels:
             raise EIPSessionStateError("negotiated concurrent transfer limit is exhausted")
         channel = TransferChannel(handle, inbound_frames=inbound_frames)
+        if isinstance(self._transport, HttpTransferLifecycle):
+            self._transport.register_transfer(handle, direction)
         self._transfers[handle] = channel
         self._ensure_reader()
         return channel
@@ -330,6 +343,8 @@ class RequestCoordinator(EIPRequester):
         if self._transfers.get(channel.handle) is not channel:
             raise EIPSessionStateError("transfer channel is not registered")
         del self._transfers[channel.handle]
+        if isinstance(self._transport, HttpTransferLifecycle):
+            self._transport.unregister_transfer(channel.handle)
 
     def retire_transfer(self, channel: TransferChannel) -> None:
         self._retire_transfer(channel)
@@ -347,6 +362,8 @@ class RequestCoordinator(EIPRequester):
         try:
             async with asyncio.timeout(_TRANSFER_TEARDOWN_TIMEOUT):
                 await self._transport.send(frame)
+            if isinstance(self._transport, HttpTransferLifecycle):
+                self._complete_retired_transfer(channel.handle)
         except asyncio.CancelledError:
             raise
         except Exception as error:

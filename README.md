@@ -9,6 +9,7 @@ The project is currently in its architecture and specification phase. Public API
 ## Planned Components
 
 - `agent-harness`: a reusable process-local agent harness built on Pydantic AI 2, distributed as `converge-agent-harness`
+- [`agent-environment-provider`](packages/agent-environment-provider/README.md): the shared Environment provider library scaffold, distributed as `converge-agent-environment-provider`
 - [`agent-stream-protocol`](packages/agent-stream-protocol/README.md): shared Harness-to-AG-UI projection and validation, distributed as `converge-agent-stream-protocol`
 - [`agent-ui`](packages/agent-ui/README.md): a local single-user Host with a bundled [Harness UI](apps/harness-ui/README.md), default WebUI, and TUI, distributed as `converge-agent-ui`
 - `logging`: shared pretty and structured logging, distributed as `converge-logging`
@@ -21,8 +22,8 @@ Applications will be able to embed the harness directly, use the hosted service,
 
 ## Release Channels
 
-- Harness releases use `release/harness-v<version>` tags and publish `converge-agent-harness` with `converge-agent-stream-protocol` at exactly the same version. Published Protocol metadata pins that Harness version.
-- Agent UI releases independently through `release/agent-ui-v<version>` tags. Each release pins Harness and Protocol to one reviewed Harness release. Harness UI is compiled into the Agent UI sdist and wheel and has no independent npm artifact or release.
+- Harness releases use `release/harness-v<version>` tags and publish `converge-agent-environment-provider`, `converge-agent-harness`, and `converge-agent-stream-protocol` at exactly the same version. Published Harness metadata pins Provider, and published Protocol metadata pins Harness.
+- Agent UI releases independently through `release/agent-ui-v<version>` tags. Each release pins Provider, Harness, and Protocol to one reviewed Harness release. Harness UI is compiled into the Agent UI sdist and wheel and has no independent npm artifact or release.
 - Foundation releases version the repository root, logging, and hosted service together; they publish the logging and hosted service Python packages plus the versioned foundation-service image. They select compatible published Harness libraries rather than republishing them.
 - agent-envd releases publish the `converge-agent-envd` crate, `converge-agent-envd-client` Python package, platform binaries, and the matching versioned sandbox image.
 - SDK releases are independent per language under `release/sdk/<language>/<version>` tags.
@@ -30,7 +31,7 @@ Applications will be able to embed the harness directly, use the hosted service,
 
 `<version>` is either stable `X.Y.Z` or release-candidate `X.Y.Z-rc.N`. RCs publish real registry artifacts and GitHub prereleases without advancing Docker or npm `latest`; Python package metadata and artifacts use the normalized `X.Y.ZrcN` spelling.
 
-Workspace directory names omit the project prefix (`packages/agent-ui`), Python distribution names add the hyphenated `converge-` prefix (`converge-agent-ui`), and import packages normalize it with underscores (`converge_agent_ui`). The same rule applies to Agent Harness and Agent Stream Protocol.
+Workspace directory names omit the project prefix (`packages/agent-ui`), Python distribution names add the hyphenated `converge-` prefix (`converge-agent-ui`), and import packages normalize it with underscores (`converge_agent_ui`). The same rule applies to Agent Environment Provider, Agent Harness, and Agent Stream Protocol.
 
 ## Examples
 

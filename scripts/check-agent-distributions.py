@@ -13,8 +13,13 @@ from email.policy import default
 from pathlib import Path
 
 PACKAGES = {
+    "converge-agent-environment-provider": "converge_agent_environment_provider",
     "converge-agent-harness": "converge_agent_harness",
     "converge-agent-stream-protocol": "converge_agent_stream_protocol",
+}
+INTERNAL_REQUIREMENTS = {
+    "converge-agent-harness": "converge-agent-environment-provider",
+    "converge-agent-stream-protocol": "converge-agent-harness",
 }
 LOCAL_INSTALL_DEPENDENCIES = {
     "converge-agent-envd-client": "converge_agent_envd_client",
@@ -52,14 +57,14 @@ def _metadata(path: Path) -> tuple[str, str, list[str]]:
     return name, version, requirements
 
 
-def _validate_protocol_requirement(
+def _validate_internal_requirement(
     requirements: list[str],
     version: str,
     path: Path,
+    package_name: str,
     *,
     require_exact_internal_version: bool,
 ) -> None:
-    package_name = "converge-agent-harness"
     package_pattern = re.compile(rf"^{re.escape(package_name)}(?=$|\s|[<>=!~;@\[])")
     matches = [requirement for requirement in requirements if package_pattern.match(requirement)]
     expected = f"{package_name}=={version}" if require_exact_internal_version else package_name
@@ -109,11 +114,13 @@ def validate_distributions(
         {name: _metadata(wheels[name])[1] for name in LOCAL_INSTALL_DEPENDENCIES} if require_local_dependencies else {}
     )
     for name, _, requirements, path in metadata:
-        if name == "converge-agent-stream-protocol":
-            _validate_protocol_requirement(
+        package_name = INTERNAL_REQUIREMENTS.get(name)
+        if package_name is not None:
+            _validate_internal_requirement(
                 requirements,
                 version,
                 path,
+                package_name,
                 require_exact_internal_version=require_exact_internal_version,
             )
 
@@ -131,6 +138,8 @@ def validate_distributions(
                 raise DistributionError(f"Cannot create smoke environment for {distribution}:\n{create.stderr}")
             python = _venv_python(environment)
             install_wheels = [wheels[name] for name in LOCAL_INSTALL_DEPENDENCIES] if require_local_dependencies else []
+            if distribution in {"converge-agent-harness", "converge-agent-stream-protocol"}:
+                install_wheels.append(wheels["converge-agent-environment-provider"])
             if distribution == "converge-agent-stream-protocol":
                 install_wheels.append(wheels["converge-agent-harness"])
             install_wheels.append(wheels[distribution])

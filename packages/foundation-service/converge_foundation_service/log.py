@@ -1,4 +1,4 @@
-"""Foundation-service process logging assembled from shared primitives."""
+"""Foundation Service process logging assembled from shared primitives."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ def _context(settings: ServiceSettings) -> dict[str, str]:
 
 def build_log_config(settings: ServiceSettings) -> dict[str, Any]:
     """Build one shared logging configuration for the app and Uvicorn."""
+
     return build_logging_config(
         level=settings.log_level,
         log_format=settings.log_format,
@@ -38,6 +39,7 @@ def build_log_config(settings: ServiceSettings) -> dict[str, Any]:
 
 def configure_logging(settings: ServiceSettings) -> None:
     """Configure process logging exactly once at the executable boundary."""
+
     configure_process_logging(
         level=settings.log_level,
         log_format=settings.log_format,

@@ -31,6 +31,7 @@ struct TransferInner {
     state: StdMutex<TransferState>,
     outbound: StdMutex<Option<mpsc::Sender<DataFrame>>>,
     max_frame_bytes: usize,
+    max_transfer_bytes: u64,
     max_records: usize,
     max_active: usize,
     terminal_ttl: Duration,
@@ -43,6 +44,7 @@ struct TransferInner {
 #[derive(Default)]
 struct TransferState {
     records: BTreeMap<String, TransferRecord>,
+    detached_handles: BTreeSet<String>,
     terminal_order: VecDeque<(String, Instant)>,
     reservations: usize,
     session_closed: bool,
@@ -150,8 +152,30 @@ pub(crate) enum TransferError {
     Cancelled,
     Timeout,
     UnknownOutcome,
+    CleanupFailed,
     SessionClosed,
     Internal,
+}
+
+pub(crate) fn reset_status(error: TransferError) -> DataResetStatus {
+    match error {
+        TransferError::Denied
+        | TransferError::NotFound
+        | TransferError::InvalidHandle
+        | TransferError::WrongKind => DataResetStatus::Denied,
+        TransferError::Expired | TransferError::Timeout => DataResetStatus::Expired,
+        TransferError::Source => DataResetStatus::Source,
+        TransferError::Busy | TransferError::Quota | TransferError::Limit => DataResetStatus::Limit,
+        TransferError::Protocol | TransferError::WrongState | TransferError::Conflict => {
+            DataResetStatus::Protocol
+        }
+        TransferError::Cancelled | TransferError::SessionClosed => DataResetStatus::Cancelled,
+        TransferError::IntegrityMismatch
+        | TransferError::Unsupported
+        | TransferError::UnknownOutcome
+        | TransferError::CleanupFailed
+        | TransferError::Internal => DataResetStatus::Internal,
+    }
 }
 
 impl TransferRegistry {
@@ -165,6 +189,7 @@ impl TransferRegistry {
                 outbound: StdMutex::new(None),
                 max_frame_bytes: usize::try_from(config.limits.max_transfer_frame_bytes)
                     .map_err(|_| TransferError::Internal)?,
+                max_transfer_bytes: config.limits.max_staged_file_bytes,
                 max_records: usize::try_from(config.limits.max_file_transfer_records)
                     .map_err(|_| TransferError::Internal)?,
                 max_active: usize::try_from(config.limits.max_concurrent_file_transfers)
@@ -188,18 +213,24 @@ impl TransferRegistry {
             .session_closed = true;
     }
 
-    pub(crate) fn install_outbound(
+    pub(crate) fn begin_session(
         &self,
         sender: mpsc::Sender<DataFrame>,
     ) -> Result<(), TransferError> {
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let mut outbound = self
             .inner
             .outbound
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if outbound.is_some() {
+        if state.reservations != 0 || outbound.is_some() {
             return Err(TransferError::Conflict);
         }
+        state.session_closed = false;
         *outbound = Some(sender);
         Ok(())
     }
@@ -226,8 +257,8 @@ impl TransferRegistry {
             .as_ref()
             .and_then(|range| range.length)
             .unwrap_or(available);
-        if max_bytes > mount.max_file_bytes
-            || (params.byte_range.is_none() && available > mount.max_file_bytes)
+        if max_bytes > self.inner.max_transfer_bytes
+            || (params.byte_range.is_none() && available > self.inner.max_transfer_bytes)
         {
             return Err(TransferError::Limit);
         }
@@ -418,16 +449,18 @@ impl TransferRegistry {
             TransferRecord::Reader(_) => return Err(TransferError::WrongKind),
         };
         let mut writer = record.lock().await;
-        let status = match writer.phase {
-            WriterPhase::Committed => FileWriterAbortStatus::AlreadyCommitted,
+        let (status, cleanup) = match writer.phase {
+            WriterPhase::Committed => (FileWriterAbortStatus::AlreadyCommitted, Ok(())),
             WriterPhase::Committing | WriterPhase::UnknownOutcome => {
-                FileWriterAbortStatus::CommitInProgress
+                (FileWriterAbortStatus::CommitInProgress, Ok(()))
             }
-            WriterPhase::Aborted => FileWriterAbortStatus::AlreadyAborted,
+            WriterPhase::Aborted => (FileWriterAbortStatus::AlreadyAborted, Ok(())),
             _ => {
                 writer.phase = WriterPhase::Aborted;
-                self.discard_writer_candidate(&mut writer);
-                FileWriterAbortStatus::Aborted
+                (
+                    FileWriterAbortStatus::Aborted,
+                    self.discard_writer_candidate(&mut writer),
+                )
             }
         };
         let terminal = matches!(
@@ -440,6 +473,7 @@ impl TransferRegistry {
         if terminal {
             self.mark_terminal(&handle.0);
         }
+        cleanup?;
         Ok(status)
     }
 
@@ -454,9 +488,10 @@ impl TransferRegistry {
         let mut writer = record.lock().await;
         if expired(writer.expires_at, writer.last_progress, self.inner.idle_ttl) {
             writer.phase = WriterPhase::Aborted;
-            self.discard_writer_candidate(&mut writer);
+            let cleanup = self.discard_writer_candidate(&mut writer);
             drop(writer);
             self.mark_terminal(&params.writer.0);
+            cleanup?;
             return Err(TransferError::Expired);
         }
         if writer.phase != WriterPhase::Sealed {
@@ -465,9 +500,10 @@ impl TransferRegistry {
         let digest = writer.digest.clone().ok_or(TransferError::WrongState)?;
         if params.transferred_bytes != writer.transferred || params.transfer_digest != digest {
             writer.phase = WriterPhase::Aborted;
-            self.discard_writer_candidate(&mut writer);
+            let cleanup = self.discard_writer_candidate(&mut writer);
             drop(writer);
             self.mark_terminal(&params.writer.0);
+            cleanup?;
             return Err(TransferError::IntegrityMismatch);
         }
         let state = self
@@ -562,7 +598,7 @@ impl TransferRegistry {
                         WriterPhase::Committed | WriterPhase::UnknownOutcome
                     ) {
                         writer.phase = WriterPhase::Aborted;
-                        self.discard_writer_candidate(&mut writer);
+                        let _ = self.discard_writer_candidate(&mut writer);
                     }
                 }
             }
@@ -576,9 +612,11 @@ impl TransferRegistry {
             state
                 .records
                 .retain(|handle, _| operation_owned.contains(handle));
+            state.detached_handles.extend(operation_owned);
+            let retained = state.records.keys().cloned().collect::<BTreeSet<_>>();
             state
                 .terminal_order
-                .retain(|(handle, _)| operation_owned.contains(handle));
+                .retain(|(handle, _)| retained.contains(handle));
         }
         self.inner
             .outbound
@@ -849,7 +887,7 @@ impl TransferRegistry {
             DataFrameKind::Reset if operation_owned => Ok(()),
             DataFrameKind::Reset => {
                 writer.phase = WriterPhase::Aborted;
-                self.discard_writer_candidate(&mut writer);
+                self.discard_writer_candidate(&mut writer)?;
                 let handle = writer.handle.clone();
                 let offset = writer.transferred;
                 drop(writer);
@@ -906,7 +944,7 @@ impl TransferRegistry {
                         return;
                     }
                     writer.phase = WriterPhase::Aborted;
-                    self.discard_writer_candidate(&mut writer);
+                    let _ = self.discard_writer_candidate(&mut writer);
                     writer.handle.clone()
                 };
                 self.mark_terminal(&handle);
@@ -963,7 +1001,7 @@ impl TransferRegistry {
                             None
                         } else {
                             writer.phase = WriterPhase::Aborted;
-                            self.discard_writer_candidate(&mut writer);
+                            let _ = self.discard_writer_candidate(&mut writer);
                             Some(writer.handle.clone())
                         }
                     };
@@ -975,11 +1013,14 @@ impl TransferRegistry {
         }
     }
 
-    fn discard_writer_candidate(&self, writer: &mut WriterRecord) {
+    fn discard_writer_candidate(&self, writer: &mut WriterRecord) -> Result<(), TransferError> {
         writer.file.take();
         if let Some(candidate) = writer.candidate.take() {
-            let _ = candidate.delete();
+            candidate
+                .delete()
+                .map_err(|_| TransferError::CleanupFailed)?;
         }
+        Ok(())
     }
 
     fn operation_timeout(&self, requested_ms: Option<u64>) -> Result<Duration, TransferError> {
@@ -1044,10 +1085,15 @@ impl TransferRegistry {
     }
 
     fn record(&self, handle: &str) -> Result<TransferRecord, TransferError> {
-        self.inner
+        let state = self
+            .inner
             .state
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner);
+        if state.detached_handles.contains(handle) {
+            return Err(TransferError::InvalidHandle);
+        }
+        state
             .records
             .get(handle)
             .cloned()
@@ -1159,20 +1205,18 @@ impl WriterCommit {
         operation_id: &str,
     ) -> Result<WriterCommitOutput, TransferError> {
         check_operation(operations, operation_id)?;
-        self.candidate
-            .file
-            .sync_all()
-            .map_err(|_| TransferError::Source)?;
-        let metadata = self
-            .candidate
-            .file
-            .metadata()
-            .map_err(|_| TransferError::Source)?;
         let expected_size = self
             .prefix_bytes
             .checked_add(self.transferred)
             .ok_or(TransferError::Limit)?;
-        if metadata.len() != expected_size || file_has_multiple_links(&metadata) {
+        if let Some(executable) = self.executable {
+            set_executable(&self.candidate.file, executable).map_err(|_| TransferError::Denied)?;
+        }
+        if !self
+            .candidate
+            .verify_complete(expected_size)
+            .map_err(|_| TransferError::Source)?
+        {
             return Err(TransferError::IntegrityMismatch);
         }
         self.candidate
@@ -1212,13 +1256,9 @@ impl WriterCommit {
         let current = observe_destination(&mount, &self.path)?;
         validate_commit_mode(self.mode, current.as_ref())?;
         check_operation(operations, operation_id)?;
-        if let Some(executable) = self.executable {
-            set_executable(&self.candidate.file, executable).map_err(|_| TransferError::Denied)?;
-        }
         let replace = match self.mode {
             FileWriteMode::Create => false,
-            FileWriteMode::Replace | FileWriteMode::Append => true,
-            FileWriteMode::Upsert => current.is_some(),
+            FileWriteMode::Replace | FileWriteMode::Append | FileWriteMode::Upsert => true,
         };
         mount
             .publish_candidate(&mut self.candidate, &self.path, replace)
@@ -1243,12 +1283,14 @@ impl TransferState {
         {
             if let Some((handle, _)) = self.terminal_order.pop_front() {
                 self.records.remove(&handle);
+                self.detached_handles.remove(&handle);
             }
         }
     }
 
     fn reclaim_terminal(&mut self) -> bool {
         while let Some((handle, _)) = self.terminal_order.pop_front() {
+            self.detached_handles.remove(&handle);
             if self.records.remove(&handle).is_some() {
                 return true;
             }
@@ -1403,17 +1445,6 @@ fn set_permissions_from(
     Ok(())
 }
 
-#[cfg(unix)]
-fn file_has_multiple_links(metadata: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    metadata.nlink() != 1
-}
-
-#[cfg(not(unix))]
-fn file_has_multiple_links(_metadata: &std::fs::Metadata) -> bool {
-    false
-}
-
 fn expired(
     absolute: chrono::DateTime<chrono::Utc>,
     last_progress: Instant,
@@ -1428,7 +1459,6 @@ fn map_mount_error(error: MountPathError) -> TransferError {
         MountPathError::Denied | MountPathError::NotRegular => TransferError::Denied,
         MountPathError::NotFound => TransferError::NotFound,
         MountPathError::AlreadyExists => TransferError::Conflict,
-        MountPathError::Limit => TransferError::Limit,
         MountPathError::Quota => TransferError::Quota,
         MountPathError::Unsupported => TransferError::Unsupported,
         MountPathError::UnknownOutcome => TransferError::UnknownOutcome,
@@ -1551,8 +1581,8 @@ mod tests {
         let transfers = TransferRegistry::new(&config, 1).expect("initializes transfer registry");
         let (sender, receiver) = mpsc::channel(16);
         transfers
-            .install_outbound(sender)
-            .expect("installs outbound data sender");
+            .begin_session(sender)
+            .expect("begins transfer session");
         (tree, config, mounts, transfers, receiver)
     }
 
@@ -1633,6 +1663,32 @@ mod tests {
             completion.digest.value,
             format!("{:x}", Sha256::digest(content))
         );
+    }
+
+    #[tokio::test]
+    async fn reader_accepts_bounded_ranges_from_files_larger_than_mount_mutation_limit() {
+        let (tree, _config, mounts, transfers, _outbound) = setup(false, 60_000);
+        let source = fs::File::create(tree.child("native/large.bin")).expect("large source");
+        source
+            .set_len(2 * 1024 * 1024)
+            .expect("extends source beyond the mount mutation limit");
+
+        let opened = transfers
+            .open_reader(
+                &mounts,
+                &FileReaderOpenParams {
+                    context: context("open-large-range"),
+                    path: path("/large.bin"),
+                    byte_range: Some(FileByteRange {
+                        offset: 1024 * 1024,
+                        length: Some(16),
+                    }),
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .expect("explicit bounded range uses the transfer ceiling");
+        assert!(!opened.reader.0.is_empty());
     }
 
     #[tokio::test]
@@ -1930,11 +1986,9 @@ mod tests {
         transfers.reconcile_committing().await;
         assert!(!transfers.has_active());
         assert_eq!(
-            transfers
-                .abort_writer(&opened.writer)
-                .await
-                .expect("retained commit remains observable"),
-            FileWriterAbortStatus::CommitInProgress
+            transfers.abort_writer(&opened.writer).await,
+            Err(TransferError::InvalidHandle),
+            "a new session cannot address the old session's writer handle"
         );
 
         let operations = OperationLedger::new(
@@ -2177,6 +2231,49 @@ mod tests {
             transfers.close_reader(&opened.reader).await,
             Err(TransferError::Expired)
         );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn abort_reports_candidate_cleanup_failure() {
+        let (tree, _config, mounts, transfers, _outbound) = setup(true, 60_000);
+        let opened = transfers
+            .open_writer(
+                &mounts,
+                &FileWriterOpenParams {
+                    context: context("cleanup-failure-open"),
+                    path: path("/cleanup-failure.bin"),
+                    mode: FileWriteMode::Create,
+                    executable: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .expect("opens writer");
+        let record = match transfers
+            .record(&opened.writer.0)
+            .expect("writer record exists")
+        {
+            TransferRecord::Writer(record) => record,
+            TransferRecord::Reader(_) => panic!("writer record expected"),
+        };
+        let candidate_name = record
+            .lock()
+            .await
+            .candidate
+            .as_ref()
+            .expect("candidate exists")
+            .name
+            .clone();
+        let candidate_path = tree.child("native").join(&candidate_name);
+        fs::remove_file(&candidate_path).expect("external actor removes candidate name");
+        fs::create_dir(&candidate_path).expect("external actor replaces candidate with directory");
+
+        assert_eq!(
+            transfers.abort_writer(&opened.writer).await,
+            Err(TransferError::CleanupFailed)
+        );
+        fs::remove_dir(candidate_path).expect("remove replacement directory");
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]

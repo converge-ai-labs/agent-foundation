@@ -1,0 +1,352 @@
+from __future__ import annotations
+
+import asyncio
+import ipaddress
+import json
+import ssl
+from dataclasses import dataclass
+from typing import Literal
+from urllib.parse import urlsplit, urlunsplit
+
+import httpx2
+
+from converge_agent_envd_client.eip.v1 import DataFrame, DataFrameKind
+from converge_agent_envd_client.errors import (
+    EIPProtocolError,
+    EIPTransportClosedError,
+    EIPTransportError,
+)
+from converge_agent_envd_client.transport import ControlFrame, EIPTransportFrame, TransferDirection
+
+_CONTROL_PATH = "/eip/control"
+_TRANSFER_PATH = "/eip/transfer"
+_SESSION_HEADER = "EIP-Session"
+_HANDLE_HEADER = "EIP-Transfer-Handle"
+_DIRECTION_HEADER = "EIP-Transfer-Direction"
+_CLOSE_GRACE_SECONDS = 1.0
+
+
+@dataclass(slots=True)
+class _TransferState:
+    direction: TransferDirection
+    upload: asyncio.Queue[bytes | None] | None = None
+    task: asyncio.Task[None] | None = None
+    offset: int = 0
+
+
+class HttpTransport:
+    """Authenticated EIP HTTP control and raw-transfer transport."""
+
+    def __init__(
+        self,
+        endpoint: str,
+        credential: str,
+        *,
+        verify: ssl.SSLContext | str | bool = True,
+        request_timeout: float = 30.0,
+        allow_plaintext_private_link: bool = False,
+        max_request_bytes: int = 1024 * 1024,
+        max_response_bytes: int = 1024 * 1024,
+        max_transfer_frame_bytes: int = 1024 * 1024,
+    ) -> None:
+        if not credential or any(character.isspace() or ord(character) < 32 for character in credential):
+            raise ValueError("HTTP attachment credential must be non-empty and contain no whitespace")
+        if request_timeout <= 0:
+            raise ValueError("request_timeout must be positive")
+        if verify is False:
+            raise ValueError("HTTP TLS verification cannot be disabled")
+        _validate_limit("max_request_bytes", max_request_bytes)
+        _validate_limit("max_response_bytes", max_response_bytes)
+        _validate_limit("max_transfer_frame_bytes", max_transfer_frame_bytes)
+        self._endpoint = _normalize_endpoint(
+            endpoint,
+            allow_plaintext_private_link=allow_plaintext_private_link,
+        )
+        self._credential = credential
+        self._client = httpx2.AsyncClient(
+            verify=verify,
+            timeout=request_timeout,
+            follow_redirects=False,
+            trust_env=False,
+        )
+        self._max_request_bytes = max_request_bytes
+        self._max_response_bytes = max_response_bytes
+        self._max_transfer_frame_bytes = max_transfer_frame_bytes
+        self._session: str | None = None
+        self._received: asyncio.Queue[EIPTransportFrame | BaseException] = asyncio.Queue(128)
+        self._transfers: dict[str, _TransferState] = {}
+        self._close_task: asyncio.Task[None] | None = None
+        self._closed = False
+
+    def set_limits(
+        self,
+        *,
+        max_request_bytes: int,
+        max_response_bytes: int,
+        max_transfer_frame_bytes: int,
+    ) -> None:
+        _validate_limit("max_request_bytes", max_request_bytes)
+        _validate_limit("max_response_bytes", max_response_bytes)
+        _validate_limit("max_transfer_frame_bytes", max_transfer_frame_bytes)
+        self._max_request_bytes = min(self._max_request_bytes, max_request_bytes)
+        self._max_response_bytes = min(self._max_response_bytes, max_response_bytes)
+        self._max_transfer_frame_bytes = min(self._max_transfer_frame_bytes, max_transfer_frame_bytes)
+
+    def register_transfer(self, handle: str, direction: TransferDirection) -> None:
+        if handle in self._transfers:
+            raise EIPProtocolError("HTTP transfer handle is already registered")
+        self._transfers[handle] = _TransferState(direction=direction)
+
+    def unregister_transfer(self, handle: str) -> None:
+        state = self._transfers.pop(handle, None)
+        if state is not None and state.task is not None and not state.task.done():
+            state.task.cancel()
+
+    async def send(self, frame: EIPTransportFrame) -> None:
+        if self._closed:
+            raise EIPTransportClosedError("HTTP transport is closed")
+        if isinstance(frame, ControlFrame):
+            await self._send_control(frame)
+            return
+        if not isinstance(frame, DataFrame):
+            raise TypeError("unsupported EIP transport frame")
+        await self._send_transfer_frame(frame)
+
+    async def receive(self) -> EIPTransportFrame:
+        if self._closed and self._received.empty():
+            raise EIPTransportClosedError("HTTP transport is closed")
+        item = await self._received.get()
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    async def close(self) -> None:
+        if self._close_task is None:
+            self._closed = True
+            self._close_task = asyncio.create_task(self._finish_close(), name="eip-http-close")
+        await asyncio.shield(self._close_task)
+
+    async def _send_control(self, frame: ControlFrame) -> None:
+        if len(frame.payload) > self._max_request_bytes:
+            raise EIPTransportError("EIP control request exceeds its negotiated byte limit")
+        headers = self._headers("application/json")
+        if self._session is not None:
+            headers[_SESSION_HEADER] = self._session
+        try:
+            async with self._client.stream(
+                "POST",
+                f"{self._endpoint}{_CONTROL_PATH}",
+                headers=headers,
+                content=frame.payload,
+            ) as response:
+                if response.status_code != 200:
+                    raise EIPTransportError(f"EIP HTTP control request failed with status {response.status_code}")
+                _validate_response_headers(response, "application/json")
+                payload = await _read_response_bounded(response, self._max_response_bytes)
+                if self._session is None:
+                    selector = response.headers.get(_SESSION_HEADER)
+                    if selector is not None:
+                        self._session = _validate_header_value(selector, "HTTP session selector")
+                    elif _is_success_response(payload):
+                        raise EIPProtocolError("successful HTTP initialize response omitted EIP-Session")
+        except EIPTransportError:
+            raise
+        except httpx2.HTTPError as error:
+            raise EIPTransportError("EIP HTTP control request failed") from error
+        await self._received.put(ControlFrame(payload))
+
+    async def _send_transfer_frame(self, frame: DataFrame) -> None:
+        state = self._transfers.get(frame.handle)
+        if state is None:
+            raise EIPProtocolError("HTTP transfer frame has no registered handle")
+        if frame.kind is DataFrameKind.ATTACH:
+            if state.task is not None:
+                raise EIPProtocolError("HTTP transfer attached more than once")
+            if state.direction == "read":
+                state.task = asyncio.create_task(self._download(frame.handle, state), name="eip-http-download")
+            else:
+                state.upload = asyncio.Queue(8)
+                state.task = asyncio.create_task(self._upload(frame.handle, state), name="eip-http-upload")
+                await self._received.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=frame.handle))
+            return
+        if frame.kind is DataFrameKind.RESET:
+            if state.task is not None:
+                state.task.cancel()
+            self._transfers.pop(frame.handle, None)
+            return
+        if state.direction != "write" or state.upload is None:
+            raise EIPProtocolError("HTTP reader accepts only ATTACH or RESET")
+        if frame.kind is DataFrameKind.CHUNK:
+            if frame.offset != state.offset:
+                raise EIPProtocolError("HTTP writer offset is not contiguous")
+            state.offset += len(frame.payload)
+            await _put_upload(state, frame.payload)
+            return
+        if frame.kind is DataFrameKind.END:
+            if frame.offset != state.offset:
+                raise EIPProtocolError("HTTP writer END offset is not contiguous")
+            await _put_upload(state, None)
+            return
+        raise EIPProtocolError("unsupported HTTP writer frame")
+
+    async def _download(self, handle: str, state: _TransferState) -> None:
+        try:
+            async with self._client.stream(
+                "POST",
+                f"{self._endpoint}{_TRANSFER_PATH}",
+                headers=self._transfer_headers(handle, "read"),
+                content=b"",
+            ) as response:
+                if response.status_code != 200:
+                    raise EIPTransportError(f"EIP HTTP reader failed with status {response.status_code}")
+                _validate_response_headers(response, "application/octet-stream")
+                await self._received.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=handle))
+                async for chunk in response.aiter_bytes(self._max_transfer_frame_bytes):
+                    if not chunk:
+                        continue
+                    await self._received.put(
+                        DataFrame(kind=DataFrameKind.CHUNK, handle=handle, offset=state.offset, payload=chunk)
+                    )
+                    state.offset += len(chunk)
+                await self._received.put(DataFrame(kind=DataFrameKind.END, handle=handle, offset=state.offset))
+        except asyncio.CancelledError:
+            raise
+        except BaseException as error:
+            await self._fail_background(error)
+
+    async def _upload(self, handle: str, state: _TransferState) -> None:
+        upload = state.upload
+        assert upload is not None
+
+        async def content():
+            while True:
+                chunk = await upload.get()
+                if chunk is None:
+                    break
+                yield chunk
+
+        try:
+            response = await self._client.post(
+                f"{self._endpoint}{_TRANSFER_PATH}",
+                headers=self._transfer_headers(handle, "write"),
+                content=content(),
+            )
+            if response.status_code != 204:
+                raise EIPTransportError(f"EIP HTTP writer failed with status {response.status_code}")
+            _validate_response_headers(response, "application/octet-stream")
+            await self._received.put(DataFrame(kind=DataFrameKind.END_ACK, handle=handle, offset=state.offset))
+        except asyncio.CancelledError:
+            raise
+        except BaseException as error:
+            await self._fail_background(error)
+
+    async def _fail_background(self, error: BaseException) -> None:
+        if not isinstance(error, (EIPProtocolError, EIPTransportError)):
+            error = EIPTransportError("EIP HTTP transfer failed")
+        await self._received.put(error)
+
+    async def _finish_close(self) -> None:
+        tasks = [state.task for state in self._transfers.values() if state.task is not None]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._transfers.clear()
+        try:
+            async with asyncio.timeout(_CLOSE_GRACE_SECONDS):
+                await self._client.aclose()
+        except TimeoutError:
+            pass
+        self._credential = ""
+        self._session = None
+
+    def _headers(self, content_type: str) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self._credential}",
+            "Content-Type": content_type,
+            "Accept-Encoding": "identity",
+        }
+
+    def _transfer_headers(self, handle: str, direction: Literal["read", "write"]) -> dict[str, str]:
+        if self._session is None:
+            raise EIPTransportClosedError("HTTP EIP session is not initialized")
+        headers = self._headers("application/octet-stream")
+        headers[_SESSION_HEADER] = self._session
+        headers[_HANDLE_HEADER] = _validate_header_value(handle, "transfer handle")
+        headers[_DIRECTION_HEADER] = direction
+        return headers
+
+
+async def _put_upload(state: _TransferState, item: bytes | None) -> None:
+    upload = state.upload
+    task = state.task
+    if upload is None or task is None:
+        raise EIPTransportClosedError("HTTP writer transfer is not active")
+    put = asyncio.create_task(upload.put(item))
+    try:
+        done, _ = await asyncio.wait({put, task}, return_when=asyncio.FIRST_COMPLETED)
+        if task in done and put not in done:
+            raise EIPTransportClosedError("HTTP writer transfer ended before accepting the body")
+        await put
+    finally:
+        if not put.done():
+            put.cancel()
+            await asyncio.gather(put, return_exceptions=True)
+
+
+async def _read_response_bounded(response: httpx2.Response, maximum: int) -> bytes:
+    output = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(output) + len(chunk) > maximum:
+            raise EIPProtocolError("EIP HTTP response exceeds its negotiated byte limit")
+        output.extend(chunk)
+    return bytes(output)
+
+
+def _normalize_endpoint(endpoint: str, *, allow_plaintext_private_link: bool) -> str:
+    parsed = urlsplit(endpoint)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("HTTP endpoint must use http or https and include a host")
+    if parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        raise ValueError("HTTP endpoint cannot contain user info, query, or fragment")
+    if parsed.path not in {"", "/"}:
+        raise ValueError("HTTP endpoint must not contain a path")
+    if parsed.scheme == "http" and not _is_loopback_host(parsed.hostname) and not allow_plaintext_private_link:
+        raise ValueError("plaintext HTTP requires loopback or an explicit provider-private-link opt-in")
+    return urlunsplit((parsed.scheme, parsed.netloc, "", "", "")).rstrip("/")
+
+
+def _validate_response_headers(response: httpx2.Response, expected_content_type: str) -> None:
+    content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    if content_type != expected_content_type:
+        raise EIPProtocolError("EIP HTTP response has an unexpected media type")
+    if "Content-Encoding" in response.headers:
+        raise EIPProtocolError("EIP HTTP response content encoding is forbidden")
+
+
+def _is_success_response(payload: bytes) -> bool:
+    try:
+        value = json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(value, dict) and "result" in value and "error" not in value
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _validate_header_value(value: str, name: str) -> str:
+    if not value or len(value) > 1024 or any(ord(character) < 33 or ord(character) > 126 for character in value):
+        raise EIPProtocolError(f"invalid {name}")
+    return value
+
+
+def _validate_limit(name: str, value: int) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")

@@ -1,69 +1,76 @@
-# Foundation Service Specifications
+# Foundation Service
 
-## Overview
+## Design Position
 
-This directory defines `foundation-service`, the optional durable Host that embeds `agent-harness`. Foundation Service is one modular service, product authorization boundary, schema, and container image whose `all`, `control`, and `execution` roles divide process ownership and scaling without creating separate products or lifecycle authorities.
+This directory defines `foundation-service`, the optional durable Host that embeds `agent-harness`. It is a modular service with independently selectable control and execution process roles, not another Agent loop and not a collection of independently versioned microservices.
 
-Foundation owns product resource scope and authorization, durable Agent authoring and immutable executable revisions, Threads, Turns, Items, scheduling, worker lease generations, checkpoint selection, deferred feedback, asynchronous child Threads, Environment provider orchestration, service APIs, durable events, and usage records. It reconstructs process-local Harness objects from exact trusted inputs and supplies fresh authority for every logical run.
+Foundation owns managed Secrets, resource authorization, serializable Agent authoring resources, immutable revisions and dependency locks, durable interaction records, Executions and ExecutionAttempts, scheduling, pending actions, Environment management, lifecycle events, usage records, artifacts, and the public management API.
 
-Foundation does not redefine the code-first Harness `AgentDefinition`, plugin lifecycle, Pydantic Agent loop, `HarnessState`, Harness result semantics, Agent Stream Protocol, Environment Interaction Protocol, provider-native state, or external side effects. Platform-owned data and service APIs follow [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md).
+It does not redefine the code-first Harness `AgentDefinition`, Pydantic Agent loop, Harness result and state semantics, Agent Stream Protocol conversion, Environment provider lifecycle types, EIP, or provider-native state. Platform-owned data and APIs follow [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md).
 
-## Document Catalog
+## Accepted Identity Model
 
-| Document                                                                               | Owning contract                                                                                                        |
-| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md)                                                       | Service architecture, roles, dependency direction, major components, and completion boundaries                         |
-| [01-resource-scope-and-authorization.md](01-resource-scope-and-authorization.md)       | Organization and Workspace scope, principals, credentials, fixed roles, authorization, and run grants                  |
-| [02-agent-revisions-and-reconstruction.md](02-agent-revisions-and-reconstruction.md)   | Agent authoring, Presets, immutable Agent and model-integration revisions, dependency locks, and worker reconstruction |
-| [03-threads-turns-items-and-checkpoints.md](03-threads-turns-items-and-checkpoints.md) | Threads, Turns, Items, internal worker leases, checkpoints, cancellation, and continuation selection                   |
-| [04-scheduling-workers-and-recovery.md](04-scheduling-workers-and-recovery.md)         | Scheduling, leases, fencing, worker ownership, retries, reconciliation, and process roles                              |
-| [05-deferred-actions-and-children.md](05-deferred-actions-and-children.md)             | Durable approvals, external client tools, authenticated feedback, asynchronous child Threads, and result delivery      |
-| [06-environment-provider-lifecycle.md](06-environment-provider-lifecycle.md)           | Environment provider registry, desired topology, launch envelopes, effective bindings, and envd boundary               |
-| [07-events-usage-and-delivery.md](07-events-usage-and-delivery.md)                     | Durable lifecycle events, outbox publication, stream replay, usage records, artifacts, and observability projections   |
+The shared [Platform Interaction Model](../interaction-model.md) owns the public concepts `Session`, `Thread`, `Turn`, and `Item`. Foundation additionally owns durable scheduling identities:
 
-## Reading Paths
+```text
+Session -> Thread -> Turn -> Execution -> ExecutionAttempt -> Harness Run -> ModelAttempt
+```
 
-### Understand Foundation Service
+An interactive Execution records `session_id`, `thread_id`, and `turn_id`. A standalone webhook, schedule, or service request can create an Execution without a Session or Turn and records `thread_id` only when it continues a Harness history.
 
-Read `00`, then `03` and `04` for the durable Turn lifecycle. Read the [Harness Hosting Contract](../agent-harness/13-hosting-contract.md) for the process-local boundary embedded by an execution worker.
+One Turn can span several process-local Harness Runs when approval, deferred input, or worker recovery creates a boundary. One `ExecutionAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. None of `execution_id`, `execution_attempt_id`, or `run_id` replaces `thread_id`.
 
-### Implement product resources or authorization
+## Specification Catalog
 
-Read `01` and `02`, then [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md). Every product operation authenticates a principal and authorizes an action against an explicit Organization or Workspace resource scope.
+| Document                                                                                      | Owning contract                                                                                                               |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| [00 Overview](00-overview.md)                                                                 | Service shape, process roles, end-to-end flow, subsystem boundaries, dependency direction, and completion boundaries          |
+| [01 Secret Management](01-secret-management.md)                                               | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls     |
+| [02 Storage](02-storage.md)                                                                   | Relational, Redis-compatible, object, and mounted-filesystem capabilities and deployment-profile equivalence                  |
+| [03 Relational Schema](03-relational-schema.md)                                               | Service-wide relational metadata, migration authority, compatibility, application, and failure semantics                      |
+| [04 Resource Scope and Authorization](04-resource-scope-and-authorization.md)                 | Organization and Workspace hierarchy, Principals, credentials, fixed roles, product permissions, and run grants               |
+| [05 Agent Revisions and Reconstruction](05-agent-revisions-and-reconstruction.md)             | Agent Presets, immutable revisions, model integrations, dependency locks, and trusted process-local reconstruction            |
+| [06 Interactions, Executions, and Checkpoints](06-interactions-executions-and-checkpoints.md) | Interaction-to-runtime mapping, Execution state, Attempt fencing, dispatch phase, continuation, idempotency, and cancellation |
+| [07 Scheduling, Workers, and Recovery](07-scheduling-workers-and-recovery.md)                 | Eligibility, queues, claims, leases, stale-worker rejection, dispatch uncertainty, replacement, retry, and shutdown           |
+| [08 Deferred Actions and Children](08-deferred-actions-and-children.md)                       | Approval, client tools, user input, suspension, asynchronous child Executions, delivery, and cancellation                     |
+| [09 Environment Management](09-environment-management.md)                                     | Host use of canonical provider specifications, resource state, operations, attachments, reconciliation, and envd boundary     |
+| [10 Events, Usage, and Delivery](10-events-usage-and-delivery.md)                             | Harness observation, AG-UI and Item projection, durable lifecycle events, outbox, usage ingestion, artifacts, and telemetry   |
+| [11 Management API](11-management-api.md)                                                     | Public resource routes, interactive and standalone submission, commands, read models, replay, concurrency, and compatibility  |
 
-### Implement Turn processing or recovery
+Read `00`, `06`, and `07` together before changing the control/execution boundary. Read the shared interaction model before changing Session, Thread, Turn, or Item semantics. Read the Environment Provider and Agent Stream Protocol catalogs before adding provider or event adapters.
 
-Read `02` through `05`, then [Harness Run Context and Lifecycle](../agent-harness/06-execution-context-and-lifecycle.md), [Snapshot and Resume](../agent-harness/10-snapshot-and-resume.md), and [Harness Hosting Contract](../agent-harness/13-hosting-contract.md).
+## Implementation Orientation
 
-### Integrate Environment providers
+The current package establishes these service-wide roots:
 
-Read `06`, [Harness Environment Integration](../agent-harness/08-environment-integration.md), and the [agent-envd catalog](../agent-envd/README.md). Foundation owns provisioning and durable launch state; the Harness owns the entered run resource; envd owns EIP operations and daemon-generation evidence.
+| Path                                                                            | Architectural role                                                                     |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `packages/foundation-service/converge_foundation_service/settings.py`           | Maps process environment into typed provider and migration configuration               |
+| `packages/foundation-service/converge_foundation_service/app.py`                | Owns FastAPI lifespan, constructs one storage resource set, and exposes readiness      |
+| `packages/foundation-service/converge_foundation_service/storage/`              | Generic backend configuration, construction, lifecycle, and capability semantics       |
+| `packages/foundation-service/converge_foundation_service/database/metadata.py`  | Explicit registry of all service-owned relational models                               |
+| `packages/foundation-service/converge_foundation_service/database/migration.py` | Programmatic Alembic runner and bounded migration coordination                         |
+| `packages/foundation-service/converge_foundation_service/database/migrations/`  | Single ordered revision history                                                        |
+| `packages/foundation-service/converge_foundation_service/cli.py`                | Stable `foundation-service serve` and `foundation-service db ...` executable interface |
 
-### Implement event, usage, or client delivery
-
-Read `03`, `04`, `05`, and `07`. Durable lifecycle commitment, event publication, external result delivery, usage recording, pricing, billing, and payment remain independent facts.
+These roots are boundaries, not a requirement that every capability become a subpackage. Small capabilities remain focused modules; a capability gains a subdirectory only when it owns several cohesive implementations or contracts. Runnable configuration and migration usage live in the [Foundation Service package guide](../../packages/foundation-service/README.md).
 
 ## Authority Rules
 
-- Foundation product resources have an explicit Organization or Workspace scope; identifiers and references grant no authority.
-- The control plane owns authenticated Turn acceptance, immutable version selection, Thread/Turn/Item APIs, scheduling intent, feedback acceptance, and public APIs.
-- An execution worker owns one worker lease generation at a time, verifies exact locks, reconstructs process-local Harness values, supplies fresh `RunBindings`, and publishes only generation-fenced candidates.
-- One worker lease generation starts at most one logical Harness run. Internal Harness model attempts do not change the worker lease generation.
-- PostgreSQL is the distributed durable lifecycle authority. Redis, queues, streams, and notifications coordinate work but do not define whether work exists or completed.
-- A stale worker cannot commit an Item, checkpoint, lifecycle event, pending action, child result, usage record, or terminal outcome.
-- Native deferred external calls and approvals remain distinct. Foundation owns durable pending state and authenticated feedback; the external client owns its effects.
-- `HarnessState` restores portable process-local continuation data only. Foundation separately stores durable lifecycle, exact revisions, policy decisions, provider launch state, pending actions, child delivery, and reconciliation evidence.
-- Product authorization stays in Foundation Service. The Harness receives fresh run authority and envd enforces EIP grants without querying product membership.
-- Process-local Harness completion, durable completion, event delivery, external delivery, usage recording, billing, and payment are independent facts.
+- The control role accepts resources and commands, commits immutable selections, and owns durable lifecycle authority.
+- The execution role claims fenced `ExecutionAttempt` leases and invokes Harness in-process. It does not expose another product API or run migrations.
+- PostgreSQL is authoritative for lifecycle and fencing. Redis, queues, and notifications are disposable coordination hints.
+- Foundation records contain only Foundation-owned serializable data. They contain no Python class, plugin instance, native Model, Toolset, Capability, callable, client, credential, provider attachment, or live controller.
+- The worker verifies exact locks and uses trusted installed adapters to reconstruct a process-local Harness `AgentDefinition` and fresh `RunBindings`.
+- Foundation consumes the canonical Environment Provider types and `HarnessAguiObserver`; it does not create parallel provider or Harness-event models.
+- A stale Attempt cannot mutate Execution lifecycle, checkpoints, pending work, Items, child delivery, or terminal outcome. A late immutable `UsageRecord` can still be ingested under its original Attempt when record identity and content validate, but it cannot mutate lifecycle.
+- Before any external effect, the worker durably advances from `pre_dispatch` to `effects_possible`. Recovery never treats missing acknowledgement as proof that no effect occurred.
+- Harness completion, durable Execution completion, Item projection, event delivery, external delivery, usage ingestion, billing, and payment are separate facts.
 
 ## Specification Conventions
 
 - Python-like schemas are conceptual unless explicitly declared as API or storage formats.
-- `Thread` means one durable, independently advancing, multi-turn Agent conversation. It is not a login session, EIP session, provider session, or transport connection.
-- `Turn` means one user request and all Agent work caused by that request.
-- `Item` means one ordered durable semantic unit within a Turn, not every transient runtime event.
-- A worker lease generation is an internal fencing value, not a public resource or another level in the interaction model.
-- A `Checkpoint` is an immutable complete continuation candidate selected by a fenced Foundation transaction.
+- A definition revision is immutable; changing materialized content or a dependency lock creates another revision.
 - `Ref` values identify entities or revisions and grant no authority.
-- A definition or integration revision is immutable. Changing its materialized content or dependency lock creates another revision.
-- Process-local Python objects are reconstructed and never become durable payloads.
+- Process-local objects are reconstructed and never become durable payloads.
+- Domain schemas, repositories, queue messages, and events live in their owning domain rather than the generic storage substrate.

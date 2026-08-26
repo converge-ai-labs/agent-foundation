@@ -20,16 +20,21 @@ COMPONENTS = (
     "sdk-rust",
     "sdk-typescript",
 )
-HARNESS_MANIFESTS = (
-    Path("packages/agent-harness/pyproject.toml"),
-    Path("packages/agent-stream-protocol/pyproject.toml"),
-)
-HARNESS_PACKAGES = (
-    "converge-agent-harness",
-    "converge-agent-stream-protocol",
-)
+ENVIRONMENT_PROVIDER_MANIFEST = Path("packages/agent-environment-provider/pyproject.toml")
+ENVIRONMENT_PROVIDER_PACKAGE = "converge-agent-environment-provider"
+HARNESS_MANIFEST = Path("packages/agent-harness/pyproject.toml")
 HARNESS_PACKAGE = "converge-agent-harness"
 STREAM_PROTOCOL_MANIFEST = Path("packages/agent-stream-protocol/pyproject.toml")
+HARNESS_MANIFESTS = (
+    ENVIRONMENT_PROVIDER_MANIFEST,
+    HARNESS_MANIFEST,
+    STREAM_PROTOCOL_MANIFEST,
+)
+HARNESS_PACKAGES = (
+    ENVIRONMENT_PROVIDER_PACKAGE,
+    HARNESS_PACKAGE,
+    "converge-agent-stream-protocol",
+)
 AGENT_UI_MANIFEST = Path("packages/agent-ui/pyproject.toml")
 AGENT_UI_PACKAGE = "converge-agent-ui"
 AGENT_UI_RELEASE_TOOL = "tool.converge.agent-ui-release"
@@ -384,10 +389,14 @@ def validate_component_version(root: Path, component: str, version: str) -> None
     if release_version.canonical == "0.0.0":
         return
     if component == "harness":
-        expected = f"{HARNESS_PACKAGE}=={release_version.python_package}"
-        actual = _project_dependency_requirement(root, STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE)
-        if actual != expected:
-            raise ReleaseVersionError(f"Expected {STREAM_PROTOCOL_MANIFEST} dependency {expected}, found {actual}")
+        for manifest, package_name in (
+            (HARNESS_MANIFEST, ENVIRONMENT_PROVIDER_PACKAGE),
+            (STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),
+        ):
+            expected = f"{package_name}=={release_version.python_package}"
+            actual = _project_dependency_requirement(root, manifest, package_name)
+            if actual != expected:
+                raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
     elif component == "agent-ui":
         selected = _agent_ui_harness_release(root).python_package
         for package_name in HARNESS_PACKAGES:
@@ -556,12 +565,16 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
                 python_version,
                 path,
             )
-        planned[STREAM_PROTOCOL_MANIFEST] = _replace_project_dependency(
-            planned[STREAM_PROTOCOL_MANIFEST],
-            HARNESS_PACKAGE,
-            f"{HARNESS_PACKAGE}=={python_version}",
-            STREAM_PROTOCOL_MANIFEST,
-        )
+        for manifest, package_name in (
+            (HARNESS_MANIFEST, ENVIRONMENT_PROVIDER_PACKAGE),
+            (STREAM_PROTOCOL_MANIFEST, HARNESS_PACKAGE),
+        ):
+            planned[manifest] = _replace_project_dependency(
+                planned[manifest],
+                package_name,
+                f"{package_name}=={python_version}",
+                manifest,
+            )
         lock_content = _read_text(root, ROOT_UV_LOCK)
         for package_name in HARNESS_PACKAGES:
             lock_content = _replace_lock_package_version(

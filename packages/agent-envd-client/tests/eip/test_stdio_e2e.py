@@ -308,9 +308,11 @@ def test_configured_mount_defines_file_and_command_surface(tmp_path: Path) -> No
     asyncio.run(scenario())
 
 
-def test_mount_ancestor_of_private_runtime_fails_closed(tmp_path: Path) -> None:
+def test_mount_ancestor_of_private_runtime_subtracts_protected_state(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     runtime.mkdir()
+    visible = tmp_path / "visible.txt"
+    visible.write_text("visible")
     python = Path(sys.executable).resolve()
     config_path = tmp_path / "agent-envd.json"
     config_path.write_text(
@@ -336,9 +338,35 @@ def test_mount_ancestor_of_private_runtime_fails_closed(tmp_path: Path) -> None:
             config_path=config_path,
             runtime_dir=runtime,
         )
-        stderr = await wait_for_exit(process, expected_code=1)
-        assert b"mount initialization failed" in stderr
-        assert b"overlap the protected envd runtime parent" in stderr
+        session = await EIPSession.initialize(
+            StdioTransport.from_process(process),
+            expected_environment_id="env-e2e",
+            required_methods=("file.list", "file.stat"),
+        )
+        listed = await session.client.file_list(
+            FileListParams(
+                context=EIPCallContext(operation_id="broad-list-e2e"),
+                path=EIPPath(mount_id="broad", path="/"),
+                offset=0,
+                max_results=10,
+                include_hidden=True,
+            )
+        )
+        assert tuple(entry.relative_path for entry in listed.entries) == (
+            "agent-envd.json",
+            "visible.txt",
+        )
+        with pytest.raises(EIPMethodError) as denied:
+            await session.client.file_stat(
+                FileStatParams(
+                    context=EIPCallContext(operation_id="protected-stat-e2e"),
+                    path=EIPPath(mount_id="broad", path="/runtime"),
+                    follow_symlinks=False,
+                )
+            )
+        assert denied.value.error.data.error_type is ErrorType.DENIED
+        await session.close()
+        assert_disabled_isolation_warning(await wait_for_exit(process))
 
     asyncio.run(scenario())
 

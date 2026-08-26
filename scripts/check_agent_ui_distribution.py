@@ -23,6 +23,7 @@ DISTRIBUTION_STEM = "converge_agent_ui"
 MANIFEST_NAME = "asset-manifest.json"
 PACKAGE_PREFIX = PurePosixPath("converge_agent_ui/static")
 INTERNAL_PACKAGES = (
+    "converge-agent-environment-provider",
     "converge-agent-harness",
     "converge-agent-stream-protocol",
 )

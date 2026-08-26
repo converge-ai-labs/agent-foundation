@@ -3,25 +3,24 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from contextvars import ContextVar
-from copy import copy
-from dataclasses import dataclass, replace
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any
 
-from pydantic import JsonValue
 from pydantic_ai import RunContext
-from pydantic_ai.messages import BaseToolReturnPart, ModelRequest, RetryPromptPart, UserPromptPart
-from pydantic_ai.models import ModelRequestContext
 
-from converge_agent_harness._json import dump_json_bytes
 from converge_agent_harness.context import AgentContext
 from converge_agent_harness.environment.commands import BoundProcessHandle
 from converge_agent_harness.environment.models import (
-    ENVIRONMENT_ACTION_DISPATCH,
     EnvironmentError,
 )
-from converge_agent_harness.errors import DefinitionError
+from converge_agent_harness.model_context import (
+    ModelContextNext,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
+    ModelContextRequestKind,
+)
 from converge_agent_harness.tools.metadata import CanonicalResource, ToolResourceResolver
 
 from .configuration import DynamicEnvironmentConfiguration
@@ -67,7 +66,6 @@ class _DynamicEnvironmentContext:
         self._run_id = run_id
         self._environment = environment
         self._resolve_process = resolve_process
-        self._last_projected_version: int | None = None
         self._pending_version: int | None = None
         self._notice_pending = False
         self._active_context: RunContext[AgentContext] | None = None
@@ -233,27 +231,19 @@ class _DynamicEnvironmentContext:
             if self._active_context is ctx:
                 self._active_context = None
 
-    async def before_model_request(
+    async def wrap_model_context(
         self,
         ctx: RunContext[AgentContext],
-        request_context: ModelRequestContext,
-    ) -> ModelRequestContext:
-        if not _has_ordinary_user_boundary(ctx, request_context.messages):
-            return request_context
-        topology = ctx.deps.environment.topology
-        if self._last_projected_version == topology.topology_version and self._pending_version is None:
-            return request_context
-        rendered = await self._render_topology(ctx.deps)
-        messages = list(request_context.messages)
-        final = cast(ModelRequest, messages[-1])
-        messages[-1] = replace(final, parts=(*final.parts, UserPromptPart(rendered)))
-        self._last_projected_version = topology.topology_version
-        if self._pending_version is not None and self._pending_version <= topology.topology_version:
-            self._pending_version = None
-        self._notice_pending = False
-        updated = copy(request_context)
-        updated.messages = messages
-        return updated
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection:
+        projection = await handler(request)
+        if request.kind is ModelContextRequestKind.INPUT:
+            topology_version = ctx.deps.environment.topology.topology_version
+            if self._pending_version is not None and self._pending_version <= topology_version:
+                self._pending_version = None
+            self._notice_pending = False
+        return projection
 
     def _ensure_observer(self, ctx: RunContext[AgentContext]) -> None:
         if self._observer_task is not None:
@@ -283,79 +273,6 @@ class _DynamicEnvironmentContext:
                     priority="asap",
                 )
 
-    async def _render_topology(self, context: AgentContext) -> str:
-        topology = context.environment.topology
-        selected = topology.bindings[: self.configuration.max_topology_bindings]
-        default = next((item for item in topology.bindings if item.binding_id == topology.default_binding_id), None)
-        bindings: list[dict[str, JsonValue]] = []
-        for binding in selected:
-            availability = "unavailable"
-            ready: list[str] = []
-            reason: str | None = None
-            try:
-                observation = await context.environment.describe(binding.binding_id)
-                availability = observation.availability.status
-                ready = sorted(observation.availability.ready_families)
-                reason = observation.availability.reason_code
-            except EnvironmentError:
-                pass
-            effective_families = sorted(
-                {
-                    ENVIRONMENT_ACTION_DISPATCH[action].family
-                    for action in binding.permission_ceiling.operations
-                    if ENVIRONMENT_ACTION_DISPATCH[action].family != "state"
-                }
-            )
-            root = (
-                "/workspace" if binding.binding_id == topology.default_binding_id else f"/environment/{binding.alias}"
-            )
-            projected: dict[str, JsonValue] = {
-                "alias": binding.alias,
-                "root": root,
-                "operations": cast(JsonValue, effective_families),
-                "availability": availability,
-                "ready": cast(JsonValue, ready),
-                "read_only": not any(
-                    action.value.startswith(("environment.file.write", "environment.file.patch"))
-                    or action.value
-                    in {
-                        "environment.file.mkdir",
-                        "environment.file.move",
-                        "environment.file.remove",
-                        "environment.file.copy_destination",
-                    }
-                    for action in binding.permission_ceiling.operations
-                ),
-            }
-            if reason is not None:
-                projected["reason"] = reason
-            bindings.append(projected)
-
-        payload: dict[str, JsonValue] = {
-            "topology_version": topology.topology_version,
-            "restored_state_topology_version": context.environment.restored_state_topology_version,
-            "default_alias": default.alias if default is not None else None,
-            "bindings": cast(JsonValue, bindings),
-            "truncated": len(selected) < len(topology.bindings),
-        }
-        prefix = "Current Environment topology (trusted dynamic context):\n"
-        rendered = _bounded_topology_json(
-            payload,
-            self.configuration.max_topology_bytes - len(prefix.encode("utf-8")),
-        )
-        return f"{prefix}{rendered}"
-
-
-def _has_ordinary_user_boundary(ctx: RunContext[AgentContext], messages: Sequence[Any]) -> bool:
-    if not messages or not isinstance(messages[-1], ModelRequest):
-        return False
-    final = messages[-1]
-    if final.run_id != ctx.run_id:
-        return False
-    if not any(isinstance(part, UserPromptPart) for part in final.parts):
-        return False
-    return not any(isinstance(part, BaseToolReturnPart | RetryPromptPart) for part in final.parts)
-
 
 def _string_argument(arguments: Mapping[str, object], name: str) -> str:
     value = arguments.get(name)
@@ -377,30 +294,6 @@ def _optional_string_argument(arguments: Mapping[str, object], name: str) -> str
             code="environment_request_invalid",
         )
     return value
-
-
-def _bounded_topology_json(payload: dict[str, JsonValue], max_bytes: int) -> str:
-    bindings = cast(list[JsonValue], payload["bindings"])
-    while True:
-        encoded = dump_json_bytes(payload, sort_keys=True)
-        if len(encoded) <= max_bytes:
-            return encoded.decode("utf-8")
-        if bindings:
-            bindings.pop()
-            payload["truncated"] = True
-            continue
-        minimal: dict[str, JsonValue] = {
-            "topology_version": payload["topology_version"],
-            "bindings": [],
-            "truncated": True,
-        }
-        encoded = dump_json_bytes(minimal, sort_keys=True)
-        if len(encoded) > max_bytes:
-            raise DefinitionError(
-                "Environment topology byte limit cannot encode a minimal snapshot.",
-                code="dynamic_environment_limit_invalid",
-            )
-        return encoded.decode("utf-8")
 
 
 def _consume_task_result(task: asyncio.Task[None]) -> None:

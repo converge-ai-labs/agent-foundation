@@ -2,6 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
+from .attachments import create_environment_provider_binding
 from .commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -30,7 +31,7 @@ from .coordinator import (
     create_environment_run_binding,
     create_noop_environment_run_binding,
 )
-from .eip import EIPEnvironmentProviderBinding, EIPSessionFactory
+from .eip import EIPEnvironmentProviderBinding
 from .extension_factories import (
     ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP,
     EnvironmentRunExtensionFactory,
@@ -171,7 +172,6 @@ __all__ = [
     "DynamicEnvironmentCapability",
     "DynamicEnvironmentConfiguration",
     "EIPEnvironmentProviderBinding",
-    "EIPSessionFactory",
     "EnvironmentAction",
     "EnvironmentActionDispatch",
     "EnvironmentAvailability",
@@ -249,6 +249,7 @@ __all__ = [
     "VirtualFileOperator",
     "build_environment_provider_factory_catalog",
     "build_environment_run_extension_factory_catalog",
+    "create_environment_provider_binding",
     "create_environment_run_binding",
     "create_noop_environment_run_binding",
     "discover_environment_provider_factory_references",

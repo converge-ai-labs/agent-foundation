@@ -28,8 +28,3 @@ packages = ["converge_agent_stream_protocol"]
 [tool.deptry]
 known_first_party = ["converge_agent_stream_protocol"]
 package_module_name_map = { "ag-ui-protocol" = "ag_ui", "converge-agent-harness" = "converge_agent_harness", "pydantic-ai-slim" = "pydantic_ai" }
-
-# The package is an initialization scaffold. These runtime boundaries are
-# intentionally declared before their adapter modules are implemented.
-[tool.deptry.per_rule_ignores]
-DEP002 = ["ag-ui-protocol", "converge-agent-harness", "pydantic", "pydantic-ai-slim"]

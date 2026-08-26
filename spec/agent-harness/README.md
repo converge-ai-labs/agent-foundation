@@ -28,6 +28,7 @@ The Harness owns code-first Agent construction, a narrow optional plugin configu
 | [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, authority, data safety, compatibility, and trade-offs                                                                 |
 | [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native input, thin model resolution, self-healing, semantic recovery, streaming, and output                                             |
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                           |
+| [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch                 |
 
 ## Reading Paths
 
@@ -41,11 +42,11 @@ Read `03`, `04`, `05`, and `14`. Hosted durable definitions are owned by [Founda
 
 ### Understand Models and Recovery
 
-Read `06`, `10`, and `16`. Provider transport retry, exact history repair, semantic attempts, and durable Host recovery have separate owners.
+Read `06`, `10`, and `16`. Provider transport retry, exact history repair, `ModelAttempt` recovery, and durable Host recovery have separate owners.
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
+Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
 
 ### Implement Hosting or Persistence
 
@@ -54,9 +55,10 @@ Read `10`, `12`, `13`, and `14`, then the Foundation Service catalog.
 ## Authority Rules
 
 - Pydantic AI owns the Agent loop and its native Model, Capability, Toolset, message, deferred, output, event, and usage contracts.
-- The Harness owns process-local code-first construction and logical-run behavior.
+- The shared [interaction model](../interaction-model.md) owns Session, Thread, Turn, and Item meaning; `HarnessState` carries the stable identity and continuation of one Thread.
 - Concrete plugins and other native Python inputs are trusted in-process objects; the narrow Harness plugin document is an optional builder-local source, not an Agent definition format.
-- A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, execution lifecycle, and delivery.
+- The Harness owns process-local code-first construction and logical-Run behavior.
+- A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, Session/Turn lifecycle, execution lifecycle, and delivery.
 - Providers own external side effects and authoritative reconciliation evidence.
 - A telemetry backend observes execution but never becomes lifecycle authority.
 
@@ -65,5 +67,5 @@ Read `10`, `12`, `13`, and `14`, then the Foundation Service catalog.
 - Python-like schemas are conceptual typed contracts unless explicitly declared as wire formats.
 - A process-local Python object is not durable merely because a Host can reconstruct it.
 - One durable fact has one owner; cross-documents link rather than duplicate schemas.
-- Identifiers provide correlation and never grant authority by themselves.
+- Identifiers provide correlation and never grant authority by themselves; `thread_id`, `run_id`, and model-attempt IDs remain distinct.
 - Recovery text must preserve unknown side effects and must not claim exactly-once behavior without provider evidence.

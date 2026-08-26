@@ -4,19 +4,20 @@
 
 `HarnessState` is the complete portable continuation value understood by the process-local Harness. It contains only:
 
+- one stable `thread_id` for the independently advancing message history;
 - detached public Pydantic AI message history;
 - detached JSON state namespaced by stable Capability ID;
 - optional portable Environment backend state under one explicit aggregate field.
 
 It contains no executable definition, plugin object, model, Toolset, provider client, Environment binding, desired topology, provider launch state, current authority, usage ledger, event log, Host execution record, lease, queue, or delivery state. A Host may persist the value or embed it in a larger durable record, but the Harness does not choose or commit a durable checkpoint.
 
-Resume creates a new logical Harness run with fresh `RunBindings`. State preserves conversation, explicitly stored Capability data, and provider-defined portable data for already authorized bindings; it never restores authority, topology, or a live Python resource.
+Resume creates a new logical Harness Run with fresh `RunBindings`. State preserves Thread identity, messages, explicitly stored Capability data, and provider-defined portable data for already authorized bindings; it never restores authority, topology, or a live Python resource.
 
 ```mermaid
 flowchart LR
-    Host -->|input, fresh bindings, optional state| Run1[Logical Harness run]
+    Host -->|input, fresh bindings, optional state| Run1[Harness Run]
     Run1 -->|HarnessState candidate| Host
-    Host -->|selected state and fresh bindings| Run2[New logical Harness run]
+    Host -->|selected state and fresh bindings| Run2[New Harness Run]
 ```
 
 ## State Schema
@@ -32,17 +33,23 @@ class AgentContextStateSnapshot(BaseModel):
 
 
 class HarnessState(BaseModel):
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["1"]
+    thread_id: str
     message_history: tuple[ModelMessage, ...] = ()
     agent_context_state: AgentContextStateSnapshot = (
         AgentContextStateSnapshot()
     )
     environment_state: EnvironmentState | None = None
+
+    @classmethod
+    def new(...) -> HarnessState: ...
 ```
 
 `HarnessState` and its nested values are frozen detached envelopes. Pydantic message history is round-tripped through `ModelMessagesTypeAdapter`; Capability and Environment payload data are round-tripped through Pydantic `JsonValue`. Public accessors decode fresh copies, so mutable aliases do not cross the state boundary.
 
-`schema_version` versions only the Harness envelope. `environment_state` is optional with a default of `None`, so an existing schema-version-1 value without that field remains valid. Each Capability entry has an independent non-blank version owned by that Capability's codec; each Environment binding entry has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#environment-state) owns its schema and authority boundary.
+`thread_id` is a Harness-generated opaque correlation value consisting of the `thread-` prefix and 32 lowercase hexadecimal characters. `HarnessState.new()` creates a new Thread and generates its ID; direct envelope validation requires the field. Serialization, ordinary copies, exports, and resume preserve it exactly. The field is not accepted through `RunBindings`, metadata, or a run argument. `HarnessState.fork()` copies the messages and portable State payloads into a new envelope with a newly generated ID, which is the required core path for intentionally creating an independently advancing history from an existing checkpoint. Trusted plugins and Host state transformations remain able to construct complete State under the existing trust boundary; the ID is not cryptographic integrity or authority.
+
+`schema_version` versions only the Harness envelope and is `1` for this contract. Import requires the exact supported envelope version and a valid required `thread_id`; validation never invents a replacement identity for malformed input. Each Capability entry has an independent non-blank version owned by that Capability's codec; each Environment binding entry has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#environment-state) owns its schema and authority boundary.
 
 ## AgentContextState
 
@@ -79,7 +86,7 @@ Namespace isolation is a composition convention backed by the typed API, not a s
 
 ## Export
 
-`AgentContext.export_state(message_history)` combines a detached message sequence with the current `AgentContextState` snapshot and a fresh aggregate Environment export:
+`AgentContext.export_state(message_history)` preserves `AgentContext.thread_id` and combines it with a detached message sequence, the current `AgentContextState` snapshot, and a fresh aggregate Environment export:
 
 ```python
 async def export_state(
@@ -96,15 +103,15 @@ State export does not require `HarnessState.message_history` to equal a result o
 
 The Harness stores only public Pydantic `ModelMessage` values. It never serializes raw stream deltas or private graph nodes. When a streamed model response is interrupted, the Harness uses public part lifecycle events to derive one explicitly interrupted response containing only parts that are safe to replay; it never marks an unfinished part complete.
 
-| Time                               | Exported messages                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------ |
-| Before first inner attempt         | Imported message history                                                       |
-| During model or tool work          | Latest complete public message view exposed by `AgentRunEvents`                |
-| Between semantic recovery attempts | Normalized interrupted history used by the next attempt                        |
-| At completion or deferred output   | `AgentRunResult.all_messages()`                                                |
-| After normalized cancellation      | Complete messages supplied by `RunCancelled` or the latest observable boundary |
+| Time                             | Exported messages                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| Before first `ModelAttempt`      | Imported message history                                                       |
+| During model or tool work        | Latest complete public message view exposed by `AgentRunEvents`                |
+| Between `ModelAttempt` values    | Normalized interrupted history used by the next `ModelAttempt`                 |
+| At completion or deferred output | `AgentRunResult.all_messages()`                                                |
+| After normalized cancellation    | Complete messages supplied by `RunCancelled` or the latest observable boundary |
 
-A new semantic continuation prompt is input to the next attempt, not retroactively inserted into an earlier completed message.
+A new semantic continuation prompt is input to the next `ModelAttempt`, not retroactively inserted into an earlier completed message.
 
 ## Interrupted History Normalization
 
@@ -139,21 +146,22 @@ No normalization occurs for ordinary complete history or for a provider-suspende
 
 A new run receives `previous_state` separately from fresh `RunBindings`. Stream construction deep-copies the supplied state. Entry then:
 
-1. binds and enters the new Environment from fresh Host authority, publishing its initial topology while the paired controller remains non-active;
-2. restores a present `environment_state` only into compatible, already selected bindings;
-3. enters ordered Environment run extensions after successful restore or confirmation that no Environment state was supplied;
-4. activates the controller after every extension enters successfully;
-5. invokes the optional `RunInputFactory` against that entered Environment;
-6. creates one `AgentContextState` initialized from the imported Capability snapshot;
-7. creates the fresh `AgentContext` and plugin graph;
-8. passes imported messages to the first Pydantic attempt;
-9. lets each Capability read and validate only the namespaces it understands.
+01. binds and enters the new Environment from fresh Host authority, publishing its initial topology while the paired controller remains non-active;
+02. restores a present `environment_state` only into compatible, already selected bindings;
+03. enters ordered Environment run extensions after successful restore or confirmation that no Environment state was supplied;
+04. activates the controller after every extension enters successfully;
+05. invokes the optional `RunInputFactory` against that entered Environment;
+06. restores the selected `thread_id` into a read-only field on the fresh `AgentContext`;
+07. creates one `AgentContextState` initialized from the imported Capability snapshot;
+08. creates the remaining fresh `AgentContext` dependencies and plugin graph;
+09. passes imported messages to the first `ModelAttempt`;
+10. lets each Capability read and validate only the namespaces it understands.
 
 Environment restore and ordered run-extension entry finish before controller activation and input production, never overlap `apply()`, and never create a binding, choose topology, consume Host launch state, or grant access. An unmatched saved binding is ignored with a bounded diagnostic; an incompatible selected binding fails according to the Environment codec contract. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
 
-Identity, policy, credentials, model resolution, Environment authority, topology, tool grants, provider sessions, and Host ownership always come from fresh trusted bindings. Message metadata, Capability state, and portable Environment state grant none of them.
+Identity, policy, credentials, model resolution, Environment authority, topology, tool grants, provider sessions, and Host ownership always come from fresh trusted bindings. Message metadata, Thread identity, Capability state, and portable Environment state grant none of them.
 
-State restores the independently advancing message history but does not carry its provider model-session or prompt-cache affinity. The Host supplies the same stable `AgentInstanceRef` when it continues that history, and the fresh model integration derives or restores the matching affinity under [the model-conversation contract](16-input-model-and-output.md#model-conversation-affinity). If a provider uses an opaque selector that cannot be derived, the Host retains it beside `HarnessState`; transient Harness and inner run IDs never replace it.
+State restores both the independently advancing message history and its provider-neutral `thread_id`; it does not carry a provider session, route, credential, or prompt-cache setting. The fresh model integration reads the restored ID from `AgentContext` and derives or restores matching provider affinity under [the Thread-affinity contract](16-input-model-and-output.md#thread-affinity). If a provider uses an additional opaque selector that cannot be derived, the Host retains it beside the matching `HarnessState`; transient Harness and model-attempt IDs never replace the State-owned key.
 
 Omitting new input is valid when the selected message history is sufficient for native Pydantic continuation. Supplying deferred tool results uses Pydantic AI's own input contract and the exact pending call or approval correlation owned by the integrating Host.
 
@@ -169,9 +177,9 @@ class HostExecutionState(BaseModel):
     pending_delivery: HostDeliveryState | None
 ```
 
-This is an ownership illustration, not a Harness API. Definition selection, desired Environment topology, worker lease generation, artifact locks, provider provisioning and attachment, provider launch-state codecs, client-tool pending state, asynchronous child lifecycle, and delivery fencing remain Host-owned. `HostLaunchState` is separate from `HarnessState.environment_state`: the former makes a provider resource reachable, while the latter can restore only portable backend-local data after fresh reachability and authority already exist.
+This is an ownership illustration, not a Harness API. Definition selection, desired Environment topology, `ExecutionAttempt` generation, artifact locks, provider provisioning and attachment, provider launch-state codecs, client-tool pending state, asynchronous child lifecycle, and delivery fencing remain Host-owned. `HostLaunchState` is separate from `HarnessState.environment_state`: the former makes a provider resource reachable, while the latter can restore only portable backend-local data after fresh reachability and authority already exist.
 
-The Harness does not define or require a generic provider route pin. Provider-specific continuation facts that are not public Pydantic messages, including an opaque model-session selector when derivation from the stable Agent instance is impossible, belong to the selected model integration or Host envelope rather than the Harness schema. A broader product-conversation routing key does not replace the distinct prompt-cache affinity required for each independently advancing Agent message history.
+The Harness does not define or require a generic provider route pin. Provider-specific continuation facts that cannot be derived from `thread_id` and public Pydantic messages, including an opaque model-session selector, belong to the selected model integration or Host envelope rather than the Harness schema. A broader product-conversation routing key does not replace the distinct prompt-cache affinity required for each independently advancing Agent message history.
 
 ## External Effects
 

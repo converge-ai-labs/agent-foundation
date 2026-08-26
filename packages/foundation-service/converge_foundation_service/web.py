@@ -37,12 +37,8 @@ class SPAStaticFiles(StaticFiles):
 
 def mount_web_application(app: FastAPI, directory: Path) -> None:
     """Mount one validated production build after all service routes."""
+
     index_path = directory / "index.html"
     if not index_path.is_file():
         raise ValueError(f"Foundation Web index is missing: {index_path}")
-
-    app.mount(
-        "/",
-        SPAStaticFiles(directory=directory, html=True, check_dir=True),
-        name="foundation-web",
-    )
+    app.mount("/", SPAStaticFiles(directory=directory, html=True, check_dir=True), name="foundation-web")

@@ -1,56 +1,145 @@
-"""Fixture-owned integration infrastructure for foundation-service tests."""
+"""Fixture-owned infrastructure for storage contract tests."""
 
 from __future__ import annotations
 
-import os
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from uuid import uuid4
 
+import anyio
 import pytest
-from alembic import command
+from aiobotocore.config import AioConfig
+from aiobotocore.httpxsession import HttpxSession
+from aiobotocore.session import get_session
+from botocore.exceptions import BotoCoreError
+from converge_foundation_service.storage.config import RedisMemoryConfig, RedisServerConfig
+from converge_foundation_service.storage.object_store import LocalObjectStore, ObjectStore, S3ObjectStore
+from converge_foundation_service.storage.redis import open_redis
+from redis.asyncio import Redis
+from testcontainers.core.container import DockerContainer
+from testcontainers.core.wait_strategies import PortWaitStrategy
 
-# Tests never inherit application infrastructure from a developer's shell or .env.
-for _variable in [key for key in os.environ if key.startswith("FOUNDATION_")]:
-    os.environ.pop(_variable, None)
-
-from converge_foundation_service.settings import ServiceSettings as _ServiceSettings  # noqa: E402
-
-_ServiceSettings.model_config = {**_ServiceSettings.model_config, "env_file": None}
+MINIO_IMAGE = "quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
 
 
 @pytest.fixture(scope="session")
-def pg_url() -> Generator[str]:
-    """Yield a disposable PostgreSQL 17 database owned by Testcontainers."""
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture(scope="session")
+def pg_url() -> Iterator[str]:
     from testcontainers.community.postgres import PostgresContainer
 
     with PostgresContainer("postgres:17-alpine") as container:
-        host = container.get_container_host_ip()
-        port = container.get_exposed_port(5432)
-        yield f"postgresql+psycopg://{container.username}:{container.password}@{host}:{port}/{container.dbname}"
+        yield (
+            f"postgresql+psycopg://{container.username}:{container.password}"
+            f"@{container.get_container_host_ip()}:{container.get_exposed_port(5432)}/{container.dbname}"
+        )
 
 
 @pytest.fixture(scope="session")
-def redis_url() -> Generator[str]:
-    """Yield a disposable Redis 7 instance owned by Testcontainers."""
+def redis_url() -> Iterator[str]:
     from testcontainers.community.redis import RedisContainer
 
-    with RedisContainer("redis:7-alpine") as container:
-        host = container.get_container_host_ip()
-        port = container.get_exposed_port(6379)
-        yield f"redis://{host}:{port}/0"
+    with RedisContainer("redis:8-alpine") as container:
+        yield f"redis://{container.get_container_host_ip()}:{container.get_exposed_port(6379)}/0"
+
+
+@dataclass(frozen=True, slots=True)
+class S3Service:
+    endpoint_url: str
+    access_key: str
+    secret_key: str
 
 
 @pytest.fixture(scope="session")
-def migrated_pg_url(pg_url: str) -> Generator[str]:
-    """Apply and verify the complete migration history on disposable PostgreSQL."""
-    from converge_foundation_service import cli
-    from converge_foundation_service.settings import get_settings
+def s3_service() -> Iterator[S3Service]:
+    access_key = "converge-test-access"
+    secret_key = "converge-test-secret"
+    container = (
+        DockerContainer(MINIO_IMAGE)
+        .with_env("MINIO_ROOT_USER", access_key)
+        .with_env("MINIO_ROOT_PASSWORD", secret_key)
+        .with_command("server /data")
+        .with_exposed_ports(9000)
+        .waiting_for(PortWaitStrategy(9000))
+    )
+    with container:
+        endpoint = f"http://{container.get_container_host_ip()}:{container.get_exposed_port(9000)}"
+        yield S3Service(endpoint, access_key, secret_key)
 
-    os.environ["FOUNDATION_DATABASE_URL"] = pg_url
-    get_settings.cache_clear()
-    try:
-        command.upgrade(cli._alembic_config(), "head")
-        command.current(cli._alembic_config(), check_heads=True)
-        yield pg_url
-    finally:
-        get_settings.cache_clear()
-        os.environ.pop("FOUNDATION_DATABASE_URL", None)
+
+@pytest.fixture(params=["memory", "redis"])
+async def redis_client(request: pytest.FixtureRequest) -> AsyncIterator[Redis]:
+    if request.param == "memory":
+        config = RedisMemoryConfig()
+    else:
+        config = RedisServerConfig(url=request.getfixturevalue("redis_url"))
+    async with open_redis(config) as client:
+        await client.flushdb()
+        yield client
+        await client.flushdb()
+
+
+@pytest.fixture(params=["local", "s3"])
+async def object_store(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[ObjectStore]:
+    if request.param == "local":
+        yield await LocalObjectStore.create(tmp_path / "objects")
+        return
+
+    service: S3Service = request.getfixturevalue("s3_service")
+    async with _open_s3_store(service) as store:
+        yield store
+
+
+@pytest.fixture
+async def s3_object_store(s3_service: S3Service) -> AsyncIterator[S3ObjectStore]:
+    async with _open_s3_store(s3_service) as store:
+        yield store
+
+
+@asynccontextmanager
+async def _open_s3_store(service: S3Service) -> AsyncIterator[S3ObjectStore]:
+    bucket = f"converge-storage-{uuid4().hex}"
+    config = AioConfig(
+        connect_timeout=5,
+        read_timeout=30,
+        retries={"total_max_attempts": 1, "mode": "standard"},
+        s3={"addressing_style": "path"},
+        http_session_cls=HttpxSession,
+    )
+    async with AsyncExitStack() as stack:
+        client = await stack.enter_async_context(
+            get_session().create_client(
+                "s3",
+                endpoint_url=service.endpoint_url,
+                region_name="us-east-1",
+                aws_access_key_id=service.access_key,
+                aws_secret_access_key=service.secret_key,
+                config=config,
+            )
+        )
+        await _wait_for_s3(client)
+        await client.create_bucket(Bucket=bucket)
+        store = S3ObjectStore(client, bucket)
+        try:
+            yield store
+        finally:
+            listed = await client.list_objects_v2(Bucket=bucket)
+            for item in listed.get("Contents", []):
+                await client.delete_object(Bucket=bucket, Key=item["Key"])
+            await client.delete_bucket(Bucket=bucket)
+
+
+async def _wait_for_s3(client) -> None:
+    with anyio.fail_after(180):
+        while True:
+            try:
+                await client.list_buckets()
+            except BotoCoreError:
+                await anyio.sleep(1)
+            else:
+                return

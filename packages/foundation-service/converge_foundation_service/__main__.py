@@ -1,5 +1,4 @@
-"""Support ``python -m converge_foundation_service``."""
-
 from converge_foundation_service.cli import main
 
-main()
+if __name__ == "__main__":
+    main()

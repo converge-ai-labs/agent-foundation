@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from copy import copy, deepcopy
-from dataclasses import dataclass, field, replace
+from copy import deepcopy
+from dataclasses import dataclass, field
 from html import escape
 from typing import Any, Literal, Protocol, runtime_checkable
 
@@ -23,22 +23,18 @@ from pydantic import (
 )
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import BaseToolReturnPart, ModelRequest, UserPromptPart
-from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.toolsets import AbstractToolset
 
 from converge_agent_harness._json import dump_json_bytes
-from converge_agent_harness.capabilities.context import _requires_exact_boundary
 from converge_agent_harness.context import AgentContext
 from converge_agent_harness.errors import DefinitionError, RunError
-from converge_agent_harness.toolsets._results import ToolError, ToolFailure
-from converge_agent_harness.toolsets.working_state import (
-    NoteGetToolResult,
-    NoteToolResult,
-    TaskListToolResult,
-    TaskProjection,
-    TaskToolResult,
-    WorkingStateToolset,
+from converge_agent_harness.model_context import (
+    AbstractModelContextCapability,
+    ModelContextBlock,
+    ModelContextNext,
+    ModelContextPlacement,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
 )
 
 WORKING_STATE_CAPABILITY_ID = "converge.working-state"
@@ -46,8 +42,6 @@ TASK_STATE_RUN_CAPABILITY_ID = "converge.working-state.tasks.run"
 _WORKING_STATE_VERSION = "1"
 _WORKING_STATE_OPEN = '<working-state source="converge-harness">'
 _WORKING_STATE_CLOSE = "</working-state>"
-_WORKING_STATE_METADATA_KEY = "converge.working-state.boundary"
-_WORKING_STATE_METADATA_VERSION = "1"
 _TASK_ID_PATTERN = re.compile(r"^task-([1-9][0-9]*)$")
 _JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _EMPTY_JSON_OBJECT = _JSON_OBJECT_ADAPTER.dump_json({})
@@ -518,13 +512,26 @@ class WorkingStateConfiguration(BaseModel):
 
 
 @dataclass(init=False)
-class WorkingStateCapability(AbstractCapability[AgentContext]):
+class WorkingStateCapability(AbstractModelContextCapability):
     """Own one task-and-note namespace while preserving distinct sharing rules."""
 
     id = WORKING_STATE_CAPABILITY_ID
 
     def __init__(self, configuration: WorkingStateConfiguration | None = None) -> None:
         self.configuration = (configuration or WorkingStateConfiguration()).model_copy(deep=True)
+
+    async def bind_inline_child_task_state(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        owner: str,
+    ) -> TaskStateRunCapability | None:
+        """Borrow the exact active embedded task store for one trusted child identity."""
+        del ctx, owner
+        raise DefinitionError(
+            "Working State task borrowing requires the active run replacement.",
+            code="capability_scope_invalid",
+        )
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(WORKING_STATE_CAPABILITY_ID)
@@ -575,12 +582,15 @@ class _WorkingStateRunCapability(WorkingStateCapability):
         state: WorkingState,
     ) -> None:
         super().__init__(configuration)
+        from converge_agent_harness.toolsets.working_state import WorkingStateToolset
+
         self._context = context
-        self._state = state
-        self._cell: TaskStateCell | None = None
-        self._provider: TaskStateRunCapability | None = None
-        self._task_binding_resolved = False
-        self._state_lock = asyncio.Lock()
+        self._toolset = WorkingStateToolset(
+            owner=self,
+            context=context,
+            state=state,
+            configuration=self.configuration,
+        )
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps is not self._context:
@@ -589,8 +599,19 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             )
         return self
 
+    async def bind_inline_child_task_state(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        owner: str,
+    ) -> TaskStateRunCapability | None:
+        cell = await self._toolset.embedded_task_cell(ctx)
+        if cell is None:
+            return None
+        return TaskStateRunCapability(source="embedded_borrowed", cell=cell.bind(owner))
+
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
-        return WorkingStateToolset(self).get_toolset(
+        return self._toolset.get_toolset(
             tasks=self.configuration.tasks_enabled,
             notes=self.configuration.notes_enabled,
         )
@@ -603,322 +624,32 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             "for concise private facts worth retaining; note values are loaded only on demand."
         )
 
-    async def before_model_request(
+    async def wrap_model_context(
         self,
         ctx: RunContext[AgentContext],
-        request_context: ModelRequestContext,
-    ) -> ModelRequestContext:
-        await self._ensure_bound(ctx)
-        if _requires_exact_boundary(ctx, request_context.messages):
-            return request_context
-        messages = deepcopy(request_context.messages)
-        for index, message in enumerate(messages):
-            if not isinstance(message, ModelRequest):
-                continue
-            metadata = message.metadata or {}
-            if metadata.get(_WORKING_STATE_METADATA_KEY) != _WORKING_STATE_METADATA_VERSION:
-                continue
-            parts = tuple(
-                part
-                for part in message.parts
-                if not (
-                    isinstance(part, UserPromptPart)
-                    and isinstance(part.content, str)
-                    and part.content.startswith(_WORKING_STATE_OPEN)
-                    and part.content.endswith(_WORKING_STATE_CLOSE)
-                )
-            )
-            cleaned_metadata = dict(metadata)
-            cleaned_metadata.pop(_WORKING_STATE_METADATA_KEY, None)
-            messages[index] = replace(message, parts=parts, metadata=cleaned_metadata or None)
-        if not _ordinary_user_boundary(ctx, messages):
-            updated = copy(request_context)
-            updated.messages = messages
-            return updated
-        snapshot = await self._task_snapshot() if self.configuration.tasks_enabled else TaskState()
-        all_tasks = snapshot.tasks
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection:
+        await self._toolset.ensure_bound(ctx)
+        projection = await handler(request)
+        snapshot = await self._toolset.context_snapshot(ctx)
+        all_tasks = snapshot.tasks if snapshot is not None else {}
         tasks = sorted(
             (task for task in all_tasks.values() if task.status != "completed"),
             key=lambda item: _task_sequence(item.id),
         )
-        note_keys = sorted(self._state.notes) if self.configuration.notes_enabled else []
+        note_keys = sorted(self._toolset.note_keys()) if self.configuration.notes_enabled else []
         rendered = _render_working_state(tasks, all_tasks, note_keys, self.configuration)
-        final = messages[-1]
-        assert isinstance(final, ModelRequest)
-        metadata = dict(final.metadata or {})
-        metadata[_WORKING_STATE_METADATA_KEY] = _WORKING_STATE_METADATA_VERSION
-        messages[-1] = replace(
-            final,
-            parts=(*final.parts, UserPromptPart(rendered)),
-            metadata=metadata,
+        return ModelContextProjection(
+            blocks=(
+                *projection.blocks,
+                ModelContextBlock(
+                    source_id=WORKING_STATE_CAPABILITY_ID,
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=rendered,
+                ),
+            )
         )
-        updated = copy(request_context)
-        updated.messages = messages
-        return updated
-
-    async def task_create(
-        self,
-        ctx: RunContext[AgentContext],
-        subject: str,
-        description: str,
-        active_form: str | None = None,
-        blocked_by: Sequence[str] = (),
-        blocks: Sequence[str] = (),
-        metadata: Mapping[str, JsonValue] | None = None,
-    ) -> TaskToolResult:
-        await self._ensure_bound(ctx)
-        try:
-            request = CreateTask(
-                subject=subject,
-                description=description,
-                active_form=active_form,
-                blocked_by=tuple(blocked_by),
-                blocks=tuple(blocks),
-                metadata=dict(metadata or {}),
-            )
-        except ValidationError:
-            return {"ok": False, "error": {"code": "task_request_invalid"}}
-        return await self._task_result("create", request)
-
-    async def task_get(self, ctx: RunContext[AgentContext], task_id: str) -> TaskToolResult:
-        await self._ensure_bound(ctx)
-        try:
-            task = _require_task((await self._task_snapshot()).tasks, task_id)
-            return {"ok": True, "task": _project_task(task)}
-        except TaskStateError as exc:
-            return _task_error(exc)
-
-    async def task_list(self, ctx: RunContext[AgentContext]) -> TaskListToolResult:
-        await self._ensure_bound(ctx)
-        state = await self._task_snapshot()
-        tasks = sorted(state.tasks.values(), key=lambda item: _task_sequence(item.id))
-        return {
-            "ok": True,
-            "tasks": [_project_task(task) for task in tasks],
-        }
-
-    async def task_claim(
-        self,
-        ctx: RunContext[AgentContext],
-        task_id: str,
-        expected_revision: int | None = None,
-    ) -> TaskToolResult:
-        await self._ensure_bound(ctx)
-        return await self._task_result("claim", task_id, expected_revision)
-
-    async def task_update(
-        self,
-        ctx: RunContext[AgentContext],
-        task_id: str,
-        status: Literal["pending", "in_progress", "completed"] | None = None,
-        subject: str | None = None,
-        description: str | None = None,
-        active_form: str | None = None,
-        add_blocks: Sequence[str] = (),
-        add_blocked_by: Sequence[str] = (),
-        metadata: Mapping[str, JsonValue] | None = None,
-    ) -> TaskToolResult:
-        await self._ensure_bound(ctx)
-        try:
-            mutation = TaskMutation(
-                status=status,
-                subject=subject,
-                description=description,
-                active_form=active_form,
-                clear_active_form=status == "completed",
-                add_blocks=tuple(add_blocks),
-                add_blocked_by=tuple(add_blocked_by),
-                metadata=dict(metadata) if metadata is not None else None,
-            )
-            cell = self._require_cell()
-            snapshot = await cell.snapshot()
-            current = _require_task(snapshot.tasks, task_id)
-            claim = (
-                current.status == "in_progress"
-                or status in {"in_progress", "completed"}
-                or not _mutation_is_empty(mutation)
-            )
-            if status == "in_progress":
-                mutation = mutation.model_copy(update={"status": None})
-            if _mutation_is_empty(mutation) and not claim:
-                task = current
-            else:
-                task = await cell.mutate(task_id, mutation, current.revision, claim=claim)
-            await self._observe_provider()
-            return {"ok": True, "task": _project_task(task)}
-        except ValidationError:
-            return {"ok": False, "error": {"code": "task_request_invalid"}}
-        except TaskStateError as exc:
-            return _task_error(exc)
-
-    async def note(
-        self,
-        ctx: RunContext[AgentContext],
-        key: str,
-        value: str | None = None,
-    ) -> NoteToolResult:
-        if not key.strip() or "\x00" in key or len(key) > _MAX_NOTE_KEY_LENGTH:
-            return {"ok": False, "error": {"code": "note_key_invalid"}}
-        if value is not None and ("\x00" in value or len(value) > _MAX_NOTE_VALUE_LENGTH):
-            return {"ok": False, "error": {"code": "note_value_invalid"}}
-        async with self._state_lock:
-            notes = self._state.notes
-            if value is None:
-                existed = notes.pop(key, None) is not None
-            else:
-                notes[key] = value
-                existed = True
-            state = _working_state_with(self._state, notes=notes)
-            await ctx.deps.state.write(WORKING_STATE_CAPABILITY_ID, state, version=_WORKING_STATE_VERSION)
-            self._state = state
-        return {"ok": True, "key": key, "present": existed and value is not None}
-
-    async def note_get(self, ctx: RunContext[AgentContext], key: str | None = None) -> NoteGetToolResult:
-        del ctx
-        notes = self._state.notes
-        if key is None:
-            return {"ok": True, "keys": sorted(notes)}
-        if key not in notes:
-            return {"ok": False, "error": {"code": "note_not_found", "key": key}}
-        return {"ok": True, "key": key, "value": notes[key]}
-
-    async def _task_result(self, operation: str, *args: Any) -> TaskToolResult:
-        cell = self._require_cell()
-        try:
-            if operation == "create":
-                task = await cell.create(args[0])
-            elif operation == "claim":
-                task = await cell.claim(args[0], args[1])
-            else:
-                task = await cell.update(args[0], args[1], args[2])
-            await self._observe_provider()
-            return {"ok": True, "task": _project_task(task)}
-        except TaskStateError as exc:
-            return _task_error(exc)
-
-    async def _task_snapshot(self) -> TaskState:
-        state = await self._require_cell().snapshot()
-        await self._observe_provider(state)
-        return state
-
-    async def _ensure_bound(self, ctx: RunContext[AgentContext]) -> None:
-        if ctx.deps is not self._context:
-            raise DefinitionError(
-                "Working State run replacement cannot cross logical runs.",
-                code="capability_scope_invalid",
-            )
-        if self._task_binding_resolved:
-            return
-        attachment = ctx.capabilities.get(TASK_STATE_RUN_CAPABILITY_ID)
-        if attachment is not None and type(attachment) is not TaskStateRunCapability:
-            raise DefinitionError(
-                "Task-state run attachment has an incompatible type.",
-                code="task_state_type_mismatch",
-            )
-        if attachment is not None and TASK_STATE_RUN_CAPABILITY_ID not in self._context._capability_provenance.run_ids:
-            raise DefinitionError(
-                "Task-state attachment must originate from RunBindings.",
-                code="capability_scope_invalid",
-            )
-        if not self.configuration.tasks_enabled:
-            self._task_binding_resolved = True
-            return
-
-        if self.configuration.task_mode == "embedded":
-            if type(attachment) is TaskStateRunCapability:
-                if attachment.source != "embedded_borrowed":
-                    raise DefinitionError(
-                        "Embedded task mode requires an embedded_borrowed attachment.",
-                        code="task_state_mode_mismatch",
-                    )
-                if self._context.instance.parent_agent_instance_id is None:
-                    raise DefinitionError(
-                        "An independent root cannot borrow a parent embedded task scope.",
-                        code="task_state_borrow_forbidden",
-                    )
-                if self._state.tasks is not None and self._state.tasks.tasks:
-                    raise DefinitionError(
-                        "A borrowed child continuation must not contain a private task snapshot.",
-                        code="task_state_snapshot_conflict",
-                    )
-                self._cell = attachment.cell
-                self._state = _working_state_with(self._state, tasks=None)
-            else:
-                embedded_state = self._state.tasks or TaskState()
-                self._cell = EmbeddedTaskStateCell(
-                    embedded_state,
-                    owner="root",
-                    on_change=self._replace_embedded_tasks,
-                )
-            self._task_binding_resolved = True
-            return
-
-        if self._state.tasks is not None:
-            raise DefinitionError(
-                "Provider task mode cannot restore an embedded task map.",
-                code="task_state_snapshot_conflict",
-            )
-        if type(attachment) is not TaskStateRunCapability or attachment.source != "provider":
-            raise DefinitionError(
-                "Provider task mode requires one fresh provider TaskStateRunCapability.",
-                code="task_state_binding_missing",
-            )
-        self._cell = attachment.cell
-        self._provider = attachment
-        self._task_binding_resolved = True
-        cursor = self._state.provider_cursor
-        if cursor is not None and (
-            cursor.provider_type != attachment.provider_type or cursor.state_version != attachment.state_version
-        ):
-            self._state = _working_state_with(self._state, provider_cursor=None)
-            await self._context.state.write(
-                WORKING_STATE_CAPABILITY_ID,
-                self._state,
-                version=_WORKING_STATE_VERSION,
-            )
-
-    def _require_cell(self) -> TaskStateCell:
-        if self._cell is None:
-            raise DefinitionError("Working State task cell is unavailable.", code="task_state_binding_missing")
-        return self._cell
-
-    async def _replace_embedded_tasks(self, tasks: TaskState) -> None:
-        async with self._state_lock:
-            state = _working_state_with(self._state, tasks=tasks)
-            await self._context.state.write(
-                WORKING_STATE_CAPABILITY_ID,
-                state,
-                version=_WORKING_STATE_VERSION,
-            )
-            self._state = state
-
-    async def _observe_provider(self, snapshot: TaskState | None = None) -> None:
-        provider = self._provider
-        if provider is None:
-            return
-        observed = snapshot or await provider.cell.snapshot()
-        cursor = ProviderTaskCursor(
-            provider_type=provider.provider_type,
-            state_version=provider.state_version,
-            observed_revision=observed.revision,
-        )
-        async with self._state_lock:
-            current_cursor = self._state.provider_cursor
-            if (
-                current_cursor is not None
-                and current_cursor.provider_type == cursor.provider_type
-                and current_cursor.state_version == cursor.state_version
-                and current_cursor.observed_revision is not None
-                and current_cursor.observed_revision > observed.revision
-            ):
-                return
-            state = _working_state_with(self._state, tasks=None, provider_cursor=cursor)
-            await self._context.state.write(
-                WORKING_STATE_CAPABILITY_ID,
-                state,
-                version=_WORKING_STATE_VERSION,
-            )
-            self._state = state
 
 
 def _render_working_state(
@@ -965,21 +696,6 @@ def _render_working_state(
     if len(rendered.encode("utf-8")) > budget:
         raise AssertionError("working-state context budget invariant violated")
     return rendered
-
-
-def _project_task(task: Task) -> TaskProjection:
-    """Hide internal CAS revisions while retaining useful coordination state."""
-    return {
-        "id": task.id,
-        "subject": task.subject,
-        "description": task.description,
-        "active_form": task.active_form,
-        "status": task.status,
-        "owner": task.owner,
-        "blocks": list(task.blocks),
-        "blocked_by": list(task.blocked_by),
-        "metadata": task.metadata,
-    }
 
 
 def _mutation_is_empty(mutation: TaskMutation) -> bool:
@@ -1125,30 +841,6 @@ def _validate_dependency_graph(tasks: Mapping[str, Task]) -> None:
 def _validate_model[T: BaseModel](value: T, model_type: type[T]) -> T:
     return (
         value.model_copy(deep=True) if isinstance(value, model_type) else model_type.model_validate(value, strict=True)
-    )
-
-
-def _task_error(exc: TaskStateError) -> ToolFailure:
-    details = deepcopy(exc.details)
-    error: ToolError = {
-        "code": exc.code,
-        "retry_hint": exc.retry_hint,
-        "details": details,
-    }
-    return {
-        "ok": False,
-        "error": error,
-    }
-
-
-def _ordinary_user_boundary(ctx: RunContext[AgentContext], messages: list[Any]) -> bool:
-    if not messages or not isinstance(messages[-1], ModelRequest):
-        return False
-    final = messages[-1]
-    if final.run_id != ctx.run_id:
-        return False
-    return any(isinstance(part, UserPromptPart) for part in final.parts) and not any(
-        isinstance(part, BaseToolReturnPart) for part in final.parts
     )
 
 

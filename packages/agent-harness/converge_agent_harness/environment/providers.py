@@ -51,6 +51,7 @@ from .retention import (
 
 if TYPE_CHECKING:
     from converge_agent_harness.identity import AgentInstanceContext
+    from converge_agent_harness.model_context import ModelContextProjection, ModelContextProjectionRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +305,13 @@ class BoundEnvironment(ABC):
     @abstractmethod
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
         """Resolve a model-facing selector into one captured internal binding path."""
+
+    @abstractmethod
+    async def project_model_context(
+        self,
+        request: ModelContextProjectionRequest,
+    ) -> ModelContextProjection:
+        """Project the current provider-neutral topology without editing messages."""
 
     @abstractmethod
     async def activate(self) -> None:

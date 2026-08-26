@@ -4,7 +4,7 @@
 
 `HarnessEvent` and `HarnessRunResultEvent` are stable process-local output seams. `AbstractCapability[AgentContext]` adapters produce Harness-owned observations, ordered Harness plugin middleware can transform or suppress non-terminal events and replace the complete result candidate, and one single-consumer `HarnessRunStream` preserves ordering and produces a terminal result event only after final validation and complete run-scoped teardown succeed.
 
-Pydantic AI public events remain the source for model and tool execution, and `RunCancelled` is the source terminal signal for native cancellation. The Harness adds only correlation, state, recovery, managed-invocation, delegation, usage-attribution, and diagnostic events that Pydantic AI does not own. Pydantic AI `RequestUsage`, `RunUsage`, and `UsageLimits` remain authoritative for model-request usage, accumulation, and supported limits. When semantic recovery starts another inner attempt, events already delivered by the earlier attempt remain observations in the same logical Harness stream and cannot be retracted.
+Pydantic AI public events remain the source for model output and tool execution, and `RunCancelled` is the source terminal signal for native cancellation. The Harness adds only bounded model-request boundary observations plus correlation, context, state, recovery, managed-invocation, delegation, usage-attribution, and diagnostic events that Pydantic AI does not own. Pydantic AI `RequestUsage`, `RunUsage`, and `UsageLimits` remain authoritative for model-request usage, accumulation, and supported limits. When semantic recovery starts another `ModelAttempt`, events already delivered by the earlier attempt remain observations in the same logical Harness stream and cannot be retracted.
 
 OpenTelemetry uses Pydantic AI's `Instrumentation` Capability plus spans for Harness-owned operations. Durable event delivery, cross-run usage aggregation, valuation, billing, and lifecycle facts belong to the host.
 
@@ -18,13 +18,14 @@ The Harness does not define Host lifecycle events, a broker, SSE, webhook, durab
 
 ```python
 class HarnessEvent(BaseModel):
+    thread_id: str
     run_id: str
     sequence: int
     occurred_at: datetime
     event: AgentStreamEvent | HarnessExtensionEvent
 ```
 
-`sequence` is strictly increasing within one run. The root run's sequence includes the final `HarnessRunResultEvent`. Resume starts another run and sequence domain. Forwarded inline-child events retain the child's run ID and sequence; the Delegation Capability consumes the child's result event internally. Concurrent runs have causal correlation through their `AgentInstanceContext`; timestamps do not establish a total order.
+`thread_id` identifies the independently advancing Thread; `run_id` identifies the process-local Harness Run. Both are present on ordinary and terminal events, including failures that have no returned State. `sequence` is strictly increasing within one Run. The root Run's sequence includes the final `HarnessRunResultEvent`. Resume preserves `thread_id` while starting another `run_id` and sequence domain. Forwarded inline-child events retain the child's run ID and sequence; the Delegation Capability consumes the child's result event internally. Concurrent runs have causal correlation through their `AgentInstanceContext`; timestamps do not establish a total order.
 
 ```python
 class HarnessExtensionEvent(BaseModel):
@@ -36,12 +37,13 @@ class HarnessExtensionEvent(BaseModel):
         "invocation",
         "delegation",
         "usage",
+        "lifecycle",
         "diagnostic",
     ]
     payload: JsonValue
 ```
 
-Extension payloads are small discriminated schemas owned by their subsystem. The event envelope does not duplicate definition, lineage, policy, or host lifecycle fields already available from run context. [`Public API and Packaging`](14-public-api-and-packaging.md) owns `HarnessRunResultEvent` and the `HarnessStreamItem` union.
+Extension payloads are small discriminated schemas owned by their subsystem. First-party producers construct a frozen typed Pydantic payload and pass only `model_dump(mode="json")` output to the open envelope; they do not assemble payload dictionaries ad hoc. The event envelope does not duplicate definition, lineage, policy, or host lifecycle fields already available from run context. [`Public API and Packaging`](14-public-api-and-packaging.md) owns `HarnessRunResultEvent` and the `HarnessStreamEvent` union.
 
 ## Adaptation
 
@@ -57,8 +59,9 @@ sequenceDiagram
     PAI-->>Stream: public AgentStreamEvent
     Capability->>Emitter: HarnessExtensionEvent
     Emitter-->>Stream: run-local extension
-    Capability->>Emitter: validated inline-child HarnessEvent
-    Emitter-->>Stream: forwarded child observation
+    Capability->>Emitter: bind exact inline-child stream
+    Capability->>Emitter: forward through private bound child seam
+    Emitter-->>Stream: validated child observation
     Stream->>Stream: sequence root events, validate child envelopes, and redact
     Stream->>Plugins: ordered event and result-candidate unwind
     Plugins-->>Stream: transformed observations and candidate
@@ -67,7 +70,32 @@ sequenceDiagram
     Stream-->>Host: final HarnessRunResultEvent with usage snapshots
 ```
 
-Model and tool events preserve their public Pydantic AI types. This includes native `DeferredToolRequestsEvent` and `DeferredToolResultsEvent` observations for approval and external execution. The Harness does not recreate model-request, response-delta, tool, or client-call lifecycle state machines and does not add a second `DEFERRED_TOOLS` control event. A transport can project a convenience client-tools payload, but only the terminal `HarnessRunResult.deferred` and a Host's accepted durable pending record have continuation meaning. High-frequency Pydantic deltas may be coalesced by a consumer without changing complete messages or `HarnessState`.
+Model output and tool events preserve their public Pydantic AI types. This includes native `ThinkingPart`, `TextPart`, function-tool call and result events, `DeferredToolRequestsEvent`, and `DeferredToolResultsEvent`. The Harness observes the public `ModelRequestNode` boundary but does not recreate provider transport, response-delta, thinking, generation, tool, client-call, or run-terminal lifecycle state machines and does not add a second `DEFERRED_TOOLS` control event. A transport can project a convenience client-tools payload, but only the terminal `HarnessRunResult.deferred` and a Host's accepted durable pending record have continuation meaning. High-frequency Pydantic deltas may be coalesced by a consumer without changing complete messages or `HarnessState`.
+
+### First-party Event Contracts
+
+One code-owned mandatory lifecycle observer emits `lifecycle` payloads at the public Pydantic `ModelRequestNode` boundary. `request_index` is the zero-based node ordinal within the logical Harness run, including internal recovery attempts, and `request_id` is `model-request-{request_index + 1}`. `model_request_started` is emitted before the node handler and includes `message_count`. Successful handler return emits `model_request_completed`; handler failure emits `model_request_failed` with a bounded stable `error_code`. The observation means that Harness entered or left the node boundary; it does not claim that a provider accepted, transmitted, or generated bytes. Raw exceptions and provider error bodies are excluded.
+
+The Compaction Capability emits one `context_snapshot` immediately before each eligible ordinary model request's threshold decision. It uses the same estimator as that decision and contains `request_index`, `estimated_tokens`, optional configured `trigger_tokens`, `target_tokens`, and `preserve_recent_user_turns`, `compaction_pending`, and `estimation_method="harness_context_estimator"`. Exact deferred/provider-suspended boundaries do not emit a snapshot, and one eligible request emits at most one. The estimate guides Harness behavior but is not provider accounting or a guaranteed context-window measurement.
+
+Handoff and compaction share persisted replacement machinery but have disjoint event types:
+
+| Operation  | Event sequence                                                                                  |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| Handoff    | `handoff_started`, `handoff_prepared`, then `handoff_completed` or `handoff_failed`             |
+| Compaction | `compaction_started`, `compaction_prepared`, then `compaction_completed` or `compaction_failed` |
+
+Each payload contains one concise kind-prefixed `operation_id`. The pending Handoff state persists that ID across model boundaries and continuation runs. A normal `summarize` call allocates and persists the handoff ID before `handoff_started`; compaction allocates and persists its ID after the threshold decision succeeds and before forcing `summarize`. A resumed pending operation reuses the persisted ID rather than emitting another start event.
+
+`*_prepared` is emitted only after the validated summary is durably written to Capability state and includes only `summary_size` and `files_count`, never summary or file content. `*_completed` is emitted only after restored history is built, protected recent turns and the target budget are validated, pending state is durably cleared, and the replacement request context exists. A successful `summarize` tool result is therefore not completion. `*_failed` contains only `failed_phase`, stable `error_code`, and `retryable`; raw exceptions are excluded. A retryable failure retains the pending operation and its ID, while a non-retryable failure durably clears the pending operation before emission so a later boundary can start a fresh operation. A provider-suspended boundary that preserves a resumable pending operation is not failure. Compaction emits only `compaction_*`, never duplicate `handoff_*` observations.
+
+Working State emits bounded revisioned committed deltas rather than snapshots. A `state` payload with `type="task_changed"` contains one `operation_id`, authoritative `state_revision`, reason `created`, `updated`, `claimed`, `completed`, `dependency_updated`, or `provider_observed`, and one task projection containing only `id`, `revision`, `subject`, `active_form`, `status`, `owner`, `blocks`, and `blocked_by`. Description, metadata, notes, and the full task map are excluded. Emission occurs only after authoritative persistence and the run's in-memory view both commit. One mutation that changes reciprocal dependency tasks emits one delta per changed task with the same operation ID and state revision. Failed and semantic no-op mutations emit nothing. A provider without a watch API guarantees observations only at Harness mutation and read boundaries.
+
+Inline delegation emits typed `inline_delegation` payloads with action `started`, `completed`, or `failed`. Every action carries the same invocation ID, compact child instance ID, selected subagent name, bounded status, parent run and Agent-instance correlation, optional originating parent tool-call ID, and the child run ID whenever a child stream was created. `started` is emitted on the child run before child model work so it is forwarded in real time; terminal actions are emitted on the parent run after the complete child result or dispatch failure is classified. Uniform payload correlation, rather than envelope order or subagent-name matching, joins those observations. A pre-stream rejection has no child run ID and never fabricates one.
+
+Each `usage_report` is likewise a typed payload containing its stable report ID, reporting reason, optional trigger record ID, valid chunk position and count, and one non-empty bounded record batch. Record schemas remain owned by the usage subsystem. First-party delegation and usage producers do not assemble free-form payload dictionaries.
+
+Event delivery failure never rolls back committed Capability state. These process-local observations retain the backpressure, middleware, redaction, payload-size, and non-durability rules of the enclosing event stream.
 
 The run-local Environment adapter reads an independent cursor from the bounded non-draining topology journal and emits exactly one bounded Harness `context` extension for every committed change, in publication order. It starts from `EnvironmentTopologyObserver.initial_topology_version`, so changes committed during `RunInputFactory` remain observable after `AgentContext` and Capabilities bind. Adapter cancellation or emitter/plugin failure can suppress later process-local delivery but cannot consume another observer cursor or roll back topology. Optional model-facing notification is a separate consumer delivered through native Pydantic enqueue or the next eligible public model-request hook; it can coalesce notices without coalescing Harness events. An enqueued notice remains observable through the ordinary `EnqueuedMessagesEvent`, while topology commit never depends on event or notice delivery.
 
@@ -81,6 +109,7 @@ The run-local Environment adapter reads an independent cursor from the bounded n
 | `invocation` | Managed-tool preparation, authorization, approval, dispatch, retry, result-safety, or unknown-outcome observation; never a grant or receipt |
 | `delegation` | Inline child or Host-managed asynchronous submission observation                                                                            |
 | `usage`      | One bounded mixed-source `usage_report` emitted at a model-request or terminal reporting boundary; not durable billing proof                |
+| `lifecycle`  | Bounded `ModelRequestNode` entry, completion, or safe failure observation; never provider transport or Host lifecycle authority             |
 | `diagnostic` | Safe implementation/provider detail without lifecycle authority                                                                             |
 
 ## Run Stream and Content
@@ -91,14 +120,9 @@ class HarnessEventEmitter(Protocol):
         self,
         event: HarnessExtensionEvent,
     ) -> None: ...
-
-    async def forward_child(
-        self,
-        event: HarnessEvent,
-    ) -> None: ...
 ```
 
-The Harness creates one emitter for each process-local run and places it on `AgentContext` for Capability authors. `emit()` creates a run-local extension event and assigns its envelope fields. `forward_child()` accepts only an event from a validated inline-child stream, preserves its child run correlation, and verifies lineage before forwarding. The emitter feeds the same ordered internal path as adapted Pydantic events. Harness plugin middleware sees those values before public delivery; already delivered values cannot be retracted. The emitter is not supplied by the host and is not a general delivery service.
+The Harness creates one emitter for each process-local run and places only its `emit()` surface on `AgentContext` for Capability authors. `emit()` creates a run-local extension event and assigns its envelope fields. Inline delegation uses a private Harness-owned child-forwarding seam bound to one exact parent and child stream; arbitrary Capability or plugin code cannot submit a foreign child envelope through the public emitter. The seam preserves child Thread, Run, and source sequence, validates nested descendant registration and monotonic sequence, and seals that provenance through plugin processing. Plugins may transform or suppress the child event payload but cannot change its child correlation or source sequence. The emitter feeds the same ordered internal path as adapted Pydantic events. Harness plugin middleware sees those values before public delivery; already delivered values cannot be retracted. The emitter is not supplied by the Host and is not a general delivery service.
 
 `HarnessRunStream` is class-based, lazily starts on first iteration, has exactly one consumer, and applies natural backpressure. It provides no replay or fan-out. An embedded application consumes it directly. A hosted worker consumes it once and projects events to any broker, SSE connection, WebSocket, log, or durable store selected by the host. Foundation Service's replayable lifecycle log is a separate Host contract: it atomically records bounded committed lifecycle facts and can selectively reference Harness observations without making every process-local delta durable.
 
@@ -126,7 +150,7 @@ One operation has one owning span path. Harness code enriches upstream spans rat
 
 The default profile emits standard OpenTelemetry and has no vendor SDK dependency. A vendor Capability can configure an exporter and propagate vendor attributes without replacing Pydantic instrumentation.
 
-The Langfuse profile maps host-approved values to Langfuse `user_id`, `session_id`, tags, metadata, version, environment, and trace naming through the Langfuse OTel-native SDK or equivalent documented attributes. The mapping occurs on the enclosing run observation so Pydantic child spans inherit it. This telemetry `session_id` is an observability grouping value: it does not define or override the distinct provider model-session and prompt-cache affinity owned by each root or child Agent instance.
+The Langfuse profile maps host-approved values to Langfuse `user_id`, `session_id`, tags, metadata, version, environment, and trace naming through the Langfuse OTel-native SDK or equivalent documented attributes. The mapping occurs on the enclosing run observation so Pydantic child spans inherit it. This telemetry `session_id` is an observability grouping value: it does not define or override the provider model-session and prompt-cache affinity derived from each root or child State's `thread_id`.
 
 Inline subagent executions are represented as nested `agent` observations containing their model and tool spans. A visible child Agent does not also receive a sibling dispatch span for the same work. Host-managed asynchronous submission has only a dispatch observation in the parent trace; the independently scheduled child starts its own trace and is correlated by safe Host metadata.
 
@@ -157,7 +181,7 @@ Pricing input contains only model/provider identity, safe provider URL when avai
 
 ### Delegation, Resume, and Limits
 
-Inline children share the parent's live `RunUsage` and calculator selection but retain child-correlated attribution records. Their effective limits are narrowed by delegation policy; native checks do not promise an atomic tree-wide budget across concurrent children. Host-managed asynchronous children and later or resumed root runs normally use fresh accumulators and ledgers.
+Inline children share the parent's live `RunUsage` and calculator selection but retain child-correlated attribution records. Their effective limits are narrowed by delegation policy; native checks do not promise an atomic tree-wide budget across concurrent children. The root terminal `HarnessRunResult.usage` therefore covers the complete inline descendant tree, while `HarnessRunResult.usage_records` is the local logical run's attribution snapshot only. Child records remain observable as child-correlated `usage_report` events and are not copied into the parent's local ledger or priced again. A Host that needs a tree-wide attribution view joins those immutable records by run lineage and stable record identity. Host-managed asynchronous children and later or resumed root runs normally use fresh accumulators and ledgers.
 
 Neither `RunUsage`, the attribution ledger, provider receipts, nor a calculator enters `HarnessState`. Imported messages remain historical, so a resumed run reports only newly committed usage. Terminal cumulative `RunUsage` snapshots and child snapshots can overlap and are never summed as independent contributions; durable projections use immutable usage records instead.
 

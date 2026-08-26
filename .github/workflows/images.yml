@@ -8,12 +8,13 @@ on:
       - ".github/workflows/images.yml"
       - "Cargo.lock"
       - "Cargo.toml"
-      - "Dockerfile"
-      - "Dockerfile.sandbox"
+      - "deploy/containers/foundation-service/Dockerfile"
+      - "deploy/containers/sandbox/Dockerfile"
       - "LICENSE"
       - "apps/foundation-web/**"
       - "crates/agent-envd/**"
       - "packages/agent-envd-client/pyproject.toml"
+      - "packages/agent-environment-provider/pyproject.toml"
       - "packages/agent-harness/pyproject.toml"
       - "packages/agent-stream-protocol/pyproject.toml"
       - "packages/agent-ui/pyproject.toml"
@@ -45,12 +46,12 @@ jobs:
       matrix:
         include:
           - name: foundation-service
-            file: Dockerfile
+            file: deploy/containers/foundation-service/Dockerfile
             image: ghcr.io/converge-ai-labs/agent-foundation-service
             local_image: agent-foundation-service:local
             check_target: image-check-foundation-service
           - name: sandbox
-            file: Dockerfile.sandbox
+            file: deploy/containers/sandbox/Dockerfile
             image: ghcr.io/converge-ai-labs/agent-foundation-sandbox
             local_image: agent-foundation-sandbox:local
             check_target: image-check-sandbox

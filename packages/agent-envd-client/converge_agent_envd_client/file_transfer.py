@@ -100,7 +100,11 @@ class EIPFileReader:
                 offset = 0 if byte_range is None else byte_range.offset
                 self._max_bytes = max(size - offset, 0)
             handle = self._opened.reader.root
-            self._channel = self._requester.register_transfer(handle, inbound_frames=8)
+            self._channel = self._requester.register_transfer(
+                handle,
+                direction="read",
+                inbound_frames=8,
+            )
             await self._requester.send_data_frame(
                 self._channel,
                 DataFrame(kind=DataFrameKind.ATTACH, handle=handle),
@@ -310,7 +314,11 @@ class EIPFileWriter:
         try:
             self._opened = await self._client.file_open_writer(self._params)
             handle = self._opened.writer.root
-            self._channel = self._requester.register_transfer(handle, inbound_frames=4)
+            self._channel = self._requester.register_transfer(
+                handle,
+                direction="write",
+                inbound_frames=4,
+            )
             await self._requester.send_data_frame(
                 self._channel,
                 DataFrame(kind=DataFrameKind.ATTACH, handle=handle),

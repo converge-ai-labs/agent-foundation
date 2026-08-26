@@ -4,7 +4,7 @@
 
 This document defines the shared HTTP and SDK contract for Foundation-owned, resource-oriented JSON APIs. It keeps common representations, collection reads, errors, mutation safety, and compatibility consistent while each subsystem continues to own its resources, fields, authorization policy, and lifecycle.
 
-These conventions do not replace an upstream or project-owned protocol. The Harness Python API, Environment Interaction Protocol (EIP), Agent Stream Protocol profiles, provider APIs, and external webhook schemas retain their own wire contracts.
+These conventions do not replace an upstream or project-owned protocol. The Harness Python API, Environment Interaction Protocol (EIP), Agent Stream Protocol observation contract, provider APIs, and external webhook schemas retain their own wire contracts.
 
 ## Boundaries
 
@@ -21,7 +21,7 @@ These conventions do not replace an upstream or project-owned protocol. The Harn
 
 Foundation-owned product HTTP APIs use the `/api` namespace. The current public compatibility line places its versioned resource routes below `/api/v1`. Operational endpoints such as liveness and readiness are outside `/api` and are not public resource APIs.
 
-Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/turns/{id}/cancel`; arbitrary verb-shaped RPC endpoints are not introduced when a resource or command expresses the operation directly.
+Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/executions/{id}/cancel`; arbitrary verb-shaped RPC endpoints are not introduced when a resource or command expresses the operation directly.
 
 A successful single-resource, mutation, or command response returns that resource or receipt directly. There is no universal `data` envelope. Ordinary status meanings are:
 

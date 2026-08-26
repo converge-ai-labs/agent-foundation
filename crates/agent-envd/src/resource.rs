@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
@@ -27,6 +28,10 @@ const MAX_TRAVERSAL_DEPTH: u32 = 128;
 const MAX_PATTERN_BYTES: usize = 16 * 1024;
 const MAX_PATCH_LINE_BYTES: usize = 64 * 1024;
 const MAX_PATCH_HUNKS: u64 = 10_000;
+const MAX_SEARCH_BYTES_PER_FILE: u64 = 64 * 1024 * 1024;
+const MAX_SEARCH_BYTES_PER_OPERATION: u64 = 256 * 1024 * 1024;
+
+type TraversalEntry = (PathBuf, String, u32);
 const RESPONSE_RESERVE_BYTES: u64 = 4096;
 
 #[derive(Clone)]
@@ -44,6 +49,15 @@ struct ResourceInner {
 struct RemovePlanEntry {
     relative: PathBuf,
     directory: bool,
+}
+
+struct PageCollector<T> {
+    offset: u64,
+    max_results: usize,
+    max_bytes: u64,
+    keep: usize,
+    matched: u64,
+    items: BTreeMap<Vec<u8>, T>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -144,27 +158,32 @@ impl ResourceRegistry {
         if !metadata.is_dir() {
             return Err(ResourceError::Denied);
         }
-        let entries = walk_entries(
-            &mount,
-            &params.path,
-            1,
-            &self.inner.operations,
-            &params.context.operation_id,
-        )?
-        .into_iter()
-        .filter(|entry| params.include_hidden || !is_hidden_path(&entry.relative_path))
-        .collect::<Vec<_>>();
-        let (entries, has_more) = bounded_slice(
-            &entries,
+        let mut page = PageCollector::new(
             params.offset,
             params.max_results,
             self.response_item_limit(),
+        );
+        let omitted = walk_entries(
+            &mount,
+            &params.path,
+            1,
+            params.include_hidden,
+            &self.inner.operations,
+            &params.context.operation_id,
+            |entry| {
+                if params.include_hidden || !is_hidden_path(&entry.relative_path) {
+                    let key = entry.relative_path.as_bytes().to_vec();
+                    page.push(key, entry)?;
+                }
+                Ok(())
+            },
         )?;
+        let (entries, has_more) = page.finish()?;
         Ok(FileListResult {
             entries,
             offset: params.offset,
             has_more,
-            omitted_unrepresentable_entries: 0,
+            omitted_unrepresentable_entries: omitted,
         })
     }
 
@@ -178,7 +197,12 @@ impl ResourceRegistry {
         }
         let matcher = PathMatcher::new(&params.pattern)?;
         let mount = read_mount(mounts, &params.root, "find")?;
-        let entries = walk_entries(
+        let mut page = PageCollector::new(
+            params.offset,
+            params.max_results,
+            self.response_item_limit(),
+        );
+        let omitted = walk_entries(
             &mount,
             &params.root,
             if params.recursive {
@@ -186,25 +210,26 @@ impl ResourceRegistry {
             } else {
                 1
             },
+            params.include_hidden,
             &self.inner.operations,
             &params.context.operation_id,
-        )?
-        .into_iter()
-        .filter(|entry| params.include_hidden || !is_hidden_path(&entry.relative_path))
-        .filter(|entry| matcher.matches(&entry.relative_path))
-        .filter(|entry| params.kinds.is_empty() || params.kinds.contains(&entry.info.kind))
-        .collect::<Vec<_>>();
-        let (entries, has_more) = bounded_slice(
-            &entries,
-            params.offset,
-            params.max_results,
-            self.response_item_limit(),
+            |entry| {
+                if (params.include_hidden || !is_hidden_path(&entry.relative_path))
+                    && matcher.matches(&entry.relative_path)
+                    && (params.kinds.is_empty() || params.kinds.contains(&entry.info.kind))
+                {
+                    let key = entry.relative_path.as_bytes().to_vec();
+                    page.push(key, entry)?;
+                }
+                Ok(())
+            },
         )?;
+        let (entries, has_more) = page.finish()?;
         Ok(FileFindResult {
             entries,
             offset: params.offset,
             has_more,
-            omitted_unrepresentable_entries: 0,
+            omitted_unrepresentable_entries: omitted,
         })
     }
 
@@ -222,50 +247,54 @@ impl ResourceRegistry {
         }
         let content = ContentMatcher::new(params.mode, &params.query, params.case_sensitive)?;
         let mount = read_mount(mounts, &params.root, "search")?;
-        let entries = walk_entries(
-            &mount,
-            &params.root,
-            MAX_TRAVERSAL_DEPTH,
-            &self.inner.operations,
-            &params.context.operation_id,
-        )?;
-        let mut matches = Vec::new();
-        for entry in entries
-            .into_iter()
-            .filter(|entry| entry.info.kind == FileKind::File)
-        {
-            if !params.include_hidden && is_hidden_path(&entry.relative_path) {
-                continue;
-            }
-            self.check_cancelled(&params.context.operation_id)?;
-            let file_matches = match search_file(
-                &mount,
-                &entry.info.path,
-                &content,
-                params.max_line_length,
-                &self.inner.operations,
-                &params.context.operation_id,
-            ) {
-                Ok(matches) => matches,
-                Err(ResourceError::Unsupported) => continue,
-                Err(error) => return Err(error),
-            };
-            if matches.len().saturating_add(file_matches.len()) > MAX_TRAVERSAL_ENTRIES {
-                return Err(ResourceError::Limit);
-            }
-            matches.extend(file_matches);
-        }
-        let (matches, has_more) = bounded_slice(
-            &matches,
+        let mut page = PageCollector::new(
             params.offset,
             params.max_results,
             self.response_item_limit(),
+        );
+        let mut scanned_bytes = 0_u64;
+        let omitted = walk_entries(
+            &mount,
+            &params.root,
+            MAX_TRAVERSAL_DEPTH,
+            params.include_hidden,
+            &self.inner.operations,
+            &params.context.operation_id,
+            |entry| {
+                if entry.info.kind != FileKind::File
+                    || (!params.include_hidden && is_hidden_path(&entry.relative_path))
+                {
+                    return Ok(());
+                }
+                self.check_cancelled(&params.context.operation_id)?;
+                let file_matches = match search_file(
+                    &mount,
+                    &entry.info.path,
+                    &content,
+                    params.max_line_length,
+                    &mut scanned_bytes,
+                    &self.inner.operations,
+                    &params.context.operation_id,
+                ) {
+                    Ok(matches) => matches,
+                    Err(ResourceError::Unsupported) => return Ok(()),
+                    Err(error) => return Err(error),
+                };
+                for matched in file_matches {
+                    let mut key = entry.relative_path.as_bytes().to_vec();
+                    key.push(0);
+                    key.extend_from_slice(&matched.line_number.to_be_bytes());
+                    page.push(key, matched)?;
+                }
+                Ok(())
+            },
         )?;
+        let (matches, has_more) = page.finish()?;
         Ok(FileSearchResult {
             matches,
             offset: params.offset,
             has_more,
-            omitted_unrepresentable_entries: 0,
+            omitted_unrepresentable_entries: omitted,
         })
     }
 
@@ -358,11 +387,39 @@ impl ResourceRegistry {
                 Err(ResourceError::Conflict)
             };
         }
-        let mut prefix = PathBuf::new();
         let mut created = 0_u64;
+        let segments = params.path.path[1..].split('/').collect::<Vec<_>>();
         let components = relative.components().collect::<Vec<_>>();
-        for (index, component) in components.iter().enumerate() {
-            prefix.push(component.as_os_str());
+        for (index, _component) in components.iter().enumerate() {
+            let prefix_path = EIPPath {
+                mount_id: params.path.mount_id.clone(),
+                path: format!("/{}", segments[..=index].join("/")),
+            };
+            let prefix = match mount.resolve_nofollow_relative(&prefix_path) {
+                Ok(relative) => relative,
+                Err(MountPathError::NotFound) => {
+                    let parent_path = if index == 0 {
+                        EIPPath {
+                            mount_id: params.path.mount_id.clone(),
+                            path: "/".to_owned(),
+                        }
+                    } else {
+                        EIPPath {
+                            mount_id: params.path.mount_id.clone(),
+                            path: format!("/{}", segments[..index].join("/")),
+                        }
+                    };
+                    let parent = mount
+                        .resolve_followed_relative(&parent_path)
+                        .map_err(map_mount_error)?;
+                    let relative = parent.join(segments[index]);
+                    mount
+                        .ensure_unprotected(&relative)
+                        .map_err(map_mount_error)?;
+                    relative
+                }
+                Err(error) => return Err(map_mount_error(error)),
+            };
             match mount.root.symlink_metadata(&prefix) {
                 Ok(metadata) => {
                     if !metadata.is_dir() || metadata.file_type().is_symlink() {
@@ -479,8 +536,8 @@ impl ResourceRegistry {
         let info = commit_candidate(
             &destination_mount,
             &params.destination,
-            if destination.is_some() {
-                FileWriteMode::Replace
+            if params.replace {
+                FileWriteMode::Upsert
             } else {
                 FileWriteMode::Create
             },
@@ -524,7 +581,9 @@ impl ResourceRegistry {
         params: &FileRemoveParams,
     ) -> Result<u64, ResourceError> {
         let mount = write_mount(mounts, &params.path, "remove")?;
-        let relative = mount.relative_path(&params.path).map_err(map_mount_error)?;
+        let relative = mount
+            .resolve_nofollow_relative(&params.path)
+            .map_err(map_mount_error)?;
         if relative == Path::new(".") || params.max_entries == 0 {
             return Err(ResourceError::Denied);
         }
@@ -664,9 +723,10 @@ fn commit_candidate(
     expected_size: u64,
     expected_digest: &str,
 ) -> Result<FileInfo, ResourceError> {
-    candidate.file.sync_all().map_err(|_| ResourceError::Io)?;
-    let metadata = candidate.file.metadata().map_err(|_| ResourceError::Io)?;
-    if metadata.len() != expected_size || file_has_multiple_links(&metadata) {
+    if !candidate
+        .verify_complete(expected_size)
+        .map_err(map_mount_error)?
+    {
         return Err(ResourceError::Conflict);
     }
     candidate
@@ -690,8 +750,14 @@ fn commit_candidate(
     }
     let replace = match mode {
         FileWriteMode::Create => false,
-        FileWriteMode::Replace | FileWriteMode::Append => true,
-        FileWriteMode::Upsert => observe_regular(mount, path)?.is_some(),
+        FileWriteMode::Replace | FileWriteMode::Append => {
+            validate_write_mode(mode, observe_regular(mount, path)?.as_ref())?;
+            true
+        }
+        FileWriteMode::Upsert => {
+            let _ = observe_regular(mount, path)?;
+            true
+        }
     };
     mount
         .publish_candidate(candidate, path, replace)
@@ -735,17 +801,6 @@ fn copy_with_digest(
     Ok((total, format!("{:x}", hasher.finalize())))
 }
 
-#[cfg(unix)]
-fn file_has_multiple_links(metadata: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    metadata.nlink() != 1
-}
-
-#[cfg(not(unix))]
-fn file_has_multiple_links(_metadata: &std::fs::Metadata) -> bool {
-    false
-}
-
 fn check_operation(operations: &OperationLedger, operation_id: &str) -> Result<(), ResourceError> {
     match operations.interruption(operation_id) {
         Some(OperationInterruption::Cancelled) => Err(ResourceError::Cancelled),
@@ -769,6 +824,9 @@ fn build_remove_plan(
     let mut discovered = 0_u64;
     while let Some((relative, depth, expanded)) = pending.pop() {
         check_operation(operations, operation_id)?;
+        mount
+            .ensure_unprotected(&relative)
+            .map_err(map_mount_error)?;
         if expanded {
             plan.push(RemovePlanEntry {
                 relative,
@@ -795,12 +853,19 @@ fn build_remove_plan(
             .root
             .read_dir(&relative)
             .map_err(|_| ResourceError::Io)?;
-        let mut children = reader
-            .map(|entry| {
-                let entry = entry.map_err(|_| ResourceError::Io)?;
-                Ok(relative.join(entry.file_name()))
-            })
-            .collect::<Result<Vec<_>, ResourceError>>()?;
+        let pending_entries = pending.iter().filter(|(_, _, expanded)| !expanded).count() as u64;
+        let remaining = max_entries
+            .min(MAX_TRAVERSAL_ENTRIES as u64)
+            .saturating_sub(discovered)
+            .saturating_sub(pending_entries);
+        let mut children = Vec::new();
+        for entry in reader {
+            let entry = entry.map_err(|_| ResourceError::Io)?;
+            if children.len() as u64 >= remaining {
+                return Err(ResourceError::Limit);
+            }
+            children.push(relative.join(entry.file_name()));
+        }
         if depth >= MAX_TRAVERSAL_DEPTH && !children.is_empty() {
             return Err(ResourceError::Limit);
         }
@@ -816,68 +881,120 @@ fn build_remove_plan(
     Ok(plan)
 }
 
-fn walk_entries(
+fn walk_entries<F>(
     mount: &Arc<Mount>,
     root: &EIPPath,
     max_depth: u32,
+    include_hidden: bool,
     operations: &OperationLedger,
     operation_id: &str,
-) -> Result<Vec<FileListEntry>, ResourceError> {
-    let root_relative = mount.relative_path(root).map_err(map_mount_error)?;
-    let mut pending = vec![(root_relative, String::new(), 0_u32)];
-    let mut entries = Vec::new();
-    while let Some((directory, prefix, depth)) = pending.pop() {
+    mut visit: F,
+) -> Result<u64, ResourceError>
+where
+    F: FnMut(FileListEntry) -> Result<(), ResourceError>,
+{
+    let root_relative = mount
+        .resolve_followed_relative(root)
+        .map_err(map_mount_error)?;
+    let (mut pending, mut omitted) = read_children_counting(
+        mount,
+        &root_relative,
+        "",
+        1,
+        include_hidden,
+        MAX_TRAVERSAL_ENTRIES,
+    )?;
+    pending.reverse();
+    let mut discovered = 0_usize;
+    while let Some((relative, relative_path, depth)) = pending.pop() {
         check_operation(operations, operation_id)?;
-        if depth >= max_depth {
+        discovered = discovered.checked_add(1).ok_or(ResourceError::Limit)?;
+        if discovered > MAX_TRAVERSAL_ENTRIES {
+            return Err(ResourceError::Limit);
+        }
+        let path = EIPPath {
+            mount_id: root.mount_id.clone(),
+            path: join_logical(&root.path, &relative_path),
+        };
+        let metadata = match mount.metadata(&path, false) {
+            Ok(metadata) => metadata,
+            Err(MountPathError::Denied) => continue,
+            Err(error) => return Err(map_mount_error(error)),
+        };
+        let directory = metadata.is_dir() && !metadata.file_type().is_symlink();
+        let info = cap_file_info(&path, &metadata);
+        visit(FileListEntry {
+            relative_path: relative_path.clone(),
+            info,
+        })?;
+        if directory && depth < max_depth {
+            let remaining = MAX_TRAVERSAL_ENTRIES
+                .saturating_sub(discovered)
+                .saturating_sub(pending.len());
+            let (mut children, skipped) = read_children_counting(
+                mount,
+                &relative,
+                &relative_path,
+                depth + 1,
+                include_hidden,
+                remaining,
+            )?;
+            omitted = omitted.saturating_add(skipped);
+            children.reverse();
+            pending.extend(children);
+        }
+    }
+    Ok(omitted)
+}
+
+fn read_children_counting(
+    mount: &Arc<Mount>,
+    directory: &Path,
+    prefix: &str,
+    depth: u32,
+    include_hidden: bool,
+    max_children: usize,
+) -> Result<(Vec<TraversalEntry>, u64), ResourceError> {
+    mount
+        .ensure_unprotected(directory)
+        .map_err(map_mount_error)?;
+    let reader = mount
+        .root
+        .read_dir(directory)
+        .map_err(|_| ResourceError::Io)?;
+    let mut children = Vec::new();
+    let mut omitted = 0_u64;
+    for entry in reader {
+        let entry = entry.map_err(|_| ResourceError::Io)?;
+        let Ok(name) = entry.file_name().into_string() else {
+            omitted = omitted.saturating_add(1);
+            continue;
+        };
+        if name.contains('/') || name.contains('\0') {
+            omitted = omitted.saturating_add(1);
             continue;
         }
-        let reader = mount
-            .root
-            .read_dir(&directory)
-            .map_err(|_| ResourceError::Io)?;
-        let mut children = Vec::new();
-        for entry in reader {
-            let entry = entry.map_err(|_| ResourceError::Io)?;
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| ResourceError::Unsupported)?;
-            if name.contains('/') || name.contains('\0') {
-                return Err(ResourceError::Unsupported);
-            }
-            let relative_path = if prefix.is_empty() {
-                name
-            } else {
-                format!("{prefix}/{name}")
-            };
-            let logical = join_logical(&root.path, &relative_path);
-            let path = EIPPath {
-                mount_id: root.mount_id.clone(),
-                path: logical,
-            };
-            let metadata = mount.metadata(&path, false).map_err(map_mount_error)?;
-            let info = cap_file_info(&path, &metadata);
-            let child_relative = mount.relative_path(&path).map_err(map_mount_error)?;
-            if metadata.is_dir() && !metadata.file_type().is_symlink() {
-                children.push((child_relative, relative_path.clone(), depth + 1));
-            }
-            entries.push(FileListEntry {
-                relative_path,
-                info,
-            });
-            if entries.len() > MAX_TRAVERSAL_ENTRIES {
-                return Err(ResourceError::Limit);
-            }
+        if !include_hidden && name.starts_with('.') {
+            continue;
         }
-        children.sort_by(|left, right| right.1.as_bytes().cmp(left.1.as_bytes()));
-        pending.extend(children);
+        let child_relative = directory.join(&name);
+        match mount.ensure_unprotected(&child_relative) {
+            Ok(()) => {}
+            Err(MountPathError::Denied) => continue,
+            Err(error) => return Err(map_mount_error(error)),
+        }
+        if children.len() >= max_children {
+            return Err(ResourceError::Limit);
+        }
+        let relative_path = if prefix.is_empty() {
+            name
+        } else {
+            format!("{prefix}/{name}")
+        };
+        children.push((child_relative, relative_path, depth));
     }
-    entries.sort_by(|left, right| {
-        left.relative_path
-            .as_bytes()
-            .cmp(right.relative_path.as_bytes())
-    });
-    Ok(entries)
+    children.sort_by(|left, right| left.1.as_bytes().cmp(right.1.as_bytes()));
+    Ok((children, omitted))
 }
 
 fn join_logical(root: &str, relative: &str) -> String {
@@ -1056,33 +1173,60 @@ fn read_line_preview<R: BufRead>(
     }))
 }
 
-fn bounded_slice<T: Clone + Serialize>(
-    items: &[T],
-    offset: u64,
-    max_results: u32,
-    max_bytes: u64,
-) -> Result<(Vec<T>, bool), ResourceError> {
-    if offset >= items.len() as u64 {
-        return Ok((Vec::new(), false));
-    }
-    let mut selected = Vec::new();
-    let mut encoded = 0_u64;
-    let mut next = usize::try_from(offset).map_err(|_| ResourceError::Limit)?;
-    while next < items.len() && selected.len() < max_results as usize {
-        let size = serde_json::to_vec(&items[next])
-            .map_err(|_| ResourceError::Internal)?
-            .len() as u64;
-        if encoded.saturating_add(size) > max_bytes {
-            if selected.is_empty() {
-                return Err(ResourceError::OutputLimit);
-            }
-            break;
+impl<T: Serialize> PageCollector<T> {
+    fn new(offset: u64, max_results: u32, max_bytes: u64) -> Self {
+        let keep = offset
+            .saturating_add(max_results as u64)
+            .saturating_add(1)
+            .min(MAX_TRAVERSAL_ENTRIES as u64) as usize;
+        Self {
+            offset,
+            max_results: max_results as usize,
+            max_bytes,
+            keep,
+            matched: 0,
+            items: BTreeMap::new(),
         }
-        encoded += size;
-        selected.push(items[next].clone());
-        next += 1;
     }
-    Ok((selected, next < items.len()))
+
+    fn push(&mut self, key: Vec<u8>, item: T) -> Result<(), ResourceError> {
+        self.matched = self.matched.checked_add(1).ok_or(ResourceError::Limit)?;
+        if self.matched > MAX_TRAVERSAL_ENTRIES as u64 {
+            return Err(ResourceError::Limit);
+        }
+        if self.keep == 0 {
+            return Ok(());
+        }
+        self.items.insert(key, item);
+        if self.items.len() > self.keep {
+            self.items.pop_last();
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> Result<(Vec<T>, bool), ResourceError> {
+        let mut selected = Vec::new();
+        let mut encoded = 0_u64;
+        let skip = usize::try_from(self.offset).unwrap_or(usize::MAX);
+        for item in self.items.into_values().skip(skip) {
+            if selected.len() >= self.max_results {
+                break;
+            }
+            let size = serde_json::to_vec(&item)
+                .map_err(|_| ResourceError::Internal)?
+                .len() as u64;
+            if encoded.saturating_add(size) > self.max_bytes {
+                if selected.is_empty() {
+                    return Err(ResourceError::OutputLimit);
+                }
+                break;
+            }
+            encoded += size;
+            selected.push(item);
+        }
+        let consumed = self.offset.saturating_add(selected.len() as u64);
+        Ok((selected, self.matched > consumed))
+    }
 }
 
 struct PathMatcher {
@@ -1176,24 +1320,42 @@ fn search_file(
     path: &EIPPath,
     matcher: &ContentMatcher,
     max_line_length: u64,
+    operation_scanned: &mut u64,
     operations: &OperationLedger,
     operation_id: &str,
 ) -> Result<Vec<FileSearchMatch>, ResourceError> {
     let opened = mount.open_regular(path).map_err(map_mount_error)?;
-    let bytes = read_file_bounded(opened.file, mount.max_file_bytes, operations, operation_id)?;
-    if bytes.contains(&0) {
-        return Err(ResourceError::Unsupported);
-    }
-    let text = std::str::from_utf8(&bytes).map_err(|_| ResourceError::Unsupported)?;
     let requested_chars = usize::try_from(max_line_length).map_err(|_| ResourceError::Limit)?;
+    let mut reader = BufReader::new(opened.file);
+    let mut file_scanned = 0_u64;
+    let mut line_number = 0_u64;
     let mut matches = Vec::new();
-    for (index, raw_line) in text.split_inclusive('\n').enumerate() {
-        let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
+    loop {
+        check_operation(operations, operation_id)?;
+        let remaining = MAX_SEARCH_BYTES_PER_FILE
+            .saturating_sub(file_scanned)
+            .min(MAX_SEARCH_BYTES_PER_OPERATION.saturating_sub(*operation_scanned));
+        let Some(mut line_bytes) = read_bounded_search_line(&mut reader, remaining)? else {
+            break;
+        };
+        let read = u64::try_from(line_bytes.len()).map_err(|_| ResourceError::Limit)?;
+        file_scanned = file_scanned.checked_add(read).ok_or(ResourceError::Limit)?;
+        *operation_scanned = operation_scanned
+            .checked_add(read)
+            .ok_or(ResourceError::Limit)?;
+        if line_bytes.contains(&0) {
+            return Err(ResourceError::Unsupported);
+        }
+        if line_bytes.last() == Some(&b'\n') {
+            line_bytes.pop();
+        }
+        let line = std::str::from_utf8(&line_bytes).map_err(|_| ResourceError::Unsupported)?;
+        line_number = line_number.checked_add(1).ok_or(ResourceError::Limit)?;
         if matcher.matches(line) {
             let (preview, preview_truncated) = truncate_chars(line, requested_chars);
             matches.push(FileSearchMatch {
                 path: path.clone(),
-                line_number: index as u64 + 1,
+                line_number,
                 preview: preview.to_owned(),
                 preview_truncated,
             });
@@ -1203,6 +1365,36 @@ fn search_file(
         }
     }
     Ok(matches)
+}
+
+fn read_bounded_search_line<R: BufRead>(
+    reader: &mut R,
+    max_bytes: u64,
+) -> Result<Option<Vec<u8>>, ResourceError> {
+    let max_bytes = usize::try_from(max_bytes).unwrap_or(usize::MAX);
+    let mut line = Vec::new();
+    loop {
+        let available = reader.fill_buf().map_err(|_| ResourceError::Io)?;
+        if available.is_empty() {
+            return if line.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(line))
+            };
+        }
+        let consumed = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(available.len(), |index| index + 1);
+        if consumed > max_bytes.saturating_sub(line.len()) {
+            return Err(ResourceError::Limit);
+        }
+        line.extend_from_slice(&available[..consumed]);
+        reader.consume(consumed);
+        if line.last() == Some(&b'\n') {
+            return Ok(Some(line));
+        }
+    }
 }
 
 fn apply_unified_diff(source: &str, patch: &str) -> Result<(String, u64), ResourceError> {
@@ -1417,7 +1609,7 @@ fn map_mount_error(error: MountPathError) -> ResourceError {
         MountPathError::Denied | MountPathError::NotRegular => ResourceError::Denied,
         MountPathError::NotFound => ResourceError::NotFound,
         MountPathError::AlreadyExists => ResourceError::Conflict,
-        MountPathError::Limit | MountPathError::Quota => ResourceError::Limit,
+        MountPathError::Quota => ResourceError::Limit,
         MountPathError::Unsupported => ResourceError::Unsupported,
         MountPathError::UnknownOutcome => ResourceError::UnknownOutcome,
         MountPathError::Io => ResourceError::Io,
@@ -1427,10 +1619,16 @@ fn map_mount_error(error: MountPathError) -> ResourceError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf, time::Duration};
+    use std::{
+        fs,
+        io::{BufReader, Cursor, Write},
+        path::PathBuf,
+        time::Duration,
+    };
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use crate::eip::{FileCopyParams, FileMkdirParams, FileMoveParams, FilePatchTextParams};
+    use sha2::{Digest, Sha256};
+
     use crate::{
         config::{Config, TrustedMountConfig},
         eip::{
@@ -1441,8 +1639,17 @@ mod tests {
         mount::MountRegistry,
         operation::{OperationLedger, random_selector},
     };
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use crate::{
+        eip::{FileCopyParams, FileMkdirParams, FileMoveParams, FilePatchTextParams},
+        runtime::RuntimeState,
+    };
 
-    use super::{ResourceError, ResourceRegistry, apply_unified_diff, join_logical};
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use super::commit_candidate;
+    use super::{
+        ResourceError, ResourceRegistry, apply_unified_diff, join_logical, read_bounded_search_line,
+    };
 
     struct TempTree(PathBuf);
 
@@ -1598,6 +1805,119 @@ mod tests {
         assert_eq!(
             fs::read_to_string(fixture.native.join("bounded.txt")).expect("bounded destination"),
             "12345678"
+        );
+    }
+
+    #[test]
+    fn bounded_search_line_rejects_before_reading_an_unterminated_overflow() {
+        let mut reader = BufReader::new(Cursor::new(b"123456789"));
+        assert_eq!(
+            read_bounded_search_line(&mut reader, 8),
+            Err(ResourceError::Limit)
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn candidate_path_substitution_cannot_publish_unverified_content() {
+        let fixture = Fixture::new();
+        let mount = fixture.mounts.get("workspace").expect("workspace mount");
+        let destination = path("/verified.bin");
+        let expected = b"verified";
+        let mut candidate = mount
+            .create_candidate(&destination)
+            .expect("create candidate");
+        candidate
+            .reserve_bytes(expected.len() as u64)
+            .expect("reserve candidate bytes");
+        candidate
+            .file
+            .write_all(expected)
+            .expect("write verified candidate");
+        let candidate_path = fixture.native.join(&candidate.name);
+        let displaced_path = fixture.native.join("displaced-candidate");
+        fs::rename(&candidate_path, &displaced_path).expect("displace verified candidate name");
+        fs::write(&candidate_path, b"substituted").expect("substitute staging pathname");
+
+        assert_eq!(
+            commit_candidate(
+                &mount,
+                &destination,
+                FileWriteMode::Create,
+                &mut candidate,
+                expected.len() as u64,
+                &format!("{:x}", Sha256::digest(expected)),
+            ),
+            Err(ResourceError::Denied)
+        );
+        assert!(!fixture.native.join("verified.bin").exists());
+        drop(candidate);
+        assert_eq!(fs::read(&candidate_path).unwrap(), b"substituted");
+
+        fs::remove_file(candidate_path).expect("remove substituted name");
+        fs::remove_file(displaced_path).expect("remove displaced candidate");
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn publication_respects_create_and_upsert_during_external_writes() {
+        let fixture = Fixture::new();
+        let mount = fixture.mounts.get("workspace").expect("workspace mount");
+
+        let upsert_path = path("/upsert.bin");
+        let upsert_bytes = b"envd-upsert";
+        let mut upsert = mount
+            .create_candidate(&upsert_path)
+            .expect("create upsert candidate");
+        upsert
+            .reserve_bytes(upsert_bytes.len() as u64)
+            .expect("reserve upsert bytes");
+        upsert
+            .file
+            .write_all(upsert_bytes)
+            .expect("write upsert candidate");
+        fs::write(fixture.native.join("upsert.bin"), b"external").expect("external create");
+        commit_candidate(
+            &mount,
+            &upsert_path,
+            FileWriteMode::Upsert,
+            &mut upsert,
+            upsert_bytes.len() as u64,
+            &format!("{:x}", Sha256::digest(upsert_bytes)),
+        )
+        .expect("upsert replaces the currently observed regular file");
+        assert_eq!(
+            fs::read(fixture.native.join("upsert.bin")).unwrap(),
+            upsert_bytes
+        );
+
+        let create_path = path("/create.bin");
+        let create_bytes = b"envd-create";
+        let mut create = mount
+            .create_candidate(&create_path)
+            .expect("create no-replace candidate");
+        create
+            .reserve_bytes(create_bytes.len() as u64)
+            .expect("reserve create bytes");
+        create
+            .file
+            .write_all(create_bytes)
+            .expect("write create candidate");
+        fs::write(fixture.native.join("create.bin"), b"external").expect("external wins create");
+        assert_eq!(
+            commit_candidate(
+                &mount,
+                &create_path,
+                FileWriteMode::Create,
+                &mut create,
+                create_bytes.len() as u64,
+                &format!("{:x}", Sha256::digest(create_bytes)),
+            ),
+            Err(ResourceError::Conflict)
+        );
+        assert_eq!(
+            fs::read(fixture.native.join("create.bin")).unwrap(),
+            b"external"
         );
     }
 
@@ -1806,6 +2126,233 @@ mod tests {
             .expect("boundary file match");
         assert_eq!(boundary_match.line_number, 2);
         assert_eq!(boundary_match.preview, "c\u{2028}d\r");
+    }
+
+    #[test]
+    fn reads_and_searches_files_larger_than_the_mutation_limit() {
+        let fixture = Fixture::read_only();
+        let mut content = b"needle at the start".to_vec();
+        content.resize(2 * 1024 * 1024, b'x');
+        fs::write(fixture.native.join("large.txt"), content).expect("large source fixture");
+
+        let read = fixture
+            .resources
+            .read_text(
+                &fixture.mounts,
+                &FileReadTextParams {
+                    context: context("large-read"),
+                    path: path("/large.txt"),
+                    line_offset: 0,
+                    line_limit: 1,
+                    max_line_length: 32,
+                },
+            )
+            .expect("large source remains readable through a bounded text page");
+        assert_eq!(read.lines_read, 1);
+        assert!(read.text.starts_with("needle at the start"));
+        assert_eq!(read.truncated_lines, vec![1]);
+
+        let searched = fixture
+            .resources
+            .search(
+                &fixture.mounts,
+                &FileSearchParams {
+                    context: context("large-search"),
+                    root: path("/"),
+                    query: "needle".to_owned(),
+                    mode: SearchMode::Literal,
+                    case_sensitive: true,
+                    offset: 0,
+                    max_results: 10,
+                    include_hidden: false,
+                    max_line_length: 32,
+                },
+            )
+            .expect("search uses its own scan ceiling");
+        assert_eq!(searched.matches.len(), 1);
+        assert_eq!(searched.matches[0].path, path("/large.txt"));
+    }
+
+    #[test]
+    fn traversal_prunes_hidden_directories_and_pages_by_global_path_order() {
+        let fixture = Fixture::read_only();
+        fs::create_dir_all(fixture.native.join("a")).expect("ordered directory");
+        fs::write(fixture.native.join("a/x.txt"), "visible").expect("nested file");
+        fs::write(fixture.native.join("a-b.txt"), "visible").expect("sibling file");
+        fs::create_dir(fixture.native.join(".hidden")).expect("hidden directory");
+        let hidden = fs::File::create(fixture.native.join(".hidden/oversized.txt"))
+            .expect("hidden sparse source");
+        hidden
+            .set_len(super::MAX_SEARCH_BYTES_PER_FILE + 1)
+            .expect("extends hidden sparse source");
+
+        let found = fixture
+            .resources
+            .find(
+                &fixture.mounts,
+                &FileFindParams {
+                    context: context("ordered-find"),
+                    root: path("/"),
+                    pattern: "*.txt".to_owned(),
+                    offset: 0,
+                    max_results: 2,
+                    recursive: true,
+                    include_hidden: false,
+                    kinds: vec![FileKind::File],
+                },
+            )
+            .expect("find prunes hidden directories");
+        assert_eq!(
+            found
+                .entries
+                .iter()
+                .map(|entry| entry.relative_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a-b.txt", "a/x.txt"]
+        );
+
+        let searched = fixture
+            .resources
+            .search(
+                &fixture.mounts,
+                &FileSearchParams {
+                    context: context("hidden-search"),
+                    root: path("/"),
+                    query: "absent".to_owned(),
+                    mode: SearchMode::Literal,
+                    case_sensitive: true,
+                    offset: 0,
+                    max_results: 10,
+                    include_hidden: false,
+                    max_line_length: 32,
+                },
+            )
+            .expect("search never scans the hidden sparse source");
+        assert!(searched.matches.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn traversal_omits_unrepresentable_names() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let fixture = Fixture::read_only();
+        let invalid = std::ffi::OsString::from_vec(vec![b'b', b'a', b'd', 0xff]);
+        fs::write(fixture.native.join(invalid), "content").expect("non-UTF-8 fixture");
+        fs::write(fixture.native.join("valid.txt"), "content").expect("UTF-8 fixture");
+
+        let listed = fixture
+            .resources
+            .list(
+                &fixture.mounts,
+                &FileListParams {
+                    context: context("unrepresentable-list"),
+                    path: path("/"),
+                    offset: 0,
+                    max_results: 10,
+                    include_hidden: true,
+                },
+            )
+            .expect("listing omits the non-UTF-8 name");
+        assert_eq!(listed.entries.len(), 1);
+        assert_eq!(listed.entries[0].relative_path, "valid.txt");
+        assert_eq!(listed.omitted_unrepresentable_entries, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn broad_mount_subtracts_the_runtime_parent_from_all_resource_paths() {
+        use std::os::unix::fs::symlink;
+
+        let tree = TempTree::new();
+        let runtime_parent = tree.child("container/runtime");
+        fs::create_dir_all(tree.child("container/data")).expect("visible sibling directory");
+        fs::write(tree.child("container/data/file.txt"), "visible").expect("visible file");
+        let runtime = RuntimeState::prepare(&runtime_parent).expect("runtime state");
+        symlink("container/runtime", tree.child("runtime-link")).expect("runtime symlink");
+
+        let mut config = Config::for_test("env-broad-mount-test");
+        config.runtime = Some(runtime);
+        config.mounts.push(TrustedMountConfig {
+            mount_id: "workspace".to_owned(),
+            native_root: tree.0.clone(),
+            writable: true,
+            allow_command_execution: false,
+            max_file_bytes: 1024 * 1024,
+            allowed_operations: Vec::new(),
+        });
+        let operations = OperationLedger::new(
+            config.environment_id.clone(),
+            11,
+            256,
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+        );
+        let mounts = MountRegistry::initialize_scoped(&config).expect("broad mount initializes");
+        let resources = ResourceRegistry::new(&config, operations);
+
+        let listed = resources
+            .list(
+                &mounts,
+                &FileListParams {
+                    context: context("protected-list"),
+                    path: path("/container"),
+                    offset: 0,
+                    max_results: 10,
+                    include_hidden: true,
+                },
+            )
+            .expect("protected child is subtracted from traversal");
+        assert_eq!(
+            listed
+                .entries
+                .iter()
+                .map(|entry| entry.relative_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["data"]
+        );
+        assert_eq!(
+            resources.stat(
+                &mounts,
+                &FileStatParams {
+                    context: context("protected-stat"),
+                    path: path("/container/runtime"),
+                    follow_symlinks: false,
+                },
+            ),
+            Err(ResourceError::Denied)
+        );
+        assert_eq!(
+            resources.stat(
+                &mounts,
+                &FileStatParams {
+                    context: context("protected-link"),
+                    path: path("/runtime-link"),
+                    follow_symlinks: true,
+                },
+            ),
+            Err(ResourceError::Denied)
+        );
+
+        assert_eq!(
+            mounts
+                .get("workspace")
+                .expect("workspace mount")
+                .ensure_unprotected(std::path::Path::new("container/runtime")),
+            Err(crate::mount::MountPathError::Denied)
+        );
+        let removed = resources.remove(
+            &mounts,
+            &FileRemoveParams {
+                context: context("protected-remove"),
+                path: path("/container"),
+                expected_kind: FileKind::Directory,
+                recursive: true,
+                max_entries: 100,
+            },
+        );
+        assert_eq!(removed, Err(ResourceError::Denied));
+        assert!(tree.child("container/data/file.txt").exists());
     }
 
     #[cfg(windows)]

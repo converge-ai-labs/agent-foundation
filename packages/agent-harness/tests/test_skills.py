@@ -10,19 +10,26 @@ import pytest
 from converge_agent_harness import (
     FILE_VIEW_RULES,
     AgentContext,
+    AgentDefinition,
+    AgentIdentityRef,
+    AgentInstanceContext,
     DefinitionError,
+    DelegationCapability,
+    DelegationRunCapability,
     DirectLocalEnvironmentConfiguration,
     DirectLocalEnvironmentProviderBinding,
+    DirectLocalFilePolicy,
     DirectLocalRootConfiguration,
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentSkillSource,
     EnvironmentStateLimits,
+    EnvironmentTopologyController,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
+    FileSkillSource,
     FileViewRule,
     HarnessBuilder,
     HarnessEvent,
@@ -33,8 +40,11 @@ from converge_agent_harness import (
     SkillManager,
     SkillPath,
     SkillsCapability,
+    SkillSelectionRunCapability,
+    SubagentDefinition,
     create_environment_run_binding,
 )
+from converge_agent_harness.environment.local.files import LocalFileOperator
 from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
@@ -54,12 +64,18 @@ class _Allow:
 class _StaticSource:
     def __init__(self, source_id: str, roots: tuple[str, ...], entries: tuple[SkillCatalogItem, ...]) -> None:
         self.source_id = source_id
-        self.logical_roots = roots
+        self.roots = roots
         self.entries = entries
 
-    async def catalog(self, *, environment) -> tuple[SkillCatalogItem, ...]:
-        del environment
+    async def catalog(self, *, files) -> tuple[SkillCatalogItem, ...]:
+        del files
         return self.entries
+
+
+class _DirectScanOverrideManager(SkillManager):
+    async def scan(self, *, files) -> tuple[SkillCatalogItem, ...]:
+        del files
+        raise AssertionError("scan_environment must not dispatch through scan")
 
 
 @dataclass(init=False)
@@ -101,15 +117,40 @@ class _ExternalFileViewRulesCapability(AbstractCapability[AgentContext]):
         return self
 
 
+class _TopologyChangingSource:
+    def __init__(
+        self,
+        inner: FileSkillSource,
+        controller: EnvironmentTopologyController,
+        replacement: EnvironmentTopologyRequest,
+    ) -> None:
+        self._inner = inner
+        self._controller = controller
+        self._replacement = replacement
+
+    @property
+    def source_id(self) -> str:
+        return self._inner.source_id
+
+    @property
+    def roots(self) -> tuple[str, ...]:
+        return self._inner.roots
+
+    async def catalog(self, *, files) -> tuple[SkillCatalogItem, ...]:
+        catalog = await self._inner.catalog(files=files)
+        await self._controller.apply(self._replacement)
+        return catalog
+
+
 class _Materializer:
     materializer_id = "test-materializer"
     target_root = "/workspace/.agents/skills"
 
-    async def materialize(self, *, environment) -> None:
-        await environment.files.mkdir(self.target_root, parents=True, exist_ok=True)
+    async def materialize(self, *, files) -> None:
+        await files.mkdir(self.target_root, parents=True, exist_ok=True)
         path = f"{self.target_root}/review"
-        await environment.files.mkdir(path, parents=True, exist_ok=True)
-        await environment.files.write_text(
+        await files.mkdir(path, parents=True, exist_ok=True)
+        await files.write_text(
             f"{path}/SKILL.md",
             "---\nname: review\ndescription: Review code carefully.\n---\n\n# Review\n\nFollow the checklist.\n",
             mode="upsert",
@@ -143,10 +184,52 @@ def _binding(root: Path):
     )
 
 
+def _multi_binding(default_root: Path, shared_root: Path):
+    default_provider = DirectLocalEnvironmentProviderBinding(
+        DirectLocalEnvironmentConfiguration(
+            environment_id="skills-default",
+            root=DirectLocalRootConfiguration(path=default_root, ownership="caller_owned"),
+        )
+    )
+    shared_provider = DirectLocalEnvironmentProviderBinding(
+        DirectLocalEnvironmentConfiguration(
+            environment_id="skills-shared",
+            root=DirectLocalRootConfiguration(path=shared_root, ownership="caller_owned"),
+        )
+    )
+    permission = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
+    return create_environment_run_binding(
+        initial_topology=EnvironmentTopologyRequest(
+            topology_version=1,
+            bindings=(
+                EnvironmentBindingRequest(
+                    binding_id="binding-default",
+                    binding_revision=1,
+                    alias="default",
+                    permission_ceiling=permission,
+                    default_working_directory="/",
+                    provider_binding=default_provider,
+                ),
+                EnvironmentBindingRequest(
+                    binding_id="binding-shared",
+                    binding_revision=1,
+                    alias="shared",
+                    permission_ceiling=permission,
+                    default_working_directory="/",
+                    provider_binding=shared_provider,
+                ),
+            ),
+            default_binding_id="binding-default",
+        ),
+        topology_limits=EnvironmentTopologyLimits(),
+        state_limits=EnvironmentStateLimits(),
+    )
+
+
 def _manager(*, materialize: bool = False) -> SkillManager:
     return SkillManager(
         (
-            EnvironmentSkillSource(
+            FileSkillSource(
                 "workspace",
                 ("/workspace/.agents/skills",),
             ),
@@ -192,8 +275,6 @@ async def _run_single_view(
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),
@@ -238,6 +319,456 @@ async def test_skill_manager_materializes_into_authorized_root_and_freezes_front
     assert "skill_inspect" not in {tool.name for tool in seen[0].function_tools}
 
 
+async def test_default_skills_capability_scans_only_workspace_agents_skills(tmp_path: Path) -> None:
+    selected = tmp_path / ".agents" / "skills" / "default"
+    selected.mkdir(parents=True)
+    (selected / "SKILL.md").write_text(
+        "---\nname: default\ndescription: Default workspace skill.\n---\n",
+        encoding="utf-8",
+    )
+    ambient = tmp_path / "other-skills" / "ambient"
+    ambient.mkdir(parents=True)
+    (ambient / "SKILL.md").write_text(
+        "---\nname: ambient\ndescription: Must not be scanned.\n---\n",
+        encoding="utf-8",
+    )
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    capability = SkillsCapability()
+    assert capability.manager.roots == ("/workspace/.agents/skills",)
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(capability,),
+    )
+    result = await executable.run("Use a skill", bindings=RunBindings.local(environment=_binding(tmp_path)))
+
+    assert result.output_or_raise() == "done"
+    instructions = str(captured[0].instructions)
+    assert "Default workspace skill." in instructions
+    assert "Must not be scanned." not in instructions
+
+
+async def test_host_can_scan_skills_through_entered_environment_file_operator(tmp_path: Path) -> None:
+    skill = tmp_path / ".agents" / "skills" / "managed"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: managed\ndescription: Managed by the Host.\n---\n",
+        encoding="utf-8",
+    )
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(issuer="test", subject="skill-manager"),
+        agent_instance_id="skill-manager-host",
+    )
+
+    async with _binding(tmp_path).bind(run_id="host-skill-scan", instance=instance) as environment:
+        catalog = await _DirectScanOverrideManager.default().scan_environment(environment=environment)
+        catalog.require_current(environment)
+
+    assert [
+        (
+            item.name,
+            item.description,
+            item.path,
+            item.source_id,
+            item.document.binding_id,
+            item.document.binding_revision,
+            item.document.path,
+        )
+        for item in catalog.items
+    ] == [
+        (
+            "managed",
+            "Managed by the Host.",
+            "/workspace/.agents/skills/managed",
+            "workspace",
+            "binding-1",
+            1,
+            "/.agents/skills/managed/SKILL.md",
+        )
+    ]
+
+
+async def test_host_can_scan_non_virtual_local_file_operator(tmp_path: Path) -> None:
+    skill = tmp_path / ".agents" / "skills" / "direct"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: direct\ndescription: Scanned without virtual paths.\n---\n",
+        encoding="utf-8",
+    )
+    files = LocalFileOperator(
+        root=tmp_path,
+        read_only=False,
+        policy=DirectLocalFilePolicy(),
+        binding_id="cli-files",
+        binding_revision=1,
+        generation="generation-1",
+    )
+    manager = SkillManager((FileSkillSource("local", ("/.agents/skills",)),))
+
+    catalog = await manager.scan(files=files)
+    default_catalog = await SkillManager.default().scan(files=files)
+
+    assert [(item.name, item.path, item.source_id) for item in catalog] == [
+        ("direct", "/.agents/skills/direct", "local")
+    ]
+    assert default_catalog == ()
+
+
+async def test_environment_scan_pins_roots_across_bindings(tmp_path: Path) -> None:
+    default_root = tmp_path / "default"
+    shared_root = tmp_path / "shared"
+    for root, skill_root, name in (
+        (default_root, ".agents/skills", "project"),
+        (shared_root, "skills", "shared"),
+    ):
+        skill = root / skill_root / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: {name.title()} skill.\n---\n",
+            encoding="utf-8",
+        )
+    binding = _multi_binding(default_root, shared_root)
+    manager = SkillManager(
+        (
+            FileSkillSource("project", ("/workspace/.agents/skills",)),
+            FileSkillSource("shared", ("/environment/shared/skills",)),
+        )
+    )
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(issuer="test", subject="skill-manager"),
+        agent_instance_id="skill-manager-multi-binding",
+    )
+
+    async with binding.bind(run_id="host-multi-scan", instance=instance) as environment:
+        catalog = await manager.scan_environment(environment=environment)
+
+    assert [(item.name, item.document.binding_id, item.document.path) for item in catalog.items] == [
+        ("project", "binding-default", "/.agents/skills/project/SKILL.md"),
+        ("shared", "binding-shared", "/skills/shared/SKILL.md"),
+    ]
+
+
+async def test_bound_catalog_ignores_unrelated_topology_refresh(tmp_path: Path) -> None:
+    default_root = tmp_path / "default"
+    shared_root = tmp_path / "shared"
+    replacement_root = tmp_path / "replacement"
+    skill = default_root / ".agents" / "skills" / "project"
+    skill.mkdir(parents=True)
+    shared_root.mkdir()
+    replacement_root.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: project\ndescription: Project skill.\n---\n",
+        encoding="utf-8",
+    )
+    binding = _multi_binding(default_root, shared_root)
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(issuer="test", subject="skill-manager"),
+        agent_instance_id="skill-manager-unrelated-refresh",
+    )
+    permission = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
+
+    async with binding.bind(run_id="host-unrelated-refresh", instance=instance) as environment:
+        await environment.activate()
+        catalog = await SkillManager.default().scan_environment(environment=environment)
+        replacement = DirectLocalEnvironmentProviderBinding(
+            DirectLocalEnvironmentConfiguration(
+                environment_id="skills-shared",
+                root=DirectLocalRootConfiguration(path=replacement_root, ownership="caller_owned"),
+            )
+        )
+        await binding.controller.apply(
+            EnvironmentTopologyRequest(
+                topology_version=2,
+                bindings=(
+                    EnvironmentBindingRequest(
+                        binding_id="binding-default",
+                        binding_revision=1,
+                        alias="default",
+                        permission_ceiling=permission,
+                        default_working_directory="/",
+                        provider_binding=None,
+                    ),
+                    EnvironmentBindingRequest(
+                        binding_id="binding-shared",
+                        binding_revision=2,
+                        alias="shared",
+                        permission_ceiling=permission,
+                        default_working_directory="/",
+                        provider_binding=replacement,
+                    ),
+                ),
+                default_binding_id="binding-default",
+            )
+        )
+
+        catalog.require_current(environment)
+
+
+async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: Path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    for root, description in ((first_root, "Revision A metadata."), (second_root, "Revision B metadata.")):
+        skill = root / ".agents" / "skills" / "review"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: review\ndescription: {description}\n---\n",
+            encoding="utf-8",
+        )
+
+    binding = _binding(first_root)
+    replacement_provider = DirectLocalEnvironmentProviderBinding(
+        DirectLocalEnvironmentConfiguration(
+            environment_id="skills-test",
+            root=DirectLocalRootConfiguration(path=second_root, ownership="caller_owned"),
+        )
+    )
+    replacement = EnvironmentTopologyRequest(
+        topology_version=2,
+        bindings=(
+            EnvironmentBindingRequest(
+                binding_id="binding-1",
+                binding_revision=2,
+                alias="local",
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                default_working_directory="/",
+                provider_binding=replacement_provider,
+            ),
+        ),
+        default_binding_id="binding-1",
+    )
+    source = _TopologyChangingSource(
+        FileSkillSource("workspace", ("/workspace/.agents/skills",)),
+        binding.controller,
+        replacement,
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
+        capabilities=(SkillsCapability(SkillManager((source,))),),
+    )
+
+    with pytest.raises(DefinitionError) as exc_info:
+        await executable.run("Review", bindings=RunBindings.local(environment=binding))
+    assert exc_info.value.code == "skill_catalog_stale"
+    assert exc_info.value.details == {
+        "root": "/workspace/.agents/skills",
+        "binding_id": "binding-1",
+        "binding_revision": 1,
+    }
+
+
+async def test_environment_scan_rejects_empty_root_refresh_during_scan(tmp_path: Path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    (first_root / ".agents" / "skills").mkdir(parents=True)
+    (second_root / ".agents" / "skills").mkdir(parents=True)
+    binding = _binding(first_root)
+    replacement_provider = DirectLocalEnvironmentProviderBinding(
+        DirectLocalEnvironmentConfiguration(
+            environment_id="skills-test",
+            root=DirectLocalRootConfiguration(path=second_root, ownership="caller_owned"),
+        )
+    )
+    replacement = EnvironmentTopologyRequest(
+        topology_version=2,
+        bindings=(
+            EnvironmentBindingRequest(
+                binding_id="binding-1",
+                binding_revision=2,
+                alias="local",
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                default_working_directory="/",
+                provider_binding=replacement_provider,
+            ),
+        ),
+        default_binding_id="binding-1",
+    )
+    source = _TopologyChangingSource(
+        FileSkillSource("workspace", ("/workspace/.agents/skills",)),
+        binding.controller,
+        replacement,
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
+        capabilities=(SkillsCapability(SkillManager((source,))),),
+    )
+
+    with pytest.raises(DefinitionError) as exc_info:
+        await executable.run("Review", bindings=RunBindings.local(environment=binding))
+    assert exc_info.value.code == "skill_catalog_stale"
+    assert exc_info.value.details == {
+        "root": "/workspace/.agents/skills",
+        "binding_id": "binding-1",
+        "binding_revision": 1,
+    }
+
+
+async def test_default_skills_capability_allows_missing_workspace_root(tmp_path: Path) -> None:
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(),),
+    )
+    result = await executable.run("No skills", bindings=RunBindings.local(environment=_binding(tmp_path)))
+
+    assert result.output_or_raise() == "done"
+    assert "<available-skills>" not in str(captured[0].instructions)
+
+
+async def test_default_skills_capability_allows_no_environment_binding() -> None:
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(),),
+    )
+    result = await executable.run("No environment", bindings=RunBindings.local())
+
+    assert result.output_or_raise() == "done"
+    assert len(captured) == 1
+    assert "<available-skills>" not in str(captured[0].instructions)
+
+
+async def test_default_skill_manager_appends_host_sources_with_later_precedence(tmp_path: Path) -> None:
+    for root, description in (
+        (tmp_path / ".agents" / "skills", "Workspace version."),
+        (tmp_path / "host-skills", "Host version."),
+    ):
+        skill = root / "same"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: same\ndescription: {description}\n---\n",
+            encoding="utf-8",
+        )
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    manager = SkillManager.default(additional_sources=(FileSkillSource("host", ("/workspace/host-skills",)),))
+    assert manager.roots == ("/workspace/.agents/skills", "/workspace/host-skills")
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(manager),),
+    )
+    result = await executable.run("Use a skill", bindings=RunBindings.local(environment=_binding(tmp_path)))
+
+    assert result.output_or_raise() == "done"
+    instructions = str(captured[0].instructions)
+    assert "Host version." in instructions
+    assert "Workspace version." not in instructions
+
+
+async def test_optional_file_skill_source_skips_each_unavailable_root(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "available"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: available\ndescription: Available root.\n---\n",
+        encoding="utf-8",
+    )
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    manager = SkillManager(
+        (
+            FileSkillSource(
+                "mixed",
+                ("/workspace/skills", "/environment/missing/skills"),
+                required=False,
+            ),
+        )
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(manager),),
+    )
+    result = await executable.run("Use a skill", bindings=RunBindings.local(environment=_binding(tmp_path)))
+
+    assert result.output_or_raise() == "done"
+    assert "Available root." in str(captured[0].instructions)
+
+
+async def test_required_file_skill_source_rejects_each_unavailable_root(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "available"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: available\ndescription: Available root.\n---\n",
+        encoding="utf-8",
+    )
+    manager = SkillManager(
+        (
+            FileSkillSource(
+                "mixed",
+                ("/workspace/skills", "/environment/missing/skills"),
+                required=True,
+            ),
+        )
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
+        capabilities=(SkillsCapability(manager),),
+    )
+
+    with pytest.raises(DefinitionError) as exc_info:
+        await executable.run("Use a skill", bindings=RunBindings.local(environment=_binding(tmp_path)))
+    assert exc_info.value.code == "skill_source_unavailable"
+    assert exc_info.value.details["source_id"] == "mixed"
+
+
+def test_file_skill_source_rejects_relative_file_operator_root() -> None:
+    with pytest.raises(ValueError, match="absolute FileOperator paths"):
+        FileSkillSource(
+            "invalid",
+            ("missing/skills",),
+            required=False,
+        )
+
+
+@pytest.mark.parametrize("root", ("missing/skills", "/skills/../escape", "/skills/"))
+def test_skill_manager_rejects_invalid_custom_source_root(root: str) -> None:
+    source = _StaticSource("invalid", (root,), ())
+
+    with pytest.raises(ValueError, match="skill roots"):
+        SkillManager((source,))
+
+
 async def test_skill_catalog_uses_ordered_later_source_precedence(tmp_path: Path) -> None:
     for root, description in (("global", "Global version"), ("project", "Project version")):
         path = tmp_path / root / "same"
@@ -255,8 +786,8 @@ async def test_skill_catalog_uses_ordered_later_source_precedence(tmp_path: Path
 
     manager = SkillManager(
         (
-            EnvironmentSkillSource("global", ("/workspace/global",)),
-            EnvironmentSkillSource("project", ("/workspace/project",)),
+            FileSkillSource("global", ("/workspace/global",)),
+            FileSkillSource("project", ("/workspace/project",)),
         )
     )
     executable = HarnessBuilder().build_code(
@@ -270,6 +801,252 @@ async def test_skill_catalog_uses_ordered_later_source_precedence(tmp_path: Path
     instructions = str(captured[0].instructions)
     assert "Project version" in instructions
     assert "Global version" not in instructions
+
+
+async def test_host_skill_selection_injects_only_exact_selected_names(tmp_path: Path) -> None:
+    for name in ("alpha", "beta"):
+        skill = tmp_path / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Use {name}.\n---\n\n# {name.title()}\n",
+            encoding="utf-8",
+        )
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
+    )
+    result = await executable.run(
+        "Use a skill",
+        bindings=RunBindings.local(
+            environment=_binding(tmp_path),
+            capabilities=(SkillSelectionRunCapability(names=frozenset({"alpha"})),),
+        ),
+    )
+
+    assert result.output_or_raise() == "done"
+    instructions = str(captured[0].instructions)
+    assert 'skill name="alpha"' in instructions
+    assert "Use alpha." in instructions
+    assert 'skill name="beta"' not in instructions
+    assert "Use beta." not in instructions
+
+
+async def test_empty_host_skill_selection_injects_no_skill_catalog(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "alpha"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: alpha\ndescription: Use alpha.\n---\n",
+        encoding="utf-8",
+    )
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
+    )
+    result = await executable.run(
+        "Use a skill",
+        bindings=RunBindings.local(
+            environment=_binding(tmp_path),
+            capabilities=(SkillSelectionRunCapability(names=frozenset()),),
+        ),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert "<available-skills>" not in str(captured[0].instructions)
+
+
+async def test_resumed_run_reselects_skills_from_fresh_host_bindings(tmp_path: Path) -> None:
+    for name in ("alpha", "beta"):
+        skill = tmp_path / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Use {name}.\n---\n",
+            encoding="utf-8",
+        )
+    captured: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(str(info.instructions))
+        yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
+    )
+    first = await executable.run(
+        "First",
+        bindings=RunBindings.local(
+            environment=_binding(tmp_path),
+            capabilities=(SkillSelectionRunCapability(names=frozenset({"alpha"})),),
+        ),
+    )
+    assert first.state is not None
+    second = await executable.run(
+        "Second",
+        bindings=RunBindings.local(environment=_binding(tmp_path)),
+        previous_state=first.state,
+    )
+
+    assert first.output_or_raise() == second.output_or_raise() == "done"
+    assert 'skill name="alpha"' in captured[0]
+    assert 'skill name="beta"' not in captured[0]
+    assert 'skill name="alpha"' in captured[1]
+    assert 'skill name="beta"' in captured[1]
+
+
+async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
+    for name in ("alpha", "beta"):
+        skill = tmp_path / "skills" / name
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Use {name}.\n---\n",
+            encoding="utf-8",
+        )
+    parent_instructions: list[str] = []
+    child_instructions: list[str] = []
+
+    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        child_instructions.append(str(info.instructions))
+        yield "child-done"
+
+    async def parent_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        parent_instructions.append(str(info.instructions))
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "worker", "task": {"request": "inspect"}}),
+                    tool_call_id="delegate-skill-selection",
+                )
+            }
+            return
+        yield "parent-done"
+
+    child = AgentDefinition(
+        agent=AgentSpec(model="logical:child"),
+        output_type=str,
+        definition_id="skill-child",
+        model=FunctionModel(stream_function=child_stream),
+        capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:parent"),
+        output_type=str,
+        model=FunctionModel(stream_function=parent_stream),
+        capabilities=(
+            DelegationCapability(),
+            SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),
+        ),
+        subagents=(
+            SubagentDefinition(
+                name="worker",
+                description="Inspect one task.",
+                agent=child,
+            ),
+        ),
+    )
+
+    async def bind_child(child, input, child_instance_id, continuation, usage_limits):
+        del child, input, continuation, usage_limits
+        return RunBindings(
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="child"),
+                agent_instance_id=f"internal-{child_instance_id}",
+                parent_agent_instance_id="skill-parent",
+                delegation_id=child_instance_id,
+            ),
+            environment=_binding(tmp_path),
+        )
+
+    result = await executable.run(
+        "Delegate",
+        bindings=RunBindings(
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="parent"),
+                agent_instance_id="skill-parent",
+            ),
+            environment=_binding(tmp_path),
+            capabilities=(
+                InvocationPolicyCapability(evaluator=_Allow()),
+                DelegationRunCapability(binder=bind_child),
+                SkillSelectionRunCapability(names=frozenset({"alpha"})),
+            ),
+        ),
+    )
+
+    assert result.output_or_raise() == "parent-done"
+    assert parent_instructions
+    assert all('skill name="alpha"' in instructions for instructions in parent_instructions)
+    assert all('skill name="beta"' not in instructions for instructions in parent_instructions)
+    assert len(child_instructions) == 1
+    assert 'skill name="alpha"' in child_instructions[0]
+    assert 'skill name="beta"' in child_instructions[0]
+
+
+async def test_host_skill_selection_rejects_unknown_names(tmp_path: Path) -> None:
+    skill = tmp_path / "skills" / "alpha"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: alpha\ndescription: Use alpha.\n---\n",
+        encoding="utf-8",
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
+        capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
+    )
+
+    with pytest.raises(DefinitionError) as exc_info:
+        await executable.run(
+            "Use a skill",
+            bindings=RunBindings.local(
+                environment=_binding(tmp_path),
+                capabilities=(SkillSelectionRunCapability(names=frozenset({"missing"})),),
+            ),
+        )
+    assert exc_info.value.code == "skill_selection_unknown"
+    assert exc_info.value.details == {"skills": ["missing"], "truncated": False}
+
+
+def test_skill_selection_requires_immutable_bounded_exact_names() -> None:
+    with pytest.raises(TypeError, match="frozenset"):
+        SkillSelectionRunCapability(names=("alpha",))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="bounded"):
+        SkillSelectionRunCapability(names=frozenset({"x" * 257}))
+    with pytest.raises(ValueError, match="must be"):
+        SkillSelectionRunCapability(id="custom", names=frozenset())
 
 
 async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path: Path) -> None:
@@ -307,8 +1084,6 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),
@@ -422,8 +1197,6 @@ async def test_selected_skill_markdown_uses_relaxed_full_read_budget(tmp_path: P
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),
@@ -497,8 +1270,6 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
         capabilities=(
             DynamicEnvironmentCapability(
                 DynamicEnvironmentConfiguration(
-                    max_topology_bindings=8,
-                    max_topology_bytes=4096,
                     max_reference_entries=64,
                 )
             ),
@@ -521,7 +1292,7 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
     assert all(str(page["content"]).endswith("\n") for page in pages[:-1])
 
 
-async def test_skill_source_cannot_escape_its_declared_logical_roots(tmp_path: Path) -> None:
+async def test_skill_source_cannot_escape_its_declared_roots(tmp_path: Path) -> None:
     for directory in ("allowed", "outside"):
         skill = tmp_path / directory / "escape"
         skill.mkdir(parents=True)
@@ -564,7 +1335,7 @@ async def test_skill_catalog_rejects_truncated_frontmatter_lines(tmp_path: Path)
     )
     manager = SkillManager(
         (
-            EnvironmentSkillSource(
+            FileSkillSource(
                 "workspace",
                 ("/workspace/skills",),
                 max_line_length=16,
@@ -595,7 +1366,7 @@ async def test_skill_catalog_stops_reading_after_frontmatter(tmp_path: Path) -> 
     )
     manager = SkillManager(
         (
-            EnvironmentSkillSource(
+            FileSkillSource(
                 "workspace",
                 ("/workspace/skills",),
                 max_line_length=64,

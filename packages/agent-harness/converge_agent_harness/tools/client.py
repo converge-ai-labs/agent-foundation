@@ -9,8 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.tools import ToolDefinition
-from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset, ExternalToolset
+from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from converge_agent_harness._json import dump_json_bytes
 from converge_agent_harness.context import AgentContext
@@ -98,16 +97,6 @@ class ClientToolsSpec(BaseModel):
         return self
 
 
-class _ClientExternalToolset(ExternalToolset[AgentContext]):
-    def __init__(self, tool_defs: list[ToolDefinition], *, id: str, instructions: str | None) -> None:
-        super().__init__(tool_defs, id=id)
-        self._instructions = instructions
-
-    async def get_instructions(self, ctx: RunContext[AgentContext]) -> str | None:
-        del ctx
-        return self._instructions
-
-
 @dataclass(kw_only=True)
 class ClientToolsRunCapability(AbstractCapability[AgentContext]):
     """Fresh Host attachment carrying a complete replacement client surface."""
@@ -124,7 +113,7 @@ class ClientToolsRunCapability(AbstractCapability[AgentContext]):
 
 @dataclass(kw_only=True)
 class ClientToolsCapability(AbstractCapability[AgentContext]):
-    """Definition-selected owner that materializes native ExternalToolsets per run."""
+    """Definition-selected owner that resolves and composes the effective client surface."""
 
     id: str | None = CLIENT_TOOLS_CAPABILITY_ID
     spec: ClientToolsSpec = field(default_factory=ClientToolsSpec)
@@ -141,41 +130,9 @@ class ClientToolsCapability(AbstractCapability[AgentContext]):
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id="converge-client-tools")
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext] | None:
-        toolsets = self._effective_toolsets(ctx)
-        native: list[ExternalToolset[AgentContext]] = []
-        for toolset in toolsets:
-            definitions = []
-            for tool in toolset.tools:
-                metadata = deepcopy(tool.metadata)
-                metadata[CLIENT_TOOL_MARKER_KEY] = {
-                    "declared_name": tool.name,
-                    "toolset_id": toolset.toolset_id,
-                }
-                definitions.append(
-                    ToolDefinition(
-                        name=tool.name,
-                        description=tool.description,
-                        parameters_json_schema=deepcopy(tool.parameters_json_schema),
-                        metadata=metadata,
-                    )
-                )
-            instructions = "\n\n".join(
-                f"Client tool `{tool.name}`: {tool.instruction}"
-                for tool in toolset.tools
-                if tool.instruction is not None
-            )
-            native.append(
-                _ClientExternalToolset(
-                    definitions,
-                    id=toolset.toolset_id,
-                    instructions=instructions or None,
-                )
-            )
-        if not native:
-            return None
-        if len(native) == 1:
-            return native[0]
-        return CombinedToolset(native)
+        from converge_agent_harness.toolsets.client import ClientToolsToolset
+
+        return ClientToolsToolset(self._effective_toolsets(ctx)).get_toolset()
 
     def _effective_toolsets(self, ctx: RunContext[AgentContext]) -> tuple[ClientToolsetDefinition, ...]:
         provenance = ctx.deps._capability_provenance

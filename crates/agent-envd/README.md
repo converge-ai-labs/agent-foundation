@@ -4,7 +4,7 @@
 
 ## Current runtime profile
 
-The daemon implements the canonical EIP 1.0 protocol over trusted stdio pipes with content-length framing. Its current surface includes:
+The daemon implements the canonical EIP 1.0 protocol over trusted stdio, a dedicated authenticated HTTP(S) listener, and outbound reverse WebSocket. Its current surface includes:
 
 - initialization, environment description, session close, cancellation, operation receipts, and local port observation;
 - trusted configured mounts for text reads, metadata, listing, bounded find and search, and binary streaming reads;
@@ -16,7 +16,7 @@ The daemon implements the canonical EIP 1.0 protocol over trusted stdio pipes wi
 
 Every descriptor reports exact JSON-RPC `available_methods`; initialization checks exact `required_methods` rather than capability families. Typed `execution_features` separately reports optional command-limit, per-command-network-deny, and individual signal-action support. The current outer-host backend reports all optional command/network features false; Unix advertises distinct interrupt/terminate actions, while non-Unix omits `process.signal` until native semantics exist. Availability is derived from configured mounts, command policy, and truthful platform support, so one unavailable method does not hide adjacent methods. Complete-candidate atomic publication is currently available on Linux and macOS. It does not imply exclusive filesystem control or compare-and-swap: commands and external writers can race with envd operations.
 
-When command policy and a command-enabled mount are configured, the descriptor reports the exact available shell, process, and output methods plus its logical shell profiles. Foreground and background execution share one transactional start gate; `process.start` publishes a handle only after requested-executable spawn succeeds. The same owner drains stdout and stderr concurrently, enforces finite limits, targets the backend-managed command lifecycle for control and cleanup, and drains remaining managed commands during daemon shutdown. In explicit `disabled` mode, native cleanup covers the initial Unix process group and a best-effort Windows task tree; descendants outside that platform-native target remain the outer Host's responsibility, as reported by `process_containment=false` and `cleanup_guarantee=outer_host`. The accepted outbound reverse-WebSocket carrier and required Linux/macOS/Windows native execution-isolation backends are not implemented yet. Envd exposes no inbound HTTP/WebSocket target surface.
+When command policy and a command-enabled mount are configured, the descriptor reports the exact available shell, process, and output methods plus its logical shell profiles. Foreground and background execution share one transactional start gate; `process.start` publishes a handle only after requested-executable spawn succeeds. The same owner drains stdout and stderr concurrently, enforces finite limits, targets the backend-managed command lifecycle for control and cleanup, and drains remaining managed commands during daemon shutdown. In explicit `disabled` mode, native cleanup covers the initial Unix process group and a best-effort Windows task tree; descendants outside that platform-native target remain the outer Host's responsibility, as reported by `process_containment=false` and `cleanup_guarantee=outer_host`. The required Linux/macOS/Windows native execution-isolation backends are not implemented yet. Only the HTTP profile binds inbound resources, limited to authenticated `/eip/control` and `/eip/transfer`; envd exposes no inbound WebSocket, generic HTTP, browser, health, or readiness surface.
 
 ## Launch configuration
 
@@ -33,7 +33,7 @@ Command execution additionally requires an absolute private runtime directory:
 AGENT_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
 ```
 
-`AGENT_ENVD_TRANSPORT` defaults to `stdio`. The accepted `reverse_websocket` mode is not available yet. Configured mounts are the only filesystem roots. Until resource-layer protected-root subtraction lands, startup rejects a command runtime that overlaps any configured mount; therefore current command-enabled deployments keep `AGENT_ENVD_RUNTIME_DIR` outside mount topology. The accepted target permits an explicit whole-filesystem root only after protected runtime/spool/control identities are subtracted from every EIP lookup and traversal.
+`AGENT_ENVD_TRANSPORT` defaults to `stdio` and also accepts `http` or `reverse_websocket`. HTTP requires `AGENT_ENVD_HTTP_BIND`, `AGENT_ENVD_HTTP_CREDENTIAL_FILE`, and either paired native TLS files or `AGENT_ENVD_HTTP_PLAINTEXT_SCOPE=loopback|provider_private_link`. Reverse WebSocket requires `AGENT_ENVD_REVERSE_WS_URL` and `AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE`; an optional CA file adds deployment trust for `wss`. Configured mounts are the only filesystem roots. Protected runtime roots are subtracted from all overlapping mount lookups.
 
 Native required isolation remains the secure default: omitting `AGENT_ENVD_EXECUTION_ISOLATION`, or setting it to `required`, fails startup until that backend exists. Explicit `disabled` mode delegates containment to the outer Host, emits one structured startup warning on stderr, and must be used only inside an appropriate provider sandbox or test boundary.
 

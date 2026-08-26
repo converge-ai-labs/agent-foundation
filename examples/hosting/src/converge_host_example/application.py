@@ -22,7 +22,7 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, Thinking
 from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, FunctionModel
 
 from converge_host_example.store import (
-    AttemptLease,
+    ExecutionAttemptLease,
     HostExecutionRecord,
     HostStoreError,
     JsonFileHostStore,
@@ -40,7 +40,7 @@ class HostDemoResult:
     partial_text_recovered: bool
     completed_thinking_recovered: bool
     incomplete_thinking_excluded: bool
-    stale_attempt_rejected: bool
+    stale_execution_attempt_rejected: bool
 
 
 def _offline_model(observed_message_counts: MutableSequence[int]) -> FunctionModel:
@@ -69,7 +69,7 @@ def _build_agent(observed_message_counts: MutableSequence[int]) -> ExecutableAge
     )
 
 
-def _fresh_bindings(record: HostExecutionRecord, lease: AttemptLease) -> RunBindings:
+def _fresh_bindings(record: HostExecutionRecord, lease: ExecutionAttemptLease) -> RunBindings:
     """Recreate current authority rather than restoring it from HarnessState."""
 
     return RunBindings(
@@ -78,16 +78,16 @@ def _fresh_bindings(record: HostExecutionRecord, lease: AttemptLease) -> RunBind
             agent_instance_id=record.agent_instance_id,
             host_refs={
                 "execution": record.execution_id,
-                "attempt": lease.attempt_id,
+                "execution_attempt": lease.execution_attempt_id,
             },
         ),
         environment=NoopEnvironmentRunBinding(),
-        metadata={"attempt_generation": lease.generation},
+        metadata={"execution_attempt_generation": lease.generation},
     )
 
 
 async def run_host_demo(state_directory: Path) -> HostDemoResult:
-    """Persist a checkpoint, replace its Attempt, resume, and commit."""
+    """Persist a checkpoint, replace its ExecutionAttempt, resume, and commit."""
 
     store = JsonFileHostStore(state_directory)
     execution = await store.create_execution(
@@ -99,7 +99,7 @@ async def run_host_demo(state_directory: Path) -> HostDemoResult:
     executable = _build_agent(observed_message_counts)
 
     async with executable:
-        first_lease = await store.acquire_attempt(execution.execution_id)
+        first_lease = await store.acquire_execution_attempt(execution.execution_id)
         first_record = await store.read_execution(execution.execution_id)
         first_result = await executable.run(
             "Record the first durable interaction.",
@@ -141,14 +141,14 @@ async def run_host_demo(state_directory: Path) -> HostDemoResult:
         # The Host selects the failed run's safe continuation candidate but
         # does not turn that Harness-local failure into a Host terminal commit.
         # It invalidates the first owner as if replacing an interrupted worker.
-        await store.abandon_attempt_for_recovery(first_lease)
-        replacement_lease = await store.acquire_attempt(execution.execution_id)
+        await store.abandon_execution_attempt_for_recovery(first_lease)
+        replacement_lease = await store.acquire_execution_attempt(execution.execution_id)
         selected = replacement_lease.starting_checkpoint
         if selected is None:
-            raise RuntimeError("The replacement Attempt did not freeze its starting checkpoint")
+            raise RuntimeError("The replacement ExecutionAttempt did not freeze its starting checkpoint")
         replacement_record = await store.read_execution(execution.execution_id)
 
-        stale_attempt_rejected = False
+        stale_execution_attempt_rejected = False
         try:
             await store.commit_checkpoint(
                 first_lease,
@@ -156,7 +156,7 @@ async def run_host_demo(state_directory: Path) -> HostDemoResult:
                 harness_state=first_state,
             )
         except HostStoreError:
-            stale_attempt_rejected = True
+            stale_execution_attempt_rejected = True
 
         replacement_result = await executable.run(
             "Continue from the Host-selected checkpoint under fresh bindings.",
@@ -189,7 +189,7 @@ async def run_host_demo(state_directory: Path) -> HostDemoResult:
         partial_text_recovered=partial_text_recovered,
         completed_thinking_recovered=completed_thinking_recovered,
         incomplete_thinking_excluded=incomplete_thinking_excluded,
-        stale_attempt_rejected=stale_attempt_rejected,
+        stale_execution_attempt_rejected=stale_execution_attempt_rejected,
     )
 
 
@@ -206,7 +206,7 @@ def _print_result(result: HostDemoResult) -> None:
     print(f"partial text recovered: {result.partial_text_recovered}")
     print(f"completed thinking recovered: {result.completed_thinking_recovered}")
     print(f"incomplete thinking excluded: {result.incomplete_thinking_excluded}")
-    print(f"stale Attempt rejected: {result.stale_attempt_rejected}")
+    print(f"stale ExecutionAttempt rejected: {result.stale_execution_attempt_rejected}")
 
 
 def main() -> None:

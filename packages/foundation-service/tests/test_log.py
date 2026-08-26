@@ -5,11 +5,7 @@ from rich.logging import RichHandler
 
 
 def test_log_config_injects_service_context() -> None:
-    settings = ServiceSettings(
-        role="control",
-        build_version="v1",
-        log_format=LogFormat.json,
-    )
+    settings = ServiceSettings(_env_file=None, role="control", build_version="v1", log_format=LogFormat.json)
 
     config = build_log_config(settings)
 
@@ -24,7 +20,7 @@ def test_log_config_injects_service_context() -> None:
 
 
 def test_pretty_logging_is_the_local_default() -> None:
-    config = build_log_config(ServiceSettings())
+    config = build_log_config(ServiceSettings(_env_file=None))
 
     assert config["handlers"]["default"]["formatter"] == "pretty"
     assert config["handlers"]["default"]["()"] is RichHandler

@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Reusable behavior inside the Pydantic Agent loop uses native `AbstractCapability[AgentContext]`. Capability is the only top-level feature-behavior composition plane in `AgentDefinition`: each feature Capability owns its callable tools, private Toolsets, instructions, settings, hooks, and native ordering as one coherent unit. The Harness does not define a second Capability base, lifecycle, or ordering graph. Fresh run attachment Capabilities enter `RunBindings` under a separate source policy.
+Reusable behavior inside the Pydantic Agent loop uses native `AbstractCapability[AgentContext]`. Capability is the only top-level feature-behavior composition plane in `AgentDefinition`: each feature Capability owns configuration, definition/run binding, lifecycle, instructions, hooks, native ordering, and Toolset composition as one coherent unit. Its owned Toolset owns model-visible tool schemas and concrete per-call execution, including provider-port calls and model-safe result or error projection. A Capability does not retain a parallel operations object or callback that delegates complete model-tool execution back out of the Toolset. The Harness does not define a second Capability base, lifecycle, or ordering graph. Fresh run attachment Capabilities enter `RunBindings` under a separate source policy.
 
 Environment itself is not a Capability. It is a Harness-entered run lifecycle resource exposed through the fixed `AgentContext.environment` field. The optional `DynamicEnvironmentCapability` consumes that field to contribute model tools, stable guidance, dynamic context, and notices; its presence cannot create, activate, replace, authorize, or close an Environment binding.
 
-Harness plugins govern only the outer semantic-input-to-complete-result boundary and may contribute ordinary Pydantic Capabilities.
+Harness plugins govern only the outer semantic-input-to-complete-result boundary and may contribute ordinary Pydantic Capabilities. A plugin that needs dynamic request context contributes the explicit `AbstractModelContextCapability`; it receives no peer plugin-only context hook.
 
 ## Native Composition
 
@@ -18,9 +18,9 @@ Harness plugins govern only the outer semantic-input-to-complete-result boundary
 | `RunContext[AgentContext]`         | Messages, usage, limits, tools, run-bound peers, and deps   |
 | Agent/run Capability binding       | Native reentrant and fresh invocation composition           |
 
-Pydantic AI owns `for_agent()`, `for_run()`, Toolset composition, lifecycle hooks, node hooks, and cleanup. Capability authors do not inspect private Agent graph state. A direct function tool is authored inside native `Capability(tools=[...])`; an external or custom Toolset is owned by a native Toolset Capability or another feature Capability. `AgentDefinition` and `HarnessBuilder.build_code()` expose no peer `tools` or `toolsets` parameters.
+Pydantic AI owns `for_agent()`, `for_run()`, Toolset composition, lifecycle hooks, node hooks, and cleanup. Capability authors do not inspect private Agent graph state. A direct function tool is authored inside native `Capability(tools=[...])`; an external or custom Toolset is composed by a native Toolset Capability or another feature Capability. For a reusable Harness feature, the Toolset directly owns the callable schema and per-call behavior over narrow run-bound ports, while its Capability resolves those ports and owns Agent-loop lifecycle. `AgentDefinition` and `HarnessBuilder.build_code()` expose no peer `tools` or `toolsets` parameters.
 
-Pydantic's finalized Capability map and ToolManager remain authoritative. Harness stable IDs support uniqueness, lookup, and source provenance only. `CapabilityOrdering.wraps` and `wrapped_by` use concrete Capability types or instances, and `requires` uses concrete types; IDs are not ordering references, and the Harness adds no second Capability sorter.
+Pydantic's finalized Capability map and ToolManager remain authoritative. Harness stable IDs support uniqueness, lookup, and source provenance only. `CapabilityOrdering.wraps` and `wrapped_by` use concrete Capability types or instances, and `requires` uses concrete types; IDs are not ordering references, and the Harness adds no second Capability sorter. The same finalized order governs the narrow model-context middleware subtype described in [Context and Memory](09-context-and-memory.md#model-context-projection-contract); `ModelContextCoordinatorCapability` is the sole mandatory infrastructure owner of message placement and does not create another ordering graph.
 
 ## Capability Sources and Authorization
 
@@ -131,6 +131,7 @@ class AgentContext:
     plugins: BoundPluginContext
     subagents: SubagentCollection
     metadata: Mapping[str, JsonValue]
+    model_context: ModelContextRunBinding | None
     skill_paths: RunSkillPaths
     tool_metadata: ToolRuntimeMetadata
 
@@ -146,13 +147,18 @@ class AgentContext:
         tool_call_id: str | None = None,
     ) -> ProviderUsageRecord: ...
 
+    async def project_model_context(
+        self,
+        request: ModelContextProjectionRequest,
+    ) -> ModelContextProjection: ...
+
     async def export_state(
         self,
         message_history: Sequence[ModelMessage],
     ) -> HarnessState: ...
 ```
 
-One fresh context is created for every logical Harness run and reused by that run's internal model attempts. Fields have cohesive cross-feature meaning:
+One fresh context is created for every logical Harness run and reused by that run's internal `ModelAttempt` values. Fields have cohesive cross-feature meaning:
 
 - `instance` is the trusted workload, actor, and lineage binding;
 - `state` coordinates detached Capability namespaces;
@@ -163,10 +169,13 @@ One fresh context is created for every logical Harness run and reused by that ru
 - `plugins` indexes the complete fresh run-bound plugin graph after binding;
 - `subagents` is the immutable collection owned by the executable;
 - `metadata` is immutable non-authoritative correlation;
+- `model_context` is the optional fresh Host wrapper around this run's projection chain;
 - `skill_paths` is the shared passive snapshot of explicitly selected, resolved skill directories and provenance;
 - `tool_metadata` stores typed passive values whose meaning and hard-limit validation belong to the Toolset that defines each key.
 
-`identity` is derived from `instance`; no second value can diverge. The context is not a generic service locator and cannot be supplied by plugins or model content. Skill paths and tool metadata contain no callable service, lifecycle hook, ordering edge, dispatch route, authority, or durable state. They are created once with the logical-run context and reused across its internal model attempts.
+`project_model_context()` is the terminal dynamic-context projection. It combines `BoundEnvironment.project_model_context()` with bounded Agent run and conversation context according to the classified input or tool-results request. It returns typed blocks only and does not edit messages, expose opaque Capability namespaces, persist rendered text, or replace Capability-owned projections such as current time, request usage, selected Host metadata, working tasks, and notes.
+
+`identity` is derived from `instance`; no second value can diverge. The context is not a generic service locator and cannot be supplied by plugins or model content. Skill paths and tool metadata contain no callable service, lifecycle hook, ordering edge, dispatch route, authority, or durable state. They are created once with the logical-run context and reused across its internal `ModelAttempt` values.
 
 ## Lifecycle Integration
 
@@ -176,6 +185,8 @@ One fresh context is created for every logical Harness run and reused by that ru
 | Transform semantic input/result       | Harness plugin `wrap_run()`                             |
 | Bind a fresh Agent-loop feature       | Capability `for_run()`                                  |
 | Contribute instructions or tools      | Native Capability/Toolset                               |
+| Augment dynamic model context         | `AbstractModelContextCapability`                        |
+| Override one run's context projection | Fresh `ModelContextRunBinding`                          |
 | Publish passive run facts for tools   | `skill_paths` or an owner-defined `ToolMetadataKey[T]`  |
 | Observe model, node, or tool behavior | Native hooks plus `AgentContext.events`                 |
 | Attribute provider usage              | `AgentContext.record_provider_usage()`                  |
@@ -253,21 +264,24 @@ The Harness state API itself does not define `CheckpointStore`, choose a latest 
 
 ## Failure Semantics
 
-| Failure                                               | Outcome                                                   |
-| ----------------------------------------------------- | --------------------------------------------------------- |
-| Capability composition/order failure                  | Pydantic Agent build or run binding fails                 |
-| Unknown, colliding, or source-denied declarative type | Definition build fails before model work                  |
-| Bare `CapabilityFunc` or source-laundered replacement | Definition build or run setup fails before model exposure |
-| Blank namespace ID or version                         | `StateError`                                              |
-| Version mismatch on typed read                        | `capability_state_version_unsupported`                    |
-| Payload fails owning model validation                 | `capability_state_invalid`                                |
-| Capability hook or Toolset fails                      | Native Pydantic/Harness failure handling applies          |
+| Failure                                                    | Outcome                                                   |
+| ---------------------------------------------------------- | --------------------------------------------------------- |
+| Capability composition/order failure                       | Pydantic Agent build or run binding fails                 |
+| Unknown, colliding, or source-denied declarative type      | Definition build fails before model work                  |
+| Bare `CapabilityFunc` or source-laundered replacement      | Definition build or run setup fails before model exposure |
+| Blank namespace ID or version                              | `StateError`                                              |
+| Version mismatch on typed read                             | `capability_state_version_unsupported`                    |
+| Payload fails owning model validation                      | `capability_state_invalid`                                |
+| Capability hook or Toolset fails                           | Native Pydantic/Harness failure handling applies          |
+| Context middleware returns an invalid or oversized overlay | Request fails before model dispatch                       |
 
 ## Boundaries
 
 | Concern                                         | Owner                                |
 | ----------------------------------------------- | ------------------------------------ |
 | Capability lifecycle and Toolsets               | Pydantic AI                          |
+| Context middleware ordering                     | Finalized native Capability mapping  |
+| Dynamic-context placement and limits            | Mandatory Harness coordinator        |
 | Shared context and Capability-state coordinator | Harness                              |
 | Environment lifecycle and portable aggregate    | Harness Environment core             |
 | One feature's state and behavior                | Owning Capability package            |

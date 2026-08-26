@@ -45,7 +45,7 @@ class AgentDefinition[OutputT]:
 | `plugins`        | Trusted concrete Harness middleware instances supplied directly with this definition                             |
 | `subagents`      | Named complete process-local child definitions and authored edge ceilings                                        |
 | `self_healing`   | Enables narrow one-shot provider-history repairs on each resolved native Model                                   |
-| `model_recovery` | Optional bounded semantic attempt policy for recoverable model interruption inside one logical Harness run       |
+| `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run         |
 
 Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. Child names are unique within one parent. The finite acyclic child graph and its exact `SubagentDefinition` contract are owned by [Delegation and Subagents](11-delegation-and-subagents.md#child-definitions-and-built-collection). The Harness does not require every trusted Python object to be serializable, hashable, deeply immutable, or reconstructible from metadata. Reentrancy remains the responsibility of native objects and Agent-bound extensions whose instances are shared by concurrent runs.
 

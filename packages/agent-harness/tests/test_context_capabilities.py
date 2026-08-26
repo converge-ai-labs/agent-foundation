@@ -23,6 +23,8 @@ from converge_agent_harness import (
     FileContextConfiguration,
     HandoffCapability,
     HarnessBuilder,
+    HarnessEvent,
+    HarnessExtensionEvent,
     HarnessState,
     RunBindings,
     RuntimeContextCapability,
@@ -37,6 +39,7 @@ from converge_agent_harness.capabilities.context import (
 )
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
+    FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -150,7 +153,7 @@ async def test_compaction_forces_same_agent_summarize_tool_and_reuses_handoff_pa
         else:
             yield "done"
 
-    previous = HarnessState(
+    previous = HarnessState.new(
         message_history=(
             ModelRequest(
                 parts=[UserPromptPart(content="Original long task")],
@@ -168,7 +171,9 @@ async def test_compaction_forces_same_agent_summarize_tool_and_reuses_handoff_pa
         model=FunctionModel(stream_function=stream),
         capabilities=(
             HandoffCapability(),
-            CompactionCapability(CompactionPolicy(trigger_tokens=2_000, target_tokens=1_000, preserve_recent_turns=1)),
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=2_000, target_tokens=1_000, preserve_recent_user_turns=1)
+            ),
         ),
     )
     result = await executable.run(
@@ -275,7 +280,7 @@ async def test_compaction_validates_target_after_dynamic_context_assembly(tmp_pa
         else:
             pytest.fail("oversized restored request reached the provider")
 
-    previous = HarnessState(
+    previous = HarnessState.new(
         message_history=(
             ModelRequest(parts=[UserPromptPart(content="Original task")]),
             ModelResponse(
@@ -291,7 +296,9 @@ async def test_compaction_validates_target_after_dynamic_context_assembly(tmp_pa
         capabilities=(
             HandoffCapability(),
             FileContextCapability(FileContextConfiguration(paths=("/workspace/AGENTS.md",))),
-            CompactionCapability(CompactionPolicy(trigger_tokens=2_000, target_tokens=1_000, preserve_recent_turns=1)),
+            CompactionCapability(
+                CompactionPolicy(trigger_tokens=2_000, target_tokens=1_000, preserve_recent_user_turns=1)
+            ),
         ),
     )
 
@@ -380,3 +387,64 @@ def _user_text(messages: list[ModelMessage]) -> str:
         for part in message.parts
         if isinstance(part, UserPromptPart) and isinstance(part.content, str)
     )
+
+
+async def test_concurrent_handoff_summaries_accept_one_state_transition() -> None:
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        calls.append(messages)
+        if len(calls) == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize",
+                    json_args=json.dumps({"content": "first-summary-only"}),
+                    tool_call_id="summary-concurrent-1",
+                ),
+                1: DeltaToolCall(
+                    name="summarize",
+                    json_args=json.dumps({"content": "second-summary-only"}),
+                    tool_call_id="summary-concurrent-2",
+                ),
+            }
+            return
+        yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(HandoffCapability(),),
+    )
+    events: list[HarnessEvent] = []
+    async with executable.stream("start", bindings=RunBindings.local()) as run:
+        async for item in run:
+            if isinstance(item, HarnessEvent):
+                events.append(item)
+            else:
+                result = item.result
+
+    assert result.output_or_raise() == "done"
+    tool_results = [
+        event.event.part
+        for event in events
+        if isinstance(event.event, FunctionToolResultEvent) and event.event.part.tool_name == "summarize"
+    ]
+    assert len(tool_results) == 2
+    assert sum(part.outcome == "failed" for part in tool_results) == 1
+    context_payloads = [
+        event.event.payload
+        for event in events
+        if isinstance(event.event, HarnessExtensionEvent)
+        and event.event.kind == "context"
+        and str(event.event.payload.get("type", "")).startswith("handoff_")
+    ]
+    assert [payload["type"] for payload in context_payloads] == [
+        "handoff_started",
+        "handoff_prepared",
+        "handoff_completed",
+    ]
+    assert len({payload["operation_id"] for payload in context_payloads}) == 1
+    restored_text = str(calls[1])
+    assert ("first-summary-only" in restored_text) != ("second-summary-only" in restored_text)

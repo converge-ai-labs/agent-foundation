@@ -46,7 +46,7 @@ Create process-wide engines and clients during FastAPI lifespan, store them in e
 
 ## Database Sessions and Transactions
 
-All service code uses the canonical engine, session factory, `short_session()`, and `transaction()` from `converge_foundation_service.db`. Do not construct local engines or session makers.
+All service code obtains the canonical engine and session factory from `open_storage()` and uses `short_session()` and `transaction()` from `converge_foundation_service.storage`. Do not construct local engines or session makers.
 
 An `AsyncSession` is a mutable unit of work. Never share it across concurrent tasks or store it in a singleton. Keep each transaction around one small database operation, and do not hold a session, connection, transaction, or lock while waiting for:
 
@@ -66,7 +66,7 @@ Complete authentication, authorization, and initial reads in a short session tha
 
 ## Migrations
 
-Alembic metadata comes from `converge_foundation_service.db.models`. Every concrete ORM model must be imported by that package before generating a revision.
+Alembic metadata comes from `converge_foundation_service.database.metadata`. Every concrete ORM model must be imported into that explicit registry before generating a revision. Domains own model meaning, while Foundation Service owns one combined metadata registry and one linear migration history.
 
 Use the repository workflow rather than creating files manually:
 

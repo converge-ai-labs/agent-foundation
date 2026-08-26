@@ -77,10 +77,10 @@ Use the Makefile as the stable development interface:
 | `make build`                | Build all workspace packages, applications, and standalone SDKs   |
 | `make images`               | Build the foundation-service and sandbox images                   |
 | `make image-check`          | Build and smoke-check both container images                       |
-| `make check`                | Check formatting, lint, and types without rewriting sources       |
+| `make check`                | Apply formatting, then check lint and types                       |
 | `make check-all`            | Run the complete component gates, including tests and builds      |
 
-Use `make format` when you want to apply formatting changes, and use the source-preserving `make check` for fast feedback while iterating. Run the full local gate before opening or updating a broad pull request:
+Use `make format` when you want to apply formatting changes alone. `make check` applies the same formatters before running the fast validation gate. Installed pre-commit hooks also format supported changed files automatically; if a hook rewrites a file during commit, review and stage that result before committing again. Run the full local gate before opening or updating a broad pull request:
 
 ```bash
 make check-all
@@ -92,9 +92,9 @@ make check-all
 
 Create a stable release with canonical version `X.Y.Z` or a release candidate with `X.Y.Z-rc.N`, where `N` is a positive integer without leading zeroes. The release tag must point to a commit whose required CI checks have passed. Do not commit release-only version bumps: each release workflow injects the tag version into its known manifests and lock files in the ephemeral checkout, validates the resulting source, and then builds and publishes it. Release workflows do not repeat CI tests or lint checks. The canonical cross-ecosystem RC identity is `X.Y.Z-rc.N`; Python package metadata and artifact names use its standard PEP 440 normalization, `X.Y.ZrcN`.
 
-Harness releases use `release/harness-v<version>`. The workflow assigns exactly the same version to `converge-agent-harness` and `converge-agent-stream-protocol`, pins the published Protocol dependency to that exact Harness version, builds both wheels and source distributions, publishes them through the `harness-pypi` environment, and attaches all four artifacts to one GitHub Release.
+Harness releases use `release/harness-v<version>`. The workflow assigns exactly the same version to `converge-agent-environment-provider`, `converge-agent-harness`, and `converge-agent-stream-protocol`, pins the published Harness dependency to that exact Provider version and the published Protocol dependency to that exact Harness version, builds all three wheels and source distributions, publishes them through the `harness-pypi` environment, and attaches all six artifacts to one GitHub Release.
 
-Agent UI releases use `release/agent-ui-v<version>`. The UI version advances independently. Before tagging, maintainers set `[tool.converge.agent-ui-release].harness-version` in `packages/agent-ui/pyproject.toml` to a published Harness release; the `0.0.0` placeholder blocks a real release. The workflow pins both Harness and Protocol to that exact version in the publishable sdist and wheel. It builds the private Harness UI into both artifacts, verifies a wheel rebuild from the sdist without Node.js, and installs the wheel in a clean environment from PyPI to prove the selected libraries are available before publishing through `agent-ui-pypi`. It attaches the two artifacts to one GitHub Release. The private frontend has no npm publication or independent release.
+Agent UI releases use `release/agent-ui-v<version>`. The UI version advances independently. Before tagging, maintainers set `[tool.converge.agent-ui-release].harness-version` in `packages/agent-ui/pyproject.toml` to a published Harness release; the `0.0.0` placeholder blocks a real release. The workflow pins Provider, Harness, and Protocol to that exact version in the publishable sdist and wheel. It builds the private Harness UI into both artifacts, verifies a wheel rebuild from the sdist without Node.js, and installs the wheel in a clean environment from PyPI to prove the selected libraries are available before publishing through `agent-ui-pypi`. It attaches the two artifacts to one GitHub Release. The private frontend has no npm publication or independent release.
 
 Foundation releases use `release/foundation-v<version>`. The workflow versions the repository root, `converge-logging`, and `converge-foundation-service`; it publishes the latter two Python distributions through the `foundation-pypi` environment and publishes the native `linux/amd64` foundation-service image. It excludes and does not republish Harness, Agent UI, or `converge-agent-envd-client`, and selects compatible published Harness libraries through its own dependency management.
 
@@ -110,7 +110,7 @@ A push to `main` that changes a development image input builds and smoke-checks 
 
 ## Database Changes
 
-Database changes follow the migration contract in [DEVELOPMENT.md](DEVELOPMENT.md#schema-migrations).
+Database changes follow the migration contract in [DEVELOPMENT.md](DEVELOPMENT.md#migrations).
 
 Do not create Alembic revision files manually or autogenerate against an existing developer or shared database. Generate every `foundation-service` revision through the stable repository target:
 

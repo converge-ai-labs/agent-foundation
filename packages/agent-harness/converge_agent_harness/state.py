@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from typing import Any, Literal, cast
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, field_validator
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
@@ -16,6 +17,10 @@ from converge_agent_harness.errors import StateError
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 _ENVIRONMENT_STATE_ADAPTER = TypeAdapter(EnvironmentState)
 _EMPTY_MESSAGES_JSON = ModelMessagesTypeAdapter.dump_json([])
+
+
+def _new_thread_id() -> str:
+    return f"thread-{uuid4().hex}"
 
 
 def encode_messages(messages: Any) -> bytes:
@@ -95,7 +100,11 @@ class HarnessState(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["1"]
+    thread_id: str = Field(
+        pattern=r"^thread-[a-f0-9]{32}$",
+        max_length=39,
+    )
     message_history_json: bytes | Sequence[ModelMessage] = Field(
         default=_EMPTY_MESSAGES_JSON,
         alias="message_history",
@@ -109,6 +118,25 @@ class HarnessState(BaseModel):
         exclude=True,
         repr=False,
     )
+
+    @classmethod
+    def new(
+        cls,
+        *,
+        message_history: Sequence[ModelMessage] = (),
+        agent_context_state: AgentContextStateSnapshot | None = None,
+        environment_state: EnvironmentState | None = None,
+    ) -> HarnessState:
+        """Create the initial continuation envelope for a new Thread."""
+        return cls(
+            schema_version="1",
+            thread_id=_new_thread_id(),
+            message_history=message_history,
+            agent_context_state=(
+                agent_context_state if agent_context_state is not None else AgentContextStateSnapshot()
+            ),
+            environment_state=environment_state,
+        )
 
     @field_validator("environment_state_json", mode="before")
     @classmethod
@@ -142,6 +170,14 @@ class HarnessState(BaseModel):
         if self.environment_state_json is None:
             return None
         return _ENVIRONMENT_STATE_ADAPTER.validate_json(cast(bytes, self.environment_state_json))
+
+    def fork(self) -> HarnessState:
+        """Copy portable continuation data into a distinct Thread."""
+        return HarnessState.new(
+            message_history=self.message_history,
+            agent_context_state=self.agent_context_state,
+            environment_state=self.environment_state,
+        )
 
 
 class AgentContextState:

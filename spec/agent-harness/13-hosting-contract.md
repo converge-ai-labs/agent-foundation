@@ -4,7 +4,7 @@
 
 Embedded applications and hosted execution workers use the same code-first Harness API. The Harness does not expose a separate hosted Agent format. A hosted service owns durable Agent definition schemas, Presets, immutable revisions, dependency locks, and reconstruction adapters; the worker reconstructs one process-local `AgentDefinition` and calls `HarnessBuilder`. Plugin middleware may instead use the narrow Harness-owned configuration document and Build Context, so the Host need not expose or implement plugin factory concepts.
 
-The Host also owns durable acceptance, worker lease generations, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates.
+The Host also owns durable acceptance, worker `ExecutionAttempt` values, leases, checkpoint selection, deferred delivery, recovery, and terminal commit. The Harness returns only process-local observations and state candidates.
 
 ## Boundary
 
@@ -14,9 +14,10 @@ The Host also owns durable acceptance, worker lease generations, leases, checkpo
 | Trusted direct Python object reconstruction | Owns                                           | Validates process-local composition     |
 | Optional plugin configuration/loading       | Persists or supplies deployment input          | Owns document, loading, and application |
 | Agent Identity and provider policy          | Issues/evaluates                               | Carries through fresh bindings          |
+| Environment managed resources/attachments   | Uses provider Managers and retains outer scope | Adapts no provider lifecycle            |
 | Environment and model binding               | Constructs fresh values and retains controller | Enters/uses and owns run resource scope |
 | Agent loop and outer middleware             | Delegates                                      | Owns process-locally                    |
-| Internal model semantic attempts            | Observes one logical run                       | Owns bounded recovery                   |
+| Internal `ModelAttempt` values              | Observes one logical run                       | Owns bounded recovery                   |
 | Worker crash and durable replay             | Owns                                           | Exports portable state only             |
 | Durable completion and delivery             | Owns                                           | Returns a candidate                     |
 
@@ -34,7 +35,7 @@ flowchart LR
     Builder --> Executable[ExecutableAgent]
 ```
 
-The Host revision stores only Host-owned serializable values and exact dependencies. It can include logical model IDs, model settings, plugin/provider configuration, tool declarations, output schema, and artifact locks under Foundation schemas. It does not store a Harness compiler document, catalog manifest, Python class, plugin instance, Model, Toolset, Capability, callable, credential, or live client.
+The Host revision stores only Host-owned serializable values and exact dependencies. It can include logical model IDs, model settings, plugin/provider configuration, tool declarations, output schema, and artifact locks under Host-owned schemas. It does not store a Harness compiler document, catalog manifest, Python class, plugin instance, Model, Toolset, Capability, callable, credential, or live client.
 
 At execution time trusted installed adapters create:
 
@@ -55,20 +56,20 @@ The resulting value is an ordinary `AgentDefinition`. An operator may pass an ex
 For each logical run the Host constructs `RunBindings` with:
 
 - the trusted `AgentInstanceContext`;
-- one fresh `EnvironmentRunBinding` and its paired `EnvironmentTopologyController` retained by the Host;
+- one fresh `EnvironmentRunBinding` and its paired `EnvironmentTopologyController` retained by the Host; each concrete provider binding is either constructed directly by trusted code or adapted from a fresh single-use `EnvironmentRuntimeAttachment` acquired through `converge-agent-environment-provider`;
 - an optional fresh `ModelRunBinding`;
 - fresh run Capabilities;
 - bounded non-authoritative metadata.
 
-The Host assigns a distinct stable `AgentInstanceRef` to every independently advancing root, child, or fork message history and preserves that reference when it selects a continuation of the same history. A new Harness run or worker lease generation changes transient run correlation, not the selected Agent instance.
+The Host supplies `AgentInstanceRef` as workload identity and policy correlation. Thread identity is independent: the Harness generates `HarnessState.thread_id` for new history and restores it into fresh `AgentContext` from the State selected for continuation. A new Harness run or worker `ExecutionAttempt` changes transient run correlation but does not change the State-owned ID, and no fresh binding can override it.
 
 The Harness enters the Environment aggregate and activates the paired controller for the complete logical run. A Host reconciliation task can start before stream entry and await `controller.wait_until_active()` without polling, so an authorized Host path can materialize fresh provider bindings and add, refresh, or remove bindings during input preparation, model attempts, tool work, or recovery backoff. The controller is a process-local mutation handle: it is never put in metadata, `AgentContext`, a Capability namespace, a model tool, or a durable record, and it cannot be reused after the run terminal fence.
 
-An operator may populate its Environment provider registry from explicitly selected `converge_agent_harness.environments` entry-point metadata after verifying the exact dependency/artifact lock. As with Harness plugin factories, entry-point availability never authorizes a definition, and a durable row never carries an import target. A provider that allocates before Harness entry still implements the stronger Host materialization, launch-state, reconciliation, and unentered-discard contract rather than using the simple pre-entry-inert factory path.
+Provider specification validation, built-in and third-party factory selection, create/resume/pause/destroy behavior, resource state, and fresh attachment acquisition use the separate [Environment Provider contract](../agent-environment-provider/README.md). Provider availability and schema validity never authorize a run. A Host retains the managed resource outside the Harness stream, transfers each attachment at most once, and never places provider resource state or an import target in `RunBindings` or `HarnessState`.
 
-A hosted model integration normally implements `ModelRunBinding`, resolves its own trusted configuration, current policy, credentials, and route selection, and returns a native Model or raises. It also derives or restores provider model-session and prompt-cache affinity from the stable `AgentInstanceRef` and selected model/provider namespace. A product-conversation routing key may remain broader, but it cannot be reused as the prompt-cache key for the root and all children because those Agents own different message histories. The Harness applies no special catalog role validation and, if a Host omits the binding for a string model, deliberately delegates to native Pydantic inference. A fail-closed hosted profile therefore requires its worker adapter to supply and test the binding; this is a Host invariant, not a different Harness API.
+A hosted model integration normally implements `ModelRunBinding`, resolves its own trusted configuration, current policy, credentials, and route selection, and returns a native Model or raises. It reads `ModelResolutionContext.deps.thread_id` and derives or restores provider model-session and prompt-cache affinity from that State-owned value and the selected model/provider namespace. A Session or `AgentInstanceRef` routing key may remain broader, but it cannot replace the prompt-cache key for the root and all children because those Agents own different message histories. The Harness applies no special catalog role validation and, if a Host omits the binding for a string model, deliberately delegates to native Pydantic inference. A fail-closed hosted profile therefore requires its worker adapter to supply and test the binding; this is a Host invariant, not a different Harness API.
 
-The Host passes optional `HarnessState`, native input or an input factory, one `RunUsage` accumulator, and optional native `UsageLimits`. One logical run can contain several inner Pydantic attempts while retaining the same Host worker lease generation, bindings, context, Environment, plugins, state coordinator, and usage accumulator.
+The Host passes optional `HarnessState`, native input or an input factory, one `RunUsage` accumulator, and optional native `UsageLimits`. One logical run can contain several inner `ModelAttempt` values while retaining the same durable Host attempt, bindings, context, Environment, plugins, state coordinator, and usage accumulator.
 
 ## State and Resume Mapping
 
@@ -83,22 +84,22 @@ sequenceDiagram
     Host->>Harness: later new run with fresh bindings and selected state
 ```
 
-The Host stores and selects `HarnessState`. It separately stores definition revision, desired Environment topology, provider launch/lifecycle data, any opaque non-derivable model-session continuation selector, accepted client-tool pending data, asynchronous child state, delivery ledgers, and durable reconciliation evidence.
+The Host stores and selects `HarnessState`, including its stable Thread ID. If the Host persists provider resources, it separately stores desired Environment topology and `EnvironmentProviderResourceState`, along with definition revision, any additional opaque non-derivable provider continuation selector, accepted client-tool pending data, asynchronous child state, delivery ledgers, and durable reconciliation evidence.
 
 `HarnessState` restores public Pydantic messages, JSON Capability namespaces, and optional provider-defined portable Environment data for already selected fresh bindings. It does not restore topology, provider reachability, or launch authority. Plugin objects, Model bindings, Environment bindings, controllers, credentials, policy, usage, active attempts, and delivery facts are rebuilt.
 
-The Harness defines no mandatory model route pin or provider-session schema. If one provider requires an additional durable continuation selector beyond public messages, the Host and that model integration own it as provider-specific state and associate it with the stable Agent instance. It is not a generic Harness recovery condition, and the Host never substitutes a fresh Harness or inner run ID for it.
+The Harness defines no mandatory model route pin or provider-session schema. If one provider requires an additional durable continuation selector beyond public messages and `thread_id`, the Host and that model integration own it as provider-specific state and associate it with the selected Harness State. It is not a generic Harness recovery condition, and the Host never substitutes a fresh Harness or model-attempt ID for the State-owned ID.
 
 ## Recovery Mapping
 
 The Host distinguishes:
 
-- internal Harness semantic attempts inside one live logical run;
-- a new durable worker lease generation after process loss, lease loss, or selected recovery.
+- internal Harness `ModelAttempt` values inside one live logical run;
+- a new durable worker `ExecutionAttempt` after process loss, lease loss, or selected recovery.
 
-A new Host worker lease generation always creates a new Harness run with fresh bindings and a new controller. It reconstructs desired topology from Host state, consumes selected provider launch state before Harness entry, uses only an authoritative selected checkpoint, and does not blindly replay a possible external mutation. The interrupted-tool normalization text explicitly preserves unknown outcome and tells the next model to inspect current state.
+A new durable Host attempt always creates a new Harness run with fresh bindings and a new controller. It reconstructs desired topology from Host state, resumes or creates provider resources through the selected Manager before Harness entry, uses only an authoritative selected checkpoint, and does not blindly replay a possible external mutation. The interrupted-tool normalization text explicitly preserves unknown outcome and tells the next model to inspect current state.
 
-Provider transport retry and Harness Model self-healing do not advance the Host worker lease generation. Usage observations from all inner semantic attempts remain in the one logical run accumulator and must not be double-counted with terminal snapshots.
+Provider transport retry and Harness Model self-healing do not create durable Host attempt records. Usage observations from all inner `ModelAttempt` values remain in the one logical run accumulator and must not be double-counted with terminal snapshots.
 
 ## Deferred and Client-side Tools
 
@@ -108,13 +109,13 @@ External calls and approvals remain distinct. A Host reconstructs exact tool sur
 
 ## Asynchronous Children
 
-The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. A Host-defined Capability can use a fresh typed service collaborator to accept independent child work. The Host owns child Thread and Turn identity, stable child Agent instance and model-conversation affinity, worker leases, checkpointing, cancellation, result retention, and delivery.
+The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. A Host-defined Capability can use a fresh typed service collaborator to accept independent child work. The Host owns child Execution and workload identity, `ExecutionAttempt` generations, checkpointing, cancellation, result retention, and delivery. Each child Harness State owns its Thread ID, which the Host preserves by selecting that State for continuation.
 
 A successful asynchronous spawn is an ordinary tool result, not `DeferredToolRequests`. Child completion becomes later Host-selected semantic input and does not satisfy the original spawn tool call.
 
 ## Events and Completion
 
-The Host consumes one `HarnessRunStream` and may persist, coalesce, or fan out events. Earlier attempt events remain observations even if a later semantic attempt succeeds. The terminal result determines the logical run outcome.
+The Host consumes one `HarnessRunStream` and may persist, coalesce, or fan out events. Earlier `ModelAttempt` events remain observations even if a later `ModelAttempt` succeeds. The terminal result determines the logical run outcome.
 
 A normal result becomes durable only through a fenced Host transaction. `RunCleanupError.outcome` is an uncertain candidate and cannot be reported as a clean Harness terminal delivery.
 
@@ -141,12 +142,12 @@ A Host rejects an incompatible revision or adapter before building process-local
 02. Durable Agent schemas and dependency locks belong to the Host; the optional plugin document schema belongs to the Harness even when the Host persists it.
 03. Python objects are reconstructed in-process and never stored in Host records.
 04. Fresh authority enters every logical run through typed bindings and narrowly owned run Capabilities; Environment authority never enters through `DynamicEnvironmentCapability`.
-05. Internal model attempts do not advance the Host worker lease generation.
+05. Internal `ModelAttempt` values do not create additional durable Host attempt generations.
 06. New durable recovery uses a fresh Harness run and fresh bindings.
 07. Process-local completion is only a candidate for Host durable completion.
 08. State restores data, not authority, desired topology, controller handles, or live resources.
 09. A Host can mutate Environment topology only through the controller paired with the currently entered logical run.
-10. Every independent root, child, or fork history has its own stable Agent instance and model-conversation affinity; continuation reconstructs that affinity from fresh bindings rather than transient run IDs.
+10. Every independent root, child, or fork history has its own State-owned Thread ID; continuation restores it into `AgentContext`, and fresh model bindings derive affinity from it rather than from workload or transient run IDs.
 
 ## Trade-offs
 

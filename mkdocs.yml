@@ -12,7 +12,10 @@ nav:
   - Home: index.md
   - Agent Harness:
       - Overview: agent-harness/index.md
+      - Skills: agent-harness/skills.md
       - Plugins: agent-harness/plugins.md
+  - Agent Stream Protocol:
+      - Overview and Usage: agent-stream-protocol/index.md
 
 theme:
   name: material

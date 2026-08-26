@@ -29,6 +29,14 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "AGENT_ENVD_LISTEN_ADDRESS",
     "AGENT_ENVD_HTTP_ENABLED",
     "AGENT_ENVD_WEBSOCKET_ENABLED",
+    "AGENT_ENVD_HTTP_BIND",
+    "AGENT_ENVD_HTTP_CREDENTIAL_FILE",
+    "AGENT_ENVD_HTTP_TLS_CERT_FILE",
+    "AGENT_ENVD_HTTP_TLS_KEY_FILE",
+    "AGENT_ENVD_HTTP_PLAINTEXT_SCOPE",
+    "AGENT_ENVD_REVERSE_WS_URL",
+    "AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE",
+    "AGENT_ENVD_REVERSE_WS_CA_FILE",
     "AGENT_ENVD_ENVIRONMENT_ID",
     "AGENT_ENVD_RUNTIME_DIR",
     "AGENT_ENVD_EXECUTION_ISOLATION",
@@ -38,11 +46,22 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "AGENT_ENVD_EXECUTION_GID",
 ];
 
-const NETWORK_ONLY_VARIABLES: &[&str] = &[
-    "AGENT_ENVD_API_KEY",
+const LEGACY_NETWORK_VARIABLES: &[&str] = &[
     "AGENT_ENVD_LISTEN_ADDRESS",
     "AGENT_ENVD_HTTP_ENABLED",
     "AGENT_ENVD_WEBSOCKET_ENABLED",
+];
+const HTTP_VARIABLES: &[&str] = &[
+    "AGENT_ENVD_HTTP_BIND",
+    "AGENT_ENVD_HTTP_CREDENTIAL_FILE",
+    "AGENT_ENVD_HTTP_TLS_CERT_FILE",
+    "AGENT_ENVD_HTTP_TLS_KEY_FILE",
+    "AGENT_ENVD_HTTP_PLAINTEXT_SCOPE",
+];
+const REVERSE_WEBSOCKET_VARIABLES: &[&str] = &[
+    "AGENT_ENVD_REVERSE_WS_URL",
+    "AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE",
+    "AGENT_ENVD_REVERSE_WS_CA_FILE",
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -155,8 +174,31 @@ impl DaemonLimits {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) enum TransportConfig {
+    Stdio,
+    Http(HttpConfig),
+    ReverseWebSocket(ReverseWebSocketConfig),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct HttpConfig {
+    pub(crate) bind: std::net::SocketAddr,
+    pub(crate) credential_file: PathBuf,
+    pub(crate) tls_certificate_file: Option<PathBuf>,
+    pub(crate) tls_private_key_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ReverseWebSocketConfig {
+    pub(crate) endpoint: String,
+    pub(crate) credential_file: PathBuf,
+    pub(crate) tls_ca_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct Config {
     pub(crate) environment_id: String,
+    pub(crate) transport: TransportConfig,
     pub(crate) limits: DaemonLimits,
     pub(crate) initialization_timeout: Duration,
     pub(crate) session_idle_timeout: Duration,
@@ -171,20 +213,44 @@ impl Config {
         reject_unknown_environment_variables()?;
         let file = load_file_config(config_file_argument()?)?;
 
-        let transport =
-            optional_unicode("AGENT_ENVD_TRANSPORT")?.unwrap_or_else(|| "stdio".to_owned());
-        if transport != "stdio" {
+        if env::var_os("AGENT_ENVD_API_KEY").is_some() {
             return Err(ConfigError::new(
-                "AGENT_ENVD_TRANSPORT must be stdio in this release",
+                "AGENT_ENVD_API_KEY is unsupported; each network transport uses its profile-specific credential file",
             ));
         }
-        for name in NETWORK_ONLY_VARIABLES {
+        for name in LEGACY_NETWORK_VARIABLES {
             if env::var_os(name).is_some() {
                 return Err(ConfigError::new(format!(
-                    "{name} is not valid with stdio transport"
+                    "{name} is unsupported; select an explicit AGENT_ENVD_TRANSPORT profile"
                 )));
             }
         }
+        let transport_name =
+            optional_unicode("AGENT_ENVD_TRANSPORT")?.unwrap_or_else(|| "stdio".to_owned());
+        let transport = match transport_name.as_str() {
+            "stdio" => {
+                reject_transport_variables(HTTP_VARIABLES, "stdio")?;
+                reject_transport_variables(REVERSE_WEBSOCKET_VARIABLES, "stdio")?;
+                TransportConfig::Stdio
+            }
+            "http" => {
+                reject_transport_variables(REVERSE_WEBSOCKET_VARIABLES, "http")?;
+                TransportConfig::Http(parse_http_config()?)
+            }
+            "reverse_websocket" => {
+                reject_transport_variables(HTTP_VARIABLES, "reverse_websocket")?;
+                TransportConfig::ReverseWebSocket(parse_reverse_websocket_config(
+                    required_unicode("AGENT_ENVD_REVERSE_WS_URL")?,
+                    PathBuf::from(required_unicode("AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE")?),
+                    optional_unicode("AGENT_ENVD_REVERSE_WS_CA_FILE")?.map(PathBuf::from),
+                )?)
+            }
+            _ => {
+                return Err(ConfigError::new(
+                    "AGENT_ENVD_TRANSPORT must be stdio, http, or reverse_websocket",
+                ));
+            }
+        };
 
         let isolation = optional_unicode("AGENT_ENVD_EXECUTION_ISOLATION")?
             .unwrap_or_else(|| "required".to_owned());
@@ -261,6 +327,7 @@ impl Config {
         )?;
         Ok(Self {
             environment_id,
+            transport,
             initialization_timeout: INITIALIZATION_TIMEOUT,
             session_idle_timeout: Duration::from_millis(DEFAULT_SESSION_IDLE_TTL_MS),
             root_mount_id: file.root_mount_id,
@@ -275,6 +342,7 @@ impl Config {
     pub(crate) fn for_test(environment_id: &str) -> Self {
         Self {
             environment_id: environment_id.to_owned(),
+            transport: TransportConfig::Stdio,
             limits: default_limits(),
             initialization_timeout: Duration::from_millis(20),
             session_idle_timeout: Duration::from_secs(1),
@@ -284,6 +352,137 @@ impl Config {
             runtime: None,
         }
     }
+}
+
+fn reject_transport_variables(names: &[&str], transport: &str) -> Result<(), ConfigError> {
+    for name in names {
+        if env::var_os(name).is_some() {
+            return Err(ConfigError::new(format!(
+                "{name} is not valid with {transport} transport"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn parse_http_config() -> Result<HttpConfig, ConfigError> {
+    let bind_text = required_unicode("AGENT_ENVD_HTTP_BIND")?;
+    let bind = bind_text.parse::<std::net::SocketAddr>().map_err(|_| {
+        ConfigError::new("AGENT_ENVD_HTTP_BIND must be a numeric IP address and port")
+    })?;
+    let credential_file = PathBuf::from(required_unicode("AGENT_ENVD_HTTP_CREDENTIAL_FILE")?);
+    validate_bootstrap_file(&credential_file, "AGENT_ENVD_HTTP_CREDENTIAL_FILE")?;
+    let credential_file = fs::canonicalize(&credential_file).map_err(|error| {
+        ConfigError::new(format!(
+            "cannot canonicalize AGENT_ENVD_HTTP_CREDENTIAL_FILE: {error}"
+        ))
+    })?;
+    let certificate = optional_unicode("AGENT_ENVD_HTTP_TLS_CERT_FILE")?.map(PathBuf::from);
+    let private_key = optional_unicode("AGENT_ENVD_HTTP_TLS_KEY_FILE")?.map(PathBuf::from);
+    if certificate.is_some() != private_key.is_some() {
+        return Err(ConfigError::new(
+            "AGENT_ENVD_HTTP_TLS_CERT_FILE and AGENT_ENVD_HTTP_TLS_KEY_FILE must be configured together",
+        ));
+    }
+    let (tls_certificate_file, tls_private_key_file) = match (certificate, private_key) {
+        (Some(certificate), Some(private_key)) => {
+            validate_bootstrap_file(&certificate, "AGENT_ENVD_HTTP_TLS_CERT_FILE")?;
+            validate_bootstrap_file(&private_key, "AGENT_ENVD_HTTP_TLS_KEY_FILE")?;
+            (
+                Some(fs::canonicalize(certificate).map_err(|error| {
+                    ConfigError::new(format!(
+                        "cannot canonicalize AGENT_ENVD_HTTP_TLS_CERT_FILE: {error}"
+                    ))
+                })?),
+                Some(fs::canonicalize(private_key).map_err(|error| {
+                    ConfigError::new(format!(
+                        "cannot canonicalize AGENT_ENVD_HTTP_TLS_KEY_FILE: {error}"
+                    ))
+                })?),
+            )
+        }
+        (None, None) => {
+            let scope = required_unicode("AGENT_ENVD_HTTP_PLAINTEXT_SCOPE")?;
+            if !matches!(scope.as_str(), "loopback" | "provider_private_link") {
+                return Err(ConfigError::new(
+                    "AGENT_ENVD_HTTP_PLAINTEXT_SCOPE must be loopback or provider_private_link",
+                ));
+            }
+            if scope == "loopback" && !bind.ip().is_loopback() {
+                return Err(ConfigError::new(
+                    "loopback HTTP plaintext scope requires a loopback bind address",
+                ));
+            }
+            (None, None)
+        }
+        _ => unreachable!("paired TLS configuration checked above"),
+    };
+    if tls_certificate_file.is_some() && env::var_os("AGENT_ENVD_HTTP_PLAINTEXT_SCOPE").is_some() {
+        return Err(ConfigError::new(
+            "AGENT_ENVD_HTTP_PLAINTEXT_SCOPE is not valid with native HTTP TLS",
+        ));
+    }
+    Ok(HttpConfig {
+        bind,
+        credential_file,
+        tls_certificate_file,
+        tls_private_key_file,
+    })
+}
+
+fn parse_reverse_websocket_config(
+    endpoint: String,
+    credential_file: PathBuf,
+    tls_ca_file: Option<PathBuf>,
+) -> Result<ReverseWebSocketConfig, ConfigError> {
+    let endpoint = url::Url::parse(&endpoint)
+        .map_err(|_| ConfigError::new("AGENT_ENVD_REVERSE_WS_URL must be a valid ws or wss URL"))?;
+    if !matches!(endpoint.scheme(), "ws" | "wss")
+        || endpoint.host_str().is_none()
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+    {
+        return Err(ConfigError::new(
+            "AGENT_ENVD_REVERSE_WS_URL must be ws or wss with a host and without user info, query, or fragment",
+        ));
+    }
+    validate_bootstrap_file(&credential_file, "AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE")?;
+    let credential_file = fs::canonicalize(&credential_file).map_err(|error| {
+        ConfigError::new(format!(
+            "cannot canonicalize AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE: {error}"
+        ))
+    })?;
+    let tls_ca_file = tls_ca_file
+        .map(|path| {
+            validate_bootstrap_file(&path, "AGENT_ENVD_REVERSE_WS_CA_FILE")?;
+            fs::canonicalize(&path).map_err(|error| {
+                ConfigError::new(format!(
+                    "cannot canonicalize AGENT_ENVD_REVERSE_WS_CA_FILE: {error}"
+                ))
+            })
+        })
+        .transpose()?;
+    Ok(ReverseWebSocketConfig {
+        endpoint: endpoint.to_string(),
+        credential_file,
+        tls_ca_file,
+    })
+}
+
+fn validate_bootstrap_file(path: &Path, name: &str) -> Result<(), ConfigError> {
+    if !path.is_absolute() {
+        return Err(ConfigError::new(format!("{name} must be an absolute path")));
+    }
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| ConfigError::new(format!("cannot inspect {name}: {error}")))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(ConfigError::new(format!(
+            "{name} must identify a regular file, not a symlink"
+        )));
+    }
+    Ok(())
 }
 
 fn apply_file_limits(
@@ -653,12 +852,58 @@ impl Error for ConfigError {}
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, time::SystemTime};
+
     use crate::eip::EipValidate;
 
     use super::{
         Config, DEFAULT_MAX_COMMAND_ARGUMENT_BYTES, DEFAULT_MAX_COMMAND_ARGUMENTS,
         DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES, DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES,
+        parse_reverse_websocket_config,
     };
+
+    #[test]
+    fn reverse_websocket_accepts_ws_and_wss_but_rejects_credential_bearing_urls() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("clock follows Unix epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("agent-envd-config-{unique}"));
+        fs::create_dir(&directory).expect("creates fixture directory");
+        let credential = directory.join("token");
+        let ca = directory.join("ca.pem");
+        fs::write(&credential, "token").expect("writes token fixture");
+        fs::write(&ca, "certificate").expect("writes CA fixture");
+
+        let plain = parse_reverse_websocket_config(
+            "ws://127.0.0.1:8000/eip".to_owned(),
+            credential.clone(),
+            None,
+        )
+        .expect("ws endpoint is accepted");
+        assert_eq!(plain.endpoint, "ws://127.0.0.1:8000/eip");
+        let tls = parse_reverse_websocket_config(
+            "wss://control.example/eip".to_owned(),
+            credential.clone(),
+            Some(ca),
+        )
+        .expect("wss endpoint is accepted");
+        assert_eq!(tls.endpoint, "wss://control.example/eip");
+
+        for endpoint in [
+            "http://control.example/eip",
+            "ws://token@control.example/eip",
+            "wss://control.example/eip?token=secret",
+            "wss://control.example/eip#fragment",
+        ] {
+            assert!(
+                parse_reverse_websocket_config(endpoint.to_owned(), credential.clone(), None,)
+                    .is_err(),
+                "endpoint must be rejected: {endpoint}"
+            );
+        }
+        let _ = fs::remove_dir_all(directory);
+    }
 
     #[test]
     fn test_configuration_has_finite_valid_limits() {

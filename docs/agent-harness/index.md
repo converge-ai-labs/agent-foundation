@@ -61,9 +61,48 @@ Definition-selected Capabilities own Agent-loop lifecycle and compose reusable T
 | Media                    | `MediaToolset`                  | Fresh `MediaRunCapability` and `MediaReader`                    |
 | Documents                | `DocumentsToolset`              | Fresh `DocumentsRunCapability` and `DocumentConverter`          |
 | Web                      | `WebToolset`                    | Fresh `WebRunCapability`, live `WebPolicy`, and provider ports  |
+| Inline delegation        | `DelegationToolset`             | Declared child Agents and fresh `DelegationRunCapability`       |
+| CodeAct                  | `CodeActToolset`                | Run-local Monty runtime and typed eligible-tool policy          |
 | Usage                    | None                            | Native `RunUsage`, `RunUsageLedger`, and optional model pricing |
 
 Provider-backed clients are fresh trusted run attachments. They do not enter definitions or `HarnessState`, and the Harness core does not depend on vendor SDKs.
+
+## Inline Delegation and CodeAct
+
+`DelegationCapability` exposes one blocking `delegate` tool over the finite `SubagentDefinition` collection. Each invocation runs the selected child through its canonical `ExecutableAgent.stream()` path and waits for a complete result. The Host supplies fresh child authority with `DelegationRunCapability`; a returned `child_instance_id` can continue only that child's private nested `HarnessState`.
+
+Background submission, workers, receipts, waiting, cancellation routing, and durable delivery remain Host responsibilities. The Harness does not expose a background scheduler or background-delegation protocol.
+
+`CodeActCapability` optionally exposes `run_code` and `run_program`. Eligible host tools must be published explicitly by their owner through a typed policy:
+
+```python
+from converge_agent_harness import (
+    CodeActCapability,
+    CodeActPolicyToolset,
+    CodeActToolPolicy,
+)
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+
+def double(value: int) -> int:
+    return value * 2
+
+
+codeact_tools = Capability(
+    id="math-tools",
+    toolsets=[
+        CodeActPolicyToolset(
+            wrapped=FunctionToolset([double], id="math-functions"),
+            policy=CodeActToolPolicy(tools={"double": True}),
+            reject_unknown_tools=True,
+        )
+    ],
+)
+capabilities = (codeact_tools, CodeActCapability())
+```
+
+Restricted code receives no ambient filesystem, network, process, environment, credentials, or clock access. Nested calls validate and execute through the active final Pydantic AI `ToolManager`, so ordinary Capability hooks, the Harness tool-execution boundary, policy, events, and usage remain authoritative. `run_code` state lasts only for the current logical run and can be cleared with `restart=True`; `run_program` rereads a `*.codeact.py` file through the current Environment and uses a fresh interpreter session.
 
 ## Mandatory Boundaries and Optional Filters
 
@@ -109,7 +148,9 @@ Remote sandbox or integration packages implement the same Environment interfaces
 
 ## Results, Resume, and Usage
 
-`run()` returns one `HarnessRunResult`; `stream()` exposes the canonical single-consumer event stream and terminal result event. A suspended or safely failed result may include a detached `HarnessState` candidate. A later run uses a newly built or existing executable, fresh `RunBindings`, the selected `previous_state`, and, for deferred tools, a correlated `DeferredToolResume`.
+`run()` returns one `HarnessRunResult`; `stream()` exposes the canonical single-consumer `HarnessStreamEvent` sequence of `HarnessEvent` values followed by one terminal `HarnessRunResultEvent`. The stream, every event, and the result expose both `thread_id` and `run_id`: `thread_id` identifies the independently advancing history, while `run_id` identifies only the current process-local execution.
+
+A suspended or safely failed result may include a detached `HarnessState` candidate. A later run uses a newly built or existing executable, fresh `RunBindings`, the selected `previous_state`, and, for deferred tools, a correlated `DeferredToolResume`. Resume preserves `HarnessState.thread_id`; `HarnessState.fork()` copies portable continuation data into a new Thread with a new ID.
 
 `HarnessState` is continuation data, not Host lifecycle authority. It excludes live providers, credentials, policy, execution leases, durable task systems, and cross-run accounting.
 
@@ -118,6 +159,7 @@ Pydantic AI `RunUsage` remains the sole process-local model-usage accumulator. `
 ## Next Steps
 
 - Run the [Local Agent example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/local-agent).
+- [Integrate Skill discovery](skills.md) with a direct FileOperator or a revision-bound Environment catalog.
 - [Publish and load Harness plugins](plugins.md), including from a Host-managed directory without restarting the process.
 - Read the [package README](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/agent-harness).
 - Consult the [Agent Harness specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-harness) for normative architecture and compatibility contracts.

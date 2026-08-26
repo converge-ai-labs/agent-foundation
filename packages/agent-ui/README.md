@@ -23,7 +23,7 @@ The repository directory is `packages/agent-ui`, the Python distribution is `con
 
 ## Dependencies
 
-The source manifest declares unversioned dependencies on `converge-agent-harness` and `converge-agent-stream-protocol`, so uv resolves both from the workspace during repository development. Before tagging an Agent UI release, set `[tool.converge.agent-ui-release].harness-version` to one published canonical Harness release such as `1.2.3` or `1.2.3-rc.1`; the `0.0.0` placeholder blocks a real release. Agent UI release automation pins both dependencies to that exact normalized Python version before building publishable artifacts.
+The source manifest declares unversioned dependencies on `converge-agent-environment-provider`, `converge-agent-harness`, and `converge-agent-stream-protocol`, so uv resolves all three from the workspace during repository development. Before tagging an Agent UI release, set `[tool.converge.agent-ui-release].harness-version` to one published canonical Harness release such as `1.2.3` or `1.2.3-rc.1`; the `0.0.0` placeholder blocks a real release. Agent UI release automation pins all three dependencies to that exact normalized Python version before building publishable artifacts.
 
 ## Browser Assets
 

@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.agent import ModelRequestNode
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -358,7 +358,7 @@ class RunUsageLedger:
         trigger_record_id: str | None = None,
     ) -> None:
         """Emit all records not included in an earlier report, split into stable bounded chunks."""
-        from converge_agent_harness.events import HarnessExtensionEvent
+        from converge_agent_harness.events import UsageReportPayload, emit_harness_event
 
         async with self._flush_lock:
             checkpoint = len(self._records)
@@ -374,16 +374,18 @@ class RunUsageLedger:
                 str(_record_ordinal(pending[0])),
             )
             for chunk_index, chunk in enumerate(chunks):
-                payload: dict[str, JsonValue] = {
-                    "type": "usage_report",
-                    "report_id": report_id,
-                    "reason": reason,
-                    "trigger_record_id": trigger_record_id,
-                    "chunk_index": chunk_index,
-                    "chunk_count": len(chunks),
-                    "records": [record.model_dump(mode="json") for record in chunk],
-                }
-                await self._events.emit(HarnessExtensionEvent(kind="usage", payload=payload))
+                await emit_harness_event(
+                    self._events,
+                    kind="usage",
+                    payload=UsageReportPayload(
+                        report_id=report_id,
+                        reason=reason,
+                        trigger_record_id=trigger_record_id,
+                        chunk_index=chunk_index,
+                        chunk_count=len(chunks),
+                        records=tuple(record.model_dump(mode="json") for record in chunk),
+                    ),
+                )
             self._reported_index = checkpoint
 
     def _append(self, record: UsageRecord) -> None:

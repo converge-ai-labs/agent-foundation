@@ -162,8 +162,6 @@ def _build_agent(tool_calls: MutableSequence[str]) -> ExecutableAgent[str]:
                     shell_tools=False,
                     process_tools=False,
                     port_tools=False,
-                    max_topology_bindings=4,
-                    max_topology_bytes=16 * 1024,
                     max_reference_entries=64,
                 )
             ),

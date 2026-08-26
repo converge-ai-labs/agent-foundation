@@ -107,7 +107,7 @@ class SelfHealingModel(WrapperModel):
         run_context: RunContext[object] | None = None,
     ) -> AsyncGenerator[StreamedResponse]:
         # Only stream establishment is replayed. Mid-stream recovery belongs to
-        # the Harness attempt loop because emitted content cannot be taken back.
+        # the ModelAttempt recovery loop because emitted content cannot be taken back.
         async with AsyncExitStack() as stack:
             try:
                 stream = await stack.enter_async_context(

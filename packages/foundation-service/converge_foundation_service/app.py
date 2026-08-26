@@ -10,8 +10,8 @@ from anyio import fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 
-from converge_foundation_service.db import SessionFactory, create_database_engine, create_session_factory, short_session
 from converge_foundation_service.settings import ServiceRole, ServiceSettings, get_settings
+from converge_foundation_service.storage import StorageResources, open_storage, short_session
 from converge_foundation_service.web import mount_web_application
 
 logger = logging.getLogger("converge_foundation_service.app")
@@ -23,31 +23,32 @@ _CONTROL_PLANE_ROLES = {ServiceRole.all, ServiceRole.control}
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: ServiceSettings = app.state.settings
-    engine = create_database_engine(settings)
-    session_factory = create_session_factory(engine)
-    app.state.db_engine = engine
-    app.state.db_session_factory = session_factory
-    logger.info(
-        "service_started",
-        extra={
-            "event": "service_started",
-            "service": settings.service_name,
-            "role": settings.role.value,
-            "build_version": settings.build_version,
-        },
-    )
-    try:
-        yield
-    finally:
-        await engine.dispose()
+    async with open_storage(settings.storage_settings()) as storage:
+        app.state.storage = storage
+        # Keep these names for service code that only needs relational access.
+        app.state.db_engine = storage.engine
+        app.state.db_session_factory = storage.sessions
         logger.info(
-            "service_stopped",
-            extra={"event": "service_stopped", "service": settings.service_name, "role": settings.role.value},
+            "service_started",
+            extra={
+                "event": "service_started",
+                "service": settings.service_name,
+                "role": settings.role.value,
+                "build_version": settings.build_version,
+            },
         )
+        try:
+            yield
+        finally:
+            logger.info(
+                "service_stopped",
+                extra={"event": "service_stopped", "service": settings.service_name, "role": settings.role.value},
+            )
 
 
 def create_app(settings: ServiceSettings | None = None) -> FastAPI:
     """Create an application without opening external resources."""
+
     resolved_settings = settings or get_settings()
     serves_control_plane = resolved_settings.role in _CONTROL_PLANE_ROLES
     app = FastAPI(
@@ -67,20 +68,21 @@ def create_app(settings: ServiceSettings | None = None) -> FastAPI:
 
     @app.get("/readyz", include_in_schema=False)
     async def readiness(request: Request) -> dict[str, str]:
-        factory: SessionFactory = request.app.state.db_session_factory
+        storage: StorageResources = request.app.state.storage
         try:
             with fail_after(resolved_settings.database_readiness_timeout_seconds):
-                async with short_session(factory) as session:
+                async with short_session(storage.sessions) as session:
                     await session.execute(text("SELECT 1"))
+                await storage.redis.ping()
         except Exception as exc:
             logger.warning(
-                "database_readiness_failed",
-                extra={"event": "database_readiness_failed", "role": resolved_settings.role.value},
+                "storage_readiness_failed",
+                extra={"event": "storage_readiness_failed", "role": resolved_settings.role.value},
                 exc_info=True,
             )
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="database unavailable",
+                detail="required storage unavailable",
             ) from exc
         return {"status": "ready", "role": resolved_settings.role.value}
 

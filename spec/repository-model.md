@@ -16,6 +16,7 @@ This document defines the normative content and workflow boundaries of the Agent
 | `DEVELOPMENT.md`  | Repository-wide engineering standards for deployable services, persistence, migrations, and images    | Product semantics, package-specific commands, and rollout history                                                 |
 | `AGENTS.md`       | Concise operational guidance for coding agents working in the repository                              | Detailed design owned by `spec/` or engineering standards owned by `DEVELOPMENT.md`                               |
 | `apps/`           | Private application sources compiled into an owning image or language distribution                    | Independently published libraries or language package workspaces                                                  |
+| `deploy/`         | Container build definitions and reviewed deployment assets organized by deployment mechanism          | Application source, generated images, credentials, and environment-specific secrets                               |
 | `examples/`       | Runnable, tested developer examples of public integration and extension boundaries                    | Normative design, published user documentation, production packages, and release artifacts                        |
 | `packages/`       | Python 3.13 uv workspace packages whose distribution names use the `converge-` prefix                 | Design discussion and unrelated generated artifacts                                                               |
 | `crates/`         | Rust workspace crates whose package names use the `converge-` prefix                                  | Python packages and local reference repositories                                                                  |
@@ -24,7 +25,7 @@ This document defines the normative content and workflow boundaries of the Agent
 
 There is no repository-local `issues/` directory. "Issues" means the repository's GitHub Issues.
 
-Workspace membership does not by itself select a release group. The Harness release group contains `packages/agent-harness` and `packages/agent-stream-protocol`; one `release/harness-v<version>` tag assigns the same version to both Python distributions and publishes them through one workflow. The published Stream Protocol artifact requires the exact same Harness version. `packages/agent-ui` releases independently through `release/agent-ui-v<version>` and its published artifacts require one reviewed Harness release version for both Harness and Stream Protocol. Source manifests keep those workspace dependencies unversioned so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). Foundation releases exclude these packages and select their own compatible published Harness release.
+Workspace membership does not by itself select a release group. The Harness release group contains `packages/agent-harness`, `packages/agent-environment-provider`, and `packages/agent-stream-protocol`; one `release/harness-v<version>` tag assigns the same version to all three Python distributions and publishes them through one workflow. Published Harness metadata requires the exact Environment Provider version, and the published Stream Protocol artifact requires the exact Harness version. `packages/agent-ui` releases independently through `release/agent-ui-v<version>` and its published artifacts require one reviewed Harness release version for the Harness-group dependencies it consumes. Source manifests keep those workspace dependencies unversioned so uv resolves local members during repository development. Release versions follow the stable and RC forms defined by [Release Automation](#release-automation). Foundation releases exclude these packages and select their own compatible published Harness release.
 
 `packages/agent-envd-client` participates in root Python development and validation but is versioned and published with `crates/agent-envd` by the agent-envd release workflow. Foundation releases exclude that package and consume a compatible published version. Other release-group exceptions require an explicit owning specification and release workflow rather than inference from directory placement.
 
@@ -40,7 +41,7 @@ Projects under `examples/` may carry their own manifests and lock files when rea
 
 `apps/harness-ui` is the private WebUI source for `converge-agent-ui`. Its compiled output is not tracked in Git, published to npm, or released independently. The Agent UI release workflow builds it, copies immutable assets into the generated `converge_agent_ui` static package tree, and includes those assets in both the `converge-agent-ui` sdist and wheel. The sdist can rebuild its wheel without Node.js.
 
-Source directory, Python distribution, and import-package naming are deliberately distinct. Workspace directories omit the project prefix, such as `packages/agent-stream-protocol`; public distributions add the hyphenated `converge-` prefix, such as `converge-agent-stream-protocol`; Python imports normalize that name with underscores, such as `converge_agent_stream_protocol`. The same rule applies to `agent-harness` and `agent-ui`.
+Source directory, Python distribution, and import-package naming are deliberately distinct. Workspace directories omit the project prefix, such as `packages/agent-environment-provider`; public distributions add the hyphenated `converge-` prefix, such as `converge-agent-environment-provider`; Python imports normalize that name with underscores, such as `converge_agent_environment_provider`. The same rule applies to `agent-harness`, `agent-stream-protocol`, and `agent-ui`.
 
 ## Change Flow
 
@@ -111,7 +112,8 @@ The root `Makefile` is the stable local entry point. `pre-commit` provides fast 
 - `make examples-check` validates independent example locks, style, and types;
 - `make examples-check-all` additionally runs example tests, offline smoke paths, and builds;
 - `make build` builds every workspace package, private browser application, standalone SDK, and the Foundation CLI, preparing generated package assets before Python distribution builds;
-- `make check` verifies repository formatting, lint, static analysis, and types without rewriting repository sources or running tests;
+- `make check` applies the repository formatting hooks, then verifies lint, static analysis, and types without running tests;
+- installed pre-commit hooks apply the same supported formatters to changed files before accepting a commit;
 - `make check-all` runs the complete EIP, example, browser application, Python, Rust, standalone SDK, and Foundation CLI gates, including tests and builds.
 
 As implementation packages are added, their focused lint, type-check, test, and build commands must be added behind these stable Make targets rather than requiring contributors to discover unrelated tool-specific commands.

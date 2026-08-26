@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/ci-examples.yml"
       - "examples/**"
+      - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -14,6 +15,7 @@ on:
     paths:
       - ".github/workflows/ci-examples.yml"
       - "examples/**"
+      - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "pyproject.toml"
       - "uv.lock"

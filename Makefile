@@ -110,6 +110,7 @@ format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-
 .PHONY: deps-check
 deps-check: sync ## Check Python package dependency declarations
 	@(cd packages/agent-envd-client && uv run --locked deptry converge_agent_envd_client)
+	@(cd packages/agent-environment-provider && uv run --locked deptry converge_agent_environment_provider)
 	@(cd packages/agent-harness && uv run --locked deptry converge_agent_harness)
 	@(cd packages/agent-stream-protocol && uv run --locked deptry converge_agent_stream_protocol)
 	@(cd packages/agent-ui && uv run --locked deptry converge_agent_ui)
@@ -159,8 +160,8 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 .PHONY: eip-test
 eip-test: sync ## Run EIP generation, runtime, cross-language, and wire-model tests
 	@cargo build --locked --package converge-agent-envd
-	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip
-	@uv run --locked pyright packages/agent-envd-client/converge_agent_envd_client
+	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-harness/tests/test_environment_eip_e2e.py
+	@uv run --locked pyright packages/agent-envd-client/converge_agent_envd_client packages/agent-environment-provider/converge_agent_environment_provider
 	@cargo test --locked --package converge-agent-envd
 
 .PHONY: eip-check
@@ -174,7 +175,7 @@ python-build: sync agent-ui-assets ## Build all Python workspace distributions
 .PHONY: harness-python-build
 harness-python-build: ## Build the prepared Harness release-group distributions
 	@rm -rf dist
-	@for package in converge-agent-harness converge-agent-stream-protocol; do \
+	@for package in converge-agent-environment-provider converge-agent-harness converge-agent-stream-protocol; do \
 		uv build --package "$$package" --out-dir dist || exit $$?; \
 	done
 
@@ -453,11 +454,11 @@ release-check: ## Validate a component version (component=harness|agent-ui|found
 
 .PHONY: image-foundation-service
 image-foundation-service: ## Build the local foundation-service container image
-	@docker build -f Dockerfile -t "$(FOUNDATION_SERVICE_IMAGE)" .
+	@docker build -f deploy/containers/foundation-service/Dockerfile -t "$(FOUNDATION_SERVICE_IMAGE)" .
 
 .PHONY: image-sandbox
 image-sandbox: ## Build the local sandbox image with agent-envd
-	@docker build -f Dockerfile.sandbox -t "$(SANDBOX_IMAGE)" .
+	@docker build -f deploy/containers/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
 
 .PHONY: images
 images: image-foundation-service image-sandbox ## Build all local container images
@@ -487,8 +488,10 @@ python-check: lint typecheck ## Run Python workspace lint and type checks
 python-check-all: python-check test python-build docs-build ## Run the complete Python and documentation gate
 
 .PHONY: check
-check: ## Check formatting, lint, and types without rewriting repository sources
-	@printf '\n==> [1/11] Lint repository and check Python/Markdown formatting\n'
+check: ## Apply formatting, then check lint and types
+	@printf '\n==> Format repository sources with pre-commit hooks\n'
+	@$(MAKE) --no-print-directory format
+	@printf '\n==> [1/11] Lint repository and verify Python/Markdown formatting\n'
 	@$(MAKE) --no-print-directory lint
 	@printf '\n==> [2/11] Type-check Python workspace with Pyright\n'
 	@$(MAKE) --no-print-directory typecheck
@@ -510,7 +513,7 @@ check: ## Check formatting, lint, and types without rewriting repository sources
 	@$(MAKE) --no-print-directory sdk-typescript-check
 	@printf '\n==> [11/11] Check Foundation CLI with rustfmt and Clippy\n'
 	@$(MAKE) --no-print-directory foundation-cli-check
-	@printf '\n==> Check completed without rewriting repository sources\n'
+	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
 check-all: eip-check examples-check-all foundation-web-check-all harness-ui-check-all python-check-all rust-check-all sdk-check-all foundation-cli-check-all ## Run the complete repository gate
