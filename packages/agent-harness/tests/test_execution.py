@@ -38,6 +38,10 @@ from typing_extensions import TypedDict
 pytestmark = pytest.mark.anyio
 
 
+async def _consume_stream(stream: Any) -> list[Any]:
+    return [item async for item in stream]
+
+
 def _turn_model(calls: list[tuple[ModelMessage, ...]]) -> FunctionModel:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del info
@@ -766,6 +770,54 @@ async def test_concurrent_next_is_rejected_without_closing_the_active_stream() -
             terminal = await asyncio.wait_for(stream.__anext__(), timeout=2)
         assert isinstance(terminal, HarnessRunResultEvent)
         assert terminal.result.status == "cancelled"
+
+
+async def test_stream_steer_delivers_native_asap_input() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[tuple[ModelMessage, ...]] = []
+
+    async def steering_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        calls.append(tuple(messages))
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+            yield "first response"
+        else:
+            yield "done"
+
+    executable = _build(FunctionModel(stream_function=steering_stream))
+    async with executable.stream("initial", bindings=RunBindings.local()) as stream:
+        consumer = asyncio.create_task(_consume_stream(stream))
+        await started.wait()
+        enqueue_id = await stream.steer("additional user context")
+        release.set()
+        items = await asyncio.wait_for(consumer, timeout=2)
+
+        assert enqueue_id
+        assert len(calls) == 2
+        assert "additional user context" in str(calls[1])
+        terminal = items[-1]
+        assert isinstance(terminal, HarnessRunResultEvent)
+        assert terminal.result.output_or_raise() == "done"
+        with pytest.raises(RunError) as terminal_error:
+            await stream.steer("too late")
+        assert terminal_error.value.code == "run_not_active"
+
+
+async def test_stream_steer_requires_an_active_native_run() -> None:
+    executable = _build(_turn_model([]))
+    stream = executable.stream("initial", bindings=RunBindings.local())
+
+    with pytest.raises(RunError) as before_entry:
+        await stream.steer("early")
+    assert before_entry.value.code == "run_not_active"
+
+    async with stream:
+        with pytest.raises(RunError) as before_iteration:
+            await stream.steer("still early")
+        assert before_iteration.value.code == "run_not_active"
 
 
 async def test_usage_limit_has_a_specific_safe_failure() -> None:

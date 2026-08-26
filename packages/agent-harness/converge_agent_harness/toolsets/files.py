@@ -32,14 +32,21 @@ from converge_agent_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._results import ToolFailure
+from ._results import ToolError, ToolFailure
 from ._scoped_files import ScopedFileAccess
 from .file_results import (
+    FileCopyItem,
+    FileCopyToolResult,
+    FileDeleteResult,
     FileEditResult,
     FileGlobResult,
     FileGrepResult,
     FileListResult,
     FileMetadataProjection,
+    FileMkdirResult,
+    FileMoveResult,
+    FileMutationItem,
+    FilePathPairItem,
     FileViewResult,
     FileWriteResult,
 )
@@ -132,6 +139,15 @@ class FileTextEdit(BaseModel):
     replace_all: bool = Field(default=False, description="Replace every occurrence instead of one unique match")
 
 
+class FilePathPair(BaseModel):
+    """One source and destination pair for a file mutation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    src: str = Field(min_length=1, description="Logical source path")
+    dst: str = Field(min_length=1, description="Logical destination path")
+
+
 class FileToolset:
     """Standard file-tool semantics reusable with any FileOperator implementation."""
 
@@ -187,6 +203,41 @@ class FileToolset:
                     description="Apply multiple exact replacements to one file in sequence.",
                 ),
                 self._tool(
+                    self.mkdir,
+                    "filesystem.mkdir",
+                    {"write"},
+                    "none",
+                    name="mkdir",
+                    description="Create multiple directories in one bounded batch.",
+                    superseded_by_tool_ids={"environment.shell_exec"},
+                ),
+                self._tool(
+                    self.move,
+                    "filesystem.move",
+                    {"read", "write", "delete"},
+                    "none",
+                    name="move",
+                    description="Move files or directories using source and destination pairs.",
+                    superseded_by_tool_ids={"environment.shell_exec"},
+                ),
+                self._tool(
+                    self.copy,
+                    "filesystem.copy",
+                    {"read", "write"},
+                    "none",
+                    name="copy",
+                    description="Copy files, including streaming copies across Environment bindings.",
+                ),
+                self._tool(
+                    self.delete,
+                    "filesystem.remove",
+                    {"delete"},
+                    "none",
+                    name="delete",
+                    description="Delete files or directories with explicit recursive and force controls.",
+                    superseded_by_tool_ids={"environment.shell_exec"},
+                ),
+                self._tool(
                     self.ls,
                     "filesystem.ls",
                     {"read"},
@@ -224,6 +275,7 @@ class FileToolset:
         name: str,
         description: str,
         max_output_bytes: int = 4 * 1024 * 1024,
+        superseded_by_tool_ids: set[str] | None = None,
     ) -> HarnessTool:
         return HarnessTool(
             function,
@@ -239,6 +291,7 @@ class FileToolset:
                     redact=True,
                 ),
                 resource_resolver=(self._resource_resolver(tool_id) if self._resource_resolver is not None else None),
+                superseded_by_tool_ids=frozenset(superseded_by_tool_ids or ()),
             ),
             name=name,
             description=description,
@@ -407,6 +460,129 @@ class FileToolset:
     ) -> FileEditResult:
         """Validate all replacements in memory, then publish one final file write."""
         return await self._apply_edits(ctx, file_path, tuple(edits))
+
+    async def mkdir(
+        self,
+        ctx: RunContext[AgentContext],
+        paths: Annotated[
+            Sequence[str],
+            Field(description="Directory paths to create", min_length=1, max_length=256),
+        ],
+        parents: Annotated[bool, Field(description="Create missing parent directories")] = False,
+    ) -> FileMkdirResult:
+        """Create a bounded batch of directories and report each outcome."""
+        del ctx
+        results: list[FileMutationItem] = []
+        async with self._mutation_lock:
+            for path in paths:
+                try:
+                    async with self._file_access.scope(path, prefer_authorized_selection=False) as files:
+                        self._guard_execution()
+                        await files.mkdir(path, parents=parents, exist_ok=False)
+                    results.append({"ok": True, "path": path})
+                except EnvironmentError as exc:
+                    results.append({"ok": False, "path": path, "error": _environment_tool_error(exc)})
+        return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
+
+    async def move(
+        self,
+        ctx: RunContext[AgentContext],
+        pairs: Annotated[
+            Sequence[FilePathPair],
+            Field(description="Source and destination pairs to move", min_length=1, max_length=256),
+        ],
+        overwrite: Annotated[bool, Field(description="Replace existing destinations")] = False,
+    ) -> FileMoveResult:
+        """Move a bounded batch of files or directories within their bindings."""
+        del ctx
+        results: list[FilePathPairItem] = []
+        async with self._mutation_lock:
+            for pair in pairs:
+                try:
+                    await self._file_access.move(
+                        pair.src,
+                        pair.dst,
+                        replace=overwrite,
+                        guard=self._guard_execution,
+                    )
+                    results.append({"ok": True, "src": pair.src, "dst": pair.dst})
+                except EnvironmentError as exc:
+                    results.append(
+                        {
+                            "ok": False,
+                            "src": pair.src,
+                            "dst": pair.dst,
+                            "error": _environment_tool_error(exc),
+                        }
+                    )
+        return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
+
+    async def copy(
+        self,
+        ctx: RunContext[AgentContext],
+        pairs: Annotated[
+            Sequence[FilePathPair],
+            Field(description="Source and destination pairs to copy", min_length=1, max_length=256),
+        ],
+        overwrite: Annotated[bool, Field(description="Replace existing destinations")] = False,
+    ) -> FileCopyToolResult:
+        """Copy a bounded batch of files, including across Environment bindings."""
+        del ctx
+        results: list[FileCopyItem] = []
+        async with self._mutation_lock:
+            for pair in pairs:
+                try:
+                    result = await self._file_access.copy(
+                        pair.src,
+                        pair.dst,
+                        replace=overwrite,
+                        guard=self._guard_execution,
+                    )
+                    results.append(
+                        {
+                            "ok": True,
+                            "src": pair.src,
+                            "dst": pair.dst,
+                            "bytes_copied": result.bytes_copied,
+                        }
+                    )
+                except EnvironmentError as exc:
+                    results.append(
+                        {
+                            "ok": False,
+                            "src": pair.src,
+                            "dst": pair.dst,
+                            "error": _environment_tool_error(exc),
+                        }
+                    )
+        return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
+
+    async def delete(
+        self,
+        ctx: RunContext[AgentContext],
+        paths: Annotated[
+            Sequence[str],
+            Field(description="File or directory paths to delete", min_length=1, max_length=256),
+        ],
+        recursive: Annotated[bool, Field(description="Delete non-empty directories recursively")] = False,
+        force: Annotated[bool, Field(description="Treat missing paths as successful no-ops")] = False,
+    ) -> FileDeleteResult:
+        """Delete a bounded batch while preserving provider root protections."""
+        del ctx
+        results: list[FileMutationItem] = []
+        async with self._mutation_lock:
+            for path in paths:
+                try:
+                    async with self._file_access.scope(path, prefer_authorized_selection=False) as files:
+                        self._guard_execution()
+                        await files.remove(path, recursive=recursive)
+                    results.append({"ok": True, "path": path})
+                except EnvironmentError as exc:
+                    if force and exc.code == "environment_not_found":
+                        results.append({"ok": True, "path": path})
+                    else:
+                        results.append({"ok": False, "path": path, "error": _environment_tool_error(exc)})
+        return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
 
     async def ls(
         self,
@@ -962,6 +1138,10 @@ def _lf_lines(content: str) -> list[str]:
     return lines
 
 
+def _environment_tool_error(exc: EnvironmentError) -> ToolError:
+    return _environment_error_result(exc)["error"]
+
+
 def _environment_error_result(exc: EnvironmentError) -> ToolFailure:
     safe_details: dict[str, JsonValue] = {}
     timeout = exc.details.get("timeout_seconds")
@@ -1036,4 +1216,4 @@ def _matches_file_glob(path: str, *, root: str, pattern: str) -> bool:
     return PurePosixPath(normalized_path).full_match(pattern)
 
 
-__all__ = ["FILE_VIEW_RULES", "FileTextEdit", "FileToolset", "FileViewRule"]
+__all__ = ["FILE_VIEW_RULES", "FilePathPair", "FileTextEdit", "FileToolset", "FileViewRule"]

@@ -33,6 +33,7 @@ class ObjectKind(StrEnum):
 
     agent_snapshot = "agent-snapshot"
     environment_snapshot = "environment-snapshot"
+    resource_revision = "resource-revision"
     skill_package = "skill-package"
     harness_state = "harness-state"
     deferred_requests = "deferred-requests"
@@ -147,6 +148,59 @@ class ImmutableObjectStore:
         """Finish valid staged publications and quarantine malformed candidates."""
 
         return await to_thread.run_sync(self._recover_staging)
+
+    async def remove(self, reference: ObjectRef) -> None:
+        """Remove one unreferenced object selected by the metadata owner."""
+
+        await to_thread.run_sync(self._remove_ref, reference)
+
+    async def remove_expired_unregistered(
+        self,
+        registered_digests: set[str],
+        *,
+        cutoff: datetime,
+    ) -> int:
+        """Remove old final object files that were never registered in SQLite."""
+
+        return await to_thread.run_sync(self._remove_expired_unregistered, registered_digests, cutoff)
+
+    def _remove_ref(self, reference: ObjectRef) -> None:
+        path = self._path_for(reference)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise ObjectIntegrityError(
+                "An expired immutable object could not be removed.",
+                code="object_cleanup_failed",
+            ) from exc
+        if path.parent.exists():
+            self._sync_directory(path.parent)
+
+    def _remove_expired_unregistered(self, registered_digests: set[str], cutoff: datetime) -> int:
+        removed = 0
+        for path in self._layout.objects.glob("*/*/*/*.json.zst"):
+            try:
+                relative = path.relative_to(self._layout.objects)
+                kind, version, prefix, filename = relative.parts
+                digest = filename.removesuffix(".json.zst")
+                reference = ObjectRef(
+                    object_kind=ObjectKind(kind),
+                    object_schema_version=version,
+                    logical_digest=digest,
+                )
+                metadata = path.stat(follow_symlinks=False)
+            except (OSError, ValueError):
+                continue
+            if (
+                reference.logical_digest in registered_digests
+                or prefix != reference.logical_digest[:2]
+                or self._path_for(reference) != path
+                or datetime.fromtimestamp(metadata.st_mtime, tz=UTC) >= cutoff
+            ):
+                continue
+            self._remove_ref(reference)
+            removed += 1
+        return removed
 
     def _publish(
         self,

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from converge_agent_ui.configuration.models import ConfigurationSettings
+
 
 class DurabilityProfile(StrEnum):
     """Local persistence durability selected for one application lifetime."""
@@ -41,9 +43,23 @@ class AgentUiSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     storage: StorageSettings
+    configuration: ConfigurationSettings = ConfigurationSettings()
+    process_settings_path: Path | None = None
     shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=300)
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: str = Field(default="pretty", pattern="^(pretty|json)$")
+
+    @field_validator("process_settings_path")
+    @classmethod
+    def _normalize_process_settings_path(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        if "\x00" in str(value) or not value.expanduser().is_absolute():
+            raise ValueError("process_settings_path must be an absolute YAML or JSON path")
+        expanded = value.expanduser()
+        if expanded.suffix.lower() not in {".yaml", ".yml", ".json"}:
+            raise ValueError("process_settings_path must use YAML or JSON")
+        return expanded.resolve(strict=False)
 
     @field_validator("log_level")
     @classmethod

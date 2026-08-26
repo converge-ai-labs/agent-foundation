@@ -1,17 +1,23 @@
 # Agent Environment Provider
 
-`converge-agent-environment-provider` is the shared Environment provider library for Converge agents. The repository directory is `packages/agent-environment-provider`, the Python distribution is `converge-agent-environment-provider`, and the import package is `converge_agent_environment_provider`.
+`converge-agent-environment-provider` is the shared Host-facing Environment provider library for Converge agents. The repository directory is `packages/agent-environment-provider`, the Python distribution is `converge-agent-environment-provider`, and the import package is `converge_agent_environment_provider`.
 
-The package exposes the shared process-local runtime attachment boundary and explicit EIP session sources:
+The package owns:
 
-- `EIPEnvironmentAttachment` and the exhaustive `EnvironmentRuntimeAttachment` union;
-- `StdioEIPSessionSource` for a private asyncio subprocess;
-- `HttpEIPSessionSource` for an authenticated Host-dialed HTTP(S) endpoint;
-- `AcceptedWebSocketEIPSessionSource` for an already-authenticated `websockets.ServerConnection` accepted by the Host.
+- credential-free `EnvironmentProviderSpec` envelopes and exact versioned provider configuration;
+- explicitly selected built-in and extension factory catalogs;
+- Host-facing `EnvironmentManager` lifecycle and reconciliation contracts;
+- sensitive provider-owned resource-state envelopes;
+- single-entry managed-resource scopes and fresh runtime attachments;
+- typed provider errors with bounded safe projections;
+- the working `converge.direct-local` built-in;
+- EIP attachment and session-source values shared with future managed sandbox providers.
 
-Each source and attachment is single-use and creates one fresh initialized EIP session. The package owns carrier acquisition but not EIP method semantics, Harness operation adaptation, product authentication, or durable provider state. Provider Manager and built-in Docker/E2B lifecycle implementations remain separate package capabilities.
+The package does not own durable storage, Host authorization or scheduling, Harness runs, model-facing tools, or provider-neutral Environment operations. A Host selects and manages a provider resource, keeps any provider state, and transfers a fresh attachment to `converge-agent-harness`. The Harness adapts that attachment into one single-use Environment binding.
 
-The package is a pure Python library and intentionally has no package-specific service image or Dockerfile. Repository sandbox-image work uses the shared [`deploy/containers/sandbox/Dockerfile`](../../deploy/containers/sandbox/Dockerfile).
+Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd and Docker are intentionally deferred until their working Block 9 implementations; E2B is deferred until Block 10. The catalog contains no placeholder factories or fallback provider selection.
+
+See the [Environment Provider guide](../../docs/agent-environment-provider/index.md) for Host orchestration and third-party plugin development.
 
 ## Versioning
 

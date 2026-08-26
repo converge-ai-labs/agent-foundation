@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "converge-agent-envd-client",
+    "pydantic>=2.12,<3",
     "websockets>=15,<16",
 ]
 

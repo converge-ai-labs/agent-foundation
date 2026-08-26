@@ -56,12 +56,14 @@ This fixed role model keeps generated requester stubs on the client/control-serv
 
 ## Session Model
 
-Each accepted stdio carrier and successfully upgraded reverse-WebSocket connection creates one fresh uninitialized EIP session. In HTTP, the first authenticated control POST carrying `initialize` creates the session and returns its opaque selector in a protected response header.
+Each successfully upgraded reverse-WebSocket connection creates one fresh uninitialized EIP session. A trusted stdio carrier belongs to one daemon generation and can admit a sequence of fresh uninitialized sessions, exactly one at a time: initial admission and every admission after a successfully completed `session.close` require a new `initialize` request. In HTTP, the first authenticated control POST carrying `initialize` creates the session and returns its opaque selector in a protected response header.
+
+This state machine describes one logical session rather than the lifetime of an underlying stdio carrier:
 
 ```mermaid
 stateDiagram-v2
     [*] --> CarrierEstablished
-    CarrierEstablished --> Uninitialized: carrier trust succeeds
+    CarrierEstablished --> Uninitialized: carrier or session admission succeeds
     CarrierEstablished --> Closed: framing or attachment authentication fails
     Uninitialized --> Initialized: first request is successful initialize
     Uninitialized --> Closed: initialization fails or times out
@@ -83,6 +85,8 @@ A session is not a Harness run, tenant, principal, generation lease, or resource
 Carrier loss destroys the session and all session-owned transfers. Generation-owned operations, handoff-complete commits, processes, receipts, and command output remain under their daemon records. A later reverse-WebSocket connection always initializes a new session; it never resumes the prior WebSocket, request correlation table, reader, writer, or binary stream.
 
 `session.close` atomically stops later session admission before cleaning session-owned transfers. A concurrently admitted `file.commit_writer` either completes its candidate handoff first and becomes operation-owned, or loses to session closing and remains cleanup-owned by the session. Session close does not cancel operations, close process stdin, terminate processes, or release command output.
+
+For trusted stdio, successful close is also a reuse barrier: envd cleans the old session, clears all session-scoped request and transfer state, fully writes the `session.close` response, and returns the same physical carrier to uninitialized admission. The next admitted control frame must be a fresh `initialize`; no prior request ID, transfer, or session selector remains valid. The requester returns a healthy carrier lease only after it receives that close response. Lost close response, failed initialization, malformed framing, fatal protocol error, or carrier EOF makes reuse unsafe and closes the carrier rather than guessing whether it rearmed.
 
 ## Shared Carrier Rules
 
@@ -176,7 +180,7 @@ Content-Type: application/vnd.converge.eip-data\r\n
 
 Stdin carries requester-to-envd control and data frames. Stdout carries envd-to-requester control and data frames. A fair scheduler never splits an outer frame. Stderr carries structured daemon logs and never protocol frames. Command stdout and stderr remain command-output data and never appear on daemon stdout.
 
-Stdio has no bearer credential. Its trust boundary requires the provider to create private pipes, launch the expected executable with trusted configuration, validate child ownership, and prevent another principal from replacing or attaching to the descriptors. The first request is `initialize`. Parent stdin EOF is carrier loss and normally also triggers daemon shutdown because the parent owns this daemon lifecycle. EOF is never successful transfer EOF or evidence that an operation was not dispatched.
+Stdio has no bearer credential. Its trust boundary requires the provider to create private pipes, launch the expected executable with trusted configuration, validate child ownership, and prevent another principal from replacing or attaching to the descriptors. The physical pipes remain generation-owned across a clean logical-session close; the first request on initial admission and after every successful close barrier is `initialize`. Failed initialization or fatal framing/protocol state makes that physical carrier unusable. Parent stdin EOF is carrier loss and normally also triggers daemon shutdown because the parent owns this daemon lifecycle. EOF is never successful transfer EOF or evidence that an operation was not dispatched.
 
 ## Host-Dialed HTTP Profile
 
@@ -320,15 +324,11 @@ A provider selects stdio, HTTP, or reverse WebSocket before session establishmen
 03. Only the HTTP profile binds an inbound EIP listener; envd exposes no inbound WebSocket, browser, generic HTTP, arbitrary download/upload, health, or readiness API.
 04. Public or provider-routed HTTP uses validated HTTPS; plaintext HTTP is limited to an explicitly trusted loopback or private provider link. Reverse WebSocket retains its defined `ws`/validated `wss` endpoint policy, token, redirect, and `eip.v1` rules.
 05. Every carrier requires its defined bootstrap authentication except trusted private stdio, and credentials/session selectors never enter URLs, cookies, EIP payloads, model state, or ordinary observability.
-06. The requester's first EIP request is `initialize`, and every successful carrier or HTTP initialization creates a fresh session; one daemon admits at most one active initialized session and supports fresh sequential sessions.
+06. The requester's first EIP request is `initialize`, and every successful carrier or HTTP initialization creates a fresh session; one daemon admits at most one active initialized session and supports fresh sequential sessions, including cleanly rearmed sessions over one generation-owned stdio carrier.
 07. Carrier or request loss removes affected session transfer delivery but does not erase generation-owned operations, processes, receipts, or command output.
-08. Reconnect never automatically replays a request or resumes a file transfer.
+08. Reconnect or stdio rearming never automatically replays a request or resumes a file transfer.
 09. Every transfer has one session, direction, attachment, exact byte sequence, finite bounds, and typed completion.
 10. Reader acceptance occurs only through successful `file.close_reader`; a writer upload acknowledgement precedes commit on every carrier.
 11. Stdio stdout contains only framed EIP traffic and stderr contains only logs.
 12. Missing/rejected reverse-WebSocket tokens and invalid TLS/subprotocol are generation-fatal; transient reverse connectivity uses capped exponential backoff with full jitter.
 13. Closing a carrier or HTTP request never proves cancellation, non-dispatch, successful file EOF, or mutation failure.
-    t precedes commit on every carrier.
-14. Stdio stdout contains only framed EIP traffic and stderr contains only logs.
-15. Missing/rejected reverse-WebSocket tokens and invalid TLS/subprotocol are generation-fatal; transient reverse connectivity uses capped exponential backoff with full jitter.
-16. Closing a carrier or HTTP request never proves cancellation, non-dispatch, successful file EOF, or mutation failure.

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`AgentDefinition` is the immutable process-local input used to build one reusable Harness executable. It is a Python composition boundary, not a durable document or wire format. It combines the native Pydantic AI `AgentSpec` with one build-time output contract, a trusted native model, top-level Capabilities, Harness plugins, and named complete child definitions. Capability is the only top-level feature-behavior composition plane: function tools and Toolsets are owned by a Capability rather than supplied through peer `AgentDefinition` fields.
+`AgentDefinition` is the immutable process-local input used to build one reusable Harness executable. It is a Python composition boundary, not a durable document or wire format. It combines the Harness `AgentSpec`, a narrow subclass of native Pydantic AI `AgentSpec`, with one build-time output contract, a trusted native model, top-level Capabilities, Harness plugins, and named complete child definitions. Capability is the only top-level feature-behavior composition plane: function tools and Toolsets are owned by a Capability rather than supplied through peer `AgentDefinition` fields. A native Pydantic AI `AgentSpec` remains accepted when no Harness model configuration is needed.
 
 The Harness does not compile, serialize, reload, or discover Agent definitions. A hosted system owns its serializable Agent definition and dependency-lock schemas, then reconstructs the trusted Python objects required by `AgentDefinition` inside the execution process. Direct plugins remain such inputs. Separately, one builder may apply the narrow [Harness-owned plugin configuration](05-plugin-system.md#configuration-document) after definition construction; this removes plugin reconstruction from the Host without turning the document into an Agent format. Python objects, factory classes, and import targets never pass through a hosted API or durable record.
 
@@ -37,7 +37,7 @@ class AgentDefinition[OutputT]:
 
 | Field            | Meaning                                                                                                          |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `agent`          | Native Pydantic AI declarative Agent configuration                                                               |
+| `agent`          | Harness or native Pydantic AI declarative Agent configuration                                                    |
 | `output_type`    | Explicit native process-local `OutputSpec`, or `None` to select the object schema in `AgentSpec.output_schema`   |
 | `definition_id`  | Non-blank logical correlation value; it grants no authority                                                      |
 | `model`          | Optional native Model or model name overriding the `AgentSpec` selection                                         |
@@ -49,7 +49,24 @@ class AgentDefinition[OutputT]:
 
 Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. Child names are unique within one parent. The finite acyclic child graph and its exact `SubagentDefinition` contract are owned by [Delegation and Subagents](11-delegation-and-subagents.md#child-definitions-and-built-collection). The Harness does not require every trusted Python object to be serializable, hashable, deeply immutable, or reconstructible from metadata. Reentrancy remains the responsibility of native objects and Agent-bound extensions whose instances are shared by concurrent runs.
 
-`AgentSpec` remains the owner of instructions, request settings, output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. Exactly one build-time output source is selected: an explicit `AgentDefinition.output_type`, or native `AgentSpec.output_schema` when `output_type is None`. The latter produces `dict[str, JsonValue]`; `None` without a schema and an explicit output together with a schema are rejected. Native `OutputSpec`, Model profiles, Capability-owned tools and Toolsets, and explicit Capability instances retain their upstream Pydantic AI semantics. The Harness does not mirror those types in a second schema.
+`AgentSpec` remains the owner of instructions, request settings, output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. The Harness subclass adds only `model_config`, a resolved `ModelConfiguration` describing model characteristics that native provider `ModelProfile` does not own. Exactly one build-time output source is selected: an explicit `AgentDefinition.output_type`, or native `AgentSpec.output_schema` when `output_type is None`. The latter produces `dict[str, JsonValue]`; `None` without a schema and an explicit output together with a schema are rejected. Native `OutputSpec`, Model profiles, Capability-owned tools and Toolsets, and explicit Capability instances retain their upstream Pydantic AI semantics. The Harness does not mirror those types in a second schema.
+
+```python
+class ModelConfiguration(BaseModel):
+    context_window: int | None = None
+    proactive_context_management_threshold: float | None = 0.65
+    compact_threshold: float = 0.90
+
+class AgentSpec(PydanticAgentSpec):
+    model_configuration: ModelConfiguration | None = Field(
+        default=None,
+        alias="model_config",
+    )
+```
+
+`ModelConfiguration` is the resolved per-model value, not a provider request setting or a replacement for native `ModelProfile`. `context_window=None` means the Harness cannot derive context thresholds. When known, the builder derives the summarize reminder threshold as `int(context_window * proactive_context_management_threshold)` and the compaction trigger as `int(context_window * compact_threshold)`. A `None` proactive threshold disables the automatic summarize reminder. The defaults are 65% and 90%, matching the context lifecycle rather than a provider wire contract.
+
+A Host or preset layer may select and materialize `ModelConfiguration`, but the Harness does not infer it from a model name and does not yet ship concrete model declarations. Model configuration parameterizes an explicitly selected `HandoffCapability` or `CompactionCapability`; it never enables either feature implicitly. Explicit Capability token settings take precedence. `CompactionCapability()` without an explicit policy requires a known model context window and is resolved once at build time.
 
 ## Build API
 
@@ -111,12 +128,13 @@ The build flow is:
 02. Create fresh configured plugin instances for the current definition, append them after direct definition plugins, and validate and deterministically order the combined tuple.
 03. Call each plugin's `for_agent()` and validate stable concrete type, ID, and ordering.
 04. Collect the Agent-bound plugins' ordinary Pydantic `AbstractCapability[AgentContext]` contributions.
-05. Install one thin `ResolveModelId` Capability, exactly one outer `ToolExecutionBoundaryCapability`, and exactly one innermost `MessageIntegrityFilterCapability` for every Agent.
-06. Wrap a concrete build-time Model in `SelfHealingModel` when self-healing is enabled.
-07. Resolve exactly one build-time business output. Prepare an explicit `OutputSpec`, or construct native `StructuredDict` from a detached `AgentSpec.output_schema` and clear that field only on the temporary construction copy.
-08. Form the complete native output contract as `[business_output, DeferredToolRequests]`; the reserved control type is outside every business output marker.
-09. Call `Agent.from_spec()` once with `deps_type=AgentContext`, the copied `AgentSpec`, the complete output contract, the selected model, the exact authorized custom Capability types, explicit Capabilities, and plugin contributions. No top-level `tools` or `toolsets` argument is supplied, and runs do not override output type.
-10. Build the matching business-output validator and return an `ExecutableAgent` owning the immutable child collection.
+05. Resolve automatic Handoff and Compaction thresholds once from the copied Harness `AgentSpec.model_config`; explicit Capability token settings remain unchanged.
+06. Install one thin `ResolveModelId` Capability, exactly one mandatory `ToolSurfaceCapability`, exactly one outer `ToolExecutionBoundaryCapability`, and exactly one innermost `MessageIntegrityFilterCapability` for every Agent. Tool ordering places ordinary candidates inside tool-surface resolution, optional CodeAct outside the effective surface, and the execution boundary outermost.
+07. Wrap a concrete build-time Model in `SelfHealingModel` when self-healing is enabled.
+08. Resolve exactly one build-time business output. Prepare an explicit `OutputSpec`, or construct native `StructuredDict` from a detached `AgentSpec.output_schema` and clear that field only on the temporary construction copy.
+09. Form the complete native output contract as `[business_output, DeferredToolRequests]`; the reserved control type is outside every business output marker.
+10. Call `Agent.from_spec()` once with `deps_type=AgentContext`, the copied `AgentSpec`, the complete output contract, the selected model, the exact authorized custom Capability types, explicit Capabilities, and plugin contributions. No top-level `tools` or `toolsets` argument is supplied, and runs do not override output type.
+11. Build the matching business-output validator and return an `ExecutableAgent` owning the immutable child collection.
 
 `defer_model_check=True` is always used so a logical string can reach the run-scoped resolver after fresh `RunBindings` exist. The resolver delegates to native Pydantic inference when the run has no `ModelRunBinding`; this is ordinary embedded behavior, not a second settings or registry system. The exact resolution and recovery contract is owned by [Input, Model, and Output Boundaries](16-input-model-and-output.md).
 

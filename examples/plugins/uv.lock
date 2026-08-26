@@ -67,12 +67,14 @@ version = "0.0.0"
 source = { editable = "../../packages/agent-environment-provider" }
 dependencies = [
     { name = "converge-agent-envd-client" },
+    { name = "pydantic" },
     { name = "websockets" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "converge-agent-envd-client", editable = "../../packages/agent-envd-client" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]
 
@@ -114,6 +116,7 @@ name = "converge-plugin-examples"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "converge-agent-environment-provider" },
     { name = "converge-agent-harness" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
@@ -128,6 +131,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "converge-agent-environment-provider", editable = "../../packages/agent-environment-provider" },
     { name = "converge-agent-harness", editable = "../../packages/agent-harness" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.31.1,<2.32" },

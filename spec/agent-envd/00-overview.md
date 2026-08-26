@@ -84,7 +84,7 @@ One canonical Protobuf descriptor generates Rust daemon models/dispatch and Pyth
 
 ### Session and method dispatch
 
-Every carrier creates a fresh session whose first request is `initialize`. Initialization verifies expected Environment identity, negotiates EIP version, checks exact `required_methods`, and returns configured mounts, optional root mount, exact `available_methods`, client-actionable limits, exact optional execution-feature support, generation, and isolation posture.
+Every successfully initialized HTTP session or reverse-WebSocket connection is fresh and begins with `initialize`. One generation-owned trusted stdio carrier can host fresh sequential sessions, exactly one at a time; initial admission and every admission after a successful `session.close` barrier require a new `initialize`. Initialization verifies expected Environment identity, negotiates EIP version, checks exact `required_methods`, and returns configured mounts, optional root mount, exact `available_methods`, client-actionable limits, exact optional execution-feature support, generation, and isolation posture.
 
 A session owns only its reader/writer handles and attachments. Accepted operations, processes, receipts, and command output belong to daemon generation owners and can survive reverse-WebSocket reconnect within that generation.
 

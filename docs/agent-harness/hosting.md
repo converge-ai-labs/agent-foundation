@@ -140,7 +140,7 @@ Start with the embedded path and add Host-owned durable boundaries only when the
 
 ## Runnable Example
 
-The [Host persistence example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/hosting) runs entirely offline and demonstrates:
+The `host` layer of the [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates:
 
 - Host-owned Execution and ExecutionAttempt records;
 - opaque fencing and stale-attempt rejection;

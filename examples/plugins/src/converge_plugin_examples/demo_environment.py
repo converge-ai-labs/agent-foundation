@@ -8,19 +8,25 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
+from converge_agent_environment_provider import (
+    EnvironmentManagementAction,
+    EnvironmentOperationContext,
+    EnvironmentProviderFactoryCatalog,
+    EnvironmentProviderSpec,
+    build_environment_provider_factory_catalog,
+    discover_environment_provider_factory_references,
+)
 from converge_agent_harness import (
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentPermissionSet,
     EnvironmentProviderBinding,
-    EnvironmentProviderFactoryCatalog,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
     RunBindings,
-    build_environment_provider_factory_catalog,
+    create_environment_provider_binding,
     create_environment_run_binding,
-    discover_environment_provider_factory_references,
 )
 from pydantic import JsonValue
 
@@ -38,12 +44,26 @@ class EnvironmentDemoResult:
     docs_text: str
 
 
-def _provider_configuration(root: Path, environment_id: str) -> dict[str, JsonValue]:
-    return {
+def _provider_spec(root: Path, environment_id: str) -> EnvironmentProviderSpec:
+    parameters: dict[str, JsonValue] = {
         "root": str(root),
         "environment_id": environment_id,
         "read_only": True,
     }
+    return EnvironmentProviderSpec(
+        provider_key=PROVIDER_KEY,
+        schema_version="1",
+        parameters=parameters,
+    )
+
+
+def _operation(action: EnvironmentManagementAction, environment_id: str) -> EnvironmentOperationContext:
+    return EnvironmentOperationContext(
+        operation_id=f"operation-{action.value}-{environment_id}",
+        action=action,
+        resource_correlation=f"resource-{environment_id}",
+        attempt=1,
+    )
 
 
 def _binding_request(
@@ -69,38 +89,65 @@ async def _run_environment_demo(
     source_root: Path,
     docs_root: Path,
 ) -> EnvironmentDemoResult:
-    source = catalog.create_provider_binding(
-        PROVIDER_KEY,
-        _provider_configuration(source_root, "workspace-source"),
-    )
-    docs = catalog.create_provider_binding(
-        PROVIDER_KEY,
-        _provider_configuration(docs_root, "workspace-docs"),
-    )
-    topology = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            _binding_request(binding_id="workspace-1", alias="source", provider_binding=source),
-            _binding_request(binding_id="docs-1", alias="docs", provider_binding=docs),
-        ),
-        default_binding_id="workspace-1",
-    )
-    environment_binding = create_environment_run_binding(
-        initial_topology=topology,
-        topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=1),
-        state_limits=EnvironmentStateLimits(max_binding_entries=2),
-    )
-    run_bindings = RunBindings.local(environment=environment_binding)
+    from converge_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
-    # HarnessRunStream performs this same aggregate bind/activate lifecycle.
-    async with run_bindings.environment.bind(
-        run_id="run-example",
-        instance=run_bindings.instance,
-    ) as environment:
-        await environment.activate()
-        default_page = await environment.files.read_text("/workspace/message.txt")
-        docs_page = await environment.files.read_text("/environment/docs/message.txt")
-        aliases = tuple(binding.alias for binding in environment.topology.bindings)
+    source_manager = catalog.create_manager(
+        _provider_spec(source_root, "workspace-source"),
+        runtime=WorkspaceEnvironmentRuntime(),
+    )
+    docs_manager = catalog.create_manager(
+        _provider_spec(docs_root, "workspace-docs"),
+        runtime=WorkspaceEnvironmentRuntime(),
+    )
+    source_resource = await source_manager.create(
+        operation=_operation(EnvironmentManagementAction.CREATE, "workspace-source")
+    )
+    docs_resource = await docs_manager.create(
+        operation=_operation(EnvironmentManagementAction.CREATE, "workspace-docs")
+    )
+    source_state = source_resource.state
+    docs_state = docs_resource.state
+
+    async with source_resource, docs_resource:
+        async with (
+            source_resource.acquire_attachment() as source_attachment,
+            docs_resource.acquire_attachment() as docs_attachment,
+        ):
+            source = create_environment_provider_binding(source_attachment)
+            docs = create_environment_provider_binding(docs_attachment)
+            topology = EnvironmentTopologyRequest(
+                topology_version=1,
+                bindings=(
+                    _binding_request(binding_id="workspace-1", alias="source", provider_binding=source),
+                    _binding_request(binding_id="docs-1", alias="docs", provider_binding=docs),
+                ),
+                default_binding_id="workspace-1",
+            )
+            environment_binding = create_environment_run_binding(
+                initial_topology=topology,
+                topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=1),
+                state_limits=EnvironmentStateLimits(max_binding_entries=2),
+            )
+            run_bindings = RunBindings.local(environment=environment_binding)
+
+            # HarnessRunStream performs this same aggregate bind/activate lifecycle.
+            async with run_bindings.environment.bind(
+                run_id="run-example",
+                instance=run_bindings.instance,
+            ) as environment:
+                await environment.activate()
+                default_page = await environment.files.read_text("/workspace/message.txt")
+                docs_page = await environment.files.read_text("/environment/docs/message.txt")
+                aliases = tuple(binding.alias for binding in environment.topology.bindings)
+
+    await source_manager.destroy(
+        source_state,
+        operation=_operation(EnvironmentManagementAction.DESTROY, "workspace-source"),
+    )
+    await docs_manager.destroy(
+        docs_state,
+        operation=_operation(EnvironmentManagementAction.DESTROY, "workspace-docs"),
+    )
 
     return EnvironmentDemoResult(
         selection_mode=selection_mode,
@@ -121,7 +168,7 @@ async def run_environment_entrypoint_demo(
     references = discover_environment_provider_factory_references()
     if PROVIDER_KEY not in {reference.provider_key for reference in references}:
         raise RuntimeError(f"Installed Environment provider factory {PROVIDER_KEY!r} was not discovered")
-    catalog = build_environment_provider_factory_catalog(provider_keys=(PROVIDER_KEY,))
+    catalog = build_environment_provider_factory_catalog(extension_keys=(PROVIDER_KEY,))
     return await _run_environment_demo(
         selection_mode="entrypoint",
         catalog=catalog,

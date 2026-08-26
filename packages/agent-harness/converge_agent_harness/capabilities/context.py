@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections import deque
-from collections.abc import Awaitable, Callable
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -18,14 +18,15 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import (
     BaseToolReturnPart,
     ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
+    TextPart,
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
+from pydantic_ai.usage import UsageLimits
 
 from converge_agent_harness._json import dump_json_bytes
 from converge_agent_harness.capabilities.lifecycle import active_model_request_index
@@ -51,6 +52,7 @@ from converge_agent_harness.model_context import (
     _requires_exact_boundary,
     _requires_exact_history,
 )
+from converge_agent_harness.tools.invocation import disabled_tool_execution
 
 RUNTIME_CONTEXT_CAPABILITY_ID = "converge.runtime-context"
 WORKSPACE_OUTLINE_CAPABILITY_ID = "converge.workspace-outline"
@@ -68,7 +70,11 @@ _HANDOFF_REMINDER_CLOSE = "</context-reminder>"
 _HANDOFF_METADATA_KEY = "converge.context"
 _RESTORED_BOUNDARY_METADATA_KEY = "converge.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
-_COMPACTION_PROMPT_PREFIX = "Context compaction is required before continuing."
+_COMPACTION_PROMPT = (
+    "Create a concise plain-text continuation summary of the conversation so far. Preserve the user's intent, "
+    "completed work, decisions, unresolved work, relevant prior interactions, and the immediate next step. "
+    "Do not call tools and do not continue the task. Return only the summary."
+)
 
 
 class RuntimeContextConfiguration(BaseModel):
@@ -484,9 +490,9 @@ class _HandoffState(BaseModel):
     operation_id: str | None = Field(default=None, min_length=1, max_length=128)
     summary: str | None = None
     files: tuple[str, ...] = Field(default=(), max_length=64)
-    kind: Literal["handoff", "compaction"] = "handoff"
-    preserve_recent_user_turns: int = Field(default=0, ge=0, le=32)
-    target_tokens: int | None = Field(default=None, gt=0)
+    kind: Literal["handoff", "compaction"] = Field(default="handoff", exclude=True)
+    preserve_recent_user_turns: int = Field(default=0, ge=0, le=32, exclude=True)
+    target_tokens: int | None = Field(default=None, gt=0, exclude=True)
 
     @field_validator("files")
     @classmethod
@@ -499,8 +505,11 @@ class _HandoffState(BaseModel):
 
     @model_validator(mode="after")
     def _validate_operation_identity(self) -> _HandoffState:
-        if self.operation_id is not None and not self.operation_id.startswith(f"{self.kind}-"):
-            raise ValueError("context operation identity does not match its kind")
+        if self.operation_id is None:
+            return self
+        expected_prefix = "compaction-" if self.kind == "compaction" else "handoff-"
+        if not self.operation_id.startswith(expected_prefix):
+            raise ValueError("handoff operation identity is invalid")
         return self
 
 
@@ -530,10 +539,20 @@ class HandoffCapability(AbstractModelContextCapability):
 
         replacement = HandoffCapability(self.configuration)
         replacement._context = ctx.deps
-        state = (
-            await ctx.deps.state.read(HANDOFF_CAPABILITY_ID, _HandoffState, version=_CONTEXT_STATE_VERSION)
-            or _HandoffState()
+        restored = await ctx.deps.state.read(
+            HANDOFF_CAPABILITY_ID,
+            _HandoffState,
+            version=_CONTEXT_STATE_VERSION,
         )
+        state = restored or _HandoffState()
+        if state.kind == "compaction":
+            state = _HandoffState()
+        if restored is not None:
+            await ctx.deps.state.write(
+                HANDOFF_CAPABILITY_ID,
+                state,
+                version=_CONTEXT_STATE_VERSION,
+            )
         replacement._toolset = HandoffToolset(owner=replacement, context=ctx.deps, state=state)
         ctx.deps._record_run_capability(HANDOFF_CAPABILITY_ID, replacement)
         return replacement
@@ -602,8 +621,13 @@ class HandoffCapability(AbstractModelContextCapability):
         state = self._toolset.state
         if state.summary is None or _requires_exact_boundary(ctx, request_context.messages):
             return request_context
+        retained_requests = ctx.deps._steering.retained_requests
         try:
-            messages = _build_restored_history(request_context.messages, state)
+            messages = _build_restored_history(
+                request_context.messages,
+                state,
+                original_request=retained_requests[0] if retained_requests else None,
+            )
         except BaseException as exc:
             try:
                 await self._toolset.replace_state(_HandoffState())
@@ -613,51 +637,6 @@ class HandoffCapability(AbstractModelContextCapability):
             await _emit_context_failure(ctx, state, phase="history_replacement", exc=exc, retryable=False)
             raise
         replacement = _replace_messages(request_context, messages)
-        if state.kind == "handoff":
-            try:
-                await self._toolset.replace_state(_HandoffState())
-            except BaseException as exc:
-                await _emit_context_failure(ctx, state, phase="state_clear", exc=exc, retryable=True)
-                raise
-            await emit_harness_event(
-                ctx.deps.events,
-                kind="context",
-                payload=ContextOperationCompletedPayload(
-                    type="handoff_completed",
-                    operation_id=_require_operation_id(state),
-                ),
-            )
-        return replacement
-
-    async def arm_compaction(
-        self,
-        ctx: RunContext[AgentContext],
-        *,
-        preserve_recent_user_turns: int,
-        target_tokens: int,
-    ) -> None:
-        if self._context is not ctx.deps or self._toolset is None:
-            raise DefinitionError("Handoff cannot cross logical runs.", code="capability_scope_invalid")
-        state = _HandoffState(
-            operation_id=f"compaction-{token_urlsafe(9)}",
-            kind="compaction",
-            preserve_recent_user_turns=preserve_recent_user_turns,
-            target_tokens=target_tokens,
-        )
-        await self._toolset.replace_state(state)
-        await emit_harness_event(
-            ctx.deps.events,
-            kind="context",
-            payload=ContextOperationStartedPayload(
-                type="compaction_started",
-                operation_id=_require_operation_id(state),
-            ),
-        )
-
-    async def complete_compaction(self, ctx: RunContext[AgentContext]) -> None:
-        if self._context is not ctx.deps or self._toolset is None:
-            raise DefinitionError("Handoff cannot cross logical runs.", code="capability_scope_invalid")
-        state = self._toolset.state
         try:
             await self._toolset.replace_state(_HandoffState())
         except BaseException as exc:
@@ -667,41 +646,35 @@ class HandoffCapability(AbstractModelContextCapability):
             ctx.deps.events,
             kind="context",
             payload=ContextOperationCompletedPayload(
-                type="compaction_completed",
+                type="handoff_completed",
                 operation_id=_require_operation_id(state),
             ),
         )
+        return replacement
 
 
 class CompactionPolicy(BaseModel):
-    """Finite same-model compaction trigger and continuation target."""
+    """Absolute provider-usage threshold for same-Agent plain-text compaction."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     trigger_tokens: int = Field(gt=0)
-    target_tokens: int = Field(gt=0)
-    preserve_recent_user_turns: int = Field(default=1, ge=0, le=32)
-
-    @model_validator(mode="after")
-    def _validate_target(self) -> CompactionPolicy:
-        if self.target_tokens >= self.trigger_tokens:
-            raise ValueError("compaction target_tokens must be lower than trigger_tokens")
-        return self
 
 
 @dataclass(init=False)
 class CompactionCapability(AbstractCapability[AgentContext]):
-    """Force the same main model to call summarize before the configured limit."""
+    """Replace long history with a cache-friendly plain-text nested run."""
 
     id = COMPACTION_CAPABILITY_ID
 
-    def __init__(self, policy: CompactionPolicy) -> None:
-        if not isinstance(policy, CompactionPolicy):
+    def __init__(self, policy: CompactionPolicy | None = None) -> None:
+        if policy is not None and not isinstance(policy, CompactionPolicy):
             policy = CompactionPolicy.model_validate(policy, strict=True)
-        self.policy = policy.model_copy(deep=True)
+        self.policy = policy.model_copy(deep=True) if policy is not None else None
+        self._depth = 0
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="innermost", requires=(HandoffCapability,), wrapped_by=(HandoffCapability,))
+        return CapabilityOrdering(position="innermost")
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(COMPACTION_CAPABILITY_ID)
@@ -712,6 +685,11 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                     code="capability_type_mismatch",
                 )
             return existing
+        if self.policy is None:
+            raise DefinitionError(
+                "Compaction requires a policy or a model configuration with a context window.",
+                code="compaction_policy_unresolved",
+            )
         replacement = CompactionCapability(self.policy)
         ctx.deps._record_run_capability(COMPACTION_CAPABILITY_ID, replacement)
         return replacement
@@ -721,131 +699,184 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        if _requires_exact_boundary(ctx, request_context.messages):
+        if self.policy is None:
+            raise DefinitionError("Compaction policy was not resolved.", code="compaction_policy_unresolved")
+        if self._depth > 0 or _requires_exact_boundary(ctx, request_context.messages):
             return request_context
-        handoff = ctx.capabilities.get(HANDOFF_CAPABILITY_ID)
-        if not isinstance(handoff, HandoffCapability) or handoff._toolset is None:
-            raise DefinitionError(
-                "Compaction requires the finalized HandoffCapability.",
-                code="compaction_handoff_missing",
-            )
-        outgoing_tokens = _outgoing_token_estimate(request_context.messages)
+        request_tokens = _latest_request_tokens(request_context.messages)
+        if request_tokens is None:
+            return request_context
         await emit_harness_event(
             ctx.deps.events,
             kind="context",
             payload=ContextSnapshotPayload(
                 request_index=active_model_request_index(ctx),
-                estimated_tokens=outgoing_tokens,
+                request_tokens=request_tokens,
                 trigger_tokens=self.policy.trigger_tokens,
-                target_tokens=self.policy.target_tokens,
-                preserve_recent_user_turns=self.policy.preserve_recent_user_turns,
-                compaction_pending=handoff._toolset.state.operation_id is not None,
             ),
         )
-        if _is_current_restored_boundary(request_context.messages):
-            final = request_context.messages[-1]
-            assert isinstance(final, ModelRequest)
-            if final.metadata is not None and final.metadata.get(_HANDOFF_METADATA_KEY) == "compaction":
-                estimated_tokens = _serialized_token_estimate(request_context.messages)
-                if estimated_tokens > self.policy.target_tokens:
-                    error = DefinitionError(
-                        "Compacted history exceeds target_tokens after dynamic context assembly.",
-                        code="compaction_target_unreachable",
-                        details={
-                            "target_tokens": self.policy.target_tokens,
-                            "estimated_tokens": estimated_tokens,
-                        },
-                    )
-                    failed_state = handoff._toolset.state
-                    try:
-                        await handoff._toolset.replace_state(_HandoffState())
-                    except BaseException as clear_exc:
-                        await _emit_context_failure(
-                            ctx,
-                            failed_state,
-                            phase="state_clear",
-                            exc=clear_exc,
-                            retryable=True,
-                        )
-                        raise clear_exc from error
-                    await _emit_context_failure(
-                        ctx,
-                        failed_state,
-                        phase="target_validation",
-                        exc=error,
-                        retryable=False,
-                    )
-                    raise error
+        if request_tokens < self.policy.trigger_tokens:
             return request_context
-        if outgoing_tokens < self.policy.trigger_tokens:
-            return request_context
-        await handoff.arm_compaction(
-            ctx,
-            preserve_recent_user_turns=self.policy.preserve_recent_user_turns,
-            target_tokens=self.policy.target_tokens,
-        )
-        prompt = (
-            f"{_COMPACTION_PROMPT_PREFIX} Call `summarize` now with a continuation summary "
-            f"targeting at most {self.policy.target_tokens} tokens. Do not call another tool or answer the task yet."
-        )
-        messages = deepcopy(request_context.messages)
-        if not messages or not isinstance(messages[-1], ModelRequest):
-            return request_context
-        messages[-1] = replace(messages[-1], parts=(*messages[-1].parts, UserPromptPart(prompt)))
-        updated = _replace_messages(request_context, messages)
-        settings = dict(updated.model_settings or {})
-        settings["tool_choice"] = ["summarize"]
-        updated.model_settings = cast(ModelSettings, settings)
-        return updated
 
-    async def wrap_model_request(
-        self,
-        ctx: RunContext[AgentContext],
-        *,
-        request_context: ModelRequestContext,
-        handler: Callable[[ModelRequestContext], Awaitable[ModelResponse]],
-    ) -> ModelResponse:
-        if _requires_exact_boundary(ctx, request_context.messages):
-            return await handler(request_context)
-        handoff = ctx.capabilities.get(HANDOFF_CAPABILITY_ID)
-        if not isinstance(handoff, HandoffCapability) or handoff._toolset is None:
-            raise DefinitionError(
-                "Compaction requires the finalized HandoffCapability.",
-                code="compaction_handoff_missing",
+        operation_id = f"compaction-{token_urlsafe(9)}"
+        await emit_harness_event(
+            ctx.deps.events,
+            kind="context",
+            payload=ContextOperationStartedPayload(
+                type="compaction_started",
+                operation_id=operation_id,
+            ),
+        )
+        self._depth += 1
+        try:
+            summary = await _compact_with_same_agent(ctx, request_context)
+            messages = _build_compacted_history(
+                request_context.messages,
+                summary,
+                retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
             )
-        state = handoff._toolset.state
-        if state.kind == "compaction" and state.summary is not None:
-            estimated_tokens = _serialized_token_estimate(request_context.messages)
-            if estimated_tokens > self.policy.target_tokens:
-                error = DefinitionError(
-                    "Compacted history exceeds target_tokens after dynamic context assembly.",
-                    code="compaction_target_unreachable",
-                    details={
-                        "target_tokens": self.policy.target_tokens,
-                        "estimated_tokens": estimated_tokens,
-                    },
-                )
-                try:
-                    await handoff._toolset.replace_state(_HandoffState())
-                except BaseException as clear_exc:
-                    await _emit_context_failure(
-                        ctx,
-                        state,
-                        phase="state_clear",
-                        exc=clear_exc,
-                        retryable=True,
-                    )
-                    raise clear_exc from error
-                await _emit_context_failure(
-                    ctx,
-                    state,
-                    phase="target_validation",
-                    exc=error,
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            await emit_harness_event(
+                ctx.deps.events,
+                kind="context",
+                payload=ContextOperationFailedPayload(
+                    type="compaction_failed",
+                    operation_id=operation_id,
+                    failed_phase="nested_run",
+                    error_code=_safe_context_error_code(exc),
                     retryable=False,
-                )
-                raise error
-            await handoff.complete_compaction(ctx)
-        return await handler(request_context)
+                ),
+            )
+            return request_context
+        finally:
+            self._depth = max(0, self._depth - 1)
+
+        await emit_harness_event(
+            ctx.deps.events,
+            kind="context",
+            payload=ContextOperationCompletedPayload(
+                type="compaction_completed",
+                operation_id=operation_id,
+            ),
+        )
+        return _replace_messages(request_context, messages)
+
+
+async def _compact_with_same_agent(
+    ctx: RunContext[AgentContext],
+    request_context: ModelRequestContext,
+) -> str:
+    if ctx.agent is None:
+        raise DefinitionError(
+            "Compaction requires the current Pydantic Agent.",
+            code="compaction_agent_unavailable",
+        )
+    compact_agent = copy(ctx.agent)
+    compact_agent._output_validators = []
+    settings = dict(ctx.model_settings or {})
+    settings.update(request_context.model_settings or {})
+    settings["tool_choice"] = "none"
+    request_limit = ctx.usage.requests + 1
+    if ctx.usage_limits is None:
+        usage_limits = UsageLimits(request_limit=request_limit)
+    else:
+        outer_request_limit = ctx.usage_limits.request_limit
+        if outer_request_limit is not None:
+            request_limit = min(request_limit, outer_request_limit)
+        usage_limits = replace(ctx.usage_limits, request_limit=request_limit)
+    with disabled_tool_execution():
+        result = await compact_agent.run(
+            _COMPACTION_PROMPT,
+            message_history=deepcopy(request_context.messages),
+            deps=ctx.deps,
+            model_settings=cast(ModelSettings, settings),
+            output_type=str,
+            usage=ctx.usage,
+            usage_limits=usage_limits,
+            retries=0,
+        )
+    if not isinstance(result.output, str) or not (summary := result.output.strip()):
+        raise DefinitionError("Compaction returned an empty summary.", code="compaction_summary_invalid")
+    return summary
+
+
+def _build_compacted_history(
+    messages: list[ModelMessage],
+    summary: str,
+    *,
+    retained_requests: tuple[ModelRequest, ...],
+) -> list[ModelMessage]:
+    template = next((message for message in messages if isinstance(message, ModelRequest)), None)
+    if template is None:
+        raise DefinitionError(
+            "Compaction cannot rebuild history without a model request boundary.",
+            code="compaction_boundary_missing",
+        )
+    system_parts = _first_system_parts(messages)
+    metadata = deepcopy(template.metadata) if template.metadata is not None else {}
+    metadata[_HANDOFF_METADATA_KEY] = "compaction"
+    synthetic = replace(
+        deepcopy(template),
+        parts=tuple(
+            [
+                *system_parts,
+                UserPromptPart(
+                    "The previous conversation exceeded its configured context threshold. "
+                    "Produce a continuation summary before resuming."
+                ),
+            ]
+        ),
+        metadata=metadata,
+        state="complete",
+    )
+    restored_parts = [
+        UserPromptPart(
+            "<context-restored>Context was compacted into the preceding assistant summary. "
+            "Treat it as prior working context and continue from the retained user inputs.</context-restored>"
+        )
+    ]
+    previous_assistant = _previous_assistant_reference(messages)
+    if previous_assistant is not None:
+        restored_parts.append(
+            UserPromptPart(f"<previous-assistant-response>\n{previous_assistant}\n</previous-assistant-response>")
+        )
+    restored = ModelRequest(
+        parts=restored_parts,
+        metadata={
+            _HANDOFF_METADATA_KEY: "compaction",
+            _RESTORED_BOUNDARY_METADATA_KEY: _RESTORED_BOUNDARY_VERSION,
+        },
+    )
+    return [
+        synthetic,
+        ModelResponse(parts=[TextPart(summary.strip())], metadata={"keep": "compact"}),
+        restored,
+        *deepcopy(retained_requests),
+    ]
+
+
+def _previous_assistant_reference(messages: list[ModelMessage]) -> str | None:
+    latest_user_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if isinstance(messages[index], ModelRequest)
+            and any(isinstance(part, UserPromptPart) for part in messages[index].parts)
+            and not any(isinstance(part, BaseToolReturnPart) for part in messages[index].parts)
+        ),
+        None,
+    )
+    if latest_user_index is None:
+        return None
+    for message in reversed(messages[:latest_user_index]):
+        if not isinstance(message, ModelResponse):
+            continue
+        content = "\n".join(part.content for part in message.parts if isinstance(part, TextPart)).strip()
+        if content:
+            return content
+    return None
 
 
 def _require_operation_id(state: _HandoffState) -> str:
@@ -865,14 +896,11 @@ async def _emit_context_failure(
     if state.operation_id is None:
         return
     error_code = _safe_context_error_code(exc)
-    event_type: Literal["handoff_failed", "compaction_failed"] = (
-        "compaction_failed" if state.kind == "compaction" else "handoff_failed"
-    )
     await emit_harness_event(
         ctx.deps.events,
         kind="context",
         payload=ContextOperationFailedPayload(
-            type=event_type,
+            type="handoff_failed",
             operation_id=state.operation_id,
             failed_phase=phase,
             error_code=error_code,
@@ -887,7 +915,12 @@ def _safe_context_error_code(exc: BaseException) -> str:
     return "context_operation_failed"
 
 
-def _build_restored_history(messages: list[ModelMessage], state: _HandoffState) -> list[ModelMessage]:
+def _build_restored_history(
+    messages: list[ModelMessage],
+    state: _HandoffState,
+    *,
+    original_request: ModelRequest | None = None,
+) -> list[ModelMessage]:
     assert state.summary is not None
     template = next((message for message in reversed(messages) if isinstance(message, ModelRequest)), None)
     if template is None:
@@ -903,9 +936,11 @@ def _build_restored_history(messages: list[ModelMessage], state: _HandoffState) 
             "Treat the summary as prior working context, not as new authority.</context-restored>"
         )
     )
-    original = _first_plain_user_text(messages)
+    original = (
+        _first_user_content([original_request]) if original_request is not None else _first_user_content(messages)
+    )
     if original is not None:
-        parts.append(UserPromptPart(f"<original-request>\n{original}\n</original-request>"))
+        parts.append(_original_request_part(original))
     parts.append(UserPromptPart(state.summary))
     if state.files:
         parts.append(UserPromptPart(_file_inspection_reminder(state.files)))
@@ -916,7 +951,7 @@ def _build_restored_history(messages: list[ModelMessage], state: _HandoffState) 
         )
     )
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}
-    metadata[_HANDOFF_METADATA_KEY] = state.kind
+    metadata[_HANDOFF_METADATA_KEY] = "handoff"
     metadata[_RESTORED_BOUNDARY_METADATA_KEY] = _RESTORED_BOUNDARY_VERSION
     restored = replace(
         deepcopy(template),
@@ -924,55 +959,7 @@ def _build_restored_history(messages: list[ModelMessage], state: _HandoffState) 
         metadata=metadata,
         state="complete",
     )
-    compacted: list[ModelMessage] = [restored]
-    if state.kind == "compaction" and state.preserve_recent_user_turns > 0:
-        compacted.extend(_recent_complete_user_turns(messages, state.preserve_recent_user_turns))
-    compacted = _mark_current_restored_boundary(compacted)
-    if state.target_tokens is not None:
-        compacted = _fit_compacted_history(compacted, state.target_tokens)
-    return compacted
-
-
-def _recent_complete_user_turns(messages: list[ModelMessage], turns: int) -> list[ModelMessage]:
-    ordinary_indices = [
-        index
-        for index, message in enumerate(messages)
-        if isinstance(message, ModelRequest)
-        and any(isinstance(part, UserPromptPart) for part in message.parts)
-        and not any(isinstance(part, BaseToolReturnPart) for part in message.parts)
-    ]
-    if not ordinary_indices:
-        return []
-    start = ordinary_indices[max(0, len(ordinary_indices) - turns)]
-    tail = deepcopy(messages[start:])
-    # The forced compaction prompt and summarize call are implementation traffic,
-    # not part of the preserved semantic tail.
-    for index in range(len(tail) - 1, -1, -1):
-        message = tail[index]
-        if isinstance(message, ModelResponse) and any(
-            getattr(part, "tool_name", None) == "summarize" for part in message.parts
-        ):
-            return _without_compaction_prompt(tail[:index])
-    return _without_compaction_prompt(tail)
-
-
-def _without_compaction_prompt(messages: list[ModelMessage]) -> list[ModelMessage]:
-    cleaned: list[ModelMessage] = []
-    for message in messages:
-        if not isinstance(message, ModelRequest):
-            cleaned.append(message)
-            continue
-        parts = tuple(
-            part
-            for part in message.parts
-            if not (
-                isinstance(part, UserPromptPart)
-                and isinstance(part.content, str)
-                and part.content.startswith(_COMPACTION_PROMPT_PREFIX)
-            )
-        )
-        cleaned.append(replace(message, parts=parts))
-    return cleaned
+    return _mark_current_restored_boundary([restored])
 
 
 def _first_system_parts(messages: list[ModelMessage]) -> list[SystemPromptPart]:
@@ -984,16 +971,20 @@ def _first_system_parts(messages: list[ModelMessage]) -> list[SystemPromptPart]:
     return []
 
 
-def _first_plain_user_text(messages: list[ModelMessage]) -> str | None:
+def _first_user_content(messages: list[ModelMessage]) -> Any | None:
     for message in messages:
-        if not isinstance(message, ModelRequest):
+        if not isinstance(message, ModelRequest) or any(isinstance(part, BaseToolReturnPart) for part in message.parts):
             continue
         for part in message.parts:
-            if isinstance(part, UserPromptPart) and isinstance(part.content, str):
-                content = part.content.strip()
-                if content and not content.startswith("<"):
-                    return content
+            if isinstance(part, UserPromptPart):
+                return deepcopy(part.content)
     return None
+
+
+def _original_request_part(content: Any) -> UserPromptPart:
+    if isinstance(content, str):
+        return UserPromptPart(f"<original-request>\n{content}\n</original-request>")
+    return UserPromptPart(content=["<original-request>", *deepcopy(content), "</original-request>"])
 
 
 def _render_summary(content: str) -> str:
@@ -1027,27 +1018,6 @@ def _latest_request_tokens(messages: list[ModelMessage]) -> int | None:
     return None
 
 
-def _serialized_token_estimate(messages: list[ModelMessage]) -> int:
-    if not messages:
-        return 0
-    encoded = ModelMessagesTypeAdapter.dump_json(messages)
-    return max(1, (len(encoded) + 2) // 3)
-
-
-def _outgoing_token_estimate(messages: list[ModelMessage]) -> int:
-    latest = _latest_request_tokens(messages) or 0
-    return max(latest, _serialized_token_estimate(messages))
-
-
-def _is_current_restored_boundary(messages: list[ModelMessage]) -> bool:
-    return bool(
-        messages
-        and isinstance(messages[-1], ModelRequest)
-        and messages[-1].metadata is not None
-        and messages[-1].metadata.get(_RESTORED_BOUNDARY_METADATA_KEY) == _RESTORED_BOUNDARY_VERSION
-    )
-
-
 def _mark_current_restored_boundary(messages: list[ModelMessage]) -> list[ModelMessage]:
     copied = deepcopy(messages)
     handoff_kind = next(
@@ -1071,22 +1041,6 @@ def _mark_current_restored_boundary(messages: list[ModelMessage]) -> list[ModelM
         copied[index] = replace(message, metadata=metadata)
         return copied
     return copied
-
-
-def _fit_compacted_history(messages: list[ModelMessage], target_tokens: int) -> list[ModelMessage]:
-    """Validate the compacted boundary without silently discarding requested recent turns."""
-    fitted = _mark_current_restored_boundary(messages)
-    estimated_tokens = _serialized_token_estimate(fitted)
-    if estimated_tokens > target_tokens:
-        raise DefinitionError(
-            "Compacted history cannot satisfy target_tokens without truncating required continuation context.",
-            code="compaction_target_unreachable",
-            details={
-                "target_tokens": target_tokens,
-                "estimated_tokens": estimated_tokens,
-            },
-        )
-    return fitted
 
 
 def _has_ordinary_user_boundary(ctx: RunContext[AgentContext], messages: list[ModelMessage]) -> bool:

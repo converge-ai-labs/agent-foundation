@@ -34,72 +34,115 @@ This is the right default for an Agent that needs only a model and non-Environme
 
 ## Direct Local
 
-Direct Local exposes an explicitly selected local directory and command policy to a trusted embedded application. It is an operation backend, not a sandbox claim.
+Direct Local exposes an explicitly selected existing Host directory to a trusted embedded application. It is an operation backend, not a sandbox claim. Its public configuration and lifecycle Manager belong to `converge-agent-environment-provider`; the Harness receives only a fresh runtime attachment.
 
 ```python
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+from converge_agent_environment_provider import (
+    DirectLocalProviderRuntime,
+    EnvironmentManagementAction,
+    EnvironmentManager,
+    EnvironmentOperationContext,
+    EnvironmentProviderSpec,
+    build_environment_provider_factory_catalog,
+)
 from converge_agent_harness import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalRootConfiguration,
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentPermissionSet,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
+    RunBindings,
+    create_environment_provider_binding,
     create_environment_run_binding,
 )
 
 
-def local_environment(workspace: Path):
-    provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
-            environment_id="local-app",
-            root=DirectLocalRootConfiguration(
-                path=workspace,
-                ownership="caller_owned",
-            ),
+def direct_local_manager(workspace: Path) -> EnvironmentManager:
+    catalog = build_environment_provider_factory_catalog(
+        builtin_keys=("converge.direct-local",),
+    )
+    return catalog.create_manager(
+        EnvironmentProviderSpec(
+            provider_key="converge.direct-local",
+            schema_version="1",
+            parameters={
+                "environment_id": "local-app",
+                "root": {"path": str(workspace)},
+            },
+        ),
+        runtime=DirectLocalProviderRuntime(),
+    )
+
+
+@asynccontextmanager
+async def local_bindings(
+    manager: EnvironmentManager,
+    *,
+    attempt: int,
+) -> AsyncGenerator[RunBindings]:
+    correlation = "resource-local-app"
+    managed = await manager.create(
+        operation=EnvironmentOperationContext(
+            operation_id=f"operation-create-{attempt}",
+            action=EnvironmentManagementAction.CREATE,
+            resource_correlation=correlation,
+            attempt=1,
         )
     )
-    topology = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="workspace",
-                binding_revision=1,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(
-                    operations=frozenset(
-                        {
-                            EnvironmentAction.FILE_READ_TEXT,
-                            EnvironmentAction.FILE_WRITE_TEXT,
-                        }
-                    )
-                ),
-                default_working_directory="/workspace",
-                provider_binding=provider,
+    state = managed.state
+    try:
+        async with managed:
+            async with managed.acquire_attachment() as attachment:
+                provider_binding = create_environment_provider_binding(attachment)
+                topology = EnvironmentTopologyRequest(
+                    topology_version=1,
+                    bindings=(
+                        EnvironmentBindingRequest(
+                            binding_id="workspace",
+                            binding_revision=1,
+                            alias="local",
+                            permission_ceiling=EnvironmentPermissionSet(
+                                operations=frozenset(
+                                    {
+                                        EnvironmentAction.FILE_READ_TEXT,
+                                        EnvironmentAction.FILE_WRITE_TEXT,
+                                    }
+                                )
+                            ),
+                            default_working_directory="/workspace",
+                            provider_binding=provider_binding,
+                        ),
+                    ),
+                    default_binding_id="workspace",
+                )
+                environment = create_environment_run_binding(
+                    initial_topology=topology,
+                    topology_limits=EnvironmentTopologyLimits(),
+                    state_limits=EnvironmentStateLimits(),
+                )
+                yield RunBindings.local(environment=environment)
+    finally:
+        await manager.destroy(
+            state,
+            operation=EnvironmentOperationContext(
+                operation_id=f"operation-destroy-{attempt}",
+                action=EnvironmentManagementAction.DESTROY,
+                resource_correlation=correlation,
+                attempt=1,
             ),
-        ),
-        default_binding_id="workspace",
-    )
-    return create_environment_run_binding(
-        initial_topology=topology,
-        topology_limits=EnvironmentTopologyLimits(),
-        state_limits=EnvironmentStateLimits(),
-    )
+        )
 ```
 
-Pass a fresh aggregate to the run:
+Keep `local_bindings()` open for the complete Harness run. A later Harness continuation gets another fresh managed-resource scope and attachment. The Harness restores `HarnessState`; it never calls the provider Manager's `resume()` method. A Host calls Manager `resume()` only when its own persisted provider resource state and lifecycle policy require provider-resource resume.
 
-```python
-bindings = RunBindings.local(environment=local_environment(workspace))
-```
+The Direct Local root has no Provider, Agent, Session, or binding owner. The Host creates, shares, retains, and removes it. Direct Local validates it and never creates, deletes, tags, or locks it. The virtual `/workspace` path routes to the selected default binding; `/environment/{alias}` addresses an explicit alias in a multi-binding topology.
 
-The virtual `/workspace` path routes to the selected default binding. `/environment/{alias}` can address an explicit alias in a multi-binding topology.
-
-Direct Local should be used only when the embedding process intentionally grants its own OS access. Use an isolated provider outside the Harness operation API when untrusted code requires a real sandbox boundary.
+Direct Local should be used only when the embedding process intentionally grants its own OS access. Use an isolated provider when untrusted code requires a real sandbox boundary.
 
 ## Expose Environment Tools
 
@@ -136,7 +179,7 @@ Three decisions remain distinct:
 
 A provider denial always narrows a Harness allow decision. Provider availability never grants authorization.
 
-The repository's Local Agent example uses a deliberately simple allow evaluator only inside a caller-owned temporary workspace. A real application should evaluate current identity, tool metadata, normalized arguments, effects, and resources.
+The `local` layer of the repository's [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) uses a deliberately simple allow evaluator only inside a caller-owned temporary workspace. A real application should evaluate current identity, tool metadata, normalized arguments, effects, and resources.
 
 ## Multiple Bindings and Routing
 

@@ -34,9 +34,8 @@ factory_catalog = build_environment_provider_factory_catalog(
     extension_keys=selected_provider_keys,
 )
 
-resolved = factory_catalog.resolve_spec(provider_spec)
-manager = resolved.factory.create_manager(
-    resolved.configuration,
+manager = factory_catalog.create_manager(
+    provider_spec,
     runtime=provider_runtime,
 )
 
@@ -55,6 +54,8 @@ async with managed:
 ```
 
 The Host keeps the attachment-acquisition scope open until the adapted Harness binding has closed. Exiting the Harness binding or `ManagedEnvironment` closes process-local resources only. The Host separately decides whether a reusable provider resource should later remain available, resume, pause, or be destroyed.
+
+A later Harness run always receives a fresh attachment and binding. Harness continuation restores `HarnessState`; it never invokes Manager `resume()`. Provider `resume()` is a separate Host lifecycle decision based on persisted `EnvironmentProviderResourceState`.
 
 ## Lifecycle and Cleanup Boundaries
 
@@ -143,7 +144,7 @@ Register the factory class through the Provider entry-point group:
 "acme.sandbox" = "acme_environment.provider:AcmeSandboxFactory"
 ```
 
-Metadata discovery imports nothing. The Host explicitly selects extension keys when building an immutable factory catalog; an empty extension selection performs no metadata scan or target import. A plugin key cannot shadow a built-in key.
+Metadata discovery imports nothing. The Host explicitly selects extension keys when building an immutable factory catalog; an empty extension selection performs no metadata scan or target import. A plugin key cannot shadow a built-in key. Unknown keys and schema versions fail exactly: there is no legacy entry-point group, latest-version inference, fallback provider, or placeholder built-in.
 
 ### Manager Requirements
 

@@ -35,7 +35,7 @@ from ..files import (
 from ..models import EnvironmentError, EnvironmentOperationReceipt
 
 if TYPE_CHECKING:
-    from .binding import DirectLocalFilePolicy
+    from .binding import _DirectLocalFilePolicy
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _MAX_QUERY_PATTERN_BYTES = 16 * 1024
@@ -193,7 +193,7 @@ class LocalFileOperator:
         *,
         root: Path,
         read_only: bool,
-        policy: DirectLocalFilePolicy,
+        policy: _DirectLocalFilePolicy,
         binding_id: str,
         binding_revision: int,
         generation: str,

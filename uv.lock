@@ -444,6 +444,7 @@ version = "0.0.0"
 source = { editable = "packages/agent-environment-provider" }
 dependencies = [
     { name = "converge-agent-envd-client" },
+    { name = "pydantic" },
     { name = "websockets" },
 ]
 
@@ -455,6 +456,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "converge-agent-envd-client", editable = "packages/agent-envd-client" },
+    { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]
 
@@ -582,6 +584,7 @@ dependencies = [
     { name = "converge-logging" },
     { name = "filelock" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "zstandard" },
 ]
@@ -602,6 +605,7 @@ requires-dist = [
     { name = "converge-logging", editable = "packages/logging" },
     { name = "filelock", specifier = ">=3.20,<4" },
     { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
     { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]

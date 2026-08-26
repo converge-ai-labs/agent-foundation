@@ -172,4 +172,4 @@ A durable Host should keep these facts separate:
 | Execution attempt, generation, fence, and lease | Host                      |
 | Durable completion and output delivery          | Host/product              |
 
-See [Embedding in a Host](hosting.md) and the runnable [Host persistence example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/hosting).
+See [Embedding in a Host](hosting.md) and the `host` layer of the runnable [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app).

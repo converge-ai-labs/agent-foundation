@@ -6,7 +6,7 @@ from typing import Literal, NotRequired, TypedDict
 
 from pydantic_ai import ToolReturn
 
-from ._results import ToolFailure
+from ._results import ToolError, ToolFailure
 from .output import ToolOutputDisclosure
 
 
@@ -50,6 +50,47 @@ class FileEditSuccess(TypedDict):
 
 
 type FileEditResult = FileEditSuccess | ToolFailure
+
+
+class FileMutationItem(TypedDict):
+    ok: bool
+    path: str
+    error: NotRequired[ToolError]
+
+
+class FileMkdirResult(TypedDict):
+    ok: bool
+    results: list[FileMutationItem]
+    count: int
+
+
+class FilePathPairItem(TypedDict):
+    ok: bool
+    src: str
+    dst: str
+    error: NotRequired[ToolError]
+
+
+class FileMoveResult(TypedDict):
+    ok: bool
+    results: list[FilePathPairItem]
+    count: int
+
+
+class FileCopyItem(FilePathPairItem):
+    bytes_copied: NotRequired[int]
+
+
+class FileCopyToolResult(TypedDict):
+    ok: bool
+    results: list[FileCopyItem]
+    count: int
+
+
+class FileDeleteResult(TypedDict):
+    ok: bool
+    results: list[FileMutationItem]
+    count: int
 
 
 class FileListSuccess(TypedDict):
@@ -102,11 +143,18 @@ type FileGrepResult = FileGrepSuccess | ToolFailure
 
 
 __all__ = [
+    "FileCopyItem",
+    "FileCopyToolResult",
+    "FileDeleteResult",
     "FileEditResult",
     "FileGlobResult",
     "FileGrepResult",
     "FileListResult",
     "FileMetadataProjection",
+    "FileMkdirResult",
+    "FileMoveResult",
+    "FileMutationItem",
+    "FilePathPairItem",
     "FileViewResult",
     "FileWriteResult",
 ]

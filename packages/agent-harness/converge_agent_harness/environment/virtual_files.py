@@ -205,8 +205,24 @@ class VirtualFileOperator:
         *,
         replace: bool = False,
     ) -> FileCopyResult:
-        source_selected = self._resolve(source)
-        destination_selected = self._resolve(destination)
+        return await self._copy_resolved(
+            source,
+            destination,
+            source_selected=self._resolve(source),
+            destination_selected=self._resolve(destination),
+            replace=replace,
+        )
+
+    async def _copy_resolved(
+        self,
+        source: str,
+        destination: str,
+        *,
+        source_selected: EnvironmentPath,
+        destination_selected: EnvironmentPath,
+        replace: bool,
+    ) -> FileCopyResult:
+        """Copy through exact preselected routes using copy-specific actions."""
         async with self._prepare(source_selected, EnvironmentAction.FILE_COPY_SOURCE) as source_file:
             async with self._prepare(
                 destination_selected,

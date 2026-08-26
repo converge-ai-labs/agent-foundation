@@ -5,14 +5,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from converge_agent_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+)
 from converge_agent_harness import (
     BoundEnvironment,
     BoundProcessHandle,
     CompactionCapability,
     CompactionPolicy,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalRootConfiguration,
     DocumentConversionRequest,
     DocumentConversionResult,
     DocumentsCapability,
@@ -55,6 +56,7 @@ from converge_agent_harness import (
     WorkingStateCapability,
     create_environment_run_binding,
 )
+from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -63,6 +65,7 @@ pytestmark = pytest.mark.anyio
 
 _EXPECTED_TOOLS = {
     "ask_user_question",
+    "copy",
     "download",
     "edit",
     "environment_port_inspect",
@@ -159,9 +162,9 @@ class _Monitor:
 
 def _environment(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="capability-integration",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=root),
         )
     )
     return create_environment_run_binding(
@@ -217,9 +220,7 @@ def _definition_capabilities():
         RuntimeContextCapability(RuntimeContextConfiguration(metadata_keys=("tenant",))),
         FileContextCapability(FileContextConfiguration(paths=("/workspace/AGENTS.md",), required=True)),
         HandoffCapability(),
-        CompactionCapability(
-            CompactionPolicy(trigger_tokens=1_000_000, target_tokens=500_000, preserve_recent_user_turns=1)
-        ),
+        CompactionCapability(CompactionPolicy(trigger_tokens=1_000_000)),
         SkillsCapability(skill_manager),
         WorkingStateCapability(),
         UserInteractionCapability(),

@@ -45,7 +45,7 @@ Every `HarnessState` carries the stable `thread_id` of one independently advanci
 
 ## Runnable examples and guides
 
-The [General Agent example](../../examples/general-agent/README.md) shows the minimal application-owned build, fresh bindings, run, and result path without optional Capabilities or configured Environment operations. The [Local Agent example](../../examples/local-agent/README.md) adds managed Direct Local tools, working state, structured suspension, and resume. The [plugin integration example](../../examples/plugins/README.md) publishes and selects a real Harness plugin distribution.
+The [Agent Application example](../../examples/agent-app/README.md) progresses from the minimal application-owned build and fresh bindings to managed Direct Local tools, structured resume, and Host-owned persistence and recovery. The [plugin integration example](../../examples/plugins/README.md) publishes and selects a real Harness plugin distribution.
 
 The [Agent Harness user guide](../../docs/agent-harness/index.md) covers installation, first-party feature families, filters, Environments, results, resume, and usage. The [plugin guide](../../docs/agent-harness/plugins.md) covers packaging, configuration, lifecycle, and discovery from a Host-managed plugin directory without a process restart.
 

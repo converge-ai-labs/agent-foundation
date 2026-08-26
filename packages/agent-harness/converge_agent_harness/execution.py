@@ -37,6 +37,7 @@ from converge_agent_harness.capabilities.context import (
     RUNTIME_CONTEXT_CAPABILITY_ID,
     WORKSPACE_OUTLINE_CAPABILITY_ID,
     CompactionCapability,
+    CompactionPolicy,
     FileContextCapability,
     HandoffCapability,
     RuntimeContextCapability,
@@ -79,6 +80,11 @@ from converge_agent_harness.capabilities.skills import (
     SKILLS_CAPABILITY_ID,
     SkillsCapability,
     SkillSelectionRunCapability,
+)
+from converge_agent_harness.capabilities.steering import (
+    STEERING_CAPABILITY_ID,
+    SteeringBridge,
+    SteeringCapability,
 )
 from converge_agent_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
@@ -161,6 +167,7 @@ from converge_agent_harness.recovery import (
     normalize_interrupted_history,
 )
 from converge_agent_harness.result import HarnessRunResult, SafeFailure
+from converge_agent_harness.spec import AgentSpec as HarnessAgentSpec
 from converge_agent_harness.state import AgentContextState, HarnessState
 from converge_agent_harness.tools.client import (
     CLIENT_TOOLS_CAPABILITY_ID,
@@ -178,6 +185,10 @@ from converge_agent_harness.tools.invocation import (
     ToolExecutionBoundaryCapability,
 )
 from converge_agent_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID, InvocationPolicyCapability
+from converge_agent_harness.tools.surface import (
+    TOOL_SURFACE_CAPABILITY_ID,
+    ToolSurfaceCapability,
+)
 from converge_agent_harness.usage import (
     MODEL_COST_RUN_CAPABILITY_ID,
     USAGE_CAPABILITY_ID,
@@ -399,6 +410,40 @@ class AgentDefinition[OutputT]:
         object.__setattr__(self, "subagents", subagents)
 
 
+def _resolve_model_configured_capabilities(
+    agent: AgentSpec,
+    capabilities: tuple[AbstractCapability[AgentContext], ...],
+) -> tuple[AbstractCapability[AgentContext], ...]:
+    model_configuration = agent.model_configuration if isinstance(agent, HarnessAgentSpec) else None
+    resolved: list[AbstractCapability[AgentContext]] = []
+    for capability in capabilities:
+        if isinstance(capability, CompactionCapability) and capability.policy is None:
+            trigger_tokens = model_configuration.compaction_trigger_tokens if model_configuration is not None else None
+            if trigger_tokens is None:
+                raise DefinitionError(
+                    "Automatic compaction requires AgentSpec.model_config.context_window.",
+                    code="compaction_policy_unresolved",
+                )
+            resolved.append(CompactionCapability(CompactionPolicy(trigger_tokens=trigger_tokens)))
+            continue
+        if isinstance(capability, HandoffCapability) and model_configuration is not None:
+            configuration = capability.configuration
+            threshold_fields = {"include_summary_reminder", "summary_reminder_tokens"}
+            if not threshold_fields.intersection(configuration.model_fields_set):
+                reminder_tokens = model_configuration.summary_reminder_tokens
+                configuration = configuration.model_copy(
+                    update={
+                        "include_summary_reminder": reminder_tokens is not None,
+                        "summary_reminder_tokens": reminder_tokens or 0,
+                    },
+                    deep=True,
+                )
+                resolved.append(HandoffCapability(configuration))
+                continue
+        resolved.append(capability)
+    return tuple(resolved)
+
+
 class HarnessBuilder:
     """Build executable Agents through one authoritative Agent.from_spec path."""
 
@@ -489,7 +534,10 @@ class HarnessBuilder:
         subagents = SubagentCollection({child.declaration.name: child for child in built_children})
         configured_plugins = self._create_configured_plugins()
         plugins, plugin_capabilities = bind_agent_plugins((*definition.plugins, *configured_plugins))
-        authored_capabilities = (*definition.capabilities, *plugin_capabilities)
+        authored_capabilities = _resolve_model_configured_capabilities(
+            definition.agent,
+            (*definition.capabilities, *plugin_capabilities),
+        )
         definition_reserved_ids = _validate_capability_source(authored_capabilities, source="definition")
 
         async def resolve_model(
@@ -504,12 +552,13 @@ class HarnessBuilder:
 
         capabilities = (
             ToolExecutionBoundaryCapability(),
+            ToolSurfaceCapability(),
             MessageIntegrityFilterCapability(),
             LifecycleEventCapability(),
+            SteeringCapability(),
             ModelContextCoordinatorCapability(),
             ResolveModelId(resolve_model),
-            *definition.capabilities,
-            *plugin_capabilities,
+            *authored_capabilities,
             UsageCapability(),
         )
         model = definition.model
@@ -850,11 +899,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 instance=self._bindings.instance,
                 events=self._emitter,
             )
+            context_state = AgentContextState(self._previous_state.agent_context_state)
             context = AgentContext(
                 run_id=self.run_id,
                 thread_id=self._previous_state.thread_id,
                 instance=self._bindings.instance,
-                state=AgentContextState(self._previous_state.agent_context_state),
+                state=context_state,
                 environment=environment,
                 model_binding=self._bindings.model_binding,
                 model_context=self._bindings.model_context,
@@ -864,6 +914,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 usage_attribution=usage_attribution,
                 deferred_resume=self._deferred_resume,
                 metadata=self._bindings.metadata,
+                _steering=SteeringBridge(
+                    context_state,
+                    run_id=self.run_id,
+                    retain_inputs=COMPACTION_CAPABILITY_ID in self._executable._definition_reserved_capability_ids,
+                ),
                 _skill_selection_names=self._skill_selection_names,
                 _capability_provenance=_CapabilityProvenance(
                     definition_ids=self._executable._definition_reserved_capability_ids,
@@ -1303,6 +1358,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if self._pydantic_events is not None:
             self._pydantic_events.cancel()
 
+    async def steer(self, input: RunInputValue) -> str:
+        """Retain and deliver one user steering value through native Pydantic enqueue."""
+        if not self._entered or self._closed or self._context is None:
+            raise RunError("The run is not active.", code="run_not_active")
+        return await self._context._steering.steer(input)
+
     async def export_state(self) -> HarnessState:
         """Export the latest complete message and Capability-state boundary."""
         if not self._entered or self._closed or self._context is None:
@@ -1573,6 +1634,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         except HarnessError as exc:
             raise PluginError("Plugin middleware supplied an invalid input.", code="plugin_input_invalid") from exc
 
+        await exchange.context._steering.prepare(current_input)
+
         policy = self._executable.definition.model_recovery
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
@@ -1612,6 +1675,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             if isinstance(event, AgentRunResultEvent):
                                 result = event.result
                                 messages = tuple(result.all_messages())
+                                new_message_index = len(messages) - len(result.new_messages())
                                 self._latest_messages = messages
                                 state = await exchange.context.export_state(messages)
                                 if isinstance(result.output, DeferredToolRequests):
@@ -1629,7 +1693,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                         state=state,
                                         usage=result.usage,
                                         _messages=messages,
-                                        _new_message_index=self._new_message_index,
+                                        _new_message_index=new_message_index,
                                     )
                                 else:
                                     candidate = HarnessRunResult(
@@ -1640,14 +1704,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                         state=state,
                                         usage=result.usage,
                                         _messages=messages,
-                                        _new_message_index=self._new_message_index,
+                                        _new_message_index=new_message_index,
                                     )
                                 yield self._record_inner_candidate(candidate)
                                 return
                             yield self._adapt_event(cast(AgentStreamEvent, event))
                     except RunCancelled as exc:
+                        raw_messages = exc.all_messages()
+                        raw_new_message_count = len(exc.new_messages())
                         messages, _ = normalize_interrupted_history(
-                            exc.all_messages(),
+                            raw_messages,
                             response_tracker=response_tracker,
                         )
                         self._pydantic_events = None
@@ -1662,7 +1728,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 state=state,
                                 usage=self._usage if exc.run_id is None else exc.usage,
                                 _messages=messages,
-                                _new_message_index=min(self._new_message_index, len(messages)),
+                                _new_message_index=max(0, len(messages) - raw_new_message_count),
                             )
                         )
                         return
@@ -2000,14 +2066,18 @@ def _validate_built_capability_tree(
     root.apply(leaves.append)
     seen_ids: dict[str, str] = {}
     execution_boundary_count = 0
+    tool_surface_count = 0
     message_integrity_count = 0
     lifecycle_event_count = 0
+    steering_count = 0
     model_context_coordinator_count = 0
     usage_count = 0
     reserved_ids = {
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
+        TOOL_SURFACE_CAPABILITY_ID,
         MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
         LIFECYCLE_EVENT_CAPABILITY_ID,
+        STEERING_CAPABILITY_ID,
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
@@ -2073,6 +2143,14 @@ def _validate_built_capability_tree(
                     code="capability_scope_invalid",
                 )
             continue
+        if isinstance(capability, ToolSurfaceCapability):
+            tool_surface_count += 1
+            if capability_id != TOOL_SURFACE_CAPABILITY_ID:
+                raise DefinitionError(
+                    "The mandatory tool-surface Capability has an invalid ID.",
+                    code="capability_scope_invalid",
+                )
+            continue
         if type(capability) is MessageIntegrityFilterCapability:
             message_integrity_count += 1
             if capability_id != MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID:
@@ -2086,6 +2164,14 @@ def _validate_built_capability_tree(
             if capability_id != LIFECYCLE_EVENT_CAPABILITY_ID:
                 raise DefinitionError(
                     "The mandatory lifecycle event Capability has an invalid ID.",
+                    code="capability_scope_invalid",
+                )
+            continue
+        if type(capability) is SteeringCapability:
+            steering_count += 1
+            if capability_id != STEERING_CAPABILITY_ID:
+                raise DefinitionError(
+                    "The mandatory steering Capability has an invalid ID.",
                     code="capability_scope_invalid",
                 )
             continue
@@ -2142,9 +2228,29 @@ def _validate_built_capability_tree(
                 },
             )
 
+    surface_index = next(
+        (index for index, capability in enumerate(leaves) if isinstance(capability, ToolSurfaceCapability)),
+        None,
+    )
+    if surface_index is not None:
+        for capability in leaves[:surface_index]:
+            if isinstance(capability, ToolExecutionBoundaryCapability | CodeActCapability):
+                continue
+            if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
+                raise DefinitionError(
+                    "Only CodeAct and the tool execution boundary may wrap the mandatory tool surface.",
+                    code="tool_surface_order_invalid",
+                    details={"capability_type": type(capability).__name__},
+                )
+
     if execution_boundary_count != 1:
         raise DefinitionError(
             "The built Agent must contain exactly one mandatory tool execution boundary Capability.",
+            code="capability_scope_invalid",
+        )
+    if tool_surface_count != 1:
+        raise DefinitionError(
+            "The built Agent must contain exactly one mandatory tool-surface Capability.",
             code="capability_scope_invalid",
         )
     if message_integrity_count != 1:
@@ -2155,6 +2261,11 @@ def _validate_built_capability_tree(
     if lifecycle_event_count != 1:
         raise DefinitionError(
             "The built Agent must contain exactly one mandatory lifecycle event Capability.",
+            code="capability_scope_invalid",
+        )
+    if steering_count != 1:
+        raise DefinitionError(
+            "The built Agent must contain exactly one mandatory steering Capability.",
             code="capability_scope_invalid",
         )
     if model_context_coordinator_count != 1:
@@ -2222,7 +2333,9 @@ def _validate_capability_source(
 
     reserved_ids = {
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
+        TOOL_SURFACE_CAPABILITY_ID,
         MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
+        STEERING_CAPABILITY_ID,
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
@@ -2285,7 +2398,9 @@ def _validate_capability_source(
         reserved_type = isinstance(
             capability,
             ToolExecutionBoundaryCapability
+            | ToolSurfaceCapability
             | MessageIntegrityFilterCapability
+            | SteeringCapability
             | ModelContextCoordinatorCapability
             | InvocationPolicyCapability
             | UsageCapability

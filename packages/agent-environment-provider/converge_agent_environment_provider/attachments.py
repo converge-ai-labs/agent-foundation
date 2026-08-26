@@ -16,6 +16,8 @@ from converge_agent_envd_client import (
 )
 from websockets.asyncio.server import ServerConnection
 
+from .direct_local.configuration import DirectLocalProviderConfiguration
+
 
 class EIPSessionSource(ABC):
     """Single-use source for one freshly initialized EIP client session."""
@@ -191,8 +193,16 @@ class AcceptedWebSocketEIPSessionSource(EIPSessionSource):
 class DirectLocalEnvironmentAttachment:
     attachment_id: str
     environment_id: str
-    configuration: object
+    configuration: DirectLocalProviderConfiguration
     _claimed: bool = field(default=False, init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        _validate_attachment_identity(self.attachment_id, field_name="attachment_id")
+        _validate_attachment_identity(self.environment_id, field_name="environment_id")
+        if not isinstance(self.configuration, DirectLocalProviderConfiguration):
+            raise TypeError("Direct Local attachment configuration has an incompatible type")
+        if self.configuration.environment_id != self.environment_id:
+            raise ValueError("Direct Local attachment environment identity does not match its configuration")
 
     def claim(self) -> None:
         if self._claimed:
@@ -207,6 +217,12 @@ class EIPEnvironmentAttachment:
     session_source: EIPSessionSource
     _claimed: bool = field(default=False, init=False, repr=False, compare=False)
 
+    def __post_init__(self) -> None:
+        _validate_attachment_identity(self.attachment_id, field_name="attachment_id")
+        _validate_attachment_identity(self.environment_id, field_name="environment_id")
+        if not isinstance(self.session_source, EIPSessionSource):
+            raise TypeError("EIP attachment session_source has an incompatible type")
+
     def claim(self) -> None:
         if self._claimed:
             raise RuntimeError("Environment attachment is single-use")
@@ -214,6 +230,13 @@ class EIPEnvironmentAttachment:
 
 
 type EnvironmentRuntimeAttachment = DirectLocalEnvironmentAttachment | EIPEnvironmentAttachment
+
+
+def _validate_attachment_identity(value: str, *, field_name: str) -> None:
+    if not isinstance(value, str):
+        raise TypeError(f"{field_name} must be a string")
+    if not value or value != value.strip() or len(value) > 128:
+        raise ValueError(f"{field_name} must be a nonblank trimmed string of at most 128 characters")
 
 
 async def _initialize(

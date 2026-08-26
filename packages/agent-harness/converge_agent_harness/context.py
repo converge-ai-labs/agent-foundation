@@ -19,6 +19,7 @@ from converge_agent_harness.identity import AgentIdentityRef, AgentInstanceConte
 from converge_agent_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
+    from converge_agent_harness.capabilities.steering import SteeringBridge
     from converge_agent_harness.environment.models import EnvironmentPath
     from converge_agent_harness.environment.providers import BoundEnvironment, EnvironmentRunBinding
     from converge_agent_harness.events import HarnessEventEmitter
@@ -260,6 +261,7 @@ class AgentContext:
     usage_attribution: RunUsageLedger = field(repr=False)
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
+    _steering: SteeringBridge = field(repr=False, compare=False)
     model_context: ModelContextRunBinding | None = None
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
     _skill_selection_names: frozenset[str] | None = field(default=None, repr=False, compare=False)

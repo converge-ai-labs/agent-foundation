@@ -2,7 +2,7 @@
 
 FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
-EXAMPLE_DIRS := examples/general-agent examples/plugins examples/hosting examples/local-agent
+EXAMPLE_DIRS := examples/agent-app examples/plugins
 
 .PHONY: install
 install: ## Install locked dependencies and Git hooks
@@ -56,9 +56,9 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-code)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
-	@(cd examples/general-agent && uv run --locked general-agent-example)
-	@(cd examples/hosting && uv run --locked host-persistence-example)
-	@(cd examples/local-agent && uv run --locked local-agent-example)
+	@(cd examples/agent-app && uv run --locked agent-app-example basic)
+	@(cd examples/agent-app && uv run --locked agent-app-example local)
+	@(cd examples/agent-app && uv run --locked agent-app-example host)
 
 .PHONY: examples-build
 examples-build: examples-sync ## Build every example distribution

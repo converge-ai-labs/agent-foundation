@@ -6,9 +6,25 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from enum import StrEnum
 
-from anyio import CancelScope, Event, Lock, move_on_after
+from anyio import CancelScope, Event, Lock, create_task_group, move_on_after
+from anyio.streams.memory import MemoryObjectReceiveStream
 from pydantic import BaseModel, ConfigDict, Field
 
+from converge_agent_ui.configuration import (
+    ConfigurationDiagnostic,
+    ConfigurationGeneration,
+    ConfigurationService,
+    LocalSkillDiscoverySettings,
+    LocalSkillSourceDefinition,
+    ResourceRevision,
+    ResourceRevisionRef,
+    SkillChangePreview,
+    SkillConflictPreview,
+    SkillScanPreview,
+    SkillSourceStatus,
+    SourceTransactionManifest,
+)
+from converge_agent_ui.configuration.catalog import CatalogRepository
 from converge_agent_ui.errors import ApplicationStateError
 from converge_agent_ui.settings import AgentUiSettings
 from converge_agent_ui.storage import LocalStore, StoreDiagnostic, open_local_store
@@ -40,6 +56,11 @@ class AgentUiApplication:
         self._settings = settings
         self._store = store
         self._state = ApplicationState.starting
+        self._configuration = ConfigurationService(
+            settings.configuration,
+            CatalogRepository(store),
+            process_settings_path=settings.process_settings_path,
+        )
         self._operation_lock = Lock()
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
@@ -60,6 +81,137 @@ class AgentUiApplication:
     async def recovery_diagnostics(self, *, limit: int = 100) -> tuple[StoreDiagnostic, ...]:
         async with self._operation():
             return await self._store.recovery_diagnostics(limit=limit)
+
+    async def current_configuration(self) -> ConfigurationGeneration | None:
+        async with self._operation():
+            return await self._configuration.current_generation()
+
+    async def retained_configurations(self, *, limit: int = 100) -> tuple[ConfigurationGeneration, ...]:
+        async with self._operation():
+            return await self._configuration.retained_generations(limit=limit)
+
+    async def configuration_resource(self, reference: ResourceRevisionRef) -> ResourceRevision:
+        async with self._operation():
+            return await self._configuration.resource(reference)
+
+    async def configuration_diagnostics(self, *, limit: int = 100) -> tuple[ConfigurationDiagnostic, ...]:
+        async with self._operation():
+            return await self._configuration.diagnostics(limit=limit)
+
+    async def reload_configuration(self) -> ConfigurationGeneration:
+        async with self._operation():
+            return await self._configuration.reload()
+
+    async def apply_source_transaction(
+        self,
+        manifest: SourceTransactionManifest,
+        replacements: dict[str, bytes],
+    ) -> ConfigurationGeneration:
+        async with self._operation():
+            return await self._configuration.apply_transaction(manifest, replacements)
+
+    async def skill_source_statuses(self) -> tuple[SkillSourceStatus, ...]:
+        async with self._operation():
+            return await self._configuration.skill_source_statuses()
+
+    async def upsert_skill_source(
+        self,
+        source: LocalSkillSourceDefinition,
+        *,
+        target_root_id: str,
+    ) -> ConfigurationGeneration:
+        async with self._operation():
+            return await self._configuration.upsert_skill_source(
+                source,
+                target_root_id=target_root_id,
+            )
+
+    async def delete_skill_source(self, skill_source_id: str) -> ConfigurationGeneration:
+        async with self._operation():
+            return await self._configuration.delete_skill_source(skill_source_id)
+
+    async def reorder_skill_sources(
+        self,
+        skill_source_ids: tuple[str, ...],
+    ) -> ConfigurationGeneration:
+        async with self._operation():
+            return await self._configuration.reorder_skill_sources(skill_source_ids)
+
+    async def skill_conflicts(
+        self,
+        discovery: LocalSkillDiscoverySettings | None = None,
+    ) -> SkillConflictPreview:
+        async with self._operation():
+            return await self._configuration.skill_conflicts(discovery)
+
+    async def scan_skill_source(self, skill_source_id: str) -> SkillScanPreview:
+        async with self._operation():
+            return await self._configuration.scan_skill_source(skill_source_id)
+
+    async def scan_skills(
+        self,
+        discovery: LocalSkillDiscoverySettings | None = None,
+    ) -> SkillScanPreview:
+        async with self._operation():
+            return await self._configuration.scan_skills(discovery)
+
+    async def discard_skill_scan(self, scan_id: str) -> None:
+        async with self._operation():
+            await self._configuration.discard_skill_scan(scan_id)
+
+    async def preview_skill_import(
+        self,
+        *,
+        scan_id: str,
+        skill_name: str,
+        skill_id: str,
+        display_name: str,
+        target_root_id: str,
+    ) -> SkillChangePreview:
+        async with self._operation():
+            return await self._configuration.preview_skill_import(
+                scan_id=scan_id,
+                skill_name=skill_name,
+                skill_id=skill_id,
+                display_name=display_name,
+                target_root_id=target_root_id,
+            )
+
+    async def preview_skill_refresh(
+        self,
+        *,
+        scan_id: str,
+        skill_name: str,
+        skill_id: str,
+    ) -> SkillChangePreview:
+        async with self._operation():
+            return await self._configuration.preview_skill_refresh(
+                scan_id=scan_id,
+                skill_name=skill_name,
+                skill_id=skill_id,
+            )
+
+    async def accept_skill_import(self, change_id: str) -> ConfigurationGeneration:
+        async with self._operation():
+            return await self._configuration.accept_skill_import(change_id)
+
+    async def accept_skill_refresh(self, change_id: str) -> ConfigurationGeneration:
+        async with self._operation():
+            return await self._configuration.accept_skill_refresh(change_id)
+
+    async def discard_skill_change(self, change_id: str) -> None:
+        async with self._operation():
+            await self._configuration.discard_skill_change(change_id)
+
+    @asynccontextmanager
+    async def subscribe_configurations(
+        self,
+        *,
+        capacity: int = 16,
+    ) -> AsyncGenerator[MemoryObjectReceiveStream[ConfigurationGeneration]]:
+        async with self._operation():
+            async with self._configuration.subscribe(capacity=capacity) as subscription:
+                yield subscription
 
     @asynccontextmanager
     async def _operation(self) -> AsyncGenerator[None]:
@@ -122,12 +274,21 @@ async def open_application(settings: AgentUiSettings) -> AsyncGenerator[AgentUiA
     try:
         async with open_local_store(settings.storage) as store:
             application = AgentUiApplication(settings, store)
+            await application._configuration.initialize()
+            await store.cleanup_unreferenced_objects(
+                retention_seconds=application._configuration.settings.orphan_retention_seconds,
+            )
             application._state = ApplicationState.ready
-            try:
-                yield application
-            finally:
-                with CancelScope(shield=True):
-                    await application._stop()
+            async with create_task_group() as tasks:
+                tasks.start_soon(application._configuration.reconcile_periodically)
+                tasks.start_soon(application._configuration.reap_skill_leases_periodically)
+                try:
+                    yield application
+                finally:
+                    with CancelScope(shield=True):
+                        await application._stop()
+                        tasks.cancel_scope.cancel()
+                        await application._configuration.close()
     finally:
         if application is not None:
             application._state = ApplicationState.closed

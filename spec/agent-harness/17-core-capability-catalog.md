@@ -22,6 +22,8 @@ The current mandatory build contribution is deliberately narrow:
 | Logical model resolver    | Pydantic `ResolveModelId`                     | Consult fresh `ModelRunBinding` or delegate to native inference                                                                    | [Input, Model, and Output](16-input-model-and-output.md)                 |
 | Typed run dependencies    | `AgentContext`                                | Carry Identity, Environment, model and model-context bindings, events, usage attribution, plugins, children, metadata, and state   | [Capability Model](04-capability-model.md)                               |
 | Usage reporting           | Mandatory `UsageCapability`                   | Attribute mixed usage and flush pending records after every committed model request                                                | [Events, Observability, and Usage](12-events-observability-and-usage.md) |
+| Active-run steering       | Mandatory `SteeringCapability`                | Bind the public stream to native `RunContext.enqueue()` without exposing a private Pydantic run handle                             | [Public API and Packaging](14-public-api-and-packaging.md)               |
+| Tool-surface resolution   | Capability-contributed `WrapperToolset`       | Resolve declarative managed-tool supersession over the complete prepared candidate surface before CodeAct and final registration   | [Tool Execution](07-tool-execution.md)                                   |
 | Tool execution boundary   | Capability-contributed outer `WrapperToolset` | Bound all function text/JSON returns and enforce managed policy when metadata selects it                                           | [Tool Execution](07-tool-execution.md)                                   |
 | Message integrity Filter  | Innermost request Filter Capability           | Remove orphan or duplicate ordinary function-tool results before provider dispatch                                                 | [Input, Model, and Output](16-input-model-and-output.md)                 |
 | Model context coordinator | Mandatory `ModelContextCoordinatorCapability` | Remove prior owned overlays, resolve the typed Host/Capability/terminal projection chain, and commit one validated request overlay | [Context and Memory](09-context-and-memory.md)                           |
@@ -40,7 +42,7 @@ Model self-healing is a Model wrapper, not a Capability. Interrupted-stream sema
 | Runtime context                   | Bounded request epilogue with run timing, configured context window, and usage facts                 | [Context and Memory](09-context-and-memory.md)                           |
 | Workspace outline                 | Bounded revision-pinned Environment file-metadata projection on input requests                       | [Context and Memory](09-context-and-memory.md)                           |
 | File context                      | Run-frozen conventional and explicit Environment file contents on input requests                     | [Context and Memory](09-context-and-memory.md)                           |
-| Compaction and handoff            | Native history Capability, explicit summary tool, and tool-results summary reminder                  | [Context and Memory](09-context-and-memory.md)                           |
+| Compaction and handoff            | Same-Agent plain-text history compaction, plus an independent explicit handoff tool and reminder     | [Context and Memory](09-context-and-memory.md)                           |
 | Skills and discovery              | Run-frozen selected catalog and bounded resource Toolset                                             | [Context and Memory](09-context-and-memory.md)                           |
 | Working state                     | Capability using one `AgentContextState` namespace and the model-context subtype                     | [Context and Memory](09-context-and-memory.md)                           |
 | Structured user interaction       | Native deferred client-side tool                                                                     | [Tool Execution](07-tool-execution.md)                                   |
@@ -66,6 +68,8 @@ flowchart LR
     Run[RunBindings capabilities] --> PAI
     Resolver[Mandatory ResolveModelId] --> PAI
     Usage[Mandatory usage reporting] --> PAI
+    Steering[Mandatory active-run steering] --> PAI
+    Surface[Mandatory tool-surface resolution] --> PAI
     Boundary[Mandatory tool execution boundary] --> PAI
     Integrity[Mandatory message integrity Filter] --> PAI
     PAI --> Agent[Pydantic AI Agent loop]
@@ -113,4 +117,4 @@ A documentation catalog provides shared vocabulary without a second factory or c
 
 ### Small Mandatory Core vs. Uniform Feature Set
 
-Only model resolution, shared context/state coordination, mixed-usage reporting, the message-integrity Filter, and the code-owned tool execution boundary are mandatory. Optional Agents may expose very different tool and behavior surfaces, while native Pydantic composition stays authoritative. Without reserved managed metadata or a client definition marker, the boundary preserves ordinary native dispatch and adds only the default redaction, bound, and spill policy for native JSON and textual `ToolReturn` fields; managed authorization, credentials, grants, retries, and events remain opt-in through complete trusted metadata.
+Only model resolution, shared context/state coordination, active-run steering, mixed-usage reporting, tool-surface resolution, the message-integrity Filter, and the code-owned tool execution boundary are mandatory. Optional Agents may expose very different tool and behavior surfaces, while native Pydantic composition stays authoritative. Without reserved managed metadata or a client definition marker, the boundary preserves ordinary native dispatch and adds only the default redaction, bound, and spill policy for native JSON and textual `ToolReturn` fields; managed authorization, credentials, grants, retries, and events remain opt-in through complete trusted metadata.

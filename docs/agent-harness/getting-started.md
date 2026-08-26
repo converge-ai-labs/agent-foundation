@@ -126,8 +126,8 @@ Definition Capabilities describe stable Agent behavior. Provider clients, author
 
 ## Next Steps
 
-- Run the repository's [General Agent example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/general-agent) for this minimal path as an independent application with an injectable model.
+- Run the `basic` layer of the repository's [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) for this minimal path with an injectable model.
 - Read [Agents and Runs](agents-and-runs.md) for the complete build, stream, result, and cleanup path.
 - Read [Capabilities](capabilities.md) to choose optional first-party behavior.
 - Read [Environments](environments.md) before exposing files, shell commands, processes, or ports.
-- Run the [Local Agent example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/local-agent) for a complete offline tool, working-state, suspension, and resume flow.
+- Continue with the example's `local` layer for a complete offline tool, working-state, suspension, and resume flow.

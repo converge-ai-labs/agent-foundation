@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
+from converge_agent_environment_provider import (
+    DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
+)
+from converge_agent_harness import (
     DocumentAsset,
     DocumentConversionRequest,
     DocumentConversionResult,
@@ -48,6 +49,7 @@ from converge_agent_harness import (
     WebSearchResult,
     create_environment_run_binding,
 )
+from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from converge_agent_harness.toolsets.documents import DocumentsToolset
 from converge_agent_harness.toolsets.media import MediaToolset
@@ -147,9 +149,9 @@ class _ScrapeProvider:
 
 def _binding(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="content-capabilities-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=root),
         )
     )
     return create_environment_run_binding(
@@ -174,9 +176,9 @@ def _binding(root: Path):
 
 def _replacement_request(root: Path) -> EnvironmentTopologyRequest:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="content-capabilities-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=root),
         )
     )
     return EnvironmentTopologyRequest(

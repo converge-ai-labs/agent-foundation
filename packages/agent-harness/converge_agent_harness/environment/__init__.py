@@ -31,7 +31,6 @@ from .coordinator import (
     create_environment_run_binding,
     create_noop_environment_run_binding,
 )
-from .eip import EIPEnvironmentProviderBinding
 from .extension_factories import (
     ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP,
     EnvironmentRunExtensionFactory,
@@ -58,16 +57,6 @@ from .files import (
     FileWriteMode,
     FileWriteResult,
 )
-from .local import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalFilePolicy,
-    DirectLocalOutputPolicy,
-    DirectLocalPortPolicy,
-    DirectLocalProcessPolicy,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
-)
 from .models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_CATALOG_VERSION,
@@ -93,15 +82,6 @@ from .models import (
     EnvironmentTopologyChange,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
-)
-from .provider_factories import (
-    ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP,
-    EnvironmentProviderFactory,
-    EnvironmentProviderFactoryCatalog,
-    EnvironmentProviderFactoryReference,
-    EnvironmentProviderFactoryRegistration,
-    build_environment_provider_factory_catalog,
-    discover_environment_provider_factory_references,
 )
 from .providers import (
     BoundEnvironment,
@@ -148,7 +128,6 @@ __all__ = [
     "DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS",
     "ENVIRONMENT_ACTION_CATALOG_VERSION",
     "ENVIRONMENT_ACTION_DISPATCH",
-    "ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP",
     "ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP",
     "ArgvCommand",
     "BoundEnvironment",
@@ -161,17 +140,8 @@ __all__ = [
     "CommandRequest",
     "CompositeBoundEnvironment",
     "CompositeEnvironmentRunBinding",
-    "DirectLocalEnvironmentConfiguration",
-    "DirectLocalEnvironmentProviderBinding",
-    "DirectLocalFilePolicy",
-    "DirectLocalOutputPolicy",
-    "DirectLocalPortPolicy",
-    "DirectLocalProcessPolicy",
-    "DirectLocalRootConfiguration",
-    "DirectLocalShellProfile",
     "DynamicEnvironmentCapability",
     "DynamicEnvironmentConfiguration",
-    "EIPEnvironmentProviderBinding",
     "EnvironmentAction",
     "EnvironmentActionDispatch",
     "EnvironmentAvailability",
@@ -190,10 +160,6 @@ __all__ = [
     "EnvironmentPath",
     "EnvironmentPermissionSet",
     "EnvironmentProviderBinding",
-    "EnvironmentProviderFactory",
-    "EnvironmentProviderFactoryCatalog",
-    "EnvironmentProviderFactoryReference",
-    "EnvironmentProviderFactoryRegistration",
     "EnvironmentProviderOperations",
     "EnvironmentReadinessRequirement",
     "EnvironmentRunBinding",
@@ -247,11 +213,9 @@ __all__ = [
     "ShellCommand",
     "ShellExecResult",
     "VirtualFileOperator",
-    "build_environment_provider_factory_catalog",
     "build_environment_run_extension_factory_catalog",
     "create_environment_provider_binding",
     "create_environment_run_binding",
     "create_noop_environment_run_binding",
-    "discover_environment_provider_factory_references",
     "discover_environment_run_extension_factory_references",
 ]

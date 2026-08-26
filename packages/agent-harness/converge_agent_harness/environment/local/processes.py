@@ -45,11 +45,12 @@ from ..retention import (
 from .retention import LocalRetentionStore, LocalRetentionWriter
 
 if TYPE_CHECKING:
+    from converge_agent_environment_provider import DirectLocalShellProfile
+
     from .binding import (
-        DirectLocalOutputPolicy,
-        DirectLocalPortPolicy,
-        DirectLocalProcessPolicy,
-        DirectLocalShellProfile,
+        _DirectLocalOutputPolicy,
+        _DirectLocalPortPolicy,
+        _DirectLocalProcessPolicy,
     )
     from .files import LocalFileOperator
 
@@ -177,8 +178,8 @@ class LocalProcessManager:
         *,
         files: LocalFileOperator,
         retention: LocalRetentionStore,
-        policy: DirectLocalProcessPolicy,
-        output_policy: DirectLocalOutputPolicy,
+        policy: _DirectLocalProcessPolicy,
+        output_policy: _DirectLocalOutputPolicy,
         shell_profiles: tuple[DirectLocalShellProfile, ...],
         binding_id: str,
         binding_revision: int,
@@ -745,7 +746,7 @@ class LocalShell:
 
 
 class LocalPortOperator:
-    def __init__(self, policy: DirectLocalPortPolicy) -> None:
+    def __init__(self, policy: _DirectLocalPortPolicy) -> None:
         self._policy = policy
 
     async def inspect(self, target: PortTarget) -> PortObservation:
@@ -795,7 +796,7 @@ def _resolve_configured_executable(path: Path) -> Path:
         raise EnvironmentError("Configured executable must be absolute.", code="environment_request_invalid")
     try:
         canonical = expanded.resolve(strict=True)
-    except OSError:
+    except (OSError, ValueError):
         raise EnvironmentError("Configured executable is unavailable.", code="environment_not_found") from None
     if not canonical.is_file():
         raise EnvironmentError("Configured executable is not a file.", code="environment_request_invalid")

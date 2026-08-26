@@ -8,6 +8,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
+from converge_agent_environment_provider import (
+    EnvironmentManagementAction,
+    EnvironmentOperationContext,
+    EnvironmentProviderSpec,
+    build_environment_provider_factory_catalog,
+)
 from converge_agent_harness import (
     EnvironmentAction,
     EnvironmentBindingRequest,
@@ -18,8 +24,8 @@ from converge_agent_harness import (
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
     RunBindings,
-    build_environment_provider_factory_catalog,
     build_environment_run_extension_factory_catalog,
+    create_environment_provider_binding,
     create_environment_run_binding,
     discover_environment_run_extension_factory_references,
 )
@@ -43,19 +49,33 @@ async def _run_extension_demo(
     catalog: EnvironmentRunExtensionFactoryCatalog,
     workspace_root: Path,
 ) -> EnvironmentExtensionDemoResult:
-    from converge_plugin_examples.environment import WorkspaceEnvironmentProviderFactory
+    from converge_plugin_examples.environment import (
+        WorkspaceEnvironmentProviderFactory,
+        WorkspaceEnvironmentRuntime,
+    )
 
     provider_catalog = build_environment_provider_factory_catalog(
         explicit_factories=(WorkspaceEnvironmentProviderFactory(),)
     )
-    provider = provider_catalog.create_provider_binding(
-        "example.workspace",
-        {
-            "root": str(workspace_root),
-            "environment_id": "extension-workspace",
-            "read_only": False,
-        },
+    manager = provider_catalog.create_manager(
+        EnvironmentProviderSpec(
+            provider_key="example.workspace",
+            schema_version="1",
+            parameters={
+                "root": str(workspace_root),
+                "environment_id": "extension-workspace",
+                "read_only": False,
+            },
+        ),
+        runtime=WorkspaceEnvironmentRuntime(),
     )
+    operation = EnvironmentOperationContext(
+        operation_id=f"operation-create-{selection_mode}",
+        action=EnvironmentManagementAction.CREATE,
+        resource_correlation=f"resource-extension-{selection_mode}",
+        attempt=1,
+    )
+    resource = await manager.create(operation=operation)
     extension_id = f"marker-{selection_mode}"
     marker_path = "/workspace/.example-run"
     extension = catalog.create_extension(
@@ -65,42 +85,56 @@ async def _run_extension_demo(
             configuration={"marker_path": marker_path, "label": selection_mode},
         )
     )
-    topology = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="workspace-1",
-                binding_revision=1,
-                alias="workspace",
-                permission_ceiling=EnvironmentPermissionSet(
-                    operations=frozenset(
-                        {
-                            EnvironmentAction.FILE_READ_TEXT,
-                            EnvironmentAction.FILE_WRITE_TEXT,
-                            EnvironmentAction.FILE_REMOVE,
-                        }
-                    )
+    state = resource.state
+    async with resource:
+        async with resource.acquire_attachment() as attachment:
+            provider = create_environment_provider_binding(attachment)
+            topology = EnvironmentTopologyRequest(
+                topology_version=1,
+                bindings=(
+                    EnvironmentBindingRequest(
+                        binding_id="workspace-1",
+                        binding_revision=1,
+                        alias="workspace",
+                        permission_ceiling=EnvironmentPermissionSet(
+                            operations=frozenset(
+                                {
+                                    EnvironmentAction.FILE_READ_TEXT,
+                                    EnvironmentAction.FILE_WRITE_TEXT,
+                                    EnvironmentAction.FILE_REMOVE,
+                                }
+                            )
+                        ),
+                        default_working_directory="/",
+                        provider_binding=provider,
+                    ),
                 ),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="workspace-1",
-    )
-    environment_binding = create_environment_run_binding(
-        initial_topology=topology,
-        topology_limits=EnvironmentTopologyLimits(max_bindings=1, max_committed_changes=1),
-        state_limits=EnvironmentStateLimits(max_binding_entries=1),
-        extensions=(extension,),
-    )
-    run_bindings = RunBindings.local(environment=environment_binding)
+                default_binding_id="workspace-1",
+            )
+            environment_binding = create_environment_run_binding(
+                initial_topology=topology,
+                topology_limits=EnvironmentTopologyLimits(max_bindings=1, max_committed_changes=1),
+                state_limits=EnvironmentStateLimits(max_binding_entries=1),
+                extensions=(extension,),
+            )
+            run_bindings = RunBindings.local(environment=environment_binding)
 
-    async with run_bindings.environment.bind(
-        run_id="run-extension-example",
-        instance=run_bindings.instance,
-    ) as environment:
-        await environment.activate()
-        marker_text = (await environment.files.read_text(marker_path)).text
+            async with run_bindings.environment.bind(
+                run_id="run-extension-example",
+                instance=run_bindings.instance,
+            ) as environment:
+                await environment.activate()
+                marker_text = (await environment.files.read_text(marker_path)).text
+
+    await manager.destroy(
+        state,
+        operation=EnvironmentOperationContext(
+            operation_id=f"operation-destroy-{selection_mode}",
+            action=EnvironmentManagementAction.DESTROY,
+            resource_correlation=f"resource-extension-{selection_mode}",
+            attempt=1,
+        ),
+    )
 
     return EnvironmentExtensionDemoResult(
         selection_mode=selection_mode,

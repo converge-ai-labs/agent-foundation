@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import shutil
 import tempfile
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from converge_agent_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalShellProfile,
+)
 
 from ..models import (
     EnvironmentAction,
@@ -29,98 +31,67 @@ from .files import LocalFileOperator
 from .processes import LocalPortOperator, LocalProcessManager, LocalShell
 from .retention import LocalRetentionStore
 
-_MIB = 1024 * 1024
-_GIB = 1024 * _MIB
+
+@dataclass(frozen=True, slots=True)
+class _DirectLocalFilePolicy:
+    max_value_bytes: int
 
 
-class DirectLocalRootConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    path: Path
-    ownership: Literal["caller_owned", "binding_owned"]
-    read_only: bool = False
-
-
-class DirectLocalFilePolicy(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    max_value_bytes: Annotated[int, Field(gt=0)] = 16 * _MIB
+@dataclass(frozen=True, slots=True)
+class _DirectLocalProcessPolicy:
+    allowed_executables: frozenset[Path]
+    allowed_environment_keys: frozenset[str]
+    max_concurrent_processes: int
+    max_wall_time_seconds: float
+    terminate_grace_seconds: float
 
 
-class DirectLocalShellProfile(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    profile_id: Annotated[str, Field(min_length=1, max_length=128)]
-    executable: Path
-    fixed_arguments: tuple[str, ...] = ()
-    allow_login: bool = False
-
-    @field_validator("executable")
-    @classmethod
-    def _absolute_executable(cls, value: Path) -> Path:
-        expanded = value.expanduser()
-        if not expanded.is_absolute():
-            raise ValueError("shell profile executable must be an absolute path")
-        return expanded
+@dataclass(frozen=True, slots=True)
+class _DirectLocalOutputPolicy:
+    max_buffer_bytes: int
+    max_spool_bytes: int
 
 
-class DirectLocalProcessPolicy(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    allowed_executables: frozenset[Path] = frozenset()
-    allowed_environment_keys: frozenset[str] = frozenset()
-    max_concurrent_processes: Annotated[int, Field(gt=0)] = 128
-    max_wall_time_seconds: float = 24 * 60 * 60
-    terminate_grace_seconds: float = 5.0
-
-    @model_validator(mode="after")
-    def _finite_times(self) -> DirectLocalProcessPolicy:
-        if not math.isfinite(self.max_wall_time_seconds) or self.max_wall_time_seconds <= 0:
-            raise ValueError("max_wall_time_seconds must be positive and finite")
-        if not math.isfinite(self.terminate_grace_seconds) or self.terminate_grace_seconds <= 0:
-            raise ValueError("terminate_grace_seconds must be positive and finite")
-        return self
+@dataclass(frozen=True, slots=True)
+class _DirectLocalPortPolicy:
+    allowed_ports: frozenset[int]
 
 
-class DirectLocalOutputPolicy(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    max_buffer_bytes: Annotated[int, Field(gt=0)] = _MIB
-    max_spool_bytes: Annotated[int, Field(gt=0)] = 64 * _GIB
-
-
-class DirectLocalPortPolicy(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    allowed_ports: frozenset[Annotated[int, Field(ge=1, le=65535)]] = frozenset()
-
-
-class DirectLocalEnvironmentConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
+@dataclass(frozen=True, slots=True)
+class _DirectLocalBindingConfiguration:
     environment_id: str
-    root: DirectLocalRootConfiguration
-    files: DirectLocalFilePolicy = DirectLocalFilePolicy()
-    shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
-    processes: DirectLocalProcessPolicy = DirectLocalProcessPolicy()
-    outputs: DirectLocalOutputPolicy = DirectLocalOutputPolicy()
-    ports: DirectLocalPortPolicy = DirectLocalPortPolicy()
+    root_path: Path
+    read_only: bool
+    files: _DirectLocalFilePolicy
+    shell_profiles: tuple[DirectLocalShellProfile, ...]
+    processes: _DirectLocalProcessPolicy
+    outputs: _DirectLocalOutputPolicy
+    ports: _DirectLocalPortPolicy
 
-    @field_validator("environment_id")
     @classmethod
-    def _environment_id(cls, value: str) -> str:
-        if not value or len(value) > 128:
-            raise ValueError("environment_id must be non-empty and bounded")
-        return value
-
-    @model_validator(mode="after")
-    def _safe_combination(self) -> DirectLocalEnvironmentConfiguration:
-        if self.root.read_only and (self.shell_profiles or self.processes.allowed_executables):
-            raise ValueError("read-only roots cannot enable Direct Local process execution")
-        profile_ids = [profile.profile_id for profile in self.shell_profiles]
-        if len(profile_ids) != len(set(profile_ids)):
-            raise ValueError("shell profile IDs must be unique")
-        return self
+    def from_provider(
+        cls,
+        configuration: DirectLocalProviderConfiguration,
+    ) -> _DirectLocalBindingConfiguration:
+        return cls(
+            environment_id=configuration.environment_id,
+            root_path=configuration.root.path,
+            read_only=configuration.root.read_only,
+            files=_DirectLocalFilePolicy(max_value_bytes=configuration.max_value_bytes),
+            shell_profiles=configuration.shell_profiles,
+            processes=_DirectLocalProcessPolicy(
+                allowed_executables=configuration.allowed_executables,
+                allowed_environment_keys=configuration.allowed_environment_keys,
+                max_concurrent_processes=configuration.max_concurrent_processes,
+                max_wall_time_seconds=configuration.max_wall_time_seconds,
+                terminate_grace_seconds=configuration.terminate_grace_seconds,
+            ),
+            outputs=_DirectLocalOutputPolicy(
+                max_buffer_bytes=configuration.max_buffer_bytes,
+                max_spool_bytes=configuration.max_spool_bytes,
+            ),
+            ports=_DirectLocalPortPolicy(allowed_ports=configuration.allowed_ports),
+        )
 
 
 class _BoundDirectLocalProvider(BoundEnvironmentProvider):
@@ -177,8 +148,8 @@ class _BoundDirectLocalProvider(BoundEnvironmentProvider):
 class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
     """Single-use direct process-local root and output provider."""
 
-    def __init__(self, configuration: DirectLocalEnvironmentConfiguration) -> None:
-        self.configuration = configuration.model_copy(deep=True)
+    def __init__(self, configuration: DirectLocalProviderConfiguration) -> None:
+        self.configuration = _DirectLocalBindingConfiguration.from_provider(configuration)
         self._used = False
         self._discarded = False
 
@@ -203,21 +174,17 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
         if self._used or self._discarded:
             raise EnvironmentError("Direct Local provider binding is single-use.", code="environment_binding_reused")
         self._used = True
-        configured = self.configuration.root.path.expanduser()
-        owned = self.configuration.root.ownership == "binding_owned"
+        configured = self.configuration.root_path
         root: Path | None = None
         retention: LocalRetentionStore | None = None
         processes: LocalProcessManager | None = None
         retention_root: Path | None = None
         try:
-            if owned:
-                root = await asyncio.to_thread(_create_owned_root, configured)
-            else:
-                root = await asyncio.to_thread(_resolve_caller_root, configured)
+            root = await asyncio.to_thread(_resolve_shared_root, configured)
             generation = f"generation-{uuid4().hex[:16]}"
             files = LocalFileOperator(
                 root=root,
-                read_only=self.configuration.root.read_only,
+                read_only=self.configuration.read_only,
                 policy=self.configuration.files,
                 binding_id=binding_id,
                 binding_revision=binding_revision,
@@ -227,7 +194,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                 self.configuration.processes.allowed_executables or self.configuration.shell_profiles
             )
             if process_enabled:
-                retention_root = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="converge-output-"))
+                retention_root = await _create_retention_root()
                 retention = LocalRetentionStore(
                     root=retention_root,
                     binding_id=binding_id,
@@ -257,7 +224,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                 EnvironmentAction.FILE_COPY_SOURCE,
             }
             file_actions = {action for action in EnvironmentAction if action.value.startswith("environment.file.")}
-            permissions = set(read_file_actions if self.configuration.root.read_only else file_actions)
+            permissions = set(read_file_actions if self.configuration.read_only else file_actions)
             families: set[EnvironmentOperationFamily] = {"files"}
             if shell is not None:
                 permissions.add(EnvironmentAction.SHELL_EXEC)
@@ -291,7 +258,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                     EnvironmentMountDescriptor(
                         name="root",
                         path="/",
-                        read_only=self.configuration.root.read_only,
+                        read_only=self.configuration.read_only,
                     ),
                 ),
             )
@@ -318,37 +285,52 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                     elif retention_root is not None:
                         await asyncio.to_thread(shutil.rmtree, retention_root, True)
                 finally:
-                    if owned and root is not None:
-                        await asyncio.to_thread(shutil.rmtree, root, True)
+                    root = None
 
     async def discard(self) -> None:
         self._discarded = True
 
 
-def _create_owned_root(path: Path) -> Path:
+async def _create_retention_root() -> Path:
+    allocation = asyncio.create_task(asyncio.to_thread(tempfile.mkdtemp, prefix="converge-output-"))
     try:
-        path.mkdir(parents=True, exist_ok=False)
-        return path.resolve(strict=True)
-    except FileExistsError as exc:
-        raise EnvironmentError("Direct Local owned root already exists.", code="environment_conflict") from exc
-    except OSError as exc:
-        raise EnvironmentError(
-            "Direct Local could not create its owned root.", code="environment_provider_failure"
-        ) from exc
+        return Path(await asyncio.shield(allocation))
+    except asyncio.CancelledError as cancellation:
+        allocated: str | None = None
+        while not allocation.done():
+            try:
+                allocated = await asyncio.shield(allocation)
+            except asyncio.CancelledError:
+                continue
+            except BaseException:
+                break
+        if allocation.done() and not allocation.cancelled():
+            try:
+                allocated = allocation.result()
+            except BaseException:
+                pass
+        if allocated is not None:
+            cleanup = asyncio.create_task(asyncio.to_thread(shutil.rmtree, allocated, True))
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+        raise cancellation
 
 
-def _resolve_caller_root(path: Path) -> Path:
+def _resolve_shared_root(path: Path) -> Path:
     try:
         root = path.resolve(strict=True)
         is_directory = root.is_dir()
     except FileNotFoundError as exc:
-        raise EnvironmentError("Direct Local caller root does not exist.", code="environment_not_found") from exc
+        raise EnvironmentError("Direct Local shared root does not exist.", code="environment_not_found") from exc
     except PermissionError as exc:
-        raise EnvironmentError("Direct Local caller root is not accessible.", code="environment_denied") from exc
+        raise EnvironmentError("Direct Local shared root is not accessible.", code="environment_denied") from exc
     except OSError as exc:
         raise EnvironmentError(
-            "Direct Local could not inspect the caller root.", code="environment_provider_failure"
+            "Direct Local could not inspect the shared root.", code="environment_provider_failure"
         ) from exc
     if not is_directory:
-        raise EnvironmentError("Direct Local caller root is not a directory.", code="environment_request_invalid")
+        raise EnvironmentError("Direct Local shared root is not a directory.", code="environment_request_invalid")
     return root

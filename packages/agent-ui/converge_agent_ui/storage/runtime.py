@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 from uuid import uuid4
@@ -21,7 +21,13 @@ from converge_agent_ui.settings import StorageSettings
 
 from .database import Database, open_database, short_session, transaction
 from .layout import StorageLayout
-from .models import ImmutableObjectRecord, RecoveryDiagnosticRecord, StoreLeaseRecord
+from .models import (
+    ImmutableObjectRecord,
+    RecoveryDiagnosticRecord,
+    ResourceRevisionRecord,
+    SkillPackageReferenceRecord,
+    StoreLeaseRecord,
+)
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef, RecoveryDiagnostic
 
 
@@ -149,6 +155,63 @@ class LocalStore:
             cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
         ) as session:
             return int((await session.execute(select(func.count()).select_from(ImmutableObjectRecord))).scalar_one())
+
+    async def cleanup_unreferenced_objects(self, *, retention_seconds: int) -> int:
+        """Delete only expired inventory objects absent from durable references."""
+
+        if retention_seconds <= 0:
+            raise ValueError("object retention must be positive")
+        cutoff = datetime.now(UTC) - timedelta(seconds=retention_seconds)
+        async with short_session(
+            self.database.sessions,
+            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
+        ) as session:
+            referenced = set((await session.execute(select(ResourceRevisionRecord.object_digest))).scalars())
+            referenced.update((await session.execute(select(SkillPackageReferenceRecord.object_digest))).scalars())
+            registrations = tuple(
+                (
+                    await session.execute(
+                        select(
+                            ImmutableObjectRecord.logical_digest,
+                            ImmutableObjectRecord.object_kind,
+                            ImmutableObjectRecord.object_schema_version,
+                            ImmutableObjectRecord.registered_at,
+                        )
+                    )
+                ).tuples()
+            )
+            registered_digests = {row[0] for row in registrations}
+            candidates = tuple(row for row in registrations if _as_utc(row[3]) < cutoff)
+        removed: list[str] = []
+        for logical_digest, object_kind, object_schema_version, _registered_at in candidates:
+            if logical_digest in referenced:
+                continue
+            try:
+                reference = ObjectRef(
+                    object_kind=ObjectKind(object_kind),
+                    object_schema_version=object_schema_version,
+                    logical_digest=logical_digest,
+                )
+            except ValueError as exc:
+                raise StoreIntegrityError(
+                    "An expired object registration is invalid.",
+                    code="object_registration_invalid",
+                ) from exc
+            await self.objects.remove(reference)
+            removed.append(logical_digest)
+        if removed:
+            async with transaction(
+                self.database.sessions,
+                cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
+            ) as session:
+                await session.execute(
+                    delete(ImmutableObjectRecord).where(ImmutableObjectRecord.logical_digest.in_(removed))
+                )
+        unregistered = await self.objects.remove_expired_unregistered(
+            registered_digests,
+            cutoff=cutoff,
+        )
+        return len(removed) + unregistered
 
     async def recovery_diagnostics(self, *, limit: int = 100) -> tuple[StoreDiagnostic, ...]:
         """Return recent recovery evidence without exposing persistence entities."""

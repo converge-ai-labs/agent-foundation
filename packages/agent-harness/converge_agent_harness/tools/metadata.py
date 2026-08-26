@@ -77,6 +77,7 @@ class HarnessToolMetadata:
     idempotency: IdempotencySemantics
     output_policy: ToolOutputPolicy
     resource_resolver: ToolResourceResolver | None = None
+    superseded_by_tool_ids: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         normalized = _normalize_metadata_fields(
@@ -86,6 +87,7 @@ class HarnessToolMetadata:
             idempotency=self.idempotency,
             output_policy=self.output_policy,
             resource_resolver=self.resource_resolver,
+            superseded_by_tool_ids=self.superseded_by_tool_ids,
         )
         object.__setattr__(self, "tool_id", normalized["tool_id"])
         object.__setattr__(self, "effects", normalized["effects"])
@@ -93,6 +95,7 @@ class HarnessToolMetadata:
         object.__setattr__(self, "idempotency", normalized["idempotency"])
         object.__setattr__(self, "output_policy", normalized["output_policy"])
         object.__setattr__(self, "resource_resolver", normalized["resource_resolver"])
+        object.__setattr__(self, "superseded_by_tool_ids", normalized["superseded_by_tool_ids"])
 
 
 class HarnessTool(Tool[AgentContext]):
@@ -129,6 +132,7 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
                 idempotency=value.idempotency,
                 output_policy=value.output_policy.model_copy(deep=True),
                 resource_resolver=value.resource_resolver,
+                superseded_by_tool_ids=value.superseded_by_tool_ids,
             )
         if not isinstance(value, Mapping):
             raise TypeError("metadata must be HarnessToolMetadata or a mapping")
@@ -139,9 +143,10 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
             "idempotency",
             "output_policy",
             "resource_resolver",
+            "superseded_by_tool_ids",
         }
         extra = set(value) - expected
-        required = expected - {"resource_resolver"}
+        required = expected - {"resource_resolver", "superseded_by_tool_ids"}
         missing = required - set(value)
         if extra or missing:
             raise ValueError("metadata fields do not match the managed contract")
@@ -152,6 +157,7 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
             idempotency=value["idempotency"],
             output_policy=value["output_policy"],
             resource_resolver=value.get("resource_resolver"),
+            superseded_by_tool_ids=value.get("superseded_by_tool_ids", ()),
         )
         return HarnessToolMetadata(**fields)
     except DefinitionError:
@@ -168,6 +174,7 @@ def _normalize_metadata_fields(
     idempotency: object,
     output_policy: object,
     resource_resolver: object,
+    superseded_by_tool_ids: object,
 ) -> dict[str, Any]:
     if not isinstance(tool_id, str) or not tool_id.strip() or len(tool_id.strip()) > MAX_TOOL_ID_LENGTH:
         raise DefinitionError("Managed tool_id is invalid.", code="tool_metadata_invalid")
@@ -207,11 +214,36 @@ def _normalize_metadata_fields(
     if resource_resolver is not None and not callable(resource_resolver):
         raise DefinitionError("Managed resource_resolver must be callable.", code="tool_metadata_invalid")
 
+    if isinstance(superseded_by_tool_ids, (str, bytes)):
+        raise DefinitionError("Managed supersession targets must be a collection.", code="tool_metadata_invalid")
+    try:
+        raw_supersession_targets = tuple(superseded_by_tool_ids)  # type: ignore[arg-type]
+    except TypeError as exc:
+        raise DefinitionError(
+            "Managed supersession targets must be a collection.", code="tool_metadata_invalid"
+        ) from exc
+    if not all(
+        isinstance(item, str) and item.strip() and len(item.strip()) <= MAX_TOOL_ID_LENGTH
+        for item in raw_supersession_targets
+    ):
+        raise DefinitionError("Managed supersession targets are invalid.", code="tool_metadata_invalid")
+    normalized_targets = tuple(item.strip() for item in raw_supersession_targets)
+    if len(set(normalized_targets)) != len(normalized_targets):
+        raise DefinitionError("Managed supersession targets are invalid.", code="tool_metadata_invalid")
+    normalized_tool_id = tool_id.strip()
+    if normalized_tool_id in normalized_targets:
+        raise DefinitionError(
+            "Managed tools cannot supersede themselves.",
+            code="tool_supersession_self_reference",
+            details={"tool_id": normalized_tool_id},
+        )
+
     return {
-        "tool_id": tool_id.strip(),
+        "tool_id": normalized_tool_id,
         "effects": normalized_effects,
         "credential_audiences": normalized_audiences,
         "idempotency": idempotency,
         "output_policy": policy,
         "resource_resolver": resource_resolver,
+        "superseded_by_tool_ids": frozenset(normalized_targets),
     }

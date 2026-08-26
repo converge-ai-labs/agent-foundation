@@ -18,6 +18,14 @@ class ApplicationStateError(AgentUiError):
     """The application cannot accept the requested operation in its current state."""
 
 
+class ConfigurationError(AgentUiError):
+    """A configuration candidate or source edit is invalid or conflicted."""
+
+
+class SkillManagementError(ConfigurationError):
+    """A local Skill scan, copy, validation, or import could not complete safely."""
+
+
 class StoreError(AgentUiError):
     """The local store could not complete an operation safely."""
 
@@ -37,7 +45,9 @@ class ObjectIntegrityError(StoreIntegrityError):
 __all__ = [
     "AgentUiError",
     "ApplicationStateError",
+    "ConfigurationError",
     "ObjectIntegrityError",
+    "SkillManagementError",
     "StoreError",
     "StoreIntegrityError",
     "StoreLeaseConflict",

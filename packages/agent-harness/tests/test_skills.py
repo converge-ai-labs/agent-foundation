@@ -7,6 +7,10 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
+from converge_agent_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+)
 from converge_agent_harness import (
     FILE_VIEW_RULES,
     AgentContext,
@@ -16,10 +20,6 @@ from converge_agent_harness import (
     DefinitionError,
     DelegationCapability,
     DelegationRunCapability,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalFilePolicy,
-    DirectLocalRootConfiguration,
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
@@ -43,6 +43,10 @@ from converge_agent_harness import (
     SkillSelectionRunCapability,
     SubagentDefinition,
     create_environment_run_binding,
+)
+from converge_agent_harness.environment.local.binding import (
+    DirectLocalEnvironmentProviderBinding,
+    _DirectLocalFilePolicy,
 )
 from converge_agent_harness.environment.local.files import LocalFileOperator
 from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
@@ -159,9 +163,9 @@ class _Materializer:
 
 def _binding(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="skills-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=root),
         )
     )
     return create_environment_run_binding(
@@ -186,15 +190,15 @@ def _binding(root: Path):
 
 def _multi_binding(default_root: Path, shared_root: Path):
     default_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="skills-default",
-            root=DirectLocalRootConfiguration(path=default_root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=default_root),
         )
     )
     shared_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="skills-shared",
-            root=DirectLocalRootConfiguration(path=shared_root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=shared_root),
         )
     )
     permission = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
@@ -405,7 +409,7 @@ async def test_host_can_scan_non_virtual_local_file_operator(tmp_path: Path) -> 
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=DirectLocalFilePolicy(),
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="cli-files",
         binding_revision=1,
         generation="generation-1",
@@ -478,9 +482,9 @@ async def test_bound_catalog_ignores_unrelated_topology_refresh(tmp_path: Path) 
         await environment.activate()
         catalog = await SkillManager.default().scan_environment(environment=environment)
         replacement = DirectLocalEnvironmentProviderBinding(
-            DirectLocalEnvironmentConfiguration(
+            DirectLocalProviderConfiguration(
                 environment_id="skills-shared",
-                root=DirectLocalRootConfiguration(path=replacement_root, ownership="caller_owned"),
+                root=DirectLocalRootConfiguration(path=replacement_root),
             )
         )
         await binding.controller.apply(
@@ -524,9 +528,9 @@ async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: P
 
     binding = _binding(first_root)
     replacement_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="skills-test",
-            root=DirectLocalRootConfiguration(path=second_root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=second_root),
         )
     )
     replacement = EnvironmentTopologyRequest(
@@ -572,9 +576,9 @@ async def test_environment_scan_rejects_empty_root_refresh_during_scan(tmp_path:
     (second_root / ".agents" / "skills").mkdir(parents=True)
     binding = _binding(first_root)
     replacement_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="skills-test",
-            root=DirectLocalRootConfiguration(path=second_root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=second_root),
         )
     )
     replacement = EnvironmentTopologyRequest(

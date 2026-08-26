@@ -22,6 +22,7 @@ from converge_agent_harness.model_context import (
     ModelContextRequestKind,
 )
 from converge_agent_harness.tools.metadata import CanonicalResource, ToolResourceResolver
+from converge_agent_harness.toolsets.files import FilePathPair
 
 from .configuration import DynamicEnvironmentConfiguration
 from .providers import BoundEnvironment
@@ -91,6 +92,13 @@ class _DynamicEnvironmentContext:
             try:
                 resources = self._resolve_resources(tool_id, arguments, context)
             except EnvironmentError as exc:
+                if tool_id in {
+                    "filesystem.mkdir",
+                    "filesystem.move",
+                    "filesystem.copy",
+                    "filesystem.remove",
+                }:
+                    raise
                 if exc.code not in {
                     "environment_reference_invalid",
                     "environment_reference_stale",
@@ -127,6 +135,16 @@ class _DynamicEnvironmentContext:
             "filesystem.multi_edit",
         }:
             return (self._path_resource(context, _string_argument(arguments, "file_path")),)
+        if tool_id == "filesystem.mkdir":
+            return self._path_resources(context, _string_sequence_argument(arguments, "paths"))
+        if tool_id in {"filesystem.move", "filesystem.copy"}:
+            pairs = _path_pair_sequence_argument(arguments, "pairs")
+            return self._path_resources(
+                context,
+                tuple(path for pair in pairs for path in (pair.src, pair.dst)),
+            )
+        if tool_id == "filesystem.remove":
+            return self._path_resources(context, _string_sequence_argument(arguments, "paths"))
         if tool_id == "filesystem.ls":
             return (self._path_resource(context, _string_argument(arguments, "path")),)
         if tool_id in {"filesystem.glob", "filesystem.grep"}:
@@ -152,6 +170,13 @@ class _DynamicEnvironmentContext:
         if tool_id.startswith("environment.port_"):
             return (self._binding_resource(context, _optional_string_argument(arguments, "alias")),)
         return ()
+
+    def _path_resources(
+        self,
+        context: AgentContext,
+        paths: tuple[str, ...],
+    ) -> tuple[CanonicalResource, ...]:
+        return tuple(dict.fromkeys(self._path_resource(context, path) for path in paths))
 
     def _path_resource(
         self,
@@ -294,6 +319,44 @@ def _optional_string_argument(arguments: Mapping[str, object], name: str) -> str
             code="environment_request_invalid",
         )
     return value
+
+
+def _string_sequence_argument(arguments: Mapping[str, object], name: str) -> tuple[str, ...]:
+    value = arguments.get(name)
+    if not isinstance(value, list | tuple) or not value or not all(isinstance(item, str) and item for item in value):
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return tuple(value)
+
+
+def _path_pair_sequence_argument(arguments: Mapping[str, object], name: str) -> tuple[FilePathPair, ...]:
+    value = arguments.get(name)
+    if not isinstance(value, list | tuple) or not value:
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    pairs: list[FilePathPair] = []
+    for item in value:
+        if isinstance(item, FilePathPair):
+            pairs.append(item)
+            continue
+        if isinstance(item, Mapping):
+            try:
+                pairs.append(FilePathPair.model_validate(item, strict=True))
+            except ValueError as exc:
+                raise EnvironmentError(
+                    f"Environment tool argument {name!r} is invalid.",
+                    code="environment_request_invalid",
+                ) from exc
+            continue
+        raise EnvironmentError(
+            f"Environment tool argument {name!r} is invalid.",
+            code="environment_request_invalid",
+        )
+    return tuple(pairs)
 
 
 def _consume_task_result(task: asyncio.Task[None]) -> None:

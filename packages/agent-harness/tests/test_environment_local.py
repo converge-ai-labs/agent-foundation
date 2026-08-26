@@ -8,21 +8,24 @@ from pathlib import Path
 import converge_agent_harness as harness_module
 import converge_agent_harness.environment as environment_module
 import converge_agent_harness.environment.local as local_module
+import converge_agent_harness.environment.local.binding as local_binding_module
 import converge_agent_harness.environment.local.files as local_files_module
 import converge_agent_harness.environment.local.processes as local_processes_module
 import converge_agent_harness.environment.local.retention as local_retention_module
 import pytest
+from converge_agent_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalProviderRuntime,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+    EnvironmentManagementAction,
+    EnvironmentOperationContext,
+    EnvironmentProviderSpec,
+    build_environment_provider_factory_catalog,
+)
 from converge_agent_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalFilePolicy,
-    DirectLocalOutputPolicy,
-    DirectLocalPortPolicy,
-    DirectLocalProcessPolicy,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentError,
@@ -34,8 +37,10 @@ from converge_agent_harness import (
     FileQueryRequest,
     FileTextSearchRequest,
     OpaqueOutputReference,
+    create_environment_provider_binding,
     create_environment_run_binding,
 )
+from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 from pydantic.errors import PydanticInvalidForJsonSchema
 from pydantic_core import PydanticSerializationError
@@ -50,10 +55,6 @@ def _write_utf8(path: Path, value: str) -> None:
 
 def _read_utf8(path: Path) -> str:
     return path.read_bytes().decode("utf-8")
-
-
-def _process_policy() -> DirectLocalProcessPolicy:
-    return DirectLocalProcessPolicy(allowed_executables=frozenset({_PROCESS_EXECUTABLE}))
 
 
 def _instance() -> AgentInstanceContext:
@@ -71,45 +72,112 @@ def test_direct_local_internal_facets_are_not_public_exports() -> None:
         assert not hasattr(module, "LocalShell")
 
 
-def test_direct_local_policy_defaults_cover_only_materialized_values_and_live_resources() -> None:
-    files = DirectLocalFilePolicy()
-    assert files.max_value_bytes == 16 * 1024 * 1024
+def test_direct_local_configuration_defaults_and_exact_schema(tmp_path: Path) -> None:
+    configuration = DirectLocalProviderConfiguration(
+        environment_id="local-defaults",
+        root=DirectLocalRootConfiguration(path=tmp_path),
+    )
+    assert configuration.max_value_bytes == 16 * 1024 * 1024
+    assert configuration.max_concurrent_processes == 128
+    assert configuration.max_wall_time_seconds == 24 * 60 * 60
+    assert configuration.terminate_grace_seconds == 5
+    assert configuration.max_buffer_bytes == 1024 * 1024
+    assert configuration.max_spool_bytes == 64 * 1024 * 1024 * 1024
 
-    processes = DirectLocalProcessPolicy()
-    assert processes.max_concurrent_processes == 128
-    assert processes.max_wall_time_seconds == 24 * 60 * 60
-    assert processes.terminate_grace_seconds == 5
-
-    outputs = DirectLocalOutputPolicy()
-    assert outputs.max_buffer_bytes == 1024 * 1024
-    assert outputs.max_spool_bytes == 64 * 1024 * 1024 * 1024
-
-    with pytest.raises(ValidationError):
-        DirectLocalFilePolicy(max_file_bytes=64 * 1024 * 1024)
-    with pytest.raises(ValidationError):
-        DirectLocalProcessPolicy(max_stdin_bytes=64 * 1024 * 1024)
-    with pytest.raises(ValidationError):
-        DirectLocalOutputPolicy(retention_seconds=60)
-    with pytest.raises(ValidationError):
-        DirectLocalPortPolicy(enabled=True)
+    base = {
+        "environment_id": "invalid-policy",
+        "root": DirectLocalRootConfiguration(path=tmp_path),
+    }
+    for extra in (
+        {"max_file_bytes": 64 * 1024 * 1024},
+        {"max_stdin_bytes": 64 * 1024 * 1024},
+        {"retention_seconds": 60},
+        {"ports_enabled": True},
+    ):
+        with pytest.raises(ValidationError):
+            DirectLocalProviderConfiguration(**base, **extra)
     with pytest.raises(ValidationError):
         DirectLocalShellProfile(profile_id="relative", executable=Path("bin/sh"))
     with pytest.raises(ValidationError):
         DirectLocalShellProfile(profile_id="", executable=_PROCESS_EXECUTABLE)
 
 
+async def test_host_manager_attachment_path_supports_sequential_harness_runs(tmp_path: Path) -> None:
+    catalog = build_environment_provider_factory_catalog(builtin_keys=("converge.direct-local",))
+    manager = catalog.create_manager(
+        EnvironmentProviderSpec(
+            provider_key="converge.direct-local",
+            schema_version="1",
+            parameters={
+                "environment_id": "host-managed-local",
+                "root": {"path": str(tmp_path)},
+            },
+        ),
+        runtime=DirectLocalProviderRuntime(),
+    )
+
+    for attempt in (1, 2):
+        managed = await manager.create(
+            operation=EnvironmentOperationContext(
+                operation_id=f"operation-create-{attempt}",
+                action=EnvironmentManagementAction.CREATE,
+                resource_correlation="resource-host-managed-local",
+                attempt=1,
+            )
+        )
+        state = managed.state
+        async with managed:
+            async with managed.acquire_attachment() as attachment:
+                provider = create_environment_provider_binding(attachment)
+                request = EnvironmentTopologyRequest(
+                    topology_version=1,
+                    bindings=(
+                        EnvironmentBindingRequest(
+                            binding_id="binding-1",
+                            binding_revision=1,
+                            alias="local",
+                            permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                            default_working_directory="/",
+                            provider_binding=provider,
+                        ),
+                    ),
+                    default_binding_id="binding-1",
+                )
+                binding = create_environment_run_binding(
+                    initial_topology=request,
+                    topology_limits=EnvironmentTopologyLimits(),
+                    state_limits=EnvironmentStateLimits(),
+                )
+                async with binding.bind(run_id=f"run-{attempt}", instance=_instance()) as environment:
+                    if attempt == 1:
+                        await environment.files.write_text("/workspace/shared.txt", "preserved", mode="create")
+                    else:
+                        assert (await environment.files.read_text("/workspace/shared.txt")).text == "preserved"
+        await manager.destroy(
+            state,
+            operation=EnvironmentOperationContext(
+                operation_id=f"operation-destroy-{attempt}",
+                action=EnvironmentManagementAction.DESTROY,
+                resource_correlation="resource-host-managed-local",
+                attempt=1,
+            ),
+        )
+
+    assert (tmp_path / "shared.txt").read_text() == "preserved"
+
+
 def _two_binding_aggregate(source: Path, destination: Path):
     providers = (
         DirectLocalEnvironmentProviderBinding(
-            DirectLocalEnvironmentConfiguration(
+            DirectLocalProviderConfiguration(
                 environment_id="local-source",
-                root=DirectLocalRootConfiguration(path=source, ownership="caller_owned"),
+                root=DirectLocalRootConfiguration(path=source),
             )
         ),
         DirectLocalEnvironmentProviderBinding(
-            DirectLocalEnvironmentConfiguration(
+            DirectLocalProviderConfiguration(
                 environment_id="local-destination",
-                root=DirectLocalRootConfiguration(path=destination, ownership="caller_owned"),
+                root=DirectLocalRootConfiguration(path=destination),
             )
         ),
     )
@@ -139,17 +207,16 @@ def _aggregate(
     root: Path,
     *,
     read_only: bool = False,
-    file_policy: DirectLocalFilePolicy | None = None,
+    max_value_bytes: int = 16 * 1024 * 1024,
 ):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-1",
             root=DirectLocalRootConfiguration(
                 path=root,
-                ownership="caller_owned",
                 read_only=read_only,
             ),
-            files=file_policy or DirectLocalFilePolicy(),
+            max_value_bytes=max_value_bytes,
         )
     )
     request = EnvironmentTopologyRequest(
@@ -262,9 +329,9 @@ async def test_direct_local_rejects_escape_symlink_and_read_only_mutation(tmp_pa
 
 async def test_file_only_binding_does_not_advertise_or_create_output_operations(tmp_path: Path) -> None:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-files-only",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=tmp_path),
         )
     )
     async with provider.bind(
@@ -280,11 +347,10 @@ async def test_file_only_binding_does_not_advertise_or_create_output_operations(
 
 async def test_read_only_binding_advertises_only_effective_file_permissions(tmp_path: Path) -> None:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="read-only-permissions",
             root=DirectLocalRootConfiguration(
                 path=tmp_path,
-                ownership="caller_owned",
                 read_only=True,
             ),
         )
@@ -310,9 +376,9 @@ async def test_direct_local_read_race_returns_environment_error(
     target = tmp_path / "race.bin"
     target.write_bytes(b"value")
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="read-race",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=tmp_path),
         )
     )
     original = local_files_module._read_bytes_at_most
@@ -362,11 +428,51 @@ async def test_write_destination_inspection_errors_are_normalized(
     assert not tuple(tmp_path.glob(".converge-write-*"))
 
 
-async def test_binding_teardown_attempts_spool_and_owned_root_cleanup_after_process_failure(
+async def test_cancelled_spool_allocation_is_joined_and_removed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    spool = tmp_path / "spool"
+
+    def blocked_mkdtemp(*, prefix: str) -> str:
+        assert prefix == "converge-output-"
+        started.set()
+        release.wait(timeout=5)
+        spool.mkdir()
+        return str(spool)
+
+    monkeypatch.setattr(local_binding_module.tempfile, "mkdtemp", blocked_mkdtemp)
+    provider = DirectLocalEnvironmentProviderBinding(
+        DirectLocalProviderConfiguration(
+            environment_id="local-cancelled-spool",
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
+        )
+    )
+    scope = provider.bind(
+        run_id="run-1",
+        instance=_instance(),
+        binding_id="binding-1",
+        binding_revision=1,
+    )
+    entering = asyncio.create_task(scope.__aenter__())
+    assert await asyncio.to_thread(started.wait, 5)
+    entering.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await entering
+
+    assert not spool.exists()
+
+
+async def test_binding_teardown_attempts_spool_cleanup_and_preserves_shared_root_after_process_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    owned = tmp_path / "owned-cleanup"
+    shared = tmp_path / "shared-cleanup"
+    shared.mkdir()
     retention_closed = False
     original_retention_close = local_retention_module.LocalRetentionStore.close
 
@@ -381,10 +487,10 @@ async def test_binding_teardown_attempts_spool_and_owned_root_cleanup_after_proc
     monkeypatch.setattr(local_processes_module.LocalProcessManager, "close", fail_process_close)
     monkeypatch.setattr(local_retention_module.LocalRetentionStore, "close", observe_retention_close)
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-cleanup-failure",
-            root=DirectLocalRootConfiguration(path=owned, ownership="binding_owned"),
-            processes=_process_policy(),
+            root=DirectLocalRootConfiguration(path=shared),
+            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
         )
     )
 
@@ -398,30 +504,31 @@ async def test_binding_teardown_attempts_spool_and_owned_root_cleanup_after_proc
             pass
 
     assert retention_closed is True
-    assert not owned.exists()
+    assert shared.exists()
 
 
-async def test_binding_owned_root_is_exclusive_and_removed(tmp_path: Path) -> None:
-    owned = tmp_path / "owned"
+async def test_direct_local_requires_and_preserves_shared_root(tmp_path: Path) -> None:
+    shared = tmp_path / "shared"
+    shared.mkdir()
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
-            environment_id="local-owned",
-            root=DirectLocalRootConfiguration(path=owned, ownership="binding_owned"),
+        DirectLocalProviderConfiguration(
+            environment_id="local-shared",
+            root=DirectLocalRootConfiguration(path=shared),
         )
     )
     request = EnvironmentTopologyRequest(
         topology_version=1,
         bindings=(
             EnvironmentBindingRequest(
-                binding_id="binding-owned",
+                binding_id="binding-shared",
                 binding_revision=1,
-                alias="owned",
+                alias="shared",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
                 provider_binding=provider,
             ),
         ),
-        default_binding_id="binding-owned",
+        default_binding_id="binding-shared",
     )
     binding = create_environment_run_binding(
         initial_topology=request,
@@ -431,15 +538,14 @@ async def test_binding_owned_root_is_exclusive_and_removed(tmp_path: Path) -> No
 
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         await environment.files.write_text("/workspace/value.txt", "value", mode="create")
-        assert owned.exists()
-    assert not owned.exists()
+    assert (shared / "value.txt").read_text() == "value"
 
 
 async def test_raw_reads_are_at_most_and_stream_writes_publish_only_on_success(tmp_path: Path) -> None:
     (tmp_path / "large.bin").write_bytes(b"12345")
     binding = _aggregate(
         tmp_path,
-        file_policy=DirectLocalFilePolicy(max_value_bytes=4),
+        max_value_bytes=4,
     )
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         with pytest.raises(EnvironmentError) as too_large:
@@ -840,7 +946,7 @@ async def test_search_skips_nul_files_and_streams_files_larger_than_value_limit(
 
     nul_file.unlink()
     _write_utf8(tmp_path / "large.txt", "haystack\n" * 10 + "needle\n")
-    limited = _aggregate(tmp_path, file_policy=DirectLocalFilePolicy(max_value_bytes=16))
+    limited = _aggregate(tmp_path, max_value_bytes=16)
     async with limited.bind(run_id="run-large", instance=_instance()) as environment:
         result = await environment.files.search_text(
             FileTextSearchRequest(root="/workspace", pattern="needle", max_matches=10)
@@ -873,10 +979,10 @@ async def test_search_result_page_does_not_limit_file_traversal(tmp_path: Path) 
 
 async def test_local_retention_is_bounded_readable_and_released(tmp_path: Path) -> None:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-output",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
-            processes=_process_policy(),
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
         )
     )
     async with provider.bind(
@@ -901,11 +1007,12 @@ async def test_local_retention_is_bounded_readable_and_released(tmp_path: Path) 
 
 async def test_retention_stops_capturing_after_the_first_quota_gap(tmp_path: Path) -> None:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-output-gap",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
-            processes=_process_policy(),
-            outputs=DirectLocalOutputPolicy(max_buffer_bytes=4, max_spool_bytes=6),
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
+            max_buffer_bytes=4,
+            max_spool_bytes=6,
         )
     )
     async with provider.bind(
@@ -933,10 +1040,10 @@ async def test_retained_read_serializes_with_release(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-output-race",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
-            processes=_process_policy(),
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
         )
     )
     async with provider.bind(
@@ -974,11 +1081,12 @@ async def test_retained_read_serializes_with_release(
 
 async def test_retention_accounts_actual_bytes_and_refunds_release(tmp_path: Path) -> None:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-output-quota",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
-            processes=_process_policy(),
-            outputs=DirectLocalOutputPolicy(max_buffer_bytes=4, max_spool_bytes=8),
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
+            max_buffer_bytes=4,
+            max_spool_bytes=8,
         )
     )
     async with provider.bind(

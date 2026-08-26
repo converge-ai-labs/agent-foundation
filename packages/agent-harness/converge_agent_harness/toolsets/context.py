@@ -97,9 +97,6 @@ class HandoffToolset:
                 operation_id=operation_id,
                 summary=rendered,
                 files=tuple(files_to_inspect or ()),
-                kind=self._state.kind,
-                preserve_recent_user_turns=self._state.preserve_recent_user_turns,
-                target_tokens=self._state.target_tokens,
             )
             if self._state.operation_id is None:
                 started = state.model_copy(update={"summary": None, "files": ()})
@@ -120,7 +117,7 @@ class HandoffToolset:
                     ctx.deps.events,
                     kind="context",
                     payload=ContextOperationFailedPayload(
-                        type="compaction_failed" if self._state.kind == "compaction" else "handoff_failed",
+                        type="handoff_failed",
                         operation_id=operation_id,
                         failed_phase="summary_persistence",
                         error_code=error_code,
@@ -132,7 +129,7 @@ class HandoffToolset:
                 ctx.deps.events,
                 kind="context",
                 payload=ContextOperationPreparedPayload(
-                    type="compaction_prepared" if state.kind == "compaction" else "handoff_prepared",
+                    type="handoff_prepared",
                     operation_id=operation_id,
                     summary_size=len(rendered.encode("utf-8")),
                     files_count=len(state.files),

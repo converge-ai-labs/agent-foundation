@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import converge_agent_environment_provider as environment_provider
 import converge_agent_harness as harness
 import converge_agent_harness.capabilities as capabilities
 import converge_agent_harness.environment as environment
@@ -10,6 +11,7 @@ import converge_agent_harness.toolsets as toolsets
 
 def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
     expected = {
+        "AgentSpec",
         "BoundSkillCatalog",
         "BoundSkillCatalogItem",
         "CodeActCapability",
@@ -31,6 +33,7 @@ def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
         "MediaCapability",
         "MediaRunCapability",
         "MediaToolset",
+        "ModelConfiguration",
         "ModelCostRunCapability",
         "MonitoredProcessCapability",
         "MonitoredProcessRunCapability",
@@ -139,7 +142,7 @@ def test_feature_facades_export_documented_families() -> None:
 
 
 def test_environment_and_managed_tool_import_routes_are_public() -> None:
-    expected_environment = {
+    removed_harness_provider_symbols = {
         "DirectLocalEnvironmentConfiguration",
         "DirectLocalEnvironmentProviderBinding",
         "DirectLocalFilePolicy",
@@ -148,6 +151,10 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
         "DirectLocalProcessPolicy",
         "DirectLocalRootConfiguration",
         "DirectLocalShellProfile",
+        "EnvironmentProviderFactory",
+        "EnvironmentProviderFactoryCatalog",
+    }
+    expected_environment = {
         "DynamicEnvironmentCapability",
         "ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP",
         "EnvironmentRunBinding",
@@ -173,6 +180,18 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     }
 
     assert expected_environment <= set(environment.__all__)
+    assert removed_harness_provider_symbols.isdisjoint(environment.__all__)
+    assert removed_harness_provider_symbols.isdisjoint(harness.__all__)
+    assert {
+        "DirectLocalProviderConfiguration",
+        "DirectLocalRootConfiguration",
+        "DirectLocalShellProfile",
+        "EnvironmentManager",
+        "EnvironmentProviderFactory",
+        "EnvironmentProviderFactoryCatalog",
+        "EnvironmentProviderSpec",
+        "ManagedEnvironment",
+    } <= set(environment_provider.__all__)
     assert expected_tools <= set(tools.__all__)
     assert "InvocationAuthorizationCapability" not in tools.__all__
     assert "InvocationAuthorizationToolset" not in tools.__all__

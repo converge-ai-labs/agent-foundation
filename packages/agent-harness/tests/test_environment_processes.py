@@ -8,6 +8,11 @@ from pathlib import Path
 import converge_agent_harness.environment.local.processes as local_processes_module
 import converge_agent_harness.environment.local.retention as local_retention_module
 import pytest
+from converge_agent_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+)
 from converge_agent_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -15,13 +20,6 @@ from converge_agent_harness import (
     CommandEnvironment,
     CommandLimits,
     CommandRequest,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalOutputPolicy,
-    DirectLocalPortPolicy,
-    DirectLocalProcessPolicy,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentError,
@@ -34,6 +32,7 @@ from converge_agent_harness import (
     ShellCommand,
     create_environment_run_binding,
 )
+from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 
 pytestmark = pytest.mark.anyio
 requires_posix_processes = pytest.mark.skipif(
@@ -56,24 +55,23 @@ def _binding(
     environment_keys: frozenset[str] = frozenset(),
     max_concurrent_processes: int = 2,
     shell_profiles: tuple[DirectLocalShellProfile, ...] = (),
-    outputs: DirectLocalOutputPolicy | None = None,
-    ports: DirectLocalPortPolicy | None = None,
+    outputs: tuple[int, int] | None = None,
+    ports: frozenset[int] | None = None,
     permissions: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
 ):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-process",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=root),
             shell_profiles=shell_profiles,
-            processes=DirectLocalProcessPolicy(
-                allowed_executables=executables,
-                allowed_environment_keys=environment_keys,
-                max_concurrent_processes=max_concurrent_processes,
-                max_wall_time_seconds=2,
-                terminate_grace_seconds=0.02,
-            ),
-            outputs=outputs or DirectLocalOutputPolicy(),
-            ports=ports or DirectLocalPortPolicy(),
+            allowed_executables=executables,
+            allowed_environment_keys=environment_keys,
+            max_concurrent_processes=max_concurrent_processes,
+            max_wall_time_seconds=2,
+            terminate_grace_seconds=0.02,
+            max_buffer_bytes=outputs[0] if outputs is not None else 1024 * 1024,
+            max_spool_bytes=outputs[1] if outputs is not None else 64 * 1024 * 1024 * 1024,
+            allowed_ports=ports or frozenset(),
         )
     )
     request = EnvironmentTopologyRequest(
@@ -259,14 +257,12 @@ async def test_binding_refresh_cannot_split_exec_from_output_materialization(
 
     def provider(environment_id: str, root: Path) -> DirectLocalEnvironmentProviderBinding:
         return DirectLocalEnvironmentProviderBinding(
-            DirectLocalEnvironmentConfiguration(
+            DirectLocalProviderConfiguration(
                 environment_id=environment_id,
-                root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
-                processes=DirectLocalProcessPolicy(
-                    allowed_executables=frozenset({executable}),
-                    max_wall_time_seconds=2,
-                    terminate_grace_seconds=0.02,
-                ),
+                root=DirectLocalRootConfiguration(path=root),
+                allowed_executables=frozenset({executable}),
+                max_wall_time_seconds=2,
+                terminate_grace_seconds=0.02,
             )
         )
 
@@ -428,14 +424,12 @@ async def test_foreground_retained_output_remains_readable(tmp_path: Path) -> No
 async def test_cancelled_foreground_exec_releases_unreachable_retained_output(tmp_path: Path) -> None:
     executable = Path(sys.executable).resolve()
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-cancelled-output",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
-            processes=DirectLocalProcessPolicy(
-                allowed_executables=frozenset({executable}),
-                max_wall_time_seconds=2,
-                terminate_grace_seconds=0.02,
-            ),
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({executable}),
+            max_wall_time_seconds=2,
+            terminate_grace_seconds=0.02,
         )
     )
     policy = EnvironmentOutputPolicy(max_inline_bytes=4, max_output_bytes=64, overflow="retain")
@@ -479,14 +473,12 @@ async def test_cancelled_second_output_reservation_releases_the_first(
 ) -> None:
     executable = Path(sys.executable).resolve()
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-cancelled-reservation",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
-            processes=DirectLocalProcessPolicy(
-                allowed_executables=frozenset({executable}),
-                max_wall_time_seconds=2,
-                terminate_grace_seconds=0.02,
-            ),
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({executable}),
+            max_wall_time_seconds=2,
+            terminate_grace_seconds=0.02,
         )
     )
     original_reserve = local_retention_module.LocalRetentionStore.reserve
@@ -599,15 +591,13 @@ async def test_process_manager_closes_active_processes_concurrently(
 ) -> None:
     executable = Path(sys.executable).resolve()
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="local-concurrent-close",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
-            processes=DirectLocalProcessPolicy(
-                allowed_executables=frozenset({executable}),
-                max_concurrent_processes=2,
-                max_wall_time_seconds=2,
-                terminate_grace_seconds=0.02,
-            ),
+            root=DirectLocalRootConfiguration(path=tmp_path),
+            allowed_executables=frozenset({executable}),
+            max_concurrent_processes=2,
+            max_wall_time_seconds=2,
+            terminate_grace_seconds=0.02,
         )
     )
     original_terminate = local_processes_module.LocalProcessManager._terminate_process
@@ -742,7 +732,7 @@ async def test_retained_output_uses_bounded_preview_actual_spool_and_process_pag
     binding = _binding(
         tmp_path,
         executables=frozenset({executable}),
-        outputs=DirectLocalOutputPolicy(max_buffer_bytes=4, max_spool_bytes=10),
+        outputs=(4, 10),
     )
     request = CommandRequest(
         command=ArgvCommand(
@@ -900,7 +890,7 @@ async def test_loopback_port_observation_is_explicitly_allowlisted(tmp_path: Pat
     port = socket.getsockname()[1]
     binding = _binding(
         tmp_path,
-        ports=DirectLocalPortPolicy(allowed_ports=frozenset({port})),
+        ports=frozenset({port}),
     )
     try:
         async with binding.bind(run_id="run-1", instance=_instance()) as environment:

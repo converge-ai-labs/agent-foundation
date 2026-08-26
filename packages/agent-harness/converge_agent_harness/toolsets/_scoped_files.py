@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
 from converge_agent_harness.context import AgentContext
-from converge_agent_harness.environment.files import FileOperator
+from converge_agent_harness.environment.files import FileCopyResult, FileMutationResult, FileOperator
 from converge_agent_harness.environment.models import EnvironmentError
 from converge_agent_harness.environment.providers import FileScopeProvider, FileScopeSelection
+from converge_agent_harness.environment.virtual_files import VirtualFileOperator
 from converge_agent_harness.tools.metadata import CanonicalResource, ToolResourceResolver
 
 
@@ -60,6 +61,73 @@ class ScopedFileAccess:
             )
 
         return resolve
+
+    async def move(
+        self,
+        source: str,
+        destination: str,
+        *,
+        replace: bool,
+        guard: Callable[[], None] | None = None,
+    ) -> FileMutationResult:
+        scopes = self._scopes
+        if scopes is None:
+            if guard is not None:
+                guard()
+            return await self._files.move(source, destination, replace=replace)
+        source_selection = scopes.select_files(source)
+        destination_selection = scopes.select_files(destination)
+        if (
+            source_selection.resolved_path.binding_id != destination_selection.resolved_path.binding_id
+            or source_selection.resolved_path.binding_revision != destination_selection.resolved_path.binding_revision
+            or source_selection.observed_generation != destination_selection.observed_generation
+        ):
+            raise EnvironmentError(
+                "Cross-binding move must be expressed as copy and separately authorized remove.",
+                code="environment_unsupported",
+            )
+        if guard is not None:
+            guard()
+        async with scopes.open_files(source_selection) as files:
+            return await files.move(source, destination, replace=replace)
+
+    async def copy(
+        self,
+        source: str,
+        destination: str,
+        *,
+        replace: bool,
+        guard: Callable[[], None] | None = None,
+    ) -> FileCopyResult:
+        scopes = self._scopes
+        if scopes is None:
+            if guard is not None:
+                guard()
+            return await self._files.copy(source, destination, replace=replace)
+        source_selection = scopes.select_files(source)
+        destination_selection = scopes.select_files(destination)
+        if guard is not None:
+            guard()
+        if isinstance(self._files, VirtualFileOperator):
+            return await self._files._copy_resolved(
+                source,
+                destination,
+                source_selected=source_selection.resolved_path,
+                destination_selected=destination_selection.resolved_path,
+                replace=replace,
+            )
+        same_binding = (
+            source_selection.resolved_path.binding_id == destination_selection.resolved_path.binding_id
+            and source_selection.resolved_path.binding_revision == destination_selection.resolved_path.binding_revision
+            and source_selection.observed_generation == destination_selection.observed_generation
+        )
+        if not same_binding:
+            raise EnvironmentError(
+                "Cross-binding copy requires a provider-neutral virtual file router.",
+                code="environment_unsupported",
+            )
+        async with scopes.open_files(source_selection) as source_files:
+            return await source_files.copy(source, destination, replace=replace)
 
     def guard(self, path: str) -> None:
         selection = self._selection.get()

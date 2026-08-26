@@ -7,7 +7,7 @@ import contextvars
 import hashlib
 import json
 from collections.abc import AsyncIterable, Iterator, Mapping
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -68,6 +68,10 @@ _INVOCATION_SCOPE: contextvars.ContextVar[InvocationScope | None] = contextvars.
     "converge_harness_invocation_scope",
     default=None,
 )
+_TOOL_EXECUTION_DISABLED: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "converge_harness_tool_execution_disabled",
+    default=False,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +101,16 @@ def current_invocation_scope() -> InvocationScope:
     if scope is None:
         raise RuntimeError("No managed tool invocation is active in this task")
     return scope
+
+
+@contextmanager
+def disabled_tool_execution() -> Iterator[None]:
+    """Disable function-tool dispatch in the current async execution context."""
+    token = _TOOL_EXECUTION_DISABLED.set(True)
+    try:
+        yield
+    finally:
+        _TOOL_EXECUTION_DISABLED.reset(token)
 
 
 @dataclass
@@ -131,6 +145,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     """Normalize definitions, authorize managed calls, and bound function results."""
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        _validate_final_toolset_wrapper_order(self.wrapped)
         _validate_client_run_attachment(ctx)
         tools = await self.wrapped.get_tools(ctx)
         policy = _resolve_policy(ctx)
@@ -189,6 +204,8 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         ctx: RunContext[AgentContext],
         tool: ToolsetTool[AgentContext],
     ) -> Any:
+        if _TOOL_EXECUTION_DISABLED.get():
+            raise ToolFailed("Tool execution is disabled during context compaction.")
         tool_def = tool.tool_def
         if tool_def.kind == "external":
             return await self.wrapped.call_tool(name, tool_args, ctx, tool)
@@ -1243,6 +1260,21 @@ async def _emit_best_effort(
         await asyncio.shield(_emit(ctx, metadata, phase, **fields))
     except BaseException:
         pass
+
+
+def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]) -> None:
+    from converge_agent_harness.tools.surface import ToolSurfaceToolset
+    from converge_agent_harness.toolsets.codeact import CodeActToolset
+
+    current = toolset
+    if isinstance(current, CodeActToolset):
+        current = current.wrapped
+    if not isinstance(current, ToolSurfaceToolset):
+        raise DefinitionError(
+            "Only CodeAct may wrap the mandatory tool surface inside the execution boundary.",
+            code="tool_surface_order_invalid",
+            details={"toolset_type": type(current).__name__},
+        )
 
 
 def _validate_client_run_attachment(ctx: RunContext[AgentContext]) -> None:

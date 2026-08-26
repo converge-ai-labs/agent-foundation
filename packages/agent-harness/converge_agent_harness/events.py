@@ -75,12 +75,8 @@ class ModelRequestFailedPayload(_FirstPartyPayload):
 class ContextSnapshotPayload(_FirstPartyPayload):
     type: Literal["context_snapshot"] = "context_snapshot"
     request_index: int = Field(ge=0)
-    estimated_tokens: int = Field(ge=0)
-    trigger_tokens: int | None = Field(default=None, gt=0)
-    target_tokens: int | None = Field(default=None, gt=0)
-    preserve_recent_user_turns: int | None = Field(default=None, ge=0, le=32)
-    compaction_pending: bool
-    estimation_method: Literal["harness_context_estimator"] = "harness_context_estimator"
+    request_tokens: int = Field(ge=0)
+    trigger_tokens: int = Field(gt=0)
 
 
 class ContextOperationStartedPayload(_FirstPartyPayload):
@@ -94,7 +90,7 @@ class ContextOperationStartedPayload(_FirstPartyPayload):
 
 
 class ContextOperationPreparedPayload(_FirstPartyPayload):
-    type: Literal["handoff_prepared", "compaction_prepared"]
+    type: Literal["handoff_prepared"]
     operation_id: str = Field(min_length=1, max_length=128)
     summary_size: int = Field(ge=0)
     files_count: int = Field(ge=0, le=64)

@@ -1,23 +1,3 @@
-"""Direct Local Environment provider."""
+"""Package-internal Direct Local Environment operation backend."""
 
-from .binding import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalFilePolicy,
-    DirectLocalOutputPolicy,
-    DirectLocalPortPolicy,
-    DirectLocalProcessPolicy,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
-)
-
-__all__ = [
-    "DirectLocalEnvironmentConfiguration",
-    "DirectLocalEnvironmentProviderBinding",
-    "DirectLocalFilePolicy",
-    "DirectLocalOutputPolicy",
-    "DirectLocalPortPolicy",
-    "DirectLocalProcessPolicy",
-    "DirectLocalRootConfiguration",
-    "DirectLocalShellProfile",
-]
+__all__: list[str] = []

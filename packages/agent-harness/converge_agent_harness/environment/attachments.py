@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from converge_agent_environment_provider import (
     DirectLocalEnvironmentAttachment,
+    DirectLocalProviderConfiguration,
     EIPEnvironmentAttachment,
     EnvironmentRuntimeAttachment,
 )
 
 from .eip import EIPEnvironmentProviderBinding
-from .local import DirectLocalEnvironmentConfiguration, DirectLocalEnvironmentProviderBinding
+from .local.binding import DirectLocalEnvironmentProviderBinding
 from .models import EnvironmentError
 from .providers import EnvironmentProviderBinding
 
@@ -18,7 +19,7 @@ def create_environment_provider_binding(
     """Exhaustively claim one provider attachment and create a fresh Harness binding."""
     if isinstance(attachment, DirectLocalEnvironmentAttachment):
         _claim(attachment)
-        if not isinstance(attachment.configuration, DirectLocalEnvironmentConfiguration):
+        if not isinstance(attachment.configuration, DirectLocalProviderConfiguration):
             raise EnvironmentError(
                 "Direct Local attachment configuration is incompatible",
                 code="environment_request_invalid",

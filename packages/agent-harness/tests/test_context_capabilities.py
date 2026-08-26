@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+from converge_agent_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+)
+from converge_agent_harness import AgentSpec as HarnessAgentSpec
 from converge_agent_harness import (
     CompactionCapability,
     CompactionPolicy,
-    DefinitionError,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalFilePolicy,
-    DirectLocalRootConfiguration,
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentPermissionSet,
@@ -27,6 +29,7 @@ from converge_agent_harness import (
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessState,
+    ModelConfiguration,
     RunBindings,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
@@ -34,15 +37,14 @@ from converge_agent_harness import (
     WorkspaceOutlineConfiguration,
     create_environment_run_binding,
 )
-from converge_agent_harness.capabilities.context import (
-    _fit_compacted_history,
-    _outgoing_token_estimate,
-    _requires_exact_history,
-    _serialized_token_estimate,
-)
+from converge_agent_harness.capabilities.context import _requires_exact_history
+from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from converge_agent_harness.state import AgentContextStateSnapshot, CapabilityState
+from pydantic_ai import ModelRetry
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import (
+    BinaryContent,
     FunctionToolResultEvent,
     ModelMessage,
     ModelRequest,
@@ -53,17 +55,17 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
-from pydantic_ai.usage import RequestUsage
+from pydantic_ai.usage import RequestUsage, UsageLimits
 
 pytestmark = pytest.mark.anyio
 
 
 def _local_binding(root: Path, *, default_working_directory: str = "/"):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="context-capability-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
-            files=DirectLocalFilePolicy(max_value_bytes=128 * 1024),
+            root=DirectLocalRootConfiguration(path=root),
+            max_value_bytes=128 * 1024,
         )
     )
     return create_environment_run_binding(
@@ -84,6 +86,57 @@ def _local_binding(root: Path, *, default_working_directory: str = "/"):
         topology_limits=EnvironmentTopologyLimits(),
         state_limits=EnvironmentStateLimits(),
     )
+
+
+def test_agent_spec_model_config_derives_context_capability_thresholds() -> None:
+    spec = HarnessAgentSpec(
+        model="logical:test",
+        model_config=ModelConfiguration(
+            context_window=200_000,
+            proactive_context_management_threshold=0.65,
+            compact_threshold=0.90,
+        ),
+    )
+    executable = HarnessBuilder().build_code(
+        spec,
+        output_type=str,
+        model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
+        capabilities=(HandoffCapability(), CompactionCapability()),
+    )
+    leaves: list[Any] = []
+    executable._agent.root_capability.apply(leaves.append)
+    handoff = next(capability for capability in leaves if isinstance(capability, HandoffCapability))
+    compaction = next(capability for capability in leaves if isinstance(capability, CompactionCapability))
+
+    assert spec.model_configuration is not None
+    assert spec.model_dump(mode="json", by_alias=True)["model_config"]["context_window"] == 200_000
+    assert "model_config" in HarnessAgentSpec.model_json_schema_with_capabilities()["properties"]
+    assert handoff.configuration.include_summary_reminder
+    assert handoff.configuration.summary_reminder_tokens == 130_000
+    assert compaction.policy == CompactionPolicy(trigger_tokens=180_000)
+
+
+def test_explicit_context_capability_thresholds_override_agent_model_config() -> None:
+    spec = HarnessAgentSpec(
+        model="logical:test",
+        model_config=ModelConfiguration(context_window=200_000),
+    )
+    executable = HarnessBuilder().build_code(
+        spec,
+        output_type=str,
+        model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
+        capabilities=(
+            HandoffCapability(HandoffConfiguration(summary_reminder_tokens=12_345)),
+            CompactionCapability(CompactionPolicy(trigger_tokens=23_456)),
+        ),
+    )
+    leaves: list[Any] = []
+    executable._agent.root_capability.apply(leaves.append)
+    handoff = next(capability for capability in leaves if isinstance(capability, HandoffCapability))
+    compaction = next(capability for capability in leaves if isinstance(capability, CompactionCapability))
+
+    assert handoff.configuration.summary_reminder_tokens == 12_345
+    assert compaction.policy == CompactionPolicy(trigger_tokens=23_456)
 
 
 async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders() -> None:
@@ -139,19 +192,287 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert state["summary"] is None
 
 
-async def test_compaction_forces_same_agent_summarize_tool_and_reuses_handoff_path() -> None:
-    calls: list[tuple[list[ModelMessage], AgentInfo]] = []
+async def test_handoff_preserves_structured_multimodal_original_request() -> None:
+    calls: list[list[ModelMessage]] = []
+    image = BinaryContent(data=b"\xff\x00image", media_type="image/png")
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        calls.append((messages, info))
+        calls.append(messages)
         if len(calls) == 1:
-            assert info.model_settings is not None
-            assert info.model_settings.get("tool_choice") == ["summarize"]
             yield {
                 0: DeltaToolCall(
                     name="summarize",
-                    json_args=json.dumps({"content": "Compacted continuation"}),
-                    tool_call_id="compact-1",
+                    json_args=json.dumps({"content": "Continue with the supplied image"}),
+                    tool_call_id="summary-multimodal-1",
+                )
+            }
+        else:
+            del info
+            yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(HandoffCapability(),),
+    )
+    result = await executable.run(
+        ("Describe the image", image),
+        bindings=RunBindings.local(),
+    )
+
+    assert result.output_or_raise() == "done"
+    restored_contents = [
+        part.content
+        for message in calls[1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+    ]
+    assert len(restored_contents) == 1
+    restored = restored_contents[0]
+    assert "Describe the image" in restored
+    restored_image = next(item for item in restored if isinstance(item, BinaryContent))
+    assert restored_image.data == image.data
+    assert restored_image.media_type == image.media_type
+    assert result.state is not None
+    assert "_wBpbWFnZQ==" in result.state.model_dump_json()
+
+
+async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> None:
+    calls: list[tuple[list[ModelMessage], AgentInfo]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        calls.append((messages, info))
+        if len(calls) == 1:
+            assert info.model_settings is not None
+            assert info.model_settings.get("tool_choice") == "none"
+            assert "Original long task" in _user_text(messages)
+            assert "Continue" in _user_text(messages)
+            yield "Compacted continuation"
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="Original long task")]),
+            ModelResponse(
+                parts=[TextPart(content="Previous assistant answer")],
+                usage=RequestUsage(input_tokens=2_100, output_tokens=100),
+            ),
+        )
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
+    )
+    result = await executable.run(
+        "Continue",
+        bindings=RunBindings.local(),
+        previous_state=previous,
+    )
+
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 2
+    compacted = calls[1][0]
+    assert isinstance(compacted[0], ModelRequest)
+    assert isinstance(compacted[1], ModelResponse)
+    assert compacted[1].metadata == {"keep": "compact"}
+    assert "Compacted continuation" in str(compacted[1])
+    assert "Previous assistant answer" in _user_text(compacted)
+    assert "Continue" in _user_text(compacted)
+    assert "summarize" not in {tool.name for tool in calls[0][1].function_tools}
+    assert len(result.new_messages()) == 2
+    assert result.new_messages() == result.all_messages()[-2:]
+
+
+async def test_compaction_replays_retained_initial_input_and_public_steering() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    phase = "steer"
+    calls: list[tuple[list[ModelMessage], AgentInfo]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        calls.append((messages, info))
+        if phase == "steer" and len(calls) == 1:
+            started.set()
+            await release.wait()
+            yield "first response"
+        elif info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+            yield "Retained compact summary"
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1_000)),),
+    )
+    async with executable.stream("Initial task", bindings=RunBindings.local()) as run:
+        consumer = asyncio.create_task(_consume_run(run))
+        await started.wait()
+        enqueue_id = await run.steer(("Steer toward the new requirement",))
+        release.set()
+        first = await asyncio.wait_for(consumer, timeout=2)
+
+    assert enqueue_id
+    assert first.state is not None
+    retained_state = first.state.agent_context_state
+    retained = retained_state.entries["converge.steering"].data["retained_requests"]
+    assert len(retained) == 2
+
+    previous = HarnessState(
+        schema_version="1",
+        thread_id=first.state.thread_id,
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="History to summarize")]),
+            ModelResponse(
+                parts=[TextPart(content="Previous response")],
+                usage=RequestUsage(input_tokens=1_100, output_tokens=100),
+            ),
+        ),
+        agent_context_state=retained_state,
+        environment_state=first.state.environment_state,
+    )
+    phase = "compact"
+    calls.clear()
+    result = await executable.run("Next request", bindings=RunBindings.local(), previous_state=previous)
+
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 2
+    final_text = _user_text(calls[-1][0])
+    assert "Retained compact summary" in str(calls[-1][0])
+    assert "Initial task" in final_text
+    assert "Steer toward the new requirement" in final_text
+    assert "Next request" in final_text
+
+
+async def test_compaction_preserves_new_message_boundary_across_same_run_steering() -> None:
+    first_ordinary_started = asyncio.Event()
+    release_first_ordinary = asyncio.Event()
+    calls: list[tuple[list[ModelMessage], AgentInfo]] = []
+    compact_calls = 0
+    ordinary_calls = 0
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal compact_calls, ordinary_calls
+        calls.append((messages, info))
+        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+            compact_calls += 1
+            yield f"compact-summary-{compact_calls}"
+            return
+        ordinary_calls += 1
+        if ordinary_calls == 1:
+            first_ordinary_started.set()
+            await release_first_ordinary.wait()
+            yield "first ordinary response"
+            return
+        yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="old request")]),
+            ModelResponse(
+                parts=[TextPart(content="old response")],
+                usage=RequestUsage(input_tokens=10, output_tokens=1),
+            ),
+        )
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1)),),
+    )
+
+    async with executable.stream(
+        "initial-current-input",
+        bindings=RunBindings.local(),
+        previous_state=previous,
+    ) as run:
+        consumer = asyncio.create_task(_consume_run(run))
+        await first_ordinary_started.wait()
+        enqueue_id = await run.steer("current-steering-input")
+        release_first_ordinary.set()
+        result = await asyncio.wait_for(consumer, timeout=2)
+
+    assert enqueue_id
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 4
+    assert compact_calls == 2
+    assert ordinary_calls == 2
+    new_messages = result.new_messages()
+    assert len(new_messages) == 3
+    assert new_messages == result.all_messages()[-3:]
+    assert isinstance(new_messages[0], ModelRequest)
+    assert isinstance(new_messages[1], ModelRequest)
+    assert isinstance(new_messages[2], ModelResponse)
+    new_user_text = _user_text(list(new_messages))
+    assert "initial-current-input" in new_user_text
+    assert "current-steering-input" in new_user_text
+    native_run_ids = {message.run_id for message in new_messages}
+    assert None not in native_run_ids
+    assert len(native_run_ids) == 1
+
+
+async def test_compaction_clears_output_validators_only_on_the_agent_copy() -> None:
+    validated: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+            yield "Summary that is not the business output"
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="Original task")]),
+            ModelResponse(
+                parts=[TextPart(content="Long response")],
+                usage=RequestUsage(input_tokens=2_100, output_tokens=100),
+            ),
+        )
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
+    )
+
+    @executable._agent.output_validator
+    def validate_business_output(output: str) -> str:
+        validated.append(output)
+        if output != "done":
+            raise ModelRetry("not the business output")
+        return output
+
+    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+
+    assert result.output_or_raise() == "done"
+    assert validated == ["done"]
+    assert len(executable._agent._output_validators) == 1
+
+
+async def test_compaction_blocks_function_tool_dispatch() -> None:
+    side_effects: list[str] = []
+
+    async def danger() -> str:
+        side_effects.append("executed")
+        return "changed"
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del messages
+        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+            yield {
+                0: DeltaToolCall(
+                    name="danger",
+                    json_args="{}",
+                    tool_call_id="danger-1",
                 )
             }
         else:
@@ -159,10 +480,7 @@ async def test_compaction_forces_same_agent_summarize_tool_and_reuses_handoff_pa
 
     previous = HarnessState.new(
         message_history=(
-            ModelRequest(
-                parts=[UserPromptPart(content="Original long task")],
-                metadata={"converge.context": "compaction", "converge.restored-boundary": "1"},
-            ),
+            ModelRequest(parts=[UserPromptPart(content="Original task")]),
             ModelResponse(
                 parts=[TextPart(content="Long response")],
                 usage=RequestUsage(input_tokens=2_100, output_tokens=100),
@@ -174,30 +492,146 @@ async def test_compaction_forces_same_agent_summarize_tool_and_reuses_handoff_pa
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            HandoffCapability(),
-            CompactionCapability(
-                CompactionPolicy(trigger_tokens=2_000, target_tokens=1_000, preserve_recent_user_turns=1)
-            ),
+            Capability(tools=[danger], id="danger-tools"),
+            CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),
         ),
     )
+
+    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+
+    assert result.output_or_raise() == "done"
+    assert side_effects == []
+    assert "Original task" in _user_text(list(result.all_messages()))
+
+
+async def test_compaction_preserves_outer_request_limit() -> None:
+    calls = 0
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        del messages, info
+        calls += 1
+        yield "unexpected"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="Original task")]),
+            ModelResponse(
+                parts=[TextPart(content="Long response")],
+                usage=RequestUsage(input_tokens=2_100, output_tokens=100),
+            ),
+        )
+    )
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
+    )
+
     result = await executable.run(
         "Continue",
         bindings=RunBindings.local(),
         previous_state=previous,
+        usage_limits=UsageLimits(request_limit=0),
     )
 
-    assert result.output_or_raise() == "done"
-    assert len(calls) == 2
-    assert "Continue" in _user_text(calls[1][0])
-    assert "Context compaction is required" not in _user_text(calls[1][0])
-    text = "\n".join(
-        part.content
-        for part in calls[1][0][0].parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+    assert result.status == "failed"
+    assert result.failure is not None
+    assert result.failure.code == "usage_limit_exceeded"
+    assert result.usage.requests == 0
+    assert calls == 0
+
+
+async def test_compaction_fails_open_on_blank_summary() -> None:
+    calls = 0
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        del messages
+        calls += 1
+        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+            yield "   "
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="Original task")]),
+            ModelResponse(
+                parts=[TextPart(content="Long response")],
+                usage=RequestUsage(input_tokens=2_100, output_tokens=100),
+            ),
+        )
     )
-    assert "Compacted continuation" in text
-    assert "summarize again immediately" in text
-    assert _serialized_token_estimate(calls[1][0]) <= 1_000
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
+    )
+
+    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+
+    assert result.output_or_raise() == "done"
+    assert calls == 2
+    assert "Original task" in _user_text(list(result.all_messages()))
+    assert not any(
+        isinstance(message, ModelResponse) and message.metadata == {"keep": "compact"}
+        for message in result.all_messages()
+    )
+
+
+@pytest.mark.parametrize("kind", ["handoff", "compaction"])
+async def test_handoff_migrates_legacy_v1_state(kind: str) -> None:
+    operation_id = f"{kind}-legacy"
+    previous = HarnessState.new(
+        agent_context_state=AgentContextStateSnapshot(
+            entries={
+                "converge.handoff": CapabilityState(
+                    version="1",
+                    data={
+                        "operation_id": operation_id,
+                        "summary": "Legacy summary",
+                        "files": [],
+                        "kind": kind,
+                        "preserve_recent_user_turns": 1,
+                        "target_tokens": 1_000,
+                    },
+                )
+            }
+        )
+    )
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(HandoffCapability(),),
+    )
+    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+
+    assert result.output_or_raise() == "done"
+    assert result.state is not None
+    migrated = result.state.agent_context_state.entries["converge.handoff"].data
+    assert "kind" not in migrated
+    assert "preserve_recent_user_turns" not in migrated
+    assert "target_tokens" not in migrated
+    if kind == "compaction":
+        assert migrated == {"files": [], "operation_id": None, "summary": None}
+
+
+async def _consume_run(run: Any) -> Any:
+    result = None
+    async for item in run:
+        if not isinstance(item, HarnessEvent):
+            result = item.result
+    assert result is not None
+    return result
 
 
 async def test_context_mutation_waits_for_exact_provider_and_deferred_boundaries() -> None:
@@ -219,28 +653,32 @@ async def test_context_mutation_waits_for_exact_provider_and_deferred_boundaries
     assert not _requires_exact_history(integrated)
 
 
-async def test_outgoing_estimate_sees_large_first_request_without_prior_usage() -> None:
-    messages: list[ModelMessage] = [ModelRequest(parts=[UserPromptPart("x" * 3_000)])]
+async def test_compaction_does_not_estimate_history_without_provider_usage() -> None:
+    calls: list[AgentInfo] = []
 
-    assert _outgoing_token_estimate(messages) >= 1_000
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        calls.append(info)
+        yield "done"
 
-
-async def test_compaction_never_silently_drops_an_oversized_preserved_turn() -> None:
-    base = ModelRequest(
-        parts=[UserPromptPart("summary")],
-        metadata={"converge.context": "compaction", "converge.restored-boundary": "1"},
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(content="x" * 12_000)]),
+            ModelResponse(parts=[TextPart(content="response without usage")]),
+        )
     )
-    oversized_turn: list[ModelMessage] = [
-        ModelRequest(parts=[UserPromptPart("inspect")]),
-        ModelResponse(parts=[ToolCallPart(tool_name="read", args={}, tool_call_id="call-1")]),
-        ModelRequest(parts=[ToolReturnPart(tool_name="read", content="x" * 12_000, tool_call_id="call-1")]),
-    ]
-    target = _serialized_token_estimate([base]) + 20
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1)),),
+    )
 
-    with pytest.raises(DefinitionError) as exc_info:
-        _fit_compacted_history([base, *oversized_turn], target)
+    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
 
-    assert exc_info.value.code == "compaction_target_unreachable"
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 1
+    assert calls[0].model_settings is None or calls[0].model_settings.get("tool_choice") != "none"
 
 
 async def test_dynamic_context_preserves_user_text_that_matches_harness_tags() -> None:
@@ -265,24 +703,16 @@ async def test_dynamic_context_preserves_user_text_that_matches_harness_tags() -
     assert _user_text(seen[0]).count('<runtime-context source="converge-harness">') == 2
 
 
-async def test_compaction_validates_target_after_dynamic_context_assembly(tmp_path: Path) -> None:
-    (tmp_path / "AGENTS.md").write_text("x" * 12_000, encoding="utf-8")
+async def test_compaction_failure_is_fail_open() -> None:
     calls = 0
 
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
-        del messages, info
+        del messages
         calls += 1
-        if calls == 1:
-            yield {
-                0: DeltaToolCall(
-                    name="summarize",
-                    json_args=json.dumps({"content": "Short continuation"}),
-                    tool_call_id="compact-dynamic-1",
-                )
-            }
-        else:
-            pytest.fail("oversized restored request reached the provider")
+        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+            raise RuntimeError("compact model failed")
+        yield "done"
 
     previous = HarnessState.new(
         message_history=(
@@ -297,23 +727,14 @@ async def test_compaction_validates_target_after_dynamic_context_assembly(tmp_pa
         AgentSpec(model="logical:test"),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(
-            HandoffCapability(),
-            FileContextCapability(FileContextConfiguration(paths=("/workspace/AGENTS.md",))),
-            CompactionCapability(
-                CompactionPolicy(trigger_tokens=2_000, target_tokens=1_000, preserve_recent_user_turns=1)
-            ),
-        ),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    with pytest.raises(DefinitionError) as exc_info:
-        await executable.run(
-            "Continue",
-            bindings=RunBindings.local(environment=_local_binding(tmp_path)),
-            previous_state=previous,
-        )
-    assert getattr(exc_info.value, "code", None) == "compaction_target_unreachable"
-    assert calls == 1
+    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+
+    assert result.output_or_raise() == "done"
+    assert calls == 2
+    assert "Original task" in str(result.all_messages())
 
 
 async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) -> None:
@@ -447,13 +868,18 @@ async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_p
 
 
 def _user_text(messages: list[ModelMessage]) -> str:
-    return "\n".join(
-        part.content
-        for message in messages
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
-    )
+    text: list[str] = []
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            continue
+        for part in message.parts:
+            if not isinstance(part, UserPromptPart):
+                continue
+            if isinstance(part.content, str):
+                text.append(part.content)
+            else:
+                text.extend(item for item in part.content if isinstance(item, str))
+    return "\n".join(text)
 
 
 async def test_concurrent_handoff_summaries_accept_one_state_transition() -> None:

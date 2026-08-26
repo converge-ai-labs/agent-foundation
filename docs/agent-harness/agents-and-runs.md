@@ -7,13 +7,13 @@ Agent Harness keeps Agent construction code-first and process-local. It adds one
 Use `HarnessBuilder.build_code()` for direct application composition:
 
 ```python
-from converge_agent_harness import HarnessBuilder
-from pydantic_ai.agent.spec import AgentSpec
+from converge_agent_harness import AgentSpec, HarnessBuilder, ModelConfiguration
 
 executable = HarnessBuilder().build_code(
     AgentSpec(
         model="logical:support",
         instructions="Answer concisely.",
+        model_config=ModelConfiguration(context_window=200_000),
     ),
     output_type=str,
     model=model,
@@ -43,7 +43,7 @@ Both methods follow the same validation and construction path. Build is synchron
 
 An `AgentDefinition` fixes:
 
-- the native `AgentSpec`;
+- the Harness `AgentSpec`, which remains a native Pydantic AI spec and may add resolved model characteristics;
 - one output contract;
 - a concrete or logical model selection;
 - definition-selected Capabilities;
@@ -52,6 +52,23 @@ An `AgentDefinition` fixes:
 - self-healing and bounded model-recovery policy.
 
 The output contract cannot change per run. Pass a Python output type or Pydantic AI `OutputSpec` through `output_type`, or use `AgentSpec.output_schema`; do not set both.
+
+### Model configuration
+
+`AgentSpec.model_config` holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Today it defines the context window plus proactive summarize and compaction ratios:
+
+```python
+spec = AgentSpec(
+    model="logical:support",
+    model_config=ModelConfiguration(
+        context_window=200_000,
+        proactive_context_management_threshold=0.65,
+        compact_threshold=0.90,
+    ),
+)
+```
+
+When selected, `HandoffCapability()` derives its summarize reminder at 65% and `CompactionCapability()` derives its trigger at 90%. Explicit Capability token thresholds take precedence, and model configuration never enables either Capability by itself. A Host may resolve these values from its own preset catalog; the Harness does not infer a preset from the model name and does not yet ship concrete model declarations. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
 
 ## Mandatory Composition
 
@@ -176,8 +193,11 @@ After stream entry:
 - `stream.context` exposes the fresh `AgentContext` to trusted embedding code;
 - `stream.usage` exposes the live native `RunUsage` accumulator;
 - `await stream.export_state()` returns the latest safe portable state boundary;
+- `await stream.steer(input)` delivers non-empty native user content through Pydantic AI's active-run `priority="asap"` queue and returns its enqueue ID;
 - `stream.cancel()` requests semantic cancellation;
 - `stream.result` becomes available only after the terminal result event is delivered.
+
+`steer()` is available only while an inner Pydantic run is active. When automatic compaction is configured, the Harness also retains accepted initial and steering inputs for later compact replay, preserving structured and multimodal content. This favors retaining user context over exact-once replay; it is not a durable command or receipt protocol.
 
 Always use the stream as an async context manager. Early consumer exit, exceptions, task cancellation, or an explicit cancellation request still trigger Harness cleanup.
 

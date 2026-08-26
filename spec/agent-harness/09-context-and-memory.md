@@ -185,11 +185,11 @@ An explicit file reference carries only a model-facing logical path and a bounde
 
 `RuntimeContextCapability` emits one bounded `REQUEST_EPILOGUE` block on eligible requests. Its tool-results form is deliberately lightweight and can include elapsed logical-run time, configured model context-window size, and latest model-request token usage. The context-window size is explicit Runtime Capability configuration because the Harness has no provider-neutral guarantee that a native Model profile exposes it. Current time, cumulative run usage, and selected Host metadata remain independently configurable fields for input projections. Runtime context reports context facts only; it does not own summary-tool guidance.
 
-`HandoffCapability` owns both the `summarize` tool guidance and its concise `TOOL_RESULTS` reminder. Its frozen configuration can disable that reminder or defer it until latest model-request usage reaches an explicit token threshold selected by the Host; a zero threshold reminds after every ordinary tool-result batch. The reminder neither triggers compaction nor implies that the provider has accepted a larger request. Keeping this policy with the summary tool avoids coupling generic runtime projection to one optional context-management behavior.
+`HandoffCapability` owns both the `summarize` tool guidance and its concise `TOOL_RESULTS` reminder. Its frozen configuration can disable that reminder or defer it until latest model-request usage reaches an explicit token threshold selected by the Host; a zero threshold reminds after every ordinary tool-result batch. When neither reminder field is explicitly set and Harness `AgentSpec.model_config` is present, the builder derives the threshold as `int(context_window * proactive_context_management_threshold)`; the default ratio is 65%, and `None` disables the automatic reminder. The reminder neither triggers compaction nor implies that the provider has accepted a larger request. Keeping this policy with the summary tool avoids coupling generic runtime projection to one optional context-management behavior.
 
-Compaction and explicit `summarize` requests use the same validated history-replacement path. A handoff preserves current user intent, relevant file references, and enough provenance to distinguish summarized history from new input. A pending `DeferredToolRequests` boundary is not part of the replaceable prefix: its exact suspended message tail, call IDs, categories, and message identity remain unchanged through authoritative resume validation until matching results are incorporated. Provider-suspended continuation receives the same protection. Only after those exact continuations advance can a validated replacement become ordinary active messages and reintroduce pending handoff guidance once.
+An explicit `summarize` handoff uses its own validated history-replacement path. It preserves the original request as native structured `UserContent`, including multimodal values, rather than extracting only plain text; the continuation summary and file reminders remain separately identifiable context. A pending `DeferredToolRequests` boundary is not part of the replaceable prefix: its exact suspended message tail, call IDs, categories, and message identity remain unchanged through authoritative resume validation until matching results are incorporated. Provider-suspended continuation receives the same protection. Only after those exact continuations advance can a validated replacement become ordinary active messages and reintroduce pending handoff guidance once.
 
-Context-window estimates guide reminders and compaction but never replace provider enforcement. A configured recent-turn tail is protected continuation context, not an optional trimming pool. If validated compaction cannot produce a provider-valid request within the configured budget while retaining that tail, the request fails explicitly rather than silently dropping current intent or unresolved work. [`Events, Observability, and Usage`](12-events-observability-and-usage.md#first-party-event-contracts) owns the bounded context snapshots and operation observations for this path.
+Handoff reminder thresholds consult only the latest provider-reported usage and never replace provider enforcement. Automatic plain-text compaction is the independent Capability contract below. [`Events, Observability, and Usage`](12-events-observability-and-usage.md#first-party-event-contracts) owns the bounded context observations for both paths.
 
 ## Working State Capability
 
@@ -214,15 +214,15 @@ Structured questions use the native client-side deferred-tool boundary owned by 
 
 Small operational behaviors remain separate when their state and lifecycle differ:
 
-| Capability          | Behavior                                                                 | State                                                                                            |
-| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Enqueue/messaging   | Uses Pydantic enqueue to deliver accepted steering or follow-up input    | Delivery acceptance stays with Host; incorporated IDs only when needed for duplicate suppression |
-| Monitored process   | Starts through `BoundEnvironment` and delivers a bounded completion      | Live observation and completion routing stay with a fresh Host collaborator                      |
-| File reference      | Tells the Agent which explicit files require inspection                  | Bounded pending logical paths only                                                               |
-| Workspace outline   | Projects a bounded metadata-only view of one Environment file root       | Recomputed from one revision-pinned `BoundEnvironment` scan; no continuation state               |
-| Dynamic Environment | Composes File/Shell tools with current topology context and live notices | Recomputed from `BoundEnvironment`; owns no continuation namespace                               |
-| Skill               | Supplies selected skill instructions and resources                       | Loaded skill IDs only when needed for continuation                                               |
-| Media               | Normalizes media count, size, format, and provider representation        | No raw provider URL credential state                                                             |
+| Capability          | Behavior                                                                 | State                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Enqueue/messaging   | Uses Pydantic enqueue to deliver accepted steering or follow-up input    | The Harness retains accepted user steering when compaction is enabled; native enqueue owns active-run delivery |
+| Monitored process   | Starts through `BoundEnvironment` and delivers a bounded completion      | Live observation and completion routing stay with a fresh Host collaborator                                    |
+| File reference      | Tells the Agent which explicit files require inspection                  | Bounded pending logical paths only                                                                             |
+| Workspace outline   | Projects a bounded metadata-only view of one Environment file root       | Recomputed from one revision-pinned `BoundEnvironment` scan; no continuation state                             |
+| Dynamic Environment | Composes File/Shell tools with current topology context and live notices | Recomputed from `BoundEnvironment`; owns no continuation namespace                                             |
+| Skill               | Supplies selected skill instructions and resources                       | Loaded skill IDs only when needed for continuation                                                             |
+| Media               | Normalizes media count, size, format, and provider representation        | No raw provider URL credential state                                                                           |
 
 These Capabilities use native instructions, history/request hooks, native enqueue, Model Context Projection, or Toolsets. A global projection switch is unnecessary; a Host enables, disables, or configures the owning Capability without rewriting other instruction sources.
 
@@ -270,49 +270,52 @@ Remote content, converted text, metadata, and skill resources retain provenance 
 
 ## Compaction Capability
 
-Compaction replaces an eligible history prefix with a smaller provider-valid message segment.
+Compaction replaces an eligible history with a cache-friendly plain-text summary and a deterministic replay boundary.
 
 ```python
 class CompactionPolicy(BaseModel):
     trigger_tokens: int
-    target_tokens: int
-    preserve_recent_user_turns: int
-    model: str | None = None
+
+class CompactionCapability:
+    def __init__(self, policy: CompactionPolicy | None = None) -> None: ...
 ```
+
+An explicit `trigger_tokens` remains an absolute Host-selected threshold and takes precedence. `CompactionCapability()` without a policy asks the builder to derive the absolute trigger from Harness `AgentSpec.model_config` as `int(context_window * compact_threshold)`; the default ratio is 90%. Automatic resolution requires a known context window and does not infer one from the model name. The Capability consults only the most recent `ModelResponse.usage` reported by the provider and triggers when its input-plus-output token count reaches the resolved threshold. A history with no provider usage does not compact; the Harness does not serialize messages to estimate tokens.
 
 ```mermaid
 sequenceDiagram
     participant PAI as Pydantic AI
     participant Compact as CompactionCapability
-    participant Context as AgentContext
     participant Model
+    participant State as AgentContextState
 
-    PAI->>Compact: history before model request
-    Compact->>Compact: estimate budget and select prefix
-    alt compaction required
-        Compact->>Model: summarize selected history
-        Model-->>Compact: structured summary
-        Compact->>Compact: rebuild and validate messages
-        Compact->>Context: update compaction state
+    PAI->>Compact: complete history before model request
+    Compact->>Compact: inspect latest provider usage
+    alt threshold reached
+        Compact->>Model: same Agent and Model, full history plus plain-text compact request
+        Model-->>Compact: plain-text summary
+        Compact->>State: read retained semantic inputs and user steering
+        Compact->>Compact: rebuild deterministic replay boundary
         Compact-->>PAI: compacted history
-    else no compaction
+    else no usage or below threshold
         Compact-->>PAI: original history
     end
 ```
 
-The Capability preserves:
+The nested compact run is implemented by the same Pydantic Capability and a shallow copy of the current Agent. It keeps the effective Model, system prompts, instructions, and tool definitions cache-compatible, requests `str` output, disables provider tool selection for the nested request, and permits only one additional model request within all outer usage ceilings. The mandatory execution boundary also rejects any function-tool dispatch if a provider violates that request. It does not call or depend on the `summarize` tool or Handoff Capability. A run-local recursion guard prevents nested compaction.
 
-- the current user intent and immediately preceding assistant references;
-- unresolved or deferred tool work;
-- provider-valid tool-call/result relationships;
-- configured recent turns;
-- provenance needed to distinguish summary content from new user input.
+A successful replacement has this fixed order:
 
-Transient Environment and working-state context is omitted from the summarized history prefix and resolved again after compaction. Native multimodal content is normalized by the request content compatibility filter owned by [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters). Oversized function-tool text/JSON is already represented by the inline preview and optional run-local file path owned by [Tool Execution](07-tool-execution.md#dispatch-retry-and-results); compaction does not create another spill or retention mechanism.
+1. one synthetic compact request preserving the stable system and instruction prefix;
+2. one plain-text summary response marked as compact-retained content;
+3. one restored-context request with any immediately preceding visible assistant response needed to resolve references;
+4. the run's initial semantic inputs and every user steering input accepted through `HarnessRunStream.steer()`.
 
-The original history remains active until structured summary validation and message-integrity checks succeed. Compaction failure leaves history unchanged or stops the request according to the configured policy.
+Retained user inputs preserve native structured `UserContent`, including multimodal values, rather than flattening them to text. They live in one versioned Capability-state namespace so repeated compaction and a later Harness run can reconstruct the same user context. The ledger is append-only: compaction does not clear it. It records only semantic run inputs and public user steering; internal topology, process, or other Capability calls to `RunContext.enqueue()` are not retained as user intent. Retention favors not losing accepted context over exact-once replay, so a rare boundary race may cause an accepted steering input to appear once through native delivery and again in a later compact replay.
 
-Compaction state contains only data not already represented by the compacted messages, such as a bounded prior-response reference or compaction counter. Model clients and callbacks remain process-local.
+The compact summary replaces tool traffic only after the nested request succeeds. Transient Environment and working-state projections are resolved again at the next ordinary request. Native multimodal compatibility remains owned by [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters), and oversized tool results remain owned by [Tool Execution](07-tool-execution.md#dispatch-retry-and-results); compaction creates no estimator, spill, target-size trimmer, or durable message bus.
+
+Ordinary compact-run failures, including an empty plain-text summary, emit a bounded `compaction_failed` observation and leave the original history unchanged. Cancellation propagates. This fail-open rule does not turn the compact summary into an authoritative durable fact and does not conceal provider context-limit failures if the original request still exceeds its actual window.
 
 ## Memory Integration
 
@@ -346,7 +349,7 @@ Provider writes can be inline when required for consistency or emitted as host w
 | Provider-backed task data and scope          | Host task provider; Working State exports only an optional observed cursor                        |
 | Pending handoff and logical file references  | Owning context Capabilities                                                                       |
 | Loaded skills or discovered tools            | Owning discovery Capability                                                                       |
-| Compaction-only metadata                     | Compaction Capability                                                                             |
+| Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                          |
 | Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs                   |
 | Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup                       |
 | Long-term memory records                     | Memory provider; plugin instances own no durable namespace                                        |

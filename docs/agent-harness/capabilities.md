@@ -40,7 +40,7 @@ Capability presence does not itself authorize external work. Tools that cross a 
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `DocumentsRunCapability`                                       |
 | `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebRunCapability` with current client and policy              |
 | `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
-| `CompactionCapability`         | Bounded same-model compaction before a configured threshold                                 | `HandoffCapability` in the same definition                     |
+| `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
 | `DelegationCapability`         | Blocking inline child delegation                                                            | Declared subagents and `DelegationRunCapability`               |
 | `CodeActCapability`            | Restricted `run_code` and optional `run_program`                                            | Explicit eligible tools and Environment files for programs     |
 
@@ -71,6 +71,8 @@ capabilities = (
 - File context loads selected files once for the logical run and fences the Environment route used to load them.
 
 All three have explicit byte, item, depth, or line bounds. Configure them to match the Environment and target model rather than treating their defaults as universal.
+
+For context lifecycle features, Harness `AgentSpec.model_config` can resolve model-relative defaults once at build time. With a known context window, an otherwise unconfigured `HandoffCapability()` warns at 65% and `CompactionCapability()` compacts at 90%. Explicit token settings override these values, and the Capabilities remain opt-in.
 
 ## Working State
 

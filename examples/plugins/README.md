@@ -4,11 +4,11 @@ This standalone project demonstrates the supported configuration and direct-code
 
 ## Composition Matrix
 
-| Boundary                  | Installed entry-point mode                                                                                                                     | Explicit code mode                                                                                            |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Environment provider      | Select an `EnvironmentProviderFactory` from `converge_agent_harness.environments`, then call `create_provider_binding()`                       | Supply an `EnvironmentProviderFactory` object directly, then call the same `create_provider_binding()` method |
-| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `converge_agent_harness.environment_run_extensions`, then call `create_extension()`            | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method    |
-| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                       |
+| Boundary                  | Installed entry-point mode                                                                                                                        | Explicit code mode                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Environment provider      | Select an `EnvironmentProviderFactory` from `converge_agent_environment_provider.providers`, then construct a Manager from an exact specification | Supply an `EnvironmentProviderFactory` object directly, then construct the same Manager                    |
+| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `converge_agent_harness.environment_run_extensions`, then call `create_extension()`               | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
+| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build    | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
 
 Entry-point metadata provides only a stable key and import target. Harness middleware configuration uses the Harness-owned versioned envelope; YAML is preferred for files, JSON is supported for files and inline environment values, and each plugin package owns only the typed `configuration` payload.
 
@@ -46,31 +46,34 @@ The project is intentionally outside the root release workspace. Its independent
 
 ```toml
 [tool.uv.sources]
+converge-agent-environment-provider = { path = "../../packages/agent-environment-provider", editable = true }
 converge-agent-harness = { path = "../../packages/agent-harness", editable = true }
 ```
 
-A standalone plugin distribution should remove that development source and declare the released `converge-agent-harness` range it supports.
+A standalone plugin distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
 
 ## Environment Provider Factory
 
 The distribution registers one package factory:
 
 ```toml
-[project.entry-points."converge_agent_harness.environments"]
+[project.entry-points."converge_agent_environment_provider.providers"]
 "example.workspace" = "converge_plugin_examples.environment:WorkspaceEnvironmentProviderFactory"
 ```
 
 [`environment.py`](src/converge_plugin_examples/environment.py) contains:
 
-- a strict package-owned `WorkspaceEnvironmentConfiguration` model;
-- a no-argument, side-effect-free `WorkspaceEnvironmentProviderFactory` factory;
-- `create_provider_binding()`, which returns a fresh, pre-entry-inert Direct Local binding.
+- a strict package-owned schema-version-1 `WorkspaceEnvironmentConfiguration` model;
+- an exact process-local `WorkspaceEnvironmentRuntime` collaborator;
+- a no-argument, side-effect-free `WorkspaceEnvironmentProviderFactory`;
+- a complete `WorkspaceEnvironmentManager` and single-entry managed resource;
+- fresh `DirectLocalEnvironmentAttachment` values for Harness transfer.
 
-The factory does not create directories, open sessions, authenticate, or acquire cleanup-producing resources. Those operations belong to the returned binding's async lifecycle.
+Specification validation, factory construction, and Manager construction perform no filesystem I/O. `create()` and `resume()` validate the selected existing workspace; neither creates or owns it. Harness binding cleanup, managed-resource scope cleanup, and explicit Provider destroy remain separate operations.
 
 ### Installed entry-point mode
 
-[`run_environment_entrypoint_demo()`](src/converge_plugin_examples/demo_environment.py) discovers metadata, verifies that `example.workspace` is installed, selects only that key, and invokes the selected factory twice with Host-supplied JSON configuration.
+[`run_environment_entrypoint_demo()`](src/converge_plugin_examples/demo_environment.py) discovers metadata, verifies that `example.workspace` is installed, selects only that key, and constructs two Managers from Host-supplied exact specifications and fresh runtime collaborators.
 
 ```bash
 uv run plugin-example-environment-entrypoint
@@ -78,13 +81,13 @@ uv run plugin-example-environment-entrypoint
 
 ### Explicit code mode
 
-[`run_environment_code_demo()`](src/converge_plugin_examples/demo_environment.py) imports and supplies `WorkspaceEnvironmentProviderFactory()` directly. It still invokes the same catalog factory method, so package-specific configuration validation and provider-binding validation remain identical.
+[`run_environment_code_demo()`](src/converge_plugin_examples/demo_environment.py) imports and supplies `WorkspaceEnvironmentProviderFactory()` directly. It still invokes the same catalog Manager-construction path, so schema, runtime, state, and lifecycle validation remain identical.
 
 ```bash
 uv run plugin-example-environment-code
 ```
 
-Both paths create two bindings, assemble one topology, enter and activate the aggregate, then verify default and alias-qualified routing:
+Both paths create two managed resources, acquire and transfer two fresh attachments, assemble one Harness topology, enter and activate the aggregate, verify default and alias-qualified routing, then explicitly destroy the logical Provider resources:
 
 ```text
 selection mode: entrypoint
@@ -98,16 +101,17 @@ Code mode prints the same result with `selection mode: code`.
 
 ### Real provider checklist
 
-- Use one stable entry-point name and return the same value from `provider_key()`.
-- Keep no-argument factory construction safe and side-effect free.
-- Define and document a strict bounded configuration schema.
-- Return a fresh `EnvironmentProviderBinding` from each factory call.
-- Defer allocation, authentication, session creation, and cleanup-producing work to `bind()`.
-- Publish only operations the entered provider can enforce.
-- Keep aliases, permission ceilings, topology limits, artifact authorization, and run selection under Host control.
-- Resolve current credentials through a fresh provider or Host boundary rather than persisting them in configuration.
+- Use one stable namespaced entry-point name and return the same value from `provider_key()`.
+- Keep configuration, factory, and Manager construction strict, bounded, and side-effect free.
+- Support exact schema versions without fallback or shape inference.
+- Accept current credentials and client factories only through a typed process-local runtime collaborator.
+- Tie every lifecycle call to a Host-generated operation identity and resource correlation.
+- Return provider-owned state before resource-scope entry and validate it exactly on resume, destroy, and reconciliation.
+- Issue only fresh supported attachments while a single-entry managed-resource scope is active.
+- Treat `reconcile()` as bounded read-only inspection of one exact prior operation.
+- Keep aliases, permission ceilings, topology, attachment transfer, durable storage, authorization, and scheduling under Host control.
 
-The example delegates operations to `DirectLocalEnvironmentProviderBinding` to stay focused on packaging and selection. A remote provider implements its own binding and entered-provider contracts.
+The example uses the public `DirectLocalEnvironmentAttachment` backend to stay focused on provider packaging and lifecycle. A remote sandbox provider issues an `EIPEnvironmentAttachment`; it does not implement another Harness operation binding.
 
 ## Environment Run Extension
 

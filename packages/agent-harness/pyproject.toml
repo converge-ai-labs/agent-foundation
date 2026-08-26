@@ -32,8 +32,3 @@ packages = ["converge_agent_harness"]
 [tool.deptry]
 known_first_party = ["converge_agent_harness"]
 package_module_name_map = { "converge-agent-environment-provider" = "converge_agent_environment_provider" }
-
-# The provider package is an architectural boundary dependency whose public
-# types will be consumed as the scaffold is implemented.
-[tool.deptry.per_rule_ignores]
-DEP002 = ["converge-agent-environment-provider"]
