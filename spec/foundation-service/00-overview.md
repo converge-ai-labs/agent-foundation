@@ -15,7 +15,7 @@ flowchart LR
     subgraph Control[Control role]
         API[Product API and authorization]
         Authoring[Agent and integration authoring]
-        Lifecycle[Conversation and Execution lifecycle]
+        Lifecycle[Thread and Turn lifecycle]
         Scheduler[Scheduler and reconcilers]
         Feedback[Deferred feedback]
         Publisher[Outbox publisher]
@@ -28,7 +28,7 @@ flowchart LR
 
     Coordination[Redis or queue coordination]
 
-    subgraph Execution[Execution role]
+    subgraph ExecutionRole[Execution role]
         Worker[Fenced worker]
         Reconstruct[Trusted reconstruction]
         Environment[Environment materialization]
@@ -61,19 +61,20 @@ PostgreSQL is the distributed durable authority for accepted work, selected revi
 
 ## Component Boundaries
 
-| Concern                                      | Owner                    | Relationship                                                             |
-| -------------------------------------------- | ------------------------ | ------------------------------------------------------------------------ |
-| Product resource scope and authorization     | Foundation control plane | Authenticates and authorizes every public and internal product operation |
-| Durable Agent and integration revisions      | Foundation control plane | Selects exact serializable inputs and locks                              |
-| Process-local Agent composition              | Harness                  | Built by a trusted Foundation reconstruction adapter                     |
-| Conversation, Execution, Attempt, checkpoint | Foundation               | Durable lifecycle and continuation selection                             |
-| Model and tool loop                          | Harness and Pydantic AI  | One logical Harness run inside one Foundation Attempt                    |
-| Scheduling and worker ownership              | Foundation               | Uses leases, fencing, idempotency, and reconciliation                    |
-| Environment provisioning and launch state    | Foundation               | Produces fresh bindings for the Harness                                  |
-| Run-scoped Environment routing               | Harness                  | Enters and owns run resource scope                                       |
-| Environment data-plane operations            | Provider or envd         | Enforces provider and EIP operation policy                               |
-| Durable events and usage                     | Foundation               | Commits facts and publishes projections independently                    |
-| Client-side effects                          | External client          | Foundation authenticates feedback but does not claim the external effect |
+| Concern                                   | Owner                    | Relationship                                                             |
+| ----------------------------------------- | ------------------------ | ------------------------------------------------------------------------ |
+| Product resource scope and authorization  | Foundation control plane | Authenticates and authorizes every public and internal product operation |
+| Durable Agent and integration revisions   | Foundation control plane | Selects exact serializable inputs and locks                              |
+| Process-local Agent composition           | Harness                  | Built by a trusted Foundation reconstruction adapter                     |
+| Thread, Turn, and Item                    | Foundation               | Public durable interaction model                                         |
+| Worker lease generation and checkpoint    | Foundation               | Internal ownership fencing and continuation selection                    |
+| Model and tool loop                       | Harness and Pydantic AI  | One process-local Harness run for one worker lease generation            |
+| Scheduling and worker ownership           | Foundation               | Uses leases, fencing, idempotency, and reconciliation                    |
+| Environment provisioning and launch state | Foundation               | Produces fresh bindings for the Harness                                  |
+| Run-scoped Environment routing            | Harness                  | Enters and owns run resource scope                                       |
+| Environment data-plane operations         | Provider or envd         | Enforces provider and EIP operation policy                               |
+| Durable events and usage                  | Foundation               | Commits facts and publishes projections independently                    |
+| Client-side effects                       | External client          | Foundation authenticates feedback but does not claim the external effect |
 
 ## Process Roles
 
@@ -85,7 +86,7 @@ The same artifact supports three roles:
 
 A role is a process ownership and scaling boundary. Roles share domain models, durable records, authorization semantics, and compatibility contracts. Rolling overlap is safe because every background loop is idempotent, leased, or fenced. An execution-only process exposes operational probes but no product API and never changes the database schema.
 
-## End-to-End Execution
+## End-to-End Turn
 
 ```mermaid
 sequenceDiagram
@@ -96,21 +97,21 @@ sequenceDiagram
     participant Worker
     participant Harness
 
-    Caller->>Control: create Execution with idempotency key
+    Caller->>Control: create Turn with idempotency key
     Control->>Control: authenticate, authorize, and resolve exact revisions
-    Control->>DB: commit queued Execution, event, and outbox entry
+    Control->>DB: commit queued Turn, user Item, event, and outbox entry
     Control-->>Caller: durable acceptance
     Scheduler->>DB: find eligible queued work
     Scheduler-->>Worker: bounded wakeup
-    Worker->>DB: claim fenced Attempt and lease
+    Worker->>DB: claim next fenced worker lease generation
     Worker->>Worker: reconstruct Agent and fresh bindings
-    Worker->>Harness: start one logical run from selected state
-    Harness-->>Worker: events, state, result, and usage candidates
-    Worker->>DB: fenced checkpoint, pending, or terminal commit
+    Worker->>Harness: call the in-process Python API from selected state
+    Harness-->>Worker: observations, state, result, and usage candidates
+    Worker->>DB: fenced Items, checkpoint, pending, or terminal commit
     DB-->>Caller: replayable lifecycle projection
 ```
 
-The request that accepts an Execution does not remain open until Agent completion. The worker performs model, tool, provider, and streaming I/O without an open database transaction. It opens a fresh short transaction only to publish a bounded fact and revalidates its ownership generation before every authoritative commit.
+The request that accepts a Turn does not remain open until Agent completion. The worker performs model, tool, provider, and streaming I/O without an open database transaction. It opens a fresh short transaction only to publish a bounded fact and revalidates its worker lease generation before every authoritative commit.
 
 ## Dependency Direction
 
@@ -128,16 +129,18 @@ flowchart LR
 
 Foundation depends on public Harness and envd-client contracts. The Harness and envd never import Foundation lifecycle, tenancy, database, or API types. Product surfaces call Foundation application capabilities rather than reconstructing lifecycle logic. Optional commercial or deployment-specific integrations implement public Foundation ports and do not replace the common authorization or execution kernel.
 
+External applications call Foundation through its HTTP API or language SDKs. The execution worker does not call the Harness through a Foundation SDK or another network service; the hosted adapter imports the Harness Python package and invokes its public process-local API directly.
+
 ## Completion Boundaries
 
 These facts advance independently:
 
 1. a caller request is authenticated and authorized;
-2. an Execution is durably accepted;
-3. a worker claims an Attempt;
+2. a Turn and its initial user Item are durably accepted;
+3. a worker claims the next lease generation;
 4. a Harness run returns a process-local candidate;
 5. Foundation selects a checkpoint or terminal outcome;
-6. an event or stream update is delivered;
+6. an Item, lifecycle event, or stream update is delivered;
 7. an external client effect or child result is delivered;
 8. usage is recorded, priced, billed, or paid.
 
@@ -147,9 +150,9 @@ No later fact is inferred merely because an earlier fact occurred. An acknowledg
 
 1. Foundation Service has one domain and authorization model across `all`, `control`, and `execution` roles.
 2. PostgreSQL is the distributed lifecycle authority; coordination loss changes latency, not accepted work.
-3. One Foundation Attempt starts one logical Harness run.
+3. One worker lease generation starts at most one logical Harness run.
 4. Process-local Python values never become durable Foundation payloads.
 5. No database transaction spans model, tool, Environment, queue, stream, sleep, or external I/O.
-6. Every authoritative worker publication is fenced against the current Attempt generation.
+6. Every authoritative worker publication is fenced against the current worker lease generation.
 7. Product authorization remains outside Harness and envd membership logic.
 8. Durable completion, publication, external delivery, usage, billing, and payment remain separate facts.

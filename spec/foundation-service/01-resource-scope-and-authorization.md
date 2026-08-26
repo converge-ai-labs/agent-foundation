@@ -4,7 +4,7 @@
 
 Foundation Service uses one customer resource hierarchy and one product authorizer across self-hosted, enterprise-integrated, and managed deployments. Organization and Workspace scope are part of the common data model; deployment packaging or entitlement does not create another tenant schema or bypass authorization.
 
-Product authorization answers who may create, inspect, change, invoke, or administer Foundation resources. Harness run authority separately limits what an executing Agent may do through tools, credentials, and Environments. A platform role can permit a caller to start an Execution without granting the resulting Agent every possible side effect.
+Product authorization answers who may create, inspect, change, invoke, or administer Foundation resources. Harness run authority separately limits what an executing Agent may do through tools, credentials, and Environments. A platform role can permit a caller to start a Turn without granting the resulting Agent every possible side effect.
 
 ## Resource Hierarchy
 
@@ -13,7 +13,7 @@ flowchart TB
     Instance[Foundation deployment]
     Organization[Organization]
     Workspace[Workspace]
-    Resource[Agent, Revision, Conversation, Execution, Connector, Secret, Environment, or Artifact]
+    Resource[Agent, Revision, Thread, Turn, Item, Connector, Secret, Environment, or Artifact]
 
     Instance --> Organization --> Workspace --> Resource
 ```
@@ -40,23 +40,23 @@ The platform operator trust domain is separate from customer membership. Operato
 
 Organization and Workspace membership bind principals to fixed permission bundles. Workspace roles do not silently grant Organization scope.
 
-| Role               | Scope and authority                                                                                                                     | Explicit exclusions                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Organization Owner | Organization lifecycle, ownership transfer, all Workspace administration, and organization policy                                       | Platform operator authority                                                       |
-| Organization Admin | Organization membership, Workspace creation and administration, and organization policy                                                 | Ownership transfer or Organization deletion                                       |
-| Workspace Admin    | Workspace membership, resource administration, capability availability, production policy, and Execution administration                 | Organization administration                                                       |
-| Builder            | Create and edit Workspace Agents, revisions, Skills, Connectors, and test Executions; bind resources already available in the Workspace | Membership administration, Secret reveal, or expanding Workspace capability scope |
-| Operator           | Invoke, observe, cancel, and retry authorized production Executions and operate approved resources                                      | Agent authoring, membership management, and Secret administration                 |
-| Viewer             | Read safe Workspace resources, Execution state, and permitted audit projections                                                         | Mutations, invocation, credential use, and secret access                          |
+| Role               | Scope and authority                                                                                                                | Explicit exclusions                                                               |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Organization Owner | Organization lifecycle, ownership transfer, all Workspace administration, and organization policy                                  | Platform operator authority                                                       |
+| Organization Admin | Organization membership, Workspace creation and administration, and organization policy                                            | Ownership transfer or Organization deletion                                       |
+| Workspace Admin    | Workspace membership, resource administration, capability availability, production policy, and Turn administration                 | Organization administration                                                       |
+| Builder            | Create and edit Workspace Agents, revisions, Skills, Connectors, and test Turns; bind resources already available in the Workspace | Membership administration, Secret reveal, or expanding Workspace capability scope |
+| Operator           | Invoke, observe, cancel, and retry authorized production Turns and operate approved resources                                      | Agent authoring, membership management, and Secret administration                 |
+| Viewer             | Read safe Workspace resources, Turn state, and permitted audit projections                                                         | Mutations, invocation, credential use, and secret access                          |
 
-Foundation authoring is Workspace collaborative rather than per-Agent ownership. A Builder can edit Agents in the Workspace subject to current policy; creating an Agent does not establish a private authorization island. A Workspace Admin controls which externally supplied or organization-scoped capabilities are available to the Workspace. Creating a Workspace-owned Tool, Skill, Connector, or Environment makes that resource addressable in the Workspace but does not grant every Agent or Execution permission to use it.
+Foundation authoring is Workspace collaborative rather than per-Agent ownership. A Builder can edit Agents in the Workspace subject to current policy; creating an Agent does not establish a private authorization island. A Workspace Admin controls which externally supplied or organization-scoped capabilities are available to the Workspace. Creating a Workspace-owned Tool, Skill, Connector, or Environment makes that resource addressable in the Workspace but does not grant every Agent or Turn permission to use it.
 
 ## Platform Permissions and Run Grants
 
 The product permission catalog contains stable atomic actions such as:
 
 - `agent.create`, `agent.update`, `agent.publish`, and `agent.invoke`;
-- `execution.read`, `execution.cancel`, and `execution.retry`;
+- `thread.create`, `thread.read`, `turn.create`, `turn.read`, `turn.cancel`, `turn.retry`, and `item.read`;
 - `connector.create`, `connector.configure`, and `connector.use`;
 - `secret.metadata.read`, `secret.use`, `secret.rotate`, `secret.reveal`, and `secret.delete`;
 - `environment.configure`, `environment.attach`, and `environment.operate`;
@@ -96,7 +96,7 @@ class AuthorizationDecision:
     obligations: tuple[Obligation, ...]
 ```
 
-The authorizer evaluates current membership, bindings, resource scope, credential status, and applicable policy version. An allowed decision can add obligations but cannot carry plaintext credentials. Every durable Execution records the authenticated actor, selected Agent identity, delegation lineage, and run policy version needed to interpret its authority and audit trail.
+The authorizer evaluates current membership, bindings, resource scope, credential status, and applicable policy version. An allowed decision can add obligations but cannot carry plaintext credentials. Every durable Turn records the authenticated actor, selected Agent identity, delegation lineage, and run policy version needed to interpret its authority and audit trail.
 
 Authorization is repeated for every operation and every paginated or streamed continuation. Identifier possession, a previously allowed operation, queue routing, or an existing Harness checkpoint does not preserve current product authority. Recovery reauthorizes fresh bindings without rewriting the historical decision under which earlier effects occurred.
 
@@ -104,7 +104,7 @@ Authorization is repeated for every operation and every paginated or streamed co
 
 `use` and `reveal` are separate actions. An Agent normally receives only an audience-bound use lease from a credential broker after product authorization and run-grant evaluation. The lease is scoped to an exact operation, resource, audience, and lifetime. It does not enter prompts, tool arguments, `HarnessState`, ordinary events, traces, or logs.
 
-Rotating a credential changes the material used for later leases without changing the principal, Agent revision, or resource owner. Revocation prevents new leases and causes a resumed Attempt to fail closed when fresh authority cannot be established.
+Rotating a credential changes the material used for later leases without changing the principal, Agent revision, or resource owner. Revocation prevents new leases and causes a resumed Turn to fail closed when fresh authority cannot be established.
 
 ## Failure and Security Semantics
 

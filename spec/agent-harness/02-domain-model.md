@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The Harness domain contains process-local Agent construction, one logical execution, its trusted bindings, events, usage observations, results, and portable continuation state. Durable definitions, executions, worker Attempts, leases, queues, and delivery remain Host domains.
+The Harness domain contains process-local Agent construction, one logical execution, its trusted bindings, events, usage observations, results, and portable continuation state. Durable Threads, Turns, Items, worker leases, queues, and delivery remain Host domains.
 
 ```mermaid
 flowchart LR
@@ -71,7 +71,7 @@ The platform distinguishes:
 | Model-conversation affinity | Provider-facing cache/session correlation derived by the selected model integration |
 | Harness run ID              | One logical process-local invocation                                                |
 | Pydantic inner run ID       | One semantic attempt inside the logical run                                         |
-| Host Execution/Attempt      | Durable work and worker generation outside the Harness                              |
+| Host Turn/worker lease      | Durable work and worker ownership outside the Harness                               |
 | Tool call ID                | Pydantic call correlation                                                           |
 
 A model conversation is the independently advancing message history owned by one Agent instance. A root, every inline child instance, every Host-managed child, and every explicit fork therefore have distinct model-conversation affinity. Continuing the same Agent instance across a new Harness run preserves that affinity even though its Harness and inner run IDs change. The selected model integration derives or looks up the provider-facing value; [Input, Model, and Output Boundaries](16-input-model-and-output.md#model-conversation-affinity) owns the detailed cache and session rules.
@@ -91,13 +91,13 @@ A compact model reference:
 - is never reused or silently redirected after release, expiry, removal, incompatible restore, or topology replacement; and
 - fails explicitly when unknown, stale, exhausted, or no longer authorized rather than exposing a longer private identifier as fallback.
 
-The owner persists a compact reference only when its semantic continuation crosses runs. Environment revision, cursor, process, and retained-output projections are run-local and disappear with the run. Working State task references remain in their task scope, and inline child references remain in the parent Delegation State. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, provider handles and cursors, receipts, operation IDs, and Host Execution or Attempt IDs retain their owning opaque/full representations and are not rewritten by this projection rule. The Environment, Working State, and Delegation specifications own each concrete allocator and lifetime.
+The owner persists a compact reference only when its semantic continuation crosses runs. Environment revision, cursor, process, and retained-output projections are run-local and disappear with the run. Working State task references remain in their task scope, and inline child references remain in the parent Delegation State. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, provider handles and cursors, receipts, operation IDs, and Host Turn or worker-lease identifiers retain their owning opaque/full representations and are not rewritten by this projection rule. The Environment, Working State, and Delegation specifications own each concrete allocator and lifetime.
 
 ## Process-local and Durable State
 
-A Host revision reconstructs a process-local `AgentDefinition`; it is not itself a Harness value. A Host Execution selects an executable, fresh `RunBindings`, optional input, and optional prior `HarnessState`. The Harness result and state become durable only if the Host commits them.
+A Host revision reconstructs a process-local `AgentDefinition`; it is not itself a Harness value. A Host Turn selects an executable, fresh `RunBindings`, optional input, and optional prior `HarnessState`. The Harness result and state become durable only if the Host commits them.
 
-One logical Harness run can use several inner Pydantic run IDs during bounded model recovery. This does not change the Host Attempt, Harness run ID, context, Environment aggregate/controller lifetime, plugins, state coordinator, or usage accumulator. Dynamic topology replacement changes immutable routing snapshots inside that one Environment lifetime rather than creating another run identity.
+One logical Harness run can use several inner Pydantic run IDs during bounded model recovery. This does not change the Host worker lease generation, Harness run ID, context, Environment aggregate/controller lifetime, plugins, state coordinator, or usage accumulator. Dynamic topology replacement changes immutable routing snapshots inside that one Environment lifetime rather than creating another run identity.
 
 ## Version Boundaries
 
@@ -120,7 +120,7 @@ These versions evolve independently.
 4. `AgentContext` is fresh per logical run and shared only by that run's internal attempts.
 5. `HarnessState` restores data, not authority, desired Environment topology, provider launch state, controllers, or live resources.
 6. Trusted plugins may intentionally transform complete result state; the Harness does not infer provenance.
-7. A process-local terminal result does not commit a Host Execution or external delivery.
+7. A process-local terminal result does not commit a Host Turn, Item, or external delivery.
 8. Events and usage snapshots are observations until their owning Host subsystem persists them.
 9. A compact model-facing reference is scoped, non-authoritative, collision-checked, and never substitutes for its internal or durable identity.
 
@@ -132,4 +132,4 @@ This document owns identities and cross-contract relationships only. Detailed sc
 
 ### Stable Workload Identity, Transient Runs
 
-Stable Agent identity supports policy and credentials across continuation, while fresh process-local runs avoid duplicating durable Host Attempt semantics.
+Stable Agent identity supports policy and credentials across continuation, while fresh process-local runs avoid duplicating durable Host worker-lease semantics.

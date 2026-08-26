@@ -2,9 +2,9 @@
 
 ## Overview
 
-This directory defines the shared Agent User Interaction Protocol projection boundary, distributed as `converge-agent-stream-protocol`. The package adapts validated Harness execution observations and retained Host display data into standard AG-UI events that presentation surfaces can consume without importing Host session or lifecycle types.
+This directory defines the shared Agent User Interaction Protocol projection boundary, distributed as `converge-agent-stream-protocol`. The package adapts validated Harness execution observations and retained Host display data into standard AG-UI events that presentation surfaces can consume without importing Host Thread, Turn, Item, or lifecycle types.
 
-The projection is reusable by local Agent UI and optional hosted transports. It is not a scheduler, session store, web server, browser SDK, durable event log, or second Agent runtime.
+The projection is reusable by local Agent UI and optional hosted transports. It is not a scheduler, Thread store, web server, browser SDK, durable event log, or second Agent runtime.
 
 ## Document Catalog
 
@@ -29,10 +29,10 @@ Read `00`, then [Foundation Service](../foundation-service/README.md) for hosted
 ## Authority Rules
 
 - Pydantic AI and the Harness own run execution, messages, tool semantics, final results, and `HarnessState`.
-- A Host owns input acceptance, session or Execution identity, authorization, checkpoint selection, retention, and transport lifecycle.
+- A Host owns input acceptance, Thread/Turn/Item identity, authorization, checkpoint selection, retention, and transport lifecycle.
 - Agent Stream Protocol owns deterministic projection, protocol validation, ordering checks, replay-safe display envelopes, and namespaced extension policy.
 - A renderer owns ephemeral view state only.
-- AG-UI event delivery is observation. It never commits execution, proves external side effects, grants tool authority, or becomes continuation state.
+- AG-UI event delivery is observation. It never commits a Turn or Item, proves external side effects, grants tool authority, or becomes continuation state.
 
 ## Specification Conventions
 

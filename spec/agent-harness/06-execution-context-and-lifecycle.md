@@ -4,22 +4,22 @@
 
 One Harness run is one process-local logical invocation of an `ExecutableAgent`. It enters one Environment aggregate and activates its paired Host-retained topology controller, creates one outer `AgentContext`, binds one plugin chain, owns one shared `RunUsage` accumulator, and produces at most one terminal Harness result.
 
-A logical Harness run may contain several sequential Pydantic AI model attempts when `ModelRecoveryPolicy` is enabled. Those attempts are an internal recovery mechanism, not separate Harness runs, Host Attempts, plugin invocations, contexts, Environments, controller lifetimes, or usage ledgers. Each Pydantic attempt receives a unique upstream run ID while the public Harness `run_id` remains stable.
+A logical Harness run may contain several sequential Pydantic AI model attempts when `ModelRecoveryPolicy` is enabled. Those attempts are an internal recovery mechanism, not separate Harness runs, Host worker lease generations, plugin invocations, contexts, Environments, controller lifetimes, or usage ledgers. Each Pydantic attempt receives a unique upstream run ID while the public Harness `run_id` remains stable.
 
 Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval boundaries, output validation retries, messages, and provider-suspended continuation. The Harness owns outer preparation, plugin middleware, bounded semantic attempt coordination, terminal normalization, and cleanup.
 
 ## Boundary
 
-| Concern                                          | Owner                                      |
-| ------------------------------------------------ | ------------------------------------------ |
-| Model/tool loop and native deferred values       | Pydantic AI                                |
-| Provider transport retry                         | Provider client and Pydantic `RetryConfig` |
-| Narrow provider-history repair                   | `SelfHealingModel`                         |
-| Logical run and interrupted-stream attempts      | Harness                                    |
-| Durable execution, worker Attempt, lease, replay | Host                                       |
-| Continuation persistence and selection           | Host                                       |
+| Concern                                        | Owner                                      |
+| ---------------------------------------------- | ------------------------------------------ |
+| Model/tool loop and native deferred values     | Pydantic AI                                |
+| Provider transport retry                       | Provider client and Pydantic `RetryConfig` |
+| Narrow provider-history repair                 | `SelfHealingModel`                         |
+| Logical run and interrupted-stream attempts    | Harness                                    |
+| Durable Thread/Turn/Item, worker lease, replay | Host                                       |
+| Continuation persistence and selection         | Host                                       |
 
-A Host may map one logical Harness run to one durable worker Attempt. It does not create a new durable Attempt for every internal model attempt.
+A Host may map one logical Harness run to one worker lease generation of a durable Turn. It does not change that lease generation for every internal model attempt.
 
 ## RunBindings and AgentContext
 

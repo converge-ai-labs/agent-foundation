@@ -4,7 +4,7 @@
 
 `converge-agent-stream-protocol` is the shared protocol adapter between Agent Foundation execution observations and Agent User Interaction Protocol clients. It accepts validated public Harness events, Host-approved snapshots, and terminal outcomes; emits a strictly ordered standard AG-UI stream; validates supported client input; and provides replay-safe envelope utilities. It lets browser, terminal, and hosted presentation adapters share one interpretation of an Agent run.
 
-The adapter is not an execution wrapper. It never calls a model, constructs an Agent, selects `HarnessState`, authorizes a tool, commits a session or Foundation `Execution`, or owns a transport. A Host supplies authoritative run and lineage correlation and remains responsible for persistence, authorization, backpressure policy, and reconnection.
+The adapter is not an execution wrapper. It never calls a model, constructs an Agent, selects `HarnessState`, authorizes a tool, commits a Thread, Turn, or Item, or owns a transport. A Host supplies authoritative run and lineage correlation and remains responsible for persistence, authorization, backpressure policy, and reconnection.
 
 ## Boundaries
 
@@ -12,14 +12,14 @@ The adapter is not an execution wrapper. It never calls a model, constructs an A
 | -------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Pydantic messages, tools, run, and output    | Pydantic AI and Harness          | Projects only public normalized observations                                                             |
 | Complete continuation state                  | Harness `HarnessState` and Host  | Never derives it from AG-UI messages, state snapshots, or replay                                         |
-| Local session or durable Execution lifecycle | Owning Host                      | Receives opaque correlation and terminal facts; does not infer them                                      |
+| Local or hosted Thread/Turn/Item lifecycle   | Owning Host                      | Receives opaque correlation and terminal facts; does not infer them                                      |
 | AG-UI standard event semantics               | Upstream AG-UI protocol          | Preserves standard names and payload meaning for one declared compatibility profile                      |
 | Harness-to-AG-UI mapping and extensions      | `converge-agent-stream-protocol` | Owns deterministic mapping, ordering validation, safe extension namespace, and replay envelope utilities |
 | SSE, WebSocket, in-process iterator, or HTTP | Host transport adapter           | Carries the same validated event values without changing meaning                                         |
 | Rendered components and ephemeral view state | WebUI or TUI renderer            | May filter or aggregate display, but cannot rewrite source protocol facts                                |
 | Foundation durable event replay              | Foundation Service               | Remains authoritative; AG-UI is a live or retained presentation projection                               |
 
-The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local sessions](../agent-ui/02-local-sessions-and-state.md) own local retention, while [Foundation Service](../foundation-service/README.md) owns hosted durable replay.
+The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local Threads](../agent-ui/02-local-threads-and-state.md) own local retention, while [Foundation Service](../foundation-service/README.md) owns hosted durable replay.
 
 ## Dependency Direction
 
@@ -33,7 +33,7 @@ flowchart LR
     Local --> TUI[TUI]
 ```
 
-The Harness imports no AG-UI, UI, session, HTTP, or terminal type. `converge-agent-stream-protocol` depends on public Harness event and result types, the upstream AG-UI schema library, Pydantic, and the lightweight Pydantic AI runtime needed to classify public stream events. It imports no Agent UI session implementation or Foundation persistence model.
+The Harness imports no AG-UI, UI, Thread, Turn, Item, HTTP, or terminal type. `converge-agent-stream-protocol` depends on public Harness event and result types, the upstream AG-UI schema library, Pydantic, and the lightweight Pydantic AI runtime needed to classify public stream events. It imports no Agent UI Thread implementation or Foundation persistence model.
 
 In source manifests, `converge-agent-stream-protocol` declares an unversioned dependency on `converge-agent-harness`, while `converge-agent-ui` declares unversioned dependencies on both packages. The root uv workspace resolves those local sources during repository development without turning workspace membership into a release group.
 
@@ -76,7 +76,7 @@ class ProjectedEvent:
     source_observation_id: str | None
 ```
 
-The Host provides correlation from trusted records. `agent_instance_ref` and session or Execution references are safe opaque correlation values selected for the client; they are never bearer credentials. `sequence` is strictly increasing within one projection stream. `event_id` is stable for one retained projection record and supports subscriber deduplication; it does not become a Foundation durable event ID unless a Foundation adapter explicitly maps and labels the two identities.
+The Host provides correlation from trusted records. `agent_instance_ref` and Thread, Turn, or Item references are safe opaque correlation values selected for the client; they are never bearer credentials. `sequence` is strictly increasing within one projection stream. `event_id` is stable for one retained projection record and supports subscriber deduplication; it does not become a Foundation Item or durable event ID unless a Foundation adapter explicitly maps and labels the identities.
 
 A replay-capable Host stores the validated `ProjectedEvent` envelope or enough public semantic input to reproduce it under the same profile. It does not persist a renderer's DOM, terminal widget graph, unvalidated provider frame, private exception, or arbitrary Python object.
 
@@ -122,7 +122,7 @@ A source gap, duplicate conflicting identity, invalid lifecycle transition, or i
 AG-UI client input is presentation input, not continuation authority. The adapter validates the selected upstream request schema, bounded messages and attachments, advertised client tools, shared-state values, and protocol version. It returns a normalized value to the Host. The Host then:
 
 - authenticates the caller where required;
-- selects the profile, session or Execution, checkpoint, and expected revision;
+- selects the profile, Thread, Turn, checkpoint, and expected revision;
 - decides which user-authored content enters `RunInput`;
 - authorizes client-side tools through the Harness or Foundation owning contract;
 - supplies fresh Identity, model, Environment, credential, and run Capabilities.
@@ -145,7 +145,7 @@ sequenceDiagram
     Run-->>Renderer: new ordered projected events
 ```
 
-A Host cursor is opaque and scoped to its session or Execution, projection profile, filter, and retention generation. Duplicate delivery is allowed; clients deduplicate by event ID. A cursor older than retained data returns an explicit gap and a fresh Host-approved message/state snapshot when available. It never silently starts at the newest event.
+A Host cursor is opaque and scoped to its Thread and optional Turn, projection profile, filter, and retention generation. Duplicate delivery is allowed; clients deduplicate by event ID. A cursor older than retained data returns an explicit gap and a fresh Host-approved message/state snapshot when available. It never silently starts at the newest event.
 
 Presentation replay reconstructs visible messages, activities, and state. It does not rerun model or tool work, recreate a live run, prove that omitted deltas never occurred, or select a continuation checkpoint. A Host can discard token-level deltas after retaining complete semantic messages and still report the gap honestly.
 
@@ -162,12 +162,12 @@ Transport disconnect is an observation failure and does not cancel execution. A 
 | Invalid source ordering                | Projection stops with bounded safe failure                            | Host retains execution truth and can rebuild only from valid public observations |
 | Slow or disconnected subscriber        | Subscriber loses live delivery or receives an explicit replay gap     | Run continues unless a separate cancellation command is accepted                 |
 | Retention cursor expired               | Typed gap plus reload/resnapshot instruction                          | Host snapshot and retained semantic data recover presentation, not execution     |
-| Renderer failure                       | One surface fails without changing run or session state               | Renderer reconnects and replays                                                  |
+| Renderer failure                       | One surface fails without changing run or Thread state                | Renderer reconnects and replays                                                  |
 | Terminal delivery acknowledgement lost | Terminal event may be delivered again with the same retained event ID | Subscriber deduplicates; Host completion is unchanged                            |
 
 ## Foundation Service Use
 
-Foundation may use this package to project a live Harness stream and selected retained semantic data. Its durable lifecycle log, Execution snapshot, Attempt fence, checkpoint, and replay cursor remain owned by Foundation. An AG-UI transport labels which envelopes are backed by Foundation durable events, retained semantic projections, or live-only observations. It never exposes an Agent UI local session type or claims that all token-level AG-UI events are durable.
+Foundation may use this package to project a live Harness stream and selected retained semantic data. Its durable Threads, Turns, Items, lifecycle log, worker-generation fence, checkpoints, and replay cursors remain owned by Foundation. An AG-UI transport labels which envelopes are backed by Foundation Items or durable events, retained semantic projections, or live-only observations. It never claims that all token-level AG-UI events are durable Items.
 
 ## Compatibility
 
@@ -192,12 +192,12 @@ Using upstream events preserves ecosystem interoperability. Some Agent Foundatio
 ## Invariants
 
 01. Agent Stream Protocol projects public observations and never executes or resumes an Agent.
-02. The Harness has no dependency on AG-UI, Agent UI, transport, renderer, or session types.
+02. The Harness has no dependency on AG-UI, Agent UI, transport, renderer, or Thread/Turn/Item types.
 03. Every stream declares one stable protocol profile and has strictly increasing projection sequence.
 04. Standard AG-UI names and payloads retain upstream meaning; project behavior uses versioned `converge.*` extensions.
 05. A terminal AG-UI event observes source completion or classified failure and never commits Host completion.
 06. AG-UI messages, snapshots, deltas, cursors, and client input cannot replace `HarnessState`, Host checkpoint selection, or fresh run authority.
 07. Replay preserves retained event identity and reports retention gaps explicitly.
-08. A disconnect or renderer failure never implicitly cancels a Harness run or Foundation Execution.
+08. A disconnect or renderer failure never implicitly cancels a Harness run or Foundation Turn.
 09. Background spawn completion is later Host-routed input, not a deferred result for the original spawn tool call.
 10. Redaction and visibility are applied before diagnostic, raw, custom, or inspector projections leave the trusted runtime boundary.

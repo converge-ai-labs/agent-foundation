@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Agent UI is the local single-user Host for interactive use of `agent-harness`. The Python distribution `converge-agent-ui` owns Agent composition, local sessions, foreground run orchestration, process-local background child jobs, and application services. The private browser source application `apps/harness-ui` is compiled into that distribution and is never published or versioned as an independent npm package.
+Agent UI is the local single-user Host for interactive use of `agent-harness`. The Python distribution `converge-agent-ui` owns Agent composition, local Threads/Turns/Items, foreground run orchestration, process-local background child jobs, and application services. The private browser source application `apps/harness-ui` is compiled into that distribution and is never published or versioned as an independent npm package.
 
 The executable has two presentation modes:
 
@@ -12,24 +12,24 @@ converge-agent-ui webui
 converge-agent-ui tui
 ```
 
-WebUI is the default. Both modes create the same application service, open the same profile and session stores, execute the same built Agents through the same Harness path, and consume the same [AG-UI projection](../agent-stream-protocol/00-overview.md). A mode changes only the presentation adapter and its transport lifecycle.
+WebUI is the default. Both modes create the same application service, open the same profile and Thread stores, execute the same built Agents through the same Harness path, and consume the same [AG-UI projection](../agent-stream-protocol/00-overview.md). A mode changes only the presentation adapter and its transport lifecycle.
 
 Agent UI does not expose a multi-tenant service, durable distributed worker protocol, or alternative Agent loop. It can optionally act as a process-local EIP control service: `agent-envd` dials its reverse-WebSocket ingress, and an explicit local Host command can make that attachment available to a current or later run through the ordinary Harness Environment boundary. Work requiring service-owned acceptance, leases, retries, durable asynchronous children, or remote product authorization uses [Foundation Service](../foundation-service/README.md).
 
 ## Boundaries
 
-| Concern                                       | Owner                             | Agent UI relationship                                                                                                    |
-| --------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Agent loop, run stream, final result, state   | Harness and Pydantic AI           | Calls the public Harness API with fresh bindings                                                                         |
-| Local profile documents and resolved snapshot | Agent UI                          | Reconstructs one complete process-local `AgentDefinition` graph                                                          |
-| Local session and selected checkpoint         | Agent UI                          | Persists Host records and a complete `HarnessState`                                                                      |
-| Standard presentation event projection        | `converge-agent-stream-protocol`  | Uses one adapter instance per foreground or child run                                                                    |
-| Web and terminal rendering                    | Surface adapters                  | Consume AG-UI and submit typed application commands                                                                      |
-| Local background child scheduling             | Agent UI                          | Reuses built child executables through the Harness Host boundary                                                         |
-| Dynamic envd attachment routing               | Agent UI application service      | Authenticates optional reverse-WebSocket attachments and transfers selected candidates into fresh or active run topology |
-| EIP carrier, session, and Environment methods | agent-envd client and agent-envd  | Uses the existing requester/responder contract; Agent UI does not create another Environment protocol                    |
-| Durable distributed execution                 | Foundation Service                | Not emulated by local session files                                                                                      |
-| Identity, model, Environment, and credentials | Fresh Host bindings and providers | Reauthorized for every root and child invocation; never restored from a profile, session, or UI event                    |
+| Concern                                        | Owner                             | Agent UI relationship                                                                                                    |
+| ---------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Agent loop, run stream, final result, state    | Harness and Pydantic AI           | Calls the public Harness API with fresh bindings                                                                         |
+| Local profile documents and resolved snapshot  | Agent UI                          | Reconstructs one complete process-local `AgentDefinition` graph                                                          |
+| Local Thread/Turn/Item and selected checkpoint | Agent UI                          | Persists Host records and a complete `HarnessState`                                                                      |
+| Standard presentation event projection         | `converge-agent-stream-protocol`  | Uses one adapter instance per foreground or child run                                                                    |
+| Web and terminal rendering                     | Surface adapters                  | Consume AG-UI and submit typed application commands                                                                      |
+| Local background child scheduling              | Agent UI                          | Reuses built child executables through the Harness Host boundary                                                         |
+| Dynamic envd attachment routing                | Agent UI application service      | Authenticates optional reverse-WebSocket attachments and transfers selected candidates into fresh or active run topology |
+| EIP carrier, session, and Environment methods  | agent-envd client and agent-envd  | Uses the existing requester/responder contract; Agent UI does not create another Environment protocol                    |
+| Durable distributed Turn execution             | Foundation Service                | Not emulated by local Thread files                                                                                       |
+| Identity, model, Environment, and credentials  | Fresh Host bindings and providers | Reauthorized for every root and child invocation; never restored from a profile, Thread, or UI event                     |
 
 ## Architecture
 
@@ -42,7 +42,7 @@ flowchart TB
     subgraph Host[Agent UI application service]
         Commands[Typed application commands]
         Profiles[Profile repository and resolver]
-        Sessions[Local session store]
+        Threads[Local Thread store]
         Runs[Foreground run coordinator]
         Jobs[Background child monitor]
         Attachments[Process-local envd attachment registry]
@@ -61,16 +61,16 @@ flowchart TB
     CLI --> Web
     CLI --> TUI
     Web & TUI --> Commands
-    Commands --> Profiles & Sessions & Runs & Jobs & Attachments
+    Commands --> Profiles & Threads & Runs & Jobs & Attachments
     Attachments --> Environment
     Profiles --> Definition --> Executable
     Runs & Jobs --> Executable --> Environment --> Stream --> State
     Stream --> Projection
     Projection --> Web & TUI
-    State --> Sessions
+    State --> Threads
 ```
 
-The application service exposes one typed in-process command/query boundary for profile selection, session creation and selection, input submission, cancellation, background-child control, optional envd invitation and attachment selection, and replay subscription. The WebUI transport adapts that boundary to loopback HTTP and an AG-UI event stream. The TUI calls it in process. Neither surface reads profile files, mutates session files, calls `ExecutableAgent.stream()` directly, applies Environment topology directly, or applies a private Harness-event projection.
+The application service exposes one typed in-process command/query boundary for profile selection, Thread creation and selection, Turn submission, cancellation, background-child control, optional envd invitation and attachment selection, and replay subscription. The WebUI transport adapts that boundary to loopback HTTP and an AG-UI event stream. The TUI calls it in process. Neither surface reads profile files, mutates Thread files, calls `ExecutableAgent.stream()` directly, applies Environment topology directly, or applies a private Harness-event projection.
 
 ## Main Flow
 
@@ -78,29 +78,29 @@ The application service exposes one typed in-process command/query boundary for 
 sequenceDiagram
     participant Surface as WebUI or TUI
     participant App as Agent UI application service
-    participant Store as Session store
+    participant Store as Thread store
     participant Harness
     participant AGUI as AG-UI projection
 
-    Surface->>App: submit input for session and expected revision
+    Surface->>App: submit input for Thread and expected revision
     App->>Store: lock and select profile snapshot plus checkpoint
     App->>Harness: stream input, HarnessState, and fresh RunBindings
     Harness-->>AGUI: validated Harness events
     AGUI-->>Surface: ordered AG-UI events
     Harness-->>App: terminal Harness result and complete state
     App->>Store: atomically commit turn and selected checkpoint
-    App-->>Surface: terminal AG-UI envelope and refreshed session projection
+    App-->>Surface: terminal AG-UI envelope and refreshed Thread projection
 ```
 
 Input acceptance, Harness start, Harness terminal result, local checkpoint commit, background result routing, and surface delivery are distinct facts. A disconnected surface does not cancel work. The current mode can submit an explicit cancellation command; the run coordinator then invokes the ordinary Harness cancellation contract and records the resulting local turn outcome.
 
 ## Application-Service Lifetime
 
-One process owns one application-service instance and its supervised async lifetime. It acquires profile and session repositories before accepting commands, retains entered foreground run and background-job tasks as children of that lifetime, and closes surfaces before releasing repositories. Shutdown requests cancellation, drains run and child cleanup, and then records any job or turn whose terminal outcome remains unknown as interrupted rather than successful.
+One process owns one application-service instance and its supervised async lifetime. It acquires profile and Thread repositories before accepting commands, retains entered foreground run and background-job tasks as children of that lifetime, and closes surfaces before releasing repositories. Shutdown requests cancellation, drains run and child cleanup, and then records any job or Turn whose terminal outcome remains unknown as interrupted rather than successful.
 
-Only one foreground turn advances a given session lineage at a time. Independent sessions can run concurrently subject to Host policy and configured limits. A stale expected session revision conflicts before dispatch rather than selecting a newer checkpoint implicitly.
+Only one foreground Turn advances a given Thread lineage at a time. Independent Threads can run concurrently subject to Host policy and configured limits. A stale expected Thread revision conflicts before dispatch rather than selecting a newer checkpoint implicitly.
 
-The optional envd attachment registry is another child of the application-service lifetime. It owns pending invitations, accepted reverse-WebSocket carriers, and unclaimed provider-binding candidates only in memory. Selecting a candidate for an active run transfers it through that run's retained `EnvironmentTopologyController`; selecting one for a later turn contributes to fresh `RunBindings`. Process restart invalidates invitations and closes attachments rather than restoring network authority from session files.
+The optional envd attachment registry is another child of the application-service lifetime. It owns pending invitations, accepted reverse-WebSocket carriers, and unclaimed provider-binding candidates only in memory. Selecting a candidate for an active run transfers it through that run's retained `EnvironmentTopologyController`; selecting one for a later Turn contributes to fresh `RunBindings`. Process restart invalidates invitations and closes attachments rather than restoring network authority from Thread files.
 
 ## Surface and CLI Contract
 
@@ -108,9 +108,9 @@ The root command is equivalent to selecting `webui`; it is not a third execution
 
 - `webui` starts the application service and a loopback browser transport, serves the bundled immutable assets, and opens or reports the local URL according to CLI options; when explicitly configured, the same service lifetime also exposes the EIP reverse-WebSocket ingress;
 - `tui` starts the same application service and attaches the terminal renderer directly;
-- surface-neutral configuration selects the profile store, session store, model/provider settings, logging, and Host policy before either adapter starts.
+- surface-neutral configuration selects the profile store, Thread store, model/provider settings, logging, and Host policy before either adapter starts.
 
-Web transport binds to loopback by default because the Host assumes one local user and carries no multi-tenant authorization model. Loopback location alone is not request authority: each application-service lifetime creates an unguessable process-local browser capability, and every browser command and stream attachment presents it. The transport accepts only its exact served `Host` and `Origin`, exposes no wildcard credentialed CORS policy, and rejects missing or mismatched capability, Host, or Origin values before an application command. The capability is never persisted in a profile or session, sent to model context, or written to ordinary logs, and restart invalidates it.
+Web transport binds to loopback by default because the Host assumes one local user and carries no multi-tenant authorization model. Loopback location alone is not request authority: each application-service lifetime creates an unguessable process-local browser capability, and every browser command and stream attachment presents it. The transport accepts only its exact served `Host` and `Origin`, exposes no wildcard credentialed CORS policy, and rejects missing or mismatched capability, Host, or Origin values before an application command. The capability is never persisted in a profile or Thread, sent to model context, or written to ordinary logs, and restart invalidates it.
 
 Binding another interface is an explicit operator action and requires an adopting wrapper to replace the built-in local-browser capability with authentication, authorization, TLS, Host, and origin policy appropriate to its exposure. The built-in loopback mechanism is not a remote multi-user authentication contract. These constraints preserve the authority of the local application boundary without treating every local browser origin or process as trusted.
 
@@ -138,15 +138,15 @@ Agent UI has an independent `release/agent-ui-v<version>` release channel. Its r
 
 ## Completion Boundaries
 
-| Fact                         | Meaning                                                                                        |
-| ---------------------------- | ---------------------------------------------------------------------------------------------- |
-| Command accepted             | The application service validated a request; model work may not have started                   |
-| Harness result delivered     | One process-local run reached a terminal Harness result                                        |
-| Session checkpoint committed | The local store atomically selected the new complete `HarnessState` and turn projection        |
-| Background spawn accepted    | The process-local job monitor owns a job; the child may not have started                       |
-| Background result routed     | A retained child outcome became eligible input for an active or later parent turn              |
-| AG-UI envelope delivered     | One presentation subscriber observed an event; no execution or checkpoint fact is strengthened |
-| Surface rendered             | Ephemeral UI state changed                                                                     |
+| Fact                        | Meaning                                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| Command accepted            | The application service validated a request; model work may not have started                   |
+| Harness result delivered    | One process-local run reached a terminal Harness result                                        |
+| Thread checkpoint committed | The local store atomically selected the new complete `HarnessState` and Turn/Item projection   |
+| Background spawn accepted   | The process-local job monitor owns a job; the child may not have started                       |
+| Background result routed    | A retained child outcome became eligible input for an active or later parent turn              |
+| AG-UI envelope delivered    | One presentation subscriber observed an event; no execution or checkpoint fact is strengthened |
+| Surface rendered            | Ephemeral UI state changed                                                                     |
 
 ## Trade-offs
 
@@ -165,12 +165,12 @@ Local atomic files and process-owned jobs keep interactive startup and operation
 ## Invariants
 
 01. `converge-agent-ui` with no subcommand selects the same WebUI path as the explicit `webui` subcommand.
-02. WebUI and TUI use one application-service contract, one session authority, one Harness execution path, and one AG-UI projection contract.
+02. WebUI and TUI use one application-service contract, one Thread/Turn/Item authority, one Harness execution path, and one AG-UI projection contract.
 03. No surface directly converts private Harness events into a second presentation truth.
 04. Agent UI persists only complete selected Harness checkpoints; UI replay data cannot restore execution authority or continuation.
 05. Every root and child invocation receives fresh bindings regardless of retained local state.
 06. An envd connection or displayed attachment status grants no Agent authority; only explicit Host selection can transfer a validated candidate into fresh bindings or an active run topology.
-07. Attachment invitations, credentials, carriers, and live bindings are process-local and never enter a profile, session, checkpoint, replay log, or browser state.
+07. Attachment invitations, credentials, carriers, and live bindings are process-local and never enter a profile, Thread, checkpoint, replay log, or browser state.
 08. The browser source application is private and ships only as immutable files inside the Python sdist and wheel.
 09. Generated browser assets are absent from Git and mandatory in publishable Python artifacts.
 10. Process-local job acceptance, envd attachment, Harness completion, local commit, AG-UI delivery, and rendering remain independent facts.

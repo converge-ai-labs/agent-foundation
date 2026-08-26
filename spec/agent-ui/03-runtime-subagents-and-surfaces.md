@@ -15,24 +15,24 @@ The application service can also own an optional process-local envd attachment r
 | Complete root and child executable graph     | Harness build                    | Borrows exact `SubagentCollection`; never rebuilds a child from parent internals                   |
 | Blocking inline child invocation and state   | Harness Delegation Capability    | Uses normal tool call, nested child `HarnessState`, shared usage, and parent checkpoint boundary   |
 | Background tool presentation                 | Agent UI behavior Capability     | Reads exact built children and exposes bounded spawn/status/steer/cancel tools selected by profile |
-| Current background submission authority      | Fresh Agent UI run Capability    | Binds current session, parent lineage, job monitor, child-binding factory, and policy              |
+| Current background submission authority      | Fresh Agent UI run Capability    | Binds current Thread, parent lineage, job monitor, child-binding factory, and policy               |
 | Live task scheduling and synchronization     | Agent UI background monitor      | Owns supervised tasks, queues, wake-up, terminal retention, and process-generation state           |
 | Child Agent loop, events, state, and cleanup | Same Harness API as root         | Calls child `ExecutableAgent.stream()` with fresh bindings                                         |
 | AG-UI event mapping                          | `converge-agent-stream-protocol` | Projects root and exposed child streams once                                                       |
 | Envd invitation and attachment registry      | Agent UI application service     | Owns authenticated admission, routing, selection, and unclaimed candidate cleanup                  |
 | EIP requester session over accepted carrier  | `converge-agent-envd-client`     | Initializes envd and carries bounded control and file-data frames                                  |
 | Active Environment topology                  | Harness                          | Receives selected single-use provider bindings through fresh bindings or its retained controller   |
-| Session checkpoint and job records           | Agent UI session store           | Commits parent checkpoints and bounded job facts under separate lifecycle rules                    |
-| Durable distributed child Execution          | Foundation Service               | Not emulated by local jobs                                                                         |
+| Thread checkpoint and job records            | Agent UI Thread store            | Commits parent checkpoints and bounded job facts under separate lifecycle rules                    |
+| Durable distributed child Thread/Turn        | Foundation Service               | Not emulated by local jobs                                                                         |
 
 ## Shared Foreground Orchestration
 
-The application service accepts a typed `SubmitTurn` command containing a session selector, expected revision, and bounded user input. It opens the session's pinned executable, requests fresh root `RunBindings`, enters exactly one `HarnessRunStream`, and is its sole consumer. The coordinator forwards public events to one AG-UI projection instance, captures the terminal result, and asks the session store to commit the complete checkpoint.
+The application service accepts a typed `SubmitTurn` command containing a Thread selector, expected revision, and bounded user input. It opens the Thread's pinned executable, requests fresh root `RunBindings`, enters exactly one `HarnessRunStream`, and is its sole consumer. The coordinator forwards public events to one AG-UI projection instance, captures the terminal result, and asks the Thread store to commit the complete checkpoint and Turn Items.
 
 Surface code receives:
 
 - command acknowledgements and conflicts;
-- session/profile query projections;
+- Thread/profile query projections;
 - replay and live `ProjectedEvent` subscriptions;
 - background job query/control projections;
 - surface-neutral safe failures.
@@ -62,19 +62,19 @@ sequenceDiagram
     Harness-->>App: topology publication
 ```
 
-Creating an invitation is an explicit local Host operation. It allocates a compact process-local attachment reference, expected Environment identity, finite expiry and capacity, and admission policy. Its short-lived credential is delivered through a protected operator bootstrap path and never through an ordinary browser projection, URL, profile, session, replay event, model context, or log. The browser can observe safe states such as waiting, available, bound, unavailable, expired, or closed; those observations grant no Environment authority.
+Creating an invitation is an explicit local Host operation. It allocates a compact process-local attachment reference, expected Environment identity, finite expiry and capacity, and admission policy. Its short-lived credential is delivered through a protected operator bootstrap path and never through an ordinary browser projection, URL, profile, Thread, replay event, model context, or log. The browser can observe safe states such as waiting, available, bound, unavailable, expired, or closed; those observations grant no Environment authority.
 
-After carrier authentication, Agent UI sends the first `initialize` request and validates protocol version, Environment identity, daemon generation, descriptor, required methods, and configured limits. A successful initialization creates an available attachment in the registry, not a run binding. A later explicit application command selects the attachment, model-facing alias, permission ceiling, and target session lineage. The registry then creates one single-use EIP-backed `EnvironmentProviderBinding` and transfers ownership exactly once:
+After carrier authentication, Agent UI sends the first `initialize` request and validates protocol version, Environment identity, daemon generation, descriptor, required methods, and configured limits. A successful initialization creates an available attachment in the registry, not a run binding. A later explicit application command selects the attachment, model-facing alias, permission ceiling, and target Thread lineage. The registry then creates one single-use EIP-backed `EnvironmentProviderBinding` and transfers ownership exactly once:
 
 - if the target foreground run is active, Agent UI submits a higher complete topology request through that run's retained `EnvironmentTopologyController`;
 - if no turn is active, Agent UI can retain the bounded selection in memory until the next turn constructs fresh `RunBindings`;
 - expiry, cancellation, process shutdown, or failure before transfer closes the carrier and discards the candidate.
 
-One initialized EIP session is claimed by at most one run binding. It is never shared concurrently between root runs, session lineages, or background children. A root attachment is not inherited by a child; every child still receives independently authorized fresh bindings. After a run releases its provider scope, envd can reconnect into the application registry and initialize a fresh EIP session for another explicit selection.
+One initialized EIP session is claimed by at most one run binding. It is never shared concurrently between root runs, Thread lineages, or background children. A root attachment is not inherited by a child; every child still receives independently authorized fresh bindings. After a run releases its provider scope, envd can reconnect into the application registry and initialize a fresh EIP session for another explicit selection.
 
 A transient carrier loss within the same selected Environment identity and daemon generation can be handled as bounded provider-private reconnect and typed availability change. It does not resume transfers, replay requests, or prove that an in-flight mutation was not dispatched. A changed daemon generation requires a fresh candidate and higher Harness binding revision; Agent UI never silently retargets an existing binding, cursor, handle, or operation.
 
-The registry and listener are children of the application-service lifetime. Admission counts, pending candidates, initialized carriers, wait time, reconnect, and shutdown drain are finite. Restart invalidates invitations and selections and closes all carriers. Session records can retain only safe display facts; they never restore attachment credentials, sockets, EIP sessions, provider bindings, or routing authority.
+The registry and listener are children of the application-service lifetime. Admission counts, pending candidates, initialized carriers, wait time, reconnect, and shutdown drain are finite. Restart invalidates invitations and selections and closes all carriers. Thread records can retain only safe display facts; they never restore attachment credentials, sockets, EIP sessions, provider bindings, or routing authority.
 
 The EIP ingress has a separate route and authentication domain from browser commands and AG-UI streams. It uses mandatory `wss`, the selected `eip.v1` subprotocol, a Bearer attachment credential, and first-message initialization. It can share the Agent UI server process and supervised lifespan, but the default plain loopback browser listener is not by itself a valid reverse-WebSocket endpoint. Non-loopback advertisement requires operator-configured TLS and network exposure; it does not convert Agent UI into a multi-user service.
 
@@ -87,7 +87,7 @@ The profile-selected Agent UI Background Capability has stable configuration and
 ```python
 @dataclass(frozen=True, slots=True)
 class AgentUiBackgroundRunCapability(AbstractCapability[AgentContext]):
-    session_id: str
+    thread_id: str
     lineage_id: str
     parent_turn_id: str
     parent_run_id: str
@@ -114,13 +114,13 @@ class BackgroundControlRequest(BaseModel):
     subagent_ref: str
 ```
 
-`spawn` returns an ordinary bounded result after the monitor accepts ownership. It is never a Pydantic deferred call. Status, bounded wait, steer, and cancel resolve `subagent_ref` together with trusted current parent/session lineage. A compact ref cannot address another session or root Agent instance and never substitutes for the monitor's internal job ID.
+`spawn` returns an ordinary bounded result after the monitor accepts ownership. It is never a Pydantic deferred call. Status, bounded wait, steer, and cancel resolve `subagent_ref` together with trusted current parent/Thread lineage. A compact ref cannot address another Thread or root Agent instance and never substitutes for the monitor's internal job ID.
 
 Steering is optional bounded input delivered to a running child through a Host-owned message seam supported by that child composition. Acceptance means the monitor queued or delivered the message to the exact live job; it does not mean the child incorporated it into a model request. A child without a compatible steering seam returns an unsupported outcome. Agent UI never mutates private Pydantic history or a live `AgentContext` to simulate steering.
 
 ## Background Job Lifecycle
 
-Execution outcome and result delivery advance independently:
+Child Turn outcome and result delivery advance independently:
 
 ```mermaid
 stateDiagram-v2
@@ -177,9 +177,9 @@ class BackgroundJobRecord(BaseModel):
     finished_at: datetime | None
 ```
 
-Terminal result, bounded complete child state, and safe failure can be retained after the child stream and resources close. They support later model input, status, and diagnostic display but do not recreate fresh authority. Retention size, count, and age are bounded per session. Advancing `delivery` never erases or rewrites `outcome`.
+Terminal result, bounded complete child state, and safe failure can be retained after the child stream and resources close. They support later model input, status, and diagnostic display but do not recreate fresh authority. Retention size, count, and age are bounded per Thread. Advancing `delivery` never erases or rewrites `outcome`.
 
-A process-generation mismatch turns a record whose outcome is `accepted` or `running` into `interrupted` during recovery. Its delivery remains `unavailable` because no complete child outcome was selected. Agent UI does not restart it automatically. A process-local background child therefore has no crash-recovery guarantee; work requiring independent durable retry or failover uses a Foundation child Execution.
+A process-generation mismatch turns a record whose outcome is `accepted` or `running` into `interrupted` during recovery. Its delivery remains `unavailable` because no complete child outcome was selected. Agent UI does not restart it automatically. A process-local background child therefore has no crash-recovery guarantee; work requiring independent durable retry or failover uses a Foundation child Thread and Turn.
 
 ### Result Routing and Wake-up
 
@@ -188,24 +188,24 @@ Child stream events and terminal result routing are separate:
 1. public child Harness events can be projected into a distinct AG-UI child stream with parent correlation;
 2. on terminal close, the monitor atomically retains a safe result or failure and complete state when available;
 3. it publishes a Host bus notification and wakes eligible application-service subscribers;
-4. if the parent session has an active turn with a compatible enqueue seam, Host policy may offer the result as new input;
+4. if the parent Thread has an active Turn with a compatible enqueue seam, Host policy may offer the result as new input;
 5. otherwise the result remains retained for an explicit or policy-created later parent turn.
 
-The monitor never completes the original spawn tool-call ID after spawn acceptance. A later parent turn receives typed Host-generated content naming the exact job and terminal outcome. Agent UI serializes foreground advancement, so result routing does not start a competing turn silently. Duplicate notifications retain one job/result identity and are incorporated at most once per chosen parent checkpoint under session revision checks.
+The monitor never completes the original spawn tool-call ID after spawn acceptance. A later parent Turn receives typed Host-generated content naming the exact job and terminal outcome. Agent UI serializes foreground advancement, so result routing does not start a competing Turn silently. Duplicate notifications retain one job/result identity and are incorporated at most once per chosen parent checkpoint under Thread revision checks.
 
-`delivery="delivered"` records successful Host incorporation selection, not proof that a later model used or acted on the child content. `delivery="retained"` means a terminal outcome is available but no parent continuation has selected it. Both statuses preserve the separate execution outcome.
+`delivery="delivered"` records successful Host incorporation selection, not proof that a later model used or acted on the child content. `delivery="retained"` means a terminal outcome is available but no parent continuation has selected it. Both statuses preserve the separate child Turn outcome.
 
 ## Fresh Child Bindings
 
-Every background start requests fresh bindings using trusted parent session and job lineage, exact built edge, authored context policy, effective limits, and current Host policy. It does not retain or copy the parent `RunBindings`, plugin graph, `BoundPluginContext`, Environment, client connection, credential, message list, event queue, usage accumulator, or borrowed local task cell after the parent run.
+Every background start requests fresh bindings using trusted parent Thread and job lineage, exact built edge, authored context policy, effective limits, and current Host policy. It does not retain or copy the parent `RunBindings`, plugin graph, `BoundPluginContext`, Environment, client connection, credential, message list, event queue, usage accumulator, or borrowed local task cell after the parent run.
 
-For task sharing, the local Host can retain its own session-scoped task store and supply a fresh identity-bound child view under the Harness Working State contract. It cannot keep a parent-run borrowed cell beyond that cell's documented lifetime. Other Capability state remains child-private. A background child's complete `HarnessState` lives in the Host job record rather than the inline Delegation Capability's parent state.
+For task sharing, the local Host can retain its own Thread-scoped task store and supply a fresh identity-bound child view under the Harness Working State contract. It cannot keep a parent-run borrowed cell beyond that cell's documented lifetime. Other Capability state remains child-private. A background child's complete `HarnessState` lives in the Host job record rather than the inline Delegation Capability's parent state.
 
 The child runs through its ordinary `ExecutableAgent.stream()` path with a distinct run ID and usage accumulator. Edge usage limits remain ceilings; Host policy can narrow them. Cross-job budgets and strict aggregate admission are Host facts.
 
 ## Cancellation, Shutdown, and Failure
 
-A model-facing cancel resolves the trusted job, marks a cancellation request, and asks the monitor to cancel and drain the child stream. Success means the process-local task reached a cancelled terminal observation; it does not roll back provider, tool, Environment, or external effects. A stale parent run attachment cannot control jobs after its run closes unless a later fresh attachment is explicitly authorized for that same session lineage.
+A model-facing cancel resolves the trusted job, marks a cancellation request, and asks the monitor to cancel and drain the child stream. Success means the process-local task reached a cancelled terminal observation; it does not roll back provider, tool, Environment, or external effects. A stale parent run attachment cannot control jobs after its run closes unless a later fresh attachment is explicitly authorized for that same Thread lineage.
 
 Application shutdown stops accepting jobs and envd attachments, fences active Environment topology control, requests cancellation for active jobs, drains within the configured bound, closes child streams, Environment bindings, EIP sessions, and unclaimed carriers, and records remaining unknown outcomes as interrupted or unavailable. It then closes the foreground coordinator and stores before exiting. A terminal result is retained only after complete child cleanup reaches the Host's record-selection boundary.
 
@@ -241,15 +241,15 @@ The WebUI includes a protocol inspector over the same post-validation event enve
 
 TUI attaches directly to the application service and renders the same AG-UI event schemas. It can collapse token deltas, background child detail, or completed tool sections to preserve terminal readability. This is a view filter: the application service and retained projection still own event identity and order. Expanding a section reads the retained safe projection rather than private Harness objects.
 
-Terminal resize, color capability, key bindings, clipboard support, and pager behavior are presentation concerns. They do not alter command or session semantics. TUI shutdown follows the same explicit application-service cancellation/drain flow as WebUI shutdown.
+Terminal resize, color capability, key bindings, clipboard support, and pager behavior are presentation concerns. They do not alter command or Thread semantics. TUI shutdown follows the same explicit application-service cancellation/drain flow as WebUI shutdown.
 
 ### Surface Equivalence
 
-Surface equivalence means semantic command and observation parity, not pixel or widget parity. Both modes can select a profile, create/select/fork a session, submit input, cancel the active turn, inspect safe root/child/tool observations, control authorized background jobs, and operate configured envd attachment commands. The optional listener belongs to the application-service process rather than the browser renderer, so a TUI process can enable the same ingress when configured. A feature whose semantics exist only in one renderer belongs in that renderer and cannot become hidden execution authority.
+Surface equivalence means semantic command and observation parity, not pixel or widget parity. Both modes can select a profile, create/select/fork a Thread, submit a Turn, cancel the active Turn, inspect safe root/child/tool observations, control authorized background jobs, and operate configured envd attachment commands. The optional listener belongs to the application-service process rather than the browser renderer, so a TUI process can enable the same ingress when configured. A feature whose semantics exist only in one renderer belongs in that renderer and cannot become hidden execution authority.
 
 ## Compatibility
 
-Application-service command schemas, session schema, Agent UI background Capability schema, attachment registry schema, EIP version, AG-UI profile, Web transport API, and TUI rendering version independently. A surface announces or is built against compatible application and AG-UI profiles before accepting a stream. Unknown required extension events fail negotiation; optional namespaced events can be ignored while standard run meaning remains intact. EIP compatibility is negotiated independently and never inferred from the Agent UI or AG-UI version.
+Application-service command schemas, Thread/Turn/Item schema, Agent UI background Capability schema, attachment registry schema, EIP version, AG-UI profile, Web transport API, and TUI rendering version independently. A surface announces or is built against compatible application and AG-UI profiles before accepting a stream. Unknown required extension events fail negotiation; optional namespaced events can be ignored while standard run meaning remains intact. EIP compatibility is negotiated independently and never inferred from the Agent UI or AG-UI version.
 
 A running job retains the executable snapshot, child definition identity, process generation, and projection profile with which it started. Editing a profile or upgrading a renderer cannot mutate it. Restart interrupts the job; it never reconstructs a live task under another version.
 
@@ -261,7 +261,7 @@ In-process scheduling gives local Agents useful parallel child work and immediat
 
 ### One AG-UI stream vs. direct terminal rendering
 
-TUI cannot exploit private Harness event classes as a second source of truth. The shared stream makes session replay and Web/TUI behavior consistent and keeps renderer upgrades independent of Harness internals.
+TUI cannot exploit private Harness event classes as a second source of truth. The shared stream makes Thread replay and Web/TUI behavior consistent and keeps renderer upgrades independent of Harness internals.
 
 ### Retained result routing vs. deferred spawn
 
@@ -272,7 +272,7 @@ An ordinary spawn result lets the parent continue while the Host owns later wake
 01. Inline delegation remains Harness-owned; Agent UI background behavior never copies its builder, Agent loop, nested state, or active tool-task lifecycle.
 02. A background spawn completes with an ordinary accepted result and a compact scoped ref; child completion is later Host-routed input.
 03. Every background child uses the exact built child executable and complete fresh bindings.
-04. Live jobs, bindings, queues, cancellation scopes, Environment handles, credentials, and usage accumulators never become session or Harness state.
+04. Live jobs, bindings, queues, cancellation scopes, Environment handles, credentials, and usage accumulators never become Thread or Harness state.
 05. A prior-process nonterminal job becomes interrupted and is never restarted automatically.
 06. WebUI and TUI submit the same typed commands and consume the same post-validation AG-UI projection.
 07. Surface filtering changes layout and detail only; it cannot change event identity, run terminality, checkpoint selection, or result routing.

@@ -771,7 +771,7 @@ Recovery is layered:
 
 - a provider binding may reconnect or refresh a session while authenticated identity and generation remain unchanged;
 - an observed generation change marks that binding unavailable and requires a fresh higher binding revision through the controller;
-- worker or process loss creates a new Host Attempt and a fresh `EnvironmentRunBinding`;
+- worker or process loss creates a new Host worker lease generation and a fresh `EnvironmentRunBinding`;
 - provider resource loss is recreated or reattached only according to Host provider policy and Host-owned launch state;
 - an ambiguous mutation is reconciled through provider idempotency or receipt evidence and is never replayed merely because readiness or transport recovered.
 
@@ -799,7 +799,7 @@ Validation and preparation may await. Failure or caller cancellation before comm
 
 An operation acquires a lease on one binding revision and generation from one captured snapshot before policy evaluation. Publication switches new routing atomically while in-flight operations finish against their captured provider. Removed or replaced scopes retire in supervised aggregate work after commit and close only after their operation leases drain; caller cancellation cannot abandon retirement. Opaque handles remain bound to their originating `binding_id`, revision, and generation. They never retarget: a provider can support a bounded retired-handle drain path for wait, signal, release, or cleanup, otherwise an update that cannot safely fence an active handle fails before publication with `topology_in_use`. A retired binding is not selectable by new alias or path operations. `apply()` does not wait for every family to become ready, retirement to finish, or a model notice to be delivered.
 
-The controller is Host-only. It never appears on `AgentContext`, in a Toolset, in model context, or in portable state. A Host that accepts an external mount command authenticates and authorizes that command, materializes fresh provider bindings, and applies the complete request itself. The Harness controller is the process-local mutation seam, not a public durable command API. A distributed Host separately owns command durability, desired-topology revision, Attempt fencing, retry, and unknown-outcome reconciliation.
+The controller is Host-only. It never appears on `AgentContext`, in a Toolset, in model context, or in portable state. A Host that accepts an external mount command authenticates and authorizes that command, materializes fresh provider bindings, and applies the complete request itself. The Harness controller is the process-local mutation seam, not a public durable command API. A distributed Host separately owns command durability, desired-topology revision, worker-generation fencing, retry, and unknown-outcome reconciliation.
 
 The observer journal is process-local, append-only for the entered run, and non-draining: one immutable `EnvironmentTopologyChange` is appended in the same no-await section as every publication. The captured `max_committed_changes` is both the hard apply count and journal-entry ceiling, and each entry contains at most the captured `max_bindings` binding changes. Once the change limit is reached, a newer apply fails before publication. The journal therefore never drops or overwrites a committed entry.
 
@@ -840,7 +840,7 @@ The Capability uses public Pydantic AI surfaces:
 - `before_model_request(ctx, ModelRequestContext)` to append bounded current topology to an eligible ordinary user request without changing the system/tool prefix;
 - `RunContext.enqueue()` for a coalesced trusted topology-change notice when an inner Agent run is active and can accept native enqueue input.
 
-The Capability reads `restored_state_topology_version` for diagnostic continuity, starts its observer cursor at `initial_topology_version`, and captures the live topology at the first eligible boundary. Every new logical Harness run emits one bounded fresh topology snapshot at its first eligible ordinary model boundary, even when imported state reports the same topology version as the prior run. Same-version suppression applies only to repeated boundaries inside that one entered run. This prevents a replacement Attempt from inheriting a stale rendered descriptor, permission, availability, or routing projection merely because the Host reused a durable desired version.
+The Capability reads `restored_state_topology_version` for diagnostic continuity, starts its observer cursor at `initial_topology_version`, and captures the live topology at the first eligible boundary. Every new logical Harness run emits one bounded fresh topology snapshot at its first eligible ordinary model boundary, even when imported state reports the same topology version as the prior run. Same-version suppression applies only to repeated boundaries inside that one entered run. This prevents a replacement worker from inheriting a stale rendered descriptor, permission, availability, or routing projection merely because the Host reused a durable desired version.
 
 When a change occurs before the first inner attempt, during recovery backoff, or while no enqueue-capable request exists, the Capability retains only the latest observed topology version in process-local projection state and injects one bounded fresh snapshot or change notice at the next eligible model boundary. It does not create a second durable event queue. Provider-suspended continuation is not modified: no request is inserted ahead of a suspended provider continuation, but the first later ordinary eligible boundary receives the current fresh snapshot. On every tool call, routing and policy use the live `BoundEnvironment`, not the last model notice.
 
@@ -886,7 +886,7 @@ An unavailable binding retains its last immutable published descriptor while `de
 
 ## Environment State
 
-Environment continuation captures only explicitly portable backend-local data. Vendor provisioning, attachment, sandbox identity authority, recreate policy, credentials, endpoints, sessions, and lifecycle records belong to Host launch/Attempt state and are consumed before a fresh `EnvironmentRunBinding` is constructed.
+Environment continuation captures only explicitly portable backend-local data. Vendor provisioning, attachment, sandbox identity authority, recreate policy, credentials, endpoints, sessions, and lifecycle records belong to Host launch and worker-lease state and are consumed before a fresh `EnvironmentRunBinding` is constructed.
 
 ```python
 type EnvironmentStateResourceCompatibility = Literal[

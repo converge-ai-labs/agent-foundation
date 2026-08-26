@@ -96,13 +96,13 @@ The Harness does not serialize `ModelProfile`, merge profile keys, copy provider
 
 ## Model Conversation Affinity
 
-One Agent instance owns one independently advancing Pydantic message history. The root Agent, every inline child instance, every Host-managed child, and every explicit fork are therefore separate model conversations even when a Host groups them under one product conversation or trace. Continuing the same Agent instance from its selected `HarnessState` continues the same model conversation through a fresh logical Harness run.
+One Agent instance owns one independently advancing Pydantic message history. The root Agent, every inline child instance, every Host-managed child, and every explicit fork are therefore separate model conversations even when a Host groups them under one product Thread or trace. Continuing the same Agent instance from its selected `HarnessState` continues the same model conversation through a fresh logical Harness run.
 
 A selected model integration can map that stable conversation identity to provider-specific routing, session, thread, or prompt-cache settings. For example, an OpenAI-compatible integration can set `openai_prompt_cache_key`, which the provider renders as `prompt_cache_key`. These values are provider integration details rather than Harness fields or a portable wire schema.
 
 The mapping follows these rules:
 
-1. Distinct independently advancing message histories receive distinct provider model-session and prompt-cache affinity. A child never inherits its parent's value, and sibling children never share one merely because they have the same definition, product conversation, Host Execution, or Environment.
+1. Distinct independently advancing message histories receive distinct provider model-session and prompt-cache affinity. A child never inherits its parent's value, and sibling children never share one merely because they have the same definition, product Thread, Host Turn, or Environment.
 2. A continuation of the same `AgentInstanceRef` preserves the same affinity on a best-effort basis across fresh Harness runs, worker replacement, and reconstructed model bindings. Every internal semantic attempt in one logical run uses that same affinity.
 3. A transient Harness `run_id`, Pydantic inner run ID, tool-call ID, or parent product-conversation ID is not the default affinity source. Those values rotate too often or group distinct message histories and would reduce cache reuse or mix unrelated cache/session scopes.
 4. The fresh `ModelRunBinding` derives or looks up the value from the stable `AgentInstanceRef`, selected model/provider namespace, and Host policy. A provider that needs an opaque non-derivable continuation selector keeps it in the Host's provider-specific envelope and reattaches it when constructing the fresh binding.
