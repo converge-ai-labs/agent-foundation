@@ -4,7 +4,7 @@
 
 Foundation Service owns a durable managed Secret resource for opaque values supplied by an authorized caller. The public management API accepts a Secret value on creation or replacement and never returns that value after acceptance, including in the mutation response. It exposes only identity, ownership, key, version, and timestamps.
 
-Secret management is distinct from credential selection, resolution, and injection. This contract defines no association between a Secret and an Agent, model, tool, Environment, definition, Execution, or Attempt, and it exposes no public plaintext-read or comparison operation. Any consumer resolves current credential authority through a separate trusted runtime boundary; durable Agent definitions continue to contain no credential material.
+Secret management is distinct from credential selection, resolution, and injection. This contract defines no association between a Secret and an Agent, model, tool, Environment, definition, Turn, or `TurnAttempt`, and it exposes no public plaintext-read or comparison operation. Any consumer resolves current credential authority through a separate trusted runtime boundary; durable Agent definitions continue to contain no credential material.
 
 Managed Secrets are recoverable encrypted values rather than password verifiers. Foundation therefore encrypts them directly with AES-256-GCM under one operator-configured master key instead of applying one-way hashing. The service is not a zero-knowledge system: the write path observes plaintext transiently, and any process holding the configured master key is cryptographically capable of recovering stored values. The public management API exposes no plaintext-read operation.
 

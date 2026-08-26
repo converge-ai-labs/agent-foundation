@@ -30,8 +30,8 @@ flowchart TB
     subgraph Service[foundation-service]
         Control[Control plane]
         Definitions[Host-owned definition revisions]
-        Lifecycle[Durable Executions and ExecutionAttempts]
-        Worker[Execution worker]
+        Lifecycle[Durable Turns and TurnAttempts]
+        Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
     end
 
@@ -116,7 +116,7 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 | `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                            | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy             |
 | Foundation SDKs              | Language-typed access to the public Foundation Service `/api` contract                                                                                                                                    | Service internals, product policy, or durable lifecycle authority                                            |
 | `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                    | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control |
-| `foundation-service`         | Managed Secrets, Host-owned definition/Presets/revisions, reconstruction locks, Executions/ExecutionAttempts, client tools, APIs, events, usage records, and optional web projection                      | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning         |
+| `foundation-service`         | Managed Secrets, Host-owned definition/Presets/revisions, reconstruction locks, durable Turns/TurnAttempts, client tools, APIs, events, usage records, and optional web projection                        | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning         |
 | Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                               | Harness internals and provider implementation                                                                |
 
 ## Harness Foundation
@@ -165,7 +165,7 @@ Environment is a Harness-owned run lifecycle resource, not a Capability. `BoundE
 
 The Harness adapts EIP through `converge-agent-envd-client`; other trusted consumers can use that client independently. `agent-envd` carries JSON-RPC control and raw file transfer over trusted stdio, Host-dialed HTTP, or an envd-initiated reverse WebSocket. It owns daemon-generation operation/receipt evidence, process handles, disk-backed command output with explicit-offset reads, session-scoped transfers, and Linux/macOS/Windows command containment. Carrier direction never changes the low-level client's requester role or envd's responder role.
 
-Provider-defined portable backend data can enter only the explicit `HarnessState.environment_state` field after fresh bindings are selected. Provider resource-incarnation evidence and optional launch/reattachment payload remain in a separate encrypted Host envelope. Live clients, sockets, credentials, process handles, readiness, controllers, and provider authority do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns neither provider lifecycle nor state.
+Provider-defined portable backend data can enter only the explicit `HarnessState.environment_state` field after fresh bindings are selected. Provider resource-incarnation evidence and optional launch/reattachment payload remain in Host continuation entries, using `ProviderContinuationPayloadEnvelope` when the payload exceeds the inline bound. Live clients, sockets, credentials, process handles, readiness, controllers, and provider authority do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns neither provider lifecycle nor state.
 
 ## Foundation Client Surfaces
 
@@ -182,9 +182,9 @@ Foundation Service adds durability without changing Harness execution semantics:
 ```mermaid
 flowchart LR
     Ingress[API or webhook] --> Control[Control plane]
-    Control --> Durable[Definitions and Executions]
+    Control --> Durable[Definitions and Turns]
     Durable --> Queue[Scheduling]
-    Queue --> Worker[Execution worker]
+    Queue --> Worker[Worker]
     Worker --> Reconstruct[Trusted adapters]
     Reconstruct --> Harness[agent-harness]
     Harness --> Candidate[Events, result, state, usage]
@@ -193,9 +193,30 @@ flowchart LR
 
 Foundation definitions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. A worker verifies exact dependency/artifact locks, reconstructs native Pydantic/Harness objects, resolves operator-approved Environment providers, materializes current desired topology from encrypted launch-envelope entries, durably advances an unrepresented replacement resource's binding/topology incarnation revisions, and supplies fresh `RunBindings` to the same public API as an embedded application. The worker retains the paired Environment controller only for that active logical run.
 
-One durable Foundation `ExecutionAttempt` starts one logical Harness Run. Internal Harness `ModelAttempt` values are not durable `ExecutionAttempt` generations. Authorized desired Environment topology can advance during that Run and is reconciled through the retained controller with separate effective publication. Worker or lease loss creates a new fenced `ExecutionAttempt`, fresh provider bindings, and a fresh Harness Run from authoritative selected Host and Harness state.
+Every Foundation Agent invocation selects or creates a Session and Thread and
+accepts one durable Turn. One `TurnAttempt` starts at most one logical Harness
+Run; internal Harness `ModelAttempt` values are not durable worker generations.
+Authorized desired Environment topology can advance during that Run and is
+reconciled through the retained controller with separate effective publication.
+Worker or lease loss terminalizes the attempt as `lost`; after provider
+reconciliation establishes resume safety and the Turn-owned budget permits
+recovery, Foundation creates a new fenced `TurnAttempt`, fresh provider
+bindings, and a fresh Harness Run from the same Turn's latest conditionally
+committed state. Every Turn owns one deterministic state key; Foundation
+replaces that key at complete checkpoints and exposes no separate base, result,
+or checkpoint-history object.
 
-Client-side tools use native Pydantic deferred values. Foundation durably commits pending calls and approvals, authenticates external feedback, and starts a later run with fresh bindings. Asynchronous children use independent Executions and result-delivery ledgers rather than Pydantic deferred spawn calls.
+Client-side tools use native Pydantic deferred values. Foundation seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a child Turn that starts a later run with fresh bindings. Asynchronous children use independent Threads and Turns rather than Pydantic deferred spawn calls.
+
+Foundation's [Turn persistence](foundation-service/04-turn-persistence.md) owns
+durable Agent-work identity, scheduling, the recovery budget, the interactive
+recovery boundary, and complete Turn-state object schema. [Turn Attempt
+persistence](foundation-service/05-turn-attempt-persistence.md) owns the
+`turn_attempts` table, worker leases, and fences. [Lifecycle and stream
+persistence](foundation-service/06-lifecycle-and-stream-persistence.md) owns
+one lifecycle-event table and Redis Agent-message transport with object-backed
+retained replay; pending calls, Items, stream entries, and generic provider
+receipts do not receive separate relational tables.
 
 The hosted service boundary is defined in [Foundation Service](foundation-service/README.md).
 
@@ -223,11 +244,11 @@ The platform distinguishes:
 - Host-owned `Session`, `Thread`, `Turn`, and `Item` identities;
 - Host-owned immutable definition revision and dependency locks;
 - process-local Harness Run and `ModelAttempt`;
-- Host durable `Execution` and `ExecutionAttempt`;
+- Foundation durable Turn and `TurnAttempt`;
 - Environment identity and generation;
 - credential binding and invocation grant.
 
-A Host definition revision contains only serializable Host data and exact locks. It contains no plugin/Capability class, native Model, Toolset, output Python type, callable, client, plaintext credential, or process-local object. An execution reconstructs those values without mutating the selected revision.
+A Host definition revision contains only serializable Host data and exact locks. It contains no plugin/Capability class, native Model, Toolset, output Python type, callable, client, plaintext credential, or process-local object. A worker reconstructs those values without mutating the selected revision.
 
 ## Service API Boundaries
 
@@ -272,7 +293,7 @@ flowchart LR
     Run -. projection .-> Telemetry[Telemetry]
 ```
 
-Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn or Execution commit, usage recording, telemetry export, external delivery, billing, and payment are independent facts.
+Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn commit, usage recording, telemetry export, external delivery, billing, and payment are independent facts.
 
 ## Design Principles
 

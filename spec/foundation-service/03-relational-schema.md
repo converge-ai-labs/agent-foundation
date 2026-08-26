@@ -88,7 +88,7 @@ sequenceDiagram
     Process-->>Deploy: Ready
 ```
 
-A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply migrations before becoming ready. Concurrent PostgreSQL runners serialize through one service-scoped advisory lock with a bounded wait. Execution-only processes never apply migrations and fail closed when the database is not at the expected head.
+A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply migrations before becoming ready. Concurrent PostgreSQL runners serialize through one service-scoped advisory lock with a bounded wait. Worker-only processes never apply migrations and fail closed when the database is not at the expected head.
 
 SQLite belongs to the single-process profile. One owning process applies history to a file-backed database before opening the service for work. In-memory SQLite cannot retain migration state across connections and is not a service migration target; SQLite files on NFS and multi-process migration coordination are also unsupported.
 
@@ -127,5 +127,5 @@ Supporting SQLite and PostgreSQL constrains the default schema to a tested porta
 06. Portable revisions are verified on both SQLite and PostgreSQL.
 07. PostgreSQL-only schema requirements fail explicitly in the SQLite profile.
 08. Migration connections are synchronous, dedicated, bounded, and separate from asynchronous application pools.
-09. Execution-only processes check schema compatibility and never mutate it.
+09. Worker-only processes check schema compatibility and never mutate it.
 10. Unknown or failed migration state blocks readiness and is never bypassed by automatic stamping.
