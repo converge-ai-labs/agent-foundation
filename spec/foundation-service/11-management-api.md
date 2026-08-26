@@ -42,6 +42,7 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Secrets                   | Routes owned by [Secret Management](01-secret-management.md)                                                                                | Workspace and User ownership with metadata-only reads and write-only values               |
 | Security audit            | `/organizations/{organization_id}/security-audit-events`, `/workspaces/{workspace_id}/security-audit-events`, `/users/me/security-activity` | IAM-owned bounded security projections                                                    |
 | Lifecycle events          | `/workspaces/{workspace_id}/events` and resource-scoped event collections                                                                   | Durable replay, not ordinary pagination                                                   |
+| Delivery stream           | `GET /workspaces/{workspace_id}/stream`, `WS /workspaces/{workspace_id}/stream`                                                             | SSE or WebSocket over the same retained and live delivery-envelope contract               |
 | Usage records             | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                            |
 
 OSS registers exactly the routes for its supported capabilities. An extension can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
@@ -100,6 +101,7 @@ Public resources expose stable product fields and safe references, not ORM objec
 - Execution exposes lifecycle, wait reason, selected revisions, interaction correlation, parent/retry references, cancellation intent, and timestamps;
 - ExecutionAttempt exposes generation, worker-safe status, dispatch phase, lease timing, Harness correlation, and bounded failure evidence, but no credential or process-private value;
 - Environment exposes desired spec revision, desired phase, safe lifecycle status, current operation, and effective observations, but never provider resource-state ciphertext or attachment material;
+- LifecycleEvent reads preserve event type, schema version, owning-resource sequence, subject, actor when applicable, Attempt attribution, resource version, bounded payload, and commit time;
 - UsageRecord reads preserve immutable identity and attribution.
 
 An Item read never substitutes for lifecycle event replay, and an event read never expands private Item or object-backed content without separate authorization.
@@ -108,9 +110,9 @@ An Item read never substitutes for lifecycle event replay, and an event read nev
 
 Ordinary collections use `limit` and opaque `cursor` exactly as defined by Platform API Conventions. Each resource defines deterministic default ordering and explicit filters. Cursors are bound to principal scope, filter, order, and retention.
 
-Lifecycle and interaction replay use opaque replay cursors scoped to Session, Thread, Turn, Execution, or Workspace delivery views. A replay response labels each envelope source kind and reports `replay_gap` when retained data no longer covers the requested cursor. The client then reads current resource state and an authorized semantic snapshot; it never treats the newest event as a complete missing history.
+Lifecycle and interaction replay use opaque replay cursors over the retained Workspace stream, with optional Session, Thread, Turn, Execution, source-kind, and event-type filters. A replay response labels each envelope source kind and reports `replay_gap` when the cursor generation differs or its sequence precedes the retained floor. The response includes the current generation, retained floor, high watermark, and authorized resource links. The client then reads current resource state and an authorized semantic snapshot; it never treats the newest event as a complete missing history.
 
-SSE and WebSocket endpoints use the same envelope and cursor semantics. Authentication and initial database reads finish before stream construction. Transport disconnect does not cancel work.
+`GET /api/v1/workspaces/{workspace_id}/stream` opens SSE. A WebSocket upgrade at `/api/v1/workspaces/{workspace_id}/stream` exposes the same envelope, cursor, filters, gap response, and replay-to-live cutover. Authentication and initial database reads finish before stream construction. Transport disconnect does not cancel work, and live-only AG-UI observations do not advance the retained replay cursor.
 
 ## Concurrency and Idempotency
 
