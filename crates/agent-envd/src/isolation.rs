@@ -1707,7 +1707,9 @@ pub(crate) fn run_internal_probe(arguments: &[OsString]) -> Result<i32, Isolatio
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    configure_probe_descendant_session(&mut sleeper);
+    if probe_detaches_descendant(&arguments[8]) {
+        configure_probe_descendant_session(&mut sleeper);
+    }
     sleeper.spawn().map_err(|error| {
         IsolationError::new(format!("cannot start isolation probe descendant: {error}"))
     })?;
@@ -1721,6 +1723,10 @@ pub(crate) fn run_internal_probe(arguments: &[OsString]) -> Result<i32, Isolatio
         std::thread::sleep(Duration::from_millis(5));
     }
     Ok(PROBE_EXIT_CODE)
+}
+
+fn probe_detaches_descendant(platform: &OsStr) -> bool {
+    platform == "linux"
 }
 
 #[cfg(unix)]
@@ -1948,6 +1954,12 @@ mod tests {
         assert!(reserved_probe_environment_name(OsStr::new(
             "DYLD_INSERT_LIBRARIES"
         )));
+    }
+
+    #[test]
+    fn probe_detaches_descendants_only_with_namespace_complete_cleanup() {
+        assert!(probe_detaches_descendant(OsStr::new("linux")));
+        assert!(!probe_detaches_descendant(OsStr::new("macos")));
     }
 
     #[cfg(target_os = "macos")]
