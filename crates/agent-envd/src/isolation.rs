@@ -1,5 +1,5 @@
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fmt, fs, io,
     net::TcpStream,
     path::{Path, PathBuf},
@@ -18,6 +18,7 @@ use tokio::process::Command;
 use crate::{
     config::{
         Config, ExecutionConfig, ExecutionIsolationMode, ExecutionNetworkMode, TransportConfig,
+        reserved_environment_name,
     },
     eip::{
         IsolationBackend, IsolationCleanupGuarantee, IsolationMode, IsolationNetworkPolicy,
@@ -1595,15 +1596,19 @@ fn wait_for_process_exit(pid: i32, deadline: Instant) -> bool {
     }
 }
 
+fn reserved_probe_environment_name(name: &OsStr) -> bool {
+    name.to_str().is_none_or(reserved_environment_name)
+}
+
 pub(crate) fn run_internal_probe(arguments: &[OsString]) -> Result<i32, IsolationError> {
     if arguments.len() != 11 {
         return Err(IsolationError::new(
             "internal isolation probe received an invalid argument count",
         ));
     }
-    if std::env::vars_os().any(|(name, _)| name != "PWD") {
+    if std::env::vars_os().any(|(name, _)| reserved_probe_environment_name(&name)) {
         return Err(IsolationError::new(
-            "isolation probe inherited launcher environment values",
+            "isolation probe inherited reserved launcher environment values",
         ));
     }
     let allowed = Path::new(&arguments[0]);
@@ -1929,6 +1934,20 @@ mod tests {
         assert!(!posture.filesystem_containment);
         assert!(!posture.process_containment);
         assert!(!posture.network_containment);
+    }
+
+    #[test]
+    fn probe_environment_allows_platform_metadata_but_rejects_control_values() {
+        assert!(!reserved_probe_environment_name(OsStr::new(
+            "__CF_USER_TEXT_ENCODING"
+        )));
+        assert!(!reserved_probe_environment_name(OsStr::new("PWD")));
+        assert!(reserved_probe_environment_name(OsStr::new(
+            "AGENT_ENVD_API_KEY"
+        )));
+        assert!(reserved_probe_environment_name(OsStr::new(
+            "DYLD_INSERT_LIBRARIES"
+        )));
     }
 
     #[cfg(target_os = "macos")]
