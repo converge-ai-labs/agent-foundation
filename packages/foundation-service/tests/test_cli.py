@@ -23,13 +23,13 @@ def test_serve_role_override_does_not_construct_environment_app(
 
     monkeypatch.setattr("a13n_service.cli.uvicorn.run", capture_app)
     try:
-        result = CliRunner().invoke(main, ["serve", "--role", "execution"])
+        result = CliRunner().invoke(main, ["serve", "--role", "worker"])
     finally:
         get_settings.cache_clear()
 
     assert result.exit_code == 0, result.output
     assert len(served_apps) == 1
-    assert served_apps[0].state.settings.role is ServiceRole.execution
+    assert served_apps[0].state.settings.role is ServiceRole.worker
 
 
 def test_database_cli_delegates_to_service_migrator(monkeypatch: pytest.MonkeyPatch) -> None:

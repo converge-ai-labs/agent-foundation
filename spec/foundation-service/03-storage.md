@@ -4,7 +4,7 @@
 
 Foundation Service owns one internal storage substrate for relational data, Redis-compatible data structures, object storage, and mounted filesystems. It is part of `a13n-service`; it is not an independently published Python distribution, a public SDK surface, or a business-domain repository layer.
 
-The substrate standardizes backend selection, process lifecycle, safety, and the semantics that local and network backends share. It does not force unlike storage systems behind one generic provider interface. Consumers use mature upstream Python interfaces directly when those interfaces already own the semantics. Foundation defines a small protocol only for object storage, where the local filesystem and S3-compatible services otherwise lack a shared application-facing contract.
+The substrate standardizes typed backend construction, process lifecycle, safety, and the semantics that local and network backends share. The [runtime contract](01-runtime-configuration-and-deployment.md) selects and validates the complete deployment profile before construction. Storage does not force unlike systems behind one generic provider interface. Consumers use mature upstream Python interfaces directly when those interfaces already own the semantics. Foundation defines a small protocol only for object storage, where the local filesystem and S3-compatible services otherwise lack a shared application-facing contract.
 
 Storage capabilities contain no Agent, Execution, lifecycle-event, work-queue, webhook, or presentation-stream meaning. Domain owners compose these generic primitives and remain responsible for their schemas, keys, ordering rules, and authority.
 
@@ -12,14 +12,14 @@ Storage capabilities contain no Agent, Execution, lifecycle-event, work-queue, w
 
 | Concern                                | Storage capability owner                                                   | Consumer owner                                                   |
 | -------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Backend configuration and construction | Selects exactly one configured backend for each capability                 | Declares which capabilities the process requires                 |
+| Backend configuration and construction | Validates and constructs exactly one selected backend for each capability  | Runtime and distribution declare which capabilities are required |
 | Client and pool lifecycle              | Creates process-wide resources and closes them during application shutdown | Uses injected resources and does not construct competing clients |
 | Generic storage semantics              | Defines the common local/network contract in this document                 | Chooses keys, schemas, queries, and domain meaning               |
 | Durable authority                      | Supplies persistence primitives                                            | Declares which committed domain records are authoritative        |
 | Coordination and delivery              | Supplies Redis commands, including Streams                                 | Defines queue, lease, notification, and replay policy            |
 | Deployment resources                   | Accepts configured endpoints, credentials, roots, and mounts               | Deployment creates databases, buckets, Redis, and NFS mounts     |
 
-The storage substrate does not own consumer schemas, migration history, domain repositories, serialization formats, retention policy, data residency, backup policy, or cross-resource transactions. Foundation Service owns its relational schema lifecycle through the [Relational Schema Lifecycle](03-relational-schema.md). Foundation's durable lifecycle and API contracts remain owned by [Foundation Service](README.md). Platform identifiers and persisted timestamps follow [Platform Data Conventions](../data-conventions.md).
+The storage substrate does not own deployment-profile selection, consumer schemas, migration history, domain repositories, serialization formats, retention policy, data residency, backup policy, or cross-resource transactions. Foundation Service owns its relational schema lifecycle through the [Relational Schema Lifecycle](04-relational-schema.md). Foundation's durable lifecycle and API contracts remain owned by [Foundation Service](README.md). Platform identifiers and persisted timestamps follow [Platform Data Conventions](../data-conventions.md).
 
 ## Capability Model
 
@@ -47,7 +47,7 @@ flowchart LR
 | Objects                     | Foundation `ObjectStore` protocol         | S3-compatible storage through aiobotocore | Object semantics over a confined local directory |
 | Files                       | `pathlib` plus AnyIO file operations      | NFS mounted by deployment                 | Local directory                                  |
 
-Backend selection occurs while the process starts. Consumers receive the selected capability and do not branch on backend type. A failed network backend never causes an implicit switch to a local backend because that would create a second, divergent state system.
+Backend selection occurs while the process starts under one validated runtime profile. Consumers receive the selected capability and do not branch on backend type. A failed network backend never causes an implicit switch to a local backend because that would create a second, divergent state system.
 
 The following internal Python shape is representative of the consumer contract:
 
@@ -75,19 +75,19 @@ The portable relational subset includes ordinary transactions, constraints, inde
 
 The canonical engine and session factory are constructed once per process. Each operation opens a short-lived session and transaction. An `AsyncSession` is neither shared across concurrent tasks nor retained across agent execution, network I/O, sleeps, background work, or streaming responses. Cancellation and exceptions roll back the active transaction, and cleanup is allowed to finish before cancellation propagates.
 
-Foundation Service's ordered migration history is the schema authority for both relational backends. Domains own the meaning of their relational models and schema changes, while the service owns their aggregation into one history. Revision ordering, backend portability, application ownership, and failure behavior are defined by the [Relational Schema Lifecycle](03-relational-schema.md). Runtime `create_all` calls never replace migration history.
+Foundation Service's ordered migration history is the schema authority for both relational backends. Domains own the meaning of their relational models and schema changes, while the service owns their aggregation into one history. Revision ordering, backend portability, application ownership, and failure behavior are defined by the [Relational Schema Lifecycle](04-relational-schema.md). Runtime `create_all` calls never replace migration history.
 
 ## Redis-Compatible Data Structures
 
 The asynchronous redis-py client is the consumer interface. Foundation does not divide it into separate cache, list, map, queue, or event abstractions. The same injected client exposes strings with expiration, hashes, lists, sets, sorted sets, Streams, pipelines and transactions, and Pub/Sub. Domain code chooses commands and defines key namespaces, value encodings, delivery semantics, and retention. The shared factory keeps response decoding disabled so keys and values remain binary-safe; domains decode their own formats explicitly.
 
-The network backend is a real Redis service. The local backend is fakeredis using one shared in-memory server per process. Both are supplied through the redis-py asynchronous interface, so consumers do not contain local-versus-network branches.
+The network backend is a real Redis service and is required by every distributed profile. The local backend is fakeredis using one shared in-memory server per process. Both are supplied through the redis-py asynchronous interface, so consumers do not contain local-versus-network branches.
 
-The in-memory backend is non-durable, loses all contents at process exit, and does not coordinate separate processes. It is valid only for a single-process minimal profile. A local deployment that needs exact server behavior, multi-process coordination, persistence, or Redis modules uses a real Redis service.
+The in-memory backend is non-durable, loses all contents at process exit, and does not coordinate separate processes. It is valid only for a single-process `all` profile. A deployment that needs exact server behavior, separate roles, multiple processes, persistence, or Redis modules uses a real Redis service.
 
 Only commands covered by the Redis dual-backend contract suite belong to the local compatibility contract. Configuration fails before serving traffic when a required command or server feature is unavailable in the selected backend. Differences in scripting, modules, blocking-command scheduling, server-side functions, eviction, persistence, clustering, and failure behavior are never silently treated as equivalent.
 
-Redis data is coordination or derived state unless the owning domain contract explicitly says otherwise. Selecting Redis Streams does not by itself make a stream the durable authority for a domain lifecycle.
+Redis supplies required distributed coordination and feature-owned data flow. Each owning domain defines key and stream identity, retention, replay, loss behavior, and whether a value is authoritative or derived. Selecting Redis Streams does not by itself make a stream the durable authority for a relational domain transition, and successful publication does not prove that such a transition committed.
 
 ## Object Storage
 
@@ -109,7 +109,7 @@ The network adapter targets S3-compatible object storage through an aiobotocore 
 
 The local adapter stores bodies and metadata beneath one configured root while preserving object semantics: keys remain opaque, publication uses an atomic same-filesystem replacement, conditional writes are serialized correctly within the process, and listing order and pagination are deterministic. Temporary upload data is not observable through `open`, `stat`, or `list` and is removed after failed or cancelled publication.
 
-The local object backend is a single-process backend. Separate processes do not share its conditional-write coordination even when configured with the same directory; deployments requiring concurrent writers use S3-compatible storage.
+The local object backend is a single-process backend. Separate processes do not share its conditional-write coordination even when configured with the same directory. Every distributed profile uses shared S3-compatible storage.
 
 Object keys are non-empty UTF-8 strings. They cannot contain NUL, be absolute paths, or resolve outside the local object root. The local adapter does not follow symlinks that escape that root. These restrictions apply before any filesystem access and do not turn keys into a public path syntax.
 
@@ -127,7 +127,7 @@ Filesystem storage and object storage remain distinct. Filesystem consumers may 
 
 ## Lifecycle and Failure Semantics
 
-All required capabilities are constructed during application lifespan and closed during shutdown. Startup validates configuration and performs bounded readiness checks for required network services, roots, and buckets. Credentials and provider clients stay process-local and are neither persisted in domain records nor included in diagnostic output.
+All required capabilities are constructed during the shared [application lifespan](01-runtime-configuration-and-deployment.md#startup-lifecycle) and closed during shutdown. Startup validates configuration and performs bounded capability checks for required network services, roots, and buckets. Credentials and provider clients stay process-local and are neither persisted in domain records nor included in diagnostic output.
 
 | Failure                                   | Observable outcome                                                          | Retry rule                                                              |
 | ----------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -135,6 +135,7 @@ All required capabilities are constructed during application lifespan and closed
 | Failure before a request is dispatched    | No storage effect                                                           | Retry within the caller's deadline when the operation is otherwise safe |
 | Connection loss after dispatching a write | Effect may be unknown                                                       | Reconcile by identifier or version before retrying                      |
 | Conditional-write conflict                | Existing state is preserved                                                 | Re-read and make a new domain decision                                  |
+| Required Redis operation is unavailable   | Distributed process is unready and stops new dependent work                 | Restore Redis and resume only after bounded capability checks           |
 | Cancellation                              | Operation stops and owned resources are cleaned up                          | Caller decides whether to reconcile or retry                            |
 | Shutdown                                  | New work stops and owned pools, clients, streams, and temporary files close | In-flight work follows the process shutdown contract                    |
 
@@ -169,6 +170,7 @@ Local backends optimize for zero-service development, not operational parity. Th
 06. Local compatibility covers only behavior exercised by the corresponding dual-backend contract suite.
 07. In-memory Redis state is process-local and non-durable.
 08. The local object backend has exactly one writing service process.
-09. Object and confined filesystem names cannot escape their configured roots.
-10. Blocking filesystem work does not run on the service event loop.
-11. A capability that cannot preserve required semantics fails explicitly before the process serves dependent traffic.
+09. Every distributed profile uses real Redis and shared S3-compatible object storage.
+10. Object and confined filesystem names cannot escape their configured roots.
+11. Blocking filesystem work does not run on the service event loop.
+12. A capability that cannot preserve required semantics fails explicitly before the process serves dependent traffic.

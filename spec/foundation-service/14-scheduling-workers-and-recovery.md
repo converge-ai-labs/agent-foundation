@@ -2,15 +2,15 @@
 
 ## Design Position
 
-Foundation scheduling converts durable eligible Execution state into fenced ExecutionAttempt ownership. PostgreSQL remains authoritative for eligibility, Attempt generations, leases, dispatch phase, and outcomes. Redis, queue messages, and in-process notifications reduce discovery latency but are disposable hints.
+Foundation scheduling converts durable eligible Execution state into fenced ExecutionAttempt ownership. PostgreSQL remains authoritative for eligibility, Attempt generations, leases, dispatch phase, and outcomes. Real Redis is the required distributed dispatch and coordination path, but a Redis message never creates or transfers durable Attempt ownership.
 
-Workers are process-role loops, not durable product owners. A deployment scales the `execution` role by adding processes or replicas that compete through the same claim contract.
+Workers are process-role loops, not durable product owners. A deployment scales the `worker` role by adding processes or replicas that compete through the same claim contract.
 
 ## Scheduling Contract
 
-An Execution is eligible when it is `queued`, admission and backoff constraints allow work, no live Attempt owns it, exact dependencies remain resolvable, and current policy permits the transition. The scheduler uses bounded deterministic scans and idempotently records or signals eligible work.
+An Execution is eligible when it is `queued`, admission and backoff constraints allow work, no live Attempt owns it, exact dependencies remain resolvable, and current policy permits the transition. The scheduler uses bounded deterministic scans and idempotently records Redis dispatch intent for eligible work under the shared [durable operation contract](06-durable-operations-and-outbox.md).
 
-A coordination message contains only enough identity to prompt a fresh durable claim. Receiving, duplicating, delaying, reordering, acknowledging, or losing that message cannot create, complete, cancel, or transfer an ExecutionAttempt. Operational admission control and fairness can delay eligibility but do not create another queue authority.
+A Redis dispatch message contains only enough identity to prompt a fresh durable claim. Receiving, duplicating, delaying, reordering, acknowledging, or losing that message cannot create, complete, cancel, or transfer an ExecutionAttempt. Missing or failed publication remains recoverable from durable eligible state and its outbox intent. Operational admission control and fairness can delay eligibility but do not create another queue authority.
 
 ## Claim and Lease
 
@@ -18,13 +18,13 @@ A coordination message contains only enough identity to prompt a fresh durable c
 sequenceDiagram
     participant Scheduler
     participant DB as PostgreSQL
-    participant Queue
+    participant Redis
     participant Worker
     participant Harness
 
     Scheduler->>DB: scan eligible Executions
-    Scheduler-->>Queue: bounded wakeup hint
-    Queue-->>Worker: duplicated or delayed notification allowed
+    Scheduler-->>Redis: publish dispatch identity
+    Redis-->>Worker: duplicated or delayed delivery allowed
     Worker->>DB: atomically create next Attempt generation and lease
     DB-->>Worker: Attempt ID, generation, and exact Execution snapshot
     Worker->>Worker: close transaction and reconstruct safe local inputs
@@ -54,7 +54,7 @@ Fencing applies to:
 - child acceptance and result incorporation;
 - terminal outcomes.
 
-Usage ingestion has a narrower exception defined by [Events, Usage, and Delivery](10-events-usage-and-delivery.md): an immutable UsageRecord that proves already incurred usage can arrive after lease loss under its original Attempt attribution, but it cannot advance lifecycle state.
+Usage ingestion has a narrower exception defined by [Events, Usage, and Delivery](17-events-usage-and-delivery.md): an immutable UsageRecord that proves already incurred usage can arrive after lease loss under its original Attempt attribution, but it cannot advance lifecycle state.
 
 A stale worker may publish bounded non-authoritative telemetry identifying its stale Attempt. It cannot publish a lifecycle event or Item that consumers could mistake for current product state.
 
@@ -94,30 +94,32 @@ Backoff uses an exact durable next-eligible timestamp. Scheduler restart does no
 
 ## Shutdown and Drain
 
-A control process stops accepting new product work before stopping ingress and reconcilers. An execution process stops claiming Attempts, continues bounded active work until its drain deadline, and either commits an authoritative transition or relinquishes ownership for lease recovery.
+A control process stops accepting new product work before stopping ingress and reconcilers. A worker process stops claiming Attempts, continues bounded active work until its drain deadline, and either commits an authoritative transition or relinquishes ownership for lease recovery. Complete role drain behavior is owned by [Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md#drain-and-shutdown).
 
-Shutdown never extends a lease indefinitely or marks unfinished local work successful. Execution-only processes never migrate. Role overlap during rollout remains safe through leases, fencing, and idempotency.
+Shutdown never extends a lease indefinitely or marks unfinished local work successful. Worker-only processes never migrate. Role overlap during rollout remains safe through leases, fencing, and idempotency.
 
 ## Failure Semantics
 
-| Failure                                 | Durable outcome                                          |
-| --------------------------------------- | -------------------------------------------------------- |
-| Coordination unavailable                | Accepted work remains durable; discovery can be delayed  |
-| Duplicate queue message                 | At most one new Attempt generation succeeds              |
-| Worker crashes before claim commit      | No Attempt ownership exists                              |
-| Worker crashes while `pre_dispatch`     | Lease expires; safe automatic requeue is permitted       |
-| Worker crashes after `effects_possible` | Lease expires; evidence-based reconciliation is required |
-| Heartbeat arrives after lease expiry    | Worker is stale even if it reconnects                    |
-| Stale worker submits lifecycle result   | Fenced commit is rejected                                |
-| Scheduler scans concurrently            | Claim serialization prevents duplicate live ownership    |
+| Failure                                 | Durable outcome                                                                                                             |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Redis unavailable                       | Control and worker roles become unready; no new distributed dispatch or claim proceeds, while accepted work remains durable |
+| Duplicate or delayed Redis message      | At most one new Attempt generation succeeds                                                                                 |
+| Worker crashes before claim commit      | No Attempt ownership exists                                                                                                 |
+| Worker crashes while `pre_dispatch`     | Lease expires; safe automatic requeue is permitted                                                                          |
+| Worker crashes after `effects_possible` | Lease expires; evidence-based reconciliation is required                                                                    |
+| Heartbeat arrives after lease expiry    | Worker is stale even if it reconnects                                                                                       |
+| Stale worker submits lifecycle result   | Fenced commit is rejected                                                                                                   |
+| Scheduler scans concurrently            | Claim serialization prevents duplicate live ownership                                                                       |
 
 ## Invariants
 
-1. PostgreSQL, not coordination delivery, owns eligibility and Attempt state.
-2. At most one live Attempt generation owns an Execution.
-3. Every worker-originated lifecycle mutation verifies the current generation.
-4. Worker activity and external I/O occur outside database transactions.
-5. `effects_possible` is a durable conservative boundary, not an inference from receipts.
-6. Replacement Attempts use fresh process-local values and only selected durable state.
-7. Unknown external outcomes are reconciled rather than blindly replayed.
-8. Late immutable usage evidence cannot mutate lifecycle state.
+01. PostgreSQL, not coordination delivery, owns eligibility and Attempt state.
+02. Distributed scheduling and claiming require real Redis and stop when it is unavailable.
+03. Redis delivery never creates, completes, or transfers an ExecutionAttempt.
+04. At most one live Attempt generation owns an Execution.
+05. Every worker-originated lifecycle mutation verifies the current generation.
+06. Worker activity and external I/O occur outside database transactions.
+07. `effects_possible` is a durable conservative boundary, not an inference from receipts.
+08. Replacement Attempts use fresh process-local values and only selected durable state.
+09. Unknown external outcomes are reconciled rather than blindly replayed.
+10. Late immutable usage evidence cannot mutate lifecycle state.

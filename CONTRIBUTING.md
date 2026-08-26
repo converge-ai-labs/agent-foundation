@@ -44,7 +44,7 @@ The repository selects Python 3.13 through `.python-version`. Python packages ar
 - database sessions never span streams, agent runs, external calls, waits, or background-task boundaries;
 - streaming FastAPI routes complete database-backed authentication and initial reads before constructing the response;
 - logging, process lifespan, role selection, image construction, and graceful shutdown use shared service infrastructure;
-- `foundation-service` uses one artifact for all-in-one, control-plane, and execution-plane deployment roles.
+- `foundation-service` uses one artifact for all-in-one, control, and worker deployment roles.
 
 Keep transport handling, application orchestration, domain behavior, and infrastructure adapters separated. Update the accepted design in `spec/` when a change alters ownership, lifecycle, compatibility, security, or deployment semantics; do not use the development guide to introduce product architecture implicitly.
 
@@ -129,7 +129,7 @@ make db-migrate msg="describe the schema change"
 
 The target starts the local PostgreSQL service when needed, rebuilds schema history in a disposable database, autogenerates and formats the revision, and removes the temporary database. Review the generated migration rather than treating a clean model diff as proof of safety. The complete model-import and verification flow is documented in [packages/foundation-service/README.md](packages/foundation-service/README.md#add-an-orm-model).
 
-A schema-change pull request must explain lock duration, scans or rewrites, rolling old/new compatibility, index strategy, bounded backfill, interruption and rerun behavior, and rollback or forward repair. Prefer additive expand-and-contract changes. The shared image auto-migrates `all` and `control` replicas under advisory locking; deployments with a dedicated migration job disable replica auto migration. Execution-only processes never migrate.
+A schema-change pull request must explain lock duration, scans or rewrites, rolling old/new compatibility, index strategy, bounded backfill, interruption and rerun behavior, and rollback or forward repair. Prefer additive expand-and-contract changes. The shared image auto-migrates `all` and `control` replicas under advisory locking; deployments with a dedicated migration job disable replica auto migration. Worker-only processes never migrate.
 
 Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/concurrency tests. Record any required timeout override and its rationale in the pull request.
 

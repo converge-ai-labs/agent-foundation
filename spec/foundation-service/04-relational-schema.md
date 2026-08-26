@@ -2,27 +2,27 @@
 
 ## Design Position
 
-Foundation Service owns one relational schema and one ordered migration history for every domain table stored in its service database. A domain owns the meaning, invariants, and compatibility intent of its models. The service owns the combined metadata, revision ordering, and transition of a deployed database from one accepted schema state to another.
+Each selected Foundation Service distribution owns one final relational schema and one ordered migration graph for every domain table stored in its service database. A domain owns the meaning, invariants, and compatibility intent of its models and revisions. The [distribution](02-distribution-composition-and-extensions.md) owns their explicit assembly; the service owns transition of a deployed database from one accepted final schema state to another.
 
-This lifecycle is separate from the generic [relational storage capability](02-storage.md#relational-storage). Storage constructs SQLAlchemy engines and short asynchronous sessions; it does not discover domain models, create tables, choose a revision, or mutate a deployed schema.
+This lifecycle is separate from the generic [relational storage capability](03-storage.md#relational-storage). Storage constructs SQLAlchemy engines and short asynchronous sessions; it does not discover domain models, create tables, choose a revision, or mutate a deployed schema.
 
 ## Boundaries
 
 | Concern                                       | Owner                                | Contract                                                                                                          |
 | --------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
 | Domain model and invariant                    | Owning Foundation domain             | Defines schema meaning and the application behavior that reads and writes it                                      |
-| Combined relational metadata                  | Foundation Service                   | Includes every concrete service-owned relational model exactly once                                               |
-| Ordered revision graph                        | Foundation Service                   | Defines the sole upgrade path for the service database                                                            |
+| Combined relational metadata                  | Selected distribution                | Includes every common and extension-owned concrete model exactly once                                             |
+| Ordered revision graph                        | Selected distribution                | Assembles the sole upgrade path for that distribution's service database                                          |
 | Engine, session, and transaction construction | Storage capability                   | Supplies generic asynchronous relational access without schema ownership                                          |
 | Revision generation and review                | Repository workflow and change owner | Produces a candidate from an empty database rebuilt through accepted history, then reviews its operational safety |
 | Migration application                         | Deployment-owned migration runner    | Applies accepted revisions before a role accepts schema-dependent work                                            |
 | Backup, restore, and database provisioning    | Deployment                           | Supplies and protects the database independently of application migrations                                        |
 
-Domains do not maintain independent Alembic histories inside one Foundation Service database. Separately versioned histories would create competing heads, ambiguous cross-domain ordering, and no single compatibility fact for a process that uses several domains in one transaction.
+Domains and extension packages can own revision files and locations, but the selected distribution explicitly assembles them into one graph. They are never applied as independent histories inside one Foundation Service database. The final graph has one compatibility fact for a process that uses several domains in one transaction.
 
 ## Metadata and Revision Authority
 
-The service metadata registry explicitly includes every concrete ORM model. Importing a storage helper, scanning installed packages, or discovering modules by naming convention never changes the schema. A model absent from the registry is absent from migration comparison and is therefore not a deployed Foundation Service table.
+The final distribution metadata registry explicitly includes every concrete ORM model. Importing a storage helper, scanning installed packages, or discovering modules by naming convention never changes the schema. A model absent from the final registry is absent from migration comparison and is therefore not a deployed table for that distribution.
 
 The following internal Python shape is representative; concrete fields and invariants remain owned by the domain:
 
@@ -38,9 +38,9 @@ class DomainRecord(Base):
     id: Mapped[str] = mapped_column(primary_key=True)
 ```
 
-The owning model module is then imported explicitly into the service metadata registry. Import order does not create a second history or transfer schema meaning to the database package.
+The owning model contribution is included explicitly in the final distribution metadata. Import order does not create a second history or transfer schema meaning to the database package.
 
-The revision graph has one ordered history and at most one head. Revisions normally form a linear chain. Every revision identifies its predecessor and contains both an upgrade operation and an intentionally reviewed downgrade or forward-repair position. A merge revision is accepted only when reconciling genuinely concurrent reviewed changes; it is not routine domain composition.
+The final revision graph has at most one head. Revisions normally form a linear chain. Every revision identifies its predecessor and contains both an upgrade operation and an intentionally reviewed downgrade or forward-repair position. A merge revision reconciles genuinely concurrent reviewed common or extension changes before release; runtime never chooses between competing heads.
 
 The ordered revision history, not ORM metadata and not runtime `create_all`, is the authority for an existing database. Metadata describes the accepted target schema and supports comparison; it does not prove that an autogenerated operation is safe or complete.
 
@@ -54,7 +54,7 @@ Migration application uses a dedicated synchronous database connection because i
 
 ## Generation and Review
 
-A new revision is generated only after replaying all accepted history into a disposable PostgreSQL database. Autogeneration compares that database with the complete service metadata and produces a candidate revision. The candidate is then reviewed as executable deployment code.
+A new revision is generated only after replaying the selected distribution's complete accepted graph into a disposable PostgreSQL database. Autogeneration compares that database with the complete final metadata and produces a candidate revision. The candidate is then reviewed as executable deployment code.
 
 Review verifies at least:
 
@@ -75,20 +75,20 @@ sequenceDiagram
     participant Deploy as Deployment owner
     participant Runner as Migration runner
     participant DB as Service database
-    participant Process as Foundation process
+    participant Process as Foundation role
 
     Deploy->>Runner: Apply accepted history
     Runner->>DB: Acquire service migration ownership
     Runner->>DB: Inspect current revision
-    Runner->>DB: Apply ordered revisions
-    Runner->>DB: Verify expected head
+    Runner->>DB: Apply final distribution graph
+    Runner->>DB: Verify expected distribution head
     Runner-->>Deploy: Migration complete
     Deploy->>Process: Start schema-dependent role
     Process->>DB: Check expected head
     Process-->>Deploy: Ready
 ```
 
-A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply migrations before becoming ready. Concurrent PostgreSQL runners serialize through one service-scoped advisory lock with a bounded wait. Execution-only processes never apply migrations and fail closed when the database is not at the expected head.
+A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply the selected distribution graph before becoming ready. Concurrent PostgreSQL runners serialize through one service-scoped advisory lock with a bounded wait. Worker-only processes never apply migrations and fail closed when the database is not at the expected distribution head.
 
 SQLite belongs to the single-process profile. One owning process applies history to a file-backed database before opening the service for work. In-memory SQLite cannot retain migration state across connections and is not a service migration target; SQLite files on NFS and multi-process migration coordination are also unsupported.
 
@@ -100,32 +100,34 @@ SQLite belongs to the single-process profile. One owning process applies history
 | DDL lock or statement timeout                           | Revision stops and startup fails            | Remove the blocker, inspect database state, and rerun only when the revision is interruption-safe |
 | Database loses connection before commit status is known | Revision outcome may be unknown             | Inspect the recorded revision and affected schema before retrying                                 |
 | Database is behind or has an unknown revision           | Schema-dependent role fails closed          | Apply accepted history or restore a compatible database                                           |
-| Multiple heads or missing model registration            | Generation and verification fail            | Repair the revision graph or metadata registry before release                                     |
+| Multiple heads or missing common/extension model        | Generation and verification fail            | Repair the final distribution graph or metadata before release                                    |
+| Database contains an unsupported distribution revision  | Every role fails schema compatibility       | Start a compatible distribution or apply an accepted forward path                                 |
 | Unsupported backend operation                           | Dependent role fails before serving traffic | Select PostgreSQL or change the domain design to the portable subset                              |
 
 A failed migration is never bypassed by stamping the database to a newer revision. Repair either safely reruns the accepted operation or introduces a reviewed forward revision based on observed database state.
 
 ## Compatibility
 
-Application and migration releases are compatible only across explicitly reviewed adjacent schema states. A rolling release must keep the preceding application version functional during expansion and keep the updated application tolerant until contraction is safe. Removing a column, constraint, index, or interpretation requires evidence that every active and rollback-eligible application version has stopped depending on it.
+Application, distribution, and migration releases are compatible only across explicitly reviewed adjacent schema states. A rolling release must keep the preceding compatible distribution version functional during expansion and keep the updated version tolerant until contraction is safe. Removing a column, constraint, index, or interpretation requires evidence that every active and rollback-eligible application version has stopped depending on it.
 
 Schema revision identity is internal deployment state, not a public API or domain-object version. Backup restoration must restore both relational data and the matching migration state; the runner then applies only accepted later revisions.
 
 ## Trade-offs
 
-One service-wide history creates a serialization point for otherwise independent domain changes. Foundation accepts that coordination cost because one database and one process can use several domains atomically, and therefore require one unambiguous compatibility state. Domains retain ownership of schema meaning without owning competing deployment histories.
+One final distribution graph creates a serialization point for otherwise independent common and extension changes. Foundation accepts that coordination cost because one database and one process can use several domains atomically and therefore require one unambiguous compatibility state. Domains retain ownership of schema meaning without owning competing applied histories.
 
 Supporting SQLite and PostgreSQL constrains the default schema to a tested portable subset. A domain may choose stronger PostgreSQL behavior, but doing so narrows the supported deployment profile explicitly rather than creating weak local emulation.
 
 ## Invariants
 
-01. Foundation Service has one combined relational metadata registry and one ordered migration history.
+01. Each selected distribution has one combined relational metadata registry and one ordered migration graph.
 02. A domain owns schema meaning; the service owns revision ordering and application.
 03. Generic storage code does not import domain models or run migrations.
 04. Runtime table creation never substitutes for revision history.
-05. The revision graph has at most one head.
+05. The final distribution revision graph has at most one head.
 06. Portable revisions are verified on both SQLite and PostgreSQL.
 07. PostgreSQL-only schema requirements fail explicitly in the SQLite profile.
 08. Migration connections are synchronous, dedicated, bounded, and separate from asynchronous application pools.
-09. Execution-only processes check schema compatibility and never mutate it.
-10. Unknown or failed migration state blocks readiness and is never bypassed by automatic stamping.
+09. Installed packages never change metadata or migration contents through discovery.
+10. Worker-only processes check the expected distribution head and never mutate it.
+11. Unknown, unsupported-distribution, or failed migration state blocks readiness and is never bypassed by automatic stamping.

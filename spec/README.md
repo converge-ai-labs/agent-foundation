@@ -207,10 +207,10 @@ The hosted service boundary is defined in [Foundation Service](foundation-servic
 | ------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
 | Embedded            | Application-selected                                                                             | Harness in product process                                                  |
 | Local Agent UI      | Hybrid SQLite metadata and compressed-file package/state/event storage with process coordination | Harness plus Environment Provider resources and Host-owned async child jobs |
-| Minimal service     | SQLite and in-memory coordination                                                                | Control and execution together                                              |
-| Distributed service | PostgreSQL durable authority and Redis coordination                                              | Separately scalable control/execution roles                                 |
+| Minimal service     | SQLite, in-memory Redis, and local objects                                                       | Control and worker together in one process                                  |
+| Distributed service | PostgreSQL, real Redis, and shared object storage                                                | Separately scalable control and worker roles                                |
 
-The internal relational, Redis-compatible, object, and mounted-filesystem surfaces for these profiles are defined by [Foundation Storage Capabilities](foundation-service/02-storage.md). Foundation Service's single relational metadata and migration authority is defined by the [Relational Schema Lifecycle](foundation-service/03-relational-schema.md).
+Foundation Service configuration, role ownership, dependency requirements, and readiness are defined by [Runtime Configuration and Deployment](foundation-service/01-runtime-configuration-and-deployment.md). The internal relational, Redis-compatible, object, and mounted-filesystem surfaces are defined by [Foundation Storage Capabilities](foundation-service/03-storage.md). The final distribution's relational metadata and migration authority are defined by the [Relational Schema Lifecycle](foundation-service/04-relational-schema.md).
 
 Coordination streams and queues do not become durable lifecycle authority.
 
@@ -313,7 +313,9 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn o
 | agent-envd catalog                    | [agent-envd/README.md](agent-envd/README.md)                                                                                                         |
 | EIP architecture and protocol         | [agent-envd/00-overview.md](agent-envd/00-overview.md), [agent-envd/02-eip-protocol.md](agent-envd/02-eip-protocol.md)                               |
 | Foundation Service boundary           | [foundation-service/README.md](foundation-service/README.md)                                                                                         |
-| Foundation Secret management          | [foundation-service/01-secret-management.md](foundation-service/01-secret-management.md)                                                             |
-| Foundation interactions and execution | [foundation-service/06-interactions-executions-and-checkpoints.md](foundation-service/06-interactions-executions-and-checkpoints.md)                 |
-| Foundation scheduling and recovery    | [foundation-service/07-scheduling-workers-and-recovery.md](foundation-service/07-scheduling-workers-and-recovery.md)                                 |
-| Foundation public API                 | [foundation-service/11-management-api.md](foundation-service/11-management-api.md)                                                                   |
+| Foundation runtime and deployment     | [foundation-service/01-runtime-configuration-and-deployment.md](foundation-service/01-runtime-configuration-and-deployment.md)                       |
+| Foundation distribution composition   | [foundation-service/02-distribution-composition-and-extensions.md](foundation-service/02-distribution-composition-and-extensions.md)                 |
+| Foundation Secret management          | [foundation-service/11-secret-management.md](foundation-service/11-secret-management.md)                                                             |
+| Foundation interactions and execution | [foundation-service/13-interactions-executions-and-checkpoints.md](foundation-service/13-interactions-executions-and-checkpoints.md)                 |
+| Foundation scheduling and recovery    | [foundation-service/14-scheduling-workers-and-recovery.md](foundation-service/14-scheduling-workers-and-recovery.md)                                 |
+| Foundation public API                 | [foundation-service/18-management-api.md](foundation-service/18-management-api.md)                                                                   |

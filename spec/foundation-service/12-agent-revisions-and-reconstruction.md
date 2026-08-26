@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation stores serializable Agent authoring resources and immutable executable revisions. It does not persist a Harness `AgentDefinition`, Python import target, plugin instance, native Model, Toolset, Capability, callable, client, credential, or provider binding. An execution worker reconstructs those process-local values through trusted installed adapters after verifying every selected revision and lock.
+Foundation stores serializable Agent authoring resources and immutable executable revisions. It does not persist a Harness `AgentDefinition`, Python import target, plugin instance, native Model, Toolset, Capability, callable, client, credential, or provider binding. A worker reconstructs those process-local values through trusted installed adapters after verifying every selected revision and lock.
 
 An Execution selects exact immutable inputs. It never resolves `latest` after durable acceptance or silently adopts edits made while queued, suspended, or recovering. An interactive Turn references that Execution; a standalone Execution needs no synthetic Turn.
 
@@ -15,7 +15,7 @@ An `AgentRevision` is an immutable executable snapshot associated with one Agent
 - logical Agent instructions and typed input/output declarations;
 - selected model-integration revision and model settings;
 - Capability, Tool, Skill, Connector, and Environment declarations under their owning Foundation schemas;
-- non-secret Secret requirements that bind an exact Workspace-owned Secret reference or declare an invoking-User Secret key under [Secret Management](01-secret-management.md);
+- non-secret Secret requirements that bind an exact Workspace-owned Secret reference or declare an invoking-User Secret key under [Secret Management](11-secret-management.md);
 - direct trusted adapter keys and bounded adapter configuration;
 - optional Harness plugin configuration under the Harness-owned document contract;
 - exact dependency, package, content-digest, and schema compatibility locks.
@@ -26,7 +26,7 @@ Secret requirements never contain a Secret value. A Workspace-owned requirement 
 
 Changing materialized Agent content, a selected integration revision, or a dependency lock creates another Agent revision. Prior revisions selected by retained Executions remain addressable for their documented retention period.
 
-The revision boundary exists to prevent queued or suspended work from changing underneath the Worker. For example, a Builder can materialize revision `agent-revision-7` from exact Preset, Model Integration, Tool, Skill, Connector, and Environment revisions, submit a Turn, and then change the Agent's authoring head before a Worker claims the Execution. The Worker still reconstructs `agent-revision-7`; it never reads the newer mutable head or resolves a current default.
+The revision boundary exists to prevent queued or suspended work from changing underneath the worker. For example, a Builder can materialize revision `agent-revision-7` from exact Preset, Model Integration, Tool, Skill, Connector, and Environment revisions, submit a Turn, and then change the Agent's authoring head before a worker claims the Execution. The worker still reconstructs `agent-revision-7`; it never reads the newer mutable head or resolves a current default.
 
 ## Revision Relationships
 
@@ -97,7 +97,7 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 
 ## Invariants
 
-1. An Execution selects one exact immutable Agent revision and exact integration revisions; it never resolves a mutable Agent head at Worker claim time.
+1. An Execution selects one exact immutable Agent revision and exact integration revisions; it never resolves a mutable Agent head at worker claim time.
 2. A revision contains serializable Foundation data and references only, never live Python objects or credentials.
 3. Dependency locks and content digests are verified before Harness construction.
 4. Package presence does not authorize an adapter, plugin, Capability, provider, or import target.

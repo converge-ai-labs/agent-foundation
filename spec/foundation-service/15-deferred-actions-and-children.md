@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation turns Harness suspension and Host-managed child work into durable lifecycles without retaining a Worker across human or external waits. Approval, client-tool execution, and structured user input are durable pending actions owned by one Execution. For interactive work, their user-visible requests and responses are Items in the owning Turn.
+Foundation turns Harness suspension and Host-managed child work into durable lifecycles without retaining a worker across human or external waits. Approval, client-tool execution, and structured user input are durable pending actions owned by one Execution and follow the shared [durable operation contract](06-durable-operations-and-outbox.md). For interactive work, their user-visible requests and responses are Items in the owning Turn.
 
 An asynchronous subagent is an independent child Execution. When it owns an independently advancing visible history, Foundation also creates a child Thread under the same Session. The child has its own Attempts, Harness Runs, checkpoints, cancellation, Environment attachments, usage, and result-delivery state.
 
@@ -69,7 +69,7 @@ stateDiagram-v2
 
 All transitions out of `pending` are terminal and compare the current `version`. `completed` stores the exact native approval, client-tool, or user-input result. `rejected` is valid only for an approval and stores the native denial result. Expiration and cancellation do not fabricate a successful native result; they fail or cancel the owning continuation according to its already selected policy. A terminal action is never reopened. Idempotent repetition of the same resolution returns the original receipt, while different content conflicts.
 
-For example, if an Agent proposes deleting a repository, the Harness can return an approval request and complete state. Foundation commits a `pending` approval and releases the Worker. Hours later an authorized responder approves the exact request; Foundation stores the native approval result, moves the action to `completed`, and queues the same Execution. A fresh Worker resumes from the selected checkpoint. Repeating that approval returns the first receipt, while approving changed tool arguments conflicts.
+For example, if an Agent proposes deleting a repository, the Harness can return an approval request and complete state. Foundation commits a `pending` approval and releases the worker. Hours later an authorized responder approves the exact request; Foundation stores the native approval result, moves the action to `completed`, and queues the same Execution. A fresh worker resumes from the selected checkpoint. Repeating that approval returns the first receipt, while approving changed tool arguments conflicts.
 
 ## Suspension and Resume
 
@@ -154,7 +154,7 @@ class ChildResultDelivery:
     finalized_at: datetime | None
 ```
 
-`spawn_operation_id` is the opaque idempotency identity of the accepted parent tool operation. It makes lost child-acceptance acknowledgement safe: the same parent operation returns the same relationship and child. `parent_mode` determines whether the parent continues immediately or enters `waiting`. `cancellation_policy` can request cooperative child cancellation but never claims rollback, and `result_visibility` is an upper bound that is still checked against current authorization on every read or incorporation. A result payload is bounded; larger content uses an authorized Item-owned content reference under the [large-content contract](10-events-usage-and-delivery.md#large-content). Its digest binds later incorporation to the exact terminal result.
+`spawn_operation_id` is the opaque idempotency identity of the accepted parent tool operation. It makes lost child-acceptance acknowledgement safe: the same parent operation returns the same relationship and child. `parent_mode` determines whether the parent continues immediately or enters `waiting`. `cancellation_policy` can request cooperative child cancellation but never claims rollback, and `result_visibility` is an upper bound that is still checked against current authorization on every read or incorporation. A result payload is bounded; larger content uses an authorized Item-owned content reference under the [large-content contract](17-events-usage-and-delivery.md#large-content). Its digest binds later incorporation to the exact terminal result.
 
 A Host-managed spawn is an ordinary completed parent tool operation. Its Item, when interactive, names the accepted child Thread and Execution. It is not a deferred request, and child completion never fills the original spawn tool-call ID.
 
@@ -178,9 +178,9 @@ stateDiagram-v2
     discarded --> [*]
 ```
 
-Transport notification does not change this state. A result can be offered to several replacement Attempts while it remains `available`; only the generation-fenced transaction that selects a complete parent checkpoint can advance it to `selected`. That transaction records the target Execution and checkpoint, so a Worker crash cannot cause the result to enter the same parent lineage twice.
+Transport notification does not change this state. A result can be offered to several replacement Attempts while it remains `available`; only the generation-fenced transaction that selects a complete parent checkpoint can advance it to `selected`. That transaction records the target Execution and checkpoint, so a worker crash cannot cause the result to enter the same parent lineage twice.
 
-For example, a parent Agent can launch a research child with `parent_mode="wait_for_result"`. When the child completes, its immutable result becomes `available` and the parent Execution is queued. If the resumed parent Worker crashes before selecting a checkpoint, the result remains `available` for the replacement Attempt. Once a complete parent checkpoint selects it, the ledger becomes `selected`; duplicate child notifications or another Worker cannot incorporate it again.
+For example, a parent Agent can launch a research child with `parent_mode="wait_for_result"`. When the child completes, its immutable result becomes `available` and the parent Execution is queued. If the resumed parent worker crashes before selecting a checkpoint, the result remains `available` for the replacement Attempt. Once a complete parent checkpoint selects it, the ledger becomes `selected`; duplicate child notifications or another worker cannot incorporate it again.
 
 If the parent Execution is waiting for the child, accepted delivery creates the applicable result Item and queues that same Execution for another Attempt. If the parent already completed independently, the result remains available for an explicitly selected later Turn or Execution rather than reopening terminal state.
 

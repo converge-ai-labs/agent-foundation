@@ -2,21 +2,21 @@
 
 ## Design Position
 
-Foundation Service owns one Identity and Access Management (IAM) contract for Organization and Workspace tenancy, human and service identities, authentication credentials, built-in roles, RoleBindings, and security audit. The OSS distribution presents one Organization while retaining real Organization identifiers and tenant constraints in the common data model. Deployment topology, process role, license, and edition are not IAM resources or authorization shortcuts.
+Foundation Service owns one Identity and Access Management (IAM) contract for Organization and Workspace tenancy, human and service identities, authentication credentials, built-in roles, RoleBindings, and security audit. The [OSS distribution](02-distribution-composition-and-extensions.md#oss-composition) presents one Organization while retaining real Organization identifiers and tenant constraints in the common data model. Deployment topology, process role, license, and edition are not IAM resources or authorization shortcuts.
 
 IAM authorizes a caller to inspect, change, invoke, or administer Foundation resources. Harness run authority separately constrains what an executing Agent may do through tools, Secrets, and Environments. Allowing a User or Service Account to invoke an Agent does not grant the resulting model arbitrary side effects.
 
 ## Boundaries
 
-| Concern                                                         | Owner                                        | Relationship                                                                     |
-| --------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------- |
-| Organization, Workspace, User, and Service Account identity     | This document                                | Defines durable identity, ownership, and lifecycle                               |
-| Password, browser session, invitation, reset token, and API key | This document                                | Defines authentication and credential lifecycle                                  |
-| RoleBinding, built-in roles, and product authorization          | This document                                | Defines the only durable product grant model                                     |
-| Managed Secret value protection                                 | [Secret Management](01-secret-management.md) | Uses IAM scope and authorization without treating a Secret as a login credential |
-| Agent revision and execution identity                           | Their owning Foundation documents            | Remain authorization targets and audit subjects, not IAM Principals              |
-| Model-triggered tool and Environment authority                  | Harness run grants and providers             | Narrows an authorized invocation independently from product RBAC                 |
-| OSS, EE, and Cloud capability composition                       | Distribution boundary                        | Adds capabilities without adding edition fields or bypassing common IAM checks   |
+| Concern                                                         | Owner                                                                  | Relationship                                                                     |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Organization, Workspace, User, and Service Account identity     | This document                                                          | Defines durable identity, ownership, and lifecycle                               |
+| Password, browser session, invitation, reset token, and API key | This document                                                          | Defines authentication and credential lifecycle                                  |
+| RoleBinding, built-in roles, and product authorization          | This document                                                          | Defines the only durable product grant model                                     |
+| Managed Secret value protection                                 | [Secret Management](11-secret-management.md)                           | Uses IAM scope and authorization without treating a Secret as a login credential |
+| Agent revision and execution identity                           | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
+| Model-triggered tool and Environment authority                  | Harness run grants and providers                                       | Narrows an authorized invocation independently from product RBAC                 |
+| OSS, EE, and Cloud capability composition                       | [Distribution boundary](02-distribution-composition-and-extensions.md) | Adds capabilities without edition fields or bypassing common IAM checks          |
 
 The canonical resource hierarchy is:
 
@@ -44,7 +44,7 @@ The common relational model permits several Organizations so EE and Cloud can us
 
 OSS supplies local email-and-password authentication, invitations, browser sessions, Workspace-bound User and Service Account API keys, built-in roles, and direct User or Service Account RoleBindings. It does not supply SSO, OIDC, external identity records, Groups, custom roles, Organization-bound API keys, product quotas, billing, or platform-operator elevation.
 
-EE and Cloud add capabilities in separate modules while preserving the identifiers, tenant fields, Principal meaning, credential boundary, and authorizer contract defined here. Core rows contain no `edition`, `plan`, `license`, or deployment-placement field.
+EE and Cloud distributions add capabilities through the explicit composition contract while preserving the identifiers, tenant fields, Principal meaning, credential boundary, and authorizer contract defined here. Core rows contain no `edition`, `plan`, `license`, or deployment-placement field.
 
 ## Tenant and Identity Model
 
@@ -301,7 +301,7 @@ Removing a User's access to a key boundary permanently revokes that boundary's P
 
 Security audit events are append-only and distinct from Execution lifecycle events, application logs, traces, and UsageRecords. Login, password, email, User status, invitation, RoleBinding, API key, Service Account, Workspace, and Secret security mutations emit events. Events contain no secret material or credential verifier.
 
-A successful security-sensitive mutation commits its audit event in the same short transaction as the authoritative state change. Authentication failures and denied attempts emit through a separate bounded path because no resource mutation transaction exists; audit unavailability never converts a denial into an allow.
+A successful security-sensitive mutation commits its audit event in the same short transaction as the authoritative state change under [Durable Operations and Outbox](06-durable-operations-and-outbox.md#atomic-durable-commit). Authentication failures and denied attempts emit through a separate bounded path because no resource mutation transaction exists; audit unavailability never converts a denial into an allow.
 
 Audit actor, credential, and resource IDs are retained evidence rather than cascading ownership references.
 
@@ -309,7 +309,9 @@ Organization Admin can read its Organization's events. Workspace Admin can read 
 
 ## Bootstrap and Invitation Flow
 
-The first OSS startup uses deployment configuration containing only the initial Admin email. It creates the singleton Organization, its `default` Workspace, and one bootstrap Invitation granting Organization Admin. It generates a single-use initialization link. SMTP delivery sends the link to the configured email and marks successful acceptance as email verification; without SMTP, the service emits the link once through the protected startup-log boundary and acceptance does not verify the email.
+The OSS distribution supplies an IAM bootstrap control component under the shared [runtime lifecycle](01-runtime-configuration-and-deployment.md). Deployment configuration contains only the initial Admin email. The component idempotently creates the singleton Organization, its `default` Workspace, and one bootstrap Invitation granting Organization Admin, then generates a single-use initialization link. Concurrent control or all-in-one replicas serialize the same bootstrap facts and cannot create another Organization or invitation identity. A worker-only process never performs IAM bootstrap.
+
+SMTP delivery sends the link to the configured email and marks successful acceptance as email verification; without SMTP, the service emits the link once through the protected startup-log boundary and acceptance does not verify the email.
 
 The initialization endpoint requires the complete token, sets the initial name and password, creates the User and grants atomically, and permanently closes the bootstrap surface. There is no unauthenticated first-visitor claim. Until bootstrap succeeds, ordinary authenticated product routes are unavailable.
 
@@ -441,4 +443,4 @@ Passwords, session tokens, invitation and reset tokens, API key secrets, Secret 
 
 ## Compatibility
 
-User, Service Account, Organization, Workspace, and RoleBinding IDs; Principal kind; resource identity; tenant ownership; and credential boundary are durable compatibility facts. Email, name, and display labels are mutable. OSS rejects unknown persisted Principal kinds, boundary kinds, role keys, and resource types rather than guessing their meaning. Extensions may add values and behavior but cannot reinterpret existing rows.
+User, Service Account, Organization, Workspace, and RoleBinding IDs; Principal kind; resource identity; tenant ownership; and credential boundary are durable compatibility facts. Email, name, and display labels are mutable. OSS rejects unknown persisted Principal kinds, boundary kinds, role keys, and resource types rather than guessing their meaning. A selected distribution may add values and behavior but cannot reinterpret existing rows.

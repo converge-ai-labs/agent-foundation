@@ -59,7 +59,7 @@ The request `value` is a non-empty JSON string whose UTF-8 encoding is at most 6
 
 ## Public Management API
 
-All routes use the shared `/api/v1` JSON contract and are exposed only by `control` and `all` service roles. An `execution` role never serves the public management API. Secret values appear only in authenticated request bodies; they never appear in a URL, query parameter, header, or multipart filename.
+All routes use the shared `/api/v1` JSON contract and are exposed only by `control` and `all` service roles. A `worker` role never serves the public management API. Secret values appear only in authenticated request bodies; they never appear in a URL, query parameter, header, or multipart filename.
 
 ### Create
 
@@ -154,7 +154,7 @@ A deleted key may be used for a newly generated Secret ID under the same owner. 
 
 Replacement updates the active row in place under a row lock. The new ciphertext, nonce, encryption-key identifier, incremented version, and `value_updated_at` commit atomically; the previous encrypted value is not retained as an application-visible version.
 
-Secret creation, replacement, deletion, master-key re-encryption, and denied management attempts emit bounded [IAM security audit events](04-identity-and-access-management.md#security_audit_events). These events contain no Secret key, value-derived data, request body, ciphertext, nonce, master-key material, or raw authorization claims. Their persistence, retention, and export are not part of the Secret relational schema.
+Secret creation, replacement, deletion, master-key re-encryption, and denied management attempts emit bounded [IAM security audit events](10-identity-and-access-management.md#security_audit_events). These events contain no Secret key, value-derived data, request body, ciphertext, nonce, master-key material, or raw authorization claims. Their persistence, retention, and export are not part of the Secret relational schema.
 
 ## Protection Boundary
 
@@ -162,9 +162,11 @@ Every active Secret value is encrypted directly under one operator-configured 25
 
 Authenticated additional data uses a stable length-prefixed encoding that binds the exact `id`, `organization_id`, `workspace_id`, `owner_type`, `owner_id`, `key`, `version`, and `encryption_key_id`. Copying ciphertext to another tenant, row, owner, key, version, or key identifier therefore fails authentication rather than returning another Secret's plaintext.
 
-The `control` and `all` roles load the configured master key because they accept Secret mutations. Possessing that symmetric key also gives those processes cryptographic decryption capability, even though the public management API and its normal application path never invoke decryption. This is an API and code-path boundary rather than cryptographic separation between management and runtime authority.
+Every role that includes Secret management or runtime Secret resolution loads the configured master key. A `control` process uses it for accepted Secret writes and key migration. A `worker` process uses it only to resolve authorized Secret bindings for a fenced Execution. An `all` process owns both paths. A worker exposes no Secret management route, and no role receives decryption authority merely from a public API permission.
 
-The master key is required runtime secret configuration and is never stored in the application database, source tree, or container image. A missing or malformed key, a key that is not exactly 256 bits, or a blank key identifier prevents a `control` or `all` process from becoming ready. The service has no generated default, plaintext fallback, or alternate ambient key source.
+Possessing the symmetric key gives each such process cryptographic decryption capability. The distinction between management and runtime resolution is therefore an API, authorization, and code-path boundary rather than cryptographic separation.
+
+The master key is required runtime secret configuration and is never stored in the application database, source tree, or container image. A missing or malformed key, a key that is not exactly 256 bits, or a blank key identifier prevents any role that includes Secret management or resolution from becoming ready. The service has no generated default, plaintext fallback, or alternate ambient key source.
 
 Changing the master-key bytes requires a new `encryption_key_id` and a coordinated decrypt-and-re-encrypt migration of every active ciphertext before the old key becomes unavailable. Reusing one key identifier for different key bytes and replacing the configured key without migrating existing rows are invalid operations. A plaintext-preserving master-key migration changes only `ciphertext`, `nonce`, and `encryption_key_id`; it does not change the Secret domain version or `value_updated_at`.
 
@@ -221,7 +223,7 @@ Owner deletion first makes the owner ineligible for Secret creation and replacem
 | Missing or denied authentication/authorization                       | `401`, `403`, or concealed `404` under Host policy                                             | No mutation; denial is audited without revealing protected metadata                             |
 | Active owner/key already exists on create                            | `409 secret_key_conflict`                                                                      | No mutation; caller selects another key or explicitly replaces the known Secret                 |
 | `expected_version` differs from the locked row                       | `409 version_conflict`                                                                         | No mutation; caller must inspect current metadata and make a new decision                       |
-| Configured master key or key identifier is missing or invalid        | Process fails startup or readiness                                                             | No Secret route is served; there is no fallback key or plaintext mode                           |
+| Configured master key or key identifier is missing or invalid        | A role requiring Secret management or resolution fails startup or readiness                    | No Secret route or runtime resolution is available; there is no fallback key or plaintext mode  |
 | Secure nonce generation or AES-GCM encryption fails                  | Safe `500 secret_protection_failed`                                                            | No database mutation; transient buffers are discarded; the caller may retry                     |
 | Cancellation before database commit begins                           | Request is cancelled                                                                           | No committed mutation; transient buffers are discarded best-effort                              |
 | Timeout, disconnect, or cancellation during possible database commit | Unknown to the caller                                                                          | Read current metadata before deciding whether to issue another mutation                         |
@@ -251,7 +253,7 @@ The `aes_256_gcm_v1` ciphertext layout, nonce size, authentication-tag size, add
 
 Polymorphic `(owner_type, owner_id)` ownership supports Workspace-shared and User-personal values without parallel Secret tables. Explicit Organization and Workspace columns preserve tenant filtering and relational tenant consistency, while Foundation domain logic and each owner lifecycle enforce polymorphic owner existence, cleanup, and reconciliation.
 
-Write-only management sharply limits accidental human and API disclosure but cannot prove that a process or operator holding the master key never accesses the value. Direct AES-256-GCM encryption avoids an external key-service dependency and keeps the row and write path small. In exchange, compromise of both the database and master key exposes every active Secret, a compromised `control` or `all` process can decrypt stored values, and master-key replacement requires decrypting and re-encrypting all active rows rather than rewrapping small per-Secret keys.
+Write-only management sharply limits accidental human and API disclosure but cannot prove that a process or operator holding the master key never accesses the value. Direct AES-256-GCM encryption avoids an external key-service dependency and keeps the row and write path small. In exchange, compromise of both the database and master key exposes every active Secret, a compromised process holding the key can decrypt stored values, and master-key replacement requires decrypting and re-encrypting all active rows rather than rewrapping small per-Secret keys.
 
 Retaining no application-visible value history reduces exposure and makes rollback impossible. Rotation mistakes are repaired by another authorized replacement or at the credential issuer, not by revealing or restoring an older Foundation value.
 
@@ -259,7 +261,7 @@ Retaining no application-visible value history reduces exposure and makes rollba
 
 1. Every managed Secret has one immutable `sec_` ID, Organization, Workspace, `SecretOwnerType`, `owner_id`, and key.
 2. Unsupported owner enum values and owner IDs that fail existence, lifecycle, or authorization checks are rejected.
-3. The public management API never resolves plaintext, although a `control` or `all` process holding the symmetric master key is cryptographically capable of decryption.
+3. The public management API never resolves plaintext, although every process holding the symmetric master key is cryptographically capable of decryption.
 4. A Secret value appears only in bounded create or replace request memory and never in any management response or durable non-ciphertext record.
 5. Every replacement requires exact CAS against `expected_version` and advances the positive Secret version exactly once.
 6. Active owner/key uniqueness is enforced durably, and the management API provides no implicit upsert.

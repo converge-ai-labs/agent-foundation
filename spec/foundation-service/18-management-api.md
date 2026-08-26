@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation exposes one resource-oriented `/api/v1` management contract for IAM, Agent authoring, interaction, durable execution, deferred work, Environment resources, events, and raw usage. The API follows [Platform API Conventions](../api-conventions.md), [Platform Data Conventions](../data-conventions.md), and the [Identity and Access Management contract](04-identity-and-access-management.md); this document owns Foundation resource routes, command boundaries, read models, and cross-resource mutation behavior.
+Foundation exposes one resource-oriented `/api/v1` management contract for IAM, Agent authoring, interaction, durable execution, deferred work, Environment resources, events, and raw usage. The API follows [Platform API Conventions](../api-conventions.md), [Platform Data Conventions](../data-conventions.md), the [HTTP ingress contract](05-http-ingress-and-request-contract.md), the shared [durable operation contract](06-durable-operations-and-outbox.md), and the [Identity and Access Management contract](10-identity-and-access-management.md); this document owns Foundation resource routes, command boundaries, read models, and cross-resource mutation behavior.
 
 The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and external webhook payloads retain their own contracts.
 
@@ -40,13 +40,13 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | ExecutionAttempts         | `/executions/{execution_id}/attempts`                                                                                                       | Read-only operational history; workers mutate internally                                  |
 | Pending actions           | `/executions/{execution_id}/pending-actions`                                                                                                | Read and authorized response commands                                                     |
 | Environment resources     | `/workspaces/{workspace_id}/environments`                                                                                                   | Desired provider spec, lifecycle, and safe state metadata                                 |
-| Secrets                   | Routes owned by [Secret Management](01-secret-management.md)                                                                                | Workspace and User ownership with metadata-only reads and write-only values               |
+| Secrets                   | Routes owned by [Secret Management](11-secret-management.md)                                                                                | Workspace and User ownership with metadata-only reads and write-only values               |
 | Security audit            | `/organizations/{organization_id}/security-audit-events`, `/workspaces/{workspace_id}/security-audit-events`, `/users/me/security-activity` | IAM-owned bounded security projections                                                    |
 | Lifecycle events          | `/workspaces/{workspace_id}/events` and resource-scoped event collections                                                                   | Durable replay, not ordinary pagination                                                   |
 | Delivery stream           | `GET /workspaces/{workspace_id}/stream`, `WS /workspaces/{workspace_id}/stream`                                                             | SSE or WebSocket over the same retained and live delivery-envelope contract               |
 | Usage records             | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                            |
 
-OSS registers exactly the routes for its supported capabilities. An extension can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
+The selected [distribution](02-distribution-composition-and-extensions.md) registers exactly the routes for its supported capabilities. An EE or Cloud capability can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
 
 Collection fields, filters, order, and payload limits are defined by the owning resource document. All ordinary collections use the shared cursor shape. Lifecycle replay uses its own monotonic cursor and explicit retention-gap response.
 
@@ -113,17 +113,15 @@ Ordinary collections use `limit` and opaque `cursor` exactly as defined by Platf
 
 Lifecycle and interaction replay use opaque replay cursors over the retained Workspace stream, with optional Session, Thread, Turn, Execution, source-kind, and event-type filters. A replay response labels each envelope source kind and reports `replay_gap` when the cursor generation differs or its sequence precedes the retained floor. The response includes the current generation, retained floor, high watermark, and authorized resource links. The client then reads current resource state and an authorized semantic snapshot; it never treats the newest event as a complete missing history.
 
-`GET /api/v1/workspaces/{workspace_id}/stream` opens SSE. A WebSocket upgrade at `/api/v1/workspaces/{workspace_id}/stream` exposes the same envelope, cursor, filters, gap response, and replay-to-live cutover. Authentication and initial database reads finish before stream construction. Transport disconnect does not cancel work, and live-only AG-UI observations do not advance the retained replay cursor.
+`GET /api/v1/workspaces/{workspace_id}/stream` opens SSE. A WebSocket upgrade at `/api/v1/workspaces/{workspace_id}/stream` exposes the same envelope, cursor, filters, gap response, and replay-to-live cutover under the shared [HTTP streaming boundary](05-http-ingress-and-request-contract.md#streaming-connections). Transport disconnect does not cancel work, and live-only AG-UI observations do not advance the retained replay cursor.
 
 ## Concurrency and Idempotency
 
-Mutable resources expose one monotonically increasing `version`. `PATCH` and state-sensitive commands use `expected_version`; mismatch returns `409`. Immutable revisions and usage records reject mutation rather than carrying artificial versions.
-
-Creates and commands that can be retried accept `Idempotency-Key`. Evidence is scoped to principal, resource, operation kind, and canonical request for a finite documented lifetime. Idempotent replay resolves before current-version comparison. Expired evidence and absent receipts do not prove that an earlier operation was never dispatched.
+Routes identify which mutable resources require `expected_version` and which retryable creates or commands require `Idempotency-Key`. Their shared wire behavior follows [Platform API Conventions](../api-conventions.md#mutations-and-retries), and their evidence and atomic commit follow [Durable Operations and Outbox](06-durable-operations-and-outbox.md). Immutable revisions and usage records reject mutation rather than carrying artificial versions.
 
 ## Errors and Compatibility
 
-The API uses shared bounded errors and stable codes. Owning domains add safe details such as `current_version`, `wait_reason`, `pending_kind`, `dispatch_phase`, or `replay_gap`; they never expose traceback, SQL, provider payload, Secret value, credential, attachment, private path, or raw model/tool content.
+The API uses the shared bounded errors and stable codes enforced by the [HTTP ingress contract](05-http-ingress-and-request-contract.md#errors-and-diagnostics). Owning domains add safe details such as `current_version`, `wait_reason`, `pending_kind`, `dispatch_phase`, or `replay_gap`; they never expose traceback, SQL, provider payload, Secret value, credential, attachment, private path, or raw model/tool content.
 
 `/api/v1` evolves additively. Removing or repurposing a field, changing a command side-effect boundary, weakening authorization, changing idempotency scope, or changing resource identity requires an incompatible API version. First-party SDK releases can add idiomatic convenience methods but preserve the same resources, receipts, errors, and retry boundaries.
 

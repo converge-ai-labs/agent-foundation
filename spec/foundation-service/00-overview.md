@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control-plane and execution-plane work to separately scalable process roles. It does not split lifecycle ownership across microservices.
+Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control and worker work to separately scalable process roles under the shared [runtime contract](01-runtime-configuration-and-deployment.md). It does not split lifecycle ownership across microservices.
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation additionally owns durable `Execution` and `ExecutionAttempt` resources for scheduling and recovery. Interactive work correlates the two models; standalone webhook, scheduled, or service work can create an Execution without creating a Session or Turn.
 
-The execution worker embeds the public Harness Python API. It reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness in process. Queue delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
+The worker embeds the public Harness Python API. It reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness in process. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -30,9 +30,9 @@ flowchart LR
         Objects[(Object storage)]
     end
 
-    Coordination[Redis or queue hints]
+    Coordination[Required Redis data flow]
 
-    subgraph WorkerRole[Execution role]
+    subgraph WorkerRole[Worker role]
         Worker[Fenced worker]
         Reconstruct[Trusted reconstruction]
         Provider[Environment Provider Manager]
@@ -47,7 +47,7 @@ flowchart LR
     Auth --> Authoring & Interaction & Lifecycle & Feedback
     Authoring & Interaction & Lifecycle & Feedback --> Database
     Scheduler --> Database
-    Scheduler -. wakeup .-> Coordination -. notification .-> Worker
+    Scheduler --> Coordination --> Worker
     Worker --> Database
     Worker --> Reconstruct --> Harness
     Worker --> Provider --> Harness
@@ -58,34 +58,36 @@ flowchart LR
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, interaction state, Executions, current ExecutionAttempt generations, dispatch evidence, checkpoints, pending actions, Environment lifecycle, and terminal outcomes. Redis and queue messages reduce discovery latency only. Object storage retains bounded large content under database-selected references.
+PostgreSQL is the distributed authority for accepted resources, interaction state, Executions, current ExecutionAttempt generations, dispatch evidence, checkpoints, pending actions, Environment lifecycle, and terminal outcomes. Real Redis is a required distributed dependency for coordination and feature-owned data flow. Each owning feature defines the identity, retention, replay, and authority of its Redis data; Redis publication alone never proves that a relational lifecycle transition committed. Shared object storage retains bounded large content under database-selected references.
 
 ## Component Boundaries
 
-| Concern                                                       | Owner                                                  | Relationship                                                        |
-| ------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)  | Foundation persists and authorizes its hosted representations       |
-| Organization, Workspace, identity, and resource authorization | [Foundation IAM](04-identity-and-access-management.md) | Applies to every public and internal product operation              |
-| Durable Agent and integration revisions                       | Foundation control plane                               | Selects exact serializable inputs and dependency locks              |
-| Execution and ExecutionAttempt                                | Foundation                                             | Owns durable scheduling, fencing, recovery, and completion          |
-| Process-local Agent composition and loop                      | Harness                                                | Built by a trusted Foundation reconstruction adapter                |
-| Provider specification and resource operations                | `a13n-environment-provider`                            | Foundation invokes Managers and persists selected provider state    |
-| Runtime Environment attachment and routing                    | Provider package and Harness                           | Provider supplies a fresh attachment; Harness adapts and enters it  |
-| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                  | Foundation supplies visibility processing, retention, and delivery  |
-| Durable lifecycle events, Items, and usage                    | Foundation                                             | Commits product facts independently from process-local observations |
-| Client-side effects                                           | External client                                        | Foundation authenticates feedback but does not claim the effect     |
+| Concern                                                       | Owner                                                         | Relationship                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations       |
+| Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                               |
+| OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning         |
+| Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation              |
+| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks              |
+| Execution and ExecutionAttempt                                | Foundation                                                    | Owns durable scheduling, fencing, recovery, and completion          |
+| Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                |
+| Provider specification and resource operations                | `a13n-environment-provider`                                  | Foundation invokes Managers and persists selected provider state    |
+| Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it  |
+| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery  |
+| Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations |
+| Client-side effects                                           | External client                                               | Foundation authenticates feedback but does not claim the effect     |
 
-Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. Optional commercial integrations implement Foundation ports without replacing the common resource authorizer or durable execution kernel.
+Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable execution kernel.
 
 ## Process Roles
 
-One artifact supports three roles:
+One artifact supports two independently deployable roles and their all-in-one composition:
 
-- `all` owns control and execution loops in one process;
+- `all` owns control and worker loops in one process;
 - `control` owns product APIs, authorization, scheduling, control-plane reconciliation, deferred feedback, and outbox publication;
-- `execution` owns worker claiming, Agent reconstruction, Environment resource attachment, Harness invocation, observation consumption, and fenced publication.
+- `worker` owns Execution claiming, Agent reconstruction, Environment resource attachment, Harness invocation, observation consumption, and fenced publication.
 
-These names describe deployment roles, not product resources. An `Execution` remains a durable scheduled-work resource regardless of which role processes it. Rolling overlap is safe only when every background loop is idempotent, leased, or fenced. Execution-only processes expose operational probes but no product API and never migrate the schema.
+These names describe deployment roles, not product resources. An `Execution` remains a durable scheduled-work resource regardless of which role processes it. The [runtime contract](01-runtime-configuration-and-deployment.md) owns the complete component matrix, deployment profiles, readiness, and drain behavior. Worker-only processes expose operational probes but no product API and never migrate the schema.
 
 ## End-to-End Interactive Turn
 
@@ -104,7 +106,7 @@ sequenceDiagram
     Control->>DB: commit Turn, user Item, Execution, event, outbox
     Control-->>Caller: durable acceptance
     Scheduler->>DB: find eligible Execution
-    Scheduler-->>Worker: bounded wakeup hint
+    Scheduler-->>Worker: Redis work signal
     Worker->>DB: claim next ExecutionAttempt generation
     Worker->>Worker: reconstruct Agent and safe local inputs
     Worker->>DB: cross fenced effects-possible boundary
@@ -156,9 +158,9 @@ No later fact follows merely because an earlier fact occurred. In particular, qu
 
 ## Invariants
 
-1. Foundation has one domain and authorization model across `all`, `control`, and `execution` roles.
+1. Foundation has one domain and authorization model across `all`, `control`, and `worker` roles.
 2. Session, Thread, Turn, and Item follow the shared platform meanings; Execution and ExecutionAttempt own durable scheduling separately.
-3. PostgreSQL is lifecycle authority; coordination loss changes latency, not accepted work.
+3. PostgreSQL is accepted lifecycle authority; Redis is required for distributed data flow, and its loss blocks readiness without erasing committed work.
 4. One ExecutionAttempt starts at most one logical Harness Run.
 5. Process-local Python values and runtime attachments never become Foundation durable payloads.
 6. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.

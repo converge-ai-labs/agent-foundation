@@ -28,7 +28,7 @@ class ServiceRole(StrEnum):
 
     all = "all"
     control = "control"
-    execution = "execution"
+    worker = "worker"
 
 
 class DatabaseBackend(StrEnum):

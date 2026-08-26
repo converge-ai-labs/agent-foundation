@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation implements the shared [`Session`, `Thread`, `Turn`, and `Item`](../interaction-model.md) interaction model and a separate durable execution model. An `Execution` is accepted schedulable work. An `ExecutionAttempt` is one fenced Worker ownership generation for that Execution. Neither a Harness Run nor a model request replaces those durable identities.
+Foundation implements the shared [`Session`, `Thread`, `Turn`, and `Item`](../interaction-model.md) interaction model and a separate durable execution model under the shared [durable operation contract](06-durable-operations-and-outbox.md). An `Execution` is accepted schedulable work. An `ExecutionAttempt` is one fenced worker ownership generation for that Execution. Neither a Harness Run nor a model request replaces those durable identities.
 
 An interactive Turn normally creates one Execution. A standalone webhook, scheduled job, or service request can create an Execution without a Session or Turn. Worker loss, approval suspension, and selected recovery create later ExecutionAttempts for the same non-terminal Execution; they do not create another Turn or pretend that one process remained alive.
 
