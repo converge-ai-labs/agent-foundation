@@ -78,11 +78,20 @@ async def short_session(
     """Yield one session and close it through bounded shielded cleanup."""
 
     session = factory()
+    active_error: BaseException | None = None
     try:
         yield session
+    except BaseException as error:
+        active_error = error
+        raise
     finally:
-        with move_on_after(cleanup_timeout_seconds, shield=True):
-            await session.close()
+        try:
+            with move_on_after(cleanup_timeout_seconds, shield=True):
+                await session.close()
+        except Exception as close_error:
+            if active_error is None:
+                raise
+            active_error.add_note(f"session close cleanup failed with {type(close_error).__name__}")
 
 
 @asynccontextmanager
@@ -99,7 +108,7 @@ async def transaction(
             try:
                 with move_on_after(cleanup_timeout_seconds, shield=True):
                     await database_transaction.rollback()
-            except SQLAlchemyError as rollback_error:
+            except Exception as rollback_error:
                 error.add_note(f"rollback cleanup failed with {type(rollback_error).__name__}")
             raise
         else:
