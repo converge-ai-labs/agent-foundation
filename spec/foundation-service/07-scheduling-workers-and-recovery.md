@@ -10,7 +10,7 @@ Workers are process-role loops, not durable product owners. A deployment scales 
 
 An Execution is eligible when it is `queued`, admission and backoff constraints allow work, no live Attempt owns it, exact dependencies remain resolvable, and current policy permits the transition. The scheduler uses bounded deterministic scans and idempotently records or signals eligible work.
 
-A coordination message contains only enough identity to prompt a fresh durable claim. Receiving, duplicating, delaying, reordering, acknowledging, or losing that message cannot create, complete, cancel, or transfer an ExecutionAttempt. Admission control, quotas, and fairness can delay eligibility but do not create another queue authority.
+A coordination message contains only enough identity to prompt a fresh durable claim. Receiving, duplicating, delaying, reordering, acknowledging, or losing that message cannot create, complete, cancel, or transfer an ExecutionAttempt. Operational admission control and fairness can delay eligibility but do not create another queue authority.
 
 ## Claim and Lease
 

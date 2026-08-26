@@ -62,18 +62,18 @@ PostgreSQL is the distributed authority for accepted resources, interaction stat
 
 ## Component Boundaries
 
-| Concern                                             | Owner                                                 | Relationship                                                        |
-| --------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning             | [Platform Interaction Model](../interaction-model.md) | Foundation persists and authorizes its hosted representations       |
-| Organization, Workspace, and resource authorization | Foundation control plane                              | Applies to every public and internal product operation              |
-| Durable Agent and integration revisions             | Foundation control plane                              | Selects exact serializable inputs and dependency locks              |
-| Execution and ExecutionAttempt                      | Foundation                                            | Owns durable scheduling, fencing, recovery, and completion          |
-| Process-local Agent composition and loop            | Harness                                               | Built by a trusted Foundation reconstruction adapter                |
-| Provider specification and resource operations      | `converge-agent-environment-provider`                 | Foundation invokes Managers and persists selected provider state    |
-| Runtime Environment attachment and routing          | Provider package and Harness                          | Provider supplies a fresh attachment; Harness adapts and enters it  |
-| Harness-to-AG-UI conversion                         | `HarnessAguiObserver`                                 | Foundation supplies visibility processing, retention, and delivery  |
-| Durable lifecycle events, Items, and usage          | Foundation                                            | Commits product facts independently from process-local observations |
-| Client-side effects                                 | External client                                       | Foundation authenticates feedback but does not claim the effect     |
+| Concern                                                       | Owner                                                  | Relationship                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)  | Foundation persists and authorizes its hosted representations       |
+| Organization, Workspace, identity, and resource authorization | [Foundation IAM](04-identity-and-access-management.md) | Applies to every public and internal product operation              |
+| Durable Agent and integration revisions                       | Foundation control plane                               | Selects exact serializable inputs and dependency locks              |
+| Execution and ExecutionAttempt                                | Foundation                                             | Owns durable scheduling, fencing, recovery, and completion          |
+| Process-local Agent composition and loop                      | Harness                                                | Built by a trusted Foundation reconstruction adapter                |
+| Provider specification and resource operations                | `converge-agent-environment-provider`                  | Foundation invokes Managers and persists selected provider state    |
+| Runtime Environment attachment and routing                    | Provider package and Harness                           | Provider supplies a fresh attachment; Harness adapts and enters it  |
+| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                  | Foundation supplies visibility processing, retention, and delivery  |
+| Durable lifecycle events, Items, and usage                    | Foundation                                             | Commits product facts independently from process-local observations |
+| Client-side effects                                           | External client                                        | Foundation authenticates feedback but does not claim the effect     |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. Optional commercial integrations implement Foundation ports without replacing the common resource authorizer or durable execution kernel.
 
@@ -150,9 +150,9 @@ These facts advance independently:
 5. Environment management or Harness returns a process-local observation or candidate;
 6. Foundation selects a checkpoint, pending transition, or terminal outcome;
 7. an Item, lifecycle event, AG-UI envelope, or external result is delivered;
-8. immutable usage records are ingested, priced, billed, or paid.
+8. immutable usage records are ingested; an optional external capability can price or bill them without changing their identity.
 
-No later fact follows merely because an earlier fact occurred. In particular, queue acknowledgement is not ownership, Harness completion is not durable completion, absence of a provider receipt is not proof that no effect occurred, and event delivery is not billing settlement.
+No later fact follows merely because an earlier fact occurred. In particular, queue acknowledgement is not ownership, Harness completion is not durable completion, absence of a provider receipt is not proof that no effect occurred, and event delivery is not usage ingestion or external settlement.
 
 ## Invariants
 
@@ -163,5 +163,5 @@ No later fact follows merely because an earlier fact occurred. In particular, qu
 5. Process-local Python values and runtime attachments never become Foundation durable payloads.
 6. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
 7. Every authoritative Attempt publication verifies the current generation and legal transition.
-8. Product authorization remains outside Harness, Environment Provider, and envd membership logic.
-9. Durable completion, projection, external delivery, usage ingestion, billing, and payment remain separate facts.
+8. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
+9. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.

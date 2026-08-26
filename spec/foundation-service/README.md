@@ -28,7 +28,7 @@ One Turn can span several process-local Harness Runs when approval, deferred inp
 | [01 Secret Management](01-secret-management.md)                                               | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls     |
 | [02 Storage](02-storage.md)                                                                   | Relational, Redis-compatible, object, and mounted-filesystem capabilities and deployment-profile equivalence                  |
 | [03 Relational Schema](03-relational-schema.md)                                               | Service-wide relational metadata, migration authority, compatibility, application, and failure semantics                      |
-| [04 Resource Scope and Authorization](04-resource-scope-and-authorization.md)                 | Organization and Workspace hierarchy, Principals, credentials, fixed roles, product permissions, and run grants               |
+| [04 Identity and Access Management](04-identity-and-access-management.md)                     | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit    |
 | [05 Agent Revisions and Reconstruction](05-agent-revisions-and-reconstruction.md)             | Agent Presets, immutable revisions, model integrations, dependency locks, and trusted process-local reconstruction            |
 | [06 Interactions, Executions, and Checkpoints](06-interactions-executions-and-checkpoints.md) | Interaction-to-runtime mapping, Execution state, Attempt fencing, dispatch phase, continuation, idempotency, and cancellation |
 | [07 Scheduling, Workers, and Recovery](07-scheduling-workers-and-recovery.md)                 | Eligibility, queues, claims, leases, stale-worker rejection, dispatch uncertainty, replacement, retry, and shutdown           |
@@ -65,7 +65,7 @@ These roots are boundaries, not a requirement that every capability become a sub
 - Foundation consumes the canonical Environment Provider types and `HarnessAguiObserver`; it does not create parallel provider or Harness-event models.
 - A stale Attempt cannot mutate Execution lifecycle, checkpoints, pending work, Items, child delivery, or terminal outcome. A late immutable `UsageRecord` can still be ingested under its original Attempt when record identity and content validate, but it cannot mutate lifecycle.
 - Before any external effect, the worker durably advances from `pre_dispatch` to `effects_possible`. Recovery never treats missing acknowledgement as proof that no effect occurred.
-- Harness completion, durable Execution completion, Item projection, event delivery, external delivery, usage ingestion, billing, and payment are separate facts.
+- Harness completion, durable Execution completion, Item projection, event delivery, external delivery, usage ingestion, and any external settlement are separate facts.
 
 ## Specification Conventions
 

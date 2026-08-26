@@ -40,13 +40,13 @@ The following schemas are conceptual rather than wire or storage formats:
 ```python
 class Execution:
     id: ExecutionId
+    organization_id: OrganizationId
     workspace_id: WorkspaceId
     session_id: SessionId | None
     thread_id: ThreadId | None
     turn_id: TurnId | None
     agent_revision_ref: AgentRevisionRef
     actor_ref: PrincipalRef
-    agent_identity_ref: AgentIdentityRef
     policy_version_ref: PolicyVersionRef
     status: ExecutionStatus
     wait_reason: WaitReason | None

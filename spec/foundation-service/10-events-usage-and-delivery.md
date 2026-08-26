@@ -86,14 +86,14 @@ Streaming routes finish authentication and initial database reads before constru
 
 The Harness owns native `RunUsage`, the run-local attribution ledger, immutable `UsageRecord` values, and bounded `usage_report` delivery. Foundation ingests immutable `UsageRecord` values idempotently by `record_id` and adds durable attribution:
 
-- Workspace and optional Session, Thread, and Turn;
+- Organization, Workspace, and optional Session, Thread, and Turn;
 - Execution and originating ExecutionAttempt;
 - Harness Run and Agent revision;
 - model/provider identity, measures, and pricing coverage from the record.
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Foundation deduplicates all paths by the immutable `record_id` and rejects conflicting content for the same identity.
 
-Terminal `RunUsage` is an aggregate process-local snapshot used for limits and summary display. Foundation does not sum it with UsageRecords, inline-child snapshots, or later resumed-run snapshots. Durable attribution, pricing, budgets, and billing operate from immutable records.
+Terminal `RunUsage` is an aggregate process-local snapshot used for operational limits and summary display. Foundation does not sum it with UsageRecords, inline-child snapshots, or later resumed-run snapshots. Durable attribution and aggregate reads operate from immutable records. An optional pricing or billing capability consumes those records without changing their identity or content.
 
 ### Late Usage from a Stale Attempt
 
@@ -107,9 +107,9 @@ Late ingestion:
 - remains idempotent by `record_id`;
 - can be supplemented by separately identified provider evidence during reconciliation.
 
-This exception prevents lease loss from silently dropping billable usage without weakening lifecycle fencing.
+This exception prevents lease loss from silently dropping attributable usage without weakening lifecycle fencing.
 
-Raw usage, aggregation, pricing revision, budget enforcement, invoice generation, and payment remain separate facts. Changing current prices never rewrites retained raw usage or the pricing revision already applied.
+Raw usage and aggregation are separate facts. Optional pricing, budget, invoice, and payment capabilities remain external to OSS Foundation IAM and never rewrite retained raw usage.
 
 ## Artifacts and Large Content
 
@@ -136,7 +136,7 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, Item, 
 | Stale Attempt supplies valid late usage            | Usage is attributed and retained without lifecycle mutation                |
 | Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                     |
 | Object upload and metadata commit diverge          | Cleanup or explicit artifact read failure preserves the selected authority |
-| Pricing unavailable                                | Raw usage remains durable; pricing and billing wait independently          |
+| Optional pricing capability unavailable            | Raw usage remains durable and ordinary Foundation operation is unaffected  |
 
 ## Invariants
 

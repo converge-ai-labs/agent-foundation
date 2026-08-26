@@ -8,7 +8,7 @@ An Execution selects exact immutable inputs. It never resolves `latest` after du
 
 ## Authoring Model
 
-An `Agent` is the stable Workspace resource used for collaboration, policy, invocation, and workload identity. Agent metadata and publication pointers are versioned mutable product data. An `AgentPreset` is a reusable typed authoring input; it is not an executable object and does not override an Agent revision after materialization.
+An `Agent` is the stable Workspace resource used for collaboration, policy, and invocation. It is an authorization target, not an IAM Principal. Agent metadata and publication pointers are versioned mutable product data. An `AgentPreset` is a reusable typed authoring input; it is not an executable object and does not override an Agent revision after materialization.
 
 An `AgentRevision` is an immutable executable snapshot associated with one Agent. It contains only Foundation-owned serializable data and exact references, including:
 
@@ -18,7 +18,6 @@ An `AgentRevision` is an immutable executable snapshot associated with one Agent
 - direct trusted adapter keys and bounded adapter configuration;
 - optional Harness plugin configuration under the Harness-owned document contract;
 - exact dependency, package, artifact, and schema compatibility locks;
-- the stable Agent workload identity reference when the Agent uses one.
 
 A `ModelIntegration` is a stable Workspace or Organization resource describing a trusted model-provider integration. A `ModelIntegrationRevision` is immutable and selects exact provider type, routing configuration, supported model surface, compatibility facts, and non-secret credential references. Hosted profiles that use logical model aliases require an explicit `ModelRunBinding` and fail closed rather than delegating to ambient native inference.
 
@@ -40,7 +39,7 @@ flowchart LR
     Adapter --> Definition[Process-local AgentDefinition]
 ```
 
-Materialization validates resource scope, references, schemas, permission to bind each resource, dependency compatibility, and all required locks before committing the immutable revision. The revision records identity and compatibility, not live authority. Current credentials, membership, run grants, provider availability, and Environment bindings are resolved freshly for every `ExecutionAttempt` and Harness Run.
+Materialization validates resource scope, references, schemas, permission to bind each resource, dependency compatibility, and all required locks before committing the immutable revision. The revision records identity and compatibility, not live authority. Current credentials, RoleBindings, run grants, provider availability, and Environment bindings are resolved freshly for every `ExecutionAttempt` and Harness Run.
 
 ## Dependency Locks
 

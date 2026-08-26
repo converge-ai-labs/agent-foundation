@@ -23,7 +23,7 @@ The Harness owns attachment-to-binding adaptation, run-scoped topology, provider
 | Fresh single-use process-local attachment                          | `EnvironmentRuntimeAttachment`            |
 | Attachment-to-binding adaptation and run topology                  | Harness                                   |
 | File, shell, process, output, and port operations                  | Harness over Direct Local or EIP          |
-| Product membership and browser authentication                      | Foundation or product gateway, never envd |
+| Product RoleBindings and browser authentication                    | Foundation or product gateway, never envd |
 
 Provider discovery and schema validity establish availability only. They do not authorize a Workspace, Agent, Execution, or Attempt to select that provider.
 
@@ -34,6 +34,7 @@ Foundation persists only Host-owned product and envelope facts:
 ```python
 class EnvironmentResource:
     id: EnvironmentResourceId
+    organization_id: OrganizationId
     workspace_id: WorkspaceId
     version: int
     provider_spec_revision_ref: EnvironmentProviderSpecRevisionRef
@@ -103,7 +104,7 @@ Foundation commits only the transition supported by that evidence. It never crea
 
 For Docker, E2B, and compatible EIP-backed providers, the Provider package owns envd bootstrap or attachment construction and the low-level client owns EIP session behavior. Envd authenticates the exact EIP peer and enforces daemon generation, methods, filesystem, process, network, and resource limits.
 
-Envd does not query Organization membership, Workspace roles, Agent revisions, Execution state, or Foundation tables. EIP operation IDs and receipts are daemon-observed evidence; they do not prove Foundation checkpoint or Execution completion. Browser clients never receive envd attachment credentials or raw transfer handles.
+Envd does not query Organization or Workspace RoleBindings, Agent revisions, Execution state, or Foundation tables. EIP operation IDs and receipts are daemon-observed evidence; they do not prove Foundation checkpoint or Execution completion. Browser clients never receive envd attachment credentials or raw transfer handles.
 
 ## Failure Semantics
 
@@ -130,5 +131,5 @@ Foundation versions its Environment product resource and provider-spec revision 
 4. Every effectful management call carries one durable operation identity suitable for exact reconciliation.
 5. Runtime attachments are fresh, single-use, process-local, and never persisted.
 6. Effective topology is an Attempt-scoped Host observation, not provider lifecycle authority.
-7. Envd enforces EIP operations without querying product membership.
+7. Envd enforces EIP operations without querying product RoleBindings.
 8. Provider effect, Foundation state commit, Harness publication, Execution completion, and teardown are independent facts.
