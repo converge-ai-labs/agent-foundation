@@ -2,13 +2,13 @@
 
 ## Design Position
 
-Foundation exposes one resource-oriented `/api/v1` management contract for IAM, Agent authoring, interaction, durable execution, deferred work, Environment resources, events, usage, and artifacts. The API follows [Platform API Conventions](../api-conventions.md), [Platform Data Conventions](../data-conventions.md), and the [Identity and Access Management contract](04-identity-and-access-management.md); this document owns Foundation resource routes, command boundaries, read models, and cross-resource mutation behavior.
+Foundation exposes one resource-oriented `/api/v1` management contract for IAM, Agent authoring, interaction, durable execution, deferred work, Environment resources, events, and raw usage. The API follows [Platform API Conventions](../api-conventions.md), [Platform Data Conventions](../data-conventions.md), and the [Identity and Access Management contract](04-identity-and-access-management.md); this document owns Foundation resource routes, command boundaries, read models, and cross-resource mutation behavior.
 
 The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and external webhook payloads retain their own contracts.
 
 ## Scope and Authorization
 
-Every protected route authenticates one Principal and authorizes an explicit action against the selected Organization, Workspace, or resource. Login, invitation acceptance, bootstrap, and password reset authenticate their exact credentials before creating a Principal session. Identifiers, parent paths, cursors, Item references, Attempt IDs, artifact URLs, and idempotency keys grant no authority.
+Every protected route authenticates one Principal and authorizes an explicit action against the selected Organization, Workspace, or resource. Login, invitation acceptance, bootstrap, and password reset authenticate their exact credentials before creating a Principal session. Identifiers, parent paths, cursors, Item references, Attempt IDs, content delivery URLs, and idempotency keys grant no authority.
 
 Workspace collections return only resources visible under current policy. A concealed resource can return `404`. Mutation authorization is re-evaluated at acceptance even when a caller can read the current resource. Execution workers use internal application capabilities rather than calling public HTTP routes to mutate lifecycle state.
 
@@ -29,9 +29,8 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Service Accounts          | `/workspaces/{workspace_id}/service-accounts`, `/service-accounts/{service_account_id}`                                                     | Workspace-owned non-human Principal lifecycle                                             |
 | Personal API keys         | `/workspaces/{workspace_id}/personal-api-keys`, `/api-keys/{api_key_id}`                                                                    | Current User's Workspace-bound keys; safe Admin metadata projection                       |
 | Service Account API keys  | `/service-accounts/{service_account_id}/api-keys`, `/api-keys/{api_key_id}`                                                                 | Admin-managed Workspace-bound keys                                                        |
-| Presets and Agents        | `/workspaces/{workspace_id}/presets`, `/workspaces/{workspace_id}/agents`                                                                   | Mutable authoring heads and immutable selected revisions                                  |
+| Agents                    | `/workspaces/{workspace_id}/agents`                                                                                                         | Mutable collaborative authoring heads and selected revisions                              |
 | Agent revisions           | `/agents/{agent_id}/revisions`                                                                                                              | Immutable create/read collection; no in-place revision mutation                           |
-| Model integrations        | `/workspaces/{workspace_id}/model-integrations`                                                                                             | Mutable heads with immutable integration revisions                                        |
 | Sessions                  | `/workspaces/{workspace_id}/sessions`                                                                                                       | Hosted interaction tree and product/presentation scope                                    |
 | Threads                   | `/sessions/{session_id}/threads`                                                                                                            | Independently advancing histories within one Session                                      |
 | Turns                     | `/threads/{thread_id}/turns`                                                                                                                | Host-accepted advancement and Item scope                                                  |
@@ -43,8 +42,7 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Secrets                   | Routes owned by [Secret Management](01-secret-management.md)                                                                                | Workspace and User ownership with metadata-only reads and write-only values               |
 | Security audit            | `/organizations/{organization_id}/security-audit-events`, `/workspaces/{workspace_id}/security-audit-events`, `/users/me/security-activity` | IAM-owned bounded security projections                                                    |
 | Lifecycle events          | `/workspaces/{workspace_id}/events` and resource-scoped event collections                                                                   | Durable replay, not ordinary pagination                                                   |
-| Usage                     | `/workspaces/{workspace_id}/usage-records` and aggregate reads                                                                              | Immutable records and explicitly derived views                                            |
-| Artifacts                 | `/workspaces/{workspace_id}/artifacts`                                                                                                      | Metadata, authorization, retention, and signed delivery commands                          |
+| Usage records             | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                            |
 
 OSS registers exactly the routes for its supported capabilities. An extension can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
 
@@ -91,7 +89,6 @@ Commands are subordinate to the resource whose state they mutate:
 | Supply structured user input     | `POST /pending-actions/{pending_action_id}/respond`  | Schema-valid bounded response and idempotency key                              |
 | Resume/pause/destroy Environment | `POST /environments/{environment_id}/{action}`       | Expected Environment version and idempotency key                               |
 | Reconcile Environment operation  | `POST /environments/{environment_id}/reconcile`      | Targets the exact unresolved operation identity                                |
-| Create artifact upload           | `POST /artifacts/uploads`                            | Bounded upload intent; completion is a separate command                        |
 
 A command returns the mutated resource or a durable receipt. `202` means accepted, not completed. Unknown outcome after possible dispatch is reconciled by repeating the same idempotency key or reading the returned resource; clients never generate a new key merely because acknowledgement was lost.
 
@@ -103,10 +100,9 @@ Public resources expose stable product fields and safe references, not ORM objec
 - Execution exposes lifecycle, wait reason, selected revisions, interaction correlation, parent/retry references, cancellation intent, and timestamps;
 - ExecutionAttempt exposes generation, worker-safe status, dispatch phase, lease timing, Harness correlation, and bounded failure evidence, but no credential or process-private value;
 - Environment exposes desired spec revision, desired phase, safe lifecycle status, current operation, and effective observations, but never provider resource-state ciphertext or attachment material;
-- UsageRecord reads preserve immutable identity and attribution, while aggregate endpoints label their derivation window and any optional pricing input they actually applied;
-- Artifact reads expose authorized metadata and issue short-lived delivery URLs through an explicit command.
+- UsageRecord reads preserve immutable identity and attribution.
 
-An Item read never substitutes for lifecycle event replay, and an event read never expands private Item or artifact content without separate authorization.
+An Item read never substitutes for lifecycle event replay, and an event read never expands private Item or object-backed content without separate authorization.
 
 ## Pagination, Filtering, and Replay
 

@@ -25,7 +25,7 @@ flowchart TB
     Deployment[Foundation deployment]
     Organization[Organization]
     Workspace[Workspace]
-    Resource[Agent, Secret, Session, Thread, Turn, Execution, Environment, Artifact, or other resource]
+    Resource[Agent, Secret, Session, Thread, Turn, Execution, Environment, or other resource]
 
     Deployment --> Organization --> Workspace --> Resource
 ```

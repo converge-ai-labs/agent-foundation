@@ -4,7 +4,7 @@
 
 This directory defines `foundation-service`, the optional durable Host that embeds `agent-harness`. It is a modular service with independently selectable control and execution process roles, not another Agent loop and not a collection of independently versioned microservices.
 
-Foundation owns managed Secrets, resource authorization, serializable Agent authoring resources, immutable revisions and dependency locks, durable interaction records, Executions and ExecutionAttempts, scheduling, pending actions, Environment management, lifecycle events, usage records, artifacts, and the public management API.
+Foundation owns managed Secrets, resource authorization, collaborative Agent authoring, immutable Agent revisions and reconstruction locks, durable interaction records, Executions and ExecutionAttempts, scheduling, pending actions, Environment management, lifecycle events, raw usage records, and the public management API.
 
 It does not redefine the code-first Harness `AgentDefinition`, Pydantic Agent loop, Harness result and state semantics, Agent Stream Protocol conversion, Environment provider lifecycle types, EIP, or provider-native state. Platform-owned data and APIs follow [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md).
 
@@ -22,20 +22,20 @@ One Turn can span several process-local Harness Runs when approval, deferred inp
 
 ## Specification Catalog
 
-| Document                                                                                      | Owning contract                                                                                                               |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| [00 Overview](00-overview.md)                                                                 | Service shape, process roles, end-to-end flow, subsystem boundaries, dependency direction, and completion boundaries          |
-| [01 Secret Management](01-secret-management.md)                                               | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls     |
-| [02 Storage](02-storage.md)                                                                   | Relational, Redis-compatible, object, and mounted-filesystem capabilities and deployment-profile equivalence                  |
-| [03 Relational Schema](03-relational-schema.md)                                               | Service-wide relational metadata, migration authority, compatibility, application, and failure semantics                      |
-| [04 Identity and Access Management](04-identity-and-access-management.md)                     | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit    |
-| [05 Agent Revisions and Reconstruction](05-agent-revisions-and-reconstruction.md)             | Agent Presets, immutable revisions, model integrations, dependency locks, and trusted process-local reconstruction            |
-| [06 Interactions, Executions, and Checkpoints](06-interactions-executions-and-checkpoints.md) | Interaction-to-runtime mapping, Execution state, Attempt fencing, dispatch phase, continuation, idempotency, and cancellation |
-| [07 Scheduling, Workers, and Recovery](07-scheduling-workers-and-recovery.md)                 | Eligibility, queues, claims, leases, stale-worker rejection, dispatch uncertainty, replacement, retry, and shutdown           |
-| [08 Deferred Actions and Children](08-deferred-actions-and-children.md)                       | Approval, client tools, user input, suspension, asynchronous child Executions, delivery, and cancellation                     |
-| [09 Environment Management](09-environment-management.md)                                     | Host use of canonical provider specifications, resource state, operations, attachments, reconciliation, and envd boundary     |
-| [10 Events, Usage, and Delivery](10-events-usage-and-delivery.md)                             | Harness observation, AG-UI and Item projection, durable lifecycle events, outbox, usage ingestion, artifacts, and telemetry   |
-| [11 Management API](11-management-api.md)                                                     | Public resource routes, interactive and standalone submission, commands, read models, replay, concurrency, and compatibility  |
+| Document                                                                                      | Owning contract                                                                                                                 |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| [00 Overview](00-overview.md)                                                                 | Service shape, process roles, end-to-end flow, subsystem boundaries, dependency direction, and completion boundaries            |
+| [01 Secret Management](01-secret-management.md)                                               | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls       |
+| [02 Storage](02-storage.md)                                                                   | Relational, Redis-compatible, object, and mounted-filesystem capabilities and deployment-profile equivalence                    |
+| [03 Relational Schema](03-relational-schema.md)                                               | Service-wide relational metadata, migration authority, compatibility, application, and failure semantics                        |
+| [04 Identity and Access Management](04-identity-and-access-management.md)                     | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit      |
+| [05 Agent Revisions and Reconstruction](05-agent-revisions-and-reconstruction.md)             | Agents, immutable executable revisions, reconstruction locks, and trusted process-local reconstruction                          |
+| [06 Interactions, Executions, and Checkpoints](06-interactions-executions-and-checkpoints.md) | Interaction-to-runtime mapping, Execution state, Attempt fencing, dispatch phase, continuation, idempotency, and cancellation   |
+| [07 Scheduling, Workers, and Recovery](07-scheduling-workers-and-recovery.md)                 | Eligibility, queues, claims, leases, stale-worker rejection, dispatch uncertainty, replacement, retry, and shutdown             |
+| [08 Deferred Actions and Children](08-deferred-actions-and-children.md)                       | Approval, client tools, user input, suspension, asynchronous child Executions, delivery, and cancellation                       |
+| [09 Environment Management](09-environment-management.md)                                     | Host use of canonical provider specifications, resource state, operations, attachments, reconciliation, and envd boundary       |
+| [10 Events, Usage, and Delivery](10-events-usage-and-delivery.md)                             | Harness observation, AG-UI and Item projection, durable lifecycle events, outbox, usage ingestion, large content, and telemetry |
+| [11 Management API](11-management-api.md)                                                     | Public resource routes, interactive and standalone submission, commands, read models, replay, concurrency, and compatibility    |
 
 Read `00`, `06`, and `07` together before changing the control/execution boundary. Read the shared interaction model before changing Session, Thread, Turn, or Item semantics. Read the Environment Provider and Agent Stream Protocol catalogs before adding provider or event adapters.
 

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation owns durable lifecycle events, optional retained interaction Items, delivery envelopes, usage ingestion, artifacts, and replay without turning transport or telemetry into execution authority. Authoritative state transitions and their outbox intents commit together; publishers and subscribers can retry independently.
+Foundation owns durable lifecycle events, optional retained interaction Items, delivery envelopes, raw usage ingestion, and replay without turning transport or telemetry into execution authority. Authoritative state transitions and their outbox intents commit together; publishers and subscribers can retry independently.
 
 Harness observations follow the accepted Agent Stream Protocol path. Foundation consumes `HarnessAguiObserver` output and does not implement another Harness-to-AG-UI mapping. A delivered AG-UI event can become a retained interaction projection only through an explicit Host commit; it never becomes a lifecycle fact merely because a subscriber received it.
 
@@ -16,7 +16,7 @@ Harness observations follow the accepted Agent Stream Protocol path. Foundation 
 | Lifecycle event      | Fact that a Foundation resource transition committed            | Durable audit and publication fact                     |
 | Delivery envelope    | Multiplexed transport record identifying one source class       | Delivery and replay only                               |
 
-Messages, reasoning units permitted by visibility policy, tool calls, commands, file changes, approvals, child activity, plans, errors, and artifacts can become Items. Heartbeats, token fragments, provider-native frames, credentials, private state, arbitrary logs, and unbounded payloads do not automatically become Items.
+Messages, reasoning units permitted by visibility policy, tool calls, commands, file changes, approvals, child activity, plans, errors, and references to bounded object-backed content can become Items. Heartbeats, token fragments, provider-native frames, credentials, private state, arbitrary logs, and unbounded payloads do not automatically become Items.
 
 ## Harness Observation Path
 
@@ -54,7 +54,9 @@ flowchart LR
     Publisher --> Analytics[Authorized analytical sink]
 ```
 
-Lifecycle event ordering is monotonic within its owning resource stream, not a global total order. Duplicate publication preserves one event identity. Event content references Items and artifacts rather than copying their large or differently retained payloads.
+Lifecycle event ordering is monotonic within its owning resource stream, not a global total order. Duplicate publication preserves one event identity. Event content references owning resources and Items rather than copying large or differently retained payloads.
+
+For example, when an Execution completes, its terminal state, lifecycle event, and outbox intent commit in one transaction. If the publisher delivers the event and crashes before recording delivery progress, it retries the same event identity. The subscriber may observe a duplicate, but it cannot miss the terminal event because state committed without publication intent.
 
 ## Delivery Envelope and Replay
 
@@ -66,7 +68,6 @@ class FoundationDeliveryEnvelope:
     source_kind: Literal[
         "lifecycle_event",
         "retained_item",
-        "retained_agui_projection",
         "live_agui_observation",
     ]
     source_id: str
@@ -78,7 +79,9 @@ class FoundationDeliveryEnvelope:
     payload: BoundedSafePayload
 ```
 
-The schema is conceptual. A cursor is opaque, scoped to authorization, filters, and retention generation, and grants no authority. Reconnect replays retained sources and reports an explicit gap when history expired. It never reconstructs missing Harness continuation from Items, AG-UI data, or lifecycle events.
+The schema is conceptual. A cursor is opaque, scoped to authorization, filters, and retention generation, and grants no authority. Reconnect replays retained lifecycle events and Items and reports an explicit gap when history expired. Live AG-UI observations are not silently promoted into another retained record class. It never reconstructs missing Harness continuation from Items, AG-UI data, or lifecycle events.
+
+For example, a Worker can stream token observations while a model response is in progress and later commit one final message Item. A client that reconnects after the commit replays that Item and applicable lifecycle events, not the earlier token fragments. If the client disconnected before any Item committed, Foundation does not invent a retained AG-UI projection to make the fragment stream appear durable.
 
 Streaming routes finish authentication and initial database reads before constructing a response. They use fresh short sessions for later reads and release subscriptions in `finally`. Disconnect never cancels an Execution.
 
@@ -89,11 +92,11 @@ The Harness owns native `RunUsage`, the run-local attribution ledger, immutable 
 - Organization, Workspace, and optional Session, Thread, and Turn;
 - Execution and originating ExecutionAttempt;
 - Harness Run and Agent revision;
-- model/provider identity, measures, and pricing coverage from the record.
+- model/provider identity and measures from the record.
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Foundation deduplicates all paths by the immutable `record_id` and rejects conflicting content for the same identity.
 
-Terminal `RunUsage` is an aggregate process-local snapshot used for operational limits and summary display. Foundation does not sum it with UsageRecords, inline-child snapshots, or later resumed-run snapshots. Durable attribution and aggregate reads operate from immutable records. An optional pricing or billing capability consumes those records without changing their identity or content.
+Terminal `RunUsage` is an aggregate process-local snapshot used for operational limits and summary display. Foundation does not sum it with UsageRecords, inline-child snapshots, or later resumed-run snapshots. Durable attribution operates from immutable records. An optional external cost capability can consume those records without changing their identity or content.
 
 ### Late Usage from a Stale Attempt
 
@@ -109,13 +112,11 @@ Late ingestion:
 
 This exception prevents lease loss from silently dropping attributable usage without weakening lifecycle fencing.
 
-Raw usage and aggregation are separate facts. Optional pricing, budget, invoice, and payment capabilities remain external to OSS Foundation IAM and never rewrite retained raw usage.
+## Large Content
 
-## Artifacts and Large Content
+Large model, tool, command, file, or child outputs use object storage only after bounded staging, digest verification, authorization through the owning resource, and database selection. They remain content of that Item or other owning record and have no independent product identity. Object keys, file paths, digests, and signed URLs grant no product authority by possession.
 
-Large model, tool, command, file, or child outputs use object storage only after bounded staging, digest verification, metadata authorization, and database selection. Object keys, file paths, digests, and signed URLs grant no product authority by possession.
-
-Metadata selection and object publication are separate failure points. Unselected uploads are cleanup candidates; selected missing objects fail explicitly. Display data and artifacts never substitute for a checkpoint.
+For example, a command result that exceeds the inline Item limit is staged as an object and selected by the same transaction that commits the Item reference. An unselected upload is a cleanup candidate. A selected missing object produces an explicit content-read failure; Foundation does not reinterpret it as a missing Item or use it as continuation state.
 
 ## Observability
 
@@ -125,18 +126,18 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, Item, 
 
 ## Failure Semantics
 
-| Failure                                            | Outcome                                                                    |
-| -------------------------------------------------- | -------------------------------------------------------------------------- |
-| State transaction rolls back                       | Associated lifecycle event, Item, and outbox intent do not exist           |
-| Outbox publisher crashes after delivery            | Same source identity can be delivered again                                |
-| Client disconnects                                 | Execution continues according to durable state                             |
-| Replay range expires                               | Client receives an explicit gap and current authorized state               |
-| Observer or live delivery fails                    | No lifecycle fact is invented; retained sources remain authoritative       |
-| Usage report repeats or overlaps terminal snapshot | `record_id` deduplication prevents double counting                         |
-| Stale Attempt supplies valid late usage            | Usage is attributed and retained without lifecycle mutation                |
-| Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                     |
-| Object upload and metadata commit diverge          | Cleanup or explicit artifact read failure preserves the selected authority |
-| Optional pricing capability unavailable            | Raw usage remains durable and ordinary Foundation operation is unaffected  |
+| Failure                                            | Outcome                                                                       |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| State transaction rolls back                       | Associated lifecycle event, Item, and outbox intent do not exist              |
+| Outbox publisher crashes after delivery            | Same source identity can be delivered again                                   |
+| Client disconnects                                 | Execution continues according to durable state                                |
+| Replay range expires                               | Client receives an explicit gap and current authorized state                  |
+| Observer or live delivery fails                    | No lifecycle fact is invented; retained sources remain authoritative          |
+| Usage report repeats or overlaps terminal snapshot | `record_id` deduplication prevents double counting                            |
+| Stale Attempt supplies valid late usage            | Usage is attributed and retained without lifecycle mutation                   |
+| Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                        |
+| Object upload and owning-record commit diverge     | Cleanup or an explicit content-read failure preserves owning-record authority |
+| Optional cost capability unavailable               | Raw usage remains durable and ordinary Foundation operation is unaffected     |
 
 ## Invariants
 
@@ -147,5 +148,5 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, Item, 
 5. Items, replay, AG-UI data, and lifecycle events never become Harness continuation state.
 6. Usage is ingested idempotently by immutable UsageRecord identity, not report or aggregate identity.
 7. Late stale-Attempt usage cannot change lifecycle state.
-8. Artifact references and signed delivery URLs grant no product authority.
+8. Object references and signed delivery URLs grant no product authority.
 9. Telemetry observes the system and never acts as durable lifecycle authority.

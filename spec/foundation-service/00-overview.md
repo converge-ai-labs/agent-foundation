@@ -17,7 +17,7 @@ flowchart LR
     subgraph Control[Control role]
         API[Management and interaction API]
         Auth[Resource authorization]
-        Authoring[Agent and integration authoring]
+        Authoring[Agent authoring]
         Interaction[Session, Thread, Turn, and Item]
         Lifecycle[Execution lifecycle]
         Scheduler[Scheduler and reconcilers]
@@ -66,7 +66,7 @@ PostgreSQL is the distributed authority for accepted resources, interaction stat
 | ------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
 | Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)  | Foundation persists and authorizes its hosted representations       |
 | Organization, Workspace, identity, and resource authorization | [Foundation IAM](04-identity-and-access-management.md) | Applies to every public and internal product operation              |
-| Durable Agent and integration revisions                       | Foundation control plane                               | Selects exact serializable inputs and dependency locks              |
+| Durable Agent revisions                                       | Foundation control plane                               | Selects exact serializable inputs and reconstruction locks          |
 | Execution and ExecutionAttempt                                | Foundation                                             | Owns durable scheduling, fencing, recovery, and completion          |
 | Process-local Agent composition and loop                      | Harness                                                | Built by a trusted Foundation reconstruction adapter                |
 | Provider specification and resource operations                | `converge-agent-environment-provider`                  | Foundation invokes Managers and persists selected provider state    |
