@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -120,6 +121,7 @@ class _FakeEntryPoint:
 
 def test_builtin_catalog_resolves_direct_local_without_metadata_scan(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
         "converge_agent_environment_provider.factories._entry_points",
@@ -134,7 +136,7 @@ def test_builtin_catalog_resolves_direct_local_without_metadata_scan(
             schema_version="1",
             parameters={
                 "environment_id": "local-1",
-                "root": {"path": "/tmp"},
+                "root": {"path": str(tmp_path)},
             },
         ),
         runtime=DirectLocalProviderRuntime(),
