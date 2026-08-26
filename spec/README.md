@@ -30,6 +30,7 @@ flowchart TB
     subgraph Service[foundation-service]
         Control[Control plane]
         Definitions[Host-owned definition revisions]
+        Connectors[Connectors, Connections, and Triggers]
         Lifecycle[Durable Executions and ExecutionAttempts]
         Worker[Execution worker]
         Reconstruct[Trusted reconstruction adapters]
@@ -84,8 +85,9 @@ flowchart TB
     AppService --> Sessions
     AppService --> Definition
     AppService --> StreamProtocol --> WebUI & TUI
-    Control --> Definitions --> Lifecycle --> Worker
-    Definitions --> Reconstruct --> Definition
+    Control --> Definitions & Connectors
+    Definitions & Connectors --> Lifecycle --> Worker
+    Definitions & Connectors --> Reconstruct --> Definition
     Definition --> Builder --> Plugins
     Worker --> Bindings
     Identity --> Bindings
@@ -183,8 +185,8 @@ Foundation Service adds durability without changing Harness execution semantics:
 
 ```mermaid
 flowchart LR
-    Ingress[API or webhook] --> Control[Control plane]
-    Control --> Durable[Definitions and Executions]
+    Ingress[API, schedule, or verified Connector event] --> Control[Control plane]
+    Control --> Durable[Definitions, Triggers, and Executions]
     Durable --> Queue[Scheduling]
     Queue --> Worker[Execution worker]
     Worker --> Reconstruct[Trusted adapters]
@@ -193,7 +195,7 @@ flowchart LR
     Candidate --> Durable
 ```
 
-Foundation definitions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. A worker verifies exact dependency/artifact locks, reconstructs native Pydantic/Harness objects, resolves operator-approved Environment providers, materializes current desired topology from encrypted launch-envelope entries, durably advances an unrepresented replacement resource's binding/topology incarnation revisions, and supplies fresh `RunBindings` to the same public API as an embedded application. The worker retains the paired Environment controller only for that active logical run.
+Foundation definitions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. A worker verifies exact dependency/artifact locks, reconstructs native Pydantic/Harness objects, resolves current authorized Connections and operator-approved Environment providers, materializes current desired topology from encrypted launch-envelope entries, durably advances an unrepresented replacement resource's binding/topology incarnation revisions, and supplies fresh `RunBindings` to the same public API as an embedded application. The worker retains the paired Environment controller only for that active logical run.
 
 One durable Foundation `ExecutionAttempt` starts one logical Harness Run. Internal Harness `ModelAttempt` values are not durable `ExecutionAttempt` generations. Authorized desired Environment topology can advance during that Run and is reconciled through the retained controller with separate effective publication. Worker or lease loss creates a new fenced `ExecutionAttempt`, fresh provider bindings, and a fresh Harness Run from authoritative selected Host and Harness state.
 
@@ -226,6 +228,7 @@ The platform distinguishes:
 - Host-owned immutable definition revision and dependency locks;
 - process-local Harness Run and `ModelAttempt`;
 - Host durable `Execution` and `ExecutionAttempt`;
+- Workspace Connector, immutable Connector revision, authorized Connection, and Trigger identities;
 - Environment identity and generation;
 - credential binding and invocation grant.
 
@@ -255,7 +258,7 @@ flowchart LR
     Agent --> Provider[Feature provider]
 ```
 
-Installed plugins and native objects are trusted in-process code. Harness plugin, Environment provider, and Environment run-extension package presence is only availability; an operator explicitly enables or selects the relevant key before import/use. Factory-produced and directly constructed objects enter the same concrete composition path for their extension kind. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or package-installation system.
+Installed plugins and native objects are trusted in-process code. Harness plugin, Connector Provider, Environment provider, and Environment run-extension package presence is only availability; an operator explicitly enables or selects the relevant key and exact artifact before import/use. Factory-produced and directly constructed objects enter the same concrete composition path for their extension kind. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or package-installation system.
 
 ## Observability and Cost
 
@@ -317,3 +320,4 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn o
 | Foundation interactions and execution | [foundation-service/06-interactions-executions-and-checkpoints.md](foundation-service/06-interactions-executions-and-checkpoints.md)                 |
 | Foundation scheduling and recovery    | [foundation-service/07-scheduling-workers-and-recovery.md](foundation-service/07-scheduling-workers-and-recovery.md)                                 |
 | Foundation public API                 | [foundation-service/11-management-api.md](foundation-service/11-management-api.md)                                                                   |
+| Foundation Connectors and Triggers    | [foundation-service/12-connectors-connections-and-triggers.md](foundation-service/12-connectors-connections-and-triggers.md)                         |

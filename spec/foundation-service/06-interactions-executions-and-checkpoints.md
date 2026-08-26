@@ -54,6 +54,8 @@ class Execution:
     selected_checkpoint_id: CheckpointId | None
     parent_execution_id: ExecutionId | None
     retry_of_execution_id: ExecutionId | None
+    trigger_source: TriggerExecutionSource | None
+    connector_selections: tuple[ResolvedConnectorSelection, ...]
     current_attempt_generation: int
     cancel_requested_at: datetime | None
     created_at: datetime
@@ -71,9 +73,21 @@ class ExecutionAttempt:
     lease_expires_at: datetime
     started_at: datetime
     finished_at: datetime | None
+
+
+class TriggerExecutionSource:
+    trigger_id: TriggerId
+    trigger_version: int
+    occurrence_key: str
+    source_type: Literal["schedule", "connector_event"]
+
+
+class ResolvedConnectorSelection:
+    connector_revision_id: ConnectorRevisionId
+    connection_id: ConnectionId | None
 ```
 
-At most one live Attempt generation owns an Execution. Generation increases monotonically and fences every worker-originated lifecycle mutation. Attempt IDs and generations are implementation-facing observability and management values, not bearer authority.
+At most one live Attempt generation owns an Execution. Generation increases monotonically and fences every worker-originated lifecycle mutation. `trigger_source` exists only for an Execution accepted by the [Trigger ingress contract](12-connectors-connections-and-triggers.md#trigger-input-and-occurrence-acceptance); public callers cannot assert it. Connector selections record the exact Connection or explicit connectionless result accepted for each Agent declaration and grant no authority. Attempt IDs and generations are implementation-facing observability and management values, not bearer authority.
 
 ## Execution Lifecycle
 
@@ -117,7 +131,7 @@ Automatic requeue after lease loss is permitted only when durable state proves t
 
 ## Attempt and Harness Mapping
 
-One ExecutionAttempt starts at most one logical Harness Run. Before entry, the worker resolves exact revisions, creates fresh run Capabilities, acquires fresh Environment attachments, and builds fresh `RunBindings`. A later Attempt creates a new Harness Run, controller, clients, credentials, and bindings.
+One ExecutionAttempt starts at most one logical Harness Run. Before entry, the worker resolves exact revisions, revalidates accepted Connector selections, creates fresh run Capabilities, acquires fresh Connection credentials and Environment attachments, and builds fresh `RunBindings`. A later Attempt reuses the accepted Connection IDs but creates a new Harness Run, controller, clients, credentials, and bindings.
 
 One Harness Run can contain several internal `ModelAttempt` values under the Harness recovery contract. Provider transport retries and ModelAttempt recovery do not create ExecutionAttempts. Conversely, an ExecutionAttempt never restores a task, socket, database session, controller, live provider resource handle, or Harness Run from another process.
 
@@ -145,7 +159,9 @@ Checkpoint creation alone advances nothing. Selection atomically updates the Exe
 
 Interactive acceptance authenticates and authorizes the caller, validates Session and Thread versions, resolves exact revisions and policy, and applies the caller's `Idempotency-Key`. It commits the Turn, initial user Item, Execution, source checkpoint, lifecycle events, and outbox intents as one logical unit.
 
-Standalone acceptance performs the same checks for its Workspace and declared source state while omitting interaction records. The same principal, scope, key, and canonical request return the original acceptance receipt; reuse with different content conflicts. A lost response after possible acceptance remains unknown until the caller repeats the same key or reads authoritative state.
+Public standalone acceptance performs the same checks for its Workspace and caller-authorized source state while omitting interaction records. It cannot claim Trigger identity or override a Connection selected by the Agent revision and current selection rules. The same principal, scope, key, and canonical request return the original acceptance receipt; reuse with different content conflicts. A lost response after possible acceptance remains unknown until the caller repeats the same key or reads authoritative state.
+
+Trigger acceptance is an internal sibling path. One short transaction reauthorizes the Trigger Principal, resolves the Agent's Connector selections, reserves the source occurrence key, and commits the Trigger source metadata, standalone Execution, lifecycle event, and outbox intent. Duplicate occurrence identity returns the prior accepted Execution and never creates another one.
 
 ## Cancellation and Unknown Outcome
 
@@ -165,3 +181,4 @@ If the worker disappears after `effects_possible`, the Execution remains waiting
 08. Only a complete selected `HarnessState` checkpoint advances Thread continuation.
 09. Terminal records are immutable; retry creates explicit successor records.
 10. Cancellation records intent and never implies rollback of external effects.
+11. Trigger source metadata and accepted Connector selections are immutable Execution facts, not caller overrides or bearer grants.

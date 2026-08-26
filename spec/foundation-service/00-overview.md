@@ -4,7 +4,7 @@
 
 Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control-plane and execution-plane work to separately scalable process roles. It does not split lifecycle ownership across microservices.
 
-The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation additionally owns durable `Execution` and `ExecutionAttempt` resources for scheduling and recovery. Interactive work correlates the two models; standalone webhook, scheduled, or service work can create an Execution without creating a Session or Turn.
+The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation additionally owns durable `Execution` and `ExecutionAttempt` resources for scheduling and recovery. Interactive work correlates the two models; [Triggers](12-connectors-connections-and-triggers.md) accept schedules and verified Connector events as standalone Executions without creating a Session or Turn.
 
 The execution worker embeds the public Harness Python API. It reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness in process. Queue delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
@@ -20,6 +20,7 @@ flowchart LR
         Authoring[Agent and integration authoring]
         Interaction[Session, Thread, Turn, and Item]
         Lifecycle[Execution lifecycle]
+        ConnectorControl[Connector and Trigger control]
         Scheduler[Scheduler and reconcilers]
         Feedback[Deferred feedback]
         Publisher[Outbox publisher]
@@ -35,6 +36,7 @@ flowchart LR
     subgraph WorkerRole[Execution role]
         Worker[Fenced worker]
         Reconstruct[Trusted reconstruction]
+        ConnectorRuntime[Connector Provider adapters]
         Provider[Environment Provider Manager]
         Observer[HarnessAguiObserver]
         Harness[agent-harness]
@@ -44,12 +46,12 @@ flowchart LR
     External[Models, tools, and external clients]
 
     Client --> API --> Auth
-    Auth --> Authoring & Interaction & Lifecycle & Feedback
-    Authoring & Interaction & Lifecycle & Feedback --> Database
+    Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback
+    Authoring & Interaction & Lifecycle & ConnectorControl & Feedback --> Database
     Scheduler --> Database
     Scheduler -. wakeup .-> Coordination -. notification .-> Worker
     Worker --> Database
-    Worker --> Reconstruct --> Harness
+    Worker --> Reconstruct --> ConnectorRuntime --> Harness
     Worker --> Provider --> Harness
     Provider --> Envd
     Harness --> External
@@ -62,18 +64,19 @@ PostgreSQL is the distributed authority for accepted resources, interaction stat
 
 ## Component Boundaries
 
-| Concern                                                       | Owner                                                  | Relationship                                                        |
-| ------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)  | Foundation persists and authorizes its hosted representations       |
-| Organization, Workspace, identity, and resource authorization | [Foundation IAM](04-identity-and-access-management.md) | Applies to every public and internal product operation              |
-| Durable Agent and integration revisions                       | Foundation control plane                               | Selects exact serializable inputs and dependency locks              |
-| Execution and ExecutionAttempt                                | Foundation                                             | Owns durable scheduling, fencing, recovery, and completion          |
-| Process-local Agent composition and loop                      | Harness                                                | Built by a trusted Foundation reconstruction adapter                |
-| Provider specification and resource operations                | `converge-agent-environment-provider`                  | Foundation invokes Managers and persists selected provider state    |
-| Runtime Environment attachment and routing                    | Provider package and Harness                           | Provider supplies a fresh attachment; Harness adapts and enters it  |
-| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                  | Foundation supplies visibility processing, retention, and delivery  |
-| Durable lifecycle events, Items, and usage                    | Foundation                                             | Commits product facts independently from process-local observations |
-| Client-side effects                                           | External client                                        | Foundation authenticates feedback but does not claim the effect     |
+| Concern                                                       | Owner                                                           | Relationship                                                        |
+| ------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)           | Foundation persists and authorizes its hosted representations       |
+| Organization, Workspace, identity, and resource authorization | [Foundation IAM](04-identity-and-access-management.md)          | Applies to every public and internal product operation              |
+| Durable Agent and integration revisions                       | Foundation control plane                                        | Selects exact serializable inputs and dependency locks              |
+| Connector configuration, account authorization, and Triggers  | [Connector contract](12-connectors-connections-and-triggers.md) | Freezes managed tools and accepts unique unattended occurrences     |
+| Execution and ExecutionAttempt                                | Foundation                                                      | Owns durable scheduling, fencing, recovery, and completion          |
+| Process-local Agent composition and loop                      | Harness                                                         | Built by a trusted Foundation reconstruction adapter                |
+| Provider specification and resource operations                | `converge-agent-environment-provider`                           | Foundation invokes Managers and persists selected provider state    |
+| Runtime Environment attachment and routing                    | Provider package and Harness                                    | Provider supplies a fresh attachment; Harness adapts and enters it  |
+| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                           | Foundation supplies visibility processing, retention, and delivery  |
+| Durable lifecycle events, Items, and usage                    | Foundation                                                      | Commits product facts independently from process-local observations |
+| Client-side effects                                           | External client                                                 | Foundation authenticates feedback but does not claim the effect     |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. Optional commercial integrations implement Foundation ports without replacing the common resource authorizer or durable execution kernel.
 
@@ -117,7 +120,7 @@ sequenceDiagram
 
 The same Execution can receive another ExecutionAttempt after suspension or recoverable worker loss. A new Attempt always creates fresh process-local objects and a fresh Harness Run. It does not create another Turn. Retrying a terminal user intent creates another Turn and Execution rather than rewriting the terminal records.
 
-A standalone Execution starts at durable Execution acceptance and follows the same scheduler, Attempt, dispatch, Harness, checkpoint, and completion contracts while omitting interactive Session and Turn references.
+A standalone Execution starts at durable Execution acceptance and follows the same scheduler, Attempt, dispatch, Harness, checkpoint, and completion contracts while omitting interactive Session and Turn references. Trigger acceptance additionally records the exact Trigger version and source occurrence after current authorization and deduplication.
 
 ## Dependency Direction
 
@@ -156,12 +159,13 @@ No later fact follows merely because an earlier fact occurred. In particular, qu
 
 ## Invariants
 
-1. Foundation has one domain and authorization model across `all`, `control`, and `execution` roles.
-2. Session, Thread, Turn, and Item follow the shared platform meanings; Execution and ExecutionAttempt own durable scheduling separately.
-3. PostgreSQL is lifecycle authority; coordination loss changes latency, not accepted work.
-4. One ExecutionAttempt starts at most one logical Harness Run.
-5. Process-local Python values and runtime attachments never become Foundation durable payloads.
-6. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
-7. Every authoritative Attempt publication verifies the current generation and legal transition.
-8. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
-9. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
+01. Foundation has one domain and authorization model across `all`, `control`, and `execution` roles.
+02. Session, Thread, Turn, and Item follow the shared platform meanings; Execution and ExecutionAttempt own durable scheduling separately.
+03. PostgreSQL is lifecycle authority; coordination loss changes latency, not accepted work.
+04. One ExecutionAttempt starts at most one logical Harness Run.
+05. Process-local Python values and runtime attachments never become Foundation durable payloads.
+06. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
+07. Every authoritative Attempt publication verifies the current generation and legal transition.
+08. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
+09. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
+10. Connector event ingress and outbound lifecycle webhook delivery are separate authenticated protocols and completion boundaries.

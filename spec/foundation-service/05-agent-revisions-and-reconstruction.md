@@ -14,7 +14,8 @@ An `AgentRevision` is an immutable executable snapshot associated with one Agent
 
 - logical Agent instructions and typed input/output declarations;
 - selected model-integration revision and model settings;
-- Capability, Tool, Skill, Connector, and Environment declarations under their owning Foundation schemas;
+- Capability, Tool, Skill, and Environment declarations under their owning Foundation schemas;
+- zero or more inline [Agent Connector declarations](12-connectors-connections-and-triggers.md#agent-connector-declarations), each selecting one exact `ConnectorRevision`, an optional pinned `Connection`, and the complete frozen model-visible tool contract;
 - non-secret Secret requirements that bind an exact Workspace-owned Secret reference or declare an invoking-User Secret key under [Secret Management](01-secret-management.md);
 - direct trusted adapter keys and bounded adapter configuration;
 - optional Harness plugin configuration under the Harness-owned document contract;
@@ -22,7 +23,7 @@ An `AgentRevision` is an immutable executable snapshot associated with one Agent
 
 A `ModelIntegration` is a stable Workspace or Organization resource describing a trusted model-provider integration. A `ModelIntegrationRevision` is immutable and selects exact provider type, routing configuration, supported model surface, compatibility facts, and non-secret credential references. Hosted profiles that use logical model aliases require an explicit `ModelRunBinding` and fail closed rather than delegating to ambient native inference.
 
-Secret requirements never contain a Secret value. A Workspace-owned requirement stores the exact Secret resource reference. A User-owned requirement stores only the validated key resolved for the active invoking User; a Service Account cannot satisfy it. Current Secret eligibility, values, credentials, RoleBindings, and run grants are resolved freshly rather than captured in the immutable revision.
+Secret requirements never contain a Secret value. A Workspace-owned requirement stores the exact Secret resource reference. A User-owned requirement stores only the validated key resolved for the active invoking User; a Service Account cannot satisfy it. Connector declarations contain no credential or Provider-private state. Current Secret eligibility, Connection status, values, credentials, RoleBindings, and run grants are resolved freshly rather than captured in the immutable revision.
 
 Changing materialized Agent content, a selected integration revision, or a dependency lock creates another Agent revision. Prior revisions selected by retained Executions remain addressable for their documented retention period.
 
@@ -45,11 +46,11 @@ flowchart LR
     Adapter --> Definition[Process-local AgentDefinition]
 ```
 
-Materialization validates resource scope, references, schemas, permission to bind each resource, Secret requirement form, dependency compatibility, and all required locks before committing the immutable revision. The revision records identity and compatibility, not live authority. Current credentials, RoleBindings, run grants, provider availability, Secret eligibility, and Environment bindings are resolved freshly for every `ExecutionAttempt` and Harness Run.
+Materialization validates resource scope, references, schemas, permission to bind each resource, Secret requirement form, Connector tool discovery snapshot, model-visible name collisions, dependency compatibility, and all required locks before committing the immutable revision. Provider discovery can use an explicitly eligible Connection but never auto-binds it. The client selects Provider tool names; Foundation validates and freezes their full schemas and Harness metadata rather than accepting a caller-authored tool contract. The revision records identity and compatibility, not live authority. Current credentials, Connection eligibility, RoleBindings, run grants, Provider availability, Secret eligibility, and Environment bindings are resolved freshly for every `ExecutionAttempt` and Harness Run.
 
 ## Dependency Locks
 
-A dependency lock identifies every package, external content unit, adapter, or schema whose change could alter reconstruction, Capability behavior, state compatibility, security, or output semantics. It includes exact package or content identities, trusted adapter keys, relevant schema or codec compatibility, and integrity digests when content is externally materialized.
+A dependency lock identifies every package, external content unit, adapter, or schema whose change could alter reconstruction, Capability behavior, state compatibility, security, or output semantics. It includes exact package or content identities, trusted adapter keys, selected Connector Provider artifacts, relevant schema or codec compatibility, and integrity digests when content is externally materialized. `ConnectorRevision.provider_config_version` versions the Provider's configuration schema; it does not replace the exact package or artifact lock stored here.
 
 Package installation or entry-point availability grants no trust. The deployment selects allowed adapter and plugin keys, verifies the exact lock, and imports only those installed targets. A durable row never contains an arbitrary module, class, file path, shell command, or remote code URL for execution.
 
@@ -67,15 +68,15 @@ sequenceDiagram
     Worker->>Store: read Execution, exact AgentRevision, and dependency locks
     Worker->>Worker: verify scope, locks, compatibility, and Attempt generation
     Worker->>Adapter: reconstruct native Agent inputs
-    Adapter-->>Worker: AgentSpec, Model selection, Capabilities, plugins, and policies
-    Worker->>Worker: create fresh Identity, policy, credential, model, and provider attachments
+    Adapter-->>Worker: AgentSpec, Model selection, Capabilities, tools, plugins, and policies
+    Worker->>Worker: resolve exact Connections and create fresh Identity, policy, credentials, model, and provider attachments
     Worker->>Harness: HarnessBuilder with process-local values
     Harness-->>Worker: ExecutableAgent
 ```
 
 Reconstruction is deterministic with respect to the revision and declared locks, while live authority and provider reachability are intentionally fresh. The worker assigns a stable `AgentInstanceRef` to each independently advancing root, child, or fork history. A replacement worker preserves that reference for the same Thread, when one exists, but uses a new `ExecutionAttempt`, transient Harness Run correlation, and fresh bindings.
 
-The worker validates the complete definition before starting model or tool work. It does not partially execute a revision whose output schema, Capability state codec, plugin contract, model integration, Environment provider, or dependency lock is incompatible.
+The worker validates the complete definition before starting model or tool work. It resolves every Connector declaration to exactly one eligible Connection or an explicitly connectionless Provider, verifies the locked Provider artifact and frozen tool contract, and constructs one process-local managed Toolset over the Harness tool boundary. It does not partially execute a revision whose output schema, Capability state codec, plugin contract, Connector Provider, model integration, Environment provider, or dependency lock is incompatible.
 
 ## Continuation Compatibility
 
@@ -85,15 +86,17 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 
 ## Failure Semantics
 
-| Failure                                 | Outcome                                                                     |
-| --------------------------------------- | --------------------------------------------------------------------------- |
-| Missing revision or lock                | Execution fails before Harness construction                                 |
-| Content digest or package lock mismatch | Execution fails closed and records bounded incompatibility evidence         |
-| Unknown adapter or plugin key           | Revision is not reconstructed; no ambient import fallback occurs            |
-| Model binding required but unavailable  | Execution fails before native model inference                               |
-| Credential or policy unavailable        | Fresh binding fails; the immutable revision is not rewritten                |
-| Checkpoint incompatible with revision   | Continuation fails before Harness entry; display history is not substituted |
-| Worker lost during reconstruction       | Lease recovery uses a new generation; no process-local object is restored   |
+| Failure                                         | Outcome                                                                     |
+| ----------------------------------------------- | --------------------------------------------------------------------------- |
+| Missing revision or lock                        | Execution fails before Harness construction                                 |
+| Content digest or package lock mismatch         | Execution fails closed and records bounded incompatibility evidence         |
+| Unknown adapter or plugin key                   | Revision is not reconstructed; no ambient import fallback occurs            |
+| Connector Provider or tool lock mismatch        | Execution fails before Harness construction; no current schema is adopted   |
+| Connection is missing, ambiguous, or ineligible | Execution fails before Harness construction; tools are not silently omitted |
+| Model binding required but unavailable          | Execution fails before native model inference                               |
+| Credential or policy unavailable                | Fresh binding fails; the immutable revision is not rewritten                |
+| Checkpoint incompatible with revision           | Continuation fails before Harness entry; display history is not substituted |
+| Worker lost during reconstruction               | Lease recovery uses a new generation; no process-local object is restored   |
 
 ## Invariants
 
@@ -104,3 +107,4 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 5. Every ExecutionAttempt reconstructs fresh authority and bindings without mutating the selected revision.
 6. Replacement workers preserve stable Thread identity when one exists and change Attempt generation and transient Harness Run correlation.
 7. A retained checkpoint is used only under explicitly compatible Agent and state contracts.
+8. Connector tool contracts and Provider artifacts are frozen by the Agent revision; Connection authority and credentials remain fresh per Attempt.

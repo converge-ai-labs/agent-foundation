@@ -4,7 +4,7 @@
 
 This directory defines `foundation-service`, the optional durable Host that embeds `agent-harness`. It is a modular service with independently selectable control and execution process roles, not another Agent loop and not a collection of independently versioned microservices.
 
-Foundation owns managed Secrets, resource authorization, serializable Agent authoring resources, immutable revisions and dependency locks, durable interaction records, Executions and ExecutionAttempts, scheduling, pending actions, Environment management, lifecycle events, raw usage records, and the public management API.
+Foundation owns managed Secrets, resource authorization, serializable Agent authoring resources, immutable revisions and dependency locks, Connectors, Connections, Triggers, durable interaction records, Executions and ExecutionAttempts, scheduling, pending actions, Environment management, lifecycle events, raw usage records, and the public management API.
 
 It does not redefine the code-first Harness `AgentDefinition`, Pydantic Agent loop, Harness result and state semantics, Agent Stream Protocol conversion, Environment provider lifecycle types, EIP, or provider-native state. Platform-owned data and APIs follow [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md).
 
@@ -36,8 +36,9 @@ One Turn can span several process-local Harness Runs when approval, deferred inp
 | [09 Environment Management](09-environment-management.md)                                     | Host use of canonical provider specifications, resource state, operations, attachments, reconciliation, and envd boundary       |
 | [10 Events, Usage, and Delivery](10-events-usage-and-delivery.md)                             | Harness observation, AG-UI and Item projection, durable lifecycle events, outbox, usage ingestion, large content, and telemetry |
 | [11 Management API](11-management-api.md)                                                     | Public resource routes, interactive and standalone submission, commands, read models, replay, concurrency, and compatibility    |
+| [12 Connectors, Connections, and Triggers](12-connectors-connections-and-triggers.md)         | Provider trust, Connector revisions, account authorization, managed tool projection, and Trigger occurrence acceptance          |
 
-Read `00`, `06`, and `07` together before changing the control/execution boundary. Read the shared interaction model before changing Session, Thread, Turn, or Item semantics. Read the Environment Provider and Agent Stream Protocol catalogs before adding provider or event adapters.
+Read `00`, `06`, and `07` together before changing the control/execution boundary. Read `05` and `12` together before changing Connector-backed Agent tools. Read the shared interaction model before changing Session, Thread, Turn, or Item semantics. Read the Environment Provider and Agent Stream Protocol catalogs before adding provider or event adapters.
 
 ## Implementation Orientation
 
@@ -62,6 +63,8 @@ These roots are boundaries, not a requirement that every capability become a sub
 - PostgreSQL is authoritative for lifecycle and fencing. Redis, queues, and notifications are disposable coordination hints.
 - Foundation records contain only Foundation-owned serializable data. They contain no Python class, plugin instance, native Model, Toolset, Capability, callable, client, credential, provider attachment, or live controller.
 - The worker verifies exact locks and uses trusted installed adapters to reconstruct a process-local Harness `AgentDefinition` and fresh `RunBindings`.
+- Connector Provider package presence grants no trust. Agent revisions freeze tool contracts and exact Provider dependency locks; every Attempt resolves current Connection authority and credentials.
+- Trigger ingress atomically deduplicates one source occurrence into one standalone Execution. It does not bypass Agent, IAM, scheduling, or Execution authority.
 - Foundation consumes the canonical Environment Provider types and `HarnessAguiObserver`; it does not create parallel provider or Harness-event models.
 - A stale Attempt cannot mutate Execution lifecycle, checkpoints, pending work, Items, child delivery, or terminal outcome. A late immutable `UsageRecord` can still be ingested under its original Attempt when record identity and content validate, but it cannot mutate lifecycle.
 - Before any external effect, the worker durably advances from `pre_dispatch` to `effects_possible`. Recovery never treats missing acknowledgement as proof that no effect occurred.

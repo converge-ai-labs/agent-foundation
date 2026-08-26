@@ -40,7 +40,7 @@ A live-only envelope is explicitly labeled as such. If the same semantic content
 
 ## Durable Lifecycle Events and Outbox
 
-Every authoritative Session, Thread, Turn, Execution, ExecutionAttempt, checkpoint, pending action, child relationship, Environment operation, cancellation, or reconciliation transition writes a bounded typed lifecycle event in the same transaction. An outbox entry records publication work for that event.
+Every authoritative Session, Thread, Turn, Execution, ExecutionAttempt, checkpoint, pending action, child relationship, Connector, Connection, Trigger, Environment operation, cancellation, or reconciliation transition writes a bounded typed lifecycle event in the same transaction. An outbox entry records publication work for that event.
 
 ```mermaid
 flowchart LR
@@ -106,6 +106,8 @@ The minimum event families are:
 | Attempt/checkpoint | `execution_attempt.claimed`, `execution_attempt.closed`, `execution_attempt.lost`, `checkpoint.selected`                             | Attempt ID, generation, dispatch phase, bounded outcome code, and selected checkpoint reference        |
 | Deferred work      | `pending_action.opened`, `pending_action.completed`, `pending_action.rejected`, `pending_action.expired`, `pending_action.cancelled` | Pending-action ID, kind, previous/resulting status, and response Item reference; no native envelope    |
 | Children           | `child_execution.accepted`, `child_result.available`, `child_result.selected`                                                        | Relationship, parent, child, target Execution, and selected checkpoint references                      |
+| Connectors         | `connector.created`, `connector.revision_created`, `connection.status_changed`                                                       | Connector, revision, or Connection references, previous/resulting status, and bounded outcome code     |
+| Triggers           | `trigger.created`, `trigger.enabled`, `trigger.disabled`, `trigger.failed`, `trigger.occurrence_accepted`                            | Trigger and Execution references, source kind, resulting status, and safe occurrence identity          |
 | Environment        | `environment_operation.accepted`, `environment_operation.resolved`                                                                   | Environment and operation IDs, action, previous/resulting status, and bounded outcome code             |
 | Reconciliation     | `reconciliation.required`, `reconciliation.resolved`                                                                                 | Affected resource, original operation or Attempt, bounded reason, and resolution code                  |
 
@@ -129,6 +131,8 @@ The control role owns publisher loops. A claim increments `claim_generation`; co
 Publishing to `delivery_stream` atomically creates or selects the retained `FoundationDeliveryEnvelope` under uniqueness of Workspace stream generation, source kind, and source ID. The same transaction allocates its monotonic Workspace sequence. A retry therefore reuses the original delivery ID and sequence instead of appending a second retained envelope for the same source.
 
 For example, when an Execution completes, its terminal state, lifecycle event, and outbox intent commit in one transaction. If the publisher delivers the event and crashes before recording delivery progress, it retries the same event identity. The subscriber may observe a duplicate, but it cannot miss the terminal event because state committed without publication intent.
+
+An inbound Connector event for a [Trigger](12-connectors-connections-and-triggers.md#trigger-input-and-occurrence-acceptance) is not a lifecycle event or outbox delivery. Its Provider-specific endpoint authenticates and normalizes untrusted input, deduplicates the Provider event identity, and can cause a standalone Execution acceptance. A Foundation outbound webhook instead delivers an already committed LifecycleEvent or retained Item through an OutboxRecord. The two directions have separate credentials, schemas, retry state, and completion facts; an inbound acknowledgement never proves outbound publication or Execution completion.
 
 ## Delivery Envelope and Replay
 
@@ -209,7 +213,7 @@ For example, a command result that exceeds the inline Item limit is staged as an
 
 ## Observability
 
-OpenTelemetry traces and metrics correlate safe service role, build, Session, Thread, Turn, Execution, Attempt, Harness Run, and provider identities. They omit credentials, authorization headers, plaintext Secrets, raw prompts, model output, tool payloads, and uploaded content by default.
+OpenTelemetry traces and metrics correlate safe service role, build, Session, Thread, Turn, Execution, Attempt, Harness Run, Connector Provider, Connection, and Trigger identities. They omit credentials, authorization headers, plaintext Secrets, raw prompts, model output, tool payloads, and uploaded content by default.
 
 Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, Item, or usage facts, and its presence cannot prove commitment.
 
@@ -243,3 +247,4 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, Item, 
 08. Object references and signed delivery URLs grant no product authority.
 09. Telemetry observes the system and never acts as durable lifecycle authority.
 10. Retained delivery sequence is Workspace-scoped; live observation sequence is process-local and non-replayable.
+11. Inbound Connector event acceptance and outbound Foundation webhook delivery are separate protocols and durable facts.

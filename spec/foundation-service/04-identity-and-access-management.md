@@ -8,15 +8,16 @@ IAM authorizes a caller to inspect, change, invoke, or administer Foundation res
 
 ## Boundaries
 
-| Concern                                                         | Owner                                        | Relationship                                                                     |
-| --------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------- |
-| Organization, Workspace, User, and Service Account identity     | This document                                | Defines durable identity, ownership, and lifecycle                               |
-| Password, browser session, invitation, reset token, and API key | This document                                | Defines authentication and credential lifecycle                                  |
-| RoleBinding, built-in roles, and product authorization          | This document                                | Defines the only durable product grant model                                     |
-| Managed Secret value protection                                 | [Secret Management](01-secret-management.md) | Uses IAM scope and authorization without treating a Secret as a login credential |
-| Agent revision and execution identity                           | Their owning Foundation documents            | Remain authorization targets and audit subjects, not IAM Principals              |
-| Model-triggered tool and Environment authority                  | Harness run grants and providers             | Narrows an authorized invocation independently from product RBAC                 |
-| OSS, EE, and Cloud capability composition                       | Distribution boundary                        | Adds capabilities without adding edition fields or bypassing common IAM checks   |
+| Concern                                                         | Owner                                                           | Relationship                                                                     |
+| --------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Organization, Workspace, User, and Service Account identity     | This document                                                   | Defines durable identity, ownership, and lifecycle                               |
+| Password, browser session, invitation, reset token, and API key | This document                                                   | Defines authentication and credential lifecycle                                  |
+| RoleBinding, built-in roles, and product authorization          | This document                                                   | Defines the only durable product grant model                                     |
+| Managed Secret value protection                                 | [Secret Management](01-secret-management.md)                    | Uses IAM scope and authorization without treating a Secret as a login credential |
+| Agent revision and execution identity                           | Their owning Foundation documents                               | Remain authorization targets and audit subjects, not IAM Principals              |
+| Connector, Connection, and Trigger lifecycle                    | [Connector contract](12-connectors-connections-and-triggers.md) | Uses current product authorization and run grants without creating another role  |
+| Model-triggered tool and Environment authority                  | Harness run grants and providers                                | Narrows an authorized invocation independently from product RBAC                 |
+| OSS, EE, and Cloud capability composition                       | Distribution boundary                                           | Adds capabilities without adding edition fields or bypassing common IAM checks   |
 
 The canonical resource hierarchy is:
 
@@ -25,7 +26,7 @@ flowchart TB
     Deployment[Foundation deployment]
     Organization[Organization]
     Workspace[Workspace]
-    Resource[Agent, Secret, Session, Thread, Turn, Execution, Environment, or other resource]
+    Resource[Agent, Connector, Connection, Trigger, Secret, Execution, Environment, or other resource]
 
     Deployment --> Organization --> Workspace --> Resource
 ```
@@ -59,7 +60,7 @@ Foundation recognizes exactly these OSS Principal kinds:
 - `user` is one platform-wide human identity;
 - `service_account` is one non-human identity owned by a Workspace.
 
-A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. Agent, Agent revision, Session, Execution, credential, and Secret identities are not Principals. Product authorization targets the stable Agent ID, while an accepted invocation selects the exact immutable Agent revision separately.
+A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. Agent, Agent revision, Connector, Connection, Trigger, Session, Execution, credential, and Secret identities are not Principals. A personal Connection or Trigger stores an exact `PrincipalRef` but does not become that Principal or confer its authority. Product authorization targets the stable Agent ID, while an accepted invocation selects the exact immutable Agent revision separately.
 
 The conceptual references are:
 
@@ -351,9 +352,9 @@ An Organization role applies only to a User. The last effective Organization Adm
 
 | Role key  | Permissions                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `viewer`  | Read safe Workspace metadata, resources, and histories; read Secret metadata but never Secret values                                                                                                            |
-| `runner`  | Viewer permissions; invoke every Agent; cancel and retry every Execution in the Workspace                                                                                                                       |
-| `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration; create, replace, delete, and bind Workspace Secrets                                                                    |
+| `viewer`  | Read safe Workspace metadata, resources, Connector Provider catalog, and histories; read public Secret metadata but never Secret values                                                                         |
+| `runner`  | Viewer permissions; invoke every Agent; cancel and retry every Execution in the Workspace; create and manage Connections bound to that same Principal                                                           |
+| `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration; manage Workspace Connectors, shared Connections, Triggers, and Workspace Secrets                                       |
 | `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit |
 
 The role table does not decide whether Tool, Skill, Connector, Environment, or another Agent input is an independent Workspace resource. Its owning product contract defines that resource. Builder has complete Agent-authoring authority but cannot install executable code, expand deployment capability availability, manage identity, or change RoleBindings.
@@ -414,6 +415,22 @@ No credential contains a role snapshot. Identifier possession, an earlier allow,
 ## Product Authorization and Run Grants
 
 Product RBAC decides whether a User or Service Account may invoke an Agent. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current Agent invocation permission, the immutable Agent revision, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. A resumed or retried Execution obtains fresh authority instead of retaining a role snapshot.
+
+The Connector domain owns these stable product actions:
+
+| Action                | Meaning                                                                         |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `connector.read`      | Read safe Provider catalog, Connector, revision, and tool metadata              |
+| `connector.create`    | Create a Workspace Connector and its first revision                             |
+| `connector.configure` | Create another immutable revision or change stable Connector lifecycle metadata |
+| `connection.read`     | Read a safe eligible Connection projection                                      |
+| `connection.manage`   | Establish, refresh, disable, reauthorize, or revoke an eligible Connection      |
+| `trigger.read`        | Read safe Trigger configuration and lifecycle status                            |
+| `trigger.configure`   | Create, update, enable, disable, reconcile, or delete a Trigger                 |
+
+Viewer includes safe read actions. Runner receives `connection.read` and `connection.manage` only when the Connection `principal_ref` equals the current Principal. Builder receives Workspace Connector, shared Connection, and Trigger management. A User-backed Trigger can bind only the current User; Workspace Admin identity authority can bind a Service Account Trigger and manage Service Account Connections. No caller can create or transfer a personal Connection for another User, bind a Trigger to another User, or reveal any Connection credential.
+
+Model-triggerable Connector work additionally requires the run grants `connector.use`, `secret.use`, and `tool.call`. Each grant names the selected resource and allowed operation; no role name is carried into Harness. Effective authority is the intersection of the accepted Agent revision, the resolved Connection, current Principal and RoleBindings, current Connection status, and current grants. Trigger acceptance performs the same invocation authorization for its stored Principal before creating an Execution.
 
 ## Lifecycle and Revocation
 

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation exposes one resource-oriented `/api/v1` management contract for IAM, Agent authoring, interaction, durable execution, deferred work, Environment resources, events, and raw usage. The API follows [Platform API Conventions](../api-conventions.md), [Platform Data Conventions](../data-conventions.md), and the [Identity and Access Management contract](04-identity-and-access-management.md); this document owns Foundation resource routes, command boundaries, read models, and cross-resource mutation behavior.
+Foundation exposes one resource-oriented `/api/v1` management contract for IAM, Agent authoring, Connectors, Connections, Triggers, interaction, durable execution, deferred work, Environment resources, events, and raw usage. The API follows [Platform API Conventions](../api-conventions.md), [Platform Data Conventions](../data-conventions.md), and the [Identity and Access Management contract](04-identity-and-access-management.md); this document owns Foundation resource routes, command boundaries, read models, and cross-resource mutation behavior.
 
 The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and external webhook payloads retain their own contracts.
 
@@ -32,6 +32,11 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Presets and Agents        | `/workspaces/{workspace_id}/presets`, `/workspaces/{workspace_id}/agents`                                                                   | Mutable authoring heads and immutable selected revisions                                  |
 | Agent revisions           | `/agents/{agent_id}/revisions`                                                                                                              | Immutable create/read collection; no in-place revision mutation                           |
 | Model integrations        | `/workspaces/{workspace_id}/model-integrations`                                                                                             | Mutable heads with immutable integration revisions                                        |
+| Connector Providers       | `/connector-providers`, `/connector-providers/{provider_key}`                                                                               | Read-only catalog of deployment-trusted Provider metadata; not an installation API        |
+| Connectors                | `/workspaces/{workspace_id}/connectors`, `/connectors/{connector_id}`                                                                       | Stable Workspace resources; create atomically includes revision `1`                       |
+| Connector revisions       | `/connectors/{connector_id}/revisions`, `/connector-revisions/{connector_revision_id}`                                                      | Immutable create/read configuration versions                                              |
+| Connections               | `/workspaces/{workspace_id}/connections`, `/connections/{connection_id}`                                                                    | Safe account and lifecycle projection; credentials and Provider state remain private      |
+| Triggers                  | `/workspaces/{workspace_id}/triggers`, `/triggers/{trigger_id}`                                                                             | Mutable schedule or Connector-event source targeting one exact Agent revision             |
 | Sessions                  | `/workspaces/{workspace_id}/sessions`                                                                                                       | Hosted interaction tree and product/presentation scope                                    |
 | Threads                   | `/sessions/{session_id}/threads`                                                                                                            | Independently advancing histories within one Session                                      |
 | Turns                     | `/threads/{thread_id}/turns`                                                                                                                | Host-accepted advancement and Item scope                                                  |
@@ -68,7 +73,7 @@ POST /api/v1/workspaces/{workspace_id}/executions
 Idempotency-Key: opaque-caller-key
 ```
 
-Standalone submission selects an immutable Agent revision, bounded input, optional authoritative source checkpoint, and declared trigger metadata. It omits Session and Turn references. The response returns the durable Execution acceptance receipt.
+Standalone submission selects an immutable Agent revision, bounded input, and an optional authoritative source checkpoint. It omits Session and Turn references. Public callers cannot declare Trigger identity or override an Agent Connector Connection selection. Trigger ingress creates the reserved Trigger source metadata through its [own atomic acceptance path](12-connectors-connections-and-triggers.md#trigger-input-and-occurrence-acceptance). The response returns the durable Execution acceptance receipt.
 
 An API never creates a hidden Session or Turn merely to reuse interactive storage. If the execution later needs visible independently advancing interaction history, an explicit Host operation creates or associates the required Session and Thread under its owning policy.
 
@@ -76,23 +81,34 @@ An API never creates a hidden Session or Turn merely to reuse interactive storag
 
 Commands are subordinate to the resource whose state they mutate:
 
-| Command                          | Route                                                | Required mutation contract                                                     |
-| -------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Accept invitation                | `POST /invitations/{invitation_id}/accept`           | Exact single-use token; atomically creates User credentials and RoleBindings   |
-| Resend invitation                | `POST /invitations/{invitation_id}/resend`           | Current authorization; rotates the token under the same Invitation ID          |
-| Revoke invitation                | `POST /invitations/{invitation_id}/revoke`           | Current authorization; terminal for the current invitation                     |
-| Rotate API key                   | `POST /api-keys/{api_key_id}/rotate`                 | Authorized owner or Service Account Admin; same key ID and immediate cutover   |
-| Revoke API key                   | `POST /api-keys/{api_key_id}/revoke`                 | Idempotently sets permanent revocation without deleting metadata               |
-| Cancel Execution                 | `POST /executions/{execution_id}/cancel`             | Idempotency key and current authorization                                      |
-| Retry terminal Execution         | `POST /executions/{execution_id}/retry`              | Creates a successor Execution; interactive retry also creates a successor Turn |
-| Approve pending action           | `POST /pending-actions/{pending_action_id}/approve`  | Expected pending version and idempotency key                                   |
-| Reject pending action            | `POST /pending-actions/{pending_action_id}/reject`   | Expected pending version and idempotency key                                   |
-| Submit client-tool result        | `POST /pending-actions/{pending_action_id}/complete` | Exact native result envelope and idempotency key                               |
-| Supply structured user input     | `POST /pending-actions/{pending_action_id}/respond`  | Schema-valid bounded response and idempotency key                              |
-| Resume/pause/destroy Environment | `POST /environments/{environment_id}/{action}`       | Expected Environment version and idempotency key                               |
-| Reconcile Environment operation  | `POST /environments/{environment_id}/reconcile`      | Targets the exact unresolved operation identity                                |
+| Command                          | Route                                                                 | Required mutation contract                                                                     |
+| -------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Accept invitation                | `POST /invitations/{invitation_id}/accept`                            | Exact single-use token; atomically creates User credentials and RoleBindings                   |
+| Resend invitation                | `POST /invitations/{invitation_id}/resend`                            | Current authorization; rotates the token under the same Invitation ID                          |
+| Revoke invitation                | `POST /invitations/{invitation_id}/revoke`                            | Current authorization; terminal for the current invitation                                     |
+| Rotate API key                   | `POST /api-keys/{api_key_id}/rotate`                                  | Authorized owner or Service Account Admin; same key ID and immediate cutover                   |
+| Revoke API key                   | `POST /api-keys/{api_key_id}/revoke`                                  | Idempotently sets permanent revocation without deleting metadata                               |
+| Discover Connector tools         | `POST /connector-revisions/{connector_revision_id}/discover-tools`    | Returns current Provider metadata using an authorized optional Connection; binds nothing       |
+| Discover Connector events        | `POST /connector-revisions/{connector_revision_id}/discover-events`   | Returns current Provider event metadata using an authorized optional Connection; binds nothing |
+| Start Connection setup           | `POST /connector-revisions/{connector_revision_id}/connection-setups` | Creates an expiring setup operation; not a durable product resource                            |
+| Complete Connection setup        | `POST /connection-setups/{connection_setup_id}/complete`              | Consumes exact setup proof once and creates Connection plus owned Secrets atomically           |
+| Enable or disable Connection     | `POST /connections/{connection_id}/{action}`                          | `action` is `enable` or `disable`; expected version and idempotency key                        |
+| Reauthorize Connection           | `POST /connections/{connection_id}/reauthorize`                       | Starts setup for the same non-revoked Connection                                               |
+| Refresh Connection               | `POST /connections/{connection_id}/refresh`                           | Refreshes current credentials under one stable operation identity                              |
+| Revoke Connection                | `POST /connections/{connection_id}/revoke`                            | Makes local revocation terminal and cleans local Secrets despite upstream result               |
+| Enable or disable Trigger        | `POST /triggers/{trigger_id}/{action}`                                | `action` is `enable` or `disable`; expected version and idempotency key                        |
+| Cancel Execution                 | `POST /executions/{execution_id}/cancel`                              | Idempotency key and current authorization                                                      |
+| Retry terminal Execution         | `POST /executions/{execution_id}/retry`                               | Creates a successor Execution; interactive retry also creates a successor Turn                 |
+| Approve pending action           | `POST /pending-actions/{pending_action_id}/approve`                   | Expected pending version and idempotency key                                                   |
+| Reject pending action            | `POST /pending-actions/{pending_action_id}/reject`                    | Expected pending version and idempotency key                                                   |
+| Submit client-tool result        | `POST /pending-actions/{pending_action_id}/complete`                  | Exact native result envelope and idempotency key                                               |
+| Supply structured user input     | `POST /pending-actions/{pending_action_id}/respond`                   | Schema-valid bounded response and idempotency key                                              |
+| Resume/pause/destroy Environment | `POST /environments/{environment_id}/{action}`                        | Expected Environment version and idempotency key                                               |
+| Reconcile Environment operation  | `POST /environments/{environment_id}/reconcile`                       | Targets the exact unresolved operation identity                                                |
 
 A command returns the mutated resource or a durable receipt. `202` means accepted, not completed. Unknown outcome after possible dispatch is reconciled by repeating the same idempotency key or reading the returned resource; clients never generate a new key merely because acknowledgement was lost.
+
+OAuth redirects terminate at `GET /api/v1/connector-callbacks/{provider_key}` and Connector event delivery terminates at `POST /api/v1/connector-events/{trigger_id}`. These are bounded external ingress protocols, not management resources. The callback requires the exact expiring setup state; the event route requires Provider verification and a stable Provider event identity. Path identifiers grant no authority. Success means setup committed, or the event occurrence was accepted or already known; it never waits for Agent execution.
 
 ## Read Models
 
@@ -101,6 +117,7 @@ Public resources expose stable product fields and safe references, not ORM objec
 - Session, Thread, Turn, and Item use the shared interaction meanings;
 - Execution exposes lifecycle, wait reason, selected revisions, interaction correlation, parent/retry references, cancellation intent, and timestamps;
 - ExecutionAttempt exposes generation, worker-safe status, dispatch phase, lease timing, Harness correlation, and bounded failure evidence, but no credential or process-private value;
+- Connector Provider reads expose only trusted metadata; Connector revisions expose bounded non-secret configuration; Connection and Trigger reads omit credentials, OAuth proof, webhook signatures, raw Provider state, and unredacted Provider failures;
 - Environment exposes desired spec revision, desired phase, safe lifecycle status, current operation, and effective observations, but never provider resource-state ciphertext or attachment material;
 - LifecycleEvent reads preserve event type, schema version, owning-resource sequence, subject, actor when applicable, Attempt attribution, resource version, bounded payload, and commit time;
 - UsageRecord reads preserve immutable identity and attribution.
@@ -137,3 +154,4 @@ The API uses shared bounded errors and stable codes. Owning domains add safe det
 6. Replay cursors, identifiers, receipts, and signed URLs grant no authority by possession.
 7. API read models contain no process-local object, provider resource-state data, attachment, credential, or Secret value.
 8. SDKs and the CLI consume this API rather than defining parallel lifecycle or retry semantics.
+9. Connector Provider catalog routes never install or import caller-selected code, and public Execution routes never forge Trigger or Connection selections.
