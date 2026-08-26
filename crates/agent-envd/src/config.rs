@@ -203,9 +203,12 @@ pub(crate) enum ExecutionNetworkMode {
 #[derive(Debug, Clone)]
 pub(crate) struct ExecutionConfig {
     pub(crate) isolation: ExecutionIsolationMode,
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub(crate) network: ExecutionNetworkMode,
     pub(crate) extra_read_only_paths: Vec<PathBuf>,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(crate) payload_uid: Option<u32>,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(crate) payload_gid: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -352,6 +355,8 @@ impl Config {
                 isolation: ExecutionIsolationMode::Disabled,
                 network: ExecutionNetworkMode::Host,
                 extra_read_only_paths: Vec::new(),
+                payload_uid: None,
+                payload_gid: None,
             },
             config_file: None,
             limits: default_limits(),
@@ -564,9 +569,20 @@ fn prepare_execution_config(file: FileExecutionConfig) -> Result<ExecutionConfig
             ));
         }
     }
-    if env::var_os("AGENT_ENVD_EXECUTION_UID").is_some()
-        || env::var_os("AGENT_ENVD_EXECUTION_GID").is_some()
-    {
+    let payload_uid = optional_positive_u32("AGENT_ENVD_EXECUTION_UID")?;
+    let payload_gid = optional_positive_u32("AGENT_ENVD_EXECUTION_GID")?;
+    if payload_uid.is_some() != payload_gid.is_some() {
+        return Err(ConfigError::new(
+            "AGENT_ENVD_EXECUTION_UID and AGENT_ENVD_EXECUTION_GID must be provided together",
+        ));
+    }
+    if payload_uid.is_some() && isolation != ExecutionIsolationMode::Required {
+        return Err(ConfigError::new(
+            "execution UID and GID require required Linux native isolation",
+        ));
+    }
+    #[cfg(not(target_os = "linux"))]
+    if payload_uid.is_some() {
         return Err(ConfigError::new(
             "execution UID and GID require the Linux native isolation backend",
         ));
@@ -593,6 +609,8 @@ fn prepare_execution_config(file: FileExecutionConfig) -> Result<ExecutionConfig
         isolation,
         network,
         extra_read_only_paths,
+        payload_uid,
+        payload_gid,
     })
 }
 
@@ -614,6 +632,18 @@ fn parse_network_mode(value: &str) -> Result<ExecutionNetworkMode, ConfigError> 
             "AGENT_ENVD_EXECUTION_NETWORK must be host or deny",
         )),
     }
+}
+
+fn optional_positive_u32(name: &str) -> Result<Option<u32>, ConfigError> {
+    optional_unicode(name)?
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .ok()
+                .filter(|parsed| *parsed > 0)
+                .ok_or_else(|| ConfigError::new(format!("{name} must be a positive integer")))
+        })
+        .transpose()
 }
 
 fn paths_overlap(left: &Path, right: &Path) -> bool {

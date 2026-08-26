@@ -1304,10 +1304,11 @@ async fn run_event_pump(
             SupervisorEvent::Terminal {
                 exit_code,
                 signal,
+                native_signaled,
                 stop_reason,
             } => {
                 let mut state = record.record_state();
-                apply_terminal_status(&mut state, exit_code, signal, stop_reason);
+                apply_terminal_status(&mut state, exit_code, signal, native_signaled, stop_reason);
                 state.stdin_open = false;
                 if !state.terminal_recorded {
                     state.terminal_recorded = true;
@@ -1442,6 +1443,7 @@ fn apply_terminal_status(
     state: &mut RecordState,
     exit_code: Option<i32>,
     signal: Option<ControlSignal>,
+    native_signaled: bool,
     stop_reason: Option<StopReason>,
 ) {
     let output_limited = state.output_limit_crossed;
@@ -1485,7 +1487,7 @@ fn apply_terminal_status(
             state.status.signal = Some(ProcessSignal::Kill);
             state.status.exit_code = None;
         }
-        None if signal.is_some() => {
+        None if native_signaled => {
             state.status.phase = ProcessPhase::Signaled;
             state.status.termination_reason = Some(TerminationReason::Signal);
             state.status.signal = signal.map(|signal| match signal {

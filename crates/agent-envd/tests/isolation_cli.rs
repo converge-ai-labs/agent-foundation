@@ -94,6 +94,45 @@ fn execution_environment_fields_override_file_fields_independently() {
 }
 
 #[test]
+fn payload_identity_configuration_fails_closed() {
+    let cases = [
+        (
+            &[
+                ("AGENT_ENVD_EXECUTION_ISOLATION", "required"),
+                ("AGENT_ENVD_EXECUTION_UID", "1000"),
+            ][..],
+            "must be provided together",
+        ),
+        (
+            &[
+                ("AGENT_ENVD_EXECUTION_ISOLATION", "required"),
+                ("AGENT_ENVD_EXECUTION_UID", "0"),
+                ("AGENT_ENVD_EXECUTION_GID", "1000"),
+            ][..],
+            "must be a positive integer",
+        ),
+        (
+            &[
+                ("AGENT_ENVD_EXECUTION_ISOLATION", "disabled"),
+                ("AGENT_ENVD_EXECUTION_UID", "1000"),
+                ("AGENT_ENVD_EXECUTION_GID", "1000"),
+            ][..],
+            "require required Linux native isolation",
+        ),
+    ];
+
+    for (environment, expected_error) in cases {
+        let output = run_probe(None, environment);
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(expected_error),
+            "unexpected failure: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn invalid_execution_configuration_fails_closed() {
     let directory = fixture_directory("invalid");
     let extra = directory.join("extra");

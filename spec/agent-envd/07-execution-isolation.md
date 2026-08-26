@@ -12,7 +12,7 @@ Linux, macOS, and Windows are all required targets with platform-native containm
 
 A deployment that already places envd inside a container, VM, remote sandbox, or equivalent boundary can explicitly configure `disabled`. That delegates child containment to the outer Host while preserving command validation, configured-mount authorization, transactional spawn, environment filtering, process ownership, output bounds, quotas, signaling, and cleanup.
 
-There is no `auto`, `best_effort`, or probe-driven fallback. Required isolation either passes its production probe for the active platform and policy or envd fails before carrier admission.
+There is no `auto`, `best_effort`, or probe-driven fallback. Required isolation either passes its production probe for the active platform and policy or envd fails before carrier admission. Every required-isolation preflight failure preserves its native cause and identifies explicit `disabled` configuration only as an option when a trusted outer sandbox owns command containment.
 
 ## Boundaries
 
@@ -34,7 +34,7 @@ Isolation configuration is immutable trusted bootstrap owned by [Daemon Lifecycl
 
 `required` is the default. A request can narrow configured `host` to `deny` only when the active backend reports per-command support. `disabled` accepts only outer-Host networking and cannot claim read-only projection for extra native roots. Unknown or inconsistent combinations fail startup. Platform detection, root/admin identity, CI, transport choice, and failed probing never select `disabled` automatically.
 
-Linux payload IDs are trusted paired configuration. The backend clears supplementary groups, establishes final IDs, prevents privilege regain, and applies no-new-privileges before exec. EIP request fields never select payload identity.
+Linux payload IDs are trusted paired configuration. The unprivileged user namespace establishes final IDs, maps inherited supplementary groups to overflow IDs with no Host group authority, drops capabilities, prevents privilege regain, and applies no-new-privileges before exec. EIP request fields never select payload identity.
 
 ## Backend Contract
 
@@ -59,7 +59,7 @@ Required isolation starts deny-by-default and exposes only:
 
 An operator that intentionally needs whole-filesystem breadth configures an ordinary trusted mount such as `/` on POSIX or explicit volume roots on Windows. The session cannot switch envd into a special server-filesystem mode. Even a broad configured mount does not expose protected envd control paths to a required-isolation payload; startup and per-command policy must be able to subtract or deny them truthfully.
 
-Runtime roots are reviewed paths, not ambient `PATH`. User-managed toolchains require explicit extra read-only roots. Required isolation does not expose SSH agents, container-engine sockets, D-Bus endpoints, Keychain configuration, cloud credentials, daemon carrier state, or unrelated IPC merely for compatibility.
+Runtime roots are reviewed paths, not ambient `PATH`. User-managed toolchains require explicit extra read-only roots. Required isolation does not expose SSH agents, container-engine sockets, pathname D-Bus endpoints, Keychain configuration, cloud credentials, daemon carrier state, or unrelated IPC merely for compatibility. On Linux, selecting `network="host"` deliberately retains the Host network namespace, including its abstract Unix-socket namespace; `network="deny"` creates a fresh network namespace and removes that authority. Pathname sockets remain absent unless an authorized projected root contains them.
 
 ### Protected paths and overlap
 
@@ -93,7 +93,7 @@ The exact gate, supervisor, launch channel, and acknowledgement frames are priva
 
 ## Linux Bubblewrap Backend
 
-Linux required mode uses a verified non-setuid bubblewrap release component. Envd never searches `PATH`, uses a setuid helper, or falls back after host policy denies user namespaces.
+Linux required mode uses the verified OS-managed non-setuid helper at `/usr/bin/bwrap`. The Host kernel and active Linux Security Modules must permit the daemon user to create unprivileged user namespaces. Envd never searches `PATH`, uses a setuid helper, changes Host kernel or LSM policy, or falls back after Host policy denies user namespaces.
 
 For each command the backend creates:
 
@@ -102,8 +102,8 @@ For each command the backend creates:
 - a PID namespace with private `/proc` and an envd-owned PID 1 supervisor;
 - isolated IPC and UTS namespaces;
 - minimal `/dev`;
-- a new session, dropped capabilities, and no-new-privileges;
-- a fresh network namespace with no host routes when effective policy is `deny`.
+- a new session, an anonymous session keyring, denied keyring-management syscalls, dropped capabilities, and no-new-privileges;
+- a fresh network namespace with no host routes or abstract Host Unix sockets when effective policy is `deny`.
 
 The supervisor reaps descendants, preserves initial-executable status, maps semantic signals, and destroys residual descendants. A descendant cannot evade cleanup by creating another process group or session inside the PID namespace. Force cleanup destroys the namespace from the outer manager.
 
