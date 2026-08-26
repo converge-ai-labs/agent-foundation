@@ -30,10 +30,10 @@ complete state is safe.
 
 | Concern                                                           | Owner                                                                      | Contract                                                                                       |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Agent-work identity, input, current state, scheduling, and budget | [Turn persistence](04-turn-persistence.md)                                 | Supplies the deterministic state key and decides whether another attempt may be leased         |
+| Agent-work identity, input, current state, scheduling, and budget | [Turn persistence](12-turn-persistence.md)                                 | Supplies the deterministic state key and decides whether another attempt may be leased         |
 | Worker identity, lease, fence, Harness Run, and attempt outcome   | `turn_attempts`                                                            | Authorizes one worker generation and preserves its immutable audit history                     |
 | Model-loop retries inside one Harness Run                         | Agent Harness                                                              | Remain process-local `ModelAttempt` values and never allocate another `TurnAttempt`            |
-| Lifecycle history                                                 | [Lifecycle and Stream Persistence](06-lifecycle-and-stream-persistence.md) | Records ordered facts without becoming Turn or attempt authority                               |
+| Lifecycle history                                                 | [Lifecycle and Stream Persistence](14-lifecycle-and-stream-persistence.md) | Records ordered facts without becoming Turn or attempt authority                               |
 | Provider-native operation truth                                   | Selected provider integration                                              | Reconciles idempotency or unknown effects; an attempt stores only bounded disposition evidence |
 | Non-Agent reconciliation and maintenance                          | Owning Foundation domain                                                   | Uses that domain's job, ledger, or control model rather than `TurnAttempt`                     |
 
@@ -46,7 +46,7 @@ body, user-visible Item, or competing Turn outcome.
 The following Python-like schema is conceptual. JSON values are bounded before
 relational writes and use the same validated shape on PostgreSQL and SQLite.
 `RecoveryUsage` and the Turn-owned budget fields are defined by
-[Durable Turn State](04-turn-persistence.md#durable-turn-model).
+[Durable Turn State](12-turn-persistence.md#durable-turn-model).
 
 ```python
 type TurnAttemptStatus = Literal[

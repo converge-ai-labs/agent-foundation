@@ -13,6 +13,7 @@ from .errors import (
     EIPTransportError,
 )
 from .file_transfer import EIPFileReader, EIPFileWriter
+from .http import HttpTransport
 from .output import EIPOutputPage, EIPOutputReader
 from .requester import RequestCoordinator
 from .session import EIPSession
@@ -43,6 +44,7 @@ __all__ = [
     "EIPTransportClosedError",
     "EIPTransportError",
     "EIPTransportFrame",
+    "HttpTransport",
     "RequestCoordinator",
     "StdioTransport",
     "__version__",

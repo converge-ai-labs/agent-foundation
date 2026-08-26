@@ -9,17 +9,21 @@ The repository directory is `packages/agent-stream-protocol`, the Python distrib
 ```python
 from converge_agent_stream_protocol import HarnessAguiObserver
 
-observer = HarnessAguiObserver()
+observers: dict[tuple[str, str], HarnessAguiObserver] = {}
 
 async with executable.stream(input, bindings=bindings) as stream:
     async for item in stream:
+        correlation = (item.thread_id, item.run_id)
+        observer = observers.get(correlation)
+        if observer is None:
+            observer = HarnessAguiObserver()
+            observers[correlation] = observer
+
         new_events = observer.observe(item)
         await host.persist_and_publish(new_events)
-
-all_events = observer.snapshot()
 ```
 
-One observer binds to the Thread and Run correlation on its first successful source item. Use a separate observer for each root or child Run.
+One observer binds to the Thread and Run correlation on its first successful source item. Use a separate observer for each root or child Run, including child events forwarded through a parent stream. An integration whose source contains exactly one Run can use one observer directly.
 
 A Host that retains the exact public Harness source history can atomically rebuild a fresh observer before continuing with live items:
 

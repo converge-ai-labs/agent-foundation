@@ -1,164 +1,123 @@
 # Agent Harness
 
-`converge-agent-harness` is a process-local, code-first runtime for building Pydantic AI agents with provider-neutral context, tools, Environments, continuation state, events, and usage attribution.
+`converge-agent-harness` is an embeddable, process-local runtime for building Pydantic AI agents with typed run bindings, provider-neutral tools and Environments, portable continuation state, normalized events, usage attribution, inline delegation, and restricted CodeAct orchestration.
 
-## Install
+It is a Python code library, not a hosted service or a second Agent framework.
+
+## Start Here
 
 ```bash
 pip install converge-agent-harness
 ```
 
-Agent definitions are synchronous and trusted Python values. Runs, streams, provider operations, and cleanup are asynchronous.
+The smallest application follows one path:
 
-## Build and Run
-
-A minimal offline Agent needs only an `AgentSpec`, a model, the Harness builder, and fresh run bindings:
-
-```python
-from collections.abc import AsyncIterator
-
-from converge_agent_harness import HarnessBuilder, RunBindings
-from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-
-
-async def respond(
-    messages: list[ModelMessage],
-    info: AgentInfo,
-) -> AsyncIterator[str]:
-    del messages, info
-    yield "offline result"
-
-
-agent = HarnessBuilder().build_code(
-    AgentSpec(model="logical:example"),
-    output_type=str,
-    model=FunctionModel(stream_function=respond),
-)
-async with agent:
-    result = await agent.run("Hello", bindings=RunBindings.local())
-    print(result.output_or_raise())
+```text
+AgentSpec -> HarnessBuilder -> ExecutableAgent -> RunBindings -> run/stream -> HarnessRunResult
 ```
 
-Use `async with agent` so every executable is closed deterministically.
+Follow [Getting Started](getting-started.md) to run that path entirely offline, then read [Agents and Runs](agents-and-runs.md) for the complete lifecycle.
 
-For a complete integration with real local tools, working state, structured suspension, rebuild, and resume, run the [Local Agent example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/local-agent).
+## What the Harness Adds
 
-## Capability Composition
+Pydantic AI remains responsible for the Agent loop, Models, Toolsets, Capabilities, messages, deferred values, output validation, events, and native usage. Agent Harness adds the reusable boundaries around that loop:
 
-Definition-selected Capabilities own Agent-loop lifecycle and compose reusable Toolsets. Toolsets implement model-facing schemas over narrow provider-neutral ports.
+- code-first `AgentDefinition` and `HarnessBuilder` construction;
+- one reusable `ExecutableAgent` with deterministic child ownership and cleanup;
+- fresh typed `RunBindings` and one `AgentContext` per logical run;
+- mandatory tool-result, message-integrity, model-context, lifecycle-event, and usage boundaries;
+- trusted outer middleware plugins;
+- provider-neutral Environment operations and live topology coordination;
+- optional first-party Capabilities for context, files, shell, processes, Skills, working state, interaction, media, documents, Web, delegation, and CodeAct;
+- one canonical event/result stream;
+- portable `HarnessState`, deferred resume, and bounded model recovery;
+- mixed model/provider usage attribution.
 
-| Capability family        | Reusable Toolset                | Provider or state boundary                                      |
-| ------------------------ | ------------------------------- | --------------------------------------------------------------- |
-| Dynamic Environment      | `FileToolset`, `ShellToolset`   | `BoundEnvironment` file, shell, process, and port facets        |
-| Runtime and file context | None                            | `AgentContext`, Environment files, bounded instructions         |
-| Handoff and compaction   | `HandoffToolset` for delegation | Built subagents and native message history                      |
-| Skills                   | None                            | `SkillSource` and Environment-backed materialization            |
-| Working state            | `WorkingStateToolset`           | Embedded state or fresh `TaskStateRunCapability`                |
-| User interaction         | `UserInteractionToolset`        | Native deferred requests and `DeferredToolResume`               |
-| Process monitoring       | `MonitoredProcessToolset`       | Fresh `MonitoredProcessRunCapability`                           |
-| Media                    | `MediaToolset`                  | Fresh `MediaRunCapability` and `MediaReader`                    |
-| Documents                | `DocumentsToolset`              | Fresh `DocumentsRunCapability` and `DocumentConverter`          |
-| Web                      | `WebToolset`                    | Fresh `WebRunCapability`, live `WebPolicy`, and provider ports  |
-| Inline delegation        | `DelegationToolset`             | Declared child Agents and fresh `DelegationRunCapability`       |
-| CodeAct                  | `CodeActToolset`                | Run-local Monty runtime and typed eligible-tool policy          |
-| Usage                    | None                            | Native `RunUsage`, `RunUsageLedger`, and optional model pricing |
+## Architecture
 
-Provider-backed clients are fresh trusted run attachments. They do not enter definitions or `HarnessState`, and the Harness core does not depend on vendor SDKs.
+```mermaid
+flowchart TB
+    subgraph App[Embedded application or Host]
+        DefinitionSource[Trusted code or Host reconstruction]
+        Bindings[Fresh identity, policy, model, and Environment bindings]
+        Persistence[Optional durable state and lifecycle]
+    end
 
-## Inline Delegation and CodeAct
+    subgraph Harness[Agent Harness]
+        Definition[AgentDefinition]
+        Builder[HarnessBuilder]
+        Executable[ExecutableAgent]
+        Context[AgentContext]
+        Environment[BoundEnvironment]
+        Stream[HarnessRunStream]
+        State[HarnessState]
+    end
 
-`DelegationCapability` exposes one blocking `delegate` tool over the finite `SubagentDefinition` collection. Each invocation runs the selected child through its canonical `ExecutableAgent.stream()` path and waits for a complete result. The Host supplies fresh child authority with `DelegationRunCapability`; a returned `child_instance_id` can continue only that child's private nested `HarnessState`.
+    subgraph PAI[Pydantic AI]
+        Agent[Agent loop]
+        Capabilities[Capabilities and Toolsets]
+        Model[Model]
+    end
 
-Background submission, workers, receipts, waiting, cancellation routing, and durable delivery remain Host responsibilities. The Harness does not expose a background scheduler or background-delegation protocol.
-
-`CodeActCapability` optionally exposes `run_code` and `run_program`. Eligible host tools must be published explicitly by their owner through a typed policy:
-
-```python
-from converge_agent_harness import (
-    CodeActCapability,
-    CodeActPolicyToolset,
-    CodeActToolPolicy,
-)
-from pydantic_ai.capabilities import Capability
-from pydantic_ai.toolsets import FunctionToolset
-
-
-def double(value: int) -> int:
-    return value * 2
-
-
-codeact_tools = Capability(
-    id="math-tools",
-    toolsets=[
-        CodeActPolicyToolset(
-            wrapped=FunctionToolset([double], id="math-functions"),
-            policy=CodeActToolPolicy(tools={"double": True}),
-            reject_unknown_tools=True,
-        )
-    ],
-)
-capabilities = (codeact_tools, CodeActCapability())
+    DefinitionSource --> Definition --> Builder --> Executable
+    Bindings --> Context
+    Executable --> Stream
+    Context --> Stream
+    Context --> Environment
+    Stream --> Agent
+    Agent --> Capabilities
+    Agent --> Model
+    Stream --> State --> Persistence
 ```
 
-Restricted code receives no ambient filesystem, network, process, environment, credentials, or clock access. Nested calls validate and execute through the active final Pydantic AI `ToolManager`, so ordinary Capability hooks, the Harness tool-execution boundary, policy, events, and usage remain authoritative. `run_code` state lasts only for the current logical run and can be cleared with `restart=True`; `run_program` rereads a `*.codeact.py` file through the current Environment and uses a fresh interpreter session.
+The Host reconstructs current authority and optionally persists selected state. The Harness runs one process-local logical execution. Pydantic AI owns the inner Agent loop.
 
-## Mandatory Boundaries and Optional Filters
+## Documentation Map
 
-Every built Agent receives exactly one code-owned outer `ToolExecutionBoundaryCapability` and one innermost `MessageIntegrityFilterCapability`. Do not add another function-result wrapper. The execution boundary applies one redaction, bounding, and spill policy to locally executable function results; complete managed metadata additionally enables authorization, credentials, grants, dispatch retry, and invocation events.
+| Goal                                                   | Guide                                               |
+| ------------------------------------------------------ | --------------------------------------------------- |
+| Run the smallest offline application                   | [Getting Started](getting-started.md)               |
+| Build definitions, run, stream, and handle results     | [Agents and Runs](agents-and-runs.md)               |
+| Select first-party behavior and fresh collaborators    | [Capabilities](capabilities.md)                     |
+| Expose files, shell, processes, output, or ports       | [Environments](environments.md)                     |
+| Continue, fork, checkpoint, suspend, and resume        | [State and Resume](state-and-resume.md)             |
+| Use blocking child Agents or restricted Python         | [Delegation and CodeAct](delegation-and-codeact.md) |
+| Discover and select Skill packages                     | [Skills](skills.md)                                 |
+| Add trusted outer middleware or Environment extensions | [Plugins and Extensions](plugins.md)                |
+| Add Host persistence, fencing, and durable lifecycle   | [Embedding in a Host](hosting.md)                   |
 
-Content and ColdStart filters are optional and selected by the definition:
+## Documented Boundary
 
-```python
-from converge_agent_harness import (
-    ColdStartFilterCapability,
-    ColdStartFilterConfiguration,
-    ContentFilterCapability,
-    ContentFilterConfiguration,
-)
+These guides cover the process-local Harness surface and its tested integration boundaries:
 
-capabilities = (
-    ContentFilterCapability(
-        ContentFilterConfiguration(
-            accepted_media=frozenset({"image", "document"}),
-            max_media_items=16,
-        )
-    ),
-    ColdStartFilterCapability(
-        ColdStartFilterConfiguration(
-            idle_seconds=3_600,
-            max_string_chars=8_192,
-            keep_head_chars=2_048,
-            keep_tail_chars=2_048,
-        )
-    ),
-)
-```
+- Direct Local and EIP-backed Environment **operations** enter through fresh run bindings and attachments.
+- Media, document, Web, monitoring, model, policy, and pricing integrations are typed seams; applications supply their live implementations per run.
+- Inline delegation waits for a child result; durable or background child scheduling remains a Host concern.
+- `HarnessState` is continuation data; it is not a durable Execution record or restored authority.
+- Observability at this boundary consists of the canonical event stream and usage records; exporter and telemetry-backend configuration belongs to the embedding application.
+- Provider resource lifecycle begins outside the Harness with an already selected fresh binding or runtime attachment.
 
-Choose these only when the target model/provider needs the compatibility behavior. `SelfHealingModel` remains a precise one-shot provider-history repair path. Transport retry and semantic recovery are not Filters.
+## Trust and Ownership
 
-## Environments and Direct Local
+| Concern                                                                  | Owner                |
+| ------------------------------------------------------------------------ | -------------------- |
+| Native Agent loop, Model, Capability, Toolset, messages, deferred values | Pydantic AI          |
+| Process-local definition, run, Environment facade, events, result, state | Agent Harness        |
+| Provider client, credentials, resource lifecycle, external side effects  | Integration/provider |
+| Durable definitions, checkpoints, executions, leases, delivery           | Embedding Host       |
+| Product authorization and presentation                                   | Application/product  |
 
-Application code supplies a fresh `EnvironmentRunBinding` through `RunBindings`. The aggregate exposes provider-neutral file, shell, process, output, and port contracts. `DynamicEnvironmentCapability` projects the selected facets into model-facing tools; it does not create authority or manage provider lifecycle.
+Installed extension metadata means code is available, not authorized. Saved state means prior data is available, not that prior authority remains valid.
 
-Direct Local is one provider binding for trusted embedded applications and teaching examples. Configure it with `DirectLocalEnvironmentConfiguration`, place it in an `EnvironmentTopologyRequest`, and create the aggregate with `create_environment_run_binding()`. Model calls to managed Environment tools still require a fresh `InvocationPolicyCapability`; provider availability is not authorization.
+## Runnable Examples
 
-Remote sandbox or integration packages implement the same Environment interfaces without changing Agent definitions or Toolsets.
+- [General Agent](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/general-agent): the minimal application-owned build, fresh bindings, run, and result path with an injected deterministic model.
+- [Local Agent](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/local-agent): real Direct Local file tools, embedded working state, structured suspension, rebuild, and resume under a deterministic model.
+- [Host Persistence](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/hosting): Host-owned attempts, fencing, checkpoint selection, and terminal commit.
+- [Plugin Integration](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins): packaged middleware and Environment extension discovery.
 
-## Results, Resume, and Usage
+The examples use deterministic `FunctionModel` implementations so their Agent loops and tool boundaries are reproducible without external model credentials.
 
-`run()` returns one `HarnessRunResult`; `stream()` exposes the canonical single-consumer `HarnessStreamEvent` sequence of `HarnessEvent` values followed by one terminal `HarnessRunResultEvent`. The stream, every event, and the result expose both `thread_id` and `run_id`: `thread_id` identifies the independently advancing history, while `run_id` identifies only the current process-local execution.
+## Normative Design
 
-A suspended or safely failed result may include a detached `HarnessState` candidate. A later run uses a newly built or existing executable, fresh `RunBindings`, the selected `previous_state`, and, for deferred tools, a correlated `DeferredToolResume`. Resume preserves `HarnessState.thread_id`; `HarnessState.fork()` copies portable continuation data into a new Thread with a new ID.
-
-`HarnessState` is continuation data, not Host lifecycle authority. It excludes live providers, credentials, policy, execution leases, durable task systems, and cross-run accounting.
-
-Pydantic AI `RunUsage` remains the sole process-local model-usage accumulator. `RunUsageLedger` preserves immutable model and provider attribution records for the logical run; durable aggregation, reconciliation, pricing catalogs, and billing belong to the Host.
-
-## Next Steps
-
-- Run the [Local Agent example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/local-agent).
-- [Publish and load Harness plugins](plugins.md), including from a Host-managed directory without restarting the process.
-- Read the [package README](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/agent-harness).
-- Consult the [Agent Harness specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-harness) for normative architecture and compatibility contracts.
+These pages are user documentation. The accepted architecture, invariants, compatibility rules, and ownership contracts remain in the [Agent Harness specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-harness).

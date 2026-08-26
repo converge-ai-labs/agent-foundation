@@ -4,12 +4,13 @@ This directory contains runnable, tested examples of public Agent Foundation ext
 
 ## Start Here
 
-| Goal                                        | Example                                                                        | What it demonstrates                                                                                                          |
-| ------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Publish and compose an Environment provider | [Integration package examples](plugins/README.md#environment-provider-factory) | Selected entry-point and explicit factory modes, Host JSON configuration, provider bindings, and multi-environment routing    |
-| Wrap the complete Harness run               | [Integration package examples](plugins/README.md#harness-plugin)               | Preferred YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation             |
-| Run a local Agent through first-party tools | [Local Agent example](local-agent/README.md)                                   | Offline model, Direct Local files, working state, structured suspension, fresh bindings, and resume                           |
-| Persist and resume a Harness run            | [Host persistence example](hosting/README.md)                                  | Host-owned Execution/ExecutionAttempt fencing, selected `HarnessState`, fresh bindings, replacement runs, and terminal commit |
+| Goal                                         | Example                                                                        | What it demonstrates                                                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Embed Harness in a normal Python application | [General Agent example](general-agent/README.md)                               | Minimal build, fresh local bindings, one run, normalized result, and an injected offline model                                |
+| Run a local Agent through first-party tools  | [Local Agent example](local-agent/README.md)                                   | Offline model, Direct Local files, working state, structured suspension, fresh bindings, and resume                           |
+| Persist and resume a Harness run             | [Host persistence example](hosting/README.md)                                  | Host-owned Execution/ExecutionAttempt fencing, selected `HarnessState`, fresh bindings, replacement runs, and terminal commit |
+| Wrap the complete Harness run                | [Integration package examples](plugins/README.md#harness-plugin)               | Preferred YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation             |
+| Publish and compose an Environment provider  | [Integration package examples](plugins/README.md#environment-provider-factory) | Selected entry-point and explicit factory modes, Host JSON configuration, provider bindings, and multi-environment routing    |
 
 Run every integration package example and its focused checks from the repository root:
 
@@ -20,7 +21,12 @@ make examples-check-all
 Or enter the project and run one path at a time:
 
 ```bash
-cd examples/plugins
+cd examples/general-agent
+uv sync --locked
+uv run general-agent-example
+uv run pytest
+
+cd ../plugins
 uv sync --locked
 uv run plugin-example-environment-entrypoint
 uv run plugin-example-environment-code

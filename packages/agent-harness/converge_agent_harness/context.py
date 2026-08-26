@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from time import monotonic
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
@@ -260,6 +261,7 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     model_context: ModelContextRunBinding | None = None
+    _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
     _skill_selection_names: frozenset[str] | None = field(default=None, repr=False, compare=False)
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
     tool_metadata: ToolRuntimeMetadata = field(default_factory=ToolRuntimeMetadata, compare=False)
@@ -338,6 +340,11 @@ class AgentContext:
     def identity(self) -> AgentIdentityRef:
         """Return the identity carried by the trusted instance binding."""
         return self.instance.identity
+
+    @property
+    def elapsed_seconds(self) -> float:
+        """Return monotonic elapsed time for this logical Harness run."""
+        return max(0.0, monotonic() - self._started_at_monotonic)
 
     @property
     def usage_records(self) -> tuple[UsageRecord, ...]:

@@ -21,6 +21,16 @@ make agent-ui tui
 
 The repository directory is `packages/agent-ui`, the Python distribution is `converge-agent-ui`, and the import package is `converge_agent_ui`. The private browser source lives in [`apps/harness-ui`](../../apps/harness-ui/README.md).
 
+## Local Store Development
+
+Agent UI owns its SQLite schema and Alembic history independently from Foundation Service. Generate a reviewed revision from the repository root against a disposable SQLite database:
+
+```console
+make agent-ui-db-migrate msg="describe the schema change"
+```
+
+The generator upgrades the disposable database to the current package head before comparing it with Agent UI metadata. Application startup only applies committed migrations; it never autogenerates against a user's data root.
+
 ## Dependencies
 
 The source manifest declares unversioned dependencies on `converge-agent-environment-provider`, `converge-agent-harness`, and `converge-agent-stream-protocol`, so uv resolves all three from the workspace during repository development. Before tagging an Agent UI release, set `[tool.converge.agent-ui-release].harness-version` to one published canonical Harness release such as `1.2.3` or `1.2.3-rc.1`; the `0.0.0` placeholder blocks a real release. Agent UI release automation pins all three dependencies to that exact normalized Python version before building publishable artifacts.

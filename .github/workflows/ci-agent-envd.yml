@@ -9,12 +9,16 @@ on:
       - "Cargo.lock"
       - "Cargo.toml"
       - "crates/agent-envd/**"
+      - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-envd-client/**"
       - "proto/agent-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
       - "scripts/tests/test_eip_codegen.py"
+      - "spec/agent-envd/01-daemon-lifecycle-and-configuration.md"
       - "spec/agent-envd/02-eip-protocol.md"
+      - "spec/agent-envd/05-command-and-process-execution.md"
+      - "spec/agent-envd/07-execution-isolation.md"
       - "spec/agent-envd/08-protocol-source-client-and-generation.md"
       - "uv.lock"
   push:
@@ -25,12 +29,16 @@ on:
       - "Cargo.lock"
       - "Cargo.toml"
       - "crates/agent-envd/**"
+      - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-envd-client/**"
       - "proto/agent-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
       - "scripts/tests/test_eip_codegen.py"
+      - "spec/agent-envd/01-daemon-lifecycle-and-configuration.md"
       - "spec/agent-envd/02-eip-protocol.md"
+      - "spec/agent-envd/05-command-and-process-execution.md"
+      - "spec/agent-envd/07-execution-isolation.md"
       - "spec/agent-envd/08-protocol-source-client-and-generation.md"
       - "uv.lock"
   workflow_dispatch:
@@ -70,6 +78,10 @@ jobs:
               - '.github/workflows/ci-agent-envd.yml'
               - '.github/workflows/release-agent-envd.yml'
               - 'crates/agent-envd/**'
+              - 'deploy/containers/sandbox/Dockerfile'
+              - 'spec/agent-envd/01-daemon-lifecycle-and-configuration.md'
+              - 'spec/agent-envd/05-command-and-process-execution.md'
+              - 'spec/agent-envd/07-execution-isolation.md'
               - 'proto/agent-envd/eip/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
@@ -89,6 +101,7 @@ jobs:
               - '.github/workflows/release-agent-envd.yml'
               - 'Cargo.toml'
               - 'Cargo.lock'
+              - 'crates/agent-envd/**'
               - 'crates/agent-envd/Cargo.toml'
               - 'crates/agent-envd/build.rs'
               - 'crates/agent-envd/build_support/**'
@@ -129,6 +142,14 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Install Linux isolation dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
@@ -184,21 +205,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Linux
+          - name: Linux x86_64
             runner: ubuntu-24.04
-            cache-key: linux
+            cache-key: linux-x86_64
             complete: true
+            linux: true
             components: clippy, rustfmt
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+            cache-key: linux-aarch64
+            complete: false
+            linux: true
+            components: ""
           - name: Windows
             runner: windows-2025
             cache-key: windows
             complete: false
+            linux: false
             components: ""
           # macOS exercises the Seatbelt-backed execution-isolation path.
           - name: macOS
             runner: macos-15
             cache-key: macos
             complete: false
+            linux: false
             components: ""
     runs-on: ${{ matrix.runner }}
     steps:
@@ -206,6 +236,16 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+
+      - name: Install Linux isolation dependency
+        if: matrix.linux
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.96.0

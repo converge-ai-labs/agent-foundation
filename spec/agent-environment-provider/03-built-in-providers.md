@@ -2,15 +2,16 @@
 
 ## Design Position
 
-`converge-agent-environment-provider` ships three providers in its main distribution:
+`converge-agent-environment-provider` ships four providers in its main distribution:
 
 | Provider key            | Managed resource                             | Runtime attachment | Harness backend |
 | ----------------------- | -------------------------------------------- | ------------------ | --------------- |
 | `converge.direct-local` | One configured local root and process policy | Direct Local       | Direct Local    |
+| `converge.local-envd`   | One local `agent-envd` process and runtime   | EIP                | EIP             |
 | `converge.docker`       | One Docker container running `agent-envd`    | EIP                | EIP             |
 | `converge.e2b`          | One E2B sandbox running `agent-envd`         | EIP                | EIP             |
 
-The built-ins share the specification, Manager, resource-state, and attachment contracts. They do not share vendor lifecycle implementation. Docker and E2B use their SDKs for resource lifecycle and bootstrap; after attachment, every Harness file, shell, process, output, and port operation uses EIP.
+The built-ins share the specification, Manager, resource-state, and attachment contracts. They do not share lifecycle implementation. Local Envd owns a Host-launched local daemon process, while Docker and E2B use their SDKs for outer resource lifecycle and bootstrap. After attachment, every Local Envd, Docker, and E2B Harness file, shell, process, output, and port operation uses EIP.
 
 ## Shared Configuration Rules
 
@@ -18,20 +19,24 @@ Each built-in owns an exact versioned Pydantic configuration model. Configuratio
 
 The provider factory constructs an inert Manager. Current credentials and provider clients enter through a fresh Host runtime context. No built-in touches the filesystem, Docker daemon, E2B API, network, or `agent-envd` during import, catalog construction, configuration validation, factory construction, or Manager construction.
 
-Each provider validates its own configuration, resource lifecycle, daemon bootstrap, and EIP compatibility before issuing an attachment. The Harness remains the sole owner of operation-family/facet consistency and permission-ceiling intersection against the entered Direct Local or EIP descriptor. Unsupported operations fail explicitly; no built-in emulates them through another vendor API.
+Each provider validates its own configuration, resource lifecycle, daemon bootstrap, and EIP compatibility before issuing an attachment. The Harness remains the sole owner of operation-family/facet consistency and permission-ceiling intersection against the entered Direct Local or EIP descriptor. Unsupported operations fail explicitly; no built-in emulates them through another backend or vendor API.
 
 ## Direct Local
 
 ### Configuration
 
-The provider package owns the public Direct Local configuration values:
+The provider package owns the public Direct Local configuration values. `converge.direct-local` accepts configuration schema version `1` in the first public contract. Its exact runtime collaborator is an empty frozen `DirectLocalProviderRuntime`; Direct Local needs no credential or client factory, but the explicit value preserves the same inert factory/Manager construction boundary as other providers.
 
 ```python
+@dataclass(frozen=True, slots=True)
+class DirectLocalProviderRuntime(EnvironmentProviderRuntime):
+    pass
+
+
 class DirectLocalRootConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     path: Path
-    ownership: Literal["caller_owned", "manager_owned"]
     read_only: bool = False
 
 
@@ -63,15 +68,53 @@ class DirectLocalProviderConfiguration(BaseModel):
 
 The provider schema owns these desired values; the Harness Direct Local adapter owns their file/process enforcement and provider-neutral operation semantics. This prevents a Host and Harness from maintaining competing local configuration models.
 
-### Manager behavior
+The schema validates bounded non-blank Environment and shell-profile identities, unique profile IDs, valid ports, positive byte/process ceilings, and positive finite time limits. After user expansion, the configured root, shell executables, and allowed executables are absolute paths; relative process-local working directories cannot change the meaning of a persisted specification. The root must already exist as an accessible directory. A read-only root cannot enable shell profiles or allowed executables because Direct Local cannot prevent an allowed child process from mutating files through the embedding OS account.
 
-`create()` validates the configured root and creates it only when `ownership="manager_owned"`. It returns a managed local resource and a resource state containing the Environment identity and a non-authoritative configuration fingerprint. `resume()` revalidates the same configured root and fingerprint. It never uses the state to select a different path.
+### Resource state and Manager behavior
 
-Direct Local advertises `resource_allocation=SINGLE_FROM_SPEC`, `attachment_concurrency=SHARED`, and no pause mode. Repeated `create()` for one specification never represents independent resource ownership. Shared attachments can operate concurrently on the same configured root; this is explicit shared-workspace access and makes no isolation claim. Disconnecting the managed resource closes only Manager-owned live bookkeeping. `destroy()` removes a manager-owned root only under its configured ownership contract and refuses to remove a caller-owned root. Each attachment becomes a fresh Harness Direct Local binding.
+A Direct Local resource is a logical access scope over one Host-selected existing directory, not an allocated or owned filesystem resource. Directory creation, deletion, retention, backup, sharing, and concurrent non-Harness use remain entirely Host concerns. The Provider never writes lifecycle metadata beside or inside the directory and never claims exclusive use.
 
-Direct Local reconciliation validates the exact configured root, ownership, configuration fingerprint, operation action, and Host resource correlation. It returns `RUNNING` with state when the selected root is authoritatively usable, `ABSENT` only when a manager-owned root for the exact operation is authoritatively absent, and `UNKNOWN` when existing caller-owned content or changed metadata cannot prove the intended lifecycle outcome. It performs no file mutation.
+Direct Local resource state uses `state_version="1"` with this provider-owned data codec:
+
+```python
+class DirectLocalProviderStateData(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    environment_id: str
+    configuration_fingerprint: str
+```
+
+The fingerprint covers the exact normalized schema-version-1 configuration, including the canonical root path, but is neither authority nor a filesystem identity. The desired configuration remains the source of the root path; state never retargets a Manager to another directory.
+
+`create()` validates the configured existing directory and returns a pre-entry logical managed resource plus current state. `resume()` validates the same configuration, state codec, fingerprint, and existing directory before returning another pre-entry managed resource. Neither operation creates, adopts, locks, tags, or mutates the directory. `pause()` is unsupported. `destroy()` validates any supplied state and ends only the Host's logical provider-resource lifecycle; it returns without changing the directory or its contents.
+
+Direct Local advertises `resource_allocation=SINGLE_FROM_SPEC`, `attachment_concurrency=SHARED`, and no pause mode. The same specification denotes the same logical access target, while any number of authorized Agent runs, managed-resource scopes, attachments, and ordinary Host processes can intentionally share that directory. Each acquisition still produces a fresh single-use Harness binding so run-local processes, retained output, permissions, and cleanup remain separate.
+
+Direct Local lifecycle methods perform no external provider dispatch and do not produce an unknown side-effect outcome. A cancelled validation can be retried with the same operation identity. Reconciliation observes the deterministic configured target: create or resume yields `RUNNING` with fresh validated state when the directory is accessible, `ABSENT` when it authoritatively does not exist, and `UNKNOWN` when access or canonical validation cannot establish either fact. Destroy reconciliation yields `ABSENT` because Direct Local retains no provider-owned resource after logical detach, regardless of whether the shared Host directory still exists. Reconciliation performs no filesystem mutation and needs no filesystem operation marker or resource tag.
 
 Direct Local makes no sandbox or network-isolation claim. Its existing path, process, output, cancellation, and cleanup contracts remain owned by [Harness Environment Integration](../agent-harness/08-environment-integration.md).
+
+## Local Envd
+
+### Configuration and runtime
+
+The `converge.local-envd` provider is the built-in local sandbox. Its versioned credential-free configuration contains one Environment identity, one Host-selected existing workspace root and access policy, bounded command and resource limits, a required native-isolation policy, an explicit network posture, and the required EIP compatibility. It contains no daemon executable path, ambient `PATH` selector, download location, package URL, process ID, private runtime path, or live EIP value.
+
+A fresh typed `LocalEnvdProviderRuntime` supplies the absolute `agent-envd` executable and private-runtime allocator already resolved and validated by the Host. Manager construction records that collaborator but performs no path search, download, installation, subprocess launch, probe, or filesystem mutation. The provider never consults ambient `PATH` and never substitutes another executable. Agent UI's managed-runtime selection contract is defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); another Host must provide an equivalent resolved runtime explicitly.
+
+The selected daemon must report a compatible release identity through `agent-envd --version` and pass the production-equivalent `agent-envd isolation probe --json` in required mode before provider creation. An explicit outer-Host `disabled` isolation posture is invalid for this built-in. These checks establish local runtime availability; successful EIP initialization against the launched process independently establishes the actual daemon generation, Environment identity, required methods, and protocol compatibility.
+
+### Resource state and Manager behavior
+
+A Local Envd resource owns one local daemon process and its private runtime tree over a Host-selected existing workspace. It does not own, create, delete, retain, back up, or exclusively lock that workspace. Provider state records only bounded Environment/configuration correlation and lifecycle evidence; the executable path, process object, PID, pipes, runtime tree, EIP session, and isolation-probe details remain process-local.
+
+`create()` and `resume()` validate the exact configuration and Host-resolved runtime, allocate a fresh private runtime, and start a fresh `agent-envd` process generation with trusted stdio. They issue no attachment until daemon readiness and required isolation succeed. The entered managed resource remains the sole owner of that process, complete process tree, private runtime, and pipes. `acquire_attachment()` returns one fresh `EIPEnvironmentAttachment` whose `StdioEIPSessionSource` carries an exclusive one-shot lease over the resource-owned carrier; attachment entry performs ordinary EIP initialization before the Harness can publish a binding. A clean session close returns the carrier lease so a later sequential attachment can initialize against the same daemon generation. Fatal carrier failure or unexpected process exit makes the resource unavailable and never starts a replacement implicitly.
+
+Local Envd advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. Each create owns an independent daemon process/private runtime even when several specifications intentionally select the same Host workspace. `pause(mode=FILESYSTEM)` closes the active attachment, stops the complete daemon process tree, and removes only the provider-owned private runtime while leaving workspace files untouched. `resume()` starts another private runtime and daemon generation. `FULL` is unsupported.
+
+`destroy()` stops the exact owned daemon process, closes its private pipes, and removes its private runtime. It never deletes or mutates the selected workspace merely because the provider resource is destroyed. Process termination and private-runtime cleanup must be proven before success; uncertain cleanup remains explicit rather than being reported as absence. Reconciliation uses only exact local process-owner and configuration evidence and never launches a replacement as an observation.
+
+A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, or inability to prove cleanup makes Local Envd unavailable. The Manager does not fall back to `converge.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
 
 ## Docker
 
@@ -85,7 +128,7 @@ The Docker provider accepts a bounded versioned configuration including:
 - finite CPU, memory, process, and lifetime limits supported by the selected Docker deployment;
 - an `agent-envd` bootstrap profile and compatible EIP requirement;
 - either private stdio or Host-dialed HTTP as the EIP session-source profile;
-- explicit container ownership on destroy.
+- explicit cleanup behavior for provider-created writable volumes when the Host selects destroy.
 
 The provider does not accept arbitrary Docker API objects, callbacks, socket paths from model input, or a second command-execution configuration. A Host can expose a narrower authoring schema while still resolving to this typed configuration.
 
@@ -93,13 +136,13 @@ The provider does not accept arbitrary Docker API objects, callbacks, socket pat
 
 The Docker Manager uses the Docker SDK for Python. Blocking SDK calls run through `anyio.to_thread.run_sync` or an equivalent bounded worker-thread boundary.
 
-`create()` creates and starts one container whose image includes compatible `agent-envd` bootstrap. Before possible visibility loss, it applies bounded labels for the Host operation ID, resource correlation, provider/configuration fingerprint, and ownership. `resume()` inspects the exact container ID from provider resource state and starts it when stopped or reconnects when already running. A missing container fails rather than creating another one.
+`create()` creates and starts one container whose image includes compatible `agent-envd` bootstrap. Before possible visibility loss, it applies bounded labels for the Host operation ID, resource correlation, and provider/configuration fingerprint. `resume()` inspects the exact container ID from provider resource state and starts it when stopped or reconnects when already running. A missing container fails rather than creating another one.
 
 Docker advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. Each successful create receives an independent container ID and destroy target. `pause(mode=FILESYSTEM)` stops the container after closing the active attachment; the writable container filesystem or selected volumes remain, but process memory and `agent-envd` generation do not. Resume starts a fresh daemon generation and issues a fresh EIP attachment. `FULL` is unsupported rather than being mapped to Docker's process-freeze operation, because a frozen container is not a portable retained sandbox lifecycle.
 
-`destroy()` stops and removes the exact managed container according to the configured volume ownership. A not-found response is successful absence only after the Docker daemon authoritatively reports it.
+`destroy()` stops and removes the exact container identified by validated provider state and applies the configured cleanup behavior only to provider-created writable volumes. Host-mounted paths and externally supplied volumes are never inferred as destroy targets. A not-found response is successful absence only after the Docker daemon authoritatively reports it.
 
-Docker reconciliation performs an exact label/ID inspection scoped to the operation and resource correlation. One matching running or stopped container yields validated `RUNNING` or `PAUSED` state as appropriate; authoritative zero matches yields `ABSENT`; ambiguous duplicates, inaccessible daemon state, or mismatched ownership yields `UNKNOWN`. Reconciliation never starts, stops, or removes the container.
+Docker reconciliation performs an exact label/ID inspection scoped to the operation and resource correlation. One matching running or stopped container yields validated `RUNNING` or `PAUSED` state as appropriate; authoritative zero matches yields `ABSENT`; ambiguous duplicates, inaccessible daemon state, or mismatched operation/resource/configuration correlation yields `UNKNOWN`. Reconciliation never starts, stops, or removes the container.
 
 For stdio, the Manager owns private daemon pipes. For HTTP, it publishes the dedicated EIP port only to loopback or an explicitly trusted private provider link and supplies mandatory EIP bootstrap authentication. Docker port routing does not itself grant Environment authority.
 
@@ -128,7 +171,7 @@ E2B advertises `resource_allocation=MULTIPLE_FROM_SPEC` and `attachment_concurre
 
 ### Manager behavior
 
-`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, provider/configuration fingerprint, and ownership. It waits for provider running state, resolves the provider-routed HTTPS host for the dedicated EIP port, and makes that fresh routing available through the managed resource's HTTP session source. The first acquired attachment initializes EIP and must match the expected Environment identity, protocol, required methods, and limits before the Harness publishes a binding.
+`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, and provider/configuration fingerprint. It waits for provider running state, resolves the provider-routed HTTPS host for the dedicated EIP port, and makes that fresh routing available through the managed resource's HTTP session source. The first acquired attachment initializes EIP and must match the expected Environment identity, protocol, required methods, and limits before the Harness publishes a binding.
 
 `resume()` uses the sandbox ID from validated provider resource state. E2B's connect operation attaches to a running sandbox or resumes a paused sandbox; it never creates a replacement for a missing or killed sandbox. After connect, the Manager resolves fresh routing and issues only a fresh session source; initialization remains owned by attachment entry.
 
@@ -160,7 +203,7 @@ Files written in the sandbox can survive both pause modes as provider-native res
 The main provider distribution depends on compatible Docker and E2B SDK versions. There are no provider extras. The package root exports:
 
 - provider specification, catalog, factory, Manager, operation identity, reconciliation, state, lifecycle capability, and attachment contracts;
-- the three built-in provider keys and typed configuration models;
+- the four built-in provider keys, typed configuration models, and exact runtime collaborator types;
 - `EIPSessionSource` plus stdio, HTTP, and accepted reverse-WebSocket source configuration;
 - stable provider error and outcome types.
 
@@ -170,7 +213,9 @@ It does not export vendor clients, Docker models, E2B SDK objects, raw EIP trans
 
 | Provider         | Material failure                                 | Outcome                                                               |
 | ---------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
-| Direct Local     | Root or ownership validation fails               | No attachment and no sandbox claim                                    |
+| Direct Local     | Configured shared root validation fails          | No attachment and no filesystem mutation                              |
+| Local Envd       | Runtime resolution or required isolation fails   | No daemon attachment and no Direct Local fallback                     |
+| Local Envd       | Daemon stop or private-runtime cleanup uncertain | Preserve explicit cleanup failure; never delete the workspace         |
 | Docker           | Container create/start outcome is uncertain      | Reconcile exact container labels/ID before another create             |
 | Docker           | Stopped container resumes                        | New envd generation and fresh binding/session                         |
 | E2B              | Sandbox create response is lost                  | Reconcile provider metadata before another create                     |
@@ -185,15 +230,19 @@ Raw vendor exceptions remain protected causes. Safe errors expose only bounded p
 
 ## Compatibility
 
-Built-in key, configuration schema, provider resource-state codec, lifecycle allocation/concurrency behavior, template/image bootstrap contract, vendor SDK range, EIP version, and Harness adapter evolve independently. A template or image is compatible only when its `agent-envd` and carrier profile satisfy the configured protocol requirements.
+Built-in key, configuration schema, provider resource-state codec, lifecycle allocation/concurrency behavior, Host-resolved local daemon contract, template/image bootstrap contract, vendor SDK range, EIP version, and Harness adapter evolve independently. A local executable, template, or image is compatible only when its `agent-envd` and carrier profile satisfy the configured protocol requirements.
 
-Changing E2B full pause into filesystem pause, enabling traffic-triggered resume implicitly, using Docker/E2B native operations as Harness fallbacks, or preserving a daemon generation claim across reboot is incompatible.
+Searching ambient `PATH` for Local Envd, silently falling back from Local Envd to Direct Local, changing E2B full pause into filesystem pause, enabling traffic-triggered resume implicitly, using Docker/E2B native operations as Harness fallbacks, or preserving a daemon generation claim across reboot is incompatible.
 
 ## Trade-offs
 
 ### Shared main-distribution providers
 
-Shipping Docker and E2B SDKs increases installation size. It gives Hosts one typed catalog and avoids extras or thin adapter packages. Inert imports and lazy clients keep unused providers effect-free.
+Shipping Local Envd plus Docker and E2B SDKs increases installation size. It gives Hosts one typed catalog and avoids extras or thin adapter packages. Inert imports and lazy clients keep unused providers effect-free. The Local Envd binary remains Host-selected runtime material rather than Python package data.
+
+### Local sandbox as a separate provider
+
+Local Envd adds a subprocess, private-runtime, native-isolation, and EIP lifecycle where Direct Local needs none. Keeping it as a distinct provider makes the sandbox guarantee and failure boundary explicit and prevents a convenience fallback from silently changing command authority.
 
 ### Explicit resume
 
@@ -205,14 +254,15 @@ Baking and starting `agent-envd` adds a template/image requirement. It avoids di
 
 ## Invariants
 
-01. The three exact built-in keys are available without entry-point discovery or extras.
+01. The four exact built-in keys are available without entry-point discovery or extras.
 02. Direct Local and EIP are the only Harness Environment operation backends.
-03. Docker and E2B SDKs manage resource lifecycle and bootstrap only; Harness operations always use EIP.
-04. Provider configuration and resource state contain no credential or live SDK/EIP object.
-05. Docker filesystem pause and E2B filesystem pause discard process memory and create a fresh `agent-envd` generation on resume.
-06. E2B full pause can preserve the daemon process but never preserves external connections, transfers, or EIP sessions.
-07. A missing, expired, killed, or incompatible resource is never replaced implicitly by `resume()`.
-08. E2B automatic traffic-triggered resume is disabled; the Manager owns explicit resume and readiness validation.
-09. Every resumed resource yields a fresh attachment, Harness binding, and initialized EIP session.
-10. Docker SDK calls and any unavoidable synchronous E2B SDK call never block the async event loop; native E2B async lifecycle operations remain async.
-11. Provider-native filesystem persistence and Harness portable Environment state remain separate mechanisms.
+03. Local Envd launches only the exact Host-resolved executable and owns its process/private runtime; it never searches, downloads, installs, or falls back to Direct Local.
+04. Docker and E2B SDKs manage resource lifecycle and bootstrap only; Harness operations always use EIP.
+05. Provider configuration and resource state contain no credential or live process, SDK, or EIP object.
+06. Local Envd, Docker filesystem pause, and E2B filesystem pause discard process memory and create a fresh `agent-envd` generation on resume.
+07. Local Envd required isolation never degrades to disabled mode; E2B full pause can preserve the daemon process but never preserves external connections, transfers, or EIP sessions.
+08. A missing, expired, killed, or incompatible resource is never replaced implicitly by `resume()`.
+09. E2B automatic traffic-triggered resume is disabled; the Manager owns explicit resume and readiness validation.
+10. Every resumed EIP-backed resource yields a fresh attachment, Harness binding, and initialized EIP session.
+11. Docker SDK calls and any unavoidable synchronous E2B SDK call never block the async event loop; native E2B async lifecycle operations remain async.
+12. Provider-native filesystem persistence and Harness portable Environment state remain separate mechanisms.

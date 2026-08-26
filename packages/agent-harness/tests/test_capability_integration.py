@@ -22,12 +22,12 @@ from converge_agent_harness import (
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentSkillSource,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
     FileContextCapability,
     FileContextConfiguration,
+    FileSkillSource,
     HandoffCapability,
     HarnessBuilder,
     HarnessRunResultEvent,
@@ -203,7 +203,7 @@ def _bindings(root: Path, monitor: _Monitor) -> RunBindings:
 
 
 def _definition_capabilities():
-    skill_manager = SkillManager((EnvironmentSkillSource("workspace", ("/workspace/.agents/skills",)),))
+    skill_manager = SkillManager((FileSkillSource("workspace", ("/workspace/.agents/skills",)),))
     return (
         DynamicEnvironmentCapability(
             DynamicEnvironmentConfiguration(

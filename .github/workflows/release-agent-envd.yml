@@ -42,6 +42,14 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.96.0
 
+      - name: Install Linux isolation dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: Prepare release version
         id: version
         run: |
@@ -188,6 +196,16 @@ jobs:
           cp LICENSE staging/LICENSE
           archive="agent-envd-${VERSION}-${TARGET}.tar.gz"
           tar -czf "$archive" -C staging agent-envd LICENSE
+
+      - name: Verify native Linux isolation
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          "target/${{ matrix.target }}/release/agent-envd" isolation probe --json
 
       - name: Build Windows binary archive
         if: matrix.windows

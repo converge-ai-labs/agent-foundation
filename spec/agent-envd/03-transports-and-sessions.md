@@ -190,9 +190,11 @@ The listener exposes fixed-purpose control and transfer resources only. It has n
 
 ### Session creation and control
 
-The first authenticated control POST contains exactly one `initialize` JSON-RPC request. Success creates one initialized EIP session and returns an opaque session selector in a protected response header. The selector is never placed in a URL, cookie, JSON-RPC field, or response body. Every later control or transfer request presents both current authentication and that selector in protected headers.
+The first authenticated `POST /eip/control` contains exactly one `initialize` JSON-RPC request and omits `EIP-Session`. Success creates one initialized EIP session and returns its opaque selector in `EIP-Session`. The selector is never placed in a URL, cookie, JSON-RPC field, or response body. Every later control or transfer request presents both current authentication and that selector in protected headers. A second selector-free control request is rejected rather than replacing the live session.
 
-One bounded control POST carries one JSON-RPC request and one JSON-RPC response. Concurrent control POSTs are permitted within the negotiated and daemon-global limits, and responses complete independently. HTTP connection reuse is optional and has no session meaning; a session can span multiple TCP connections while its authenticated selector remains valid.
+One bounded control POST carries one JSON-RPC request and one JSON-RPC response. An admitted control request returns HTTP `200` even when its JSON-RPC body is a typed EIP error. Concurrent control POSTs are permitted within the negotiated and daemon-global limits, and responses complete independently. HTTP connection reuse is optional and has no session meaning; a session can span multiple TCP connections while its authenticated selector remains valid.
+
+A missing or invalid Bearer credential returns `401`; malformed framing or forbidden headers return `400` or `415`; an unknown or stale session/transfer selector returns `409`; an oversized body returns `413`; and bounded admission exhaustion returns `429`. These pre-admission HTTP failures contain no JSON-RPC result and prove that no method or transfer was dispatched. Other paths and methods return `404` or `405` without exposing daemon state.
 
 The daemon admits at most one active initialized session across all carriers. `session.close`, provider drain, authentication revocation, or fatal protocol failure closes the HTTP session. The same daemon generation can then accept a fresh sequential session. A selector is unpredictable, generation-bound, expires with its session, and grants no authority without current authentication and repeated Environment checks.
 
@@ -326,3 +328,7 @@ A provider selects stdio, HTTP, or reverse WebSocket before session establishmen
 11. Stdio stdout contains only framed EIP traffic and stderr contains only logs.
 12. Missing/rejected reverse-WebSocket tokens and invalid TLS/subprotocol are generation-fatal; transient reverse connectivity uses capped exponential backoff with full jitter.
 13. Closing a carrier or HTTP request never proves cancellation, non-dispatch, successful file EOF, or mutation failure.
+    t precedes commit on every carrier.
+14. Stdio stdout contains only framed EIP traffic and stderr contains only logs.
+15. Missing/rejected reverse-WebSocket tokens and invalid TLS/subprotocol are generation-fatal; transient reverse connectivity uses capped exponential backoff with full jitter.
+16. Closing a carrier or HTTP request never proves cancellation, non-dispatch, successful file EOF, or mutation failure.

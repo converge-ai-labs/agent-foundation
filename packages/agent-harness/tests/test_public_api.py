@@ -10,6 +10,8 @@ import converge_agent_harness.toolsets as toolsets
 
 def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
     expected = {
+        "BoundSkillCatalog",
+        "BoundSkillCatalogItem",
         "CodeActCapability",
         "CodeActConfig",
         "CodeActPolicyToolset",
@@ -21,6 +23,7 @@ def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
         "DynamicEnvironmentCapability",
         "FILE_VIEW_RULES",
         "FileContextCapability",
+        "FileSkillSource",
         "FileToolset",
         "FileViewRule",
         "HandoffCapability",
@@ -57,16 +60,23 @@ def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
     assert hasattr(harness, "HarnessStreamEvent")
     assert "HarnessStreamItem" not in harness.__all__
     assert not hasattr(harness, "HarnessStreamItem")
+    assert "EnvironmentSkillSource" not in harness.__all__
+    assert not hasattr(harness, "EnvironmentSkillSource")
+    assert "EnvironmentSkillSource" not in capabilities.__all__
+    assert not hasattr(capabilities, "EnvironmentSkillSource")
 
 
 def test_feature_facades_export_documented_families() -> None:
     expected_capabilities = {
+        "BoundSkillCatalog",
+        "BoundSkillCatalogItem",
         "CodeActCapability",
         "CodeActConfig",
         "CompactionCapability",
         "DocumentsCapability",
         "DocumentsRunCapability",
         "FileContextCapability",
+        "FileSkillSource",
         "HandoffCapability",
         "MediaCapability",
         "MediaRunCapability",

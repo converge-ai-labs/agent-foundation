@@ -9,23 +9,27 @@ use std::{
 use base64::Engine as _;
 use tokio::{
     io::BufReader,
-    process::{Child, ChildStdin, Command},
+    process::{Child, ChildStdin},
     sync::{Mutex as AsyncMutex, Notify, oneshot},
 };
 
 use crate::{
-    config::{CommandConfig, Config, reserved_environment_name, valid_environment_name},
+    config::{
+        CommandConfig, Config, ExecutionNetworkMode, reserved_environment_name,
+        valid_environment_name,
+    },
     eip::{
         self, CleanupOutcome, CommandNetwork, CommandRequest, CommandSpec, EncodedBytes,
         ProcessHandle, ProcessInfo, ProcessOutput, ProcessPhase, ProcessSignal, ProcessStatus,
         ProcessWaitCondition, RequestedProcessSignal, TerminationReason,
     },
+    isolation::{IsolationPathGrant, IsolationPolicy, IsolationRuntime},
     mount::{MountPathError, MountRegistry},
     operation::ShortIdAllocator,
     retention::{AppendOutcome, LiveOutput, RetentionError, RetentionStore},
     supervisor::{
-        self, ControlSignal, LaunchPlan, OutputStream, StopReason, SupervisorEvent,
-        SupervisorRequest,
+        self, ControlSignal, LaunchPlan, OutputStream, StopReason, SupervisorCleanup,
+        SupervisorEvent, SupervisorRequest,
     },
 };
 
@@ -61,6 +65,7 @@ struct ExecutionInner {
     state: Mutex<ManagerState>,
     retention: RetentionStore,
     command: CommandConfig,
+    isolation: IsolationRuntime,
     environment_id: String,
     generation: u64,
     max_active: usize,
@@ -73,6 +78,7 @@ struct ExecutionInner {
 struct ManagerState {
     records: BTreeMap<String, Arc<ProcessRecord>>,
     active: usize,
+    residual_active: usize,
     starts_in_progress: usize,
     draining: bool,
 }
@@ -126,6 +132,7 @@ pub(crate) struct StartedRecordRelease {
 
 struct PreparedCommand {
     plan: LaunchPlan,
+    isolation_policy: IsolationPolicy,
     stdin_limit: u64,
 }
 
@@ -133,6 +140,8 @@ struct ResolvedCommand {
     executable: PathBuf,
     arguments: Vec<String>,
     roots: Vec<PathBuf>,
+    executable_grants: Vec<IsolationPathGrant>,
+    read_only_files: Vec<PathBuf>,
     environment: BTreeMap<String, String>,
 }
 
@@ -144,6 +153,7 @@ struct StartReservation {
 impl ExecutionManager {
     pub(crate) fn new(
         config: &Config,
+        isolation: IsolationRuntime,
         generation: u64,
         retention: RetentionStore,
     ) -> Result<Option<Self>, ProcessError> {
@@ -162,11 +172,13 @@ impl ExecutionManager {
                 state: Mutex::new(ManagerState {
                     records: BTreeMap::new(),
                     active: 0,
+                    residual_active: 0,
                     starts_in_progress: 0,
                     draining: false,
                 }),
                 retention,
                 command,
+                isolation,
                 environment_id: config.environment_id.clone(),
                 generation,
                 max_active,
@@ -221,8 +233,12 @@ impl ExecutionManager {
         F: Fn() -> Result<(), ProcessError>,
     {
         let executable = std::env::current_exe().map_err(|_| ProcessError::Internal)?;
-        let mut supervisor = Command::new(executable)
-            .arg("--internal-supervisor")
+        let mut supervisor = self
+            .inner
+            .isolation
+            .supervisor_command(&executable, &prepared.isolation_policy)
+            .map_err(|_| ProcessError::StartFailed)?;
+        let mut supervisor = supervisor
             .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -399,7 +415,8 @@ impl ExecutionManager {
         mounts: &MountRegistry,
         request: &CommandRequest,
     ) -> Result<PreparedCommand, ProcessError> {
-        if request.network == CommandNetwork::Deny
+        if (request.network == CommandNetwork::Deny
+            && !self.inner.isolation.supports_per_command_network_deny())
             || request.limits.memory_bytes.is_some()
             || request.limits.cpu_time_ms.is_some()
             || request.limits.process_count.is_some()
@@ -413,6 +430,8 @@ impl ExecutionManager {
             executable,
             arguments,
             roots,
+            executable_grants,
+            read_only_files,
             mut environment,
         } = self.resolve_command(mounts, &request.command)?;
         validate_arguments(
@@ -466,6 +485,27 @@ impl ExecutionManager {
         if initial_stdin.as_ref().map_or(0, Vec::len) as u64 > stdin_limit {
             return Err(ProcessError::Invalid);
         }
+        let cwd_mount = mounts
+            .get(&request.cwd.mount_id)
+            .ok_or(ProcessError::Denied)?;
+        let mut grants = vec![IsolationPathGrant {
+            root: cwd_mount.native_root.clone(),
+            writable: cwd_mount.writable,
+        }];
+        grants.extend(executable_grants);
+        normalize_grants(&mut grants);
+        let mut read_only_roots = self.inner.isolation.runtime_read_only_paths().to_vec();
+        read_only_roots.extend(self.inner.isolation.extra_read_only_paths().iter().cloned());
+        read_only_roots.extend(roots.iter().cloned());
+        read_only_roots.sort();
+        read_only_roots.dedup();
+        let network = if self.inner.isolation.configured_network() == ExecutionNetworkMode::Deny
+            || request.network == CommandNetwork::Deny
+        {
+            ExecutionNetworkMode::Deny
+        } else {
+            ExecutionNetworkMode::Host
+        };
         Ok(PreparedCommand {
             plan: LaunchPlan {
                 executable,
@@ -476,6 +516,17 @@ impl ExecutionManager {
                     .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes)),
                 keep_stdin_open: request.keep_stdin_open,
                 wall_time_ms,
+                isolation: self.inner.isolation.launch_isolation(),
+            },
+            isolation_policy: IsolationPolicy {
+                grants,
+                read_only_roots,
+                read_only_files,
+                protected_paths: self.inner.isolation.protected_paths().to_vec(),
+                protected_mutation_paths: self.inner.isolation.protected_mutation_paths().to_vec(),
+                private_home: self.inner.command.private_home.clone(),
+                private_temp: self.inner.command.private_temp.clone(),
+                network,
             },
             stdin_limit,
         })
@@ -502,10 +553,24 @@ impl ExecutionManager {
                         .resolve_executable(&selector.path)
                         .map_err(map_mount_error)?,
                 };
+                let executable_grants = match &argv.executable_spec {
+                    eip::ExecutableSpec::Path(selector) => {
+                        let mount = mounts
+                            .get(&selector.path.mount_id)
+                            .ok_or(ProcessError::Denied)?;
+                        vec![IsolationPathGrant {
+                            root: mount.native_root.clone(),
+                            writable: mount.writable,
+                        }]
+                    }
+                    eip::ExecutableSpec::Name(_) => Vec::new(),
+                };
                 Ok(ResolvedCommand {
                     executable,
                     arguments: argv.arguments.clone(),
                     roots: self.inner.command.trusted_executable_roots.clone(),
+                    executable_grants,
+                    read_only_files: Vec::new(),
                     environment: self.inner.command.base_environment.clone(),
                 })
             }
@@ -534,6 +599,8 @@ impl ExecutionManager {
                     executable: profile.native_executable.clone(),
                     arguments,
                     roots: profile.executable_search_roots.clone(),
+                    executable_grants: Vec::new(),
+                    read_only_files: vec![profile.native_executable.clone()],
                     environment,
                 })
             }
@@ -762,7 +829,14 @@ impl ExecutionManager {
             .wait_started(started, ProcessWaitCondition::TreeCleaned, deadline)
             .await
         {
-            Ok(process) if process.status.cleanup == CleanupOutcome::Complete => Ok(process),
+            Ok(process)
+                if matches!(
+                    process.status.cleanup,
+                    CleanupOutcome::Complete | CleanupOutcome::ResidualConfined
+                ) =>
+            {
+                Ok(process)
+            }
             Ok(_) | Err(_) => Err(ProcessError::UnknownOutcome),
         }
     }
@@ -866,7 +940,7 @@ impl ExecutionManager {
                 return false;
             }
         }
-        true
+        self.state().residual_active == 0
     }
 
     async fn await_stdin_ack(
@@ -931,7 +1005,11 @@ impl ExecutionManager {
     fn reserve_start(&self) -> Result<StartReservation, ProcessError> {
         let mut state = self.state();
         if state.draining
-            || state.active.saturating_add(state.starts_in_progress) >= self.inner.max_active
+            || state
+                .active
+                .saturating_add(state.residual_active)
+                .saturating_add(state.starts_in_progress)
+                >= self.inner.max_active
         {
             return Err(ProcessError::Busy);
         }
@@ -1069,7 +1147,11 @@ impl ProcessRecord {
 
     fn fully_cleaned(&self) -> bool {
         let state = self.record_state();
-        is_terminal_phase(state.status.phase) && state.status.cleanup == CleanupOutcome::Complete
+        is_terminal_phase(state.status.phase)
+            && matches!(
+                state.status.cleanup,
+                CleanupOutcome::Complete | CleanupOutcome::ResidualConfined
+            )
     }
 
     fn detach_output(&self) {
@@ -1222,25 +1304,26 @@ async fn run_event_pump(
             SupervisorEvent::Terminal {
                 exit_code,
                 signal,
+                native_signaled,
                 stop_reason,
             } => {
                 let mut state = record.record_state();
-                apply_terminal_status(&mut state, exit_code, signal, stop_reason);
+                apply_terminal_status(&mut state, exit_code, signal, native_signaled, stop_reason);
                 state.stdin_open = false;
                 if !state.terminal_recorded {
                     state.terminal_recorded = true;
                 }
             }
             SupervisorEvent::Cleaned {
-                complete,
+                cleanup,
                 output_complete,
             } => {
                 {
                     let mut state = record.record_state();
-                    state.status.cleanup = if complete {
-                        CleanupOutcome::Complete
-                    } else {
-                        CleanupOutcome::Failed
+                    state.status.cleanup = match cleanup {
+                        SupervisorCleanup::Complete => CleanupOutcome::Complete,
+                        SupervisorCleanup::ResidualConfined => CleanupOutcome::ResidualConfined,
+                        SupervisorCleanup::Failed => CleanupOutcome::Failed,
                     };
                     if !output_complete {
                         state.status.phase = ProcessPhase::Failed;
@@ -1316,18 +1399,21 @@ fn release_active_and_mark_terminal(record: &ProcessRecord) {
     let Some(manager) = record.manager.upgrade() else {
         return;
     };
-    let should_release = {
+    let release = {
         let mut state = record.record_state();
         if state.active_released {
-            false
+            None
         } else {
             state.active_released = true;
-            true
+            Some(state.status.cleanup == CleanupOutcome::ResidualConfined)
         }
     };
-    if should_release {
+    if let Some(residual) = release {
         let mut state = manager.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.active = state.active.saturating_sub(1);
+        if residual {
+            state.residual_active = state.residual_active.saturating_add(1);
+        }
     }
 }
 
@@ -1357,6 +1443,7 @@ fn apply_terminal_status(
     state: &mut RecordState,
     exit_code: Option<i32>,
     signal: Option<ControlSignal>,
+    native_signaled: bool,
     stop_reason: Option<StopReason>,
 ) {
     let output_limited = state.output_limit_crossed;
@@ -1400,7 +1487,7 @@ fn apply_terminal_status(
             state.status.signal = Some(ProcessSignal::Kill);
             state.status.exit_code = None;
         }
-        None if signal.is_some() => {
+        None if native_signaled => {
             state.status.phase = ProcessPhase::Signaled;
             state.status.termination_reason = Some(TerminationReason::Signal);
             state.status.signal = signal.map(|signal| match signal {
@@ -1497,6 +1584,21 @@ fn valid_bare_executable_name(name: &str) -> bool {
         && !name
             .chars()
             .any(|character| matches!(character, '\0' | '/' | '\\' | ':'))
+}
+
+fn normalize_grants(grants: &mut Vec<IsolationPathGrant>) {
+    grants.sort_by(|left, right| left.root.cmp(&right.root));
+    let mut normalized: Vec<IsolationPathGrant> = Vec::with_capacity(grants.len());
+    for grant in grants.drain(..) {
+        if let Some(previous) = normalized.last_mut()
+            && previous.root == grant.root
+        {
+            previous.writable |= grant.writable;
+        } else {
+            normalized.push(grant);
+        }
+    }
+    *grants = normalized;
 }
 
 fn resolve_bare_executable(name: &str, roots: &[PathBuf]) -> Result<PathBuf, ProcessError> {

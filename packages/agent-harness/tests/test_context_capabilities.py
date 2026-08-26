@@ -22,6 +22,7 @@ from converge_agent_harness import (
     FileContextCapability,
     FileContextConfiguration,
     HandoffCapability,
+    HandoffConfiguration,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -29,6 +30,8 @@ from converge_agent_harness import (
     RunBindings,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
+    WorkspaceOutlineCapability,
+    WorkspaceOutlineConfiguration,
     create_environment_run_binding,
 )
 from converge_agent_harness.capabilities.context import (
@@ -38,6 +41,7 @@ from converge_agent_harness.capabilities.context import (
     _serialized_token_estimate,
 )
 from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelMessage,
@@ -54,7 +58,7 @@ from pydantic_ai.usage import RequestUsage
 pytestmark = pytest.mark.anyio
 
 
-def _local_binding(root: Path):
+def _local_binding(root: Path, *, default_working_directory: str = "/"):
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalEnvironmentConfiguration(
             environment_id="context-capability-test",
@@ -71,7 +75,7 @@ def _local_binding(root: Path):
                     binding_revision=1,
                     alias="local",
                     permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
+                    default_working_directory=default_working_directory,
                     provider_binding=provider,
                 ),
             ),
@@ -336,6 +340,69 @@ async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) ->
     content = text.split('<file path="/workspace/AGENTS.md">', 1)[1].split("</file>", 1)[0]
     assert len(content.strip().encode("utf-8")) <= 512
     assert len(content.strip()) <= 127
+
+
+async def test_workspace_and_file_context_are_input_only_while_runtime_and_handoff_follow_tools(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    (workspace / "AGENTS.md").write_text("Default repository guidance", encoding="utf-8")
+    (workspace / "extra.md").write_text("Explicit file guidance", encoding="utf-8")
+    (workspace / "src").mkdir()
+    (workspace / "src" / "module.py").write_text("value = 1", encoding="utf-8")
+    seen: list[list[ModelMessage]] = []
+
+    async def inspect_workspace() -> str:
+        return "inspected"
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        seen.append(messages)
+        if len(seen) == 1:
+            assert "inspect_workspace" in {tool.name for tool in info.function_tools}
+            yield {
+                0: DeltaToolCall(
+                    name="inspect_workspace",
+                    json_args="{}",
+                    tool_call_id="inspect-1",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            Capability(tools=[inspect_workspace], id="test-tools"),
+            WorkspaceOutlineCapability(WorkspaceOutlineConfiguration(max_depth=3)),
+            FileContextCapability(FileContextConfiguration(paths=("extra.md",))),
+            RuntimeContextCapability(RuntimeContextConfiguration(context_window_tokens=200_000)),
+            HandoffCapability(HandoffConfiguration(summary_reminder_tokens=0)),
+        ),
+    )
+    result = await executable.run(
+        "Inspect",
+        bindings=RunBindings.local(environment=_local_binding(tmp_path, default_working_directory="/project")),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert len(seen) == 2
+    input_text = _user_text(seen[0])
+    assert "Workspace file outline (content not loaded)" in input_text
+    assert '"path":"/workspace/project/src/module.py"' in input_text
+    assert "Default repository guidance" in input_text
+    assert "Explicit file guidance" in input_text
+    assert '<context-reminder source="converge.handoff">' not in input_text
+
+    tool_results_text = _user_text(seen[1])
+    assert "Workspace file outline (content not loaded)" not in tool_results_text
+    assert "Default repository guidance" not in tool_results_text
+    assert "Explicit file guidance" not in tool_results_text
+    assert '"context_window_tokens":200000' in tool_results_text
+    assert '"elapsed_seconds":' in tool_results_text
+    assert '<context-reminder source="converge.handoff">' in tool_results_text
 
 
 async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_path: Path) -> None:

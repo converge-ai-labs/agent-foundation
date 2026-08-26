@@ -6,7 +6,7 @@
 
 The Harness is one EIP requester, not the reason those resources exist. Product gateways, CLIs, IDEs, provider controllers, and trusted background services can use the same generated low-level client. Envd never needs to know whether output becomes model input, a browser preview, an artifact, or another backend operation.
 
-Envd is optional for Harness Environments. Direct Local remains first-class when an embedding process intentionally grants local roots and commands. The [Environment Provider package](../agent-environment-provider/README.md) supplies Direct Local or EIP attachments; Docker and E2B use EIP. Both operation backends satisfy [Harness Environment Integration](../agent-harness/08-environment-integration.md).
+Envd is optional for Harness Environments. Direct Local remains first-class when an embedding process intentionally grants local roots and commands. The [Environment Provider package](../agent-environment-provider/README.md) supplies Direct Local or EIP attachments; Local Envd, Docker, and E2B use EIP. Both operation backends satisfy [Harness Environment Integration](../agent-harness/08-environment-integration.md).
 
 Envd does not provision a container or VM. A provider creates or attaches the native Environment and supplies trusted daemon bootstrap. Envd governs operations inside it. In required mode it contains every command with a native Linux, macOS, or Windows backend. In explicit disabled mode an outer sandbox owns containment while all other envd controls remain active.
 
@@ -37,7 +37,7 @@ flowchart LR
 
     subgraph Native[Selected Environment]
         Files[Configured files and state]
-        Processes[Owned command trees and ports]
+        Processes[Owned command records, native targets, and ports]
     end
 
     Provider --> Envd
@@ -100,12 +100,12 @@ Text and structured operations are incrementally bounded. Raw file bytes use one
 
 ### Command execution and isolation
 
-One execution manager owns every foreground and background command tree. Structured executable selection distinguishes trusted bare names from configured-mount `EIPPath` values. Both `shell.exec` and `process.start` cross the same gated prepare/owner-commit/release/exec-acknowledgement pipeline.
+One execution manager owns every foreground and background command record plus its backend-managed native target. Structured executable selection distinguishes trusted bare names from configured-mount `EIPPath` values. Both `shell.exec` and `process.start` cross the same gated prepare/owner-commit/release/exec-acknowledgement pipeline.
 
 Required isolation is a supported product contract on all three OS families:
 
 - Linux: bubblewrap namespaces and PID 1 supervision;
-- macOS: deny-default Seatbelt with honest residual-confined cleanup semantics;
+- macOS: deny-default inherited Seatbelt confinement plus managed process-group cleanup, without claiming bare-host adversarial whole-tree ownership;
 - Windows: AppContainer/restricted capabilities plus capability-specific ACL/network projection for containment, and a non-breakaway Job Object for whole-tree ownership.
 
 A Job Object alone is never treated as a sandbox. Every backend passes a production probe before carrier admission. Explicit `disabled` mode delegates containment to an outer sandbox without disabling envd authorization, ownership, output, or cleanup controls.
@@ -166,7 +166,7 @@ Four lifetimes remain separate:
 3. **Daemon-generation state** includes sessions, operations/receipts, process handles, output references, spool data, and cleanup evidence. Transfers have a narrower session lifetime. All volatile state ends at restart.
 4. **Host execution state** owns durable Agent attempts, checkpoints, and outcomes and is never committed by envd.
 
-Native facts also remain distinct: operation accepted, OS dispatch crossed, requested exec confirmed, initial command terminal, command tree cleaned, EIP response observed, and Host execution committed. A receipt records only named envd-observed facts.
+Native facts also remain distinct: operation accepted, OS dispatch crossed, requested exec confirmed, initial command terminal, backend cleanup terminal, EIP response observed, and Host execution committed. A receipt records only named envd-observed facts.
 
 ## Security Posture
 
@@ -181,21 +181,21 @@ Carrier trust, EIP authorization, mount policy, process ownership, output bounds
 
 ## Failure Model
 
-| Boundary                                                    | Outcome                                                             |
-| ----------------------------------------------------------- | ------------------------------------------------------------------- |
-| Config, fresh runtime, or required isolation probe fails    | No local readiness or carrier admission                             |
-| Token, TLS, endpoint, or subprotocol validation fails       | Generation-fatal drain; no unauthenticated or insecure retry        |
-| Transient reverse-WebSocket connection fails                | Capped jittered reconnect; generation state remains                 |
-| Initialization identity/version/required-method check fails | No initialized session or resource dispatch                         |
-| Validation, policy, path, timeout, or capacity fails        | Typed pre-dispatch error                                            |
-| Carrier fails before acceptance                             | Retry only with proven non-dispatch                                 |
-| Carrier fails after possible mutation acceptance            | Reconcile the same operation ID before new mutation                 |
-| Reader carrier ends before close acceptance                 | No successful read completion                                       |
-| Writer carrier ends before commit handoff                   | Candidate abort/cleanup; destination unchanged by envd              |
-| Carrier fails during/after commit                           | Receipt or unknown outcome; never automatic retry                   |
-| Command output exceeds its reserved ceiling                 | Tree termination, retained prefixes, and explicit incomplete status |
-| Cleanup cannot be proven                                    | Conservative ownership and explicit cleanup failure                 |
-| Daemon drains                                               | Admission stops before process and generation-state cleanup         |
+| Boundary                                                    | Outcome                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| Config, fresh runtime, or required isolation probe fails    | No local readiness or carrier admission                            |
+| Token, TLS, endpoint, or subprotocol validation fails       | Generation-fatal drain; no unauthenticated or insecure retry       |
+| Transient reverse-WebSocket connection fails                | Capped jittered reconnect; generation state remains                |
+| Initialization identity/version/required-method check fails | No initialized session or resource dispatch                        |
+| Validation, policy, path, timeout, or capacity fails        | Typed pre-dispatch error                                           |
+| Carrier fails before acceptance                             | Retry only with proven non-dispatch                                |
+| Carrier fails after possible mutation acceptance            | Reconcile the same operation ID before new mutation                |
+| Reader carrier ends before close acceptance                 | No successful read completion                                      |
+| Writer carrier ends before commit handoff                   | Candidate abort/cleanup; destination unchanged by envd             |
+| Carrier fails during/after commit                           | Receipt or unknown outcome; never automatic retry                  |
+| Command output exceeds its reserved ceiling                 | Backend cleanup, retained prefixes, and explicit incomplete status |
+| Cleanup cannot be proven                                    | Conservative ownership and explicit cleanup failure                |
+| Daemon drains                                               | Admission stops before process and generation-state cleanup        |
 
 ## Trade-offs
 
@@ -219,7 +219,7 @@ One operation ID removes parallel idempotency and receipt-selector stores. A run
 04. Only HTTP binds a dedicated inbound EIP listener; envd exposes no inbound WebSocket, browser, generic HTTP, health, or readiness API.
 05. Initialization publishes configured mounts, exact methods, actionable limits, exact execution-feature support, generation, and truthful isolation posture without granting authority.
 06. Operation ID is the active-cancellation identity for every post-initialization method and the sole replay/receipt identity for effectful methods; `initialize` is ledger-external, and response loss cannot erase retained side-effect evidence.
-07. One execution owner controls every command tree through cleanup, and required isolation fails closed on Linux, macOS, and Windows.
+07. One execution owner controls every command record and backend-managed native target through terminal cleanup, and required isolation fails closed on Linux, macOS, and Windows.
 08. Windows containment requires AppContainer/restricted capabilities plus ACL/network projection; Job Object ownership is necessary but not sufficient.
 09. Every producer, frame, queue, transfer, candidate, process, spool object, and record is bounded while created or consumed.
 10. Reader close is the sole read acceptance; writer commit is the sole destination publication.

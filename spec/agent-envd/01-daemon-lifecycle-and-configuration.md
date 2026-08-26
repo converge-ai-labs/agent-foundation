@@ -93,7 +93,9 @@ Executable search roots and shell profiles are trusted canonical configuration d
 
 ## Configuration Sources and Secrets
 
-The executable accepts trusted configuration from an operator-selected file, explicit non-secret CLI values, documented process environment, and a provider-created private bootstrap channel. One effective immutable value is computed before owner initialization. Conflicting duplicate authority-bearing values fail startup.
+The executable accepts trusted configuration from an operator-selected file, explicit non-secret CLI values, documented process environment, and a provider-created private bootstrap channel. One effective immutable value is computed before owner initialization. For execution policy, documented environment values override the corresponding strict JSON `execution` fields, which override the defaults; the complete merged policy is canonicalized and validated once before owner initialization.
+
+The optional JSON `execution` object contains `isolation`, `network`, and `extra_read_only_paths` with the same values and defaults as the environment settings below. Unknown fields fail startup. The packaged sandbox container image explicitly sets `AGENT_ENVD_EXECUTION_ISOLATION=disabled` because that image delegates child containment to its outer container boundary; the standalone binary does not change its `required` default.
 
 Stable non-secret environment configuration includes:
 
@@ -208,6 +210,8 @@ Startup order is:
 
 No stdio frame is accepted, HTTP listener begins admission, or reverse-WebSocket attempt begins before the required isolation probe succeeds. Only the selected HTTP profile binds an inbound EIP socket.
 
+`agent-envd isolation probe [--config <absolute-json-path>] --json` runs the same selected-backend production probe without admitting a carrier. It reports required containment or explicit outer-Host delegation as bounded JSON and exits unsuccessfully when required isolation cannot establish its configured guarantees.
+
 ## Readiness
 
 Readiness has two distinct facts:
@@ -229,7 +233,7 @@ Generation state has four clear domains:
 
 - a session contains initialization and session-scoped file transfers;
 - one operation ledger contains running requests and retained terminal evidence/receipts for effectful methods; completed observation entries are removed after response handoff;
-- the command manager contains owned process trees and process records;
+- the command manager contains owned command records and backend-managed native targets;
 - the output spool contains stdout/stderr records and disk files.
 
 Filesystem candidates remain in the file-transfer or mutation domain. These domains can coordinate one handoff, such as a sealed writer becoming commit-owned, without introducing generic ownership tokens or overlapping registries.
@@ -244,11 +248,11 @@ Session close removes only session-owned transfers. Accepted operations, process
 
 Shutdown begins from an operator signal, stdio parent loss, explicit provider lifecycle action outside EIP, generation-fatal reverse-WebSocket state, or unrecoverable ownership fault. EIP has no daemon-shutdown method.
 
-Envd stops new admission, closes session transfers, asks accepted foreground work to cancel, and lets already owned mutations publish their strongest terminal evidence within a finite drain budget. It closes process stdin, applies the active backend's strongest cleanup to every command tree, waits for bounded cleanup evidence, removes generation-private state, closes carrier/bootstrap channels, and exits.
+Envd stops new admission, closes session transfers, asks accepted foreground work to cancel, and lets already owned mutations publish their strongest terminal evidence within a finite drain budget. It closes process stdin, applies the active backend's strongest cleanup to every backend-managed command target, waits for bounded cleanup evidence, removes generation-private state, closes carrier/bootstrap channels, and exits.
 
-No process is contractually allowed to outlive envd shutdown. Required Linux namespace and Windows Job cleanup normally prove complete tree teardown. macOS can report a residual only while inherited Seatbelt confinement remains proven. Disabled mode relies on outer-Host teardown for authority outside envd's native target.
+Envd does not report normal completion while cleanup of an active backend's managed target remains unresolved. Required Linux namespace and Windows Job cleanup prove complete tree teardown. Required macOS cleanup manages the initial process group; a descendant that deliberately creates another process group or session before observation remains Seatbelt-confined but is outside bare-host whole-tree proof. A Host that requires adversarial whole-tree teardown owns a disposable outer Environment boundary. Disabled mode likewise relies on outer-Host teardown for authority outside envd's native target.
 
-If required cleanup cannot be proven, envd exits nonzero with safe supervisor diagnostics and never reports normal stopped completion. A provider can then destroy the outer Environment boundary.
+If required cleanup of the backend-managed target cannot be proven, envd exits nonzero with safe supervisor diagnostics and never reports normal stopped completion. A provider can then destroy the outer Environment boundary.
 
 ## Observability
 
@@ -262,23 +266,23 @@ The EIP descriptor exposes only non-secret client-actionable limits, exact avail
 
 ## Failure Semantics
 
-| Failure                                                                  | State and observable result                                               |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| Invalid/conflicting configuration                                        | Exit nonzero before local readiness                                       |
-| Runtime parent cannot be locked or stale generation cleanup is uncertain | Exit nonzero before local readiness                                       |
-| Runtime subtree cannot be created fresh and private                      | Exit nonzero before admission                                             |
-| Required isolation backend/probe fails                                   | Exit nonzero; no carrier admission or fallback                            |
-| Stdio framing setup fails                                                | Exit nonzero before initialization                                        |
-| HTTP bind, credential, native TLS, or plaintext-scope validation fails   | Exit nonzero before listener admission                                    |
-| Reverse-WebSocket endpoint/TLS/subprotocol is invalid                    | Generation-fatal drain and nonzero exit                                   |
-| Network-profile token is missing, malformed, unreadable, or rejected     | Generation-fatal drain and nonzero exit                                   |
-| Transient DNS/connect/liveness failure                                   | Capped jittered reconnect; generation-owned state remains                 |
-| Runtime admission exhausted                                              | Typed pre-dispatch `busy`; no native work                                 |
-| Transfer/staging/spool quota exhausted                                   | Typed `busy` or `quota_exceeded`; no unbounded allocation                 |
-| Candidate/spool cleanup is transiently uncertain                         | Conservative charge plus bounded retry; safe unaffected work can continue |
-| Cleanup uncertainty crosses safety threshold                             | Block affected admission or drain; never undercount ownership             |
-| Fatal owner inconsistency                                                | Enter `Draining`, preserve strongest evidence, clean trees, exit nonzero  |
-| Shutdown cleanup remains incomplete                                      | Exit nonzero; never report normal completion                              |
+| Failure                                                                  | State and observable result                                                        |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Invalid/conflicting configuration                                        | Exit nonzero before local readiness                                                |
+| Runtime parent cannot be locked or stale generation cleanup is uncertain | Exit nonzero before local readiness                                                |
+| Runtime subtree cannot be created fresh and private                      | Exit nonzero before admission                                                      |
+| Required isolation backend/probe fails                                   | Exit nonzero; no carrier admission or fallback                                     |
+| Stdio framing setup fails                                                | Exit nonzero before initialization                                                 |
+| HTTP bind, credential, native TLS, or plaintext-scope validation fails   | Exit nonzero before listener admission                                             |
+| Reverse-WebSocket endpoint/TLS/subprotocol is invalid                    | Generation-fatal drain and nonzero exit                                            |
+| Network-profile token is missing, malformed, unreadable, or rejected     | Generation-fatal drain and nonzero exit                                            |
+| Transient DNS/connect/liveness failure                                   | Capped jittered reconnect; generation-owned state remains                          |
+| Runtime admission exhausted                                              | Typed pre-dispatch `busy`; no native work                                          |
+| Transfer/staging/spool quota exhausted                                   | Typed `busy` or `quota_exceeded`; no unbounded allocation                          |
+| Candidate/spool cleanup is transiently uncertain                         | Conservative charge plus bounded retry; safe unaffected work can continue          |
+| Cleanup uncertainty crosses safety threshold                             | Block affected admission or drain; never undercount ownership                      |
+| Fatal owner inconsistency                                                | Enter `Draining`, preserve strongest evidence, clean managed targets, exit nonzero |
+| Shutdown cleanup remains incomplete                                      | Exit nonzero; never report normal completion                                       |
 
 ## Compatibility
 
@@ -298,4 +302,4 @@ Provider configuration changes restart envd and create a new generation. Live EI
 08. Required isolation probes Linux, macOS, or Windows before carrier admission and never selects disabled after failure.
 09. Local readiness and initialized-carrier readiness remain distinct; reconnect does not change generation or erase generation-owned resources.
 10. Each start exclusively locks its dedicated runtime parent, proves removal of every validated crash-left generation tree, then creates fresh command-home, command-temp, spool, control, and probe state; stale spool bytes are never left outside current capacity accounting while service starts.
-11. Shutdown stops admission before cleanup, terminates every owned command tree, removes volatile generation state, and reports uncertainty rather than false success.
+11. Shutdown stops admission before cleanup, applies the strongest platform cleanup to every backend-managed command target, removes volatile generation state, and reports uncertainty rather than false success.

@@ -10,18 +10,18 @@ Environment is deliberately outside Agent composition. An Agent declares authore
 
 ## Boundaries
 
-| Concern                                                   | Owner                                     | Agent relationship                                                              |
-| --------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
-| Reloadable Agent source document and component references | Agent UI configuration catalog            | Validates and versions desired composition                                      |
-| Model, Prompt, Plugin, and Skill revision content         | Owning Agent UI resource catalogs         | Referenced exactly during resolution                                            |
-| Native Agent definition and build lifecycle               | Harness                                   | Receives reconstructed native values through its public build contract          |
-| Capability behavior and namespaced state                  | Capability and Harness                    | Agent selects supported declarative forms; state remains in `HarnessState`      |
-| Harness plugin factories and middleware                   | Harness plugin system                     | Agent UI constructs the exact Harness plugin document and trusted Build Context |
-| Child topology and inline delegation                      | Harness subagent contract                 | Snapshot reconstructs complete child definitions and authored edge ceilings     |
-| Local asynchronous child tools                            | Agent UI Host Capability                  | Agent selects behavior; fresh run attachment supplies process-local authority   |
-| Environment desired state and provider resources          | Agent UI Session and Environment Provider | Independent Session selection; never serialized into Agent composition          |
-| Current Model, Environment, credentials, and Identity     | Fresh Host bindings                       | Reauthorized for every invocation                                               |
-| Durable hosted definitions and Presets                    | Foundation Service                        | Independent schema and revision authority; no implicit conversion               |
+| Concern                                                   | Owner                                     | Agent relationship                                                                       |
+| --------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Reloadable Agent source document and component references | Agent UI configuration catalog            | Validates and versions desired composition                                               |
+| Model, Prompt, Plugin, and Skill revision content         | Owning Agent UI resource catalogs         | Referenced exactly during resolution                                                     |
+| Native Agent definition and build lifecycle               | Harness                                   | Receives reconstructed native values through its public build contract                   |
+| Capability behavior and namespaced state                  | Capability and Harness                    | Agent selects supported declarative forms; state remains in `HarnessState`               |
+| Harness plugin factories and middleware                   | Harness plugin system                     | Agent UI constructs the exact Harness plugin document and trusted Build Context          |
+| Child topology and immutable built collection             | Harness subagent contract                 | Snapshot reconstructs complete child definitions and authored edge ceilings              |
+| Model-facing child execution                              | Agent UI async-subagent Capability        | Async-only tools over exact built children; fresh run attachment supplies Host authority |
+| Environment desired state and provider resources          | Agent UI Session and Environment Provider | Independent Session selection; never serialized into Agent composition                   |
+| Current Model, Environment, credentials, and Identity     | Fresh Host bindings                       | Reauthorized for every invocation                                                        |
+| Durable hosted definitions and Presets                    | Foundation Service                        | Independent schema and revision authority; no implicit conversion                        |
 
 ## Agent Definition Document
 
@@ -36,13 +36,24 @@ class AgentDefinitionDocument(BaseModel):
     model: ResourceRef
     prompt: ResourceRef
     plugins: tuple[ResourceRef, ...]
-    skills: tuple[ResourceRef, ...]
+    skills: AgentSkillConfiguration
     capabilities: tuple[FirstPartyCapabilitySelection, ...]
     environment: AgentEnvironmentRequirements
     subagents: tuple[SubagentEdge, ...]
-    delegation: DelegationPresentation
+    async_subagents: AsyncSubagentConfiguration
     output: AgentOutputSelection
     model_recovery: ModelRecoverySelection
+
+
+class AgentSkillConfiguration(BaseModel):
+    available: tuple[ResourceRef, ...]
+    materialization_binding: str | None
+    default_selection: SkillNameSelection
+
+
+class SkillNameSelection(BaseModel):
+    mode: Literal["all", "exact"]
+    names: tuple[str, ...] = ()
 
 
 class SubagentEdge(BaseModel):
@@ -52,6 +63,9 @@ class SubagentEdge(BaseModel):
     context: DelegationContextPolicy
     usage_limits: UsageLimits | None
     environment: ChildEnvironmentPolicy
+    lifetime: Literal["parent_scope", "session"]
+    steering: Literal["enabled", "disabled"]
+    continuation: Literal["enabled", "disabled"]
 
 
 class AgentEnvironmentRequirements(BaseModel):
@@ -73,18 +87,23 @@ class ChildEnvironmentPolicy(BaseModel):
     bindings: tuple[str, ...] | None
 
 
-class DelegationPresentation(BaseModel):
-    inline: Literal["unified", "named", "disabled"]
-    background: Literal["agent-ui", "disabled"]
+class AsyncSubagentConfiguration(BaseModel):
+    tools: Literal["standard", "disabled"]
+    max_active_jobs: int
+    max_jobs_per_run: int
+    max_depth: int
+    completion_delivery: Literal["active_or_next_run", "manual"]
 ```
 
-`model`, `prompt`, `plugins`, `skills`, and child `agent` values reference resources by stable identity in one candidate configuration generation. Resolution replaces every reference with its exact `ResourceRevisionRef`; an immutable resolved snapshot never retains “latest” lookup semantics.
+`model`, `prompt`, `plugins`, every `skills.available` entry, and child `agent` values reference resources by stable identity in one candidate configuration generation. Resolution replaces every reference with its exact `ResourceRevisionRef`; an immutable resolved snapshot never retains “latest” lookup semantics.
 
-Plugin order and Skill order are significant. Immediate child names are unique. A child edge selects one complete child Agent, authored context and usage ceilings, and an explicit Environment resource policy. It does not inherit the parent's tools, Capabilities, plugins, model, Prompt, credentials, or live bindings.
+Plugin order is significant. Available Skill revisions form a canonical name-keyed set; source-file ordering is retained for authoring display but does not create different runtime behavior after the same unique final catalog resolves. `default_selection.mode="all"` exposes the complete conflict-resolved available catalog. `mode="exact"` exposes only the unique exact names in `names`; an empty tuple deliberately exposes no Skills. Names select final `SKILL.md` identities rather than resource IDs, source patterns, exclusions, or paths. Resolution rejects an exact name absent from the available imported revisions and rejects ambiguous duplicate final names. `materialization_binding` is absent exactly when `available` is empty; otherwise it names one required Agent Environment binding whose FileOperator operations permit the Agent UI materializer to reconcile and scan its reserved subtree.
 
-`AgentEnvironmentRequirements` declares the binding names and provider-neutral operation families that must be available when a Session pairs this Agent with an Environment. Agent resolution validates syntax and operation keys but cannot prove resource availability because Environment selection is independent. Session creation or fork performs the cross-snapshot compatibility check against the selected Environment topology and permission ceilings.
+Immediate child names are unique. A child edge selects one complete child Agent, authored context and usage ceilings, an explicit Environment resource policy, and narrower Host lifecycle controls. It does not inherit the parent's tools, Capabilities, plugins, model, Prompt, Skill selection, credentials, or live bindings. `parent_scope` requests cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` permits accepted work to outlive that immediate owner until completion, explicit cancellation, Session deletion, or process shutdown. Neither policy makes active execution restart-durable. `max_active_jobs` bounds accepted, queued, and running jobs owned by the Agent node; waiting jobs retain state but consume no live-execution slot. `max_jobs_per_run` bounds new submissions from one root or child Harness Run.
 
-`none` supplies an empty child Environment topology. `dedicated` creates or resumes independently fenced provider resource instances scoped to the child invocation or background job and requires every selected provider to advertise `MULTIPLE_FROM_SPEC`. `shared_root` acquires separate concurrent attachments from the root resource instances and requires every selected provider to advertise `SHARED`; the child intentionally observes and can mutate the same underlying workspace. `serialized_root` waits for selected root instances to have no active attachment, then acquires fresh attachments sequentially; it is valid only for background children because an inline child waiting for its still-entered parent binding would deadlock. `bindings` selects a subset of the Session Environment topology or is absent to select all bindings. Unknown names, insufficient operations, or unsupported allocation/concurrency capabilities fail Agent/Environment compatibility during Session creation or fork, before provider effects.
+`AgentEnvironmentRequirements` declares the binding names and provider-neutral operation families that must be available when a Session pairs this Agent with an Environment. A node with available Skills includes the list/stat/read/write/create/remove operations required by its `materialization_binding`; an exact empty exposure still performs full source materialization and validation because Harness exact-name selection occurs after discovery. Agent resolution validates syntax and operation keys but cannot prove resource availability because Environment selection is independent. Session creation or fork performs the cross-snapshot compatibility check against the selected Environment topology and permission ceilings.
+
+`none` supplies an empty child Environment topology and is compatible only when the child node has no available Skills or other required Environment binding. `dedicated` creates or resumes independently fenced provider resource instances scoped to the async child job and requires every selected provider to advertise `MULTIPLE_FROM_SPEC`. `shared_root` acquires separate concurrent attachments from the root resource instances and requires every selected provider to advertise `SHARED`; the child intentionally observes and can mutate the same underlying workspace. `serialized_root` keeps the accepted job queued until selected root instances have no active attachment, then acquires fresh attachments sequentially. `bindings` selects a subset of the Session Environment topology or is absent to select all bindings. Unknown names, insufficient operations, or unsupported allocation/concurrency capabilities fail Agent/Environment compatibility during Session creation or fork, before provider effects.
 
 `AgentOutputSelection` maps through a trusted Agent UI adapter to one native Harness business-output contract. The interactive default is text, but structured first-party output contracts can be selected by schema key and version. Arbitrary Python output classes and import targets are not serialized.
 
@@ -97,10 +116,10 @@ Agent revision
   = Model revision
   + Prompt revision
   + ordered Plugin instance revisions
-  + ordered Skill revisions
+  + ordered available Skill revisions and exact default exposure
   + curated Capability selections
   + Environment requirements
-  + complete child Agent revisions and edges
+  + complete child Agent revisions, edges, and async policy
   + output and recovery policy
 ```
 
@@ -109,7 +128,7 @@ The sources have distinct responsibilities:
 - **Model** selects native provider/model behavior and defaults; fresh credentials and native Model resolution remain run-scoped.
 - **Prompt** supplies complete ordered instructions.
 - **Plugin instances** supply trusted Harness-wide middleware through the Harness-owned plugin contract.
-- **Skills** supply inspectable reusable instructions and artifacts through the first-party Skills Capability.
+- **Skills** supply inspectable reusable instructions and artifacts through one explicit Harness `SkillManager` composition plus fresh exact-name run selection.
 - **Capabilities** own Agent-loop tools, Toolsets, guidance, settings, and hooks.
 - **Environment requirements** declare provider-neutral binding/operation needs without selecting provider resources.
 - **Child Agents** are complete recursively resolved Agent definitions.
@@ -132,14 +151,20 @@ A Model adapter can reuse a documented reentrant native client or Model internal
 
 Prompt resolution produces complete immutable instruction content before the Harness build. The executable never rereads a mutable Prompt source file.
 
-Each selected Skill revision is verified and materialized through the Skills Capability's trusted source/materializer contract. Skill content is immutable for the executable snapshot. A run can place or expose that content in the selected Environment only through fresh Environment authority; Skill selection alone grants no filesystem access.
+Each available Skill revision was imported through the public Harness `SkillManager` and Agent UI's Host-owned revision process. Reconstruction verifies its immutable package object, manifest, and digest. For each Agent node, Agent UI constructs one explicit `SkillManager` whose ordered source roots contain only that node's pinned package revisions and whose trusted materializer writes those exact files through the current run Environment's `FileOperator` into a content-addressed Agent UI-owned logical root. The root is unique to the Agent snapshot and node and resolves beneath `materialization_binding`; materialization verifies or replaces that exact managed subtree before scanning, so stale files from another revision cannot enter the catalog. Session compatibility rejects missing or insufficient file operations before provider effects. Passing this manager to `SkillsCapability` replaces the Harness default workspace source; no ambient home, project, package, or sibling directory enters the runtime catalog.
+
+Run preparation uses the Harness dependency boundary directly. `SkillManager.scan_environment()` captures every configured root, opens exact revision-pinned `FileOperator` scopes, performs materialization and discovery, validates resolved documents and conflict/catalog bounds, and reselects every configured root before returning a `BoundSkillCatalog`; this scan-time fence includes empty roots and roots whose items lost conflict resolution. `SkillsCapability` then applies the fresh exact-name run selection and uses `BoundSkillCatalog.require_current()` to fence only the selected catalog-bearing logical routes before each model request and before and after each tool execution. A topology change unrelated to those routes does not invalidate the selected catalog. The Capability also owns `SkillPath` publication, instructions, and access events. The process-local bound catalog is neither persisted nor reused by another logical Run. The manager uses `conflict="error"`, and its catalog bounds are locked in the snapshot. Because Agent UI-managed available revisions must have unique final names, ambiguity fails snapshot resolution rather than being silently hidden by source precedence.
+
+When an Agent node has no available Skills, Agent UI omits `SkillsCapability`; only an empty effective selection is valid. Otherwise, for every root or child Harness Run, Agent UI derives the pinned effective selection and supplies a fresh `SkillSelectionRunCapability(names=frozenset(...))` when the selection is exact. Omitting that run Capability means the complete conflict-resolved available catalog; supplying an empty set means no Skill instructions or paths; an unknown exact name fails preparation before model exposure. The selection is repeated on resumed Runs and is never restored from `HarnessState`. A child derives its own Agent node and Session selection; the parent's allowlist is not inherited.
+
+Skill content is immutable for the executable snapshot. Materialization or selection grants no filesystem operation, credential, plugin, Capability, or package authority. `skills_catalog_resolved` and `skill_accessed` Harness context events remain observations and enter Agent UI's ordinary AG-UI processing path.
 
 `FirstPartyCapabilitySelection` is a discriminated union owned by the Agent UI schema. Each member has an exact key, schema version, and typed configuration. Unknown keys or versions fail resolution. Agent UI adapters construct public Harness/Pydantic Capability values; there is no arbitrary Capability import registry.
 
-The curated catalog includes the dynamic Environment, Working State, user interaction, document/media/web, Session-read, and Agent UI background-child behavior supported by the selected Agent UI release. A Capability that requires Host collaboration follows the two-layer pattern:
+The curated catalog includes the dynamic Environment, Working State, user interaction, document/media/web, Session-read, and Agent UI async-subagent behavior supported by the selected Agent UI release. A Capability that requires Host collaboration follows the two-layer pattern:
 
 - the definition-selected Capability owns stable model-visible behavior;
-- a fresh run Capability supplies current Session, Environment, repository, or background-monitor authority.
+- a fresh run Capability supplies current Session, Environment, repository, or async-subagent service authority.
 
 Missing or mismatched fresh collaboration fails the affected operation before side effects.
 
@@ -183,7 +208,7 @@ Resolution occurs before Session creation, explicit fork, or validation preview.
 1. captures one accepted configuration generation;
 2. resolves the root Agent and every Model, Prompt, Plugin, Skill, Capability, output, and child reference;
 3. expands the finite child graph and rejects missing revisions, duplicate immediate-child names, and cycles;
-4. validates Capability combinations, Environment requirements, delegation presentations, and child edge ceilings;
+4. validates Capability combinations, Environment requirements, exact Skill names, async-subagent policy, and child edge ceilings;
 5. verifies selected adapter and package provenance under current policy;
 6. canonicalizes all behavior-affecting content and dependency locks;
 7. computes a logical Agent digest;
@@ -201,6 +226,8 @@ class ResolvedAgentSnapshot(BaseModel):
     prompts: tuple[ResolvedPromptRevision, ...]
     plugins: tuple[ResolvedPluginRevision, ...]
     skills: tuple[ResolvedSkillRevision, ...]
+    skill_packages: tuple[SkillPackageObjectRef, ...]
+    skill_selections: tuple[ResolvedAgentSkillSelection, ...]
     capability_schemas: tuple[CapabilitySchemaLock, ...]
     adapter_locks: tuple[DependencyLock, ...]
     harness_release: str
@@ -214,25 +241,21 @@ A Session pins one exact resolved Agent snapshot identity and digest. A dynamic 
 
 An `ExecutableAgent` corresponds to one resolved Agent snapshot and complete child graph. Agent UI can cache it by logical Agent digest, Harness release, locked adapter provenance, and activated restart-bound process configuration. A cache entry contains no Session state, credential, Environment resource, or run authority.
 
-Changing any behavior-affecting component creates another logical digest and executable. Agent UI never hot-toggles instructions, plugins, Skills, Capabilities, output, recovery policy, or child edges inside an active executable. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
+Changing any behavior-affecting component creates another logical digest and executable. Agent UI never hot-toggles instructions, plugins, available Skills, default Skill exposure, Capabilities, output, recovery policy, async policy, or child edges inside an active executable. A Session can pin an exact root/child Skill exposure override at creation or fork, but changing that pinned override also requires a fork. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
 
-Run-time values vary only through contracts designed for fresh binding: Identity, current model binding, credentials, Environment attachments, policy narrowing, Session-read collaborator, and background-job collaborator. Fresh binding can narrow configured behavior but cannot add a Capability, plugin, Skill, output type, or child edge absent from the snapshot.
+Run-time values vary only through contracts designed for fresh binding: Identity, current model binding, credentials, exact Skill selection, Environment attachments, policy narrowing, Session-read collaborator, and async-subagent collaborator. Fresh binding realizes the Session-pinned effective Skill selection and can apply current policy narrowing, but it cannot add a Capability, plugin, available Skill, output type, or child edge absent from the snapshot or select a Skill outside that Session policy.
 
-## Child Definitions
+## Child Definitions and Async-Only Presentation
 
-Every child edge resolves to one complete [Harness `SubagentDefinition`](../agent-harness/11-delegation-and-subagents.md#child-definitions-and-built-collection). The child owns its Model, Prompt, Plugins, Skills, output, Capabilities, recovery policy, nested children, and Environment requirement.
+Every child edge resolves to one complete [Harness `SubagentDefinition`](../agent-harness/11-delegation-and-subagents.md#child-definitions-and-built-collection). The child owns its Model, Prompt, Plugins, available Skills and default exposure, output, Capabilities, recovery policy, nested children, and Environment requirement. One recursive Harness build produces the immutable `SubagentCollection` of exact `BuiltSubagent` values.
 
-A `self` authoring convenience can be exposed by the configuration editor, but resolution expands it to a finite complete child revision and narrows recursive delegation before snapshot publication. Runtime cloning of the parent Agent, context, credentials, or authority is not supported.
+A `self` authoring convenience can be exposed by the configuration editor, but resolution expands it to a finite complete child revision and narrows recursive child topology before snapshot publication. Runtime cloning of the parent Agent, context, credentials, Skill selection, or authority is not supported.
 
-The root separately selects presentation:
+Agent UI never installs the Harness first-party `DelegationCapability` or exposes its blocking inline `delegate` path. `async_subagents.tools="standard"` instead selects the Agent UI-owned declarative async Capability. During each run that Capability reads the exact immediate collection from `AgentContext.subagents`; a fresh typed Agent UI run Capability supplies current Session-scoped submission, binding, scheduling, and delivery authority. `tools="disabled"` retains the built collection for trusted composition but exposes no model-facing child operation.
 
-- inline `unified` exposes the first-party Harness `delegate` selector;
-- inline `named` exposes one bounded named tool per child;
-- inline `disabled` retains built children for trusted Host behavior without an inline model tool;
-- background `agent-ui` enables Agent UI background tools for the same exact built collection;
-- background `disabled` supplies no local asynchronous child tools.
+The standard async surface is fixed to background submission and has no execution-mode argument. It provides `delegate`, `resume_subagent`, `subagent_info`, `wait_subagent`, `steer_subagent`, and `cancel_subagent` over Host-owned job records. A bounded wait may await an independently scheduled job, but spawn never executes a child inline and parent cancellation never converts a child into Harness Delegation State. Complete runtime semantics are owned by [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#async-subagent-capability).
 
-Inline and background presentations can coexist. They use different lifecycle owners but never construct separate child definitions or alternative Agent loops.
+Nested children use the same rule recursively. Each async job invokes the selected child through its ordinary `ExecutableAgent.stream()` with fresh bindings, owns separate child `HarnessState`, usage, events, and delivery, and never merges child continuation into the parent's `HarnessState`.
 
 ## Configuration Reload
 
@@ -241,25 +264,26 @@ A newly accepted configuration generation can add, remove, or change source defi
 - an unchanged resolved digest can reuse a compatible executable;
 - a changed digest creates another snapshot and executable;
 - removed current source content does not delete a snapshot pinned by a retained Session;
-- an active Run and its background jobs retain the snapshot with which they started;
+- an active Run and its async-subagent jobs retain the snapshot with which they started;
 - package refresh can make a new adapter available but cannot unload or replace code already captured by an executable.
 
 Validation preview can resolve and build a candidate Agent without creating a Session, but it uses ordinary reconstruction and cleanup rather than a second approximate validator.
 
 ## Failure Semantics
 
-| Failure                                                                     | Outcome                                                                                        |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Missing or wrong-kind component reference                                   | Candidate generation or explicit resolution fails; no latest substitution                      |
-| Child graph cycle or duplicate immediate name                               | Resolution fails before snapshot publication                                                   |
-| Invalid Capability combination or output selection                          | Resolution fails before Harness build                                                          |
-| Unavailable locked plugin, model adapter, Skill codec, or Capability schema | Reconstruction fails explicitly; retained snapshot remains unchanged                           |
-| Current Host policy denies locked composition                               | Executable creation denied; snapshot is not rewritten                                          |
-| Plugin or Capability build failure                                          | Harness build fails and closes already acquired resources                                      |
-| Credential missing during a Run                                             | Model resolution or affected operation fails; Agent snapshot remains valid                     |
-| Environment requirement unsatisfied                                         | Session creation or Run binding fails before Harness dispatch, according to requirement timing |
-| Configuration changes during resolution                                     | Resolver finishes against its captured generation or restarts; it never mixes generations      |
-| Configuration changes during an active Session                              | Existing Session and executable continue with pinned snapshot                                  |
+| Failure                                                                             | Outcome                                                                                        |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Missing or wrong-kind component reference                                           | Candidate generation or explicit resolution fails; no latest substitution                      |
+| Child graph cycle or duplicate immediate name                                       | Resolution fails before snapshot publication                                                   |
+| Invalid Capability combination or output selection                                  | Resolution fails before Harness build                                                          |
+| Unavailable locked plugin, model adapter, Skill package codec, or Capability schema | Reconstruction fails explicitly; retained snapshot remains unchanged                           |
+| Exact Skill selection names an unavailable or ambiguous name                        | Resolution or run preparation fails before model exposure                                      |
+| Current Host policy denies locked composition                                       | Executable creation denied; snapshot is not rewritten                                          |
+| Plugin or Capability build failure                                                  | Harness build fails and closes already acquired resources                                      |
+| Credential missing during a Run                                                     | Model resolution or affected operation fails; Agent snapshot remains valid                     |
+| Environment requirement unsatisfied                                                 | Session creation or Run binding fails before Harness dispatch, according to requirement timing |
+| Configuration changes during resolution                                             | Resolver finishes against its captured generation or restarts; it never mixes generations      |
+| Configuration changes during an active Session                                      | Existing Session and executable continue with pinned snapshot                                  |
 
 ## Compatibility
 
@@ -283,13 +307,15 @@ Complete children repeat some authoring values but match the Harness graph and k
 
 ## Invariants
 
-01. Agent composition is the exact combination of pinned Model, Prompt, Plugin, Skill, Capability, output, and child-Agent revisions.
+01. Agent composition is the exact combination of pinned Model, Prompt, Plugin, available Skill, default Skill exposure, Capability, output, async policy, and child-Agent revisions.
 02. Environment desired state and provider resources remain outside Agent composition and are selected by a Session.
 03. Every Session pins one immutable resolved Agent snapshot and logical digest.
 04. Dynamic reload, Plugin toggles, and Prompt/Skill edits never mutate an active executable or existing Session.
 05. Every child edge resolves to one complete finite child definition; no separate subagent builder or runtime inheritance plane exists.
-06. Curated Capability keys, trusted model adapters, enabled Harness plugin keys, and selected Environment providers are the only declarative code-selection surfaces; arbitrary imports are rejected.
-07. Snapshots restore no Identity, credential, Environment, provider client, repository, scheduler, plugin object, or execution authority.
-08. Every root and child invocation receives fresh model, Environment, policy, and Host collaboration bindings.
-09. Applying another Agent composition to existing history requires an explicit Session fork.
-10. Reconstruction uses the public Harness build contract and never implements a second Agent loop.
+06. Agent UI exposes only its Host-owned async-subagent Capability; it never enables the Harness blocking inline Delegation Capability.
+07. Every root and child Run receives a fresh exact-name Skill selection derived independently from its pinned Agent node and Session policy.
+08. Curated Capability keys, trusted model adapters, enabled Harness plugin keys, and selected Environment providers are the only declarative code-selection surfaces; arbitrary imports are rejected.
+09. Snapshots restore no Identity, credential, Environment, provider client, repository, scheduler, plugin object, or execution authority.
+10. Every root and child invocation receives fresh model, Environment, policy, Skill-selection, and Host collaboration bindings.
+11. Applying another Agent composition or pinned Session Skill exposure to existing history requires an explicit Session fork.
+12. Reconstruction uses the public Harness build contract and never implements a second Agent loop.

@@ -17,6 +17,7 @@ SQLite is not the authority for desired configuration. It records accepted gener
 | Current credential material                                                   | Credential resolver                  | Fresh process-local lookup; absent from configuration snapshots and Session history |
 | Accepted-generation and resource query metadata                               | SQLite metadata store                | Mutable index over accepted file-backed content                                     |
 | Exact Session composition                                                     | Content-addressed resolved snapshots | Immutable even after configuration reload                                           |
+| Local Sandbox envd release assets and hashes                                  | Package-owned runtime manifest       | Exact default executable selection; never ambient discovery                         |
 | Native Model, plugin, Capability, Agent, or Environment resource              | Owning runtime package               | Reconstructed only at explicit runtime boundaries                                   |
 
 ## Configuration Sources
@@ -26,6 +27,7 @@ Agent UI reads one process-settings document and zero or more ordered definition
 - Models;
 - Prompts;
 - Plugin instances;
+- local Skill discovery sources;
 - Skills;
 - Agents;
 - Environments.
@@ -34,12 +36,20 @@ Structured definitions use strict versioned YAML or its exact JSON equivalent. P
 
 Source layers are ordered from lowest to highest precedence. Built-in resources form the lowest layer, followed by configured user roots and then an explicitly selected project root. A higher layer can replace one lower-layer resource only by the same stable resource ID and compatible resource kind. Replacement selects different content in the candidate generation; it does not mutate or delete the lower revision. Two definitions of the same identity at the same precedence are an error.
 
-The process settings document selects the data root, definition roots, project-root policy, credential backends, provider/plugin allowlists, logging and telemetry exporters, concurrency limits, retention policy, and Web transport settings. Settings are classified as:
+The process settings document selects the data root, definition roots, project-root policy, credential backends, provider/plugin allowlists, logging and telemetry exporters, concurrency limits, retention policy, Web transport settings, and an optional advanced Local Sandbox envd executable override. The retention policy includes the positive orphan-retention period used by automatic startup cleanup; age never expires an object that still has a durable reference. Settings are classified as:
 
 - **reloadable**, when a new accepted value can affect later commands without replacing process-owned infrastructure;
 - **restart-bound**, when the value owns already-open infrastructure such as the data root, SQLite location, listener address, TLS mode, or credential-store implementation.
 
 A valid reload containing a changed restart-bound value records the accepted desired value and reports `restart_required`; the running process continues to use its previously activated value. It never applies only part of an infrastructure change or silently starts a second store or listener.
+
+### Local Sandbox Runtime Selection
+
+The package owns a reviewed runtime manifest that selects one exact agent-envd release and one exact asset and hash set for each supported target. This manifest is release metadata, not editable product configuration. By default, Local Sandbox resolves only the matching managed executable under the Agent UI data root. Configuration reload, Direct Local, Docker, and E2B selection do not download a Host binary, and Agent UI never searches ambient `PATH`.
+
+An advanced process setting can replace the managed default with one explicit absolute executable path. Relative paths, command names, shell expressions, directories, and `PATH` lookup are invalid. Syntax validation occurs with configuration; actual availability remains a runtime fact. Before Local Sandbox provider creation, the Host requires the executable to report the package manifest's exact envd release identity, runs the production-equivalent required-isolation probe, and later requires compatible EIP initialization. The override changes location only, not the selected release. Failure leaves Local Sandbox unavailable and never substitutes Direct Local.
+
+The override affects later Local Sandbox resource operations only. An already entered provider resource or active attachment retains its selected executable/process generation until its ordinary lifecycle closes. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution) owns download, cache, validation, diagnostics, and provider handoff.
 
 ### Source Transaction Manifest
 
@@ -73,6 +83,7 @@ class ResourceRef(BaseModel):
         "model",
         "prompt",
         "plugin",
+        "skill_source",
         "skill",
         "agent",
         "environment",
@@ -152,21 +163,69 @@ The resource catalog discovers metadata without importing targets, verifies the 
 
 Plugin configuration is credential-free. A plugin that requires current external authority uses an Agent UI-supported credential reference or fresh run collaborator under its package contract; a literal credential, bearer token, or private key is rejected from the resource document and resolved snapshot.
 
+### Local Skill Discovery Sources
+
+A local Skill discovery source authorizes one bounded host directory for management-time scanning. It is distinct from an imported Skill resource and from a Harness run's model-facing catalog:
+
+```python
+class LocalSkillSourceDefinition(BaseModel):
+    schema_version: str
+    skill_source_id: str
+    display_name: str
+    directory: SafeSourceRef
+    roots: tuple[str, ...]
+    required: bool
+    max_entries_per_root: int
+
+
+class LocalSkillDiscoverySettings(BaseModel):
+    ordered_sources: tuple[ResourceRef, ...]
+    conflict: Literal["error", "prefer_earlier", "prefer_later"]
+    max_skills: int
+```
+
+Every `ordered_sources` entry names a `skill_source` resource exactly once. `directory` is a credential-free local directory selector authorized by current Host policy. Each configured existing directory is entered through a shared Direct Local Environment binding; `roots` are normalized beneath that binding and exposed as `/environment/{source-alias}/...` logical paths. Agent UI then constructs explicit ordered Harness `FileSkillSource` values and calls `SkillManager.scan_environment(environment=...)` against the entered topology. That operation captures every configured root, scans and materializes through exact revision-pinned `FileOperator` scopes, and reselects every configured root before returning a `BoundSkillCatalog`. The catalog carries exact binding revisions and observed provider generations for its discovered items; Agent UI calls `require_current()` before consuming a bound logical path. It never reads a native path through a second Skill scanner.
+
+`BoundSkillCatalog`, `BoundSkillCatalogItem`, their bound `EnvironmentPath` values, observed generations, and topology version are process-local evidence about one entered Environment. Agent UI never persists them as package, resource-revision, snapshot, or Session authority. Only the copied package manifest, payloads, and content digest become durable Agent UI authority; safe source provenance retained for refresh remains a non-authoritative hint.
+
+The scan uses the Harness contract exactly: each declared root can itself contain `SKILL.md`, each immediate child directory can contain one `SKILL.md`, and discovery does not recurse further. Source order and `conflict` select the final name catalog before import preview. `required=False` skips each individually missing, unroutable, or unsupported root; permission denial, invalid paths, malformed content, provider failure, catalog overflow, and every failure from a required root remain explicit diagnostics.
+
+No local directory is scanned merely because it exists or because `SkillsCapability` has a default workspace source. Agent UI passes an explicit `SkillManager`, which replaces the Harness default composition. A built-in project `.agents/skills` source can be represented at the lowest precedence, but it participates only when the accepted settings explicitly select it. Enabling, disabling, adding, removing, or reordering a source changes later discovery commands; it does not mutate an already imported Skill revision or a pinned Session.
+
+Source management and discovery are complete application-service operations available to both surfaces: list source status, create or edit a source, reorder the enabled set, scan one source or the composed set, inspect conflicts and package metadata, and select packages for import or refresh. A source path or scan result grants no Agent execution authority.
+
 ### Skills
 
-A Skill resource names one bounded Skill package:
+A Skill resource owns one imported bounded Skill package:
 
 ```python
 class SkillDefinition(BaseModel):
     schema_version: str
     skill_id: str
     display_name: str
+    skill_name: str
     description: str
-    source: SkillSource
+    package: SkillPackageSource
+    imported_from: SkillImportProvenance | None
     compatibility: SkillCompatibility
 ```
 
-The accepted revision includes a manifest and content digest over every materialized Skill file allowed by the Skill contract. Symlinks or references escaping the authorized source root are rejected. A Skill revision is read-only input to Agent composition; current Environment placement and writable workspace state remain runtime concerns.
+`skill_name` and `description` are validated from the package's `SKILL.md` by the public Harness scanner. `skill_id` is Agent UI resource identity and need not equal the model-facing `skill_name`. `package` resolves only within an authorized definition root and contains the desired files for this managed resource. `imported_from` records safe source and source-catalog provenance for refresh and diagnostics; it is not a live dependency and does not authorize later reads from the original source.
+
+Import follows one explicit pipeline:
+
+1. enter the selected local sources through Direct Local Environment bindings;
+2. use `SkillManager.scan_environment(environment=...)` to produce a conflict-resolved revision-bound metadata catalog;
+3. select one exact `BoundSkillCatalogItem`, call `catalog.require_current(environment)`, and call `environment.select_files(item.path)`;
+4. verify that the selection's `resolved_path` and `observed_generation` equal the bound item's directory and generation, enter `environment.open_files(selection)`, and keep that exact revision-pinned scope open while enumerating and copying the package's bounded regular files;
+5. reject path escape, symlink escape, unsupported file kinds, duplicate normalized paths, and package limits, then copy the package into an application-managed source transaction;
+6. validate the copied package again and publish a new immutable Skill revision and package object.
+
+The internal scopes used by `scan_environment()` are closed before it returns. The import therefore opens its own exact scope from the selected bound item rather than attempting to reuse a scanner-owned `FileOperator`; a stale or mismatched selection fails the import before publication.
+
+Creating or editing a managed Skill uses the same copied-package validation. Refresh rescans the recorded source, shows a manifest/content diff, and creates a new revision only after an explicit accepted edit; it never rewrites a pinned revision in place. Deleting current source content removes it from later catalogs but cannot remove a package object retained by an Agent snapshot or Session.
+
+The immutable package object contains a canonical manifest and digest over every allowed file plus the bounded file payloads needed for later materialization. Reconstruction verifies that object and materializes it through the run Environment's `FileOperator` into an Agent UI-owned logical Skill root. Current Environment placement and writable workspace state remain runtime concerns; a Skill revision grants neither filesystem access nor authority to scan another location.
 
 ### Agents and Environments
 
@@ -223,11 +282,13 @@ Package discovery can participate in reload. A newly installed trusted plugin or
 | Value                                                                | Reload effect                                                              |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | Agent, Prompt, Plugin, Skill, Model, or Environment behavior content | New revision available; existing Sessions remain pinned                    |
+| Local Skill source or discovery ordering                             | Later scans change; imported revisions and Sessions remain pinned          |
 | Model credential value behind the same `credential_ref`              | Resolved fresh for later Runs under current credential policy              |
 | Provider credential value behind a stable reference                  | Resolved fresh for later management operations                             |
 | Concurrency, retention, and safe display policy                      | Applies to later commands; cannot retroactively strengthen completed facts |
 | Plugin/provider installation metadata                                | Available only in a newly accepted catalog; no active module replacement   |
 | Data root, SQLite path, listener, TLS, credential backend            | Accepted as desired process setting and reported restart-bound             |
+| Explicit absolute Local Sandbox envd override                        | Applies only to later Local Sandbox resolution; active resources unchanged |
 | WebUI or TUI presentation preferences                                | Applies to the owning surface without changing Agent or Session semantics  |
 
 ## Credential Resolution
@@ -238,23 +299,24 @@ A configuration listing, export, diagnostic, snapshot, Session, AG-UI event, mod
 
 ## Failure Semantics
 
-| Failure                                                                    | Outcome                                                                                          |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Malformed, oversized, or unstable source                                   | Candidate rejected; last accepted generation remains active                                      |
-| Duplicate identity at equal precedence                                     | Entire candidate generation rejected                                                             |
-| Missing or wrong-kind reference                                            | Entire candidate generation rejected with bounded dependency diagnostics                         |
-| Agent cycle, invalid plugin, unavailable adapter, or invalid provider spec | Candidate generation rejected before publication                                                 |
-| Immutable snapshot publication failure                                     | No generation metadata points to the incomplete object                                           |
-| SQLite generation commit failure                                           | Published unreferenced objects remain cleanup-safe; old generation remains active                |
-| External edit races a UI edit                                              | Revision conflict or later reload; no silent merge                                               |
-| Multi-file manifest is incomplete or mismatched                            | Transaction candidate rejected; previous accepted generation remains active                      |
-| Restart-bound setting changes                                              | Desired generation accepted with `restart_required`; active infrastructure is unchanged          |
-| Credential lookup fails                                                    | Current runtime operation fails; configuration remains accepted                                  |
-| File watcher loses events                                                  | Periodic reconciliation or explicit reload detects divergence; watcher delivery is not authority |
+| Failure                                                                    | Outcome                                                                                                                |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Malformed, oversized, or unstable source                                   | Candidate rejected; last accepted generation remains active                                                            |
+| Duplicate identity at equal precedence                                     | Entire candidate generation rejected                                                                                   |
+| Missing or wrong-kind reference                                            | Entire candidate generation rejected with bounded dependency diagnostics                                               |
+| Agent cycle, invalid plugin, unavailable adapter, or invalid provider spec | Candidate generation rejected before publication                                                                       |
+| Immutable snapshot publication failure                                     | No generation metadata points to the incomplete object                                                                 |
+| SQLite generation commit failure                                           | Published unreferenced objects remain cleanup-safe and expire through storage retention; old generation remains active |
+| External edit races a UI edit                                              | Revision conflict or later reload; no silent merge                                                                     |
+| Multi-file manifest is incomplete or mismatched                            | Transaction candidate rejected; previous accepted generation remains active                                            |
+| Restart-bound setting changes                                              | Desired generation accepted with `restart_required`; active infrastructure is unchanged                                |
+| Credential lookup fails                                                    | Current runtime operation fails; configuration remains accepted                                                        |
+| Local Sandbox executable or isolation validation fails                     | Local Sandbox is unavailable with bounded diagnostics; no Direct Local fallback                                        |
+| File watcher loses events                                                  | Periodic reconciliation or explicit reload detects divergence; watcher delivery is not authority                       |
 
 ## Compatibility
 
-Process-settings schema, each resource schema, content normalization, model adapter keys, Harness plugin document version, Skill contract, Environment provider schema, and snapshot codec evolve independently. Unknown schema versions fail explicitly. A migration writes a new source representation or immutable revision; it never changes the meaning of content already addressed by a digest.
+Process-settings schema, package-owned envd runtime-manifest schema, each resource schema, content normalization, local Skill source schema, managed Skill package codec, model adapter keys, Harness plugin document version, Harness Skill contract, Environment provider schema, and snapshot codec evolve independently. Unknown schema versions fail explicitly. A migration writes a new source representation or immutable revision; it never changes the meaning of content already addressed by a digest.
 
 An Agent UI version can retain and run a pinned Session only when its locked adapters and snapshot codecs remain available and current policy permits reconstruction. The latest file-backed catalog need not contain the original source definition once its immutable snapshot is retained.
 
@@ -281,6 +343,9 @@ Separating credential values from revision content allows safe rotation and reau
 05. Dynamic reload never mutates an active Run, built executable, or existing Session snapshot.
 06. Every behavior-affecting resource revision has immutable normalized content and a digest.
 07. A source path, package installation, resource ID, or credential reference grants no runtime authority.
-08. Credentials and live provider values never enter resource snapshots, Session history, AG-UI files, or default telemetry.
-09. Restart-bound settings are never partially applied to already-open infrastructure.
-10. UI edits and external file edits pass through the same validation and generation-publication path; multi-file authoring atomicity requires an explicit source transaction manifest.
+08. Local Skill discovery uses explicit accepted sources and the Harness Environment-aware `scan_environment()` revision-pinned boundary; Agent UI performs no ambient, direct-`scan(files=...)`, or native-path bypass scan.
+09. Imported Skill revisions own copied immutable package content and never depend on continued access to their discovery source.
+10. Credentials and live provider values never enter resource snapshots, Session history, AG-UI files, or default telemetry.
+11. Restart-bound settings are never partially applied to already-open infrastructure.
+12. UI edits and external file edits pass through the same validation and generation-publication path; multi-file authoring atomicity requires an explicit source transaction manifest.
+13. Local Sandbox defaults to the package-pinned managed envd executable; only an explicit absolute override can replace it, and ambient `PATH` is never executable authority.

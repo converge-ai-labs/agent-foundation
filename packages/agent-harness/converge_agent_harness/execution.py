@@ -35,10 +35,12 @@ from converge_agent_harness.capabilities.context import (
     FILE_CONTEXT_CAPABILITY_ID,
     HANDOFF_CAPABILITY_ID,
     RUNTIME_CONTEXT_CAPABILITY_ID,
+    WORKSPACE_OUTLINE_CAPABILITY_ID,
     CompactionCapability,
     FileContextCapability,
     HandoffCapability,
     RuntimeContextCapability,
+    WorkspaceOutlineCapability,
 )
 from converge_agent_harness.capabilities.delegation import (
     DELEGATION_CAPABILITY_ID,
@@ -2015,6 +2017,7 @@ def _validate_built_capability_tree(
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
+        WORKSPACE_OUTLINE_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
         HANDOFF_CAPABILITY_ID,
         COMPACTION_CAPABILITY_ID,
@@ -2110,6 +2113,7 @@ def _validate_built_capability_tree(
                 CodeActCapability,
                 DynamicEnvironmentCapability,
                 RuntimeContextCapability,
+                WorkspaceOutlineCapability,
                 FileContextCapability,
                 HandoffCapability,
                 CompactionCapability,
@@ -2228,6 +2232,7 @@ def _validate_capability_source(
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
+        WORKSPACE_OUTLINE_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
         HANDOFF_CAPABILITY_ID,
         COMPACTION_CAPABILITY_ID,
@@ -2263,6 +2268,7 @@ def _validate_capability_source(
                 CodeActCapability,
                 DynamicEnvironmentCapability,
                 RuntimeContextCapability,
+                WorkspaceOutlineCapability,
                 FileContextCapability,
                 HandoffCapability,
                 CompactionCapability,
@@ -2289,6 +2295,7 @@ def _validate_capability_source(
             | CodeActCapability
             | DynamicEnvironmentCapability
             | RuntimeContextCapability
+            | WorkspaceOutlineCapability
             | FileContextCapability
             | HandoffCapability
             | CompactionCapability

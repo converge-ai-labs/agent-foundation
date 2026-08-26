@@ -7,8 +7,11 @@ from .context import (
     FileContextCapability,
     FileContextConfiguration,
     HandoffCapability,
+    HandoffConfiguration,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
+    WorkspaceOutlineCapability,
+    WorkspaceOutlineConfiguration,
 )
 from .delegation import (
     DelegationCapability,
@@ -55,7 +58,9 @@ from .process_monitor import (
     MonitoredProcessRunCapability,
 )
 from .skills import (
-    EnvironmentSkillSource,
+    BoundSkillCatalog,
+    BoundSkillCatalogItem,
+    FileSkillSource,
     SkillCatalogItem,
     SkillManager,
     SkillMaterializer,
@@ -98,6 +103,8 @@ from .working_state import (
 
 __all__ = [
     "AskUserQuestionRequest",
+    "BoundSkillCatalog",
+    "BoundSkillCatalogItem",
     "CodeActCapability",
     "CodeActConfig",
     "CompactionCapability",
@@ -117,10 +124,11 @@ __all__ = [
     "DocumentsConfiguration",
     "DocumentsRunCapability",
     "EmbeddedTaskStateCell",
-    "EnvironmentSkillSource",
     "FileContextCapability",
     "FileContextConfiguration",
+    "FileSkillSource",
     "HandoffCapability",
+    "HandoffConfiguration",
     "InProcessMonitoredProcessMonitor",
     "InlineDelegationBinder",
     "InlineSubagentState",
@@ -175,4 +183,6 @@ __all__ = [
     "WorkingState",
     "WorkingStateCapability",
     "WorkingStateConfiguration",
+    "WorkspaceOutlineCapability",
+    "WorkspaceOutlineConfiguration",
 ]

@@ -4,6 +4,8 @@ import argparse
 from collections.abc import Sequence
 from typing import Literal
 
+from converge_logging import configure_logging
+
 from converge_agent_ui import tui, webui
 
 Surface = Literal["webui", "tui"]
@@ -23,6 +25,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parser().parse_args(argv)
+    configure_logging(logger_names=("converge_agent_ui",))
     surface: Surface = args.surface
     if surface == "tui":
         tui.run()

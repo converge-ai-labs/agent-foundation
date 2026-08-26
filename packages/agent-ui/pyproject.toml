@@ -7,9 +7,17 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
+    "aiosqlite>=0.21,<1",
+    "alembic>=1.17.1,<2",
+    "anyio>=4,<5",
     "converge-agent-environment-provider",
     "converge-agent-harness",
     "converge-agent-stream-protocol",
+    "converge-logging",
+    "filelock>=3.20,<4",
+    "pydantic>=2.12,<3",
+    "sqlalchemy[asyncio]>=2.0.41,<3",
+    "zstandard>=0.25,<0.26",
 ]
 
 [project.scripts]
@@ -47,9 +55,9 @@ harness-version = "0.0.0"
 
 [tool.deptry]
 known_first_party = ["converge_agent_ui"]
-package_module_name_map = { "converge-agent-environment-provider" = "converge_agent_environment_provider", "converge-agent-harness" = "converge_agent_harness", "converge-agent-stream-protocol" = "converge_agent_stream_protocol" }
+package_module_name_map = { "converge-agent-environment-provider" = "converge_agent_environment_provider", "converge-agent-harness" = "converge_agent_harness", "converge-agent-stream-protocol" = "converge_agent_stream_protocol", "converge-logging" = "converge_logging", "sqlalchemy" = "sqlalchemy" }
 
-# The package is an initialization scaffold. The application-service modules
-# will consume these runtime boundaries as their implementation is added.
+# aiosqlite is loaded by SQLAlchemy through the configured async driver. The
+# runtime packages remain selected for later Agent UI application blocks.
 [tool.deptry.per_rule_ignores]
-DEP002 = ["converge-agent-environment-provider", "converge-agent-harness", "converge-agent-stream-protocol"]
+DEP002 = ["aiosqlite", "converge-agent-environment-provider", "converge-agent-harness", "converge-agent-stream-protocol"]

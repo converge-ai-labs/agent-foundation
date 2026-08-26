@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import deque
 from collections.abc import Awaitable, Callable
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
@@ -29,6 +30,7 @@ from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 from converge_agent_harness._json import dump_json_bytes
 from converge_agent_harness.capabilities.lifecycle import active_model_request_index
 from converge_agent_harness.context import AgentContext
+from converge_agent_harness.environment.files import FileOperator
 from converge_agent_harness.environment.models import EnvironmentError
 from converge_agent_harness.errors import DefinitionError, HarnessError
 from converge_agent_harness.events import (
@@ -51,14 +53,18 @@ from converge_agent_harness.model_context import (
 )
 
 RUNTIME_CONTEXT_CAPABILITY_ID = "converge.runtime-context"
+WORKSPACE_OUTLINE_CAPABILITY_ID = "converge.workspace-outline"
 FILE_CONTEXT_CAPABILITY_ID = "converge.file-context"
 HANDOFF_CAPABILITY_ID = "converge.handoff"
 COMPACTION_CAPABILITY_ID = "converge.compaction"
 _CONTEXT_STATE_VERSION = "1"
 _RUNTIME_OPEN = '<runtime-context source="converge-harness">'
 _RUNTIME_CLOSE = "</runtime-context>"
+_WORKSPACE_OUTLINE_PREFIX = "Workspace file outline (content not loaded):\n"
 _FILE_CONTEXT_OPEN = '<file-context source="converge-harness">'
 _FILE_CONTEXT_CLOSE = "</file-context>"
+_HANDOFF_REMINDER_OPEN = '<context-reminder source="converge.handoff">'
+_HANDOFF_REMINDER_CLOSE = "</context-reminder>"
 _HANDOFF_METADATA_KEY = "converge.context"
 _RESTORED_BOUNDARY_METADATA_KEY = "converge.restored-boundary"
 _RESTORED_BOUNDARY_VERSION = "1"
@@ -73,7 +79,10 @@ class RuntimeContextConfiguration(BaseModel):
     metadata_keys: tuple[str, ...] = ()
     max_bytes: int = Field(default=16 * 1024, ge=512, le=256 * 1024)
     include_current_time: bool = True
+    include_elapsed_time: bool = True
     include_usage: bool = True
+    include_latest_request_usage: bool = True
+    context_window_tokens: int | None = Field(default=None, gt=0)
 
     @field_validator("metadata_keys")
     @classmethod
@@ -102,20 +111,28 @@ class RuntimeContextCapability(AbstractModelContextCapability):
     ) -> ModelContextProjection:
         projection = await handler(request)
         payload: dict[str, JsonValue] = {}
-        if self.configuration.include_current_time:
-            payload["current_time"] = datetime.now(UTC).isoformat()
-        if self.configuration.include_usage:
-            payload["usage"] = {
-                "requests": ctx.usage.requests,
-                "tool_calls": ctx.usage.tool_calls,
-                "input_tokens": ctx.usage.input_tokens,
-                "output_tokens": ctx.usage.output_tokens,
+        if self.configuration.include_elapsed_time:
+            payload["elapsed_seconds"] = round(ctx.deps.elapsed_seconds, 1)
+        if self.configuration.context_window_tokens is not None:
+            payload["context_window_tokens"] = self.configuration.context_window_tokens
+        latest_request_tokens = _latest_request_tokens(ctx.messages)
+        if self.configuration.include_latest_request_usage and latest_request_tokens is not None:
+            payload["latest_request_tokens"] = latest_request_tokens
+        if request.kind is ModelContextRequestKind.INPUT:
+            if self.configuration.include_current_time:
+                payload["current_time"] = datetime.now(UTC).isoformat()
+            if self.configuration.include_usage:
+                payload["usage"] = {
+                    "requests": ctx.usage.requests,
+                    "tool_calls": ctx.usage.tool_calls,
+                    "input_tokens": ctx.usage.input_tokens,
+                    "output_tokens": ctx.usage.output_tokens,
+                }
+            selected_metadata = {
+                key: ctx.deps.metadata[key] for key in self.configuration.metadata_keys if key in ctx.deps.metadata
             }
-        selected_metadata = {
-            key: ctx.deps.metadata[key] for key in self.configuration.metadata_keys if key in ctx.deps.metadata
-        }
-        if selected_metadata:
-            payload["metadata"] = cast(JsonValue, selected_metadata)
+            if selected_metadata:
+                payload["metadata"] = cast(JsonValue, selected_metadata)
         encoded = dump_json_bytes(payload, sort_keys=True)
         if len(encoded) > self.configuration.max_bytes:
             payload.pop("metadata", None)
@@ -138,12 +155,171 @@ class RuntimeContextCapability(AbstractModelContextCapability):
         )
 
 
-class FileContextConfiguration(BaseModel):
-    """Explicit Environment paths used as file context for one run."""
+class WorkspaceOutlineConfiguration(BaseModel):
+    """Bounded metadata-only scan rooted in the current Environment."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    paths: tuple[str, ...]
+    root: str = "."
+    required: bool = False
+    include_hidden: bool = False
+    max_depth: int = Field(default=4, ge=1, le=16)
+    max_entries: int = Field(default=256, gt=0, le=4_096)
+    max_bytes: int = Field(default=16 * 1024, ge=512, le=256 * 1024)
+    max_provider_calls: int = Field(default=64, gt=0, le=1_024)
+
+    @field_validator("root")
+    @classmethod
+    def _validate_root(cls, value: str) -> str:
+        if not value.strip() or len(value) > 1_024 or "\x00" in value:
+            raise ValueError("workspace outline root is invalid")
+        return value
+
+
+@dataclass(init=False)
+class WorkspaceOutlineCapability(AbstractModelContextCapability):
+    """Project a bounded workspace file outline only on input requests."""
+
+    id = WORKSPACE_OUTLINE_CAPABILITY_ID
+
+    def __init__(self, configuration: WorkspaceOutlineConfiguration | None = None) -> None:
+        if configuration is not None and not isinstance(configuration, WorkspaceOutlineConfiguration):
+            configuration = WorkspaceOutlineConfiguration.model_validate(configuration, strict=True)
+        self.configuration = (configuration or WorkspaceOutlineConfiguration()).model_copy(deep=True)
+
+    async def wrap_model_context(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection:
+        projection = await handler(request)
+        if request.kind is not ModelContextRequestKind.INPUT:
+            return projection
+        try:
+            selection = ctx.deps.environment.select_files(self.configuration.root)
+            async with ctx.deps.environment.open_files(selection) as files:
+                content = await _scan_workspace_outline(files, self.configuration)
+        except EnvironmentError as exc:
+            if not self.configuration.required:
+                return projection
+            raise DefinitionError(
+                "Required workspace outline could not be loaded through the current Environment.",
+                code="workspace_outline_unavailable",
+                details={"root": self.configuration.root, "environment_code": exc.code},
+            ) from exc
+        try:
+            current = ctx.deps.environment.select_files(self.configuration.root)
+        except EnvironmentError as exc:
+            raise DefinitionError(
+                "The workspace outline root changed while it was being scanned.",
+                code="workspace_outline_stale",
+                details={"root": self.configuration.root, "environment_code": exc.code},
+            ) from exc
+        if current != selection:
+            raise DefinitionError(
+                "The workspace outline root changed while it was being scanned.",
+                code="workspace_outline_stale",
+                details={"root": self.configuration.root},
+            )
+        return ModelContextProjection(
+            blocks=(
+                *projection.blocks,
+                ModelContextBlock(
+                    source_id=WORKSPACE_OUTLINE_CAPABILITY_ID,
+                    placement=ModelContextPlacement.INPUT_PREAMBLE,
+                    content=content,
+                ),
+            )
+        )
+
+
+async def _scan_workspace_outline(
+    files: FileOperator,
+    configuration: WorkspaceOutlineConfiguration,
+) -> str:
+    entries: list[dict[str, JsonValue]] = []
+    pending: deque[tuple[str, int, int]] = deque([(configuration.root, 0, 0)])
+    provider_calls = 0
+    truncated = False
+    stop = False
+    while pending and not stop:
+        if provider_calls >= configuration.max_provider_calls:
+            truncated = True
+            break
+        path, parent_depth, offset = pending.popleft()
+        remaining = configuration.max_entries - len(entries)
+        if remaining <= 0:
+            truncated = True
+            break
+        result = await files.list(
+            path,
+            offset=offset,
+            max_results=remaining,
+            include_hidden=configuration.include_hidden,
+        )
+        provider_calls += 1
+        page = sorted(result.entries, key=lambda item: item.path)
+        if len(page) > remaining:
+            page = page[:remaining]
+            truncated = True
+        for entry in page:
+            item: dict[str, JsonValue] = {"kind": entry.kind, "path": entry.path}
+            if entry.size is not None:
+                item["size"] = entry.size
+            candidate = [*entries, item]
+            if len(_workspace_outline_content(configuration.root, candidate, truncated=True).encode("utf-8")) > (
+                configuration.max_bytes
+            ):
+                truncated = True
+                stop = True
+                break
+            entries.append(item)
+            item_depth = parent_depth + 1
+            if entry.kind == "directory":
+                if item_depth < configuration.max_depth:
+                    pending.append((entry.path, item_depth, 0))
+                else:
+                    truncated = True
+        if stop:
+            break
+        if result.has_more:
+            if not page or len(entries) >= configuration.max_entries:
+                truncated = True
+                break
+            pending.appendleft((path, parent_depth, offset + len(page)))
+    if pending:
+        truncated = True
+    content = _workspace_outline_content(configuration.root, entries, truncated=truncated)
+    if len(content.encode("utf-8")) > configuration.max_bytes:
+        raise DefinitionError(
+            "Workspace outline byte limit cannot encode its minimum projection.",
+            code="workspace_outline_limit_invalid",
+        )
+    return content
+
+
+def _workspace_outline_content(
+    root: str,
+    entries: list[dict[str, JsonValue]],
+    *,
+    truncated: bool,
+) -> str:
+    payload: dict[str, JsonValue] = {
+        "root": root,
+        "entries": cast(JsonValue, entries),
+        "truncated": truncated,
+    }
+    return _WORKSPACE_OUTLINE_PREFIX + dump_json_bytes(payload, sort_keys=True).decode("utf-8")
+
+
+class FileContextConfiguration(BaseModel):
+    """Conventional and explicit Environment paths used as file context for one run."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    paths: tuple[str, ...] = ()
+    include_default_agents_md: bool = True
     required: bool = False
     max_files: int = Field(default=8, gt=0, le=64)
     max_bytes: int = Field(default=128 * 1024, ge=512, le=1024 * 1024)
@@ -152,25 +328,35 @@ class FileContextConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def _validate_paths(self) -> FileContextConfiguration:
-        if not self.paths or len(self.paths) > self.max_files:
-            raise ValueError("file context paths must be non-empty and bounded")
+        if not self.include_default_agents_md and not self.paths:
+            raise ValueError("file context must select the default AGENTS.md or at least one explicit path")
         if len(set(self.paths)) != len(self.paths):
             raise ValueError("file context paths must be unique")
         if any(not path.strip() or "\x00" in path for path in self.paths):
             raise ValueError("file context path is invalid")
+        effective_count = len(self.paths) + int(self.include_default_agents_md and "AGENTS.md" not in self.paths)
+        if effective_count > self.max_files:
+            raise ValueError("file context paths exceed max_files")
         return self
+
+
+def _file_context_paths(configuration: FileContextConfiguration) -> tuple[tuple[str, bool], ...]:
+    selected = [(path, True) for path in configuration.paths]
+    if configuration.include_default_agents_md and "AGENTS.md" not in configuration.paths:
+        selected.append(("AGENTS.md", False))
+    return tuple(selected)
 
 
 @dataclass(init=False)
 class FileContextCapability(AbstractModelContextCapability):
-    """Load explicitly selected files through BoundEnvironment as bounded model context."""
+    """Load conventional and explicit files as bounded input-only model context."""
 
     id = FILE_CONTEXT_CAPABILITY_ID
 
-    def __init__(self, configuration: FileContextConfiguration) -> None:
-        if not isinstance(configuration, FileContextConfiguration):
+    def __init__(self, configuration: FileContextConfiguration | None = None) -> None:
+        if configuration is not None and not isinstance(configuration, FileContextConfiguration):
             configuration = FileContextConfiguration.model_validate(configuration, strict=True)
-        self.configuration = configuration.model_copy(deep=True)
+        self.configuration = (configuration or FileContextConfiguration()).model_copy(deep=True)
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(FILE_CONTEXT_CAPABILITY_ID)
@@ -183,12 +369,25 @@ class FileContextCapability(AbstractModelContextCapability):
             return existing
 
         sections: list[tuple[str, str]] = []
+        loaded_paths: set[tuple[str, int, str]] = set()
         used_bytes = 0
         failures: list[str] = []
-        for path in self.configuration.paths:
+        selected_paths = _file_context_paths(self.configuration)
+        for path, explicit in selected_paths:
+            try:
+                resolved = ctx.deps.environment.resolve_path(path)
+            except EnvironmentError as exc:
+                if explicit:
+                    failures.append(f"{path}: {exc.code}")
+                continue
+            resolved_key = (resolved.binding_id, resolved.binding_revision, resolved.path)
+            if resolved_key in loaded_paths:
+                continue
             remaining = self.configuration.max_bytes - used_bytes
             if remaining < 5:
-                break
+                if explicit:
+                    failures.append(f"{path}: file_context_budget_exhausted")
+                continue
             provider_max_line_length = min(
                 self.configuration.max_line_length,
                 max(1, (remaining - 1) // 4),
@@ -206,17 +405,19 @@ class FileContextCapability(AbstractModelContextCapability):
                     max_line_length=provider_max_line_length,
                 )
             except EnvironmentError as exc:
-                failures.append(f"{path}: {exc.code}")
+                if explicit:
+                    failures.append(f"{path}: {exc.code}")
                 continue
             section = result.text
             encoded = section.encode("utf-8")
             if len(encoded) > remaining:
                 section = encoded[:remaining].decode("utf-8", errors="ignore")
             sections.append((result.path, section))
+            loaded_paths.add(resolved_key)
             used_bytes += len(section.encode("utf-8"))
-        if self.configuration.required and (failures or len(sections) != len(self.configuration.paths)):
+        if self.configuration.required and failures:
             raise DefinitionError(
-                "Required file context could not be loaded through the current Environment.",
+                "Required explicit file context could not be loaded through the current Environment.",
                 code="file_context_unavailable",
                 details=cast(
                     dict[str, JsonValue],
@@ -267,6 +468,16 @@ class _FileContextRunCapability(FileContextCapability):
         )
 
 
+class HandoffConfiguration(BaseModel):
+    """Proactive reminder policy owned by the summarize capability."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    include_summary_reminder: bool = True
+    summary_reminder_tokens: int = Field(default=0, ge=0)
+    max_reminder_bytes: int = Field(default=4 * 1024, ge=256, le=64 * 1024)
+
+
 class _HandoffState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -294,12 +505,15 @@ class _HandoffState(BaseModel):
 
 
 @dataclass(init=False)
-class HandoffCapability(AbstractCapability[AgentContext]):
+class HandoffCapability(AbstractModelContextCapability):
     """Own handoff lifecycle hooks and compose the run-local summarize Toolset."""
 
     id = HANDOFF_CAPABILITY_ID
 
-    def __init__(self) -> None:
+    def __init__(self, configuration: HandoffConfiguration | None = None) -> None:
+        if configuration is not None and not isinstance(configuration, HandoffConfiguration):
+            configuration = HandoffConfiguration.model_validate(configuration, strict=True)
+        self.configuration = (configuration or HandoffConfiguration()).model_copy(deep=True)
         self._context: AgentContext | None = None
         self._toolset: Any = None
 
@@ -314,7 +528,7 @@ class HandoffCapability(AbstractCapability[AgentContext]):
             return existing
         from converge_agent_harness.toolsets.context import HandoffToolset
 
-        replacement = HandoffCapability()
+        replacement = HandoffCapability(self.configuration)
         replacement._context = ctx.deps
         state = (
             await ctx.deps.state.read(HANDOFF_CAPABILITY_ID, _HandoffState, version=_CONTEXT_STATE_VERSION)
@@ -341,6 +555,41 @@ class HandoffCapability(AbstractCapability[AgentContext]):
             "Use `summarize` when a long or completed phase should continue from a fresh context. "
             "Preserve current intent, completed work, decisions, unresolved work, relevant past interactions, "
             "and the immediate next step. File arguments are inspection reminders only; their contents are not loaded."
+        )
+
+    async def wrap_model_context(
+        self,
+        ctx: RunContext[AgentContext],
+        request: ModelContextProjectionRequest,
+        handler: ModelContextNext,
+    ) -> ModelContextProjection:
+        projection = await handler(request)
+        if request.kind is not ModelContextRequestKind.TOOL_RESULTS or not self.configuration.include_summary_reminder:
+            return projection
+        latest_request_tokens = _latest_request_tokens(ctx.messages)
+        threshold = self.configuration.summary_reminder_tokens
+        if threshold > 0 and (latest_request_tokens is None or latest_request_tokens < threshold):
+            return projection
+        content = (
+            f"{_HANDOFF_REMINDER_OPEN}\n"
+            "Use `summarize` when the current phase should continue from a fresh context; preserve intent, "
+            "completed work, decisions, unresolved work, relevant past interactions, and the immediate next step.\n"
+            f"{_HANDOFF_REMINDER_CLOSE}"
+        )
+        if len(content.encode("utf-8")) > self.configuration.max_reminder_bytes:
+            raise DefinitionError(
+                "Handoff reminder byte limit cannot encode its minimum projection.",
+                code="handoff_reminder_limit_invalid",
+            )
+        return ModelContextProjection(
+            blocks=(
+                *projection.blocks,
+                ModelContextBlock(
+                    source_id=HANDOFF_CAPABILITY_ID,
+                    placement=ModelContextPlacement.REQUEST_EPILOGUE,
+                    content=content,
+                ),
+            )
         )
 
     async def before_model_request(

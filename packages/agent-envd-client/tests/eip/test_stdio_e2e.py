@@ -19,6 +19,7 @@ from converge_agent_envd_client import (
 from converge_agent_envd_client.eip.v1 import (
     ArgvCommand,
     CommandEnvironment,
+    CommandNetwork,
     CommandRequest,
     DesiredPortStatus,
     EIPCallContext,
@@ -85,17 +86,24 @@ async def start_daemon(
     environment_id: str = "env-e2e",
     config_path: Path | None = None,
     runtime_dir: Path | None = None,
+    execution_isolation: str | None = "disabled",
+    execution_network: str = "host",
+    execution_extra_read_only_paths: tuple[Path, ...] = (),
 ) -> asyncio.subprocess.Process:
     arguments = [str(binary)]
     if config_path is not None:
         arguments.extend(("--config", str(config_path)))
     environment = {
         "AGENT_ENVD_ENVIRONMENT_ID": environment_id,
-        "AGENT_ENVD_EXECUTION_ISOLATION": "disabled",
-        "AGENT_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS": "[ ]",
+        "AGENT_ENVD_EXECUTION_NETWORK": execution_network,
+        "AGENT_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS": json.dumps(
+            [str(path) for path in execution_extra_read_only_paths]
+        ),
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "HTTP_PROXY": "http://proxy.invalid:8080",
     }
+    if execution_isolation is not None:
+        environment["AGENT_ENVD_EXECUTION_ISOLATION"] = execution_isolation
     if runtime_dir is not None:
         environment["AGENT_ENVD_RUNTIME_DIR"] = str(runtime_dir)
     return await asyncio.create_subprocess_exec(
@@ -306,6 +314,298 @@ def test_configured_mount_defines_file_and_command_surface(tmp_path: Path) -> No
         assert_disabled_isolation_warning(await wait_for_exit(daemon))
 
     asyncio.run(scenario())
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Seatbelt test requires macOS")
+def test_required_macos_isolation_is_default_and_contains_commands(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    workspace = tmp_path / "workspace"
+    runtime.mkdir()
+    workspace.mkdir()
+    source = workspace / "source.txt"
+    source.write_text("visible\n")
+    extra = tmp_path.with_name(f"{tmp_path.name}-extra-runtime")
+    extra.mkdir()
+    extra_source = extra / "extra.txt"
+    extra_source.write_text("extra-visible\n")
+    config_directory = tmp_path / "envd-config"
+    config_directory.mkdir()
+    ordinary_config_sibling = config_directory / "ordinary.txt"
+    ordinary_config_sibling.write_text("ordinary-visible\n")
+    config_path = config_directory / "agent-envd.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "root_mount_id": "workspace",
+                "mounts": [
+                    {
+                        "mount_id": "workspace",
+                        "native_root": str(tmp_path),
+                        "writable": True,
+                        "allow_command_execution": True,
+                        "max_file_bytes": 1024 * 1024,
+                        "allowed_operations": [
+                            "stat",
+                            "read_text",
+                            "open_reader",
+                            "list",
+                            "command_cwd",
+                        ],
+                    }
+                ],
+                "trusted_executable_roots": ["/bin", "/usr/bin"],
+            }
+        )
+    )
+
+    async def scenario() -> None:
+        daemon = await start_daemon(
+            agent_envd_binary(),
+            config_path=config_path,
+            runtime_dir=runtime,
+            execution_isolation=None,
+            execution_network="host",
+            execution_extra_read_only_paths=(extra,),
+        )
+        session = await EIPSession.initialize(
+            StdioTransport.from_process(daemon),
+            expected_environment_id="env-e2e",
+            required_methods=("shell.exec",),
+        )
+        descriptor = session.descriptor
+        assert descriptor.isolation.mode.value == "required"
+        assert descriptor.isolation.backend.value == "macos_seatbelt"
+        assert descriptor.isolation.filesystem_containment is True
+        assert descriptor.isolation.process_containment is True
+        assert descriptor.isolation.network_containment is False
+        assert descriptor.execution_features.per_command_network_deny is True
+
+        listener = await asyncio.start_server(lambda _reader, writer: writer.close(), "127.0.0.1", 0)
+        port = listener.sockets[0].getsockname()[1]
+        script = """
+set -eu
+cat source.txt
+cat "$2"
+cat "$1/ordinary.txt"
+printf changed > "$1/ordinary.txt"
+printf writable > writable.txt
+if printf denied > "$2"; then exit 93; fi
+if mv "$1" "$4"; then exit 95; fi
+if cat "$1/agent-envd.json" >/dev/null 2>&1; then exit 91; fi
+if /bin/sh -c 'cat "$1/agent-envd.json" >/dev/null 2>&1' child "$1"; then exit 92; fi
+if /usr/bin/nc -z -w 1 127.0.0.1 "$3"; then exit 94; fi
+exit 37
+"""
+        result = await session.client.shell_exec(
+            ShellExecParams(
+                context=EIPCallContext(operation_id="macos-seatbelt-e2e"),
+                request=CommandRequest(
+                    command=ArgvCommand(
+                        kind="argv",
+                        executable_spec=ExecutableName(kind="name", name="sh"),
+                        arguments=(
+                            "-c",
+                            script,
+                            "envd-test",
+                            str(config_directory),
+                            str(extra_source),
+                            str(port),
+                            str(tmp_path / "moved-config"),
+                        ),
+                    ),
+                    cwd=EIPPath(mount_id="workspace", path="/workspace"),
+                    network=CommandNetwork.DENY,
+                ),
+            )
+        )
+        listener.close()
+        await listener.wait_closed()
+        assert result.status.exit_code == 37
+        assert result.status.cleanup.value == "complete"
+        assert source.read_text() == "visible\n"
+        assert (workspace / "writable.txt").read_text() == "writable"
+        assert config_path.is_file()
+        assert ordinary_config_sibling.read_text() == "changed"
+        assert (
+            base64.b64decode(result.output.stdout.preview.data + "===") == b"visible\nextra-visible\nordinary-visible\n"
+        )
+        await session.close()
+        stderr = await wait_for_exit(daemon)
+        assert b"agent-envd.execution_isolation.disabled" not in stderr
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="bubblewrap test requires Linux")
+def test_required_linux_isolation_is_default_and_contains_commands(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    workspace = tmp_path / "workspace"
+    runtime.mkdir()
+    workspace.mkdir()
+    source = workspace / "source.txt"
+    source.write_text("visible\n")
+    extra = tmp_path.with_name(f"{tmp_path.name}-extra-runtime")
+    extra.mkdir()
+    extra_source = extra / "extra.txt"
+    extra_source.write_text("extra-visible\n")
+    unrelated = tmp_path.with_name(f"{tmp_path.name}-unrelated")
+    unrelated.mkdir()
+    unrelated_source = unrelated / "host-only.txt"
+    unrelated_source.write_text("host-only\n")
+    config_directory = tmp_path / "envd-config"
+    config_directory.mkdir()
+    ordinary_config_sibling = config_directory / "ordinary.txt"
+    ordinary_config_sibling.write_text("ordinary-visible\n")
+    config_path = config_directory / "agent-envd.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "root_mount_id": "workspace",
+                "mounts": [
+                    {
+                        "mount_id": "workspace",
+                        "native_root": str(tmp_path),
+                        "writable": True,
+                        "allow_command_execution": True,
+                        "max_file_bytes": 1024 * 1024,
+                        "allowed_operations": [
+                            "stat",
+                            "read_text",
+                            "open_reader",
+                            "list",
+                            "command_cwd",
+                        ],
+                    }
+                ],
+                "trusted_executable_roots": ["/usr/bin", "/bin"],
+            }
+        )
+    )
+
+    async def scenario() -> None:
+        daemon = await start_daemon(
+            agent_envd_binary(),
+            config_path=config_path,
+            runtime_dir=runtime,
+            execution_isolation=None,
+            execution_network="host",
+            execution_extra_read_only_paths=(extra,),
+        )
+        session = await EIPSession.initialize(
+            StdioTransport.from_process(daemon),
+            expected_environment_id="env-e2e",
+            required_methods=("shell.exec",),
+            request_timeout=10,
+        )
+        descriptor = session.descriptor
+        assert descriptor.isolation.mode.value == "required"
+        assert descriptor.isolation.backend.value == "linux_bubblewrap"
+        assert descriptor.isolation.filesystem_containment is True
+        assert descriptor.isolation.process_containment is True
+        assert descriptor.isolation.network_containment is False
+        assert descriptor.isolation.cleanup_guarantee.value == "namespace_complete"
+        assert descriptor.execution_features.per_command_network_deny is True
+
+        listener = await asyncio.start_server(lambda _reader, writer: writer.close(), "127.0.0.1", 0)
+        port = listener.sockets[0].getsockname()[1]
+        escaped_marker = workspace / "escaped-marker"
+        script = """
+set -eu
+cat source.txt
+cat "$2"
+cat "$1/ordinary.txt"
+printf changed > "$1/ordinary.txt"
+printf writable > writable.txt
+if printf denied > "$2"; then exit 93; fi
+if mv "$1" "$5"; then exit 95; fi
+if cat "$1/agent-envd.json" >/dev/null 2>&1; then exit 91; fi
+if /bin/sh -c 'cat "$1/agent-envd.json" >/dev/null 2>&1' child "$1"; then exit 92; fi
+if cat "$3" >/dev/null 2>&1; then exit 96; fi
+if env | grep -q '^AGENT_ENVD_'; then exit 97; fi
+for runtime_file in /etc/passwd /etc/group /etc/localtime /etc/resolv.conf; do
+    if [ ! -r "$runtime_file" ]; then exit 99; fi
+done
+if [ "$(awk '/^NoNewPrivs:/{print $2}' /proc/self/status)" != 1; then exit 98; fi
+if exec 3<>"/dev/tcp/127.0.0.1/$4"; then exit 94; fi
+for iteration in $(seq 1 64); do
+    /bin/sh -c '/bin/sh -c "exit 0" >/dev/null 2>&1 & exit 0'
+done
+sleep 1
+for process_status in /proc/[0-9]*/status; do
+    if grep -q '^State:.*Z' "$process_status"; then exit 100; fi
+done
+setsid /bin/sh -c 'sleep 2; printf escaped > "$1"' child "$6" &
+exit 37
+"""
+        result = await session.client.shell_exec(
+            ShellExecParams(
+                context=EIPCallContext(operation_id="linux-bubblewrap-e2e"),
+                request=CommandRequest(
+                    command=ArgvCommand(
+                        kind="argv",
+                        executable_spec=ExecutableName(kind="name", name="bash"),
+                        arguments=(
+                            "-c",
+                            script,
+                            "envd-test",
+                            str(config_directory),
+                            str(extra_source),
+                            str(unrelated_source),
+                            str(port),
+                            str(tmp_path / "moved-config"),
+                            str(escaped_marker),
+                        ),
+                    ),
+                    cwd=EIPPath(mount_id="workspace", path="/workspace"),
+                    network=CommandNetwork.DENY,
+                ),
+            )
+        )
+        listener.close()
+        await listener.wait_closed()
+        assert result.status.exit_code == 37
+        assert result.status.cleanup.value == "complete"
+        assert source.read_text() == "visible\n"
+        assert (workspace / "writable.txt").read_text() == "writable"
+        assert config_path.is_file()
+        assert ordinary_config_sibling.read_text() == "changed"
+        assert unrelated_source.read_text() == "host-only\n"
+        assert (
+            base64.b64decode(result.output.stdout.preview.data + "===") == b"visible\nextra-visible\nordinary-visible\n"
+        )
+        await asyncio.sleep(2.25)
+        assert not escaped_marker.exists()
+
+        crashed = await session.client.shell_exec(
+            ShellExecParams(
+                context=EIPCallContext(operation_id="linux-native-signal-e2e"),
+                request=CommandRequest(
+                    command=ArgvCommand(
+                        kind="argv",
+                        executable_spec=ExecutableName(kind="name", name="sh"),
+                        arguments=("-c", "kill -SEGV $$"),
+                    ),
+                    cwd=EIPPath(mount_id="workspace", path="/workspace"),
+                ),
+            )
+        )
+        assert crashed.status.phase.value == "signaled"
+        assert crashed.status.termination_reason.value == "signal"
+        assert crashed.status.exit_code is None
+        assert crashed.status.signal is None
+        assert crashed.status.cleanup.value == "complete"
+
+        await session.close()
+        stderr = await wait_for_exit(daemon)
+        assert b"agent-envd.execution_isolation.disabled" not in stderr
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        unrelated_source.unlink(missing_ok=True)
+        unrelated.rmdir()
+        extra_source.unlink(missing_ok=True)
+        extra.rmdir()
 
 
 def test_mount_ancestor_of_private_runtime_subtracts_protected_state(tmp_path: Path) -> None:
@@ -1555,7 +1855,11 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
     asyncio.run(scenario())
 
 
-def test_required_isolation_default_fails_closed_before_protocol_admission() -> None:
+@pytest.mark.skipif(
+    sys.platform in {"darwin", "linux"},
+    reason="required isolation is implemented on macOS and Linux",
+)
+def test_required_isolation_default_fails_closed_on_unsupported_platform() -> None:
     async def scenario() -> None:
         process = await asyncio.create_subprocess_exec(
             str(agent_envd_binary()),
@@ -1565,7 +1869,7 @@ def test_required_isolation_default_fails_closed_before_protocol_admission() -> 
             env={"AGENT_ENVD_ENVIRONMENT_ID": "env-e2e"},
         )
         stderr = await wait_for_exit(process, expected_code=1)
-        assert b"required execution isolation is not available" in stderr
+        assert b"required execution isolation is not implemented for this platform" in stderr
         assert process.stdout is not None
         assert await process.stdout.read() == b""
 

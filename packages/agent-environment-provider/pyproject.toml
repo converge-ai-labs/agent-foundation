@@ -6,7 +6,10 @@ readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "converge-agent-envd-client",
+    "websockets>=15,<16",
+]
 
 [dependency-groups]
 test = [
@@ -22,3 +25,4 @@ packages = ["converge_agent_environment_provider"]
 
 [tool.deptry]
 known_first_party = ["converge_agent_environment_provider"]
+package_module_name_map = { "converge-agent-envd-client" = "converge_agent_envd_client" }

@@ -2,7 +2,7 @@
 
 FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
-EXAMPLE_DIRS := examples/plugins examples/hosting examples/local-agent
+EXAMPLE_DIRS := examples/general-agent examples/plugins examples/hosting examples/local-agent
 
 .PHONY: install
 install: ## Install locked dependencies and Git hooks
@@ -56,6 +56,7 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-code)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
+	@(cd examples/general-agent && uv run --locked general-agent-example)
 	@(cd examples/hosting && uv run --locked host-persistence-example)
 	@(cd examples/local-agent && uv run --locked local-agent-example)
 
@@ -88,6 +89,11 @@ agent-ui: sync ## Run Agent UI (default WebUI; append `tui` for terminal UI)
 
 tui: agent-ui
 	@:
+
+.PHONY: agent-ui-db-migrate
+agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a disposable database
+	@test -n "$(msg)" || { echo 'msg is required: make agent-ui-db-migrate msg="description"'; exit 2; }
+	@uv run --locked python -m converge_agent_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
 format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
@@ -160,8 +166,8 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 .PHONY: eip-test
 eip-test: sync ## Run EIP generation, runtime, cross-language, and wire-model tests
 	@cargo build --locked --package converge-agent-envd
-	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip
-	@uv run --locked pyright packages/agent-envd-client/converge_agent_envd_client
+	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-harness/tests/test_environment_eip_e2e.py
+	@uv run --locked pyright packages/agent-envd-client/converge_agent_envd_client packages/agent-environment-provider/converge_agent_environment_provider
 	@cargo test --locked --package converge-agent-envd
 
 .PHONY: eip-check
@@ -472,9 +478,9 @@ image-check-foundation-service: ## Smoke-check the existing foundation-service c
 .PHONY: image-check-sandbox
 image-check-sandbox: ## Smoke-check the existing sandbox container image
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(SANDBOX_IMAGE)")" = "sandbox"
+	@docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$(SANDBOX_IMAGE)" | grep -qx 'AGENT_ENVD_EXECUTION_ISOLATION=disabled'
 	@docker run --rm \
 		--env AGENT_ENVD_ENVIRONMENT_ID=image-check \
-		--env AGENT_ENVD_EXECUTION_ISOLATION=disabled \
 		--entrypoint agent-envd "$(SANDBOX_IMAGE)"
 
 .PHONY: image-check

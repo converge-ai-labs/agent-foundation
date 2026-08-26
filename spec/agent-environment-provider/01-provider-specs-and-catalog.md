@@ -79,9 +79,10 @@ The resolved value is not serialized. It retains trusted code selected by the Ho
 
 ## Built-in and Extension Catalog
 
-The package ships three factories under exact keys:
+The package ships four factories under exact keys:
 
 - `converge.direct-local`;
+- `converge.local-envd`;
 - `converge.docker`;
 - `converge.e2b`.
 
@@ -95,9 +96,32 @@ Built-ins are selectable directly and do not depend on installed entry-point met
 Metadata discovery returns bounded references without importing targets. Catalog construction accepts explicit built-in keys, selected third-party keys, and direct factory instances. It preflights missing keys and every collision before importing a selected target. A third-party entry cannot replace or alias a built-in key. Empty third-party selection scans and imports no distribution metadata.
 
 ```python
+@dataclass(frozen=True, slots=True)
+class EnvironmentProviderFactoryReference:
+    provider_key: str
+    import_target: str
+    distribution_name: str | None
+    distribution_version: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentProviderFactoryRegistration:
+    provider_key: str
+    class_module: str
+    class_qualname: str
+    import_target: str | None
+    distribution_name: str | None
+    distribution_version: str | None
+
+
 class EnvironmentProviderFactoryCatalog(
     Mapping[str, EnvironmentProviderFactory]
 ):
+    @property
+    def registrations(
+        self,
+    ) -> tuple[EnvironmentProviderFactoryRegistration, ...]: ...
+
     def require(
         self,
         provider_key: str,
@@ -114,7 +138,21 @@ class EnvironmentProviderFactoryCatalog(
         *,
         runtime: EnvironmentProviderRuntime,
     ) -> EnvironmentManager: ...
+
+
+def discover_environment_provider_factory_references(
+) -> tuple[EnvironmentProviderFactoryReference, ...]: ...
+
+
+def build_environment_provider_factory_catalog(
+    *,
+    builtin_keys: Iterable[str] = (),
+    extension_keys: Iterable[str] = (),
+    explicit_factories: Iterable[EnvironmentProviderFactory] = (),
+) -> EnvironmentProviderFactoryCatalog: ...
 ```
+
+Built-in selection is explicit but requires no metadata scan or import target. Calling the discovery function explicitly scans installed entry-point metadata and returns deterministic bounded references without loading target code. Catalog construction loads only the requested extension keys, and an empty `extension_keys` value performs no metadata scan. Direct factory instances are already trusted process-local inputs; their keys still participate in complete collision checks. The returned catalog and registration sequence are immutable snapshots.
 
 A selected entry point must resolve to an `EnvironmentProviderFactory` subclass with a safe no-argument constructor. The class's `provider_key()` must equal the entry-point name. Catalog construction instantiates each selected factory once and records bounded distribution provenance for Host lock verification. There is no mutable global registry or import-time auto-registration.
 

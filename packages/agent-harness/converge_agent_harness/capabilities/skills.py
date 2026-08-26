@@ -2,24 +2,38 @@
 
 from __future__ import annotations
 
-import re
-from collections.abc import Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from html import escape
 from types import MappingProxyType
 from typing import Any, Literal, Protocol, cast, runtime_checkable
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
 from converge_agent_harness.context import AgentContext, SkillPath
-from converge_agent_harness.environment.files import FileMetadata
+from converge_agent_harness.environment.files import (
+    FileCopyResult,
+    FileEntriesResult,
+    FileMetadata,
+    FileMutationResult,
+    FileOperator,
+    FilePatchResult,
+    FileQueryRequest,
+    FileTextResult,
+    FileTextSearchRequest,
+    FileTextSearchResult,
+    FileWriteMode,
+    FileWriteResult,
+)
 from converge_agent_harness.environment.models import EnvironmentError, EnvironmentPath
-from converge_agent_harness.environment.providers import BoundEnvironment
+from converge_agent_harness.environment.providers import BoundEnvironment, FileScopeSelection
 from converge_agent_harness.errors import DefinitionError
 from converge_agent_harness.events import HarnessExtensionEvent
 from converge_agent_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_harness_tool_metadata
@@ -31,7 +45,6 @@ _DEFAULT_ENVIRONMENT_SKILL_ROOT = "/workspace/.agents/skills"
 _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
     {"environment_not_found", "environment_selection_invalid", "environment_unsupported"}
 )
-_ENVIRONMENT_ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 _MAX_SKILL_SELECTION = 10_000
 _SKILL_ROUTING_POLICY = """Before starting a task or a materially different phase, compare it with the available
 skill descriptions. When a skill directly applies, use the ordinary Environment file tools to read the listed
@@ -41,7 +54,7 @@ authority. Do not treat merely mentioning a skill as a request to use it."""
 
 
 class SkillCatalogItem(BaseModel):
-    """One model-facing skill frontmatter projection and accessible logical directory."""
+    """One model-facing skill frontmatter projection and accessible file path."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
@@ -58,6 +71,69 @@ class SkillCatalogItem(BaseModel):
         return value
 
 
+class BoundSkillCatalogItem(BaseModel):
+    """One catalog item resolved to an exact Environment binding revision."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(min_length=1, max_length=256)
+    description: str = Field(min_length=1, max_length=16 * 1024)
+    path: str = Field(min_length=1)
+    source_id: str = Field(min_length=1, max_length=256)
+    directory: EnvironmentPath
+    document: EnvironmentPath
+    observed_generation: str = Field(min_length=1)
+
+
+class BoundSkillCatalog(BaseModel):
+    """A deterministic catalog bound to the Environment routes used during scanning."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    topology_version: int = Field(ge=0)
+    items: tuple[BoundSkillCatalogItem, ...]
+
+    @model_validator(mode="after")
+    def _unique_names(self) -> BoundSkillCatalog:
+        names = [item.name for item in self.items]
+        if len(set(names)) != len(names):
+            raise ValueError("bound skill catalog names must be unique")
+        return self
+
+    def select(self, names: frozenset[str]) -> BoundSkillCatalog:
+        """Return the exact-name subset while preserving scan provenance."""
+        return self.model_copy(update={"items": tuple(item for item in self.items if item.name in names)})
+
+    def require_current(self, environment: BoundEnvironment) -> None:
+        """Fail if a selected logical path no longer resolves to its scanned revision."""
+        if not isinstance(environment, BoundEnvironment):
+            raise TypeError("environment must be a BoundEnvironment")
+        for item in self.items:
+            try:
+                current = environment.select_files(item.path)
+                document = environment.resolve_path(_join_logical_path(item.path, _SKILL_FILE_NAME))
+            except EnvironmentError as exc:
+                raise DefinitionError(
+                    "A bound skill catalog no longer resolves in the current Environment.",
+                    code="skill_catalog_stale",
+                    details={"skill": item.name, "environment_code": exc.code},
+                ) from exc
+            if (
+                current.resolved_path != item.directory
+                or current.observed_generation != item.observed_generation
+                or document != item.document
+            ):
+                raise DefinitionError(
+                    "A bound skill catalog no longer matches the current Environment binding revision.",
+                    code="skill_catalog_stale",
+                    details={
+                        "skill": item.name,
+                        "binding_id": item.document.binding_id,
+                        "binding_revision": item.document.binding_revision,
+                    },
+                )
+
+
 @runtime_checkable
 class SkillSource(Protocol):
     """Trusted discovery source selected explicitly by embedding code."""
@@ -66,14 +142,14 @@ class SkillSource(Protocol):
     def source_id(self) -> str: ...
 
     @property
-    def logical_roots(self) -> tuple[str, ...]: ...
+    def roots(self) -> tuple[str, ...]: ...
 
-    async def catalog(self, *, environment: BoundEnvironment) -> Sequence[SkillCatalogItem]: ...
+    async def catalog(self, *, files: FileOperator) -> Sequence[SkillCatalogItem]: ...
 
 
 @runtime_checkable
 class SkillMaterializer(Protocol):
-    """Optional provider adapter that syncs into one already-authorized Environment root."""
+    """Optional trusted adapter that syncs into one configured FileOperator root."""
 
     @property
     def materializer_id(self) -> str: ...
@@ -81,11 +157,11 @@ class SkillMaterializer(Protocol):
     @property
     def target_root(self) -> str: ...
 
-    async def materialize(self, *, environment: BoundEnvironment) -> None: ...
+    async def materialize(self, *, files: FileOperator) -> None: ...
 
 
-class EnvironmentSkillSource:
-    """Discover skill frontmatter beneath explicit logical Environment roots."""
+class FileSkillSource:
+    """Discover skill frontmatter beneath explicit FileOperator roots."""
 
     def __init__(
         self,
@@ -100,10 +176,10 @@ class EnvironmentSkillSource:
         self._source_id = _validate_identifier(source_id, "source_id")
         unresolved_roots = tuple(roots)
         if not unresolved_roots or len(set(unresolved_roots)) != len(unresolved_roots):
-            raise ValueError("Environment skill roots must be non-empty and unique")
-        self._roots = tuple(_validate_environment_skill_root(root) for root in unresolved_roots)
+            raise ValueError("File skill roots must be non-empty and unique")
+        self._roots = tuple(_validate_skill_root(root) for root in unresolved_roots)
         if max_entries_per_root <= 0 or max_frontmatter_lines <= 0 or max_line_length <= 0:
-            raise ValueError("Environment skill source limits must be positive")
+            raise ValueError("File skill source limits must be positive")
         self._required = required
         self._max_entries_per_root = max_entries_per_root
         self._max_frontmatter_lines = max_frontmatter_lines
@@ -114,18 +190,18 @@ class EnvironmentSkillSource:
         return self._source_id
 
     @property
-    def logical_roots(self) -> tuple[str, ...]:
+    def roots(self) -> tuple[str, ...]:
         return self._roots
 
     @property
     def required(self) -> bool:
         return self._required
 
-    async def catalog(self, *, environment: BoundEnvironment) -> tuple[SkillCatalogItem, ...]:
+    async def catalog(self, *, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
         discovered: list[SkillCatalogItem] = []
         for root in self._roots:
             try:
-                entries = await environment.files.list(
+                entries = await files.list(
                     root,
                     offset=0,
                     max_results=self._max_entries_per_root,
@@ -135,31 +211,31 @@ class EnvironmentSkillSource:
                 if not self.required and exc.code in _OPTIONAL_SOURCE_UNAVAILABLE_CODES:
                     continue
                 raise DefinitionError(
-                    "An explicit Environment skill root is unavailable.",
+                    "An explicit skill root is unavailable.",
                     code="skill_source_unavailable",
                     details={"source_id": self.source_id, "root": root, "environment_code": exc.code},
                 ) from exc
             if entries.has_more:
                 raise DefinitionError(
-                    "An Environment skill root exceeds its configured catalog size.",
+                    "A skill root exceeds its configured catalog size.",
                     code="skill_catalog_too_large",
                     details={"source_id": self.source_id, "root": root},
                 )
             direct = _join_logical_path(root, _SKILL_FILE_NAME)
-            if await _is_file(environment, direct):
-                discovered.append(await self._catalog_entry(environment, root))
+            if await _is_file(files, direct):
+                discovered.append(await self._catalog_entry(files, root))
             for entry in sorted(entries.entries, key=lambda item: item.path):
                 if entry.kind != "directory":
                     continue
                 skill_file = _join_logical_path(entry.path, _SKILL_FILE_NAME)
-                if await _is_file(environment, skill_file):
-                    discovered.append(await self._catalog_entry(environment, entry.path))
+                if await _is_file(files, skill_file):
+                    discovered.append(await self._catalog_entry(files, entry.path))
         return tuple(discovered)
 
-    async def _catalog_entry(self, environment: BoundEnvironment, skill_dir: str) -> SkillCatalogItem:
+    async def _catalog_entry(self, files: FileOperator, skill_dir: str) -> SkillCatalogItem:
         path = _join_logical_path(skill_dir, _SKILL_FILE_NAME)
         try:
-            result = await environment.files.read_text(
+            result = await files.read_text(
                 path,
                 line_offset=0,
                 line_limit=self._max_frontmatter_lines,
@@ -181,6 +257,152 @@ class EnvironmentSkillSource:
                 details={"path": path},
             )
         return SkillCatalogItem(name=name, description=description, path=skill_dir)
+
+
+@dataclass(frozen=True, slots=True)
+class _SkillFileRoute:
+    root: str
+    selection: FileScopeSelection
+    files: FileOperator
+
+
+class _PinnedSkillFileOperator:
+    """Route selected roots through revision-pinned Environment file scopes."""
+
+    def __init__(
+        self,
+        routes: Sequence[_SkillFileRoute],
+        unavailable: dict[str, str],
+    ) -> None:
+        self._routes = tuple(sorted(routes, key=lambda item: len(item.root), reverse=True))
+        self._unavailable = dict(unavailable)
+        self._known_roots = tuple(
+            sorted(
+                (*[item.root for item in self._routes], *self._unavailable),
+                key=len,
+                reverse=True,
+            )
+        )
+
+    def resolve_path(self, path: str) -> EnvironmentPath:
+        route = self._route(path)
+        relative = path[len(route.root) :].lstrip("/")
+        base = route.selection.resolved_path.path.rstrip("/")
+        provider_path = f"{base}/{relative}" if relative else (base or "/")
+        return EnvironmentPath(
+            binding_id=route.selection.resolved_path.binding_id,
+            binding_revision=route.selection.resolved_path.binding_revision,
+            path=provider_path,
+        )
+
+    def observed_generation(self, path: str) -> str:
+        return self._route(path).selection.observed_generation
+
+    def _route(self, path: str) -> _SkillFileRoute:
+        root = next((item for item in self._known_roots if _is_path_within_root(path, item)), None)
+        if root is None:
+            raise EnvironmentError(
+                "The file path is outside the selected skill roots.",
+                code="environment_selection_invalid",
+            )
+        unavailable_code = self._unavailable.get(root)
+        if unavailable_code is not None:
+            raise EnvironmentError(
+                "The selected skill root is unavailable.",
+                code=unavailable_code,
+                details={"root": root},
+            )
+        return next(item for item in self._routes if item.root == root)
+
+    def _same_route(self, source: str, destination: str) -> _SkillFileRoute:
+        source_route = self._route(source)
+        destination_route = self._route(destination)
+        if source_route is not destination_route:
+            raise EnvironmentError(
+                "A skill materializer cannot move or copy across selected roots.",
+                code="environment_selection_invalid",
+            )
+        return source_route
+
+    async def read_text(
+        self,
+        path: str,
+        *,
+        line_offset: int = 0,
+        line_limit: int = 200,
+        max_line_length: int = 2_000,
+    ) -> FileTextResult:
+        return await self._route(path).files.read_text(
+            path,
+            line_offset=line_offset,
+            line_limit=line_limit,
+            max_line_length=max_line_length,
+        )
+
+    async def read_bytes(self, path: str, *, offset: int = 0, length: int | None = None) -> bytes:
+        return await self._route(path).files.read_bytes(path, offset=offset, length=length)
+
+    def read_bytes_stream(self, path: str, *, chunk_size: int = 65_536) -> AsyncIterator[bytes]:
+        return self._route(path).files.read_bytes_stream(path, chunk_size=chunk_size)
+
+    async def write_bytes_stream(
+        self,
+        path: str,
+        stream: AsyncIterable[bytes],
+        *,
+        mode: FileWriteMode,
+    ) -> FileWriteResult:
+        return await self._route(path).files.write_bytes_stream(path, stream, mode=mode)
+
+    async def write_text(self, path: str, text: str, *, mode: FileWriteMode) -> FileWriteResult:
+        return await self._route(path).files.write_text(path, text, mode=mode)
+
+    async def patch_text(self, path: str, patch: str) -> FilePatchResult:
+        return await self._route(path).files.patch_text(path, patch)
+
+    async def stat(self, path: str) -> FileMetadata:
+        return await self._route(path).files.stat(path)
+
+    async def list(
+        self,
+        path: str,
+        *,
+        offset: int = 0,
+        max_results: int,
+        include_hidden: bool = False,
+    ) -> FileEntriesResult:
+        return await self._route(path).files.list(
+            path,
+            offset=offset,
+            max_results=max_results,
+            include_hidden=include_hidden,
+        )
+
+    async def query(self, request: FileQueryRequest) -> FileEntriesResult:
+        return await self._route(request.root).files.query(request)
+
+    async def search_text(self, request: FileTextSearchRequest) -> FileTextSearchResult:
+        return await self._route(request.root).files.search_text(request)
+
+    async def mkdir(
+        self,
+        path: str,
+        *,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> FileMutationResult:
+        return await self._route(path).files.mkdir(path, parents=parents, exist_ok=exist_ok)
+
+    async def move(self, source: str, destination: str, *, replace: bool = False) -> FileMutationResult:
+        route = self._same_route(source, destination)
+        return await route.files.move(source, destination, replace=replace)
+
+    async def remove(self, path: str, *, recursive: bool = False) -> FileMutationResult:
+        return await self._route(path).files.remove(path, recursive=recursive)
+
+    async def copy(self, source: str, destination: str, *, replace: bool = False) -> FileCopyResult:
+        route = self._same_route(source, destination)
+        return await route.files.copy(source, destination, replace=replace)
 
 
 class SkillsPolicy(BaseModel):
@@ -226,25 +448,30 @@ class SkillManager:
         source_ids = [source.source_id for source in resolved_sources]
         if len(set(source_ids)) != len(source_ids):
             raise ValueError("skill source IDs must be unique")
+        source_roots: dict[str, tuple[str, ...]] = {}
         for source in resolved_sources:
-            roots = source.logical_roots
-            if not roots or len(set(roots)) != len(roots):
-                raise ValueError("skill source logical roots must be non-empty and unique")
-            if any(not root.strip() or "\x00" in root for root in roots):
-                raise ValueError("skill source logical roots are invalid")
+            roots = source.roots
+            if not isinstance(roots, tuple) or not roots or not all(isinstance(root, str) for root in roots):
+                raise TypeError("skill source roots must be a non-empty tuple of strings")
+            if len(set(roots)) != len(roots):
+                raise ValueError("skill source roots must be unique")
+            source_roots[source.source_id] = tuple(_validate_skill_root(root) for root in roots)
         resolved_materializers = tuple(materializers)
         if not all(isinstance(item, SkillMaterializer) for item in resolved_materializers):
             raise TypeError("SkillManager materializers must implement SkillMaterializer")
         materializer_ids = [item.materializer_id for item in resolved_materializers]
         if len(set(materializer_ids)) != len(materializer_ids):
             raise ValueError("skill materializer IDs must be unique")
-        roots = {root for source in resolved_sources for root in source.logical_roots}
+        roots = {root for selected in source_roots.values() for root in selected}
         if any(item.target_root not in roots for item in resolved_materializers):
-            raise ValueError("skill materializers must target an explicitly selected logical root")
+            raise ValueError("skill materializers must target an explicitly selected root")
         self._sources = resolved_sources
+        self._source_roots = MappingProxyType(source_roots)
         self._materializers = resolved_materializers
         self._policy = (policy or SkillsPolicy()).model_copy(deep=True)
-        self._logical_roots = tuple(dict.fromkeys(root for source in resolved_sources for root in source.logical_roots))
+        self._roots = tuple(
+            dict.fromkeys(root for source in resolved_sources for root in source_roots[source.source_id])
+        )
 
     @classmethod
     def default(
@@ -257,7 +484,7 @@ class SkillManager:
         """Use the optional workspace skill root before explicit Host additions."""
         return cls(
             (
-                EnvironmentSkillSource(
+                FileSkillSource(
                     "workspace",
                     (_DEFAULT_ENVIRONMENT_SKILL_ROOT,),
                     required=False,
@@ -269,23 +496,25 @@ class SkillManager:
         )
 
     @property
-    def logical_roots(self) -> tuple[str, ...]:
-        """Paths the Host must make accessible in the initial Environment topology."""
-        return self._logical_roots
+    def roots(self) -> tuple[str, ...]:
+        """Absolute roots in the selected FileOperator namespace."""
+        return self._roots
 
     @property
     def policy(self) -> SkillsPolicy:
         return self._policy.model_copy(deep=True)
 
-    async def freeze(self, *, environment: BoundEnvironment) -> tuple[SkillCatalogItem, ...]:
-        """Materialize only into authorized roots, then resolve the ordered catalog."""
+    async def scan(self, *, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
+        """Scan exactly the supplied FileOperator without Environment dispatch."""
+        return await self._scan_files(files)
+
+    async def _scan_files(self, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
         for materializer in self._materializers:
             try:
-                environment.resolve_path(materializer.target_root)
-                await materializer.materialize(environment=environment)
+                await materializer.materialize(files=files)
             except EnvironmentError as exc:
                 raise DefinitionError(
-                    "A skill materializer target is not available in the current Environment.",
+                    "A skill materializer target is not available through the selected FileOperator.",
                     code="skill_materialization_unavailable",
                     details={"materializer_id": materializer.materializer_id, "environment_code": exc.code},
                 ) from exc
@@ -301,7 +530,7 @@ class SkillManager:
         selected: dict[str, SkillCatalogItem] = {}
         for source in self._sources:
             try:
-                entries = tuple(await source.catalog(environment=environment))
+                entries = tuple(await source.catalog(files=files))
             except DefinitionError:
                 raise
             except Exception as exc:
@@ -318,23 +547,7 @@ class SkillManager:
                 )
             if not entries:
                 continue
-            resolved_roots: list[EnvironmentPath] = []
-            for root in source.logical_roots:
-                try:
-                    resolved_roots.append(environment.resolve_path(root))
-                except EnvironmentError as exc:
-                    if (
-                        isinstance(source, EnvironmentSkillSource)
-                        and not source.required
-                        and exc.code in _OPTIONAL_SOURCE_UNAVAILABLE_CODES
-                    ):
-                        continue
-                    raise DefinitionError(
-                        "A selected skill source root is not authorized by the current Environment.",
-                        code="skill_source_unavailable",
-                        details={"source_id": source.source_id, "environment_code": exc.code},
-                    ) from exc
-            source_roots = tuple(resolved_roots)
+            source_roots = self._source_roots[source.source_id]
             for raw_entry in entries:
                 parsed = (
                     raw_entry.model_copy(deep=True)
@@ -347,17 +560,7 @@ class SkillManager:
                     path=parsed.path,
                     source_id=source.source_id,
                 )
-                skill_file = _join_logical_path(entry.path, _SKILL_FILE_NAME)
-                try:
-                    selected_path = environment.resolve_path(entry.path)
-                    environment.resolve_path(skill_file)
-                except EnvironmentError as exc:
-                    raise DefinitionError(
-                        "A discovered skill path is not authorized by the current Environment.",
-                        code="skill_path_unavailable",
-                        details={"skill": entry.name, "environment_code": exc.code},
-                    ) from exc
-                if not any(_is_within_root(selected_path, root) for root in source_roots):
+                if not any(_is_path_within_root(entry.path, root) for root in source_roots):
                     raise DefinitionError(
                         "A discovered skill path is outside its selected source roots.",
                         code="skill_path_outside_source",
@@ -376,12 +579,11 @@ class SkillManager:
                     selected[entry.name] = entry
         if len(selected) > self._policy.max_skills:
             raise DefinitionError("The selected skill catalog is too large.", code="skill_catalog_too_large")
-        access_paths: dict[tuple[str, int, str], str] = {}
+        access_paths: dict[str, str] = {}
         for item in selected.values():
             skill_file = _join_logical_path(item.path, _SKILL_FILE_NAME)
-            resolved = environment.resolve_path(skill_file)
             try:
-                metadata = await environment.files.stat(skill_file)
+                metadata = await files.stat(skill_file)
             except EnvironmentError as exc:
                 raise DefinitionError(
                     "A selected skill document is unavailable.",
@@ -394,8 +596,7 @@ class SkillManager:
                     code="skill_path_unavailable",
                     details={"skill": item.name},
                 )
-            key = (resolved.binding_id, resolved.binding_revision, resolved.path)
-            previous = access_paths.setdefault(key, item.name)
+            previous = access_paths.setdefault(metadata.path, item.name)
             if previous != item.name:
                 raise DefinitionError(
                     "Distinct selected skills resolve to the same skill document.",
@@ -403,6 +604,54 @@ class SkillManager:
                     details={"skill": item.name, "other_skill": previous},
                 )
         return tuple(selected[name] for name in sorted(selected))
+
+    async def scan_environment(self, *, environment: BoundEnvironment) -> BoundSkillCatalog:
+        """Scan through revision-pinned scopes and bind every result to its exact route."""
+        if not isinstance(environment, BoundEnvironment):
+            raise TypeError("environment must be a BoundEnvironment")
+        topology_version = environment.topology.topology_version
+        unavailable: dict[str, str] = {}
+        initially_unresolved: dict[str, str] = {}
+        selections: list[tuple[str, FileScopeSelection]] = []
+        for root in self._roots:
+            try:
+                selections.append((root, environment.select_files(root)))
+            except EnvironmentError as exc:
+                unavailable[root] = exc.code
+                initially_unresolved[root] = exc.code
+
+        async with AsyncExitStack() as stack:
+            routes: list[_SkillFileRoute] = []
+            for root, selection in selections:
+                try:
+                    files = await stack.enter_async_context(environment.open_files(selection))
+                except EnvironmentError as exc:
+                    if exc.code == "environment_stale_binding":
+                        raise DefinitionError(
+                            "An Environment binding changed while preparing the skill catalog.",
+                            code="skill_catalog_stale",
+                            details={
+                                "binding_id": selection.resolved_path.binding_id,
+                                "binding_revision": selection.resolved_path.binding_revision,
+                            },
+                        ) from exc
+                    unavailable[root] = exc.code
+                    continue
+                routes.append(_SkillFileRoute(root=root, selection=selection, files=files))
+            pinned_files = _PinnedSkillFileOperator(routes, unavailable)
+            catalog = await self._scan_files(pinned_files)
+            bound = _bind_skill_catalog(
+                catalog,
+                files=pinned_files,
+                topology_version=topology_version,
+            )
+        _require_skill_scan_roots_current(
+            environment,
+            selections=selections,
+            initially_unresolved=initially_unresolved,
+        )
+        bound.require_current(environment)
+        return bound
 
 
 @dataclass(init=False)
@@ -427,9 +676,9 @@ class SkillsCapability(AbstractCapability[AgentContext]):
                 "SkillsCapability must originate from the Agent definition.", code="capability_scope_invalid"
             )
         selected_names = _resolve_skill_selection(ctx)
-        catalog = await self.manager.freeze(environment=ctx.deps.environment)
+        catalog = await self.manager.scan_environment(environment=ctx.deps.environment)
         if selected_names is not None:
-            discovered_names = frozenset(item.name for item in catalog)
+            discovered_names = frozenset(item.name for item in catalog.items)
             unknown_names = sorted(selected_names - discovered_names)
             if unknown_names:
                 raise DefinitionError(
@@ -440,7 +689,8 @@ class SkillsCapability(AbstractCapability[AgentContext]):
                         "truncated": len(unknown_names) > 128,
                     },
                 )
-            catalog = tuple(item for item in catalog if item.name in selected_names)
+            catalog = catalog.select(selected_names)
+        catalog.require_current(ctx.deps.environment)
         replacement = _SkillsRunCapability(catalog, context=ctx.deps, manager=self.manager)
         ctx.deps._record_run_capability(SKILLS_CAPABILITY_ID, replacement)
         await ctx.deps.events.emit(
@@ -448,9 +698,9 @@ class SkillsCapability(AbstractCapability[AgentContext]):
                 kind="context",
                 payload={
                     "type": "skills_catalog_resolved",
-                    "skill_count": len(catalog),
-                    "skills": [item.name for item in catalog[:128]],
-                    "truncated": len(catalog) > 128,
+                    "skill_count": len(catalog.items),
+                    "skills": [item.name for item in catalog.items[:128]],
+                    "truncated": len(catalog.items) > 128,
                 },
             )
         )
@@ -461,27 +711,25 @@ class SkillsCapability(AbstractCapability[AgentContext]):
 class _SkillsRunCapability(SkillsCapability):
     def __init__(
         self,
-        catalog: Sequence[SkillCatalogItem],
+        catalog: BoundSkillCatalog,
         *,
         context: AgentContext,
         manager: SkillManager,
     ) -> None:
         self.manager = manager
-        self._catalog = tuple(item.model_copy(deep=True) for item in catalog)
+        self._catalog = catalog.model_copy(deep=True)
         self._context = context
-        keys: dict[tuple[str, int, str], SkillCatalogItem] = {}
+        keys: dict[tuple[str, int, str], BoundSkillCatalogItem] = {}
         skill_paths: list[SkillPath] = []
-        for item in self._catalog:
-            assert item.source_id is not None
+        for item in self._catalog.items:
             skill_paths.append(
                 SkillPath(
                     name=item.name,
                     source_id=item.source_id,
-                    directory=context.environment.resolve_path(item.path),
+                    directory=item.directory,
                 )
             )
-            selected = context.environment.resolve_path(_join_logical_path(item.path, _SKILL_FILE_NAME))
-            keys[(selected.binding_id, selected.binding_revision, selected.path)] = item
+            keys[(item.document.binding_id, item.document.binding_revision, item.document.path)] = item
         self._access_keys = MappingProxyType(keys)
         context.skill_paths.publish(SKILLS_CAPABILITY_ID, skill_paths)
 
@@ -491,10 +739,10 @@ class _SkillsRunCapability(SkillsCapability):
         return self
 
     def get_instructions(self) -> str | None:
-        if not self._catalog:
+        if not self._catalog.items:
             return None
         lines = [_SKILL_ROUTING_POLICY, "", "<available-skills>"]
-        for item in self._catalog:
+        for item in self._catalog.items:
             lines.extend(
                 (
                     f'<skill name="{escape(item.name, quote=True)}">',
@@ -506,6 +754,26 @@ class _SkillsRunCapability(SkillsCapability):
         lines.append("</available-skills>")
         return "\n".join(lines)
 
+    async def before_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        request_context: ModelRequestContext,
+    ) -> ModelRequestContext:
+        self._require_current(ctx)
+        return request_context
+
+    async def before_tool_execute(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: dict[str, Any],
+    ) -> dict[str, Any]:
+        del call, tool_def
+        self._require_current(ctx)
+        return args
+
     async def after_tool_execute(
         self,
         ctx: RunContext[AgentContext],
@@ -516,6 +784,7 @@ class _SkillsRunCapability(SkillsCapability):
         result: Any,
     ) -> Any:
         del call
+        self._require_current(ctx)
         metadata = tool_def.metadata or {}
         raw_harness_metadata = metadata.get(HARNESS_TOOL_METADATA_KEY)
         if raw_harness_metadata is None:
@@ -552,6 +821,11 @@ class _SkillsRunCapability(SkillsCapability):
         )
         return result
 
+    def _require_current(self, ctx: RunContext[AgentContext]) -> None:
+        if ctx.deps is not self._context:
+            raise DefinitionError("A frozen skill catalog cannot cross logical runs.", code="capability_scope_invalid")
+        self._catalog.require_current(ctx.deps.environment)
+
 
 def _resolve_skill_selection(ctx: RunContext[AgentContext]) -> frozenset[str] | None:
     names = ctx.deps._skill_selection_names
@@ -570,22 +844,26 @@ def _validate_identifier(value: str, field_name: str) -> str:
     return value
 
 
-def _validate_environment_skill_root(value: str) -> str:
-    if not isinstance(value, str) or not value.strip() or "\x00" in value:
-        raise ValueError("Environment skill roots must be valid logical paths")
+def _validate_skill_root(value: str) -> str:
+    if not isinstance(value, str) or not value.startswith("/") or "\x00" in value:
+        raise ValueError("skill roots must be absolute FileOperator paths")
+    if value != "/" and (value.endswith("/") or "//" in value):
+        raise ValueError("skill roots must use canonical absolute paths")
     if any(segment in {".", ".."} for segment in value.split("/")):
-        raise ValueError("Environment skill roots must not contain traversal segments")
-    if value == "/workspace" or value.startswith("/workspace/"):
-        return value
-    if value.startswith("/environment/"):
-        alias = value.removeprefix("/environment/").partition("/")[0]
-        if _ENVIRONMENT_ALIAS_PATTERN.fullmatch(alias):
-            return value
-    raise ValueError("Environment skill roots must use /workspace or /environment/{alias}")
+        raise ValueError("skill roots must not contain traversal segments")
+    return value
 
 
 def _join_logical_path(root: str, relative: str) -> str:
     return f"{root.rstrip('/')}/{relative.lstrip('/')}"
+
+
+def _is_path_within_root(candidate: str, root: str) -> bool:
+    if any(segment in {".", ".."} for segment in candidate.split("/")):
+        return False
+    normalized_root = root.rstrip("/") or "/"
+    prefix = "/" if normalized_root == "/" else f"{normalized_root}/"
+    return candidate == normalized_root or candidate.startswith(prefix)
 
 
 def _is_within_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:
@@ -596,9 +874,105 @@ def _is_within_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:
     return candidate.path == root.path or candidate.path.startswith(prefix)
 
 
-async def _is_file(environment: BoundEnvironment, path: str) -> bool:
+def _require_skill_scan_roots_current(
+    environment: BoundEnvironment,
+    *,
+    selections: Sequence[tuple[str, FileScopeSelection]],
+    initially_unresolved: dict[str, str],
+) -> None:
+    for root, captured in selections:
+        try:
+            current = environment.select_files(root)
+        except EnvironmentError as exc:
+            raise DefinitionError(
+                "A selected skill root no longer resolves after scanning.",
+                code="skill_catalog_stale",
+                details={"root": root, "environment_code": exc.code},
+            ) from exc
+        if current != captured:
+            raise DefinitionError(
+                "A selected skill root changed while preparing the catalog.",
+                code="skill_catalog_stale",
+                details={
+                    "root": root,
+                    "binding_id": captured.resolved_path.binding_id,
+                    "binding_revision": captured.resolved_path.binding_revision,
+                },
+            )
+    for root, previous_code in initially_unresolved.items():
+        try:
+            environment.select_files(root)
+        except EnvironmentError as exc:
+            if exc.code == previous_code:
+                continue
+            raise DefinitionError(
+                "An unresolved skill root changed state while preparing the catalog.",
+                code="skill_catalog_stale",
+                details={
+                    "root": root,
+                    "previous_environment_code": previous_code,
+                    "current_environment_code": exc.code,
+                },
+            ) from exc
+        raise DefinitionError(
+            "An unresolved skill root became routable while preparing the catalog.",
+            code="skill_catalog_stale",
+            details={"root": root, "previous_environment_code": previous_code},
+        )
+
+
+def _bind_skill_catalog(
+    catalog: Sequence[SkillCatalogItem],
+    *,
+    files: _PinnedSkillFileOperator,
+    topology_version: int,
+) -> BoundSkillCatalog:
+    resolved_documents: dict[tuple[str, int, str], str] = {}
+    bound: list[BoundSkillCatalogItem] = []
+    for item in catalog:
+        skill_file = _join_logical_path(item.path, _SKILL_FILE_NAME)
+        try:
+            directory = files.resolve_path(item.path)
+            document = files.resolve_path(skill_file)
+        except EnvironmentError as exc:
+            raise DefinitionError(
+                "A discovered skill path is not authorized by the scanned Environment scopes.",
+                code="skill_path_unavailable",
+                details={"skill": item.name, "environment_code": exc.code},
+            ) from exc
+        if not _is_within_root(document, directory):
+            raise DefinitionError(
+                "A selected skill document resolves outside its skill directory.",
+                code="skill_path_unavailable",
+                details={"skill": item.name},
+            )
+        key = (document.binding_id, document.binding_revision, document.path)
+        previous = resolved_documents.setdefault(key, item.name)
+        if previous != item.name:
+            raise DefinitionError(
+                "Distinct selected skills resolve to the same skill document.",
+                code="skill_catalog_ambiguous",
+                details={"skill": item.name, "other_skill": previous},
+            )
+        if item.source_id is None:
+            raise DefinitionError("A resolved skill has no source provenance.", code="skill_catalog_invalid")
+        bound.append(
+            BoundSkillCatalogItem(
+                name=item.name,
+                description=item.description,
+                path=item.path,
+                source_id=item.source_id,
+                directory=directory,
+                document=document,
+                observed_generation=files.observed_generation(item.path),
+            )
+        )
+    return BoundSkillCatalog(topology_version=topology_version, items=tuple(bound))
+
+
+async def _is_file(files: FileOperator, path: str) -> bool:
     try:
-        metadata: FileMetadata = await environment.files.stat(path)
+        metadata: FileMetadata = await files.stat(path)
     except EnvironmentError as exc:
         if exc.code in {"environment_not_found", "environment_unsupported"}:
             return False
@@ -647,7 +1021,9 @@ def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
 
 
 __all__ = [
-    "EnvironmentSkillSource",
+    "BoundSkillCatalog",
+    "BoundSkillCatalogItem",
+    "FileSkillSource",
     "SkillCatalogItem",
     "SkillManager",
     "SkillMaterializer",

@@ -2,7 +2,14 @@
 
 `converge-agent-environment-provider` is the shared Environment provider library for Converge agents. The repository directory is `packages/agent-environment-provider`, the Python distribution is `converge-agent-environment-provider`, and the import package is `converge_agent_environment_provider`.
 
-This package is currently a scaffold. It exposes only distribution version metadata; Provider, Manager, Docker, E2B, and EIP behavior will be added separately after their public contracts are implemented and reviewed.
+The package exposes the shared process-local runtime attachment boundary and explicit EIP session sources:
+
+- `EIPEnvironmentAttachment` and the exhaustive `EnvironmentRuntimeAttachment` union;
+- `StdioEIPSessionSource` for a private asyncio subprocess;
+- `HttpEIPSessionSource` for an authenticated Host-dialed HTTP(S) endpoint;
+- `AcceptedWebSocketEIPSessionSource` for an already-authenticated `websockets.ServerConnection` accepted by the Host.
+
+Each source and attachment is single-use and creates one fresh initialized EIP session. The package owns carrier acquisition but not EIP method semantics, Harness operation adaptation, product authentication, or durable provider state. Provider Manager and built-in Docker/E2B lifecycle implementations remain separate package capabilities.
 
 The package is a pure Python library and intentionally has no package-specific service image or Dockerfile. Repository sandbox-image work uses the shared [`deploy/containers/sandbox/Dockerfile`](../../deploy/containers/sandbox/Dockerfile).
 

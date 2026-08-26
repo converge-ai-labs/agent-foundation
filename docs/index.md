@@ -12,6 +12,8 @@ The local Agent stack consists of:
 
 The source directories omit the distribution prefix: `packages/agent-harness`, `packages/agent-stream-protocol`, and `packages/agent-ui`. Python imports use normalized underscore names: `converge_agent_harness`, `converge_agent_stream_protocol`, and `converge_agent_ui`.
 
+Start with the [Agent Harness guide](agent-harness/index.md) to embed, build, run, extend, and resume a process-local Agent. See the [Agent Stream Protocol guide](agent-stream-protocol/index.md) for Harness-to-AG-UI observation, Host processors, snapshots, and reconstruction from source history.
+
 Harness and Stream Protocol form one release group. A `release/harness-v<version>` tag publishes both at exactly the same version, and published Protocol metadata pins that Harness version. Agent UI advances independently through `release/agent-ui-v<version>` and pins both libraries to one reviewed Harness release. `<version>` is stable `X.Y.Z` or release-candidate `X.Y.Z-rc.N`; PyPI represents an RC as the equivalent PEP 440 version `X.Y.ZrcN`. The private `apps/harness-ui` browser source is compiled into the `converge-agent-ui` sdist and wheel; it is not published to npm and has no independent version or release workflow.
 
 `converge-agent-ui` selects WebUI by default:

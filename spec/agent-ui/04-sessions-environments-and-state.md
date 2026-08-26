@@ -2,24 +2,24 @@
 
 ## Design Position
 
-An Agent UI Session is the local Host authority for one persistent interaction tree and work scope. It pins one immutable resolved Agent snapshot and one immutable resolved Environment snapshot, owns one root Thread, groups child Threads, serializes Turn advancement, selects complete `HarnessState` checkpoints, records Environment provider resources, retains AG-UI presentation history, and supports Codex-style list, resume, fork, archive, and cleanup operations.
+An Agent UI Session is the local Host authority for one persistent interaction tree and work scope. It pins one immutable resolved Agent snapshot, one immutable resolved Environment snapshot, and one validated root/child Skill-exposure map; owns one root Thread; groups async-child Threads; serializes Turn advancement; selects complete `HarnessState` checkpoints; records assignments to Host-managed Environment resources; retains AG-UI presentation history; and supports Codex-style list, resume, fork, archive, and cleanup operations.
 
-A Session is neither a Pydantic provider session nor a Foundation `Execution`. Its live model clients, provider managers, Environment attachments, Harness Runs, background tasks, and surface subscriptions are process-local. Local persistence supports restart and explicit continuation without claiming distributed work ownership or exactly-once external effects.
+A Session is neither a Pydantic provider session nor a Foundation `Execution`. Its live model clients, provider managers, Environment attachments, Harness Runs, async-subagent tasks, and surface subscriptions are process-local. Local persistence supports restart and explicit continuation without claiming distributed work ownership or exactly-once external effects.
 
 ## Boundaries
 
-| Concern                                           | Owner                         | Session relationship                                                          |
-| ------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| Agent composition                                 | Resolved Agent snapshot       | Session pins exact identity and digest                                        |
-| Desired Environment topology and lifecycle policy | Resolved Environment snapshot | Session pins exact identity and digest independently from Agent               |
-| Provider resource effects and state codec         | Environment Provider Manager  | Agent UI authorizes operations and persists selected provider-state objects   |
-| Harness Environment topology and operations       | Harness                       | Receives fresh attachments for one root or child Run                          |
-| Thread and Capability continuation                | `HarnessState`                | Complete checkpoint payload is stored without interpreting private namespaces |
-| Turn acceptance and checkpoint selection          | Agent UI SQLite metadata      | Serializes one Thread and atomically selects existing immutable state objects |
-| Presentation history                              | Compressed AG-UI segments     | Retained for replay and Item projection; never reconstructs `HarnessState`    |
-| Background child execution                        | Agent UI background monitor   | Persists bounded metadata and terminal state; live task remains process-local |
-| Model-facing Session browsing                     | Read-only Session Capability  | Uses a fresh exact-Session collaborator and safe indexed projections          |
-| Dynamic configuration                             | Configuration generations     | New revisions become selectable; pinned Session snapshots do not change       |
+| Concern                                           | Owner                           | Session relationship                                                                                 |
+| ------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Agent composition                                 | Resolved Agent snapshot         | Session pins exact identity and digest                                                               |
+| Desired Environment topology and lifecycle policy | Resolved Environment snapshot   | Session pins exact identity and digest independently from Agent                                      |
+| Provider resource effects and state codec         | Environment Provider Manager    | Agent UI authorizes operations and persists selected provider-state objects                          |
+| Harness Environment topology and operations       | Harness                         | Receives fresh attachments for one root or child Run                                                 |
+| Thread and Capability continuation                | `HarnessState`                  | Complete checkpoint payload is stored without interpreting private namespaces                        |
+| Turn acceptance and checkpoint selection          | Agent UI SQLite metadata        | Serializes one Thread and atomically selects existing immutable state objects                        |
+| Presentation history                              | Compressed AG-UI segments       | Retained for replay and Item projection; never reconstructs `HarnessState`                           |
+| Async child execution                             | Agent UI async-subagent service | Persists job, child checkpoint, pending input, and delivery facts; active task remains process-local |
+| Model-facing Session browsing                     | Read-only Session Capability    | Uses a fresh exact-Session collaborator and safe indexed projections                                 |
+| Dynamic configuration                             | Configuration generations       | New revisions become selectable; pinned Session snapshots do not change                              |
 
 ## Environment Definition
 
@@ -47,11 +47,12 @@ class EnvironmentBindingDefinition(BaseModel):
 class SessionEnvironmentLifecyclePolicy(BaseModel):
     provision: Literal["eager", "on_first_run"]
     idle: Literal["keep_running", "pause_full", "pause_filesystem"]
-    ownership: Literal["session_owned", "caller_owned"]
-    delete: Literal["destroy", "detach"]
+    release: Literal["retain", "destroy_when_unreferenced"]
 ```
 
-`EnvironmentProviderSpec` and its provider-owned configuration schema are defined by the [Environment Provider catalog](../agent-environment-provider/01-provider-specs-and-catalog.md). Agent UI validates every selected provider key, schema, parameter set, permission ceiling, topology alias, and lifecycle capability while accepting a configuration generation.
+`EnvironmentProviderSpec` and its provider-owned configuration schema are defined by the [Environment Provider catalog](../agent-environment-provider/01-provider-specs-and-catalog.md). Agent UI validates every selected provider key, schema, parameter set, permission ceiling, topology alias, and lifecycle capability while accepting a configuration generation. Lifecycle policy describes what the Host does after the final assignment releases a provider resource; it does not assign that Environment to an Agent or Session owner. `retain` detaches the assignment and keeps provider state available, while `destroy_when_unreferenced` selects explicit Manager destroy only after no retained assignment or active attachment remains.
+
+Agent UI's data root is Host authority and is never an executable Session workspace or host mount. Before snapshot publication and again before provider effects, Agent UI canonicalizes every existing Host-native root exposed by a Direct Local, Local Envd, or Docker execution binding and rejects any root that equals, contains, or is contained by the active data root. Symlink resolution cannot bypass this overlap check. This rule applies to Session execution Environments; it does not convert application-internal, exact-scope Skill import reads into Session bindings.
 
 `binding_name` is a Host identity; `model_alias` is the bounded alias published through Harness topology. Names are unique in one Environment. `default_binding` is absent only for an empty topology and otherwise names one binding. The Environment definition contains no credential, provider resource ID, container/sandbox ID, endpoint resolved at runtime, attachment, EIP session, live provider object, or `HarnessState`.
 
@@ -82,8 +83,9 @@ class LocalSession(BaseModel):
     control_revision: int
     agent_snapshot: AgentSnapshotRef
     environment_snapshot: EnvironmentSnapshotRef
+    skill_selections: tuple[SessionAgentSkillSelection, ...]
     parent_fork: SessionForkRef | None
-    environment_resources: tuple[SessionEnvironmentResource, ...]
+    environment_assignments: tuple[SessionEnvironmentAssignment, ...]
     root: ThreadView
     children: tuple[ThreadView, ...]
 
@@ -95,11 +97,19 @@ class ThreadView(BaseModel):
     active_turn: TurnRef | None
     turns: tuple[TurnProjection, ...]
     presentation: PresentationReplayIndex
+
+
+class SessionAgentSkillSelection(BaseModel):
+    agent_node_id: str
+    mode: Literal["agent_default", "exact"]
+    names: tuple[str, ...] = ()
 ```
+
+`agent_node_id` selects one exact node in the pinned resolved Agent graph, not a mutable current Agent resource. `agent_default` uses that node's snapshot default. `exact` records an exact unique final-name set, including an empty set that disables Skills for that node. Session creation or fork resolves every entry against the node's pinned available Skill revisions and rejects unknown, ambiguous, duplicate, or out-of-node names. Omitted nodes use their Agent default. This map is immutable Session composition: changing it requires a fork rather than a metadata edit.
 
 `session_id`, Thread, Turn, Item, checkpoint, Run, resource, and job identifiers are compact correlations and grant no authority. When a checkpoint is selected, `thread_id` equals its stored `HarnessState.thread_id`. Every retained Item belongs to one Turn and Thread; event sequence and replay cursor remain separate identities.
 
-A Session pins both snapshots for its complete lifetime. Before persistence or provider effects, the Session compatibility resolver verifies every root and child Agent Environment requirement against the selected Environment binding names, provider-neutral operation families, permission ceilings, provider lifecycle capabilities, and child resource policy. A missing or insufficient binding rejects creation/fork rather than silently narrowing the Agent's authored behavior. Display metadata such as title, archive, pin, ordering, and tags can change under `control_revision` without changing Agent or Environment composition. Selecting another composition creates a fork.
+A Session pins both snapshots and its Skill-exposure map for its complete lifetime. Before persistence or provider effects, the Session compatibility resolver verifies every root and child Agent Environment requirement against the selected Environment binding names, provider-neutral operation families, permission ceilings, provider lifecycle capabilities, and child resource policy. It also resolves each effective Skill name set against the exact available package revisions of the corresponding Agent node. A missing or insufficient binding rejects creation/fork rather than silently narrowing the Agent's authored behavior. Display metadata such as title, archive, pin, ordering, and tags can change under `control_revision` without changing Agent or Environment composition. Selecting another composition creates a fork.
 
 Session creation is durable before provider dispatch:
 
@@ -121,40 +131,41 @@ stateDiagram-v2
 
 ## Environment Resource Assignment
 
-One Environment binding can own several durable provider resource instances with distinct execution scopes:
+One Environment binding can have several assignments to durable provider resource instances across distinct execution scopes:
 
 ```python
-class RootEnvironmentOwner(BaseModel):
+class RootEnvironmentExecutionScope(BaseModel):
     kind: Literal["root"]
 
 
-class InlineChildEnvironmentOwner(BaseModel):
-    kind: Literal["inline_child"]
-    parent_thread_id: str
-    child_instance_id: str
+class AsyncChildEnvironmentExecutionScope(BaseModel):
+    kind: Literal["async_child"]
+    subagent_job_id: str
     child_thread_id: str | None
 
 
-class BackgroundChildEnvironmentOwner(BaseModel):
-    kind: Literal["background_child"]
-    background_job_id: str
-    child_thread_id: str | None
-
-
-type EnvironmentResourceOwner = (
-    RootEnvironmentOwner
-    | InlineChildEnvironmentOwner
-    | BackgroundChildEnvironmentOwner
+type EnvironmentExecutionScope = (
+    RootEnvironmentExecutionScope | AsyncChildEnvironmentExecutionScope
 )
 
 
-class SessionEnvironmentResource(BaseModel):
-    resource_instance_id: str
+class SessionEnvironmentAssignment(BaseModel):
+    assignment_id: str
     session_id: str
     binding_name: str
-    owner: EnvironmentResourceOwner
+    scope: EnvironmentExecutionScope
+    host_resource_id: str
+    created_at: datetime
+
+
+class HostEnvironmentResource(BaseModel):
+    host_resource_id: str
     provider_key: str
     provider_spec_digest: str
+    resource_allocation: Literal[
+        "single_from_spec",
+        "multiple_from_spec",
+    ]
     lifecycle_state: Literal[
         "unprovisioned",
         "creating",
@@ -174,7 +185,11 @@ class SessionEnvironmentResource(BaseModel):
     updated_at: datetime
 ```
 
-The record selects a provider resource-state object but never stores its payload in SQLite. `(session_id, binding_name, resource_instance_id)` identifies one lifecycle and fencing domain. Inline ownership is established before provider dispatch from the already available `parent_thread_id + child_instance_id`; background ownership uses the already persisted job ID. `child_thread_id` is optional post-entry correlation filled only after the Harness creates or restores the child baseline, and it never replaces the original owner or fence identity. `operation_fence` increases before each effectful management attempt and prevents a stale completion from selecting state after a later operation. Provider operation IDs and typed reconciliation observations support recovery; they do not claim exactly-once effects.
+A Session assignment references one binding and execution scope; it does not own the underlying Environment resource. The Host resource record is the provider lifecycle and fencing authority. Async-child work correlation uses the already persisted subagent job ID before provider dispatch. `child_thread_id` is optional post-entry correlation filled only after the Harness creates or restores the child baseline, and it never replaces the assignment identity.
+
+For `SINGLE_FROM_SPEC`, Agent UI resolves one canonical `host_resource_id` from provider key, exact provider-spec digest, and provider-owned logical resource identity. Every Session using that specification references the same Host resource record and operation fence. For `MULTIPLE_FROM_SPEC`, each independent allocation receives a new Host resource record and provider state. Repeated Session assignments never manufacture another lifecycle authority for a single underlying resource.
+
+The Host resource record selects a provider resource-state object but never stores its payload in SQLite. `operation_fence` increases before each effectful management attempt and prevents a stale completion from selecting state after a later operation. Provider operation IDs and typed reconciliation observations support recovery; they do not claim exactly-once effects.
 
 Lifecycle transitions are Host decisions around Provider Manager calls:
 
@@ -212,11 +227,11 @@ stateDiagram-v2
 
 A transition such as `creating` is a durable intent/fence, not proof that provider dispatch occurred. Agent UI commits the intent in SQLite, performs the async Manager operation without a database transaction, publishes the returned provider-state object, and then commits the terminal lifecycle transition if the fence still matches.
 
-Failure after possible dispatch becomes `unknown`. Another create, resume, pause, or destroy is denied until `EnvironmentManager.reconcile()` returns exact-operation running, paused, or absent evidence, or the user explicitly chooses a recorded orphaning outcome. Reconciliation maps `ABSENT` by prior action: create returns to `unprovisioned`, destroy becomes `destroyed`, and resume/pause becomes `missing`. A required `missing` resource blocks the Session until explicit reset provisions a new resource under a higher fence or delete accepts authoritative absence. A missing resource on `resume()` never silently creates a replacement. Caller-owned Direct Local resources are detached rather than removed even when the Session is deleted.
+Failure after possible dispatch becomes `unknown`. Another create, resume, pause, or destroy is denied until `EnvironmentManager.reconcile()` returns exact-operation running, paused, or absent evidence, or the user explicitly chooses a recorded orphaning outcome. Reconciliation maps `ABSENT` by prior action: create returns to `unprovisioned`, destroy becomes `destroyed`, and resume/pause becomes `missing`. A required `missing` resource blocks the Session until explicit reset provisions a new resource under a higher fence or delete accepts authoritative absence. A missing resource on `resume()` never silently creates a replacement. Direct Local release never removes its configured shared Host directory, regardless of Session deletion policy.
 
 ### Provision and Resume
 
-One SQLite transaction first creates the provisional Session, its root Thread, pinned snapshots, every root resource intent/fence, and the `creation_request_id`. Only then can provider effects start. `provision="eager"` moves the Session to `ready` after all required root instances are available and their provider state is selected. A required failure or unknown outcome moves it to `blocked` under the same Session identity; reconciliation can move its resource and Session back toward `ready`, while retry or delete never allocates another Session implicitly. Optional binding failure remains an explicit degraded topology on a ready Session. `on_first_run` creates `unprovisioned` root records and can mark the Session ready before provisioning; the first requiring Turn performs the fenced lifecycle before Harness dispatch.
+One SQLite transaction first creates the provisional Session, its root Thread, pinned snapshots, every root assignment, any required new Host resource record/fence, and the `creation_request_id`. A `SINGLE_FROM_SPEC` assignment reuses the canonical Host resource record; a `MULTIPLE_FROM_SPEC` assignment creates a fresh record. Only then can provider effects start. `provision="eager"` moves the Session to `ready` after all required root instances are available and their provider state is selected. A required failure or unknown outcome moves it to `blocked` under the same Session identity; reconciliation can move its resource and Session back toward `ready`, while retry or delete never allocates another Session implicitly. Optional binding failure remains an explicit degraded topology on a ready Session. `on_first_run` creates `unprovisioned` root records and can mark the Session ready before provisioning; the first requiring Turn performs the fenced lifecycle before Harness dispatch.
 
 Before a Run, Agent UI makes every required binding available:
 
@@ -224,18 +239,19 @@ Before a Run, Agent UI makes every required binding available:
 2. construct a fresh provider runtime with current credentials;
 3. create or resume the exact resource through its Manager;
 4. publish and select any updated provider resource state;
-5. enter the `ManagedEnvironment` and acquire one fresh single-use attachment;
-6. supply all attachments as one complete Harness Environment topology in fresh `RunBindings`.
+5. enter the `ManagedEnvironment` and open one fresh single-use attachment-acquisition scope;
+6. adapt and supply all attachments as one complete Harness Environment topology in fresh `RunBindings`;
+7. keep every acquisition scope open until its Harness binding has closed, then release the scope before pause or resource disconnect.
 
-A `ManagedEnvironment` can remain entered across sequential Runs owned by the same application-service lifetime, subject to provider concurrency and Host policy. `dedicated` concurrent children use distinct `resource_instance_id` values only for providers advertising `MULTIPLE_FROM_SPEC`; every instance has its own provider state, operation fence, pause/resume, recovery, and cleanup lifecycle. `shared_root` uses the existing root resource record but acquires a distinct attachment only from providers advertising `SHARED`. `serialized_root` waits until root instances have no active attachment and then reuses them sequentially. `none` supplies no child topology. A child never inherits the parent's attachment or credential, even when it intentionally shares the underlying resource.
+A `ManagedEnvironment` can remain entered across sequential Runs within the same application-service lifetime, subject to provider concurrency and Host policy. `dedicated` concurrent async children use distinct Host resource records only for providers advertising `MULTIPLE_FROM_SPEC`; every record has its own provider state, operation fence, pause/resume, recovery, and cleanup lifecycle. `shared_root` uses the existing root resource record but acquires a distinct attachment only from providers advertising `SHARED`. `serialized_root` keeps the accepted async job queued until root instances have no active attachment and then reuses them sequentially. `none` supplies no child topology. A child never inherits the parent's attachment or credential, even when it intentionally shares the underlying resource.
 
 ### Idle, Restart, and Cleanup
 
-After a foreground/background activity scope becomes idle, the Session lifecycle policy selects keep-running, full pause, or filesystem-only pause. Unsupported pause modes fail before transition and do not silently become disconnect or destroy. Process shutdown disconnects live provider clients after attempting the selected bounded policy; disconnect itself is not pause or destroy.
+After a root or async-child activity scope becomes idle, the Session lifecycle policy selects keep-running, full pause, or filesystem-only pause. Unsupported pause modes fail before transition and do not silently become disconnect or destroy. Process shutdown disconnects live provider clients after attempting the selected bounded policy; disconnect itself is not pause or destroy.
 
 On application restart, SQLite lifecycle and provider-state references remain. No socket, client, `ManagedEnvironment`, attachment, or Harness binding is restored. A later operation constructs a fresh Manager and calls `resume()` on the selected resource state.
 
-Deleting a Session first moves it to `deleting`, blocks new work, drains or interrupts live work, and executes the ownership/delete policy for every root and child resource instance. Session-owned resources selected for destroy retain cleanup records until authoritative absence or an explicit unresolved outcome is committed. An unknown cleanup moves the Session to `cleanup_pending`. Metadata and history are not physically removed while required resource cleanup remains retryable unless the user explicitly chooses an orphaning operation that records the external-resource risk.
+Deleting a Session first moves it to `deleting`, blocks new work, drains or interrupts live work, and releases every root and child assignment. A Host can select Provider Manager destroy only after no retained Session assignment or active attachment references that resource. A `MULTIPLE_FROM_SPEC` resource with `release="destroy_when_unreferenced"` normally becomes destroy-eligible after its final assignment; a shared `SINGLE_FROM_SPEC` resource remains under one Host fence until the final authorized assignment releases it. `release="retain"` detaches without a destroy operation. Direct Local destroy is logical detach and never removes its configured directory. Destroy-eligible resources retain cleanup records until authoritative absence or an explicit unresolved outcome is committed. An unknown cleanup moves the Session to `cleanup_pending`. Metadata and history are not physically removed while required resource cleanup remains retryable unless the user explicitly chooses an orphaning operation that records the external-resource risk.
 
 ## Turn and Checkpoint Model
 
@@ -335,7 +351,7 @@ class PendingSubmission(BaseModel):
 
 A pending submission is not part of Harness history, AG-UI presentation history, or a Turn until the application service selects it after the current Turn reaches an eligible boundary. Selection validates the latest Thread revision, creates a new Turn, and removes the queue row in one SQLite transaction. Cancellation or deletion of a queued submission has no Harness or provider effect.
 
-The queue never silently merges input into a live model request or mutates private Pydantic message history. Explicit steering of a compatible background child follows the separate background contract.
+The queue never silently merges input into a live model request or mutates private Pydantic message history. Explicit steering of a compatible async child follows the separate async-subagent contract.
 
 ## Concurrency
 
@@ -379,7 +395,7 @@ The new Session receives independent Agent and Environment snapshot selections, 
 
 When the new Session selects the same compatible logical Agent snapshot, Agent UI uses `HarnessState.fork()` on the complete source checkpoint. Selecting a different Agent snapshot requires explicit compatibility validation. Private Capability state never enters an incompatible definition merely because message history is readable. When compatibility is not established, the Host can create a history-seeded fork with a fresh `HarnessState`; the lineage records that no private continuation state transferred.
 
-Environment provider resources are never copied by `HarnessState.fork()`. The fork applies its selected Environment lifecycle independently. A caller-owned workspace can be referenced by both Sessions only under explicit policy; session-owned resources are newly provisioned or explicitly attached through a provider-supported operation.
+Environment provider resources are never copied by `HarnessState.fork()`. The fork creates new assignments under its selected Environment lifecycle. A compatible `SINGLE_FROM_SPEC` resource can receive another assignment under the same Host lifecycle authority; a `MULTIPLE_FROM_SPEC` resource assigned exclusively to the new Session is newly provisioned unless an explicit provider-supported attach policy selects an existing resource. Direct Local workspace sharing remains explicit.
 
 ## Presentation and Item State
 
@@ -389,7 +405,7 @@ Compressed AG-UI segments own durable presentation replay. SQLite indexes stable
 - satisfy pending tool calls or approvals;
 - restore Capability or provider resource state;
 - grant access to another Session or child;
-- restart a foreground or background Run;
+- restart a root or async-child Run;
 - prove an external operation did not occur.
 
 A replay gap does not invalidate a verified selected checkpoint. A corrupt checkpoint is never replaced by visible history.
@@ -408,36 +424,38 @@ The model never supplies a filesystem path or another Session ID. Results exclud
 
 The Capability cannot create, select, switch, rename, fork, archive, delete, import, export, or compact Sessions; change Agent or Environment composition; select a checkpoint; submit input; control a Run or resource; rewrite configuration; or mutate retention. Those are explicit application commands.
 
-## Background Job Records
+## Async Subagent Records
 
-A Session retains bounded job metadata, terminal safe results, complete child state references when available, and result-delivery status. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#background-job-lifecycle) owns execution and routing.
+A Session retains bounded async-subagent job metadata, exact child Agent-node identity, parent scope and lineage, process generation, child Thread correlation, accepted steering input, complete child checkpoint references, complete pending `DeferredToolRequests` when waiting, safe terminal results, and a separate completion-delivery ledger. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#async-subagent-job-lifecycle) owns execution and routing.
 
-A live task, child stream, cancellation scope, Environment attachment, model binding, credential, and queue remain process-local. On recovery, an `accepted` or `running` job from another process generation becomes `interrupted` unless its terminal outcome was already committed. The process never recreates it automatically from retained input.
+A live task, child stream, cancellation scope, Environment attachment, model binding, credential, native input router, and usage accumulator remain process-local. On recovery, an `accepted`, `queued`, or `running` job from another process generation becomes `interrupted` unless its terminal outcome was already committed. A `waiting` job can remain waiting only when its exact child checkpoint, unconsumed deferred-request object, pinned child definition, and Environment lifecycle references validate; resumption starts a fresh child Harness Run under the same logical job. The process never recreates or reruns unknown active model/tool work automatically.
+
+Terminal completion and parent delivery are independent. A retained result can be delivered idempotently into an eligible active or later root Run, explicitly inspected, used as the basis of a linked `resume_subagent` job, or discarded under retention policy. Child `HarnessState` never becomes the parent Thread checkpoint.
 
 ## Recovery, Retention, and Delete
 
-Recovery validates snapshot and checkpoint references, Thread identity, Turn transitions, complete pending-deferred objects and consumption state, Environment resource fences, provider-state objects, job process generations, queue ownership, and AG-UI sequence chains. A selected corrupt Agent snapshot, Environment snapshot, provider state required for lifecycle, or checkpoint fails the affected operation closed. Valid `waiting` Turns remain waiting across process generations; only process-owned active execution observations become interrupted.
+Recovery validates snapshot and Skill-package references, pinned Skill selections, checkpoint and deferred-request references, Thread identity, Turn transitions, async-job process generations and waiting state, subagent input/delivery ledgers, Environment resource fences, provider-state objects, queue ownership, and AG-UI sequence chains. A selected corrupt Agent snapshot, Environment snapshot, provider state required for lifecycle, or checkpoint fails the affected operation closed. Valid `waiting` Turns remain waiting across process generations; only process-owned active execution observations become interrupted.
 
-Retention preserves every selected checkpoint, unconsumed pending-deferred object, pinned snapshot, fork reference required by a retained Session, pending Environment cleanup, undelivered background result, and queued submission. Deleting presentation detail can create explicit replay gaps but cannot delete continuation or provider lifecycle authority.
+Retention preserves every selected root or child checkpoint, unconsumed pending-deferred object, pinned snapshot and Skill package, fork reference required by a retained Session, pending Environment cleanup, undelivered async-child result, and queued submission. Deleting presentation detail can create explicit replay gaps but cannot delete continuation or provider lifecycle authority.
 
 Session delete never claims rollback of model, tool, Environment, or external effects. Unknown provider destroy outcomes remain explicit cleanup records until reconciled or deliberately orphaned by an authorized user action.
 
 ## Failure Semantics
 
-| Failure                                                  | Outcome                                                                                                         |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Stale control or Thread revision                         | Conflict before affected mutation or Harness dispatch                                                           |
-| Repeated Session create request                          | Same `creation_request_id` returns the existing provisional or ready Session                                    |
-| Missing or incompatible Agent snapshot                   | Session cannot start a Run                                                                                      |
-| Missing or incompatible Environment snapshot/provider    | Session cannot provision or bind the affected topology                                                          |
-| Corrupt selected checkpoint                              | Thread fails closed; AG-UI history is not promoted                                                              |
-| Corrupt selected provider state                          | Resource lifecycle fails closed; no replacement is created                                                      |
-| Process loss during model, tool, child, or provider work | Prior selected facts remain; active work becomes interrupted/unknown while valid waiting Turns remain resumable |
-| Checkpoint publication/selection failure after work      | Prior checkpoint remains selected; effects require reconciliation                                               |
-| Provider operation result loses its fence race           | Stale result is retained only as diagnostic evidence and cannot select state                                    |
-| AG-UI replay corruption with valid state                 | Continuation can remain available; affected range is an explicit gap                                            |
-| Queue delivery races Session advancement                 | Revision conflict; submission remains queued or is safely retried under one identity                            |
-| Retention/delete races active work                       | Operation conflicts and changes nothing                                                                         |
+| Failure                                                  | Outcome                                                                                                                            |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Stale control or Thread revision                         | Conflict before affected mutation or Harness dispatch                                                                              |
+| Repeated Session create request                          | Same `creation_request_id` returns the existing provisional or ready Session                                                       |
+| Missing or incompatible Agent snapshot                   | Session cannot start a Run                                                                                                         |
+| Missing or incompatible Environment snapshot/provider    | Session cannot provision or bind the affected topology                                                                             |
+| Corrupt selected checkpoint                              | Thread fails closed; AG-UI history is not promoted                                                                                 |
+| Corrupt selected provider state                          | Resource lifecycle fails closed; no replacement is created                                                                         |
+| Process loss during model, tool, child, or provider work | Prior selected facts remain; active work becomes interrupted/unknown while valid waiting root Turns or child jobs remain resumable |
+| Checkpoint publication/selection failure after work      | Prior checkpoint remains selected; effects require reconciliation                                                                  |
+| Provider operation result loses its fence race           | Stale result is retained only as diagnostic evidence and cannot select state                                                       |
+| AG-UI replay corruption with valid state                 | Continuation can remain available; affected range is an explicit gap                                                               |
+| Queue delivery races Session advancement                 | Revision conflict; submission remains queued or is safely retried under one identity                                               |
+| Retention/delete races active work                       | Operation conflicts and changes nothing                                                                                            |
 
 ## Compatibility
 
@@ -451,23 +469,24 @@ A newer Agent UI resumes a Session only when it can validate both pinned snapsho
 
 Separating behavior from runtime resources allows the same Agent to run in local, container, or remote Environments and the same Environment to host different Agents. Session creation must validate cross-product requirements and manage two immutable snapshots.
 
-### Session-owned provider lifecycle
+### Reference-aware provider lifecycle
 
-Binding provider resource state to the Session makes restart, pause, cleanup, and cost policy explicit. Provider operations remain outside SQLite transactions, so unknown outcomes require reconciliation rather than fictitious atomicity.
+Associating provider resource state and release policy with Session assignments makes restart, pause, cleanup, sharing, and cost policy explicit without assigning an Environment owner. Provider operations remain outside SQLite transactions, so unknown outcomes require reconciliation rather than fictitious atomicity.
 
 ### Single-writer Thread advancement
 
-Serializing each Thread gives deterministic checkpoint selection. Parallel exploration uses child Threads, background jobs, or explicit forks instead of racing one continuation state.
+Serializing each Thread gives deterministic checkpoint selection. Parallel exploration uses async-child Threads/jobs or explicit forks instead of racing one continuation state.
 
 ## Invariants
 
-01. One Session pins exactly one resolved Agent snapshot and one resolved Environment snapshot, including while its durable lifecycle is provisional or blocked.
-02. Agent and Environment composition change only through an explicit fork; dynamic configuration reload never mutates a Session.
-03. `HarnessState` is the only stored Agent state authority; a waiting Turn additionally pins the exact complete `DeferredToolRequests`, and AG-UI, identifiers, SQLite Items, transcripts, provider state, or Environment files substitute for neither.
+01. One Session pins exactly one resolved Agent snapshot, one resolved Environment snapshot, and one validated root/child Skill-exposure map, including while its durable lifecycle is provisional or blocked.
+02. Agent, Environment, and effective Skill exposure change only through an explicit fork; dynamic configuration reload never mutates a Session.
+03. `HarnessState` is the only stored Agent state authority; a waiting root Turn or async-child job additionally pins the exact complete `DeferredToolRequests`, and AG-UI, identifiers, SQLite Items, transcripts, provider state, or Environment files substitute for neither.
 04. One Thread has at most one advancing foreground Turn, enforced in process and by expected SQLite revision.
 05. A checkpoint file is published before a short SQLite transaction can select it.
 06. Provider resources use durable Host fences and selected provider-state objects, while every Harness Run receives fresh single-use attachments and bindings; concurrent sharing or independent allocation requires explicit provider capability.
 07. Closing a Harness binding, disconnecting a managed resource, pausing it, and destroying it are independent facts.
-08. Process loss preserves unknown external effects and never automatically reruns interrupted foreground or background work.
+08. Process loss preserves unknown external effects and never automatically reruns interrupted root or async-child work; only a fully committed waiting boundary can be resumed explicitly.
 09. A Session fork creates a new Session, root Thread, Environment assignment, and lineage without mutating its source.
 10. Local identifiers, snapshots, state files, and provider resource IDs grant no current model, Environment, repository, credential, plugin, or execution authority.
+11. No executable Session Environment can expose the Agent UI data root or an ancestor/descendant Host path through a local root or host mount.

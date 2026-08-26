@@ -1,0 +1,51 @@
+[project]
+name = "converge-general-agent-example"
+version = "0.0.0"
+description = "Minimal application embedding Converge Agent Harness as a code library"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.13"
+dependencies = [
+    "converge-agent-harness",
+    "pydantic-ai-slim>=2.31.1,<2.32",
+]
+
+[project.scripts]
+general-agent-example = "converge_general_agent_example.demo:main"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1,<2",
+    "pytest>=9,<10",
+    "ruff>=0.16,<0.17",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/converge_general_agent_example"]
+
+[tool.uv.sources]
+converge-agent-harness = { path = "../../packages/agent-harness", editable = true }
+
+[tool.uv.workspace]
+members = []
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "UP"]
+ignore = ["E501"]

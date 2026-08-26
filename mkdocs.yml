@@ -12,7 +12,19 @@ nav:
   - Home: index.md
   - Agent Harness:
       - Overview: agent-harness/index.md
-      - Plugins: agent-harness/plugins.md
+      - Getting Started: agent-harness/getting-started.md
+      - Agents and Runs: agent-harness/agents-and-runs.md
+      - Capabilities: agent-harness/capabilities.md
+      - Environments: agent-harness/environments.md
+      - State and Resume: agent-harness/state-and-resume.md
+      - Delegation and CodeAct: agent-harness/delegation-and-codeact.md
+      - Skills: agent-harness/skills.md
+      - Plugins and Extensions: agent-harness/plugins.md
+      - Embedding in a Host: agent-harness/hosting.md
+  - Environment Providers:
+      - Usage and Plugin Development: agent-environment-provider/index.md
+  - Agent Stream Protocol:
+      - Overview and Usage: agent-stream-protocol/index.md
 
 theme:
   name: material

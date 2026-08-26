@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 from converge_agent_envd_client.eip.v1 import DataFrame
 
@@ -12,6 +12,14 @@ class ControlFrame:
 
 
 EIPTransportFrame = ControlFrame | DataFrame
+type TransferDirection = Literal["read", "write"]
+
+
+@runtime_checkable
+class HttpTransferLifecycle(Protocol):
+    def register_transfer(self, handle: str, direction: TransferDirection) -> None: ...
+
+    def unregister_transfer(self, handle: str) -> None: ...
 
 
 class EIPTransport(Protocol):

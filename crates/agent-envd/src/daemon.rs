@@ -18,11 +18,11 @@ use crate::{
     eip::{
         self, DispatchError, DispatchStage, EIPError, EIPErrorData, EIPServerInfo, EipHandler,
         EnvironmentDescribeParams, EnvironmentDescribeResult, EnvironmentDescriptor, ErrorType,
-        ExecutionFeatures, InitializeParams, InitializeResult, IsolationBackend,
-        IsolationCleanupGuarantee, IsolationMode, IsolationNetworkPolicy, IsolationPosture,
-        JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcSuccessResponse, ReceiptOutcome,
-        ReceiptStage, RetryHint, SessionCloseParams, SessionCloseResult,
+        ExecutionFeatures, InitializeParams, InitializeResult, JsonRpcErrorResponse, JsonRpcId,
+        JsonRpcRequest, JsonRpcSuccessResponse, ReceiptOutcome, ReceiptStage, RetryHint,
+        SessionCloseParams, SessionCloseResult,
     },
+    isolation::IsolationRuntime,
     mount::MountRegistry,
     operation::{
         ActiveResponseHandoff, BeginOutcome, LedgerError, OperationInterruption, OperationLease,
@@ -153,6 +153,7 @@ fn build_descriptor(
     config: &Config,
     generation: u64,
     mounts: &MountRegistry,
+    isolation: &IsolationRuntime,
     execution: Option<&ExecutionManager>,
 ) -> EnvironmentDescriptor {
     let mut available_methods = BASE_CAPABILITIES
@@ -199,7 +200,8 @@ fn build_descriptor(
         process_count_limit: false,
         memory_bytes_limit: false,
         cpu_time_limit: false,
-        per_command_network_deny: false,
+        per_command_network_deny: execution_available
+            && isolation.supports_per_command_network_deny(),
         signal_interrupt: execution_available && cfg!(unix),
         signal_terminate: execution_available && cfg!(unix),
     };
@@ -229,15 +231,7 @@ fn build_descriptor(
             .map(ExecutionManager::shell_profiles)
             .unwrap_or_default(),
         limits: config.limits.descriptor(),
-        isolation: IsolationPosture {
-            mode: IsolationMode::Disabled,
-            backend: IsolationBackend::OuterHost,
-            filesystem_containment: false,
-            process_containment: false,
-            network_containment: false,
-            network_policy: IsolationNetworkPolicy::Host,
-            cleanup_guarantee: IsolationCleanupGuarantee::OuterHost,
-        },
+        isolation: isolation.posture(),
         root_mount_id: mounts.root_mount_id().map(str::to_owned),
         available_methods,
         execution_features,
@@ -263,6 +257,11 @@ impl Daemon {
         let scoped_mounts = MountRegistry::initialize_scoped(config).map_err(|error| {
             DaemonInitError::new(format!("mount initialization failed: {error}"))
         })?;
+        let isolation = IsolationRuntime::initialize(config).map_err(|error| {
+            DaemonInitError::new(format!(
+                "execution isolation initialization failed: {error}"
+            ))
+        })?;
         let transfers = TransferRegistry::new(config, generation)
             .map_err(|_| DaemonInitError::new("transfer registry initialization failed"))?;
         let operations = OperationLedger::new(
@@ -277,10 +276,16 @@ impl Daemon {
         let resources = ResourceRegistry::new(config, operations.clone());
         let retention = RetentionStore::new(config, generation, retention_quota)
             .map_err(|_| DaemonInitError::new("retention store initialization failed"))?;
-        let execution = ExecutionManager::new(config, generation, retention.clone())
-            .map_err(|_| DaemonInitError::new("execution manager initialization failed"))?;
-        let scoped_descriptor =
-            build_descriptor(config, generation, &scoped_mounts, execution.as_ref());
+        let execution =
+            ExecutionManager::new(config, isolation.clone(), generation, retention.clone())
+                .map_err(|_| DaemonInitError::new("execution manager initialization failed"))?;
+        let scoped_descriptor = build_descriptor(
+            config,
+            generation,
+            &scoped_mounts,
+            &isolation,
+            execution.as_ref(),
+        );
         let surfaces = AuthoritySurfaces {
             scoped: AuthoritySurface {
                 mounts: scoped_mounts,

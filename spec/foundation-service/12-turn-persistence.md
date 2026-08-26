@@ -39,7 +39,7 @@ Every Foundation operation that invokes an Agent first selects or creates a
 Thread and accepts a Turn. Scheduled triggers, webhooks, and asynchronous child
 Agents are Turn trigger and lineage variants, not standalone executions.
 Reconciliation and maintenance work that does not invoke an Agent uses its
-owning domain's work model. [`TurnAttempt`](05-turn-attempt-persistence.md)
+owning domain's work model. [`TurnAttempt`](13-turn-attempt-persistence.md)
 remains a subordinate worker-generation and fencing record; Foundation defines
 no generic `Execution` resource or `executions` table.
 
@@ -51,11 +51,11 @@ no generic `Execution` resource or `executions` table.
 | Portable messages, Capability namespaces, Environment data, and Thread ID | [Harness State](../agent-harness/10-snapshot-and-resume.md)                | Supplies detached state without Host authority                                                 |
 | Turn row, parent edge, state selection, and outcome                       | Foundation Turn domain                                                     | Forms the authoritative interaction history and Turn-level recovery boundary                   |
 | Scheduling, recovery budget, and current-attempt selection                | Foundation Turn domain                                                     | Authorizes initial dispatch, bounded recovery, and one sealed outcome                          |
-| Worker generation, lease, and stale-writer fencing                        | [Turn Attempt Persistence](05-turn-attempt-persistence.md)                 | Authorizes one worker generation and preserves its immutable attempt audit                     |
+| Worker generation, lease, and stale-writer fencing                        | [Turn Attempt Persistence](13-turn-attempt-persistence.md)                 | Authorizes one worker generation and preserves its immutable attempt audit                     |
 | Current complete Turn state                                               | One deterministic Turn state object                                        | Stores the latest conditionally committed Harness and Host state; freezes when the Turn seals  |
 | Provider resource launch, reattachment, and non-portable continuation     | Foundation Host state and selected provider integration                    | Reconstructs fresh bindings without becoming Harness state                                     |
 | Object storage operations                                                 | [Object storage](02-storage.md#object-storage)                             | Supplies atomic whole-object publication and expected-version replacement                      |
-| Lifecycle events, stream messages, and Items                              | [Lifecycle and Stream Persistence](06-lifecycle-and-stream-persistence.md) | Stores ordered facts, transports live observations, and retains presentation projections       |
+| Lifecycle events, stream messages, and Items                              | [Lifecycle and Stream Persistence](14-lifecycle-and-stream-persistence.md) | Stores ordered facts, transports live observations, and retains presentation projections       |
 | Turn-scoped audit and usage management                                    | Dedicated Turn auxiliary relational table                                  | Stores audit and usage fields by `turn_id` without acquiring Turn lifecycle or state authority |
 | Pending calls and approvals                                               | Waiting Turn plus its frozen Turn state                                    | Stores a bounded relational summary and the complete deferred value without a separate table   |
 | Tool and provider effect evidence                                         | `TurnAttempt` summary plus provider integration                            | Reconciles resume safety without a generic receipt table                                       |
@@ -751,7 +751,7 @@ Foundation Turn persistence uses these serialized object types:
 | `TurnPayloadEnvelope`                 | `application/vnd.converge.turn-payload+json`                  | Immutable oversized Turn input or output                 |
 | `ProviderContinuationPayloadEnvelope` | `application/vnd.converge.provider-continuation-payload+json` | Immutable nested payload referenced by Host continuation |
 
-[Lifecycle and Stream Persistence](06-lifecycle-and-stream-persistence.md)
+[Lifecycle and Stream Persistence](14-lifecycle-and-stream-persistence.md)
 separately owns `TurnReplaySnapshot`.
 
 ### Turn Payload Object

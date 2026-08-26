@@ -1,3 +1,3 @@
-from .binding import EIPEnvironmentProviderBinding, EIPSessionFactory
+from .binding import EIPEnvironmentProviderBinding
 
-__all__ = ["EIPEnvironmentProviderBinding", "EIPSessionFactory"]
+__all__ = ["EIPEnvironmentProviderBinding"]
