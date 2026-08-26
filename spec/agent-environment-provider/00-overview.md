@@ -10,7 +10,7 @@ The package separates three values with different authority:
 2. `EnvironmentProviderResourceState` is sensitive provider-owned data persisted and selected by a Host;
 3. an `EnvironmentRuntimeAttachment` is a fresh process-local value used to create one Harness run binding.
 
-The package contains built-in Direct Local, Docker, and E2B factories. `converge-agent-harness` depends on it and adapts attachments into provider-neutral run bindings. Any Host can use the same manager directly while retaining its own optional persistence and lifecycle authority.
+The package contains built-in Direct Local, Local Envd, Docker, and E2B factories. `converge-agent-harness` depends on it and adapts attachments into provider-neutral run bindings. Any Host can use the same manager directly while retaining its own optional persistence and lifecycle authority. Local Envd consumes one exact Host-resolved daemon executable and owns its local process/private runtime without searching or downloading binaries.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ flowchart TB
         Manager[EnvironmentManager]
         Resource[ManagedEnvironment]
         Attachment[Fresh EnvironmentRuntimeAttachment]
-        Builtins[Direct Local, Docker, and E2B]
+        Builtins[Direct Local, Local Envd, Docker, and E2B]
     end
 
     subgraph Harness[converge-agent-harness]
@@ -119,11 +119,12 @@ Direct Local and EIP are the only operation backends consumed by the Harness:
 | Resource integration   | Runtime attachment                 | Harness operation backend |
 | ---------------------- | ---------------------------------- | ------------------------- |
 | Direct Local           | `DirectLocalEnvironmentAttachment` | Direct Local              |
+| Local Envd             | `EIPEnvironmentAttachment`         | EIP                       |
 | Docker                 | `EIPEnvironmentAttachment`         | EIP                       |
 | E2B                    | `EIPEnvironmentAttachment`         | EIP                       |
 | Compatible third party | One accepted attachment type       | Direct Local or EIP       |
 
-Docker and E2B never use vendor file or command APIs as hidden fallback operations. The vendor SDK manages the outer resource; `agent-envd` and EIP own file, shell, process, output, and port behavior.
+Local Envd never falls back to Direct Local, and Docker/E2B never use vendor file or command APIs as hidden fallback operations. The Local Envd process or outer vendor resource establishes lifecycle; `agent-envd` and EIP own file, shell, process, output, and port behavior.
 
 ## Dependency and Release Direction
 
@@ -147,7 +148,7 @@ Provider specifications contain no credential, bearer token, Docker socket, E2B 
 04. A reusable bound resource and a single-use runtime attachment have separate lifetimes.
 05. Harness binding and operation semantics remain independent from provider resource management.
 06. Direct Local and EIP are the only Environment operation backends.
-07. Docker and E2B use vendor SDKs for lifecycle and EIP for operations.
+07. Local Envd uses one Host-resolved local daemon process, while Docker and E2B use vendor SDKs for outer lifecycle; all three use EIP for operations.
 08. Provider specification, resource state, runtime attachment, Harness state, and EIP session never substitute for one another.
 09. Import and construction are inert; async management entry is the first effectful boundary.
 10. Failure after possible provider dispatch remains unknown until exact-operation provider reconciliation supplies running, paused, absent, or still-unknown evidence.

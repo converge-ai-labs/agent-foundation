@@ -34,6 +34,7 @@ One `AgentUiApplication` owns the supervised lifetime of:
 - local metadata/object/event stores;
 - model and credential adapters;
 - Environment provider resources;
+- Local Sandbox runtime resolver and verified executable cache;
 - foreground run coordinator;
 - async-subagent job, input, and delivery service;
 - retained/live event subscriptions;
@@ -97,6 +98,25 @@ WebUI and TUI resource editors call the same application commands. An edit:
 External file edits enter through the same reload pipeline. A file watcher is an optimization; periodic source reconciliation and explicit reload prevent dropped watcher events from becoming authority. One application event announces accepted generation, changed resource digests, and restart-bound settings without leaking source content or credentials.
 
 Deleting or replacing current source content never removes immutable snapshots referenced by Sessions or active executables. A validation command can perform complete Agent reconstruction and cleanup without creating a Session.
+
+## Local Sandbox Runtime Resolution
+
+Agent UI presents `converge.local-envd` as **Local Sandbox**. This is distinct from Direct Local: it requires a Host-launched envd process, trusted stdio EIP, and successful native isolation. Selecting Direct Local, Docker, or E2B never invokes Host envd acquisition.
+
+Each Agent UI release contains one package-owned immutable manifest that pins an exact canonical agent-envd release and, for each supported Linux, macOS, and Windows x86_64/ARM64 target, the exact release archive identity, archive SHA-256, extracted executable SHA-256, and expected executable name. The wheel and sdist contain the manifest but do not bundle all native executables. Release validation rejects missing targets, mutable asset selectors, inconsistent versions, or hashes not reproduced from the selected agent-envd release artifacts.
+
+The Host resolves Local Sandbox in this order:
+
+1. when an explicit absolute executable override is configured, select only that path and perform no managed download;
+2. otherwise detect the current supported OS/architecture, select its exact manifest entry, and use `runtimes/agent-envd/<version>/<target>/agent-envd[.exe]` under the data root;
+3. when the managed executable is absent or fails hash validation, lazily download only the selected immutable archive, verify its embedded manifest hash, extract the one expected executable through bounded staging, verify the executable hash, and atomically publish it;
+4. execute `agent-envd --version` and require the manifest's exact canonical release identity;
+5. execute `agent-envd isolation probe --json` and require successful production-equivalent native isolation;
+6. supply the resolved absolute executable and a private-runtime allocator to the `converge.local-envd` provider runtime; provider attachment entry then launches envd and completes ordinary EIP initialization.
+
+Both the default managed path and an advanced absolute override must report the manifest's exact release identity; the override changes executable location, not Agent UI's selected envd version. Neither path searches ambient `PATH`. Download, hash verification, cache publication, target detection, override validation, and user-facing availability diagnostics belong to the Agent UI Host. The Local Envd Provider owns daemon configuration, private runtime and subprocess lifecycle, and fresh stdio `EIPEnvironmentAttachment`; `converge-agent-envd-client` owns only EIP transport/session behavior.
+
+Artifact resolution and probe failure occur before provider or Harness dispatch. Daemon startup, isolation-descriptor, Environment-identity, required-method, or EIP compatibility failure closes the attempted provider process and leaves Local Sandbox unavailable. Agent UI never falls back to Direct Local, disables isolation, or silently selects an ambient executable.
 
 ## Foreground Run Flow
 
@@ -392,7 +412,7 @@ flowchart LR
 
 Generated browser assets are not committed. Source-checkout builds use locked frontend dependencies and copy a manifest plus hashed assets into the package. The sdist contains prepared assets, so sdist-to-wheel construction does not require Node.js. Build and release verification fail when the application shell or referenced assets are missing.
 
-Agent UI releases independently and pins one exact compatible Harness release group in published metadata. The private WebUI has no independent npm publication, version, tag, or release channel.
+Agent UI releases independently and pins one exact compatible Harness release group in published metadata. The same reviewed release source pins one exact agent-envd release manifest with all supported target assets and hashes. The private WebUI has no independent npm publication, version, tag, or release channel.
 
 ## Failure Semantics
 
@@ -402,6 +422,7 @@ Agent UI releases independently and pins one exact compatible Harness release gr
 | Stale command revision                          | Conflict before affected dispatch or mutation                                                     |
 | Model or credential resolution fails            | Run fails before model use; pinned snapshot remains unchanged                                     |
 | Required Environment cannot become available    | Run does not enter Harness; provider lifecycle retains exact failure/unknown state                |
+| Local Sandbox artifact, version, or probe fails | No provider/Harness dispatch and no Direct Local or ambient-executable fallback                   |
 | Harness stream/projection fails                 | Coordinator closes stream and attachments; Turn records actual failed/interrupted outcome         |
 | Event persistence fails after live delivery     | Subscriber saw a non-durable observation; replay later exposes a gap                              |
 | Surface disconnect                              | Work continues unless explicit cancellation/policy says otherwise                                 |
@@ -413,7 +434,7 @@ Agent UI releases independently and pins one exact compatible Harness release gr
 
 ## Compatibility
 
-Application command/query schemas, configuration generation schema, Agent/Environment snapshots, Skill package and selection schema, Session store, async-subagent Capability/job/input/delivery schemas, selected Harness/Provider/Protocol release, Web API/SSE transport, and TUI renderer evolve independently. Bundled surfaces are built against the exact Agent UI application contract and selected AG-UI version.
+Application command/query schemas, configuration generation schema, Agent/Environment snapshots, Skill package and selection schema, Session store, async-subagent Capability/job/input/delivery schemas, selected Harness/Provider/Protocol release, package-owned envd runtime-manifest schema, Web API/SSE transport, and TUI renderer evolve independently. Bundled surfaces are built against the exact Agent UI application contract and selected AG-UI version.
 
 A running Run/job retains the executable snapshot, child definition, Environment resource selection, and process generation with which it started. Configuration reload or renderer upgrade cannot mutate it. Unknown custom AG-UI events can remain inspectable even when a renderer does not assign them a specialized widget.
 
@@ -443,3 +464,5 @@ Using one processed event sequence makes live delivery, replay, protocol inspect
 08. Dynamic configuration reload can affect new selections but never mutates an active executable, Run, job, pinned Skill selection, or Session composition.
 09. Browser capability, model credential, Environment credential/attachment, and Session selector are separate authority domains.
 10. Work requiring distributed durable acceptance, failover, retry, or remote multi-user policy uses Foundation Service rather than local process state.
+11. Local Sandbox uses only the package-pinned managed envd executable or one explicit validated absolute override; acquisition is lazy and never affects Direct Local, Docker, or E2B.
+12. Agent UI Host resolves and verifies envd artifacts, the Local Envd Provider owns subprocess/private-runtime lifecycle, and the low-level client owns only EIP communication.

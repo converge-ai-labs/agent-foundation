@@ -2,9 +2,9 @@
 
 ## Design Position
 
-`agent-envd` owns every foreground and background command tree it starts. `shell.exec` waits for one owned command to finish; `process.start` returns an opaque handle to the same lifecycle. Native PIDs, wrappers, sandbox helpers, process groups, jobs, and descriptors are private implementation facts.
+`agent-envd` owns every foreground and background command record plus its backend-managed native target. `shell.exec` waits for one owned command to finish; `process.start` returns an opaque handle to the same lifecycle. Native PIDs, wrappers, sandbox helpers, process groups, jobs, and descriptors are private implementation facts.
 
-Every command is structured, runs under the configured isolation posture, and is registered with its output streams before the requested executable can execute. Initial-command status and whole-tree cleanup remain separate facts.
+Every command is structured, runs under the configured isolation posture, and is registered with its output streams before the requested executable can execute. Initial-command status and backend-specific cleanup evidence remain separate facts.
 
 ## Boundaries
 
@@ -179,9 +179,9 @@ class ProcessInfo(BaseModel):
 
 `exit_code` is the requested executable's status, never a wrapper's. A raw platform signal number is not portable EIP data.
 
-The initial executable can be terminal while descendants are still being cleaned, so terminal `phase` can coexist with `cleanup="pending"`. `cleanup="complete"` means the active backend's advertised tree-cleanup guarantee is satisfied. `residual_confined` is available only for required macOS isolation when remaining descendants are still proven Seatbelt-confined but complete exit cannot be observed. `cleanup="failed"` never claims that descendants are gone.
+The initial executable can be terminal while descendants are still being cleaned, so terminal `phase` can coexist with `cleanup="pending"`. `cleanup="complete"` means the active backend's advertised cleanup guarantee is satisfied. The [macOS cleanup guarantee](07-execution-isolation.md#macos-seatbelt-backend) covers its managed initial process group rather than Linux- or Windows-style adversarial whole-tree ownership. `residual_confined` is available only for required macOS isolation when a residual inside that managed target remains proven Seatbelt-confined. `cleanup="failed"` never claims that descendants are gone.
 
-`phase="failed"` with `output_limit` means stdout or stderr crossed its per-stream ceiling and the tree was terminated. `backend_lost` means trustworthy supervision was lost. Neither invents an exit code.
+`phase="failed"` with `output_limit` means stdout or stderr crossed its per-stream ceiling and the backend-managed target was terminated. `backend_lost` means trustworthy supervision was lost. Neither invents an exit code.
 
 ## Start Atomicity
 
@@ -302,7 +302,7 @@ class ProcessReleaseResult(BaseModel):
 
 Stdin writes are serialized with close, bounded, and backpressured. A result reports exactly how many bytes envd accepted. Initial stdin is delivered incrementally; if start becomes ambiguous after partial delivery, the operation is not automatically repeated. `keep_stdin_open=false` closes stdin after complete initial delivery. Process termination and daemon drain also close it.
 
-`process.signal` accepts only descriptor-advertised semantic actions. Unsupported actions fail before backend control and are never mapped to kill. `process.kill` requests the strongest tree cleanup and waits within the call deadline for the best terminal evidence.
+`process.signal` accepts only descriptor-advertised semantic actions. Unsupported actions fail before backend control and are never mapped to kill. `process.kill` requests the strongest backend cleanup and waits within the call deadline for the best terminal evidence.
 
 `process.wait(condition="initial_terminal")` waits for a terminal initial-command phase. `tree_cleaned` additionally waits until cleanup is no longer pending. Timeout returns a typed error and does not mutate the process.
 
@@ -316,7 +316,7 @@ Process records remain until explicit `process.release` or daemon-generation end
 
 Per-process mutations serialize where their effects conflict: stdin write with close, signals with force cleanup, and release with terminal transition. Status and output reads can proceed concurrently from snapshots. Envd never adopts a caller-supplied PID or a native process it did not start.
 
-Daemon shutdown requests strongest cleanup for every owned tree. No managed process is contractually allowed to outlive the daemon generation. In explicit disabled mode, the outer Host remains responsible for any descendant outside envd's truthful native cleanup target.
+Daemon shutdown requests strongest cleanup for every backend-managed target. No such target is contractually allowed to outlive the daemon generation. Required macOS cleanup has the deliberate detached-descendant limit defined by [Execution Isolation](07-execution-isolation.md#macos-seatbelt-backend); in explicit disabled mode, the outer Host remains responsible for any descendant outside envd's truthful native cleanup target.
 
 ## Failure Semantics
 
@@ -330,7 +330,7 @@ Daemon shutdown requests strongest cleanup for every owned tree. No managed proc
 | Wall-time or cancellation cleanup is proven                     | Timed-out or cancelled status                       | Output remains readable                         |
 | Output ceiling crossed                                          | Failed status with `output_limit`                   | Retained prefixes remain; completeness is false |
 | Supervision is lost                                             | `backend_lost` and strongest cleanup                | No fabricated status                            |
-| Initial command ends but tree cleanup fails                     | `cleanup="failed"` or `cleanup_failed`              | Descendant exit is not assumed                  |
+| Initial command ends but backend cleanup fails                  | `cleanup="failed"` or `cleanup_failed`              | Unmanaged descendant exit is not assumed        |
 | Daemon generation ends                                          | All handles and output references become stale      | No adoption by a later daemon                   |
 
 ## Compatibility
@@ -339,13 +339,13 @@ Command shapes, executable selection, process phases, termination reasons, clean
 
 ## Invariants
 
-01. One command owner controls every foreground and background command tree through terminal cleanup.
+01. One command owner controls every foreground and background command record plus its backend-managed native target through terminal cleanup.
 02. No requested executable runs before command, process, isolation, and output ownership are committed.
 03. Arguments are structured values; shell text uses only an explicit trusted profile.
 04. Request values and daemon secrets never leak into helpers or ambient payload environment.
 05. Unsupported enforcement options fail before payload execution.
 06. `process.start` returns no handle until requested-executable exec success is known.
-07. Initial-command status, wrapper status, tree cleanup, EIP delivery, and Host completion are separate facts.
+07. Initial-command status, wrapper status, backend cleanup, EIP delivery, and Host completion are separate facts.
 08. Every command has stable stdout and stderr references; complete output within the configured ceiling remains readable after completion through `output.read`.
-09. Session loss never terminates a process, while daemon-generation end terminates every owned tree and invalidates every handle.
+09. Session loss never terminates a process, while daemon-generation end applies the strongest cleanup to every backend-managed target and invalidates every handle.
 10. Process and output records are reclaimed explicitly, never silently retargeted or evicted.

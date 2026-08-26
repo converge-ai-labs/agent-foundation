@@ -79,9 +79,10 @@ The resolved value is not serialized. It retains trusted code selected by the Ho
 
 ## Built-in and Extension Catalog
 
-The package ships three factories under exact keys:
+The package ships four factories under exact keys:
 
 - `converge.direct-local`;
+- `converge.local-envd`;
 - `converge.docker`;
 - `converge.e2b`.
 

@@ -57,6 +57,7 @@ An Agent is the exact composition of Model, Prompt, Plugin, available Skill, def
 | Immutable resolved composition                                        | Agent UI snapshot resolver         | Publishes content-addressed Agent and Environment snapshots                                                 |
 | Native Agent construction and loop                                    | Harness and Pydantic AI            | Calls public build/stream APIs with fresh bindings                                                          |
 | Provider specification and lifecycle implementation                   | Environment Provider package       | Uses selected factory, Manager, resource state, and fresh attachment contracts                              |
+| Local Sandbox envd artifact selection                                 | Agent UI Host                      | Exact release/target manifest, lazy verified cache, override validation, and availability diagnostics       |
 | Session/Turn/resource control state                                   | Agent UI SQLite metadata           | Owns revisions, selections, lifecycle, queues, jobs, and indexes                                            |
 | Harness/provider/snapshot/Skill payloads                              | Agent UI compressed object store   | Stores verified immutable files referenced by SQLite                                                        |
 | Presentation event history                                            | Agent UI compressed AG-UI segments | Stores processed events and rebuilds query projections                                                      |
@@ -155,6 +156,8 @@ Environment provider resources can outlive individual Runs and process connectio
 
 Dynamic configuration never changes a Session. Selecting different Agent or Environment behavior for existing history creates an explicit fork. [Sessions, Environments, and State](04-sessions-environments-and-state.md) owns lifecycle and failure semantics.
 
+The built-in **Local Sandbox** option selects `converge.local-envd`, not Direct Local. Agent UI resolves one exact envd executable, the provider owns its required-isolation subprocess/private runtime, and the Harness consumes the resulting fresh EIP attachment. Isolation, launch, or EIP failure is explicit and never falls back to Direct Local.
+
 ## Main Run Flow
 
 ```mermaid
@@ -222,7 +225,9 @@ Binding outside loopback requires an adopting wrapper with appropriate TLS, auth
 
 The private browser source application under `apps/harness-ui` is built into immutable assets in the `converge-agent-ui` Python distribution. Generated assets are not committed or independently published. The sdist contains prepared assets so building its wheel requires no Node.js. Agent UI releases independently while published metadata pins one exact compatible Harness release group.
 
-[Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#packaging) owns the detailed package contract.
+The same Agent UI release pins one exact agent-envd release and per-target asset/executable hashes in a package-owned manifest. Native envd binaries are not bundled together in the wheel; the Host lazily downloads and verifies only the current target when Local Sandbox is selected. The default never searches `PATH`; an advanced user can select only an explicit absolute executable that reports the same pinned release and passes isolation and EIP compatibility checks.
+
+[Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#packaging) owns the detailed package and [Local Sandbox runtime](05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution) contracts.
 
 ## Completion Boundaries
 
@@ -271,3 +276,4 @@ Shared commands, lifecycle, and AG-UI prevent terminal and browser products from
 09. No surface, event subscriber, file path, database row, or local identifier grants runtime authority by possession alone.
 10. Process work, file publication, SQLite selection, child outcome/delivery, event delivery, Environment lifecycle, rendering, and OTel export remain independent completion boundaries.
 11. Work requiring distributed durable execution or remote multi-user policy remains outside Agent UI.
+12. Local Sandbox is an explicit required-isolation EIP provider backed by the Agent UI-selected envd executable; it is never an alias or fallback for Direct Local.

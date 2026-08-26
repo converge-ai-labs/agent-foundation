@@ -17,6 +17,7 @@ SQLite is not the authority for desired configuration. It records accepted gener
 | Current credential material                                                   | Credential resolver                  | Fresh process-local lookup; absent from configuration snapshots and Session history |
 | Accepted-generation and resource query metadata                               | SQLite metadata store                | Mutable index over accepted file-backed content                                     |
 | Exact Session composition                                                     | Content-addressed resolved snapshots | Immutable even after configuration reload                                           |
+| Local Sandbox envd release assets and hashes                                  | Package-owned runtime manifest       | Exact default executable selection; never ambient discovery                         |
 | Native Model, plugin, Capability, Agent, or Environment resource              | Owning runtime package               | Reconstructed only at explicit runtime boundaries                                   |
 
 ## Configuration Sources
@@ -35,12 +36,20 @@ Structured definitions use strict versioned YAML or its exact JSON equivalent. P
 
 Source layers are ordered from lowest to highest precedence. Built-in resources form the lowest layer, followed by configured user roots and then an explicitly selected project root. A higher layer can replace one lower-layer resource only by the same stable resource ID and compatible resource kind. Replacement selects different content in the candidate generation; it does not mutate or delete the lower revision. Two definitions of the same identity at the same precedence are an error.
 
-The process settings document selects the data root, definition roots, project-root policy, credential backends, provider/plugin allowlists, logging and telemetry exporters, concurrency limits, retention policy, and Web transport settings. The retention policy includes the positive orphan-retention period used by automatic startup cleanup; age never expires an object that still has a durable reference. Settings are classified as:
+The process settings document selects the data root, definition roots, project-root policy, credential backends, provider/plugin allowlists, logging and telemetry exporters, concurrency limits, retention policy, Web transport settings, and an optional advanced Local Sandbox envd executable override. The retention policy includes the positive orphan-retention period used by automatic startup cleanup; age never expires an object that still has a durable reference. Settings are classified as:
 
 - **reloadable**, when a new accepted value can affect later commands without replacing process-owned infrastructure;
 - **restart-bound**, when the value owns already-open infrastructure such as the data root, SQLite location, listener address, TLS mode, or credential-store implementation.
 
 A valid reload containing a changed restart-bound value records the accepted desired value and reports `restart_required`; the running process continues to use its previously activated value. It never applies only part of an infrastructure change or silently starts a second store or listener.
+
+### Local Sandbox Runtime Selection
+
+The package owns a reviewed runtime manifest that selects one exact agent-envd release and one exact asset and hash set for each supported target. This manifest is release metadata, not editable product configuration. By default, Local Sandbox resolves only the matching managed executable under the Agent UI data root. Configuration reload, Direct Local, Docker, and E2B selection do not download a Host binary, and Agent UI never searches ambient `PATH`.
+
+An advanced process setting can replace the managed default with one explicit absolute executable path. Relative paths, command names, shell expressions, directories, and `PATH` lookup are invalid. Syntax validation occurs with configuration; actual availability remains a runtime fact. Before Local Sandbox provider creation, the Host requires the executable to report the package manifest's exact envd release identity, runs the production-equivalent required-isolation probe, and later requires compatible EIP initialization. The override changes location only, not the selected release. Failure leaves Local Sandbox unavailable and never substitutes Direct Local.
+
+The override affects later Local Sandbox resource operations only. An already entered provider resource or active attachment retains its selected executable/process generation until its ordinary lifecycle closes. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution) owns download, cache, validation, diagnostics, and provider handoff.
 
 ### Source Transaction Manifest
 
@@ -279,6 +288,7 @@ Package discovery can participate in reload. A newly installed trusted plugin or
 | Concurrency, retention, and safe display policy                      | Applies to later commands; cannot retroactively strengthen completed facts |
 | Plugin/provider installation metadata                                | Available only in a newly accepted catalog; no active module replacement   |
 | Data root, SQLite path, listener, TLS, credential backend            | Accepted as desired process setting and reported restart-bound             |
+| Explicit absolute Local Sandbox envd override                        | Applies only to later Local Sandbox resolution; active resources unchanged |
 | WebUI or TUI presentation preferences                                | Applies to the owning surface without changing Agent or Session semantics  |
 
 ## Credential Resolution
@@ -301,11 +311,12 @@ A configuration listing, export, diagnostic, snapshot, Session, AG-UI event, mod
 | Multi-file manifest is incomplete or mismatched                            | Transaction candidate rejected; previous accepted generation remains active                                            |
 | Restart-bound setting changes                                              | Desired generation accepted with `restart_required`; active infrastructure is unchanged                                |
 | Credential lookup fails                                                    | Current runtime operation fails; configuration remains accepted                                                        |
+| Local Sandbox executable or isolation validation fails                     | Local Sandbox is unavailable with bounded diagnostics; no Direct Local fallback                                        |
 | File watcher loses events                                                  | Periodic reconciliation or explicit reload detects divergence; watcher delivery is not authority                       |
 
 ## Compatibility
 
-Process-settings schema, each resource schema, content normalization, local Skill source schema, managed Skill package codec, model adapter keys, Harness plugin document version, Harness Skill contract, Environment provider schema, and snapshot codec evolve independently. Unknown schema versions fail explicitly. A migration writes a new source representation or immutable revision; it never changes the meaning of content already addressed by a digest.
+Process-settings schema, package-owned envd runtime-manifest schema, each resource schema, content normalization, local Skill source schema, managed Skill package codec, model adapter keys, Harness plugin document version, Harness Skill contract, Environment provider schema, and snapshot codec evolve independently. Unknown schema versions fail explicitly. A migration writes a new source representation or immutable revision; it never changes the meaning of content already addressed by a digest.
 
 An Agent UI version can retain and run a pinned Session only when its locked adapters and snapshot codecs remain available and current policy permits reconstruction. The latest file-backed catalog need not contain the original source definition once its immutable snapshot is retained.
 
@@ -337,3 +348,4 @@ Separating credential values from revision content allows safe rotation and reau
 10. Credentials and live provider values never enter resource snapshots, Session history, AG-UI files, or default telemetry.
 11. Restart-bound settings are never partially applied to already-open infrastructure.
 12. UI edits and external file edits pass through the same validation and generation-publication path; multi-file authoring atomicity requires an explicit source transaction manifest.
+13. Local Sandbox defaults to the package-pinned managed envd executable; only an explicit absolute override can replace it, and ambient `PATH` is never executable authority.

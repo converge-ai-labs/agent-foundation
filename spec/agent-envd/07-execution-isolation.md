@@ -38,9 +38,9 @@ Linux payload IDs are trusted paired configuration. The unprivileged user namesp
 
 ## Backend Contract
 
-Before local readiness, envd selects one backend and proves its configured filesystem, network, process-tree, status, and cleanup semantics. Each command then receives an immutable policy derived from its authorized cwd/executable, configured read/write posture, reviewed runtime roots, private home/temp, protected roots, network narrowing, rebuilt environment, and finite limits.
+Before local readiness, envd selects one backend and proves its configured filesystem, network, initial-process status, and platform cleanup semantics. Linux and Windows establish complete tree ownership through their PID-namespace or Job boundary. macOS establishes inherited Seatbelt capability confinement plus the managed process-group cleanup defined below. Each command then receives an immutable policy derived from its authorized cwd/executable, configured read/write posture, reviewed runtime roots, private home/temp, protected roots, network narrowing, rebuilt environment, and finite limits.
 
-The command manager interacts only through portable outcomes: requested-executable start, status, interrupt/terminate where advertised, force cleanup, and tree-cleanup evidence. It never assumes a host PID is the requested executable or complete tree. A policy change cannot silently widen a live command, and selectors from another generation are never retargeted.
+The command manager interacts only through portable outcomes: requested-executable start, status, interrupt/terminate where advertised, force cleanup, and backend cleanup evidence. It never assumes a host PID is the requested executable or complete tree. A policy change cannot silently widen a live command, and selectors from another generation are never retargeted.
 
 ## Filesystem Authority
 
@@ -117,7 +117,9 @@ The profile grants only reviewed process execution, selected configured/runtime 
 
 Under `host`, required IP socket and DNS/trust operations are granted while filesystem policy remains. Under `deny`, IP networking grants are omitted while only narrow local platform IPC remains.
 
-The supervisor tracks the initial process group and observable descendants. macOS has no PID namespace, so complete exit can be unprovable after a descendant escapes observation. Such a descendant remains under inherited Seatbelt policy and yields `cleanup="residual_confined"`; loss of confinement evidence yields cleanup failure.
+Seatbelt establishes inherited capability confinement, not an immutable process-ownership container. Envd manages the initial process group, which includes descendants that remain in that group. `cleanup="complete"` means that managed process group no longer exists and envd knows of no managed residual; it does not claim discovery of a descendant that deliberately creates another process group or session before observation. A residual inside the managed target yields `cleanup="residual_confined"` only while inherited Seatbelt confinement remains proven; loss of confinement evidence yields cleanup failure.
+
+Bare macOS therefore does not provide Linux PID-namespace or Windows Job-style adversarial whole-tree ownership. A Host that requires strict teardown of deliberately detached descendants places envd inside a disposable VM, container, or equivalent outer Environment and destroys that boundary after envd shutdown. This outer lifecycle responsibility does not weaken the inner required Seatbelt filesystem, network, or IPC policy.
 
 Seatbelt's public launch surface is deprecated. Each supported macOS release must pass the production probe. Removal or semantic breakage fails required startup; envd does not silently substitute an unreviewed sandbox.
 
@@ -178,7 +180,7 @@ The bounded platform probe proves:
 - descendant restriction after fork/spawn and exec;
 - requested-executable status preservation;
 - advertised signal semantics;
-- whole-tree cleanup at the reported guarantee;
+- platform cleanup at the reported guarantee;
 - configured and per-command network posture;
 - platform-specific namespace, Seatbelt, AppContainer/ACL, and Job evidence.
 
@@ -209,7 +211,7 @@ class IsolationPosture(BaseModel):
     ]
 ```
 
-True fields in required mode mean the production probe passed for this generation. `network_containment` is true only for daemon-wide `deny` and does not imply that a configured `host` posture can narrow one command. Exact optional request truth is separate in `EnvironmentDescriptor.execution_features`: process-count, memory-byte, CPU-time, per-command-deny, interrupt, and terminate booleans become true only after the active production path proves those semantics. `process.signal` is available exactly when one advertised signal action is true; other command methods remain independently available when optional limits are false.
+True fields in required mode mean the production probe passed for this generation. On macOS, `process_containment=true` means descendants inherit Seatbelt capability restrictions; it does not claim Linux PID-namespace or Windows Job-style whole-tree ownership. `network_containment` is true only for daemon-wide `deny` and does not imply that a configured `host` posture can narrow one command. Exact optional request truth is separate in `EnvironmentDescriptor.execution_features`: process-count, memory-byte, CPU-time, per-command-deny, interrupt, and terminate booleans become true only after the active production path proves those semantics. `process.signal` is available exactly when one advertised signal action is true; other command methods remain independently available when optional limits are false.
 
 The descriptor reveals no helper path, profile source, SID, ACL, protected root, sentinel, host identity, or outer-provider claim.
 
@@ -227,7 +229,7 @@ The descriptor reveals no helper path, profile source, SID, ACL, protected root,
 | Child access is denied                                                       | Ordinary child stderr/exit behavior; never unsandboxed retry       |
 | Backend evidence is lost after exec                                          | Strongest cleanup plus `backend_lost` and unknown-outcome evidence |
 | Linux namespace cleanup fails                                                | `cleanup_failed`; completeness not claimed                         |
-| macOS descendants remain provably Seatbelt-confined but unobservable         | `residual_confined`                                                |
+| macOS managed process-group exit remains unproven but confinement holds      | `residual_confined`                                                |
 | Windows Job Object cannot prove empty or ACL cleanup is uncertain            | `cleanup_failed`; job/authority cleanup not claimed                |
 | Disabled native target cannot prove cleanup                                  | `cleanup_failed`; never `residual_confined`                        |
 

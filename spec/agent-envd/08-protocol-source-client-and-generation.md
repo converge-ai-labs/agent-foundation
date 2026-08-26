@@ -4,7 +4,7 @@
 
 EIP has one language-neutral protocol source that generates the daemon wire surface and the Python client surface. The canonical source uses Protobuf service and message IDL with EIP-specific method options. JSON-RPC 2.0 remains the observable control envelope over trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket, while raw file bytes use the correlated transfer mapping defined by each carrier profile. Protobuf is an IDL and generation input; EIP does not use gRPC as a mandatory transport, put binary protobuf messages inside JSON-RPC, or serialize native file content as protobuf.
 
-The dedicated `converge-agent-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, or daemon-process authority. The Harness directly owns the adapter from its provider-neutral Environment protocols to this client; there is no separate EIP Environment adapter package.
+The dedicated `converge-agent-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, executable-discovery, artifact-download, installation, or daemon-process authority. It communicates over a session source supplied by an owning provider or Host and never searches `PATH`, selects a release, installs a binary, or launches `agent-envd`. The Harness directly owns the adapter from its provider-neutral Environment protocols to this client; there is no separate EIP Environment adapter package.
 
 The client and `converge-agent-envd` daemon belong to one agent-envd release group. Their package version is release identity, while the negotiated EIP `<major>.<minor>` version remains the independent wire-compatibility identity defined by [EIP Protocol](02-eip-protocol.md).
 
@@ -21,6 +21,7 @@ The client and `converge-agent-envd` daemon belong to one agent-envd release gro
 | Provider-neutral Environment adaptation and Harness result mapping                         | `converge-agent-harness`                                     | Exhaustively maps fresh attachments to Harness bindings        |
 | Provider lifecycle, bootstrap, and EIP session sources                                     | `converge-agent-environment-provider` and Host               | Supplies fresh `EIPEnvironmentAttachment` values               |
 | Product routing, durable execution, and optional provider-state persistence                | Host                                                         | Never generated from EIP IDL                                   |
+| Executable release selection, discovery, download, installation, and process ownership     | Installer, Host, or selected provider                        | Absent from the low-level client                               |
 
 The normative Markdown specification owns meaning. The canonical IDL must encode that accepted meaning exactly and is the source from which code is generated. A mismatch between specification, IDL, generated code, or golden wire fixtures fails validation; an implementation cannot select whichever copy is convenient.
 
@@ -155,6 +156,23 @@ Harness model-output policy is not serialized as EIP command policy. Envd always
 
 A Host chooses create, resume, pause, destroy, attachment, and optional provider-state persistence policy through the provider package without assuming Foundation Service behavior. Direct Local Environments do not depend on envd.
 
+## Executable Distribution and Installation
+
+Every agent-envd release publishes native archives for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64, plus one Release `SHA256SUMS` file. Unix assets are named `agent-envd-<version>-<target>.tar.gz`; Windows assets are named `agent-envd-<version>-<target>.zip`. The six exact targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, and `aarch64-pc-windows-msvc`. Each archive contains the `agent-envd` executable and repository license. `agent-envd --version` prints the canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity and exits without starting a daemon or reading runtime configuration.
+
+The repository provides two standalone installer entry points:
+
+- `scripts/install-agent-envd.sh` for Linux and macOS;
+- `scripts/install-agent-envd.ps1` for native Windows PowerShell.
+
+Both accept an exact `--version`, an absolute `--install-dir`, and mutually exclusive `--add-to-path` or `--no-add-to-path` behavior. The corresponding documented installer environment values provide the same inputs; explicit flags override environment values, which override defaults. Without an explicit version, the installer resolves the newest stable GitHub Release whose tag matches `release/agent-envd-v*`; prereleases are excluded, so an RC requires an explicit canonical version.
+
+The default install directory is `~/.local/bin` for a non-root POSIX user, `/usr/local/bin` for POSIX root, and `%LOCALAPPDATA%\Converge\bin` on Windows. A supplied install directory must be absolute. Installers do not modify `PATH` by default. `--add-to-path` is the only opt-in mutation and updates the appropriate user shell or Windows user environment without changing system-wide configuration; `--no-add-to-path` explicitly preserves the default behavior.
+
+An installer detects only the six supported target pairs, downloads the matching immutable release archive and `SHA256SUMS`, verifies the selected archive before extraction, stages the executable within the destination filesystem, and atomically replaces the destination `agent-envd` or `agent-envd.exe`. Unsupported targets, missing checksum entries, digest mismatch, malformed archives, and failed atomic publication fail without selecting an unverified executable. The installer owns no self-update protocol, service registration, daemon launch, install database, package registry, or mutable mirror configuration. Re-running it is an explicit installation or replacement operation.
+
+Standalone installation is independent from product-managed runtime acquisition. Agent UI pins its own exact release assets and hashes and lazily installs one selected target under its data root as defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); it does not invoke these standalone installers.
+
 ## Compatibility and Release
 
 EIP compatibility is negotiated by protocol major/minor and exact required/available methods, not inferred from Python or Rust package versions. The generated client can communicate with any daemon whose selected protocol and required methods are compatible, subject to explicit package-supported ranges.
@@ -199,9 +217,10 @@ One release group makes source, generated descriptor, conformance fixtures, and 
 05. Python typed method stubs, transfer metadata/codecs, and Rust dispatch entries are generated from one descriptor/profile bound to the negotiated EIP major and fail drift checks together.
 06. Carrier, attachment authentication, correlation, backpressure, fair multiplexing, session, retry, and cleanup behavior remains handwritten, bounded, and shared beneath generated surfaces.
 07. Compiler and generator tools are locked build dependencies rather than accidental client runtime dependencies.
-08. `converge-agent-envd-client` imports no Harness or Host lifecycle type and grants no provider authority.
+08. `converge-agent-envd-client` imports no Harness or Host lifecycle type, grants no provider authority, and never discovers, downloads, installs, selects, or launches an envd executable.
 09. The provider package owns EIP session sources, while the Harness exhaustively owns fresh-attachment-to-Environment adaptation; neither reimplements wire models, method constants, or transport handshakes.
 10. The client and daemon share the agent-envd release group and descriptor digest, while package version and EIP version remain independent identities.
 11. Shared hand-curated golden wire values, focused structural negative fixtures, and actual cross-language daemon/client tests are required in addition to generated-model round trips.
 12. Direct-local Harness Environments remain first-class and do not depend on starting envd.
 13. High-level readers and writers never expose raw handles or frame bookkeeping to ordinary consumers and never translate carrier loss into successful EOF or commit.
+14. Standalone installers verify the selected immutable release archive, publish only by staged atomic replacement, and modify `PATH` only through explicit opt-in.

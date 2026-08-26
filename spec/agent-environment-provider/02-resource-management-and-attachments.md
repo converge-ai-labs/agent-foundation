@@ -305,14 +305,14 @@ Provider plugins replace the complete management and attachment behavior through
 2. exiting `acquire_attachment()` releases its concurrency lease and any untransferred attachment material, while exiting `ManagedEnvironment` closes process-local provider clients, maintenance tasks, and attachment admission;
 3. only the Host selects a later Manager `pause()` or `destroy()` operation for an external provider resource after its own reference, policy, and fencing checks.
 
-A plugin implements all Manager methods even when one action is a validated no-op or explicitly unsupported. Direct Local destroy is logical detach with no directory mutation; Docker and E2B destroy their exact provider resource when the Host selects that action. Neither Harness cleanup nor managed-resource exit escalates into external resource reclamation. Replacing a binding inside one Harness run therefore never silently destroys the reusable provider resource from which it came.
+A plugin implements all Manager methods even when one action is a validated no-op or explicitly unsupported. Direct Local destroy is logical detach with no directory mutation. Local Envd destroy stops its exact owned daemon process and removes only its private runtime while preserving the Host workspace. Docker and E2B destroy their exact outer provider resource when the Host selects that action. Neither Harness cleanup nor managed-resource exit escalates into provider-resource reclamation. Replacing a binding inside one Harness run therefore never silently destroys the reusable provider resource from which it came.
 
 The provider package imports no Harness type. The Harness adapter exhaustively converts:
 
 - `DirectLocalEnvironmentAttachment` to a fresh Direct Local provider binding;
 - `EIPEnvironmentAttachment` to a fresh EIP-backed provider binding.
 
-Unknown attachment types fail before aggregate transfer. Docker and E2B never return vendor-native file or command attachments.
+Unknown attachment types fail before aggregate transfer. Local Envd, Docker, and E2B never return provider-native file or command attachments.
 
 ## EIP Session Sources
 
@@ -335,13 +335,15 @@ Each entry returns a fresh initialized low-level `EIPSession` or fails. `discard
 
 Supported sources are:
 
-| Public source                       | Acquisition                                                               | Protocol role                  |
-| ----------------------------------- | ------------------------------------------------------------------------- | ------------------------------ |
-| `StdioEIPSessionSource`             | Claim one private asyncio subprocess with `agent-envd` stdin/stdout pipes | Client requests; envd responds |
-| `HttpEIPSessionSource`              | Dial one dedicated authenticated EIP HTTP(S) endpoint                     | Client requests; envd responds |
-| `AcceptedWebSocketEIPSessionSource` | Claim one already-authenticated `websockets.ServerConnection`             | Client requests; envd responds |
+| Public source                       | Acquisition                                                                            | Protocol role                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------ |
+| `StdioEIPSessionSource`             | Claim one exclusive one-shot lease over provider-owned private envd stdin/stdout pipes | Client requests; envd responds |
+| `HttpEIPSessionSource`              | Dial one dedicated authenticated EIP HTTP(S) endpoint                                  | Client requests; envd responds |
+| `AcceptedWebSocketEIPSessionSource` | Claim one already-authenticated `websockets.ServerConnection`                          | Client requests; envd responds |
 
-Each concrete source is a fresh single-use process-local value. Stdio captures the subprocess and transport bounds; HTTP captures the normalized endpoint, Bearer credential, optional additive CA trust, and finite client/session bounds; accepted reverse WebSocket captures the Host-accepted connection and transport bounds. The common initialization arguments remain the `expected_environment_id` and exact `required_methods` supplied by the Harness binding.
+Each concrete source is a fresh single-use process-local value. Stdio captures one exclusive carrier lease issued by the managed resource plus transport bounds; HTTP captures the normalized endpoint, Bearer credential, optional additive CA trust, and finite client/session bounds; accepted reverse WebSocket captures the Host-accepted connection and transport bounds. The common initialization arguments remain the `expected_environment_id` and exact `required_methods` supplied by the Harness binding.
+
+For stdio, the entered `ManagedEnvironment` is the sole owner of the daemon subprocess, complete process tree, private runtime, and underlying pipes. A fresh source claims exclusive requester access for one initialized EIP session, sends ordinary `session.close` on clean exit, and returns the healthy carrier lease without closing the process or pipes. The resource can then issue another sequential source against the same daemon generation. Fatal protocol/carrier failure or unexpected process exit marks the managed resource unavailable; attachment acquisition never starts a replacement process. Only the selected Manager create/resume lifecycle starts a daemon, and pause/destroy owns process termination and private-runtime cleanup.
 
 For reverse WebSocket, the Host listener authenticates and bounds the upgrade before constructing the source, then transfers the accepted `ServerConnection` exactly once. `AcceptedWebSocketEIPSessionSource` passes that object to the low-level `AcceptedWebSocketTransport` and sends `initialize`; it does not inspect or repeat the Bearer credential. Envd remains the responder even though it opened the carrier.
 
@@ -445,8 +447,9 @@ Making attachment values reusable, treating resource-context exit as pause/destr
 05. A managed resource spans sequential runs, while every attachment, binding, and EIP session is fresh and single-use.
 06. Closing a binding, disconnecting a resource, pausing it, and destroying it are independent operations.
 07. Pause modes, resource-allocation cardinality, and attachment concurrency are explicit capabilities rather than inferred from provider names.
-08. Docker and E2B use EIP for all Harness Environment operations.
+08. Local Envd, Docker, and E2B use EIP for all Harness Environment operations.
 09. Resume reestablishes provider and binding authority before portable Environment state restoration.
 10. Cancellation and transport failure never convert possible side effects into non-dispatch or rollback.
 11. Every effectful management call carries one stable Host operation identity, and reconciliation inspects only that exact operation/resource correlation.
 12. Reconciliation is read-only and returns running, paused, absent, or unknown evidence; it never creates a replacement resource.
+13. For stdio, the managed resource is the sole subprocess/private-runtime owner; each fresh session source carries only one exclusive single-use lease over that resource-owned carrier.

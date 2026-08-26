@@ -23,6 +23,7 @@ The design does not claim a cross-file transaction between SQLite and the filesy
 | Pending deferred resume authority                                            | Compressed immutable deferred-request object files | SQLite waiting Turn/job selects one exact unconsumed request object   |
 | Provider resource state                                                      | Compressed immutable provider-state object files   | SQLite owns lifecycle/fencing metadata and selected state reference   |
 | Retained processed AG-UI sequence                                            | Compressed immutable event segments                | SQLite indexes segment ranges, cursors, Items, and search projections |
+| Managed Local Sandbox envd executable cache                                  | Package manifest plus runtime cache                | Replaceable runtime material; no Session or Environment authority     |
 | Live execution, tasks, streams, clients, attachments, credentials            | Process memory and owning runtime                  | Never reconstructed by reading local storage alone                    |
 | OpenTelemetry                                                                | Configured OTel SDK/exporter                       | Independent diagnostic delivery; no local lifecycle authority         |
 | Ordinary application logs                                                    | `converge-logging` process boundary                | Separate from SQLite and Session history                              |
@@ -48,6 +49,8 @@ agent-ui-home/
 ├── sessions/
 │   └── YYYY/MM/DD/<session-id>/
 │       └── events/
+├── runtimes/
+│   └── agent-envd/<version>/<target>/agent-envd[.exe]
 ├── staging/
 └── quarantine/
 ```
@@ -55,6 +58,8 @@ agent-ui-home/
 Configured project definition roots can live outside `agent-ui-home`; the configuration loader preserves their authority and source boundary. SQLite `-wal` and `-shm` files are ordinary sidecars, not separate logical stores.
 
 Object paths are derived from validated kind, schema version, digest, and storage-owned sharding. A Session value, model value, API value, event field, or provider payload cannot provide an arbitrary filesystem path. Paths are local locators and grant no authority.
+
+The `runtimes/agent-envd` tree is a separate replaceable executable cache. It is not an immutable object kind, SQLite-selected checkpoint, provider-state payload, Session export input, or source configuration root. The package-owned runtime manifest selects its exact version/target path and expected hashes; download and extraction stage under the same data root and atomically publish only verified executable bytes. Deleting a cached executable can require a later verified re-download but cannot change a Session, prove provider cleanup, or authorize execution. Ordinary orphan-object retention does not scan or delete this runtime tree.
 
 ## SQLite Metadata Store
 
@@ -385,3 +390,4 @@ Separating telemetry prevents diagnostic volume or exporter failure from corrupt
 08. OpenTelemetry and ordinary logs remain outside SQLite, state objects, and AG-UI files and never determine product completion.
 09. No transaction or database session remains open across Harness execution, provider I/O, async-subagent waits, or a streaming response.
 10. Retention deletes an immutable object only when no durable reference retains it and its file age exceeds the configured orphan-retention period.
+11. Managed envd executables live in a separate manifest-selected runtime cache and never become immutable object, Session, provider-state, export, or retention authority.

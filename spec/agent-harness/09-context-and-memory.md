@@ -43,10 +43,10 @@ Instruction and context-middleware ordering both inherit Pydantic AI's finalized
 The standard Capability set performs the following semantic work without creating a global stage API:
 
 1. validate imported message structure and apply the mandatory message-integrity Filter without rewriting provider semantics;
-1. apply handoff, accepted enqueue content, completed background work, and explicit file references;
-1. compact history when the configured budget requires it;
-1. resolve current Environment projection, working-state, memory, and skill guidance;
-1. finalize media and verify tool-call/result integrity before provider dispatch.
+2. apply handoff, accepted enqueue content, completed background work, and explicit file references;
+3. compact history when the configured budget requires it;
+4. resolve current Environment projection, working-state, memory, and skill guidance;
+5. finalize media and verify tool-call/result integrity before provider dispatch.
 
 The list defines expected ordering relationships for first-party Capabilities. Native model adapters and `ModelProfile` own ordinary provider reasoning, tool-argument, and history projection compatibility. Only while the latest upstream lacks a required public seam may an exact-model-integration-scoped Capability apply a tested public-hook repair; it carries typed configuration and an upstream-removal condition and never becomes a standard global normalization stage. Third-party Capabilities compose through Pydantic ordering constraints rather than registering a named stage.
 
@@ -122,8 +122,8 @@ A model-context Capability normally awaits `handler(request)` and returns a tran
 Pydantic's finalized run Capability mapping is the only source of middleware order. The coordinator selects values with `isinstance(value, AbstractModelContextCapability)` without dynamic method discovery, preserves that finalized order, and constructs the native wrapper nesting. The fixed semantic chain is:
 
 1. fresh Host binding, when present;
-1. finalized model-context Capabilities in native wrapper order;
-1. `AgentContext.project_model_context(request)` as the terminal projection.
+2. finalized model-context Capabilities in native wrapper order;
+3. `AgentContext.project_model_context(request)` as the terminal projection.
 
 The terminal projection calls `BoundEnvironment.project_model_context(request)` and combines its ordered blocks with the bounded default Agent run/conversation projection. Environment contributes `INPUT_PREAMBLE` blocks only for an `INPUT` request. Agent run/conversation context contributes one `REQUEST_EPILOGUE` block for both `INPUT` and ordinary `TOOL_RESULTS` requests, using a more compact tool-results form. Current time, request usage, selected Host metadata, working tasks, notes, and other Capability-owned state remain projected by their owning model-context Capabilities rather than exposing opaque `AgentContextState` namespaces to the terminal source.
 
