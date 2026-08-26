@@ -55,7 +55,7 @@ The output contract cannot change per run. Pass a Python output type or Pydantic
 
 ### Model configuration
 
-`AgentSpec.model_config` holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Today it defines the context window plus proactive summarize and compaction ratios:
+The `model_config` construction and serialization key holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Python code reads the value through `spec.model_configuration` because `model_config` is reserved by Pydantic for class configuration. Today it defines the context window plus proactive summarize and compaction ratios:
 
 ```python
 spec = AgentSpec(

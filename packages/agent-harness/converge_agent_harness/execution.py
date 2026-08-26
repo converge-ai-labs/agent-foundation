@@ -430,16 +430,23 @@ def _resolve_model_configured_capabilities(
             configuration = capability.configuration
             threshold_fields = {"include_summary_reminder", "summary_reminder_tokens"}
             if not threshold_fields.intersection(configuration.model_fields_set):
-                reminder_tokens = model_configuration.summary_reminder_tokens
-                configuration = configuration.model_copy(
-                    update={
-                        "include_summary_reminder": reminder_tokens is not None,
-                        "summary_reminder_tokens": reminder_tokens or 0,
-                    },
-                    deep=True,
-                )
-                resolved.append(HandoffCapability(configuration))
-                continue
+                proactive_threshold = model_configuration.proactive_context_management_threshold
+                if proactive_threshold is None:
+                    configuration = configuration.model_copy(
+                        update={"include_summary_reminder": False},
+                        deep=True,
+                    )
+                    resolved.append(HandoffCapability(configuration))
+                    continue
+                if model_configuration.context_window is not None:
+                    reminder_tokens = model_configuration.summary_reminder_tokens
+                    assert reminder_tokens is not None
+                    configuration = configuration.model_copy(
+                        update={"summary_reminder_tokens": reminder_tokens},
+                        deep=True,
+                    )
+                    resolved.append(HandoffCapability(configuration))
+                    continue
         resolved.append(capability)
     return tuple(resolved)
 

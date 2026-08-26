@@ -116,6 +116,33 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
     assert compaction.policy == CompactionPolicy(trigger_tokens=180_000)
 
 
+def test_handoff_model_config_distinguishes_unknown_context_from_disabled_reminder() -> None:
+    cases = (
+        (ModelConfiguration(), True, 0),
+        (
+            ModelConfiguration(
+                context_window=200_000,
+                proactive_context_management_threshold=None,
+            ),
+            False,
+            0,
+        ),
+    )
+    for model_configuration, expected_enabled, expected_tokens in cases:
+        executable = HarnessBuilder().build_code(
+            HarnessAgentSpec(model="logical:test", model_config=model_configuration),
+            output_type=str,
+            model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
+            capabilities=(HandoffCapability(),),
+        )
+        leaves: list[Any] = []
+        executable._agent.root_capability.apply(leaves.append)
+        handoff = next(capability for capability in leaves if isinstance(capability, HandoffCapability))
+
+        assert handoff.configuration.include_summary_reminder is expected_enabled
+        assert handoff.configuration.summary_reminder_tokens == expected_tokens
+
+
 def test_explicit_context_capability_thresholds_override_agent_model_config() -> None:
     spec = HarnessAgentSpec(
         model="logical:test",
