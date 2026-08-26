@@ -959,7 +959,7 @@ fn same_cap_file(left: &cap_std::fs::Metadata, right: &cap_std::fs::Metadata) ->
 
 #[cfg(windows)]
 fn same_cap_file(left: &cap_std::fs::Metadata, right: &cap_std::fs::Metadata) -> bool {
-    use cap_std::fs::MetadataExt;
+    use cap_primitives::fs::_WindowsByHandle;
     match (
         left.volume_serial_number(),
         left.file_index(),

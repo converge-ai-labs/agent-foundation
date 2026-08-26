@@ -1626,10 +1626,9 @@ mod tests {
         time::Duration,
     };
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     use sha2::{Digest, Sha256};
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use crate::eip::{FileCopyParams, FileMkdirParams, FileMoveParams, FilePatchTextParams};
     use crate::{
         config::{Config, TrustedMountConfig},
         eip::{
@@ -1639,12 +1638,17 @@ mod tests {
         },
         mount::MountRegistry,
         operation::{OperationLedger, random_selector},
+    };
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use crate::{
+        eip::{FileCopyParams, FileMkdirParams, FileMoveParams, FilePatchTextParams},
         runtime::RuntimeState,
     };
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use super::commit_candidate;
     use super::{
-        ResourceError, ResourceRegistry, apply_unified_diff, commit_candidate, join_logical,
-        read_bounded_search_line,
+        ResourceError, ResourceRegistry, apply_unified_diff, join_logical, read_bounded_search_line,
     };
 
     struct TempTree(PathBuf);
