@@ -16,6 +16,7 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 COPY packages/agent-envd-client/pyproject.toml packages/agent-envd-client/pyproject.toml
+COPY packages/agent-environment-provider/pyproject.toml packages/agent-environment-provider/pyproject.toml
 COPY packages/agent-harness/pyproject.toml packages/agent-harness/pyproject.toml
 COPY packages/agent-stream-protocol/pyproject.toml packages/agent-stream-protocol/pyproject.toml
 COPY packages/agent-ui/pyproject.toml packages/agent-ui/pyproject.toml

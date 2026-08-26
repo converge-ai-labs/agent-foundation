@@ -7,6 +7,7 @@ on:
       - ".github/workflows/ci-agent-stream-protocol.yml"
       - ".github/workflows/release-harness.yml"
       - "packages/agent-envd-client/**"
+      - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "packages/agent-stream-protocol/**"
       - "pyproject.toml"
@@ -19,6 +20,7 @@ on:
       - ".github/workflows/ci-agent-stream-protocol.yml"
       - ".github/workflows/release-harness.yml"
       - "packages/agent-envd-client/**"
+      - "packages/agent-environment-provider/**"
       - "packages/agent-harness/**"
       - "packages/agent-stream-protocol/**"
       - "pyproject.toml"
@@ -85,6 +87,7 @@ jobs:
       - name: Build Harness libraries and local distribution dependencies
         run: |
           uv build --package converge-agent-envd-client --out-dir dist/harness
+          uv build --package converge-agent-environment-provider --out-dir dist/harness
           uv build --package converge-agent-harness --out-dir dist/harness
           uv build --package converge-agent-stream-protocol --out-dir dist/harness
 

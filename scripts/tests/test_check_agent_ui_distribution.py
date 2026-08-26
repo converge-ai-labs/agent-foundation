@@ -18,6 +18,7 @@ def _write_wheel(
     path: Path,
     *,
     index: bytes,
+    provider_version: str | None = "1.2.3",
     harness_version: str | None = "1.2.3",
     protocol_version: str | None = "1.2.3",
     extra_packaged_files: dict[str, bytes] | None = None,
@@ -46,6 +47,8 @@ def _write_wheel(
                     "Metadata-Version: 2.4",
                     "Name: converge-agent-ui",
                     "Version: 9.8.7",
+                    "Requires-Dist: converge-agent-environment-provider"
+                    + (f"=={provider_version}" if provider_version is not None else ""),
                     "Requires-Dist: converge-agent-harness"
                     + (f"=={harness_version}" if harness_version is not None else ""),
                     "Requires-Dist: converge-agent-stream-protocol"
@@ -73,6 +76,7 @@ def test_development_validation_allows_unpinned_workspace_dependencies(tmp_path:
     _write_wheel(
         wheel,
         index=b'<script src="/assets/main.js"></script>',
+        provider_version=None,
         harness_version=None,
         protocol_version=None,
     )

@@ -59,7 +59,7 @@ A native unmanaged tool does not acquire these guarantees merely because it can 
 
 ## Code-first Build Trust
 
-A Host owns its durable Agent definition schemas and artifact locks. The worker verifies those locks and uses trusted adapters to reconstruct native Python values. The Harness does not deserialize import paths or compile Agent specs. Its narrow plugin document contains only IDs, installed entry-point keys, enable state, and bounded JSON. An explicit or opted-in ambient Build Context loads only enabled keys and produces concrete plugins before Pydantic Agent composition. The separate Environment provider and run-extension catalogs remain Host-selected because run topology and aggregate lifecycle require current authority. The narrow custom Capability catalog contains only exact Host-trusted classes and performs no package discovery.
+A Host owns its durable Agent definition schemas and artifact locks. The worker verifies those locks and uses trusted adapters to reconstruct native Python values. The Harness does not deserialize import paths or compile Agent specs. Its narrow plugin document contains only IDs, installed entry-point keys, enable state, and bounded JSON. An explicit or opted-in ambient Build Context loads only enabled keys and produces concrete plugins before Pydantic Agent composition. The Environment Provider package catalog and Harness run-extension catalog remain Host-selected because resource lifecycle and aggregate topology require current authority. The narrow custom Capability catalog contains only exact Host-trusted classes and performs no package discovery.
 
 A mismatch between Host revision and installed adapter fails before the Host calls `HarnessBuilder`. Invalid plugin configuration or an incompatible installed package fails during context or builder construction before model work. Installed, enabled, loaded, and deployment-trusted are separate states: package presence alone imports no code and grants no behavior. Missing, duplicate, colliding, wrongly typed, lock-incompatible, factory-invalid, or ID-mismatched entries fail closed. Factory configuration and extensions are detached, bounded JSON but remain untrusted input to trusted in-process package code. Configuration, metadata, import, constructor, and factory failures suppress raw standard exception chaining so normal traceback logging cannot disclose those inputs or private installation paths. An API request, model value, durable row, state payload, plugin configuration, extension map, or provider parameter map cannot name an arbitrary import target.
 
@@ -93,11 +93,13 @@ CodeAct does not sandbox trusted tool implementations after dispatch. An eligibl
 
 ## Environment Enforcement
 
-Routing selects a binding; it does not grant access. The Host alone retains the process-local topology controller, and model content cannot invoke it. Every added or refreshed entry is a fresh trusted provider binding prepared before atomic publication. Environment providers own logical resource authentication, path normalization, mount policy, symlink behavior, resource ceilings, handle visibility, process ownership, port policy, generation fencing, output retention, and native command isolation.
+Routing selects a binding; it does not grant access. The Host alone retains the process-local topology controller, and model content cannot invoke it. Every added or refreshed entry is a fresh trusted provider binding adapted from a fresh attachment or constructed directly before atomic publication. Environment Managers own provider create/resume/pause/destroy authority and resource state; bindings own logical Environment authentication, path normalization, mount policy, symlink behavior, resource ceilings, handle visibility, process ownership, port policy, generation fencing, output retention, and native command isolation.
 
 Client-side validation improves errors but never replaces provider enforcement. Environment authorization intersects exact values from the selected action catalog; an operation family, prefix, wildcard, managed tool ID, EIP available-method name, or unknown provider string never grants a core action. Operations and handles are revalidated against current binding revision, Identity, policy, and provider generation. Removal or refresh never retargets an old handle; in-flight leases drain against the captured provider and unsafe active handles fence publication.
 
-Direct Local is an explicit embedding trust choice, not native command isolation or a race-hardened filesystem broker. Its file facet rejects observed traversal and symlink escape under a Host-controlled namespace, but a hostile same-account process can race native directory replacement, and an allowed child executable already has the embedding OS account's ambient filesystem or network reach beyond its working directory. Direct Local therefore rejects `network="deny"` and rejects read-only roots combined with any shell profile or allowed executable rather than claiming enforcement it does not provide. A Host that needs command confinement or adversarial concurrent filesystem isolation uses an Environment provider, such as `agent-envd`, whose resource boundary enforces it beside the governed resources.
+Direct Local is an explicit embedding trust choice, not native command isolation or a race-hardened filesystem broker. Its file facet rejects observed traversal and symlink escape under a Host-controlled namespace, but a hostile same-account process can race native directory replacement, and an allowed child executable already has the embedding OS account's ambient filesystem or network reach beyond its working directory. Direct Local therefore rejects `network="deny"` and rejects read-only roots combined with any shell profile or allowed executable rather than claiming enforcement it does not provide. A Host that needs command confinement or adversarial concurrent filesystem isolation uses an EIP-backed managed resource whose `agent-envd` boundary enforces it beside the governed resources.
+
+Provider resource state, Docker daemon access, E2B API credentials, and EIP credentials are separate authorities. The Manager obtains current provider credentials through a live Host collaborator; no provider specification, attachment, binding, descriptor, event, or `HarnessState` carries them. A provider-routed EIP HTTP endpoint uses TLS, while plaintext is limited to an explicitly trusted loopback or private provider link. EIP bootstrap authentication remains mandatory in either case, and redirects are rejected.
 
 ## Remote Content and Network Authority
 
@@ -148,17 +150,18 @@ Telemetry export is an observation. Exporter availability does not determine run
 
 ## Compatibility Model
 
-| Axis                                     | Owner                         |
-| ---------------------------------------- | ----------------------------- |
-| Harness public Python API                | Harness                       |
-| Native Agent/Model/Capability behavior   | Pydantic AI                   |
-| Host definition/revision schema          | Host                          |
-| Reconstruction adapter and artifact lock | Host integration/operator     |
-| Harness state envelope                   | Harness                       |
-| Capability state entry                   | Owning Capability             |
-| Portable Environment binding-state codec | Owning Environment provider   |
-| Provider launch/reattachment state       | Host and provider integration |
-| Durable lifecycle/events                 | Host                          |
+| Axis                                     | Owner                                                       |
+| ---------------------------------------- | ----------------------------------------------------------- |
+| Harness public Python API                | Harness                                                     |
+| Native Agent/Model/Capability behavior   | Pydantic AI                                                 |
+| Host definition/revision schema          | Host                                                        |
+| Reconstruction adapter and artifact lock | Host integration/operator                                   |
+| Harness state envelope                   | Harness                                                     |
+| Capability state entry                   | Owning Capability                                           |
+| Portable Environment binding-state codec | Owning Environment provider                                 |
+| Provider resource-state codec            | `converge-agent-environment-provider` built-in or extension |
+| Provider resource-state storage          | Host                                                        |
+| Durable lifecycle/events                 | Host                                                        |
 
 Matching logical IDs or definition digests do not prove artifact or state compatibility. A Host selects a mutually compatible revision and adapter set before construction and performs any explicit state migration before run creation.
 

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-EIP has one language-neutral protocol source that generates the daemon wire surface and the Python client surface. The canonical source uses Protobuf service and message IDL with EIP-specific method options. JSON-RPC 2.0 remains the observable control envelope over trusted stdio and outbound reverse WebSocket, while raw file bytes use the correlated transfer carrier defined by the carrier profile. Protobuf is an IDL and generation input; EIP does not use gRPC as a mandatory transport, put binary protobuf messages inside JSON-RPC, or serialize native file content as protobuf.
+EIP has one language-neutral protocol source that generates the daemon wire surface and the Python client surface. The canonical source uses Protobuf service and message IDL with EIP-specific method options. JSON-RPC 2.0 remains the observable control envelope over trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket, while raw file bytes use the correlated transfer mapping defined by each carrier profile. Protobuf is an IDL and generation input; EIP does not use gRPC as a mandatory transport, put binary protobuf messages inside JSON-RPC, or serialize native file content as protobuf.
 
 The dedicated `converge-agent-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, or daemon-process authority. The Harness directly owns the adapter from its provider-neutral Environment protocols to this client; there is no separate EIP Environment adapter package.
 
@@ -18,9 +18,9 @@ The client and `converge-agent-envd` daemon belong to one agent-envd release gro
 | Rust server models, codecs, method registry, and dispatch surface                          | Generated agent-envd crate modules                           | Used behind daemon transport and resource owners               |
 | Python models, codecs, method registry, and typed client stubs                             | `converge-agent-envd-client`                                 | Transport-neutral client contract                              |
 | JSON-RPC framing, raw-data attachment/multiplexing, authentication, sessions, and liveness | Handwritten client and daemon runtimes over generated codecs | Implements [transport profiles](03-transports-and-sessions.md) |
-| Provider-neutral Environment adaptation and Harness result mapping                         | `converge-agent-harness`                                     | Directly maps Harness protocols to the generated client        |
-| Provider provisioning and trusted endpoint/bootstrap values                                | Host provider adapter                                        | Constructs a fresh EIP-backed `EnvironmentRunBinding`          |
-| Product routing, durable execution, and provider lifecycle persistence                     | Host                                                         | Never generated from EIP IDL                                   |
+| Provider-neutral Environment adaptation and Harness result mapping                         | `converge-agent-harness`                                     | Exhaustively maps fresh attachments to Harness bindings        |
+| Provider lifecycle, bootstrap, and EIP session sources                                     | `converge-agent-environment-provider` and Host               | Supplies fresh `EIPEnvironmentAttachment` values               |
+| Product routing, durable execution, and optional provider-state persistence                | Host                                                         | Never generated from EIP IDL                                   |
 
 The normative Markdown specification owns meaning. The canonical IDL must encode that accepted meaning exactly and is the source from which code is generated. A mismatch between specification, IDL, generated code, or golden wire fixtures fails validation; an implementation cannot select whichever copy is convenient.
 
@@ -37,11 +37,12 @@ The stable source and output ownership is:
 | `crates/agent-envd/build_support/` and Cargo `OUT_DIR`                                               | Descriptor-driven Rust generator and its generated serde models, method registry, handler trait, and dispatch surface                       |
 | `crates/agent-envd/protocol/eip/v1/testdata/`                                                        | Shared hand-curated canonical JSON values and binary-frame fixtures consumed by Python and Rust conformance tests                           |
 | `spec/agent-envd/`                                                                                   | Normative architecture, protocol, transport, resource, output, isolation, and generation contracts                                          |
-| `packages/agent-harness/converge_agent_harness/`                                                     | Direct-local Environment implementations plus the EIP adapter that consumes `converge-agent-envd-client`                                    |
+| `packages/agent-environment-provider/converge_agent_environment_provider/`                           | Provider specifications, Managers, resource attachments, and stdio/HTTP/reverse-WebSocket EIP session sources                               |
+| `packages/agent-harness/converge_agent_harness/`                                                     | Direct Local Environment implementation plus the exhaustive attachment adapter that consumes `converge-agent-envd-client`                   |
 
 `converge-agent-envd-client` is a Python workspace member for repository development and validation, but it belongs to the agent-envd release group rather than the Foundation Python release group. A Foundation release can depend on a compatible published client range but does not version or republish that package.
 
-The client package is lower-level than the Harness and is reusable by product gateways, CLIs, IDEs, provider controllers, and trusted background jobs. It imports no Pydantic AI Agent type, `AgentContext`, `BoundEnvironment`, `ToolOutputPolicy`, browser principal, provider SDK, or Host lifecycle model. The Harness adapter imports the client and translates between generated EIP values and Harness-owned provider-neutral descriptors, logical references, errors, and receipts.
+The client package is lower-level than both the provider package and the Harness and is reusable by product gateways, CLIs, IDEs, provider controllers, and trusted background jobs. It imports no Pydantic AI Agent type, `AgentContext`, `BoundEnvironment`, `ToolOutputPolicy`, browser principal, provider SDK, or Host lifecycle model. The provider package uses its session runtime to supply fresh EIP session sources. The Harness attachment adapter uses the same client and translates between generated EIP values and Harness-owned provider-neutral descriptors, logical references, errors, and receipts.
 
 ## Canonical IDL Profile
 
@@ -118,6 +119,7 @@ The handwritten client runtime owns behavior that IDL cannot safely decide:
 - JSON-RPC ID allocation, response correlation, bounded in-flight multiplexing, and cancellation plumbing;
 - transfer attachment, bounded per-transfer queues, fair scheduling, backpressure, offset state, terminal acknowledgement, and deterministic teardown over generated frame codecs;
 - stdio content-length framing for both JSON control and EIP binary data frames;
+- authenticated HTTP session creation, protected session-selector headers, concurrent bounded control POSTs, streaming transfer bodies, and request/response teardown;
 - requester-side accepted reverse-WebSocket carrier integration, required subprotocol, first-message initialization, text control, binary transfer frames, ping/pong, and close mapping;
 - carrier and message size enforcement before generated payload decode;
 - initialization state, exact required/available methods, configured mounts/root mount, selected protocol minor, descriptor refresh, and prior-generation selector fencing;
@@ -125,7 +127,7 @@ The handwritten client runtime owns behavior that IDL cannot safely decide:
 - operation-ID replay and receipt reconciliation without automatic ambiguous mutation retry;
 - secret redaction and lifecycle cleanup.
 
-A common async carrier protocol presents correlated control requests plus typed transfer attachments to the generated client core. Trusted stdio and a reverse-WebSocket connection accepted by the requester/control-service boundary satisfy that protocol without changing generated signatures, reader/writer behavior, or EIP results. The client never falls back to another carrier or repeats a possibly dispatched mutation.
+A common async carrier protocol presents correlated control requests plus typed transfer attachments to the generated client core. Trusted stdio, Host-dialed HTTP, and a reverse-WebSocket connection accepted by the requester/control-service boundary satisfy that protocol without changing generated signatures, reader/writer behavior, or EIP results. HTTP maps an attachment to one authenticated bounded streaming request or response body rather than EIP binary frames. The client never falls back to another carrier or repeats a possibly dispatched mutation.
 
 The public low-level convenience surface creates one fresh operation ID per logical operation and hides transfer handles, attachment frames, offsets, reset retirement, and digest bookkeeping:
 
@@ -143,13 +145,15 @@ async with client.open_writer(path, mode="replace") as writer:
 
 Normal reader iteration maintains a local count and SHA-256 and calls `file.close_reader` only after the public consumer drains all chunks following clean `END`. Readers never send `END_ACK`; successful close count/digest verification is the sole acceptance. The helper publishes completion state only after local verification; mismatched completion evidence is a terminal peer protocol violation that leaves completion unavailable and closes the carrier. Early context exit sends `RESET` when possible and never calls successful close. An envd-initiated reset is already terminal and is not echoed. Transfer teardown is finite; when safe correlation cannot be preserved, the client closes the carrier. Writer `commit()` seals through `END`/`END_ACK` before `file.commit_writer`; context exit without successful commit resets and calls `file.abort_writer`. Helpers iterate text/list/search pages and command output through explicit offsets and reconcile effects by operation ID. They preserve bounds, transfer expiry, integrity, cancellation, output completeness, and unknown outcomes; they never emulate an unavailable method, turn carrier loss into EOF, or materialize an unbounded value.
 
-## Harness Boundary
+## Provider and Harness Boundaries
 
-The Harness can implement an EIP-backed Environment beside Direct Local by importing `converge-agent-envd-client`. That adapter owns provider-neutral path, descriptor, command, process, output-reference, receipt, cancellation, and error translation. It wraps opaque provider selectors with the selected binding and generation before any model-facing projection.
+The shared Environment Provider package owns provider specifications, resource Managers, and fresh attachments. Its EIP attachment carries a session source for trusted stdio, Host-dialed HTTP, or an accepted reverse-WebSocket carrier. It imports no Harness or Pydantic AI type and uses vendor SDKs only for outer resource lifecycle and bootstrap.
 
-Harness model-output policy is not serialized as EIP command policy. Envd always captures bounded raw command output through its spool; the Harness decides how much to read, redact, inline, truncate, or expose through its own logical reference. The client package knows neither Harness virtual paths nor model/tool metadata.
+The Harness exhaustively adapts a fresh `EIPEnvironmentAttachment` into an EIP-backed Environment beside Direct Local. That adapter owns provider-neutral path, descriptor, command, process, output-reference, receipt, cancellation, and error translation. It wraps opaque provider selectors with the selected binding and generation before any model-facing projection. Unknown attachment variants fail before aggregate transfer.
 
-A Host provider adapter still owns Docker, E2B, remote, or local-daemon provisioning and supplies fresh trusted connection/bootstrap configuration. Direct-local Environments do not depend on envd.
+Harness model-output policy is not serialized as EIP command policy. Envd always captures bounded raw command output through its spool; the Harness decides how much to read, redact, inline, truncate, or expose through its own logical reference. The client and provider packages know neither Harness virtual paths nor model/tool metadata.
+
+A Host chooses create, resume, pause, destroy, attachment, and optional provider-state persistence policy through the provider package without assuming Foundation Service behavior. Direct Local Environments do not depend on envd.
 
 ## Compatibility and Release
 
@@ -168,7 +172,7 @@ A protocol-only compatible addition can ship in a later package release without 
 
 ## Conformance
 
-Validation proves deterministic generation with no diff, complete generated method coverage, strict request decoding, fixed code/error pairs, shared Python/Rust canonical JSON and binary-frame fixtures, and actual Python-client-to-Rust-daemon flows over stdio and reverse WebSocket. Transport tests add framing, authentication, reconnect, transfer, backpressure, and ambiguity cases without redefining method results.
+Validation proves deterministic generation with no diff, complete generated method coverage, strict request decoding, fixed code/error pairs, shared Python/Rust canonical JSON and binary-frame fixtures, and actual Python-client-to-Rust-daemon flows over stdio, HTTP, and reverse WebSocket. Transport tests add framing or HTTP resource mapping, authentication, reconnect where applicable, streaming transfer, backpressure, and ambiguity cases without redefining method results.
 
 Generated-model round trips alone are insufficient because both languages can reproduce the same generator mistake. Hand-curated wire fixtures and end-to-end daemon/client tests remain independent evidence.
 
@@ -178,9 +182,9 @@ Generated-model round trips alone are insufficient because both languages can re
 
 A custom descriptor-driven generator adds maintenance and requires disciplined compatibility lint. It removes hand-maintained cross-language model, method, transfer-enum, and frame-codec duplication and makes daemon/client drift mechanically visible. The fixed raw frame avoids per-chunk JSON/base64 overhead without creating an independently editable second protocol.
 
-### Dedicated client package and direct Harness adapter
+### Dedicated client package and attachment adapter
 
-A separate low-level client gives non-Harness consumers a reusable EIP connection without forcing them to import Pydantic AI. Keeping the provider-neutral adapter in Harness avoids a second thin integration package, at the cost of making the Harness release depend on a compatible client package.
+A separate low-level client gives non-Harness consumers a reusable EIP connection without forcing them to import Pydantic AI. The provider package owns reusable lifecycle and session-source contracts, while the Harness keeps only provider-neutral attachment adaptation and operation mapping. This preserves one operation adapter without coupling provider management to the Harness.
 
 ### Co-released client and daemon
 
@@ -189,14 +193,14 @@ One release group makes source, generated descriptor, conformance fixtures, and 
 ## Invariants
 
 01. One canonical Protobuf descriptor defines every generated EIP method and payload surface; no language keeps a second editable method list.
-02. EIP control remains JSON-RPC JSON over trusted stdio and outbound reverse WebSocket; raw file content uses the correlated bounded carrier, and Protobuf is IDL rather than a mandatory transport or content wrapper.
+02. EIP control remains JSON-RPC JSON over trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket; raw file content uses correlated binary frames or HTTP streaming bodies, and Protobuf is IDL rather than a mandatory transport or content wrapper.
 03. Generated codecs implement the accepted EIP JSON profile exactly and never inherit a language runtime's incompatible defaults silently. Sender canonicalization recursively omits absent values, schema-default values, and empty non-presence-sensitive collections even when a caller explicitly constructed them.
 04. Request decoding fails closed for unknown authority-bearing input; response evolution follows the negotiated EIP minor compatibility rules.
 05. Python typed method stubs, transfer metadata/codecs, and Rust dispatch entries are generated from one descriptor/profile bound to the negotiated EIP major and fail drift checks together.
 06. Carrier, attachment authentication, correlation, backpressure, fair multiplexing, session, retry, and cleanup behavior remains handwritten, bounded, and shared beneath generated surfaces.
 07. Compiler and generator tools are locked build dependencies rather than accidental client runtime dependencies.
 08. `converge-agent-envd-client` imports no Harness or Host lifecycle type and grants no provider authority.
-09. The Harness directly owns EIP-to-Environment adaptation and does not reimplement wire models, method constants, or transport handshakes.
+09. The provider package owns EIP session sources, while the Harness exhaustively owns fresh-attachment-to-Environment adaptation; neither reimplements wire models, method constants, or transport handshakes.
 10. The client and daemon share the agent-envd release group and descriptor digest, while package version and EIP version remain independent identities.
 11. Shared hand-curated golden wire values, focused structural negative fixtures, and actual cross-language daemon/client tests are required in addition to generated-model round trips.
 12. Direct-local Harness Environments remain first-class and do not depend on starting envd.

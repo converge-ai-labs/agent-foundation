@@ -71,6 +71,7 @@ struct AuthoritySurfaces {
 pub(crate) struct CarrierResponse {
     payload: Vec<u8>,
     handoff: Option<ActiveResponseHandoff>,
+    closes_session: bool,
 }
 
 impl CarrierResponse {
@@ -78,11 +79,12 @@ impl CarrierResponse {
         Self {
             payload,
             handoff: None,
+            closes_session: false,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (Vec<u8>, Option<ActiveResponseHandoff>) {
-        (self.payload, self.handoff)
+    pub(crate) fn into_parts(self) -> (Vec<u8>, Option<ActiveResponseHandoff>, bool) {
+        (self.payload, self.handoff, self.closes_session)
     }
 }
 
@@ -325,13 +327,28 @@ impl Daemon {
         self.transfers.has_active()
     }
 
-    pub(crate) fn install_data_sender(
+    pub(crate) fn begin_session(
         &self,
         sender: mpsc::Sender<eip::DataFrame>,
     ) -> Result<(), DaemonInitError> {
+        let mut session = self.session.state();
+        if !matches!(
+            session.lifecycle,
+            SessionState::Uninitialized | SessionState::Closed
+        ) || session.active_session_work != 0
+        {
+            return Err(DaemonInitError::new("another EIP session is still active"));
+        }
         self.transfers
-            .install_outbound(sender)
-            .map_err(|_| DaemonInitError::new("stdio data sender is already installed"))
+            .begin_session(sender)
+            .map_err(|_| DaemonInitError::new("transfer session is still active"))?;
+        session.lifecycle = SessionState::Uninitialized;
+        self.closed.send_replace(false);
+        Ok(())
+    }
+
+    pub(crate) fn session_initialized(&self) -> bool {
+        self.session.state().lifecycle == SessionState::Initialized
     }
 
     pub(crate) async fn handle_data_frame(
@@ -408,7 +425,7 @@ impl Daemon {
     #[cfg(test)]
     pub(crate) async fn handle_payload(&self, payload: &str) -> Vec<u8> {
         let response = self.handle_payload_for_carrier(payload).await;
-        let (payload, handoff) = response.into_parts();
+        let (payload, handoff, _) = response.into_parts();
         if let Some(handoff) = handoff {
             handoff.complete();
         }
@@ -472,7 +489,9 @@ impl Daemon {
             }
         };
         let is_initialization = request.method == "initialize";
+        let is_session_close = request.method == "session.close";
         let result = eip::dispatch(self, &request.method, &params_json).await;
+        let closes_session = is_session_close && result.is_ok();
         if let Err(DispatchError::Method {
             error,
             method,
@@ -525,7 +544,11 @@ impl Daemon {
                 self.error_response(Some(request_id), map_dispatch_error(error, &request.method))
             }
         };
-        CarrierResponse { payload, handoff }
+        CarrierResponse {
+            payload,
+            handoff,
+            closes_session,
+        }
     }
 
     async fn preflight(&self, method: &str) -> Result<(), EIPError> {
@@ -2492,6 +2515,11 @@ fn map_transfer_error(error: TransferError) -> EIPError {
             "file commit completed with uncertain durability evidence",
             RetryHint::ReconcileFirst,
         ),
+        TransferError::CleanupFailed => (
+            ErrorType::CleanupFailed,
+            "staged file cleanup could not be proven",
+            RetryHint::ReconcileFirst,
+        ),
         TransferError::SessionClosed => (
             ErrorType::NotInitialized,
             "file transfer session is closed",
@@ -2668,6 +2696,28 @@ mod tests {
         assert_ne!(first, 0);
         assert_ne!(second, 0);
         assert_ne!(first, second);
+    }
+
+    #[tokio::test]
+    async fn carrier_loss_allows_a_fresh_session_in_the_same_generation() {
+        let config = Config::for_test("env-test");
+        let daemon = Daemon::with_generation(&config, 7).expect("daemon builds");
+        let (first_sender, _first_receiver) = tokio::sync::mpsc::channel(2);
+        daemon
+            .begin_session(first_sender)
+            .expect("first carrier begins a session");
+
+        let first = initialize(&daemon).await;
+        assert_eq!(first["result"]["descriptor"]["generation"], 7);
+        assert!(daemon.transport_closed(Duration::from_secs(1)).await);
+
+        let (second_sender, _second_receiver) = tokio::sync::mpsc::channel(2);
+        daemon
+            .begin_session(second_sender)
+            .expect("replacement carrier begins a fresh session");
+        assert!(!daemon.session_initialized());
+        let second = initialize(&daemon).await;
+        assert_eq!(second["result"]["descriptor"]["generation"], 7);
     }
 
     #[tokio::test]
@@ -3016,7 +3066,7 @@ mod tests {
 
         for _ in 0..2 {
             let response = daemon.handle_payload_for_carrier(&payload).await;
-            let (payload, handoff) = response.into_parts();
+            let (payload, handoff, _) = response.into_parts();
             let response: Value = serde_json::from_slice(&payload).expect("response is JSON");
             assert_eq!(response["result"]["descriptor"]["generation"], 91);
             handoff

@@ -51,6 +51,6 @@ The [Agent Harness user guide](../../docs/agent-harness/index.md) covers install
 
 ## Versioning
 
-Agent Harness and `converge-agent-stream-protocol` form the Harness release group. A `release/harness-v<version>` tag publishes both distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. The published Stream Protocol artifact pins this exact Harness version; Agent UI releases independently and selects a Harness release explicitly.
+Agent Harness, `converge-agent-environment-provider`, and `converge-agent-stream-protocol` form the Harness release group. A `release/harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently and selects a Harness release explicitly.
 
 The accepted architecture and public contract are defined in the [Agent Harness specification](../../spec/agent-harness/README.md).

@@ -1,17 +1,70 @@
 # Agent Stream Protocol
 
-`converge-agent-stream-protocol` is the shared Harness-to-AG-UI projection and validation package for Converge Agent surfaces. It keeps WebUI, TUI, and optional hosted adapters on one ordered presentation protocol without making UI data an execution or continuation authority.
+`converge-agent-stream-protocol` observes public `converge-agent-harness` streams as typed AG-UI events. It maps text, reasoning, tool, and terminal observations to standard AG-UI events, exposes every other public observation through a namespaced `CUSTOM` fallback, applies an optional Host processor, and accumulates the resulting events for process-local use.
 
 The repository directory is `packages/agent-stream-protocol`, the Python distribution is `converge-agent-stream-protocol`, and the import package is `converge_agent_stream_protocol`.
 
+## Usage
+
+```python
+from converge_agent_stream_protocol import HarnessAguiObserver
+
+observer = HarnessAguiObserver()
+
+async with executable.stream(input, bindings=bindings) as stream:
+    async for item in stream:
+        new_events = observer.observe(item)
+        await host.persist_and_publish(new_events)
+
+all_events = observer.snapshot()
+```
+
+One observer binds to the Thread and Run correlation on its first successful source item. Use a separate observer for each root or child Run.
+
+A Host can filter or adjust converted values before accumulation:
+
+```python
+from ag_ui.core import Event
+from ag_ui.core.events import CustomEvent
+from converge_agent_harness import HarnessStreamEvent
+from converge_agent_stream_protocol import HarnessAguiObserver
+
+
+def process_event(
+    source: HarnessStreamEvent[object],
+    event: Event,
+) -> Event | None:
+    del source
+    if isinstance(event, CustomEvent) and event.name == "converge.harness.diagnostic":
+        return None
+    return event
+
+
+observer = HarnessAguiObserver(processor=process_event)
+```
+
+A replacement must retain the same AG-UI event type and source-derived correlation. The processor is synchronous and does not persist or publish events; the Host acts on the complete batch returned by `observe()`.
+
+## Ownership
+
+The package owns only:
+
+- standard Harness-to-AG-UI conversion;
+- generic `CUSTOM` fallback for unmapped public events;
+- multipart text, reasoning, and tool-call observation state;
+- optional Host processing;
+- detached incremental results and accumulated snapshots.
+
+The Host owns persistence, event identities, replay, fan-out, backpressure, cancellation, transport, and rendering policy. The Harness owns source lifecycle facts and continuation state.
+
 ## Dependencies
 
-The source manifest declares an unversioned dependency on `converge-agent-harness`, so uv resolves Harness from the workspace during repository development. Its projection boundary is built on the upstream `ag-ui-protocol` models, Pydantic validation, and the lightweight `pydantic-ai-slim` event runtime; it does not pull in Agent UI or a Host persistence model.
+The source manifest declares an unversioned dependency on `converge-agent-harness`, so uv resolves Harness from the workspace during repository development. Conversion uses the upstream `ag-ui-protocol` models, Pydantic serialization, and the lightweight `pydantic-ai-slim` event runtime. The package does not depend on Agent UI, a Host persistence model, or a transport framework.
 
-Release automation replaces the workspace-oriented dependency in publishable metadata with an exact same-version Harness requirement. Both the sdist and wheel therefore install only the Harness version released with that Stream Protocol artifact.
+Release automation replaces the workspace-oriented Harness dependency in publishable metadata with an exact same-version requirement. Both the sdist and wheel therefore install only the Harness version released with that Stream Protocol artifact.
 
 ## Versioning
 
-Agent Stream Protocol and `converge-agent-harness` form the Harness release group. A `release/harness-v<version>` tag publishes both distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Agent UI is versioned and released independently.
+Agent Stream Protocol, `converge-agent-harness`, and `converge-agent-environment-provider` form the Harness release group. A `release/harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and this package pins the exact Harness version. Agent UI is versioned and released independently.
 
 The accepted architecture and compatibility contract are defined in the [Agent Stream Protocol specification](../../spec/agent-stream-protocol/README.md).

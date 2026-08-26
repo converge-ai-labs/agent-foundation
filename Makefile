@@ -110,6 +110,7 @@ format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-
 .PHONY: deps-check
 deps-check: sync ## Check Python package dependency declarations
 	@(cd packages/agent-envd-client && uv run --locked deptry converge_agent_envd_client)
+	@(cd packages/agent-environment-provider && uv run --locked deptry converge_agent_environment_provider)
 	@(cd packages/agent-harness && uv run --locked deptry converge_agent_harness)
 	@(cd packages/agent-stream-protocol && uv run --locked deptry converge_agent_stream_protocol)
 	@(cd packages/agent-ui && uv run --locked deptry converge_agent_ui)
@@ -174,7 +175,7 @@ python-build: sync agent-ui-assets ## Build all Python workspace distributions
 .PHONY: harness-python-build
 harness-python-build: ## Build the prepared Harness release-group distributions
 	@rm -rf dist
-	@for package in converge-agent-harness converge-agent-stream-protocol; do \
+	@for package in converge-agent-environment-provider converge-agent-harness converge-agent-stream-protocol; do \
 		uv build --package "$$package" --out-dir dist || exit $$?; \
 	done
 

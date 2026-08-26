@@ -46,7 +46,7 @@ Read `06`, `10`, and `16`. Provider transport retry, exact history repair, `Mode
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`. For restricted Python orchestration over tools, also read `18`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
+Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
 
 ### Implement Hosting or Persistence
 

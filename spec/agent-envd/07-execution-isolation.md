@@ -81,7 +81,7 @@ Envd separates launcher and payload environments:
 - internal handles and descriptors have fixed purpose, bounded framing, and close-on-exec or non-inheritable behavior;
 - every unrelated descriptor or Windows handle is closed before requested executable entry.
 
-Arguments remain structured values. Paths become backend parameters or held authorities and are never interpolated into shell text, a Seatbelt profile, an ACL command line, or a helper script. Helpers resolve from verified trusted locations, never the workspace or payload `PATH`.
+Arguments remain structured values. Canonical validated paths become typed backend parameters and are never interpolated into shell text, a Seatbelt profile, an ACL command line, or a helper script. A backend may retain native path handles when they are useful, but cross-platform command launch does not require descriptor-based executable dispatch or an immutable pathname snapshot. Helpers resolve from verified trusted locations, never the workspace or payload `PATH`.
 
 The final payload environment is rebuilt by the command owner. `HOME` and temporary values point to private generation roots. Daemon attachment credentials, `AGENT_ENVD_*` control values, runtime paths, dynamic-loader injection values, ambient service credentials, internal handle names, and carrier state are absent.
 

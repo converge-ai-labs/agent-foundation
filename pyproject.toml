@@ -36,6 +36,7 @@ package = false
 
 [tool.uv.sources]
 converge-agent-envd-client = { workspace = true }
+converge-agent-environment-provider = { workspace = true }
 converge-agent-harness = { workspace = true }
 converge-agent-stream-protocol = { workspace = true }
 converge-logging = { workspace = true }
@@ -52,6 +53,7 @@ ignore = ["E501"]
 [tool.pyright]
 include = [
     "packages/agent-envd-client/converge_agent_envd_client",
+    "packages/agent-environment-provider/converge_agent_environment_provider",
     "packages/agent-harness/converge_agent_harness",
     "packages/agent-stream-protocol/converge_agent_stream_protocol",
     "packages/agent-ui/converge_agent_ui",
@@ -78,6 +80,7 @@ reportTypedDictNotRequiredAccess = false
 addopts = ["--import-mode=importlib"]
 testpaths = [
     "packages/agent-envd-client/tests",
+    "packages/agent-environment-provider/tests",
     "packages/agent-harness/tests",
     "packages/agent-stream-protocol/tests",
     "packages/agent-ui/tests",

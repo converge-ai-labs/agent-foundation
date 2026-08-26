@@ -4,7 +4,7 @@
 
 This directory defines `agent-ui`, the local single-user Host distributed as `converge-agent-ui`. It embeds `agent-harness`, persists local Agent profiles and sessions, manages foreground runs and process-local background subagents, and exposes the same application behavior through a bundled browser application and a terminal UI.
 
-Agent UI is not a reduced Foundation Service. It implements the shared [`Session`, `Thread`, `Turn`, and `Item` interaction model](../interaction-model.md) for a local Host and owns local lifecycle and presentation, while the Harness remains the process-local Agent runtime and the shared [Agent Stream Protocol projection](../agent-stream-protocol/README.md) remains the presentation protocol boundary.
+Agent UI is not a reduced Foundation Service. It implements the shared [`Session`, `Thread`, `Turn`, and `Item` interaction model](../interaction-model.md) for a local Host and owns local lifecycle and presentation, while the Harness remains the process-local Agent runtime and the shared [Agent Stream Protocol observation](../agent-stream-protocol/README.md) remains the presentation protocol boundary.
 
 ## Document Catalog
 
@@ -34,7 +34,7 @@ Read `03`, then the [Agent Stream Protocol specification](../agent-stream-protoc
 - Agent UI owns local Agent-profile documents, resolved profile snapshots, session records, turn selection, local checkpoint selection, process-local background jobs, optional process-local envd attachment routing, and surface lifecycle.
 - `HarnessState` is the canonical process-local continuation value. A transcript, AG-UI replay log, rendered terminal state, or browser cache never replaces it.
 - The Harness and Pydantic AI own Agent construction, Agent loops, inline delegation, run events, results, and continuation semantics.
-- Agent Stream Protocol owns the reusable Harness-to-AG-UI projection contract. Agent UI owns local transport, replay retention, and presentation policy around that projection.
+- Agent Stream Protocol owns reusable Harness-to-AG-UI conversion and process-local accumulation. Agent UI supplies its Host processor and owns local persistence, replay, fan-out, transport, and presentation policy.
 - WebUI and TUI are presentation peers over one application service. Neither owns a separate session model, orchestration loop, or rendering truth.
 - Local files, attachment status, and compact references identify records but grant no Agent, Environment, model, plugin, or child authority. Fresh run bindings remain required.
 

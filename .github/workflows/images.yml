@@ -14,6 +14,7 @@ on:
       - "apps/foundation-web/**"
       - "crates/agent-envd/**"
       - "packages/agent-envd-client/pyproject.toml"
+      - "packages/agent-environment-provider/pyproject.toml"
       - "packages/agent-harness/pyproject.toml"
       - "packages/agent-stream-protocol/pyproject.toml"
       - "packages/agent-ui/pyproject.toml"

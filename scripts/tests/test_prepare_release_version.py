@@ -15,6 +15,7 @@ CHECKER = REPOSITORY_ROOT / "scripts" / "check-release-version.py"
 RELEASE_FILES = (
     Path("pyproject.toml"),
     Path("uv.lock"),
+    Path("packages/agent-environment-provider/pyproject.toml"),
     Path("packages/agent-harness/pyproject.toml"),
     Path("packages/agent-stream-protocol/pyproject.toml"),
     Path("packages/agent-ui/pyproject.toml"),
@@ -82,6 +83,7 @@ def run_script(
             "harness",
             {
                 Path("uv.lock"),
+                Path("packages/agent-environment-provider/pyproject.toml"),
                 Path("packages/agent-harness/pyproject.toml"),
                 Path("packages/agent-stream-protocol/pyproject.toml"),
             },
@@ -181,11 +183,15 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
         check_result = run_script(CHECKER, tmp_path, component, "9.8.7-rc.2")
         assert check_result.returncode == 0, check_result.stderr
 
+    harness_manifest = (tmp_path / "packages/agent-harness/pyproject.toml").read_text()
     protocol_manifest = (tmp_path / "packages/agent-stream-protocol/pyproject.toml").read_text()
     ui_manifest = (tmp_path / "packages/agent-ui/pyproject.toml").read_text()
-    assert 'version = "9.8.7rc2"' in (tmp_path / "packages/agent-harness/pyproject.toml").read_text()
+    assert 'version = "9.8.7rc2"' in (tmp_path / "packages/agent-environment-provider/pyproject.toml").read_text()
+    assert 'version = "9.8.7rc2"' in harness_manifest
+    assert '"converge-agent-environment-provider==9.8.7rc2"' in harness_manifest
     assert '"converge-agent-harness==9.8.7rc2"' in protocol_manifest
     assert 'version = "9.8.7rc2"' in ui_manifest
+    assert '"converge-agent-environment-provider==3.2.1rc4"' in ui_manifest
     assert '"converge-agent-harness==3.2.1rc4"' in ui_manifest
     assert '"converge-agent-stream-protocol==3.2.1rc4"' in ui_manifest
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()
@@ -302,6 +308,26 @@ def test_agent_ui_release_requires_selected_harness_release_without_writing(tmp_
     assert result.returncode != 0
     assert "Select a published Harness release" in result.stderr
     assert snapshot(tmp_path) == before
+
+
+def test_checker_rejects_provider_dependency_drift(tmp_path: Path) -> None:
+    copy_release_files(tmp_path)
+    prepare_result = run_script(PREPARER, tmp_path, "harness", "9.8.7")
+    assert prepare_result.returncode == 0, prepare_result.stderr
+
+    manifest = tmp_path / "packages/agent-harness/pyproject.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            '"converge-agent-environment-provider==9.8.7"',
+            '"converge-agent-environment-provider>=9.8.7"',
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_script(CHECKER, tmp_path, "harness", "9.8.7")
+
+    assert result.returncode != 0
+    assert "dependency converge-agent-environment-provider==9.8.7" in result.stderr
 
 
 def test_checker_rejects_harness_dependency_drift(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@
 
 This document defines the shared HTTP and SDK contract for Foundation-owned, resource-oriented JSON APIs. It keeps common representations, collection reads, errors, mutation safety, and compatibility consistent while each subsystem continues to own its resources, fields, authorization policy, and lifecycle.
 
-These conventions do not replace an upstream or project-owned protocol. The Harness Python API, Environment Interaction Protocol (EIP), Agent Stream Protocol profiles, provider APIs, and external webhook schemas retain their own wire contracts.
+These conventions do not replace an upstream or project-owned protocol. The Harness Python API, Environment Interaction Protocol (EIP), Agent Stream Protocol observation contract, provider APIs, and external webhook schemas retain their own wire contracts.
 
 ## Boundaries
 

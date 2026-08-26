@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "converge-agent-envd-client",
+    "converge-agent-environment-provider",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.31.1,<2.32",
     "pydantic-core>=2.41,<3",
@@ -30,3 +31,9 @@ packages = ["converge_agent_harness"]
 
 [tool.deptry]
 known_first_party = ["converge_agent_harness"]
+package_module_name_map = { "converge-agent-environment-provider" = "converge_agent_environment_provider" }
+
+# The provider package is an architectural boundary dependency whose public
+# types will be consumed as the scaffold is implemented.
+[tool.deptry.per_rule_ignores]
+DEP002 = ["converge-agent-environment-provider"]

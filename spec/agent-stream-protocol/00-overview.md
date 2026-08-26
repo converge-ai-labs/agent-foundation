@@ -1,235 +1,160 @@
-# Agent Stream Protocol Projection
+# Agent Stream Protocol Observation
 
 ## Design Position
 
-`converge-agent-stream-protocol` is the shared protocol adapter between Agent Foundation execution observations and Agent User Interaction Protocol clients. It accepts validated public Harness events, Host-approved snapshots, and terminal outcomes; emits a strictly ordered standard AG-UI stream; validates supported client input; and provides replay-safe envelope utilities. It lets browser, terminal, and hosted presentation adapters share one interpretation of an Agent run.
+`converge-agent-stream-protocol` is the shared process-local adapter from public Harness stream items to Agent User Interaction Protocol events. One `HarnessAguiObserver` converts the items for one Harness Run, uses standard AG-UI events where their semantics match directly, falls back to `CUSTOM` for every other public observation, applies an optional Host processor, and accumulates the resulting events in observation order.
 
-The adapter is not an execution wrapper. It never calls a model, constructs an Agent, selects `HarnessState`, authorizes a tool, commits a session or Foundation `Execution`, or owns a transport. A Host supplies authoritative Session, Thread, Turn, and Run correlation and remains responsible for persistence, authorization, backpressure policy, and reconnection.
+The package does not define another execution or lifecycle layer. It does not run an Agent, manufacture missing Harness lifecycle observations, accept application commands, retain durable history, assign Host event identities, or own a transport. A Host consumes the Harness stream once, routes each Run to one observer, and decides whether and how to persist, broadcast, filter, compact, or render the returned AG-UI events.
 
 ## Boundaries
 
-| Concern                                      | Owner                            | Projection behavior                                                                                      |
-| -------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Pydantic messages, tools, run, and output    | Pydantic AI and Harness          | Projects only public normalized observations                                                             |
-| Complete continuation state                  | Harness `HarnessState` and Host  | Never derives it from AG-UI messages, state snapshots, or replay                                         |
-| Local session or durable Execution lifecycle | Owning Host                      | Receives opaque correlation and terminal facts; does not infer them                                      |
-| AG-UI standard event semantics               | Upstream AG-UI protocol          | Preserves standard names and payload meaning for one declared compatibility profile                      |
-| Harness-to-AG-UI mapping and extensions      | `converge-agent-stream-protocol` | Owns deterministic mapping, ordering validation, safe extension namespace, and replay envelope utilities |
-| SSE, WebSocket, in-process iterator, or HTTP | Host transport adapter           | Carries the same validated event values without changing meaning                                         |
-| Rendered components and ephemeral view state | WebUI or TUI renderer            | May filter or aggregate display, but cannot rewrite source protocol facts                                |
-| Foundation durable event replay              | Foundation Service               | Remains authoritative; AG-UI is a live or retained presentation projection                               |
+| Concern                                       | Owner                          | Relationship                                                                                             |
+| --------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Model, tool, and provider event semantics     | Pydantic AI                    | The observer maps its public events without redefining their lifecycle                                   |
+| Process-local event correlation and lifecycle | Harness                        | Supplies ordered `HarnessEvent` and terminal `HarnessRunResultEvent` values with Thread and Run identity |
+| Harness-to-AG-UI conversion                   | Agent Stream Protocol          | Uses standard AG-UI events where they apply directly and `CUSTOM` otherwise                              |
+| Application visibility and filtering          | Host processor                 | May retain, replace declared content fields on, or drop each converted event                             |
+| Process-local AG-UI accumulation              | Agent Stream Protocol observer | Retains post-processor events for one Run in observation order                                           |
+| Persistence, event IDs, replay, and fan-out   | Host                           | Stores or delivers returned events under its own Session or Execution contract                           |
+| HTTP, SSE, WebSocket, or in-process delivery  | Host transport                 | Serializes and carries AG-UI events without becoming their execution authority                           |
+| Display state                                 | Renderer                       | Interprets AG-UI events for one surface                                                                  |
 
-The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local sessions](../agent-ui/02-local-sessions-and-state.md) own local retention, while [Foundation Service](../foundation-service/README.md) owns hosted durable replay.
+The [Harness event contract](../agent-harness/12-events-observability-and-usage.md) owns the source stream. [Agent UI local sessions](../agent-ui/02-local-sessions-and-state.md) own local retention. [Foundation Service](../foundation-service/README.md) owns any hosted durable lifecycle and event history.
 
 ## Dependency Direction
 
 ```mermaid
 flowchart LR
-    Local[converge-agent-ui] --> AGUI[converge-agent-stream-protocol]
-    Hosted[Optional Foundation transport adapter] --> AGUI
-    AGUI --> Harness[converge-agent-harness]
+    Host[Agent UI or another Host] --> Protocol[converge-agent-stream-protocol]
+    Protocol --> Harness[converge-agent-harness]
     Harness --> Pydantic[Pydantic AI]
-    Local --> Web[WebUI]
-    Local --> TUI[TUI]
+    Host --> Store[Host persistence and fan-out]
+    Host --> Surface[WebUI or TUI]
 ```
 
-The Harness imports no AG-UI, UI, session, HTTP, or terminal type. `converge-agent-stream-protocol` depends on public Harness event and result types, the upstream AG-UI schema library, Pydantic, and the lightweight Pydantic AI runtime needed to classify public stream events. It imports no Agent UI session implementation or Foundation persistence model.
+The Harness imports no AG-UI, UI, Session, HTTP, or terminal-rendering type. Agent Stream Protocol depends only on public Harness and Pydantic AI stream types plus the upstream AG-UI schema library. It imports no Agent UI session implementation, Foundation persistence model, or transport framework.
 
-In source manifests, `converge-agent-stream-protocol` declares an unversioned dependency on `converge-agent-harness`, while `converge-agent-ui` declares unversioned dependencies on both packages. The root uv workspace resolves those local sources during repository development without turning workspace membership into a release group.
+Harness and Agent Stream Protocol are one release group. A `release/harness-v<version>` release assigns both distributions the same version, and the published Protocol artifact requires that exact Harness version. This shared release defines the supported source event union; runtime protocol-profile negotiation is not part of the process-local observer.
 
-A `release/harness-v<version>` release assigns one version to Harness and Stream Protocol. Before building publishable artifacts, release automation rewrites the Stream Protocol dependency to `converge-agent-harness==<version>` using the normalized Python package version. The resulting sdist and wheel therefore install only the matching Harness version. Agent UI releases separately and its publishable artifacts pin both Harness and Stream Protocol to one manually reviewed Harness release version. Other consuming Hosts, including Foundation Service, select their own tested Harness release in their dependency management.
+## Observer Contract
 
-## Protocol Profile
-
-A projection instance selects one explicit AG-UI compatibility profile before a run begins. The profile fixes:
-
-- the supported upstream event schema and input schema versions;
-- the standard event families enabled by the Host;
-- content and metadata limits;
-- the accepted set and versions of `converge.*` extension events;
-- whether optional shared-state, activity, raw, or custom events are emitted.
-
-The profile remains stable for the stream. A transport communicates it during endpoint negotiation or through its versioned API contract. Unknown standard event types, unsupported input fields that alter semantics, malformed JSON Patch, and unknown required extension versions fail validation rather than being coerced into another event.
-
-Standard AG-UI event names and payload fields retain their upstream meaning. Project extensions use a namespaced custom event name such as `converge.subagent.status` with an independent schema version. An extension never claims that a standard `RUN_FINISHED`, `TOOL_CALL_RESULT`, `STATE_SNAPSHOT`, or other event has stronger durability or authority than AG-UI defines.
-
-## Projection Context and Envelope
-
-The following Python-like types are conceptual process-local contracts, not another wire format:
+The public contract is intentionally small:
 
 ```python
-@dataclass(frozen=True, slots=True)
-class ProjectionContext:
-    stream_id: str
-    session_id: str | None
-    execution_id: str | None
-    thread_id: str
-    turn_id: str | None
-    run_id: str
-    parent_run_id: str | None
-    agent_instance_ref: str
-    protocol_profile: str
+type AguiEventProcessor = Callable[
+    [HarnessStreamEvent[Any], Event],
+    Event | None,
+]
 
 
-@dataclass(frozen=True, slots=True)
-class ProjectedEvent:
-    sequence: int
-    event_id: str
-    item_id: str | None
-    agui_event: AguiEvent
-    source_observation_id: str | None
+class HarnessAguiObserver:
+    def __init__(
+        self,
+        *,
+        processor: AguiEventProcessor | None = None,
+    ) -> None: ...
+
+    @property
+    def thread_id(self) -> str | None: ...
+
+    @property
+    def run_id(self) -> str | None: ...
+
+    def observe(
+        self,
+        item: HarnessStreamEvent[Any],
+    ) -> tuple[Event, ...]: ...
+
+    def snapshot(self) -> tuple[Event, ...]: ...
 ```
 
-The Host provides correlation from trusted records. Optional `session_id`, optional `execution_id`, `thread_id`, optional `turn_id`, `run_id`, and `agent_instance_ref` are safe correlation values selected for the client; they are never bearer credentials. The shared [interaction model](../interaction-model.md) owns Session, Thread, Turn, and Item meaning. A projection requires one `thread_id`; `turn_id` is optional for embedded or non-interactive work. `session_id` and `execution_id` are independent because an interactive hosted Run can belong to both a Session and a durable Execution. A local projection can carry only `session_id`, standalone durable work can carry only `execution_id`, and a directly embedded projection can carry neither. `sequence` is strictly increasing within one projection stream. `event_id` is stable for one retained projection record and supports subscriber deduplication; it does not become a Foundation durable event ID unless a Foundation adapter explicitly maps and labels the two identities. `item_id` is present only when the event contributes to one materialized semantic Item.
+The first successfully observed item binds the observer to the source `thread_id` and `run_id`. Later items must carry the same correlation. A root Run and each exposed child Run therefore use separate observers even when their source items were delivered through one parent Harness stream.
 
-A replay-capable Host stores the validated `ProjectedEvent` envelope or enough public semantic input to reproduce it under the same profile. It does not persist a renderer's DOM, terminal widget graph, unvalidated provider frame, private exception, or arbitrary Python object.
+`observe()` performs one complete operation:
 
-## Standard Event Mapping
+1. stage the multipart conversion state for the source item;
+2. convert the source item to one or more AG-UI events;
+3. call the optional processor once for each converted event;
+4. omit only events for which the processor returns `None`;
+5. commit the staged conversion state and accumulate retained events;
+6. return detached copies of the events added by that call.
 
-The adapter projects source observations into the narrowest applicable standard AG-UI event family:
+Without a processor, every converted event is retained unchanged. A replacement must preserve the AG-UI event type and source-derived Thread, Run, message, tool, and lifecycle correlation. A processor cannot turn another observation into a lifecycle event or expand one event into several.
 
-| Harness or Host observation                         | AG-UI projection                                                                                                               |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Run entered                                         | `RUN_STARTED` with Host-supplied correlation                                                                                   |
-| Assistant text lifecycle                            | `TEXT_MESSAGE_START`, ordered content events, and `TEXT_MESSAGE_END`                                                           |
-| Tool invocation lifecycle                           | `TOOL_CALL_START`, ordered argument fragments or complete arguments, `TOOL_CALL_END`, and `TOOL_CALL_RESULT` as applicable     |
-| Host-approved complete message projection           | `MESSAGES_SNAPSHOT`                                                                                                            |
-| Host-approved display/shared-state projection       | `STATE_SNAPSHOT` followed by valid RFC 6902 `STATE_DELTA` only when the selected profile defines that state                    |
-| Host-approved activity observation                  | Standard activity snapshot or delta events when supported by the selected profile                                              |
-| Child Harness observation                           | The same standard semantic event plus safe parent/child correlation; optional namespaced status metadata never changes meaning |
-| Successful terminal Harness result                  | Remaining semantic events, then exactly one `RUN_FINISHED`                                                                     |
-| Classified terminal run failure                     | Remaining safe observations, then exactly one `RUN_ERROR`                                                                      |
-| Host interruption without a Harness terminal result | A Host-classified error or namespaced interruption observation under the selected profile; never synthetic `RUN_FINISHED`      |
+All events produced from one source item are converted and processed before the observer changes its state or accumulator. A conversion failure, invalid processor replacement, or processor exception leaves the current source item unaccumulated. `snapshot()` returns detached copies of the complete post-processor event sequence. The observer does not compact chunks, remove lifecycle boundaries, create cursors, or apply a retention limit.
 
-Provider-native frames and private Harness internals are not automatically projected as `RAW` or `CUSTOM`. A Host must explicitly enable a bounded safe diagnostic projection. Tool arguments and results follow Harness visibility and redaction policy before they enter the adapter; AG-UI does not weaken that policy for a protocol inspector.
+A Host persists incrementally from the values returned by `observe()` rather than injecting a storage callback into the observer. This keeps synchronous event conversion independent from asynchronous databases, brokers, and transports. The processor likewise performs no persistence or publication side effects.
 
-An inline child emits its own run correlation. A Host-managed background child also emits a distinct run stream if the Host exposes child details. A surface may collapse, hide, or group those details, but a background result routed into the parent is later parent input and is never projected as the delayed `TOOL_CALL_RESULT` of the original spawn call.
+## Standard Event Conversion
 
-## Item Materialization and Identity
+The observer uses standard AG-UI events for direct semantic matches:
 
-The projection layer materializes a semantic Item only when the Host supplies the owning `thread_id` and `turn_id`. A Run without Turn correlation can still produce AG-UI presentation events, but those events do not claim canonical Item identity. Child observations likewise become Items only when the Host supplies the child Thread and Turn correlation rather than inheriting the parent's Turn implicitly.
+| Public source observation                            | AG-UI representation                                                                    |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Assistant `TextPart` start, delta, and end           | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, and `TEXT_MESSAGE_END`                    |
+| `ThinkingPart` start, delta, signature, and end      | Reasoning message events and `REASONING_ENCRYPTED_VALUE`                                |
+| Completed `ToolCallPart` at its end observation      | `TOOL_CALL_START`, complete `TOOL_CALL_ARGS`, and `TOOL_CALL_END`                       |
+| Successful function or output tool return            | `TOOL_CALL_RESULT`                                                                      |
+| Completed terminal `HarnessRunResultEvent`           | `RUN_FINISHED` with success outcome and a JSON-safe result when available               |
+| Failed or cancelled terminal `HarnessRunResultEvent` | `RUN_ERROR` with the Harness-owned public failure or cancellation code                  |
+| Suspension, non-success tool return, or retry prompt | Namespaced `CUSTOM` preserving the authoritative Harness correlation and public payload |
+
+The observer maintains only the state needed to translate multipart events consistently: the current Harness model-request index, open part identities, accumulated tool name, and whether text or reasoning content has already been emitted. Harness model-request lifecycle observations remain visible as `CUSTOM`; they also provide the request index used when a Pydantic part has no native identity.
+
+Tool names and mapping-valued argument deltas can be incomplete during Pydantic streaming. Their start and delta observations therefore remain visible through `CUSTOM`, while the completed `PartEndEvent` produces one coherent standard tool-call lifecycle from the final public `ToolCallPart`. The observer never mixes AG-UI chunk convenience events with explicit start/end events or concatenates independently serialized mapping deltas.
+
+A text or reasoning part delta or end without a preceding start is normalized into a valid standard lifecycle by emitting the missing start from the information present in that same public event. A conflicting part kind or identity is a conversion error rather than a reason to rewrite prior events.
+
+## Complete Custom Fallback
+
+An observation without a direct standard representation is never silently dropped. It becomes:
+
+- `converge.harness.<kind>` for `HarnessExtensionEvent`; or
+- `converge.pydantic_ai.<event_kind>` for another Pydantic AI event.
+
+The `CUSTOM.value` is:
 
 ```python
-@dataclass(frozen=True, slots=True)
-class ProjectedItem:
-    item_id: str
-    thread_id: str
-    turn_id: str
-    kind: Literal[
-        "user_message",
-        "agent_message",
-        "reasoning",
-        "tool_call",
-        "command",
-        "file_change",
-        "plan",
-        "error",
-    ]
-    status: Literal["in_progress", "completed", "failed"]
-    projection: JsonValue
+{
+    "thread_id": item.thread_id,
+    "run_id": item.run_id,
+    "sequence": item.sequence,
+    "occurred_at": item.occurred_at.isoformat(),
+    "event": public_source_representation,
+}
 ```
 
-The Host or projection adapter allocates `item_id` before publishing the first event for the unit. Every lifecycle event, retained snapshot, and later status replacement for that same semantic unit carries the same `item_id`; completion or failure updates the existing Item instead of allocating another identity. A new semantically distinct message, tool call, command, file change, plan update, reasoning unit, or error receives a new ID even when it is emitted by the same Run.
+A Harness extension uses `model_dump(mode="json", by_alias=True)`. A Pydantic AI event uses its public `AgentStreamEvent` serializer. The shared Harness/Protocol release defines these source fields; the fallback does not introduce a manual event allowlist, custom schema registry, or independent version negotiation.
 
-`ProjectedEvent.item_id` links transport observations to the materialized Item. One Item can produce many projected events, and events such as Run start, Run completion, replay gaps, or display-state synchronization can have no Item. `event_id`, projection `sequence`, replay cursor, Harness event sequence, provider message ID, and tool-call ID never substitute for `item_id`. A replay-capable Host retains the latest validated `ProjectedItem` value or enough validated lifecycle input to reproduce it with the same ID; replay and delta compaction do not renumber Items.
+A source item with a direct standard mapping is not duplicated as a second custom event. The processor receives both the source item and each converted event, and a Host can separately retain source records when its product requires them.
 
-## Ordering and Terminal Rules
+## Lifecycle Ownership
 
-One projection instance consumes one source stream serially. It assigns sequence numbers after validation and before publishing. Concurrent producer activity is serialized by the owning Host at the adapter boundary; subscribers never race to assign order.
+Agent Stream Protocol translates explicit lifecycle facts; it does not create them from local control flow. Constructing an observer, opening a subscriber, catching an exception, losing a transport, or committing Host state does not by itself emit a run lifecycle event.
 
-The adapter enforces at least these relationships:
+Model-request lifecycle extensions emitted by the Harness use the generic custom fallback because they are not equivalent to AG-UI Run lifecycle. Completed, failed, and cancelled terminal results have direct standard AG-UI terminal mappings. A suspended result remains `converge.harness.run_result` with its exact deferred calls and approvals because one aggregate AG-UI interrupt would invent continuation correlation. If a reusable Run-start observation is required, the Harness must first expose that fact publicly; the Protocol does not infer `RUN_STARTED` from the first token or model request.
 
-1. `RUN_STARTED` precedes run content;
-2. message and tool content belongs to an opened matching identity;
-3. each opened standard lifecycle closes at most once;
-4. deltas apply to the declared prior snapshot or revision;
-5. exactly one terminal run event closes a started stream;
-6. no semantic run event follows the terminal event;
-7. replay preserves original sequence and event identity.
+A Harness stream that ends through an unhandled exception or cleanup failure without a terminal item does not gain a synthetic terminal event. Host acceptance, persistence commit, cancellation request, reconnect, and external delivery remain separate Host facts.
 
-A source gap, duplicate conflicting identity, invalid lifecycle transition, or impossible terminal sequence is a projection failure. The adapter emits or returns one bounded safe protocol failure according to the Host transport contract and stops that projection; it does not invent missing tool results or success.
+## Host Processing and Persistence
 
-## Ingress Validation
+The optional processor is the policy seam. It can drop observations or replace only declared standard-event content fields while preserving type, timestamp, role, lifecycle variant, custom name, identities, and source correlation. A `CUSTOM.value` is the public source representation and is therefore retained unchanged or dropped as a whole. Host-specific metadata belongs in the Host-owned retained or delivery envelope rather than a rewritten protocol structure. Agent Stream Protocol has no built-in allowlist that suppresses otherwise public Harness events and adds no second visibility policy over the public source stream.
 
-AG-UI client input is presentation input, not continuation authority. The adapter validates the selected upstream request schema, bounded messages and attachments, advertised client tools, shared-state values, and protocol version. It returns a normalized value to the Host. The Host then:
+Host persistence wraps AG-UI events in any IDs, sequence numbers, timestamps, transaction records, or replay cursors required by that Host. Those values are not part of the observer because their identity and durability depend on the owning Session, Execution, and store. The observer's in-memory accumulation is a convenience for process-local inspection and snapshot access, not a durable event log.
 
-- authenticates the caller where required;
-- selects the profile, optional Session, optional Execution, Thread, optional Turn, checkpoint, and expected revision;
-- decides which user-authored content enters `RunInput`;
-- authorizes client-side tools through the Harness or Foundation owning contract;
-- supplies fresh Identity, model, Environment, credential, and run Capabilities.
+## Failure and Compatibility
 
-Caller-supplied message history cannot replace stored Pydantic history. Caller-supplied state cannot become `HarnessState` or Capability state. Client tool declarations cannot satisfy a pending Foundation call without the exact authenticated parent and result-correlation contract. Unknown correlation IDs are selectors to validate, not authority.
+An invalid source type, changed Run correlation, conflicting multipart identity, failed AG-UI construction, invalid processor replacement, or processor exception is reported to the caller. Completed output is normalized to JSON before accumulation; when a valid code-first output has no JSON representation, `RUN_FINISHED.result` is omitted and `rawEvent.result_omitted` records that presentation fact while the source Harness result remains available to the Host. The observer does not convert its own failure into a synthetic Harness or AG-UI lifecycle fact.
 
-## Replay and Resynchronization
-
-```mermaid
-sequenceDiagram
-    participant Renderer
-    participant Host
-    participant Replay as Retained AG-UI projection
-    participant Run as Live projection
-
-    Renderer->>Host: subscribe after opaque presentation cursor
-    Host->>Replay: validate scope and retention
-    Replay-->>Renderer: retained events in original sequence
-    Host-->>Renderer: replay boundary and current snapshot if required
-    Run-->>Renderer: new ordered projected events
-```
-
-A Host cursor is opaque and scoped to its optional Session, optional Execution, Thread, optional Turn, projection profile, filter, and retention generation. Duplicate delivery is allowed; clients deduplicate by event ID. A cursor older than retained data returns an explicit gap and a fresh Host-approved message/state snapshot when available. It never silently starts at the newest event.
-
-Presentation replay reconstructs visible messages, activities, and state. It does not rerun model or tool work, recreate a live run, prove that omitted deltas never occurred, or select a continuation checkpoint. A Host can discard token-level deltas after retaining complete semantic messages and still report the gap honestly.
-
-## Backpressure, Cancellation, and Failure
-
-The Host owns subscriber buffers and slow-consumer policy. It may coalesce only event forms whose upstream semantics permit it, such as replacing superseded display snapshots. It never drops lifecycle boundaries, terminal events, tool results, or a delta while retaining dependent later deltas without issuing a resynchronizing snapshot and explicit gap.
-
-Transport disconnect is an observation failure and does not cancel execution. A client cancellation request is validated as a separate Host command and uses the Harness or Foundation cancellation owner. Projection cleanup closes subscriber resources but does not infer rollback of model or tool side effects.
-
-| Failure                                | Observable outcome                                                    | Authority and retry                                                              |
-| -------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Unsupported protocol profile           | Subscription or request rejected before run dispatch                  | Client negotiates a supported profile                                            |
-| Invalid client input                   | Typed validation error; no Host acceptance implied                    | Client corrects input                                                            |
-| Invalid source ordering                | Projection stops with bounded safe failure                            | Host retains execution truth and can rebuild only from valid public observations |
-| Slow or disconnected subscriber        | Subscriber loses live delivery or receives an explicit replay gap     | Run continues unless a separate cancellation command is accepted                 |
-| Retention cursor expired               | Typed gap plus reload/resnapshot instruction                          | Host snapshot and retained semantic data recover presentation, not execution     |
-| Renderer failure                       | One surface fails without changing run or session state               | Renderer reconnects and replays                                                  |
-| Terminal delivery acknowledgement lost | Terminal event may be delivered again with the same retained event ID | Subscriber deduplicates; Host completion is unchanged                            |
-
-## Foundation Service Use
-
-Foundation may use this package to project a live Harness stream and selected retained semantic data. Its durable lifecycle log, Execution snapshot, `ExecutionAttempt` fence, checkpoint, and replay cursor remain owned by Foundation. An AG-UI transport labels which envelopes are backed by Foundation durable events, retained semantic projections, or live-only observations. It never exposes an Agent UI local session type or claims that all token-level AG-UI events are durable.
-
-## Compatibility
-
-Harness event schema, AG-UI protocol profile, project extension schema, Host transport API, and retained cursor codec version independently. Additive upstream fields are accepted only when the selected profile permits unknown fields or the adapter has been updated to preserve their meaning. Changing event order, field meaning, state-patch base, redaction behavior, or terminal semantics requires a new compatible profile or extension version.
-
-A retained projection stores its profile identifier. Replaying it through a newer renderer is allowed when that renderer supports the recorded profile. Re-encoding retained facts into another profile is a Host migration that must preserve event meaning and produce new projection identities; it is not transparent replay.
-
-## Trade-offs
-
-### Shared projection vs. surface-native Harness rendering
-
-One projection makes WebUI, TUI, and hosted adapters agree on messages, tools, children, terminal failures, and replay. It constrains renderers to standard or namespaced protocol semantics and can omit private runtime details that a tightly coupled terminal renderer could inspect.
-
-### Presentation replay vs. continuation state
-
-Retaining AG-UI makes reconnect and UI inspection cheap without exposing private `HarnessState`. Hosts must persist both the authoritative checkpoint and the display projection when both resume and rich replay are required.
-
-### Standard events with narrow extensions
-
-Using upstream events preserves ecosystem interoperability. Some Agent Foundation concepts need namespaced metadata or custom events, which clients can ignore safely but must negotiate when required for their experience.
+Standard AG-UI names and fields retain their upstream meaning. The selected Harness/Protocol release and its pinned AG-UI dependency define conversion compatibility. A Host pins that release with its renderer and owns migration or retention compatibility for events it stores. New public Harness event variants remain observable through `CUSTOM` even before a dedicated standard mapping is added.
 
 ## Invariants
 
-01. Agent Stream Protocol projects public observations and never executes or resumes an Agent.
-02. The Harness has no dependency on AG-UI, Agent UI, transport, renderer, or session types.
-03. Every stream declares one stable protocol profile and has strictly increasing projection sequence.
-04. Standard AG-UI names and payloads retain upstream meaning; project behavior uses versioned `converge.*` extensions.
-05. A terminal AG-UI event observes source completion or classified failure and never commits Host completion.
-06. AG-UI messages, snapshots, deltas, cursors, and client input cannot replace `HarnessState`, Host checkpoint selection, or fresh run authority.
-07. Replay preserves retained event identity and reports retention gaps explicitly.
-08. A disconnect or renderer failure never implicitly cancels a Harness run or Foundation Execution.
-09. Background spawn completion is later Host-routed input, not a deferred result for the original spawn tool call.
-10. Redaction and visibility are applied before diagnostic, raw, custom, or inspector projections leave the trusted runtime boundary.
+1. Agent Stream Protocol observes public Harness stream items and never executes or resumes an Agent.
+2. One observer binds to exactly one Harness Thread and Run.
+3. Lifecycle facts originate in the Harness source stream; the observer does not infer them from Host or transport behavior.
+4. A direct semantic match uses standard AG-UI meaning, and every other public observation falls back to `CUSTOM`.
+5. No converted event is dropped by default; only the Host processor can explicitly omit one.
+6. One source item is processed and accumulated atomically, and returned events and snapshots are detached from observer state.
+7. The observer owns no durable identity, persistence, replay, fan-out, backpressure, cancellation, or transport behavior.
+8. AG-UI observation never becomes Harness continuation state or strengthens a Host lifecycle fact.

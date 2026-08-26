@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The Environment Interaction Protocol (EIP) is the transport-neutral wire contract between a trusted requester and `agent-envd`. EIP 1.0 uses JSON-RPC 2.0 for bounded control operations and a correlated raw-binary data plane for file transfer. One versioned contract owns method names, payloads, transfer lifecycles, operation replay, typed errors, selectors, limits, and side-effect evidence across trusted stdio and outbound reverse WebSocket.
+The Environment Interaction Protocol (EIP) is the transport-neutral wire contract between a trusted requester and `agent-envd`. EIP 1.0 uses JSON-RPC 2.0 for bounded control operations and correlated raw file transfer. One versioned contract owns method names, payloads, transfer lifecycles, operation replay, typed errors, selectors, limits, and side-effect evidence across trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket.
 
 EIP is a semantic Environment protocol rather than a remote syscall interface. Canonical path resolution, bounded search, complete-candidate publication, command-tree control, command-output reads, and local-port observation execute beside the native resources. Client validation improves errors but never replaces envd enforcement.
 
@@ -15,7 +15,7 @@ EIP is a semantic Environment protocol rather than a remote syscall interface. C
 | Framing, attachment authentication, carrier direction, sessions, and liveness           | [Transports and Sessions](03-transports-and-sessions.md)                               | Establishes a trusted session before dispatch |
 | Multi-Environment routing and Harness policy                                            | Harness and Host                                                                       | Selects one trusted binding before EIP        |
 | Native filesystem, process, isolation, output, and receipt evidence                     | `agent-envd` resource owners                                                           | Executes accepted operations                  |
-| Provider provisioning and durable Agent completion                                      | Host                                                                                   | Outside EIP                                   |
+| Provider lifecycle effects and durable Agent completion                                 | Environment Provider package and Host                                                  | Outside EIP                                   |
 
 Carrier headers, stdio pipes, attachment credentials, and WebSocket upgrade fields never appear in ordinary EIP params. Carrier direction cannot change a method, result, retry rule, or side-effect classification.
 
@@ -63,7 +63,7 @@ Unknown JSON-RPC envelope fields are handled only as JSON-RPC permits and cannot
 
 ## Initialization
 
-`initialize` is the requester's first EIP request on every stdio or reverse-WebSocket session. No other method or binary frame is admitted first.
+`initialize` is the requester's first EIP request on every stdio, HTTP, or reverse-WebSocket session. No other method, binary data frame, or HTTP transfer body is admitted first.
 
 The serialized wire shape is:
 
@@ -433,11 +433,11 @@ Within one supported major:
 
 Removing or repurposing a field, changing a method's side-effect boundary, making a selector authoritative, changing replay digest semantics, resuming transfers across sessions, reintroducing reader `END_ACK`, or turning an absolute observation timestamp into a lease requires an incompatible revision.
 
-Common fixtures exercise generated Python against the Rust daemon over stdio and reverse WebSocket. Carrier tests add framing, attachment authentication, reconnect, liveness, concurrency, and size cases without redefining protocol results.
+Common fixtures exercise generated Python against the Rust daemon over stdio, HTTP, and reverse WebSocket. Carrier tests add framing or resource mapping, attachment authentication, reconnect where applicable, liveness, concurrency, streaming, and size cases without redefining protocol results.
 
 ## Invariants
 
-01. Every control message contains one correlated JSON-RPC envelope; batches and notifications are invalid, and native file bytes use only the typed binary carrier.
+01. Every control message contains one correlated JSON-RPC envelope; batches and notifications are invalid, and native file bytes use only the carrier's typed binary-frame or HTTP streaming-body mapping.
 02. `initialize` is the first request, verifies Environment identity and exact required methods, and publishes configured mounts, root mount, actionable limits, method availability, generation, and isolation posture.
 03. Every later method carries one operation ID; operation ID is the sole active-cancellation identity and, for `terminal_evidence` methods, the sole replay and receipt identity.
 04. Same operation ID plus same method/digest reports active progress or replays retained terminal evidence; `active_only` responses are not retained, and another method/digest conflicts while an entry exists.

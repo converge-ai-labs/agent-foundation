@@ -8,16 +8,16 @@ The shared [`Session`, `Thread`, `Turn`, and `Item` model](../interaction-model.
 
 ## Boundaries
 
-| Concern                              | Owner                                    | Session relationship                                                                              |
-| ------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Thread and Capability continuation   | Harness `HarnessState`                   | Stores complete selected values without interpreting private namespaces                           |
-| Profile composition                  | Resolved Agent UI snapshot               | Pins exact snapshot identity and digest                                                           |
-| Local Turn acceptance and checkpoint | Agent UI session store                   | Serializes one Thread and atomically selects complete state                                       |
-| Display replay                       | Agent Stream Protocol plus Agent UI Host | Retains bounded projection envelopes; never reconstructs `HarnessState`                           |
-| Active model/tool work               | Harness run                              | Process-local and not made durable by a `running` turn record                                     |
-| Background child execution           | Agent UI job monitor                     | Persists bounded metadata and terminal output; live task remains process-local                    |
-| Model-facing session browsing        | Read-only Session Capability             | Uses a fresh current-session attachment and returns bounded safe projections                      |
-| Filesystem atomicity and locking     | Agent UI store implementation            | Provides cross-process exclusion, atomic replacement, durability policy, and corruption detection |
+| Concern                              | Owner                         | Session relationship                                                                              |
+| ------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| Thread and Capability continuation   | Harness `HarnessState`        | Stores complete selected values without interpreting private namespaces                           |
+| Profile composition                  | Resolved Agent UI snapshot    | Pins exact snapshot identity and digest                                                           |
+| Local Turn acceptance and checkpoint | Agent UI session store        | Serializes one Thread and atomically selects complete state                                       |
+| Display replay                       | Agent UI Host                 | Retains bounded Host records around processed AG-UI events; never reconstructs `HarnessState`     |
+| Active model/tool work               | Harness run                   | Process-local and not made durable by a `running` turn record                                     |
+| Background child execution           | Agent UI job monitor          | Persists bounded metadata and terminal output; live task remains process-local                    |
+| Model-facing session browsing        | Read-only Session Capability  | Uses a fresh current-session attachment and returns bounded safe projections                      |
+| Filesystem atomicity and locking     | Agent UI store implementation | Provides cross-process exclusion, atomic replacement, durability policy, and corruption detection |
 
 ## Session Record
 
@@ -77,7 +77,7 @@ class TurnRecord(BaseModel):
     finished_at: datetime | None
 ```
 
-`session_id`, `root_thread_id`, Turn IDs, Item IDs, checkpoint IDs, Run IDs, and job references are compact identifiers and grant no authority. When a root checkpoint is selected, `root_thread_id` equals its `HarnessState.thread_id`; every checkpoint must satisfy `checkpoint.thread_id == checkpoint.harness_state.thread_id`. Every retained [`ProjectedItem`](../agent-stream-protocol/00-overview.md#item-materialization-and-identity) references an existing Turn in the Session and uses that Turn's `thread_id`; its `item_id` remains stable across status updates and retained replay. Stored input, Item values, and result projections are bounded and pass the Host's local content policy. Secret credentials, live clients, current bindings, native plugin objects, task objects, locks, and open streams are never serialized.
+`session_id`, `root_thread_id`, Turn IDs, Item IDs, checkpoint IDs, Run IDs, and job references are compact identifiers and grant no authority. When a root checkpoint is selected, `root_thread_id` equals its `HarnessState.thread_id`; every checkpoint must satisfy `checkpoint.thread_id == checkpoint.harness_state.thread_id`. Every retained projected Item references an existing Turn in the Session and uses that Turn's `thread_id`; its `item_id` remains stable across status updates and retained replay. Stored input, Item values, and result projections are bounded and pass the Host's local content policy. Secret credentials, live clients, current bindings, native plugin objects, task objects, locks, and open streams are never serialized.
 
 Each revision selects at most one checkpoint. A completed turn references the complete checkpoint produced by its terminal Harness result. A failed Harness result may select a complete returned state only when the Harness contract supplies one and Host policy explicitly chooses it; otherwise the previous checkpoint remains selected. Cancelled and interrupted records never synthesize a newer state from partial messages, AG-UI events, or provider history.
 
@@ -144,7 +144,7 @@ The fork can retain the source profile snapshot or select another already resolv
 
 ## Presentation Replay
 
-The session retains [ordered `ProjectedEvent` envelopes](../agent-stream-protocol/00-overview.md#projection-context-and-envelope) in bounded segments, the latest bounded value for each retained semantic Item, and complete Host-approved message or state snapshots needed to resynchronize a renderer. Each segment records the AG-UI protocol profile, sequence range, event identities, Item identities where present, and retention generation. Compaction can replace Item deltas with a complete Item projection but preserves `item_id`.
+The session wraps the [processed AG-UI events](../agent-stream-protocol/00-overview.md#observer-contract) in Host-owned records and retains them in bounded segments, together with the latest bounded value for each retained semantic Item and complete Host-approved message or state snapshots needed to resynchronize a renderer. Each segment records its local sequence range, event identities, Item identities where present, and retention generation. Compaction can replace Item deltas with a complete Item projection but preserves `item_id`.
 
 Replay is a display projection. It can reconstruct visible text, tool observations, child activity, and terminal status but cannot:
 
@@ -205,9 +205,9 @@ Deletion is an explicit user/Host operation outside the model-facing Session Cap
 
 ## Compatibility
 
-Session schema, profile snapshot schema, `HarnessState` version, AG-UI profile, checkpoint codec, job record schema, and search index codec evolve independently. A migration writes and validates a new complete revision before selection. It never rewrites an existing content digest in place.
+Session schema, profile snapshot schema, `HarnessState` version, retained AG-UI event schema, checkpoint codec, job record schema, and search index codec evolve independently. A migration writes and validates a new complete revision before selection. It never rewrites an existing content digest in place.
 
-A newer Agent UI can open a session only when it can validate the session schema, reconstruct the pinned profile snapshot, import the selected Harness state through its owning codecs, and support or explicitly gap the retained presentation profile. Inability to render old AG-UI data does not permit discarding a valid checkpoint; inability to import the checkpoint does not permit continuing from rendered messages.
+A newer Agent UI can open a session only when it can validate the session schema, reconstruct the pinned profile snapshot, import the selected Harness state through its owning codecs, and decode or explicitly gap the retained AG-UI events. Inability to render old AG-UI data does not permit discarding a valid checkpoint; inability to import the checkpoint does not permit continuing from rendered messages.
 
 ## Trade-offs
 

@@ -1557,7 +1557,7 @@ fn is_terminal_phase(phase: ProcessPhase) -> bool {
 fn map_mount_error(error: MountPathError) -> ProcessError {
     match error {
         MountPathError::Unsupported => ProcessError::Unsupported,
-        MountPathError::Quota | MountPathError::Limit => ProcessError::Busy,
+        MountPathError::Quota => ProcessError::Busy,
         MountPathError::Denied | MountPathError::NotFound | MountPathError::NotRegular => {
             ProcessError::Denied
         }

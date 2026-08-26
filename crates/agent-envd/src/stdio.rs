@@ -10,9 +10,9 @@ use tokio::{
 use crate::{
     config::Config,
     daemon::Daemon,
-    eip::{DataFrame, DataFrameKind, DataResetStatus, decode_data_frame, encode_data_frame},
+    eip::{DataFrame, DataFrameKind, decode_data_frame, encode_data_frame},
     operation::ActiveResponseHandoff,
-    transfer::TransferError,
+    transfer::reset_status,
 };
 
 const MAX_HEADER_BYTES: usize = 8 * 1024;
@@ -68,7 +68,7 @@ where
     let (data_tx, data_rx) = mpsc::channel::<DataFrame>(data_capacity);
     let (inbound_data_tx, mut inbound_data_rx) = mpsc::channel::<DataFrame>(data_capacity);
     daemon
-        .install_data_sender(data_tx.clone())
+        .begin_session(data_tx.clone())
         .map_err(|error| invalid_data_owned(error.to_string()))?;
 
     let (writer_stopped, mut writer_stopped_rx) = watch::channel(false);
@@ -207,7 +207,7 @@ where
             let payload = String::from_utf8(frame)
                 .map_err(|_| invalid_data("stdio control body must be UTF-8 JSON"))?;
             let response = daemon.handle_payload_for_carrier(&payload).await;
-            let (payload, handoff) = response.into_parts();
+            let (payload, handoff, _) = response.into_parts();
             if control_tx
                 .send(ControlResponse { payload, handoff })
                 .await
@@ -251,7 +251,7 @@ where
                 requests.spawn(async move {
                     let _pending_operation = pending_operation;
                     let response = daemon.handle_payload_for_carrier(&payload).await;
-                    let (payload, handoff) = response.into_parts();
+                    let (payload, handoff, _) = response.into_parts();
                     let _ = responses.send(ControlResponse { payload, handoff }).await;
                     drop(permit);
                 });
@@ -595,27 +595,6 @@ fn valid_json_content_type(value: &str) -> bool {
         (None, None) => true,
         (Some(charset), None) => charset.eq_ignore_ascii_case("charset=utf-8"),
         _ => false,
-    }
-}
-
-fn reset_status(error: TransferError) -> DataResetStatus {
-    match error {
-        TransferError::Denied
-        | TransferError::NotFound
-        | TransferError::InvalidHandle
-        | TransferError::WrongKind => DataResetStatus::Denied,
-        TransferError::Expired => DataResetStatus::Expired,
-        TransferError::Source => DataResetStatus::Source,
-        TransferError::Busy | TransferError::Quota | TransferError::Limit => DataResetStatus::Limit,
-        TransferError::Protocol | TransferError::WrongState | TransferError::Conflict => {
-            DataResetStatus::Protocol
-        }
-        TransferError::Cancelled | TransferError::SessionClosed => DataResetStatus::Cancelled,
-        TransferError::Timeout => DataResetStatus::Expired,
-        TransferError::IntegrityMismatch
-        | TransferError::Unsupported
-        | TransferError::UnknownOutcome
-        | TransferError::Internal => DataResetStatus::Internal,
     }
 }
 

@@ -7,6 +7,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
+    "converge-agent-environment-provider",
     "converge-agent-harness",
     "converge-agent-stream-protocol",
 ]
@@ -46,9 +47,9 @@ harness-version = "0.0.0"
 
 [tool.deptry]
 known_first_party = ["converge_agent_ui"]
-package_module_name_map = { "converge-agent-harness" = "converge_agent_harness", "converge-agent-stream-protocol" = "converge_agent_stream_protocol" }
+package_module_name_map = { "converge-agent-environment-provider" = "converge_agent_environment_provider", "converge-agent-harness" = "converge_agent_harness", "converge-agent-stream-protocol" = "converge_agent_stream_protocol" }
 
 # The package is an initialization scaffold. The application-service modules
-# will consume both runtime boundaries as their implementation is added.
+# will consume these runtime boundaries as their implementation is added.
 [tool.deptry.per_rule_ignores]
-DEP002 = ["converge-agent-harness", "converge-agent-stream-protocol"]
+DEP002 = ["converge-agent-environment-provider", "converge-agent-harness", "converge-agent-stream-protocol"]
