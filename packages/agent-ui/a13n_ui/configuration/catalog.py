@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import func, select
 
 from a13n_ui.errors import ConfigurationError, StoreIntegrityError
-from a13n_ui.storage import LocalStore, ObjectKind, ObjectRef, short_session, transaction
+from a13n_ui.storage.database import short_session, transaction
 from a13n_ui.storage.models import (
     ConfigurationDiagnosticRecord,
     ConfigurationGenerationRecord,
@@ -17,6 +18,7 @@ from a13n_ui.storage.models import (
     ResourceRevisionRecord,
     SkillPackageReferenceRecord,
 )
+from a13n_ui.storage.objects import ObjectKind, ObjectRef
 
 from .loader import CatalogCandidate
 from .models import (
@@ -27,6 +29,9 @@ from .models import (
     ResourceRevisionRef,
     canonical_digest,
 )
+
+if TYPE_CHECKING:
+    from a13n_ui.storage.runtime import LocalStore
 
 
 class ConfigurationDiagnostic(BaseModel):
@@ -114,7 +119,7 @@ class CatalogRepository:
                 "The accepted process settings are invalid.",
                 code="configuration_settings_invalid",
             ) from exc
-        if canonical_digest(settings.model_dump(mode="json")) != record.process_settings_digest:
+        if canonical_digest(settings) != record.process_settings_digest:
             raise StoreIntegrityError(
                 "The accepted process settings do not match their generation digest.",
                 code="configuration_settings_mismatch",
@@ -133,6 +138,11 @@ class CatalogRepository:
                 package = await self.skill_package_reference(reference)
                 await self._store.read_object(package)
         return generation
+
+    async def generation(self, generation_id: str) -> ConfigurationGeneration:
+        """Return one exact retained generation without current-generation substitution."""
+
+        return await self._generation(generation_id)
 
     async def retained_generations(self, *, limit: int = 100) -> tuple[ConfigurationGeneration, ...]:
         if not 1 <= limit <= 1000:

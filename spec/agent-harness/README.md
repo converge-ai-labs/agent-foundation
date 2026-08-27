@@ -4,7 +4,7 @@
 
 This directory defines `agent-harness`, the Pydantic AI-based process-local execution library used by embedded applications and hosted workers.
 
-The Harness owns code-first Agent construction, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed run context, the Environment aggregate lifecycle, ordered aggregate run extensions and dynamic topology core, optional run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
+The Harness owns code-first Agent construction, a neutral package-local official model catalog, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed run context, the Environment aggregate lifecycle, ordered aggregate run extensions and dynamic topology core, optional run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
 
 ## Document Catalog
 
@@ -13,7 +13,7 @@ The Harness owns code-first Agent construction, a narrow optional plugin configu
 | [00-overview.md](00-overview.md)                                                         | Architecture, recovery layering, completion boundaries, and principles                                                                  |
 | [01-pydantic-ai-foundation.md](01-pydantic-ai-foundation.md)                             | Native Pydantic AI primitive mapping and compatibility                                                                                  |
 | [02-domain-model.md](02-domain-model.md)                                                 | Process-local identities, entities, and version boundaries                                                                              |
-| [03-agent-definition-and-build.md](03-agent-definition-and-build.md)                     | Code-first `AgentDefinition`, builder, executable ownership, and Host reconstruction                                                    |
+| [03-agent-definition-and-build.md](03-agent-definition-and-build.md)                     | Code-first `AgentDefinition`, official model facts, builder, executable ownership, and Host reconstruction                              |
 | [04-capability-model.md](04-capability-model.md)                                         | Native Capability composition, `AgentContext`, and namespaced state                                                                     |
 | [05-plugin-system.md](05-plugin-system.md)                                               | Plugin document/Build Context, selected factories, concrete middleware, ordering, binding, result/state composition, and cleanup        |
 | [06-execution-context-and-lifecycle.md](06-execution-context-and-lifecycle.md)           | Logical run lifecycle, inner model attempts, cancellation, terminal results, and cleanup                                                |
@@ -22,7 +22,7 @@ The Harness owns code-first Agent construction, a narrow optional plugin configu
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, compaction, and memory boundary                         |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                         |
 | [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, inline delegation, and Host asynchronous-child boundary                                                                 |
-| [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Events, telemetry, mixed-source usage attribution, reporting, and accounting boundary                                                   |
+| [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Events, telemetry, mixed-source usage attribution, pricing catalogs, reporting, and accounting boundary                                 |
 | [13-hosting-contract.md](13-hosting-contract.md)                                         | Host-owned schemas/reconstruction, fresh bindings, durable lifecycle, and completion mapping                                            |
 | [14-public-api-and-packaging.md](14-public-api-and-packaging.md)                         | Public Python API, package boundary, errors, and compatibility                                                                          |
 | [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, authority, data safety, compatibility, and trade-offs                                                                 |

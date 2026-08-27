@@ -29,8 +29,9 @@ if TYPE_CHECKING:
         ModelContextProjectionRequest,
         ModelContextRunBinding,
     )
-    from a13n_harness.models import ModelRunBinding
+    from a13n_harness.models import RunModelResolver
     from a13n_harness.plugins import BoundPluginContext
+    from a13n_harness.pricing import AbstractModelCostCapability
     from a13n_harness.tools.deferred import DeferredToolResume
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord, RunUsageLedger, UsageRecord
 
@@ -115,10 +116,15 @@ class RunBindings:
 
     instance: AgentInstanceContext
     environment: EnvironmentRunBinding
-    model_binding: ModelRunBinding | None = None
+    model_resolver: RunModelResolver | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextRunBinding | None = None
+    _inherited_model_cost: AbstractModelCostCapability | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
@@ -130,7 +136,7 @@ class RunBindings:
         *,
         identity: AgentIdentityRef | None = None,
         environment: EnvironmentRunBinding | None = None,
-        model_binding: ModelRunBinding | None = None,
+        model_resolver: RunModelResolver | None = None,
         model_context: ModelContextRunBinding | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         metadata: Mapping[str, JsonValue] | None = None,
@@ -145,7 +151,7 @@ class RunBindings:
                 agent_instance_id=instance_id,
             ),
             environment=environment or NoopEnvironmentRunBinding(),
-            model_binding=model_binding,
+            model_resolver=model_resolver,
             model_context=model_context,
             capabilities=tuple(capabilities),
             metadata=metadata or {},
@@ -254,7 +260,7 @@ class AgentContext:
     instance: AgentInstanceContext
     state: AgentContextState
     environment: BoundEnvironment
-    model_binding: ModelRunBinding | None
+    model_resolver: RunModelResolver | None
     plugins: BoundPluginContext
     subagents: SubagentCollection
     events: HarnessEventEmitter
@@ -263,6 +269,11 @@ class AgentContext:
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
     model_context: ModelContextRunBinding | None = None
+    _inherited_model_cost: AbstractModelCostCapability | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
     _skill_selection_names: frozenset[str] | None = field(default=None, repr=False, compare=False)
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)

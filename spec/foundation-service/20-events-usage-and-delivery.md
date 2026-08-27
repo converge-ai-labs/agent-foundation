@@ -95,7 +95,7 @@ The Harness owns native `RunUsage`, the run-local attribution ledger, immutable 
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Foundation deduplicates all paths by immutable `record_id` and rejects conflicting content for the same identity.
 
-Terminal `RunUsage` is an aggregate process-local snapshot used for operational limits and summary display. Foundation does not sum it with UsageRecords, inline-child snapshots, or later TurnAttempt snapshots. Durable attribution operates from immutable records. An optional external cost capability can consume those records without changing their identity or content.
+Terminal `RunUsage` is an aggregate process-local snapshot used for operational limits and summary display. Foundation does not sum it with UsageRecords, inline-child snapshots, or later TurnAttempt snapshots. Durable attribution operates from immutable records. Harness model records already carry the applied build-time pricing revision, rule, status, and cost source; Foundation may add negotiated or settlement projections without changing record identity or content.
 
 ### Late Usage from a Stale TurnAttempt
 
@@ -137,7 +137,7 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
 | Stale TurnAttempt supplies valid late usage        | Usage is attributed and retained without lifecycle mutation                                       |
 | Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                                            |
 | Object upload and owning-record commit diverge     | Cleanup or an explicit content-read failure preserves owning-record authority                     |
-| Optional cost capability unavailable               | Raw usage remains durable and ordinary Foundation operation is unaffected                         |
+| Harness pricing is disabled, declined, or fails    | Raw usage remains durable and ordinary Foundation operation is unaffected                         |
 
 ## Invariants
 

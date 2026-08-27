@@ -123,10 +123,10 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 
 The Harness is built directly on Pydantic AI 2:
 
-- `AgentDefinition` is an immutable process-local Python value containing native `AgentSpec`, one build-time explicit or schema-derived output contract, a Model/model name, top-level Capabilities, plugins, and recovery configuration;
+- `AgentDefinition` is an immutable process-local Python value containing native `AgentSpec`, one build-time explicit or schema-derived output contract, an optional concrete Model, top-level Capabilities, plugins, and recovery configuration;
 - Capability is the only top-level feature-behavior plane; each feature Capability owns its tools, Toolsets, instructions, settings, and hooks;
 - `HarnessBuilder` resolves an explicit or disabled-by-default ambient plugin Build Context, creates fresh configured instances, binds all trusted plugins, authorizes custom Capability types, and calls `Agent.from_spec()` once;
-- `RunBindings` supplies fresh Agent instance, Environment, optional `ModelRunBinding`, run Capabilities, and metadata;
+- `RunBindings` supplies fresh Agent instance, Environment, optional async `RunModelResolver`, run Capabilities, and metadata;
 - one logical Harness Run owns one context, Environment, plugin graph, state coordinator, usage accumulator, public `run_id`, and stable Thread correlation;
 - bounded model recovery can start several `ModelAttempt` values with unique upstream model-attempt IDs inside that Run;
 - `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired topology, provider incarnation envelope, and launch payload remain Host-owned;
@@ -282,7 +282,7 @@ Installed plugins and native objects are trusted in-process code. Harness plugin
 
 Pydantic AI instrumentation owns Agent/model/tool spans. Harness features add spans only for Harness-owned context, plugins, recovery, state, Environment, and delegation work. Foundation adds durable lifecycle, queue, child, client-delivery, and connector spans.
 
-`RunUsage` is a process-local accumulator. Hosts own deduplication, cross-run aggregation, pricing revisions, durable usage records, budgets, billing, and payment.
+`RunUsage` is a process-local accumulator. The Harness applies one release-pinned or Host-replaced build-time pricing policy and records its revision; Hosts own durable deduplication, cross-run aggregation, negotiated adjustments, budgets, billing, and payment.
 
 ## Completion Boundaries
 

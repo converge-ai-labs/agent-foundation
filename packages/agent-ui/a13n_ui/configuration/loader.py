@@ -10,6 +10,7 @@ import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import partial
+from importlib.metadata import version
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
@@ -48,6 +49,7 @@ from .models import (
     SkillDefinition,
     SourceTransactionManifest,
     canonical_digest,
+    canonical_json_value,
     resource_identity,
     restart_settings_digest,
 )
@@ -214,16 +216,22 @@ async def load_catalog_candidate(
                 _validate_provider_binding(binding, settings)
 
         package_payload: JsonValue | None = None
-        normalized_value = document.model_dump(mode="json")
+        normalized_value = cast(dict[str, JsonValue], canonical_json_value(document))
         if isinstance(document, SkillDefinition):
             package_payload = await _read_skill_package(document, settings, overlays)
             if not isinstance(package_payload, dict) or not isinstance(package_payload.get("package_digest"), str):
                 raise _error("skill_package_invalid", "A managed Skill package has no canonical digest.")
             normalized_value["resolved_package_digest"] = package_payload["package_digest"]
             try:
-                normalized_value = ResolvedSkillRevisionContent.model_validate(
-                    normalized_value, strict=True
-                ).model_dump(mode="json")
+                normalized_value = cast(
+                    dict[str, JsonValue],
+                    canonical_json_value(
+                        ResolvedSkillRevisionContent.model_validate(
+                            normalized_value,
+                            strict=True,
+                        )
+                    ),
+                )
             except ValidationError as exc:
                 raise _error("skill_package_invalid", "A managed Skill revision is invalid.") from exc
         normalized = cast(JsonValue, normalized_value)
@@ -231,7 +239,7 @@ async def load_catalog_candidate(
             {
                 "schema_version": document.schema_version,
                 "normalized_content": normalized,
-                "dependencies": [lock.model_dump(mode="json") for lock in locks],
+                "dependencies": locks,
             }
         )
         revision_ref = ResourceRevisionRef(
@@ -253,14 +261,14 @@ async def load_catalog_candidate(
     _validate_graph(revisions, identities)
     revisions.sort(key=lambda revision: (revision.ref.kind.value, revision.ref.resource_id))
     packages.sort(key=lambda package: package.revision.resource_id)
-    settings_dump = settings.model_dump(mode="json")
+    settings_dump = cast(dict[str, JsonValue], canonical_json_value(settings))
     settings_digest = canonical_digest(settings_dump)
     catalog_digest = canonical_digest(
         {
             "settings": settings_digest,
             "roots": [root.root_id for root in settings.ordered_roots],
-            "resources": [revision.ref.model_dump(mode="json") for revision in revisions],
-            "availability": [lock.model_dump(mode="json") for lock in availability],
+            "resources": tuple(revision.ref for revision in revisions),
+            "availability": availability,
         }
     )
     return CatalogCandidate(
@@ -532,12 +540,16 @@ def _availability(
     provider_locks: dict[str, DependencyLock] = {}
     for registration in provider_catalog.registrations:
         reference = discovered_providers.get(registration.provider_key)
+        builtin = registration.provider_key in settings.builtin_provider_keys
         provider_locks[registration.provider_key] = DependencyLock(
             dependency_kind="environment_provider",
             key=registration.provider_key,
-            distribution_name=registration.distribution_name or (reference.distribution_name if reference else None),
+            distribution_name=registration.distribution_name
+            or (reference.distribution_name if reference else None)
+            or ("a13n-environment-provider" if builtin else None),
             distribution_version=registration.distribution_version
-            or (reference.distribution_version if reference else None),
+            or (reference.distribution_version if reference else None)
+            or (version("a13n-environment-provider") if builtin else None),
         )
     availability = tuple(
         sorted((*plugin_locks.values(), *provider_locks.values()), key=lambda item: (item.dependency_kind, item.key))

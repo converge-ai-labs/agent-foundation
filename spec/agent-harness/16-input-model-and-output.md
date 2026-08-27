@@ -2,14 +2,15 @@
 
 ## Design Position
 
-The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds four narrow boundaries:
+The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds five narrow boundaries:
 
 1. normalized code-first semantic input visible to Harness middleware;
-2. optional fresh run-scoped resolution of a logical model ID;
-3. optional exact one-shot provider-history self-healing;
-4. bounded logical-run recovery after a recoverable model interruption.
+2. optional developer-facing native Model inference and deterministic patch composition;
+3. optional fresh run-scoped resolution of a logical model ID;
+4. optional exact one-shot provider-history self-healing;
+5. bounded logical-run recovery after a recoverable model interruption.
 
-It does not add a hosted input wire format, model registry, settings/profile system, provider route-pin schema, output mode, or Capability-only retry framework.
+It does not add a hosted input wire format, durable model registry, serialized settings/profile system, provider route-pin schema, output mode, or Capability-only retry framework.
 
 ## Input
 
@@ -59,29 +60,59 @@ class DeferredToolResume:
 
 `requests` is the exact terminal pending value returned by the prior Harness run or accepted by the Host, not a value reconstructed from message metadata. `run()` and `stream()` accept it through `deferred_resume=` together with prior `HarnessState` and fresh bindings. The Harness verifies request/result categories, complete coverage, pending message identity, and the current assembled surface before forwarding only `results` through Pydantic AI's native `deferred_tool_results=` parameter on the first `ModelAttempt`. A later `ModelAttempt` uses the already incorporated public message history and receives no deferred results again. Both nested values are defensively detached. The envelope carries no authority and is not stored in `HarnessState`; the full validation and Host boundary is owned by [Tool Execution](07-tool-execution.md#approval-and-deferred-calls).
 
-## Model Resolution
+## Model Construction and Resolution
 
-Every built Agent receives one thin Pydantic `ResolveModelId` Capability. It uses the fresh `AgentContext.model_binding` only when Pydantic asks to resolve a string model ID.
+The Harness exports one optional developer-facing construction helper while retaining native Pydantic `Model` as the universal boundary:
 
 ```python
-class ModelRunBinding(ABC):
-    async def resolve_model(
+type ModelProviderFactory = Callable[[str], Provider[Any]]
+type GatewayModelProviderFactory = Callable[[str, str], Provider[Any]]
+type ModelPatch = Callable[[Model], Model]
+
+
+def infer_model(
+    model: Model | str,
+    *,
+    provider_factory: ModelProviderFactory = infer_provider,
+    gateway_provider_factory: GatewayModelProviderFactory | None = None,
+    common_headers: Mapping[str, str] | None = None,
+    patches: Sequence[ModelPatch] = (),
+) -> Model: ...
+```
+
+`infer_model()` is convenience composition, not a second Model interface. It follows these rules:
+
+1. A native `Model` passes through without provider inference. A string is normalized at this single compatibility boundary: bare `openai:` preserves Chat Completions semantics as `openai-chat:`, while `gemini:`, `google-gla:`, and `google-vertex:` normalize to `google-cloud:`. Other strings retain upstream Pydantic semantics.
+2. An ordinary provider string uses the supplied `provider_factory`. A `gateway@provider:model` string requires `gateway_provider_factory`; the Harness parses and normalizes the route, while the factory owns provider construction, credentials, endpoint selection, optional SDK dependencies, retry transport, and any HTTP client. The Harness does not read gateway environment variables or create a provider client.
+3. `patches` run synchronously in declaration order after base inference. Every patch accepts and must return a native `Model`. This is the maintained extension point for Harness or application-specific Model wrappers, profiles, transports, and compatibility fixes without replacing Pydantic's Model contract.
+4. Non-empty `common_headers` add an outer `RequestHeadersModel` after patches. It case-insensitively merges those defaults into native `ModelSettings.extra_headers` for both request and streaming request paths; request-specific headers win, including when their casing differs. The wrapper does not mutate caller mappings or the wrapped Model, inspect header meanings, or persist or emit values.
+5. The returned object is always a native `Model` and can be passed directly to `HarnessBuilder.build(model=...)`, an `AgentDefinition`, or a `RunModelResolver`. A caller can bypass this helper completely and provide any self-constructed native Model.
+
+Provider factories and patches are caller-owned synchronous construction collaborators. If either creates a client or another resource, its owner retains and closes that resource under its own explicit lifecycle. `RequestHeadersModel` delegates the native Model async context-manager lifecycle but does not invent a separate close contract. Core `a13n-harness` therefore does not force provider extras merely to expose this API; missing provider dependencies fail through the selected provider integration.
+
+Every built Agent also receives one thin Pydantic `ResolveModelId` Capability. It uses the fresh `AgentContext.model_resolver` only when Pydantic asks to resolve a string model ID.
+
+```python
+class RunModelResolver(Protocol):
+    def __call__(
         self,
         context: ModelResolutionContext[AgentContext],
         model_id: str,
-    ) -> Model: ...
+    ) -> Awaitable[Model]: ...
 ```
+
+An async function or async callable object can satisfy this protocol structurally; callers do not subclass or register an implementation.
 
 Resolution follows these rules:
 
-1. A concrete `Model` supplied at build time is used directly and does not call `ModelRunBinding`.
-2. A logical string reaches the thin resolver after the fresh run context exists.
-3. With a `ModelRunBinding`, the resolver calls it and requires a native `Model`; an invalid value or exception becomes `ModelResolutionError`.
-4. Without a binding, the resolver returns `None`, deliberately delegating to Pydantic AI's native model inference chain.
+1. A concrete `Model` supplied through `AgentDefinition.model` or `HarnessBuilder.build(model=...)` is used directly and does not call `RunModelResolver`. Its `AgentSpec.model` must be `None`.
+2. A string selected only by `AgentSpec.model` reaches the thin resolver after the fresh run context exists.
+3. With a `RunModelResolver`, the resolver calls the async callable directly and requires a native `Model`; an invalid value or exception becomes `ModelResolutionError`.
+4. Without a resolver, the thin Capability returns `None`, deliberately delegating to Pydantic AI's native model inference chain.
 
 The Harness has no second model profile, provider settings, registry, route envelope, or fallback policy. Embedded applications may use native inference. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises.
 
-`RunBindings` supplies a fresh binding for each logical Harness run. The same binding and `AgentContext` are shared by all internal recovery attempts. Pydantic's `ModelResolutionContext` carries the effective Agent dependencies and native resolution semantics.
+`RunBindings` supplies a fresh resolver for each logical Harness run. The same resolver and `AgentContext` are shared by all internal recovery attempts. Pydantic's `ModelResolutionContext` carries the effective Agent dependencies and native resolution semantics. Freshness applies to current-run authority, credentials, policy, and affinity; the callable may reference a Host-owned concurrency-safe provider client whose lifecycle is broader than the run.
 
 ### Settings and Profile
 
@@ -92,7 +123,9 @@ Pydantic AI retains the complete layering:
 - `Model.profile` and provider adapters own compatibility and rendering facts;
 - Capabilities own reusable Agent-loop behavior.
 
-The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. A hosted model-integration adapter may own a durable configuration, but it constructs a native Model before returning from `ModelRunBinding`.
+The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. A hosted model integration may retain durable gateway and provider configuration and use Harness `infer_model()` as its shared construction boundary. It supplies a Host-owned gateway provider factory or ordinary provider factory, composes required patches, and returns the native Model directly or through `RunModelResolver`.
+
+An enterprise gateway integration remains explicit model construction, not another Capability or an ambient inference registry. It may select OAuth or WebSocket transport, attach provider profiles and bounded retry configuration, and reuse a Host-owned async client through its provider factory or patches. Harness-owned compatibility normalization and `RequestHeadersModel` provide the shared behavior that embedded applications, Agent UI, and Foundation Service would otherwise duplicate. The integration still owns credential handling, client lifecycle, provider compatibility, and route authorization; the Harness does not infer those facts from process environment.
 
 ## Thread Affinity
 
@@ -103,14 +136,14 @@ A selected model integration reads `AgentContext.thread_id` and can map it to pr
 The mapping follows these rules:
 
 1. Distinct independently advancing message histories have distinct `thread_id` values and receive distinct provider model-session and prompt-cache affinity. A child never inherits its parent's value, and sibling children never share one merely because they have the same definition, `AgentInstanceRef`, Session, Host Execution, or Environment.
-2. A continuation selected from the same `HarnessState` preserves the exact ID across fresh Harness runs, worker replacement, and reconstructed model bindings. Every internal `ModelAttempt` in one logical run uses the same ID.
+2. A continuation selected from the same `HarnessState` preserves the exact ID across fresh Harness runs, worker replacement, and reconstructed model resolvers. Every internal `ModelAttempt` in one logical run uses the same ID.
 3. A transient Harness `run_id`, model-attempt ID, tool-call ID, `AgentInstanceRef`, or Host `session_id` is not the affinity source. Those values rotate independently or group histories under other policy domains.
-4. The fresh `ModelRunBinding` reads the stable ID from `ModelResolutionContext.deps`, combines it only with its selected model/provider namespace and current policy as needed, and returns a native Model configured with matching affinity. No fresh binding can replace the context's ID. A provider that needs an additional opaque non-derivable continuation selector keeps it in the Host's provider-specific envelope associated with the matching State.
+4. The fresh `RunModelResolver` callable reads the stable ID from `ModelResolutionContext.deps`, combines it only with its selected model/provider namespace and current policy as needed, and returns a native Model configured with matching affinity. No fresh binding can replace the context's ID. A provider that needs an additional opaque non-derivable continuation selector keeps it in the Host's provider-specific envelope associated with the matching State.
 5. `HarnessState` stores the provider-neutral ID, messages, and portable continuation data, but no provider session, route, credential, or rendered prompt-cache key. `AgentContextState` and Delegation State do not duplicate the ID; a nested child `HarnessState` carries its own.
 6. `HarnessState.fork()` copies portable continuation data while generating a new ID. Ordinary state copies, serialization, checkpoint selection, and export preserve the ID. A Host or trusted plugin remains able to perform an intentional complete-state transformation inside the existing trust boundary.
 7. The ID and derived affinity improve provider cache locality and best-effort continuation or retry behavior. They grant no authority, do not select a checkpoint, and cannot make an interrupted request or side effect exactly once.
 
-A concrete build-time Model remains valid for embedded use. When one reusable executable can serve several Agent instances and the provider supports provider-native affinity, trusted composition supplies request-dynamic native settings or uses a logical model with `ModelRunBinding`; one static cache or session value cannot be shared across those independent histories. Native explicit setting precedence remains owned by Pydantic and the provider integration, but the resulting value must preserve the Thread isolation above.
+A concrete build-time Model remains valid for embedded use. When one reusable executable can serve several Agent instances and the provider supports provider-native affinity, trusted composition supplies request-dynamic native settings or uses a logical model with `RunModelResolver`; one static cache or session value cannot be shared across those independent histories. Native explicit setting precedence remains owned by Pydantic and the provider integration, but the resulting value must preserve the Thread isolation above.
 
 ## Request and History Filters
 
@@ -131,7 +164,7 @@ class ContentFilterConfiguration(BaseModel):
     max_binary_bytes: int
 ```
 
-The configuration is compatibility policy selected by trusted embedding code, not a second `ModelProfile`, provider capability registry, or inference from a model name. A dynamic `ModelRunBinding` that routes among incompatible media surfaces selects an Agent definition or trusted policy valid for that route; model content never widens the policy.
+The configuration is compatibility policy selected by trusted embedding code, not a second `ModelProfile`, provider capability registry, or inference from a model name. A dynamic `RunModelResolver` that routes among incompatible media surfaces selects an Agent definition or trusted policy valid for that route; model content never widens the policy.
 
 The Content Filter preserves accepted native Pydantic values. It classifies `BinaryContent` by canonical media type, treats image/audio/video/document URLs and `UploadedFile` as their native families, rejects credential-bearing URLs, and enforces aggregate item and inline-binary byte limits before provider serialization. An unsupported, unsafe, or over-limit item is replaced in place by one bounded explanatory text value; non-media content, tool-call identity, and request ordering remain unchanged. Scalar content remains scalar for a one-to-one replacement, while list and tuple shapes retain their sequence shape. This filter does not upload, fetch, decode, compress, spill, or persist content and grants no authority.
 
@@ -266,7 +299,8 @@ Trusted plugins may replace the complete result candidate, including output, usa
 | Exact one-shot history repair         | Selected `SelfHealingModelCapability` and `SelfHealingModel` |
 | Interrupted `ModelAttempt` recovery   | Harness run coordinator                                      |
 | Provider transport retry              | Provider/client and Pydantic AI                              |
-| Hosted model catalog and policy       | Host adapter                                                 |
+| Official direct model facts           | Harness package catalog                                      |
+| Hosted model availability and policy  | Host adapter                                                 |
 | Durable deferred execution            | Host                                                         |
 
 ## Trade-offs

@@ -55,8 +55,8 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage() ->
             raise RuntimeError("stream disconnected")
         yield "resumed answer"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(),
@@ -97,8 +97,8 @@ async def test_interrupted_partial_thinking_is_not_replayed() -> None:
             raise RuntimeError("stream disconnected")
         yield "resumed answer"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(),
@@ -131,8 +131,8 @@ async def test_disabled_recovery_exports_no_unfinished_thinking() -> None:
         yield {0: DeltaThinkingPart(content="unfinished private reasoning")}
         raise RuntimeError("stream disconnected")
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -166,8 +166,8 @@ async def test_finalized_thinking_and_partial_text_are_replayed_in_order() -> No
             raise RuntimeError("stream disconnected")
         yield "resumed answer"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(),
@@ -220,8 +220,8 @@ async def test_response_tracker_does_not_mix_multiple_model_requests() -> None:
             raise RuntimeError("second response disconnected")
         yield "recovered answer"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(Capability(tools=[lookup], id="test-tools"),),
@@ -273,8 +273,8 @@ async def test_unobserved_usage_limited_thinking_is_not_exported() -> None:
         del messages, info
         yield {0: DeltaThinkingPart(content="unobserved unfinished reasoning")}
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -320,8 +320,8 @@ async def test_complete_native_tool_parts_survive_a_later_text_interruption() ->
         yield "partial answer"
         raise RuntimeError("stream disconnected")
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -387,8 +387,8 @@ async def test_malformed_native_tool_pairs_discard_the_interrupted_response(
         yield "partial answer"
         raise RuntimeError("stream disconnected")
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -427,8 +427,8 @@ async def test_unmatched_native_tool_call_discards_the_interrupted_response() ->
         yield "partial answer after native call"
         raise RuntimeError("stream disconnected")
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -471,8 +471,8 @@ async def test_recovery_does_not_replay_an_unmatched_native_tool_call() -> None:
             raise RuntimeError("stream disconnected")
         yield "resumed answer"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(),
@@ -510,8 +510,8 @@ async def test_unfinalized_tool_call_invalidates_the_partial_response() -> None:
             raise RuntimeError("stream disconnected")
         yield "resumed answer"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(),
@@ -535,8 +535,8 @@ async def test_disabled_recovery_exports_interrupted_model_history_as_a_failed_r
         yield "partial"
         raise RuntimeError("stream disconnected")
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -565,8 +565,8 @@ async def test_stream_establishment_failure_can_resume_before_any_content() -> N
             raise RuntimeError("stream establishment failed")
         yield "recovered"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(),
@@ -599,8 +599,8 @@ async def test_recovery_prompt_factory_receives_the_failure_and_repaired_history
             raise RuntimeError("disconnected")
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=ModelRecoveryPolicy(
@@ -655,8 +655,8 @@ async def test_recovery_attempt_budget_is_total_and_monotonic() -> None:
         yield "partial"
         raise RuntimeError("still disconnected")
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(max_attempts=3),
@@ -680,8 +680,8 @@ async def test_usage_limit_never_enters_model_recovery() -> None:
         calls += 1
         yield "unreachable"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(max_attempts=5),
@@ -711,8 +711,8 @@ async def test_cancel_interrupts_recovery_backoff_without_starting_another_attem
         raise RuntimeError("connection failed")
         yield "unreachable"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=ModelRecoveryPolicy(
@@ -747,8 +747,8 @@ async def test_cancelled_stream_does_not_export_unfinished_thinking() -> None:
         started.set()
         await asyncio.Event().wait()
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -787,8 +787,8 @@ async def test_cancel_fence_wins_when_provider_translates_cancellation() -> None
             raise RuntimeError("provider translated cancellation") from None
         yield "unreachable"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(max_attempts=5),
@@ -836,8 +836,8 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
                 response.state = "suspended" if entries == 1 else "complete"
                 yield response
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=SuspendingModel(FunctionModel(stream_function=stream)),
         model_recovery=_recovery_policy(max_attempts=5),
@@ -871,8 +871,8 @@ async def test_output_retry_exhaustion_does_not_start_a_new_attempt() -> None:
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", retries={"output": 1}),
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"output": 1}),
         output_type=ToolOutput(RequiredOutput, name="finish"),
         model=FunctionModel(stream_function=stream),
         model_recovery=_recovery_policy(max_attempts=5),
@@ -907,8 +907,8 @@ async def test_tool_execution_failure_does_not_start_model_recovery() -> None:
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(Capability(tools=[failing_tool], id="test-tools"),),
@@ -940,8 +940,8 @@ async def test_deferred_tool_request_stays_suspended_and_is_not_closed_or_retrie
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(Capability(tools=[deferred_tool], id="test-tools"),),
@@ -986,8 +986,8 @@ async def test_upstream_history_cleanup_removes_stale_tool_results_before_retry(
         calls.append(deepcopy(messages))
         yield "continued"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -1037,8 +1037,8 @@ async def test_saved_interrupted_tool_history_is_repaired_before_rerun() -> None
         calls.append(deepcopy(messages))
         yield "continued safely"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )

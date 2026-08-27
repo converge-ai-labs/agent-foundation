@@ -179,8 +179,6 @@ Three decisions remain distinct:
 
 A provider denial always narrows a Harness allow decision. Provider availability never grants authorization.
 
-The `local` layer of the repository's [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) uses a deliberately simple allow evaluator only inside a caller-owned temporary workspace. A real application should evaluate current identity, tool metadata, normalized arguments, effects, and resources.
-
 ## Multiple Bindings and Routing
 
 `create_environment_run_binding()` accepts a finite topology of binding requests. Each request has:

@@ -7,10 +7,11 @@ from typing import Any
 import pydantic_ai.models as pydantic_models
 import pytest
 from a13n_harness import (
+    AgentDefinition,
+    DefinitionError,
     HarnessBuilder,
     HarnessState,
     ModelResolutionError,
-    ModelRunBinding,
     RunBindings,
     SelfHealingModel,
     SelfHealingModelCapability,
@@ -35,12 +36,12 @@ from pydantic_ai.settings import ModelSettings
 pytestmark = pytest.mark.anyio
 
 
-class RecordingModelBinding(ModelRunBinding):
+class RecordingModelResolver:
     def __init__(self, model: Model) -> None:
         self.model = model
         self.calls: list[tuple[str, str, str]] = []
 
-    async def resolve_model(
+    async def __call__(
         self,
         context: ModelResolutionContext,
         model_id: str,
@@ -49,36 +50,42 @@ class RecordingModelBinding(ModelRunBinding):
         return self.model
 
 
-async def test_logical_model_is_resolved_from_the_fresh_run_binding() -> None:
+async def test_logical_model_is_resolved_from_an_async_function() -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "resolved"
 
-    binding = RecordingModelBinding(FunctionModel(stream_function=stream))
-    executable = HarnessBuilder().build_code(
+    model = FunctionModel(stream_function=stream)
+    calls: list[tuple[str, str, str]] = []
+
+    async def resolve_model(context: ModelResolutionContext, model_id: str) -> Model:
+        calls.append((context.deps.run_id, context.deps.thread_id, model_id))
+        return model
+
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
 
     result = await executable.run(
         "hello",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.local(model_resolver=resolve_model),
     )
 
     assert result.output_or_raise() == "resolved"
     assert result.state is not None
-    assert binding.calls == [
+    assert calls == [
         (result.run_id, result.state.thread_id, "logical:primary"),
     ]
 
 
-async def test_model_binding_observes_state_owned_identity_across_continuation_and_fork() -> None:
+async def test_model_resolver_observes_state_owned_identity_across_continuation_and_fork() -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "resolved"
 
-    binding = RecordingModelBinding(FunctionModel(stream_function=stream))
-    executable = HarnessBuilder().build_code(
+    binding = RecordingModelResolver(FunctionModel(stream_function=stream))
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
@@ -86,17 +93,17 @@ async def test_model_binding_observes_state_owned_identity_across_continuation_a
 
     first = await executable.run(
         "first",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.local(model_resolver=binding),
         previous_state=previous,
     )
     second = await executable.run(
         "second",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.local(model_resolver=binding),
         previous_state=previous,
     )
     forked = await executable.run(
         "forked",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.local(model_resolver=binding),
         previous_state=previous.fork(),
     )
 
@@ -121,16 +128,16 @@ async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None
         seen.append(info.model_settings)
         yield "configured"
 
-    binding = RecordingModelBinding(FunctionModel(stream_function=stream))
+    binding = RecordingModelResolver(FunctionModel(stream_function=stream))
     settings = ModelSettings(temperature=0.25)
-    executable = HarnessBuilder().build_code(
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary", model_settings=settings),
         output_type=str,
     )
 
     result = await executable.run(
         "hello",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.local(model_resolver=binding),
     )
 
     assert result.output_or_raise() == "configured"
@@ -138,7 +145,7 @@ async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None
 
 
 async def test_missing_run_binding_delegates_to_native_model_inference() -> None:
-    executable = HarnessBuilder().build_code(
+    executable = HarnessBuilder().build(
         AgentSpec(model="test"),
         output_type=str,
     )
@@ -149,30 +156,43 @@ async def test_missing_run_binding_delegates_to_native_model_inference() -> None
     assert isinstance(result.output_or_raise(), str)
 
 
-async def test_concrete_model_bypasses_the_run_binding() -> None:
+async def test_concrete_model_bypasses_the_run_resolver() -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "concrete"
 
     concrete = FunctionModel(stream_function=stream)
-    binding = RecordingModelBinding(concrete)
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:ignored"),
+    binding = RecordingModelResolver(concrete)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=concrete,
     )
 
     result = await executable.run(
         "hello",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.local(model_resolver=binding),
     )
 
     assert result.output_or_raise() == "concrete"
     assert binding.calls == []
 
 
-class InvalidModelBinding(ModelRunBinding):
-    async def resolve_model(
+def test_string_and_concrete_model_sources_are_mutually_exclusive() -> None:
+    concrete = FunctionModel(lambda messages, info: "unused")
+
+    with pytest.raises(DefinitionError) as exc_info:
+        AgentDefinition(
+            agent=AgentSpec(model="logical:primary"),
+            output_type=str,
+            model=concrete,
+        )
+
+    assert exc_info.value.code == "model_selection_conflict"
+
+
+class InvalidModelResolver:
+    async def __call__(
         self,
         context: ModelResolutionContext,
         model_id: str,
@@ -181,8 +201,8 @@ class InvalidModelBinding(ModelRunBinding):
         return Any  # type: ignore[return-value]
 
 
-async def test_invalid_model_binding_result_fails_with_a_typed_error() -> None:
-    executable = HarnessBuilder().build_code(
+async def test_invalid_model_resolver_result_fails_with_a_typed_error() -> None:
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
@@ -190,7 +210,7 @@ async def test_invalid_model_binding_result_fails_with_a_typed_error() -> None:
     with pytest.raises(ModelResolutionError) as exc_info:
         await executable.run(
             "hello",
-            bindings=RunBindings.local(model_binding=InvalidModelBinding()),
+            bindings=RunBindings.local(model_resolver=InvalidModelResolver()),
         )
 
     assert exc_info.value.code == "model_resolution_invalid"
@@ -261,8 +281,8 @@ def _recovering_function_model() -> tuple[FunctionModel, list[int]]:
 
 async def test_self_healing_is_not_installed_implicitly() -> None:
     model, calls = _recovering_function_model()
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:ignored"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=model,
     )
@@ -279,8 +299,8 @@ async def test_self_healing_is_not_installed_implicitly() -> None:
 
 async def test_self_healing_capability_wraps_a_concrete_model() -> None:
     model, calls = _recovering_function_model()
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:ignored"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=model,
         capabilities=(SelfHealingModelCapability(),),
@@ -298,8 +318,8 @@ async def test_self_healing_capability_wraps_a_concrete_model() -> None:
 
 async def test_self_healing_capability_wraps_a_run_resolved_model() -> None:
     model, calls = _recovering_function_model()
-    binding = RecordingModelBinding(model)
-    executable = HarnessBuilder().build_code(
+    binding = RecordingModelResolver(model)
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary"),
         output_type=str,
         capabilities=(SelfHealingModelCapability(),),
@@ -307,7 +327,7 @@ async def test_self_healing_capability_wraps_a_run_resolved_model() -> None:
 
     result = await executable.run(
         "continue",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.local(model_resolver=binding),
         previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
     )
 
@@ -327,7 +347,7 @@ async def test_self_healing_capability_wraps_a_natively_inferred_model(
         return model
 
     monkeypatch.setattr(pydantic_models, "infer_model", infer_model)
-    executable = HarnessBuilder().build_code(
+    executable = HarnessBuilder().build(
         AgentSpec(model="native:test"),
         output_type=str,
         capabilities=(SelfHealingModelCapability(),),

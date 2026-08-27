@@ -6,6 +6,7 @@ import asyncio
 import re
 import secrets
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
@@ -505,61 +506,19 @@ async def _finalize_child_bindings(
     child: BuiltSubagent,
     bindings: RunBindings,
 ) -> RunBindings:
-    bindings = _finalize_usage_bindings(ctx, bindings)
+    from a13n_harness.pricing import MODEL_COST_CAPABILITY_ID, AbstractModelCostCapability
+
+    inherited = ctx.deps._inherited_model_cost
+    if inherited is None:
+        selected = ctx.capabilities.get(MODEL_COST_CAPABILITY_ID)
+        if not isinstance(selected, AbstractModelCostCapability):
+            raise DefinitionError(
+                "Inline delegation requires one finalized parent model-cost Capability.",
+                code="capability_scope_invalid",
+            )
+        inherited = selected
+    bindings = replace(bindings, _inherited_model_cost=inherited)
     return await _finalize_task_bindings(ctx, child, bindings)
-
-
-def _finalize_usage_bindings(
-    ctx: RunContext[AgentContext],
-    bindings: RunBindings,
-) -> RunBindings:
-    from a13n_harness.usage import (
-        MODEL_COST_RUN_CAPABILITY_ID,
-        ModelCostRunCapability,
-    )
-
-    parent_attachment = ctx.capabilities.get(MODEL_COST_RUN_CAPABILITY_ID)
-    attachments = [capability for capability in bindings.capabilities if capability.id == MODEL_COST_RUN_CAPABILITY_ID]
-    if len(attachments) > 1:
-        raise DefinitionError(
-            "Inline child bindings contain duplicate model-cost attachments.",
-            code="model_cost_binding_invalid",
-        )
-    child_attachment = attachments[0] if attachments else None
-    if child_attachment is not None and type(child_attachment) is not ModelCostRunCapability:
-        raise DefinitionError(
-            "Inline child model-cost attachment has an incompatible type.",
-            code="capability_type_mismatch",
-        )
-    if parent_attachment is None:
-        if child_attachment is not None:
-            raise DefinitionError(
-                "Inline child model-cost selection must match its parent run.",
-                code="model_cost_binding_invalid",
-            )
-        return bindings
-    if type(parent_attachment) is not ModelCostRunCapability:
-        raise DefinitionError(
-            "Parent model-cost attachment has an incompatible type.",
-            code="capability_type_mismatch",
-        )
-    if child_attachment is not None:
-        if child_attachment.calculator is not parent_attachment.calculator:
-            raise DefinitionError(
-                "Inline child model-cost selection must match its parent run.",
-                code="model_cost_binding_invalid",
-            )
-        return bindings
-    return RunBindings(
-        instance=bindings.instance,
-        environment=bindings.environment,
-        model_binding=bindings.model_binding,
-        capabilities=(
-            *bindings.capabilities,
-            ModelCostRunCapability(calculator=parent_attachment.calculator),
-        ),
-        metadata=bindings.metadata,
-    )
 
 
 async def _finalize_task_bindings(
@@ -651,7 +610,7 @@ async def _finalize_task_bindings(
     return RunBindings(
         instance=bindings.instance,
         environment=bindings.environment,
-        model_binding=bindings.model_binding,
+        model_resolver=bindings.model_resolver,
         capabilities=(*bindings.capabilities, borrowed),
         metadata=bindings.metadata,
     )

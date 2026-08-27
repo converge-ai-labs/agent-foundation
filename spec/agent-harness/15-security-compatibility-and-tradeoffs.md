@@ -109,7 +109,7 @@ Search results, remote pages, media, converted documents, and skill resources ar
 
 ## Credential Boundary
 
-Credentials and current credential resolvers are absent from `AgentDefinition`, instructions, model input, plugin metadata, events, results, and `HarnessState`. A fresh model binding, managed invocation policy, or provider adapter requests action- and audience-scoped credentials under current Identity and policy.
+Credentials and current credential resolvers are absent from `AgentDefinition`, instructions, model input, plugin metadata, events, results, and `HarnessState`. A fresh model resolver, managed invocation policy, or provider adapter requests action- and audience-scoped credentials under current Identity and policy.
 
 The default shell path projects no credential. A provider that must inject one owns final environment/file injection and prevents caller override.
 
@@ -129,7 +129,9 @@ State restores no Identity, credential, policy decision, desired topology, Envir
 
 ## Model and Recovery Safety
 
-A concrete Model bypasses logical-ID resolution. A string model reaches the thin `ResolveModelId`; a fresh `ModelRunBinding` returns a native Model or raises. When no binding exists, the Harness deliberately returns `None` and Pydantic native inference continues. A hosted profile that requires fail-closed aliases must enforce presence of its binding during worker setup.
+A concrete Model bypasses string-ID resolution and is mutually exclusive with `AgentSpec.model`. A string model reaches the thin `ResolveModelId`; a fresh async `RunModelResolver` returns a native Model or raises. When no resolver exists, the Harness deliberately returns `None` and Pydantic native inference continues. A hosted profile that requires fail-closed aliases must enforce presence of its binding during worker setup.
+
+The packaged official model catalog contains only public direct-provider facts and grants no provider availability or authority. The packaged pricing snapshot and Host replacements are immutable public configuration, not credentials or settlement truth. Cost input excludes content and credentials; lookup miss, invalid quote, or calculation failure preserves upstream usage and cannot fail the Agent run. Inline delegation reuses the parent's effective build-time model-cost Capability without exposing another Host-selectable run override.
 
 Provider model-session and prompt-cache affinity are correlation and performance inputs, not authority. The Harness isolates every independently advancing root, child, or fork history with `HarnessState.thread_id`, restores it as a read-only `AgentContext` value, and accepts no run-binding or metadata override. The model integration derives affinity from that value rather than transient run IDs, `AgentInstanceRef`, or a broader product-conversation key shared across parent and child histories. Rendered provider affinity remains absent from `HarnessState`; an additional non-derivable opaque selector is protected and retained by the Host like other provider-specific continuation data. The State-owned ID itself is not a credential, checkpoint authority, or cryptographic integrity mechanism; trusted plugins and Host State transformations remain inside the existing trust boundary.
 

@@ -207,8 +207,8 @@ async def test_monitored_process_shares_process_reference_status_and_accepted_de
             assert status_result["truncated"] is False
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -244,8 +244,8 @@ async def test_monitored_process_requires_fresh_host_attachment_before_model_req
         model_called = True
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()), MonitoredProcessCapability()),
@@ -431,8 +431,8 @@ async def test_monitored_process_rejects_orphan_run_attachment_before_model_requ
         yield "done"
 
     monitor = _ImmediateMonitor()
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -559,8 +559,8 @@ async def test_process_monitor_cancellation_finishes_kill_before_reraising(tmp_p
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()), MonitoredProcessCapability()),

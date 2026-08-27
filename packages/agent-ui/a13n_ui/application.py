@@ -10,6 +10,13 @@ from anyio import CancelScope, Event, Lock, create_task_group, move_on_after
 from anyio.streams.memory import MemoryObjectReceiveStream
 from pydantic import BaseModel, ConfigDict, Field
 
+from a13n_ui.composition import (
+    AgentEnvironmentCompatibility,
+    CompositionService,
+    ResolvedAgentSnapshot,
+    ResolvedEnvironmentSnapshot,
+    SnapshotReference,
+)
 from a13n_ui.configuration import (
     ConfigurationDiagnostic,
     ConfigurationGeneration,
@@ -56,11 +63,13 @@ class AgentUiApplication:
         self._settings = settings
         self._store = store
         self._state = ApplicationState.starting
+        catalog = CatalogRepository(store)
         self._configuration = ConfigurationService(
             settings.configuration,
-            CatalogRepository(store),
+            catalog,
             process_settings_path=settings.process_settings_path,
         )
+        self._composition = CompositionService(store, catalog)
         self._operation_lock = Lock()
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
@@ -101,6 +110,63 @@ class AgentUiApplication:
     async def reload_configuration(self) -> ConfigurationGeneration:
         async with self._operation():
             return await self._configuration.reload()
+
+    async def resolve_agent_snapshot(
+        self,
+        agent_id: str,
+        *,
+        generation_id: str | None = None,
+    ) -> SnapshotReference:
+        async with self._operation():
+            return await self._composition.resolve_agent(
+                agent_id,
+                generation_id=generation_id,
+            )
+
+    async def resolve_environment_snapshot(
+        self,
+        environment_id: str,
+        *,
+        generation_id: str | None = None,
+    ) -> SnapshotReference:
+        async with self._operation():
+            return await self._composition.resolve_environment(
+                environment_id,
+                generation_id=generation_id,
+            )
+
+    async def agent_snapshot(self, reference: SnapshotReference) -> ResolvedAgentSnapshot:
+        async with self._operation():
+            return await self._composition.agent(reference)
+
+    async def environment_snapshot(
+        self,
+        reference: SnapshotReference,
+    ) -> ResolvedEnvironmentSnapshot:
+        async with self._operation():
+            return await self._composition.environment(reference)
+
+    async def validate_agent_environment(
+        self,
+        agent_reference: SnapshotReference,
+        environment_reference: SnapshotReference,
+    ) -> AgentEnvironmentCompatibility:
+        async with self._operation():
+            return await self._composition.compatibility(
+                agent_reference,
+                environment_reference,
+            )
+
+    async def validate_agent_executable(
+        self,
+        reference: SnapshotReference,
+        environment_reference: SnapshotReference | None = None,
+    ) -> None:
+        async with self._operation():
+            await self._composition.validate_executable(
+                reference,
+                environment_reference,
+            )
 
     async def apply_source_transaction(
         self,
@@ -288,7 +354,11 @@ async def open_application(settings: AgentUiSettings) -> AsyncGenerator[AgentUiA
                     with CancelScope(shield=True):
                         await application._stop()
                         tasks.cancel_scope.cancel()
-                        await application._configuration.close()
+                        try:
+                            with move_on_after(application._settings.shutdown_timeout_seconds):
+                                await application._composition.close()
+                        finally:
+                            await application._configuration.close()
     finally:
         if application is not None:
             application._state = ApplicationState.closed

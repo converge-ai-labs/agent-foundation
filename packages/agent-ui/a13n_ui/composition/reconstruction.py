@@ -1,0 +1,476 @@
+"""Trusted process-local reconstruction from immutable Agent snapshots."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
+from typing import Any, cast
+from uuid import uuid4
+
+from a13n_harness import (
+    AgentDefinition,
+    AgentSpec,
+    DelegationContextPolicy,
+    DocumentsCapability,
+    DynamicEnvironmentCapability,
+    DynamicEnvironmentConfiguration,
+    ExecutableAgent,
+    FileSkillSource,
+    HarnessBuilder,
+    HarnessPluginFactoryContext,
+    HarnessPluginFactoryRegistration,
+    MediaCapability,
+    ModelRecoveryPolicy,
+    SkillManager,
+    SkillsCapability,
+    SkillsPolicy,
+    SubagentDefinition,
+    UserInteractionCapability,
+    WebCapability,
+    WorkingStateCapability,
+    WorkingStateConfiguration,
+    build_harness_plugin_factory_catalog,
+)
+from a13n_harness.environment.files import FileOperator, FileQueryRequest
+from a13n_harness.environment.models import EnvironmentError
+from anyio import Lock
+from pydantic import JsonValue
+from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.usage import UsageLimits
+
+from a13n_ui.configuration import CatalogRepository, DependencyLock
+from a13n_ui.errors import CompositionError
+
+from .models import (
+    ResolvedAgentNode,
+    ResolvedAgentSnapshot,
+    ResolvedEnvironmentSnapshot,
+    ResolvedSkill,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _PackageFile:
+    path: str
+    content: bytes
+    sha256: str
+
+
+class SnapshotSkillMaterializer:
+    """Materialize one immutable managed Skill set into its exact logical root."""
+
+    def __init__(self, materializer_id: str, target_root: str, files: Mapping[str, tuple[_PackageFile, ...]]) -> None:
+        self._materializer_id = materializer_id
+        self._target_root = target_root
+        self._files = {name: tuple(values) for name, values in files.items()}
+
+    @property
+    def materializer_id(self) -> str:
+        return self._materializer_id
+
+    @property
+    def target_root(self) -> str:
+        return self._target_root
+
+    async def materialize(self, *, files: FileOperator) -> None:
+        if await self._matches_target(files):
+            return
+        stage = f"{self.target_root}.stage-{uuid4().hex}"
+        try:
+            await files.mkdir(stage, parents=True, exist_ok=False)
+            for skill_name, package in sorted(self._files.items()):
+                root = f"{stage}/{skill_name}"
+                await files.mkdir(root, parents=True, exist_ok=False)
+                for item in package:
+                    destination = f"{root}/{item.path}"
+                    parent = destination.rsplit("/", 1)[0]
+                    await files.mkdir(parent, parents=True, exist_ok=True)
+                    await files.write_bytes_stream(
+                        destination,
+                        _one_chunk(item.content),
+                        mode="create",
+                    )
+                    copied = await files.read_bytes(destination)
+                    if hashlib.sha256(copied).hexdigest() != item.sha256:
+                        raise CompositionError(
+                            "A materialized Skill file failed digest verification.",
+                            code="skill_materialization_mismatch",
+                        )
+            try:
+                await files.move(stage, self.target_root, replace=False)
+            except EnvironmentError as exc:
+                if exc.code != "environment_conflict" or not await self._matches_target(files):
+                    raise
+        except BaseException as error:
+            try:
+                await files.remove(stage, recursive=True)
+            except EnvironmentError as cleanup_error:
+                if cleanup_error.code != "environment_not_found":
+                    error.add_note(f"Skill materialization cleanup failed with {cleanup_error.code}.")
+            raise
+
+    async def _matches_target(self, files: FileOperator) -> bool:
+        try:
+            metadata = await files.stat(self.target_root)
+        except EnvironmentError as exc:
+            if exc.code == "environment_not_found":
+                return False
+            raise
+        if metadata.kind != "directory":
+            raise CompositionError(
+                "The managed Skill target is not a directory.",
+                code="skill_materialization_mismatch",
+            )
+        expected_entries: set[str] = set()
+        expected_files: list[tuple[str, _PackageFile]] = []
+        for skill_name, package in self._files.items():
+            expected_entries.add(skill_name)
+            for item in package:
+                relative = f"{skill_name}/{item.path}"
+                expected_entries.add(relative)
+                parts = relative.split("/")
+                expected_entries.update("/".join(parts[:index]) for index in range(1, len(parts)))
+                expected_files.append((relative, item))
+        result = await files.query(
+            FileQueryRequest(
+                root=self.target_root,
+                pattern="**",
+                recursive=True,
+                include_hidden=True,
+                offset=0,
+                max_results=len(expected_entries) + 1,
+            )
+        )
+        prefix = f"{self.target_root}/"
+        actual = {entry.path.removeprefix(prefix) for entry in result.entries if entry.path != self.target_root}
+        if result.has_more or actual != expected_entries:
+            raise CompositionError(
+                "The managed Skill target does not match its immutable package set.",
+                code="skill_materialization_mismatch",
+            )
+        for relative, item in expected_files:
+            copied = await files.read_bytes(f"{self.target_root}/{relative}")
+            if hashlib.sha256(copied).hexdigest() != item.sha256:
+                raise CompositionError(
+                    "The managed Skill target failed digest verification.",
+                    code="skill_materialization_mismatch",
+                )
+        return True
+
+
+async def _one_chunk(content: bytes) -> AsyncIterator[bytes]:
+    yield content
+
+
+class ExecutableCache:
+    """Process-local digest-keyed executable ownership with explicit cleanup."""
+
+    def __init__(self) -> None:
+        self._entries: dict[str, ExecutableAgent[Any]] = {}
+        self._lock = Lock()
+
+    async def get_or_build(
+        self,
+        cache_key: str,
+        build: Callable[[], Awaitable[ExecutableAgent[Any]]],
+    ) -> ExecutableAgent[Any]:
+        async with self._lock:
+            known = self._entries.get(cache_key)
+            if known is not None:
+                return known
+            executable = await build()
+            self._entries[cache_key] = executable
+            return executable
+
+    async def close(self) -> None:
+        async with self._lock:
+            entries = tuple(reversed(tuple(self._entries.values())))
+            self._entries.clear()
+        failure: Exception | None = None
+        for executable in entries:
+            try:
+                await executable.close()
+            except Exception as error:
+                if failure is None:
+                    failure = error
+                else:
+                    failure.add_note(f"Another executable close failed with {type(error).__name__}.")
+        if failure is not None:
+            raise failure
+
+
+class AgentReconstructor:
+    """Map one authority-neutral snapshot through public Harness build contracts."""
+
+    def __init__(self, catalog: CatalogRepository, cache: ExecutableCache) -> None:
+        self._catalog = catalog
+        self._cache = cache
+
+    async def executable(
+        self,
+        snapshot: ResolvedAgentSnapshot,
+        environment: ResolvedEnvironmentSnapshot | None = None,
+    ) -> ExecutableAgent[Any]:
+        if environment is None and any(node.skills for node in snapshot.resolved_agents):
+            raise CompositionError(
+                "An Agent with managed Skills requires a compatible Environment snapshot.",
+                code="agent_environment_required",
+            )
+        cache_key = snapshot.logical_agent_digest
+        if environment is not None:
+            cache_key = f"{cache_key}:{environment.logical_environment_digest}"
+
+        async def build() -> ExecutableAgent[Any]:
+            return await self._build(snapshot, environment)
+
+        return await self._cache.get_or_build(cache_key, build)
+
+    async def _build(
+        self,
+        snapshot: ResolvedAgentSnapshot,
+        environment: ResolvedEnvironmentSnapshot | None,
+    ) -> ExecutableAgent[Any]:
+        if snapshot.harness_release != _package_version("a13n-harness"):
+            raise CompositionError(
+                "The Agent snapshot selects another Harness release.",
+                code="harness_release_mismatch",
+            )
+        plugin_keys = tuple(lock.key for lock in snapshot.adapter_locks if lock.dependency_kind == "harness_plugin")
+        try:
+            plugin_catalog = build_harness_plugin_factory_catalog(plugin_keys=plugin_keys)
+        except Exception as exc:
+            raise CompositionError(
+                "The locked Harness plugin catalog could not be reconstructed.",
+                code="plugin_factory_unavailable",
+            ) from exc
+        registrations = {item.plugin_key: item for item in plugin_catalog.registrations}
+        for lock in snapshot.adapter_locks:
+            if lock.dependency_kind != "harness_plugin":
+                continue
+            registration = registrations.get(lock.key)
+            if registration is None or not _registration_matches(lock, registration):
+                raise CompositionError(
+                    "A locked Harness plugin factory changed after snapshot publication.",
+                    code="plugin_factory_lock_mismatch",
+                    details={"plugin_key": lock.key},
+                )
+
+        node_by_ref = {node.agent_revision: node for node in snapshot.resolved_agents}
+        definitions: dict[object, AgentDefinition[Any]] = {}
+
+        async def reconstruct(node: ResolvedAgentNode) -> AgentDefinition[Any]:
+            known = definitions.get(node.agent_revision)
+            if known is not None:
+                return known
+            children: list[SubagentDefinition] = []
+            for edge in node.subagents:
+                child = await reconstruct(node_by_ref[edge.target_agent])
+                children.append(
+                    SubagentDefinition(
+                        name=edge.name,
+                        description=edge.description,
+                        agent=child,
+                        context=DelegationContextPolicy(
+                            include_task=edge.context.include_task,
+                            history=edge.context.history,
+                            task_state=edge.context.task_state,
+                        ),
+                        usage_limits=(
+                            UsageLimits(**edge.usage_limits.model_dump()) if edge.usage_limits is not None else None
+                        ),
+                    )
+                )
+            plugins = tuple(
+                plugin_catalog.create_plugin(
+                    HarnessPluginFactoryContext(
+                        plugin_key=plugin.definition.plugin_key,
+                        plugin_id=plugin.definition.plugin_id,
+                        configuration=plugin.definition.configuration,
+                        extensions={},
+                    )
+                )
+                for plugin in node.plugins
+                if plugin.definition.enabled
+            )
+            capabilities = list(_capabilities(node))
+            if node.skills:
+                assert environment is not None
+                capabilities.append(await self._skills(snapshot, environment, node))
+            instructions = [block.content for block in node.prompt.definition.instruction_blocks]
+            if any(content is None for content in instructions):
+                raise CompositionError(
+                    "A resolved Prompt retained an unresolved source reference.",
+                    code="prompt_snapshot_invalid",
+                    details={"agent_id": node.agent_id},
+                )
+            spec = AgentSpec(
+                model=node.model.definition.model_id,
+                name=node.agent_id,
+                description=node.description,
+                instructions=cast(Any, instructions),
+                model_settings=node.model.definition.settings or None,
+                metadata={
+                    "agent_snapshot": snapshot.logical_agent_digest,
+                    "agent_revision": node.agent_revision.content_digest,
+                },
+            )
+            recovery = node.model_recovery
+            definition = AgentDefinition(
+                agent=spec,
+                output_type=str,
+                definition_id=f"agent-{node.agent_revision.content_digest[:16]}",
+                model=None,
+                capabilities=tuple(capabilities),
+                plugins=plugins,
+                subagents=tuple(children),
+                model_recovery=ModelRecoveryPolicy(
+                    enabled=recovery.enabled,
+                    max_attempts=recovery.max_attempts,
+                    continuation_prompt=recovery.continuation_prompt,
+                    backoff_initial_seconds=recovery.backoff_initial_seconds,
+                    backoff_max_seconds=recovery.backoff_max_seconds,
+                ),
+            )
+            definitions[node.agent_revision] = definition
+            return definition
+
+        root = await reconstruct(node_by_ref[snapshot.root_agent])
+        try:
+            return HarnessBuilder(configured_plugins_enabled=False).build(root)
+        except Exception as exc:
+            raise CompositionError(
+                "The resolved Agent snapshot could not be built by the Harness.",
+                code="agent_snapshot_build_failed",
+                details={"agent_id": snapshot.root_agent.resource_id},
+            ) from exc
+
+    async def _skills(
+        self,
+        snapshot: ResolvedAgentSnapshot,
+        environment: ResolvedEnvironmentSnapshot,
+        node: ResolvedAgentNode,
+    ) -> SkillsCapability:
+        packages: dict[str, tuple[_PackageFile, ...]] = {}
+        for skill in node.skills:
+            package_reference = await self._catalog.skill_package_reference(skill.revision)
+            if package_reference.logical_digest != skill.package_object_digest:
+                raise CompositionError(
+                    "A managed Skill package selection changed after snapshot publication.",
+                    code="skill_package_mismatch",
+                    details={"skill_id": skill.revision.resource_id},
+                )
+            packages[skill.definition.skill_name] = _decode_package(
+                await self._catalog.skill_package(skill.revision),
+                skill,
+            )
+        binding_name = node.skill_materialization_binding
+        assert binding_name is not None
+        binding = next(
+            (item for item in environment.bindings if item.binding_name == binding_name),
+            None,
+        )
+        if binding is None:
+            raise CompositionError(
+                "The Skill materialization binding is absent from the Environment snapshot.",
+                code="agent_environment_incompatible",
+                details={"agent_id": node.agent_id, "binding_name": binding_name},
+            )
+        root = f"/environment/{binding.model_alias}/.a13n/skills/{snapshot.logical_agent_digest}/{node.agent_id}"
+        materializer = SnapshotSkillMaterializer(
+            f"materializer-{node.agent_id}",
+            root,
+            packages,
+        )
+        source = FileSkillSource(
+            f"snapshot-{node.agent_id}",
+            (root,),
+            required=True,
+            max_entries_per_root=max(1, len(packages)),
+        )
+        manager = SkillManager(
+            (source,),
+            materializers=(materializer,),
+            policy=SkillsPolicy(conflict="error", max_skills=max(1, len(packages))),
+        )
+        return SkillsCapability(manager)
+
+
+def _capabilities(node: ResolvedAgentNode) -> tuple[AbstractCapability[Any], ...]:
+    values: list[AbstractCapability[Any]] = []
+    for selection in node.capabilities:
+        if selection.key == "a13n.dynamic-environment":
+            values.append(
+                DynamicEnvironmentCapability(DynamicEnvironmentConfiguration(**selection.configuration.model_dump()))
+            )
+        elif selection.key == "a13n.working-state":
+            values.append(WorkingStateCapability(WorkingStateConfiguration(**selection.configuration.model_dump())))
+        elif selection.key == "a13n.user-interaction":
+            values.append(UserInteractionCapability())
+        elif selection.key == "a13n.documents":
+            values.append(DocumentsCapability())
+        elif selection.key == "a13n.media":
+            values.append(MediaCapability())
+        elif selection.key == "a13n.web":
+            values.append(WebCapability())
+        else:
+            raise CompositionError(
+                "An Agent snapshot selects an unsupported Capability.",
+                code="capability_schema_unavailable",
+            )
+    return tuple(values)
+
+
+def _decode_package(payload: JsonValue, skill: ResolvedSkill) -> tuple[_PackageFile, ...]:
+    if not isinstance(payload, dict):
+        raise CompositionError("A managed Skill package is invalid.", code="skill_package_invalid")
+    if payload.get("package_digest") != skill.definition.resolved_package_digest:
+        raise CompositionError(
+            "A managed Skill package does not match its pinned digest.",
+            code="skill_package_mismatch",
+        )
+    raw_files = payload.get("files")
+    if not isinstance(raw_files, list):
+        raise CompositionError("A managed Skill package is invalid.", code="skill_package_invalid")
+    files: list[_PackageFile] = []
+    for raw in raw_files:
+        if not isinstance(raw, dict):
+            raise CompositionError("A managed Skill package is invalid.", code="skill_package_invalid")
+        path = raw.get("path")
+        encoded = raw.get("content_base64")
+        expected = raw.get("sha256")
+        if not isinstance(path, str) or not isinstance(encoded, str) or not isinstance(expected, str):
+            raise CompositionError("A managed Skill package is invalid.", code="skill_package_invalid")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except ValueError as exc:
+            raise CompositionError("A managed Skill package is invalid.", code="skill_package_invalid") from exc
+        if hashlib.sha256(content).hexdigest() != expected:
+            raise CompositionError("A managed Skill file digest is invalid.", code="skill_package_mismatch")
+        files.append(_PackageFile(path=path, content=content, sha256=expected))
+    return tuple(files)
+
+
+def _package_version(distribution: str) -> str:
+    try:
+        return version(distribution)
+    except PackageNotFoundError as exc:
+        raise CompositionError(
+            "The required runtime distribution is unavailable.",
+            code="composition_dependency_missing",
+            details={"distribution": distribution},
+        ) from exc
+
+
+def _registration_matches(
+    lock: DependencyLock,
+    registration: HarnessPluginFactoryRegistration,
+) -> bool:
+    return (lock.distribution_name is None or lock.distribution_name == registration.distribution_name) and (
+        lock.distribution_version is None or lock.distribution_version == registration.distribution_version
+    )
+
+
+__all__ = ["AgentReconstructor", "ExecutableCache", "SnapshotSkillMaterializer"]

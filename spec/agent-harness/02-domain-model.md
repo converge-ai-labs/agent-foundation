@@ -23,7 +23,7 @@ flowchart LR
 | -------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | `AgentDefinition`    | Immutable process-local native build inputs                                                        | [Agent Definition and Build](03-agent-definition-and-build.md)             |
 | `ExecutableAgent`    | Reusable built Pydantic Agent plus Agent-bound plugins                                             | [Public API](14-public-api-and-packaging.md)                               |
-| `RunBindings`        | Fresh trusted Agent instance, Environment, model binding, Capabilities, and metadata               | [Execution Context](06-execution-context-and-lifecycle.md)                 |
+| `RunBindings`        | Fresh trusted Agent instance, Environment, model resolver, Capabilities, and metadata              | [Execution Context](06-execution-context-and-lifecycle.md)                 |
 | `AgentContext`       | One logical run's shared Pydantic dependency                                                       | [Capability Model](04-capability-model.md)                                 |
 | `BoundPluginContext` | Immutable index of fresh plugins used by one logical run                                           | [Plugin System](05-plugin-system.md)                                       |
 | Logical Harness run  | One outer context/plugin/Environment/usage scope with one public `run_id`                          | [Execution Context](06-execution-context-and-lifecycle.md)                 |

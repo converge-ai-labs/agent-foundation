@@ -7,9 +7,9 @@ import json
 import math
 import re
 from datetime import UTC, datetime
-from enum import StrEnum
+from enum import Enum, StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Literal, Self, get_origin
+from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
 from pydantic import (
@@ -48,12 +48,23 @@ class StrictModel(BaseModel):
         normalized = dict(value)
         for name, field in cls.model_fields.items():
             raw = normalized.get(name)
-            origin = get_origin(field.annotation)
+            origin = _serialized_collection_origin(field.annotation)
             if isinstance(raw, list) and origin is tuple:
                 normalized[name] = tuple(raw)
             elif isinstance(raw, list) and origin is frozenset:
                 normalized[name] = frozenset(raw)
         return normalized
+
+
+def _serialized_collection_origin(annotation: object) -> object:
+    origin = get_origin(annotation)
+    if origin in {tuple, frozenset}:
+        return origin
+    for argument in get_args(annotation):
+        nested = _serialized_collection_origin(argument)
+        if nested in {tuple, frozenset}:
+            return nested
+    return origin
 
 
 class ResourceKind(StrEnum):
@@ -471,17 +482,44 @@ class AgentEnvironmentRequirements(StrictModel):
         return self
 
 
+class DelegationContextSelection(StrictModel):
+    """Portable child-context ceilings mapped to the Harness public contract."""
+
+    include_task: bool = True
+    history: Literal["none", "summary", "selected"] = "none"
+    task_state: Literal["shared", "isolated"] = "shared"
+
+
+class UsageLimitsSelection(StrictModel):
+    """Serializable subset of Pydantic AI usage ceilings supported by Agent UI."""
+
+    request_limit: int | None = Field(default=50, ge=1)
+    tool_calls_limit: int | None = Field(default=None, ge=1)
+    input_tokens_limit: int | None = Field(default=None, ge=1)
+    output_tokens_limit: int | None = Field(default=None, ge=1)
+    total_tokens_limit: int | None = Field(default=None, ge=1)
+    per_request_input_tokens_limit: int | None = Field(default=None, ge=1)
+    count_tokens_before_request: bool = False
+
+
 class ChildEnvironmentPolicy(StrictModel):
     mode: Literal["none", "dedicated", "shared_root", "serialized_root"] = "none"
     bindings: tuple[_ID, ...] | None = None
+
+    @field_validator("bindings")
+    @classmethod
+    def _unique_bindings(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("child Environment binding selections must be unique")
+        return value
 
 
 class SubagentEdge(StrictModel):
     name: _ID
     description: str = Field(min_length=1, max_length=16 * 1024)
     agent: ResourceRef
-    context: dict[str, JsonValue] = Field(default_factory=dict)
-    usage_limits: dict[str, JsonValue] | None = None
+    context: DelegationContextSelection = DelegationContextSelection()
+    usage_limits: UsageLimitsSelection | None = None
     environment: ChildEnvironmentPolicy = ChildEnvironmentPolicy()
     lifetime: Literal["parent_scope", "session"] = "parent_scope"
     steering: Literal["enabled", "disabled"] = "disabled"
@@ -491,11 +529,97 @@ class SubagentEdge(StrictModel):
     def _agent_reference(self) -> Self:
         if self.agent.kind is not ResourceKind.agent:
             raise ValueError("subagent edges must reference agent resources")
-        _require_finite_json(self.context)
-        _reject_secret_fields(self.context)
-        if self.usage_limits is not None:
-            _require_finite_json(self.usage_limits)
-            _reject_secret_fields(self.usage_limits)
+        return self
+
+
+class DynamicEnvironmentCapabilityConfiguration(StrictModel):
+    file_tools: bool = True
+    shell_tools: bool = True
+    process_tools: bool = True
+    port_tools: bool = False
+    max_reference_entries: int = Field(default=1024, gt=0, le=100_000)
+
+
+class WorkingStateCapabilityConfiguration(StrictModel):
+    task_mode: Literal["embedded", "provider"] = "embedded"
+    tasks_enabled: bool = True
+    notes_enabled: bool = True
+    max_context_tasks: int = Field(default=128, gt=0, le=10_000)
+    max_context_note_keys: int = Field(default=256, gt=0, le=10_000)
+    max_context_bytes: int = Field(default=64 * 1024, ge=1024, le=256 * 1024)
+
+
+class DynamicEnvironmentCapabilitySelection(StrictModel):
+    key: Literal["a13n.dynamic-environment"]
+    schema_version: Literal["1"] = "1"
+    configuration: DynamicEnvironmentCapabilityConfiguration = DynamicEnvironmentCapabilityConfiguration()
+
+
+class WorkingStateCapabilitySelection(StrictModel):
+    key: Literal["a13n.working-state"]
+    schema_version: Literal["1"] = "1"
+    configuration: WorkingStateCapabilityConfiguration = WorkingStateCapabilityConfiguration()
+
+
+class UserInteractionCapabilitySelection(StrictModel):
+    key: Literal["a13n.user-interaction"]
+    schema_version: Literal["1"] = "1"
+
+
+class DocumentsCapabilitySelection(StrictModel):
+    key: Literal["a13n.documents"]
+    schema_version: Literal["1"] = "1"
+
+
+class MediaCapabilitySelection(StrictModel):
+    key: Literal["a13n.media"]
+    schema_version: Literal["1"] = "1"
+
+
+class WebCapabilitySelection(StrictModel):
+    key: Literal["a13n.web"]
+    schema_version: Literal["1"] = "1"
+
+
+type FirstPartyCapabilitySelection = Annotated[
+    DynamicEnvironmentCapabilitySelection
+    | WorkingStateCapabilitySelection
+    | UserInteractionCapabilitySelection
+    | DocumentsCapabilitySelection
+    | MediaCapabilitySelection
+    | WebCapabilitySelection,
+    Field(discriminator="key"),
+]
+
+
+class AsyncSubagentConfiguration(StrictModel):
+    tools: Literal["standard", "disabled"] = "disabled"
+    max_active_jobs: int = Field(default=8, gt=0, le=1024)
+    max_jobs_per_run: int = Field(default=32, gt=0, le=10_000)
+    max_depth: int = Field(default=8, gt=0, le=64)
+    completion_delivery: Literal["active_or_next_run", "manual"] = "active_or_next_run"
+
+
+class AgentOutputSelection(StrictModel):
+    key: Literal["text"] = "text"
+    schema_version: Literal["1"] = "1"
+
+
+class ModelRecoverySelection(StrictModel):
+    enabled: bool = False
+    max_attempts: int = Field(default=5, ge=1, le=100)
+    continuation_prompt: str = Field(
+        default="The previous model stream ended before the task finished. Continue from the available history.",
+        min_length=1,
+        max_length=16 * 1024,
+    )
+    backoff_initial_seconds: float = Field(default=1.0, ge=0, le=3600)
+    backoff_max_seconds: float = Field(default=30.0, ge=0, le=3600)
+
+    @model_validator(mode="after")
+    def _consistent_backoff(self) -> Self:
+        if self.backoff_initial_seconds > self.backoff_max_seconds:
+            raise ValueError("initial recovery backoff must not exceed maximum backoff")
         return self
 
 
@@ -512,12 +636,12 @@ class AgentDefinitionDocument(StrictModel):
     prompt: ResourceRef
     plugins: tuple[ResourceRef, ...] = ()
     skills: AgentSkillConfiguration = AgentSkillConfiguration()
-    capabilities: tuple[dict[str, JsonValue], ...] = ()
+    capabilities: tuple[FirstPartyCapabilitySelection, ...] = ()
     environment: AgentEnvironmentRequirements = AgentEnvironmentRequirements()
     subagents: tuple[SubagentEdge, ...] = ()
-    async_subagents: dict[str, JsonValue] = Field(default_factory=dict)
-    output: dict[str, JsonValue] = Field(default_factory=dict)
-    model_recovery: dict[str, JsonValue] = Field(default_factory=dict)
+    async_subagents: AsyncSubagentConfiguration = AsyncSubagentConfiguration()
+    output: AgentOutputSelection = AgentOutputSelection()
+    model_recovery: ModelRecoverySelection = ModelRecoverySelection()
 
     @model_validator(mode="after")
     def _direct_reference_kinds(self) -> Self:
@@ -528,9 +652,9 @@ class AgentDefinitionDocument(StrictModel):
         child_names = [item.name for item in self.subagents]
         if len(child_names) != len(set(child_names)):
             raise ValueError("subagent edge names must be unique")
-        for value in (*self.capabilities, self.async_subagents, self.output, self.model_recovery):
-            _require_finite_json(value)
-            _reject_secret_fields(value)
+        capability_keys = [item.key for item in self.capabilities]
+        if len(capability_keys) != len(set(capability_keys)):
+            raise ValueError("Agent Capability selections must be unique")
         return self
 
 
@@ -656,16 +780,51 @@ def restart_settings_digest(settings: ConfigurationSettings) -> str:
     return canonical_digest({"credential_backends": settings.credential_backends})
 
 
+def canonical_json_value(value: object) -> JsonValue:
+    """Return deterministic JSON, including stable serialization of unordered sets."""
+
+    if isinstance(value, BaseModel):
+        return canonical_json_value(value.model_dump(mode="python"))
+    if isinstance(value, Enum):
+        return canonical_json_value(value.value)
+    if isinstance(value, Path):
+        return str(value)
+    if value is None or isinstance(value, bool | int | str):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("canonical JSON numbers must be finite")
+        return value
+    if isinstance(value, dict):
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError("canonical JSON object keys must be strings")
+        return {key: canonical_json_value(value[key]) for key in sorted(value)}
+    if isinstance(value, set | frozenset):
+        items = [canonical_json_value(item) for item in value]
+        return sorted(
+            items,
+            key=lambda item: json.dumps(
+                item,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
+    if isinstance(value, list | tuple):
+        return [canonical_json_value(item) for item in value]
+    raise TypeError(f"{type(value).__name__} is not canonical JSON")
+
+
 def canonical_digest(value: object) -> str:
     """Return the behavior digest for one finite JSON-compatible value."""
 
     encoded = json.dumps(
-        value,
+        canonical_json_value(value),
         ensure_ascii=False,
         allow_nan=False,
         sort_keys=True,
         separators=(",", ":"),
-        default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -758,6 +917,8 @@ def _require_finite_json(value: JsonValue, *, depth: int = 0) -> None:
 
 __all__ = [
     "AgentDefinitionDocument",
+    "AgentOutputSelection",
+    "AsyncSubagentConfiguration",
     "ConfigurationGeneration",
     "ConfigurationSettings",
     "DefinitionRootSettings",
@@ -766,10 +927,12 @@ __all__ = [
     "EnvdRuntimeManifest",
     "EnvironmentBindingDefinition",
     "EnvironmentDefinitionDocument",
+    "FirstPartyCapabilitySelection",
     "LocalDirectorySettings",
     "LocalSkillDiscoverySettings",
     "LocalSkillSourceDefinition",
     "ModelDefinition",
+    "ModelRecoverySelection",
     "PluginInstanceDefinition",
     "ProjectRootPolicy",
     "PromptBlock",
@@ -788,7 +951,9 @@ __all__ = [
     "SkillPackageSource",
     "SourceTransactionEntry",
     "SourceTransactionManifest",
+    "UsageLimitsSelection",
     "canonical_digest",
+    "canonical_json_value",
     "resource_identity",
     "restart_settings_digest",
 ]

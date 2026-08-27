@@ -403,7 +403,7 @@ class ConfigurationService:
                     self._process_settings_path,
                     self._bootstrap_settings,
                 )
-                if canonical_digest(observed.model_dump(mode="json")) != current.process_settings_digest:
+                if canonical_digest(observed) != current.process_settings_digest:
                     raise ConfigurationError(
                         "The process settings changed before the Skill source order could be written.",
                         code="process_settings_stale",
@@ -434,7 +434,7 @@ class ConfigurationService:
                     self._process_settings_path,
                     self._bootstrap_settings,
                 )
-                if canonical_digest(confirmed.model_dump(mode="json")) != current.process_settings_digest:
+                if canonical_digest(confirmed) != current.process_settings_digest:
                     raise ConfigurationError(
                         "The process settings changed while the Skill source order was validated.",
                         code="process_settings_stale",

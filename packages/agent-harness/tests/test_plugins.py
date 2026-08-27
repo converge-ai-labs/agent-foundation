@@ -126,8 +126,8 @@ async def test_plugins_bind_order_wrap_and_contribute_capabilities() -> None:
     log: list[str] = []
     inner = RecordingPlugin("inner", log, contribute_capability=True)
     outer = RecordingPlugin("outer", log, ordering=PluginOrdering(wraps=("inner",)))
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(log),
         plugins=(inner, outer),
@@ -181,8 +181,8 @@ class ShortCircuitPlugin(AbstractHarnessPlugin):
 
 async def test_plugin_can_short_circuit_without_starting_pydantic() -> None:
     calls: list[str] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(calls),
         plugins=(ShortCircuitPlugin(calls),),
@@ -216,8 +216,8 @@ class CleanupFailurePlugin(AbstractHarnessPlugin):
 
 
 async def test_cleanup_failure_withholds_terminal_delivery_and_retains_outcome() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(CleanupFailurePlugin(),),
@@ -276,8 +276,8 @@ class RaiseAfterResultPlugin(AbstractHarnessPlugin):
 async def test_invalid_or_failed_outer_result_retains_the_last_valid_inner_outcome(
     plugin: AbstractHarnessPlugin,
 ) -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(plugin,),
@@ -312,8 +312,8 @@ class ReplaceResultPlugin(AbstractHarnessPlugin):
 
 
 async def test_outer_failure_retains_the_valid_replacement_from_the_inner_plugin_boundary() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(RaiseAfterResultPlugin(), ReplaceResultPlugin()),
@@ -356,8 +356,8 @@ class EventTransformPlugin(AbstractHarnessPlugin):
 
 
 async def test_plugin_event_sequences_are_reallocated_at_the_public_boundary() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(EventTransformPlugin(),),
@@ -371,8 +371,8 @@ async def test_plugin_event_sequences_are_reallocated_at_the_public_boundary() -
 
 
 async def test_plugin_cannot_emit_a_malformed_pydantic_event() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(EventTransformPlugin(invalid=True),),
@@ -385,8 +385,8 @@ async def test_plugin_cannot_emit_a_malformed_pydantic_event() -> None:
 
 
 async def test_plugin_cannot_forge_an_unregistered_child_event() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(EventTransformPlugin(foreign_run=True),),
@@ -410,8 +410,8 @@ class EmitDuringBindingPlugin(AbstractHarnessPlugin):
 
 
 async def test_pre_start_event_overflow_fails_without_waiting_for_a_consumer() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(EmitDuringBindingPlugin(),),
@@ -473,8 +473,8 @@ class ExchangeReplacementPlugin(AbstractHarnessPlugin):
 @pytest.mark.parametrize("replacement", ["context", "input"])
 async def test_plugin_cannot_replace_trusted_context_or_bypass_input_normalization(replacement: str) -> None:
     model_calls: list[str] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(model_calls),
         plugins=(ExchangeReplacementPlugin(replacement),),
@@ -551,8 +551,8 @@ class TaskAffineCleanupPlugin(AbstractHarnessPlugin):
 
 
 async def test_normal_cleanup_stays_in_the_task_that_entered_the_plugin_iterator() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(TaskAffineCleanupPlugin(),),
@@ -596,8 +596,8 @@ class TaskAffineEnvironment(EnvironmentRunBinding):
 
 async def test_terminal_cleanup_exits_environment_scope_in_its_entering_task() -> None:
     environment = TaskAffineEnvironment()
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
     )
@@ -636,8 +636,8 @@ async def test_environment_owner_failure_interrupts_the_logical_run() -> None:
         await asyncio.Event().wait()
         yield "unreachable"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -661,8 +661,8 @@ async def test_model_stream_stays_in_one_owner_task() -> None:
         finally:
             assert asyncio.current_task() is owner_task
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -705,8 +705,8 @@ class CountingClosePlugin(AbstractHarnessPlugin):
 
 async def test_harness_closes_each_registered_plugin_response_once() -> None:
     plugin = CountingClosePlugin()
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(plugin,),
@@ -747,8 +747,8 @@ class SuppressingCancellationPlugin(AbstractHarnessPlugin):
 
 async def test_cleanup_cannot_suppress_external_cancellation() -> None:
     cleanup_started = asyncio.Event()
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(SuppressingCancellationPlugin(cleanup_started),),
@@ -775,8 +775,8 @@ async def test_cancellation_during_terminal_pump_cleanup_stays_primary() -> None
         started=cleanup_started,
         release=release_cleanup,
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(plugin,),
@@ -803,8 +803,8 @@ async def test_early_close_installs_topology_fence_before_plugin_cleanup() -> No
     environment = create_noop_environment_run_binding(
         topology_limits=EnvironmentTopologyLimits(max_bindings=1, max_committed_changes=1)
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(plugin,),
@@ -865,8 +865,8 @@ class EndAfterTwoEventsPlugin(AbstractHarnessPlugin):
 
 async def test_internal_pump_cancellation_cannot_publish_into_an_unconsumed_full_queue() -> None:
     close_started = asyncio.Event()
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(EndAfterTwoEventsPlugin(close_started),),
@@ -922,8 +922,8 @@ async def test_repeated_external_cancellation_attempts_remaining_cleanup_and_sta
         log,
         ordering=PluginOrdering(wraps=("cleanup-inner",)),
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model([]),
         plugins=(inner, outer),
@@ -956,16 +956,16 @@ async def test_repeated_external_cancellation_attempts_remaining_cleanup_and_sta
 def test_plugin_ordering_rejects_unknown_references_and_cycles() -> None:
     model = _model([])
     with pytest.raises(PluginError, match="unknown plugin"):
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=model,
             plugins=(RecordingPlugin("one", [], ordering=PluginOrdering(wraps=("missing",))),),
         )
 
     with pytest.raises(PluginError, match="cycle"):
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=model,
             plugins=(

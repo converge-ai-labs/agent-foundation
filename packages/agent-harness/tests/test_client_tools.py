@@ -80,8 +80,8 @@ def _model(tool_name: str) -> FunctionModel:
 
 
 def _build(spec: ClientToolsSpec, *, tool_name: str, extra_capabilities=()):
-    return HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    return HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(tool_name),
         capabilities=(ClientToolsCapability(spec=spec), *extra_capabilities),
@@ -123,8 +123,8 @@ async def test_client_tool_instructions_are_deterministic_and_run_frozen() -> No
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(ClientToolsCapability(spec=spec),),
@@ -164,8 +164,8 @@ async def test_run_override_replaces_defaults_and_empty_override_clears_them() -
         del messages, info
         yield "done"
 
-    cleared = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    cleared = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=text_stream),
         capabilities=(ClientToolsCapability(spec=spec), CaptureTools()),
@@ -190,8 +190,8 @@ async def test_override_policy_and_owner_are_fail_closed() -> None:
         )
     assert forbidden.value.code == "client_tools_override_forbidden"
 
-    without_owner = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    without_owner = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model("replacement_action"),
     )
@@ -242,8 +242,8 @@ async def test_deferred_result_boundary_preserves_prior_wire_history_until_provi
         seen.append(messages)
         yield "done"
 
-    rebuilt = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    rebuilt = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -345,8 +345,8 @@ async def test_mixed_external_and_approval_batch_resumes_through_native_categori
             return InvocationPolicyDecision.allow()
 
     spec = ClientToolsSpec(default_toolsets=(_toolset("client_action"),))
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(

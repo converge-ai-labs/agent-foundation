@@ -25,7 +25,7 @@ Direct objects are the simplest choice for an embedded application:
 from a13n_harness import HarnessBuilder
 
 plugin = AuditPlugin("audit-primary")
-executable = HarnessBuilder().build_code(
+executable = HarnessBuilder().build(
     agent_spec,
     output_type=str,
     model=model,

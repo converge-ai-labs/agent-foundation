@@ -22,7 +22,7 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, ResolveModelId
 from pydantic_ai.exceptions import AgentRunError, RunCancelled, UsageLimitExceeded, UserError
 from pydantic_ai.messages import AgentStreamEvent, ModelMessage
-from pydantic_ai.models import KnownModelName, Model, ModelResolutionContext
+from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, StructuredDict, TextOutput, ToolOutput
 from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
@@ -160,6 +160,11 @@ from a13n_harness.plugins import (
     bind_agent_plugins,
     bind_run_plugins,
 )
+from a13n_harness.pricing import (
+    MODEL_COST_CAPABILITY_ID,
+    AbstractModelCostCapability,
+    CatalogModelCostCapability,
+)
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
     ModelRecoveryPolicy,
@@ -189,17 +194,18 @@ from a13n_harness.tools.surface import (
     TOOL_SURFACE_CAPABILITY_ID,
     ToolSurfaceCapability,
 )
-from a13n_harness.usage import (
-    MODEL_COST_RUN_CAPABILITY_ID,
-    USAGE_CAPABILITY_ID,
-    ModelCostRunCapability,
-    RunUsageLedger,
-    UsageCapability,
-)
+from a13n_harness.usage import USAGE_CAPABILITY_ID, RunUsageLedger, UsageCapability
 
 _AGENT_EVENT_ADAPTER = TypeAdapter(AgentStreamEvent)
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
 _EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
+
+
+class _UnsetOutputType:
+    __slots__ = ()
+
+
+_UNSET_OUTPUT_TYPE = _UnsetOutputType()
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,7 +375,7 @@ class AgentDefinition[OutputT]:
     agent: AgentSpec
     output_type: OutputSpec[OutputT] | None
     definition_id: str = field(default_factory=lambda: str(uuid4()))
-    model: Model | KnownModelName | str | None = None
+    model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
     subagents: tuple[SubagentDefinition, ...] = ()
@@ -378,6 +384,13 @@ class AgentDefinition[OutputT]:
     def __post_init__(self) -> None:
         if not self.definition_id.strip():
             raise DefinitionError("definition_id must not be blank.", code="definition_id_invalid")
+        if self.model is not None and not isinstance(self.model, Model):
+            raise DefinitionError("model must be a native Model or None.", code="model_invalid")
+        if self.model is not None and self.agent.model is not None:
+            raise DefinitionError(
+                "AgentSpec.model and AgentDefinition.model are mutually exclusive.",
+                code="model_selection_conflict",
+            )
         has_schema = self.agent.output_schema is not None
         if self.output_type is not None and has_schema:
             raise DefinitionError(
@@ -407,6 +420,17 @@ class AgentDefinition[OutputT]:
         if len(set(names)) != len(names):
             raise DefinitionError("Subagent names must be unique within one parent.", code="subagent_name_duplicate")
         object.__setattr__(self, "subagents", subagents)
+
+
+def _model_cost_capabilities(
+    capabilities: Sequence[AbstractCapability[AgentContext]],
+) -> tuple[AbstractModelCostCapability, ...]:
+    leaves: list[AbstractCapability[AgentContext]] = []
+    for capability in capabilities:
+        if not isinstance(capability, AbstractCapability):
+            continue
+        capability.apply(leaves.append)
+    return tuple(capability for capability in leaves if isinstance(capability, AbstractModelCostCapability))
 
 
 def _resolve_model_configured_capabilities(
@@ -515,11 +539,86 @@ class HarnessBuilder:
                 plugin_keys=selected_keys,
             )
 
-    def build[BuildOutputT](self, definition: AgentDefinition[BuildOutputT]) -> ExecutableAgent[BuildOutputT]:
-        """Validate code-first composition and recursively construct a reusable executable."""
-        return self._build(definition, active_definition_ids=())
+    @overload
+    def build[BuildOutputT](
+        self,
+        definition: AgentDefinition[BuildOutputT],
+        /,
+    ) -> ExecutableAgent[BuildOutputT]: ...
 
-    def _build[BuildOutputT](
+    @overload
+    def build[BuildOutputT](
+        self,
+        spec: AgentSpec,
+        /,
+        *,
+        output_type: OutputSpec[BuildOutputT],
+        definition_id: str | None = None,
+        model: Model | None = None,
+        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        plugins: Sequence[AbstractHarnessPlugin] = (),
+        subagents: Sequence[SubagentDefinition] = (),
+        model_recovery: ModelRecoveryPolicy | None = None,
+    ) -> ExecutableAgent[BuildOutputT]: ...
+
+    @overload
+    def build(
+        self,
+        spec: AgentSpec,
+        /,
+        *,
+        output_type: None,
+        definition_id: str | None = None,
+        model: Model | None = None,
+        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        plugins: Sequence[AbstractHarnessPlugin] = (),
+        subagents: Sequence[SubagentDefinition] = (),
+        model_recovery: ModelRecoveryPolicy | None = None,
+    ) -> ExecutableAgent[dict[str, JsonValue]]: ...
+
+    def build(
+        self,
+        definition_or_spec: AgentDefinition[Any] | AgentSpec,
+        /,
+        *,
+        output_type: OutputSpec[Any] | _UnsetOutputType | None = _UNSET_OUTPUT_TYPE,
+        definition_id: str | None = None,
+        model: Model | None = None,
+        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        plugins: Sequence[AbstractHarnessPlugin] = (),
+        subagents: Sequence[SubagentDefinition] = (),
+        model_recovery: ModelRecoveryPolicy | None = None,
+    ) -> ExecutableAgent[Any]:
+        """Construct a reusable executable from a definition or an Agent spec."""
+        if isinstance(definition_or_spec, AgentDefinition):
+            if (
+                not isinstance(output_type, _UnsetOutputType)
+                or definition_id is not None
+                or model is not None
+                or capabilities
+                or plugins
+                or subagents
+                or model_recovery is not None
+            ):
+                raise TypeError("AgentDefinition build does not accept AgentSpec construction arguments")
+            return self._build_definition(definition_or_spec, active_definition_ids=())
+        if not isinstance(definition_or_spec, AgentSpec):
+            raise TypeError("build() requires an AgentDefinition or AgentSpec")
+        if isinstance(output_type, _UnsetOutputType):
+            raise TypeError("AgentSpec build requires the keyword-only output_type argument")
+        definition = AgentDefinition(
+            agent=definition_or_spec,
+            output_type=output_type,
+            definition_id=definition_id or str(uuid4()),
+            model=model,
+            capabilities=tuple(capabilities),
+            plugins=tuple(plugins),
+            subagents=tuple(subagents),
+            model_recovery=model_recovery if model_recovery is not None else ModelRecoveryPolicy(),
+        )
+        return self._build_definition(definition, active_definition_ids=())
+
+    def _build_definition[BuildOutputT](
         self,
         definition: AgentDefinition[BuildOutputT],
         *,
@@ -533,7 +632,7 @@ class HarnessBuilder:
             BuiltSubagent(
                 declaration=child,
                 definition=child.agent,
-                executable=self._build(child.agent, active_definition_ids=child_path),
+                executable=self._build_definition(child.agent, active_definition_ids=child_path),
             )
             for child in definition.subagents
         )
@@ -543,6 +642,15 @@ class HarnessBuilder:
         authored_capabilities = _resolve_model_configured_capabilities(
             definition.agent,
             (*definition.capabilities, *plugin_capabilities),
+        )
+        selected_model_costs = _model_cost_capabilities(definition.capabilities)
+        if len(selected_model_costs) > 1:
+            raise DefinitionError(
+                "AgentDefinition capabilities must contain at most one model-cost Capability.",
+                code="capability_scope_invalid",
+            )
+        default_model_costs: tuple[AbstractModelCostCapability, ...] = (
+            () if selected_model_costs else (CatalogModelCostCapability(),)
         )
         definition_reserved_ids = _validate_capability_source(authored_capabilities, source="definition")
 
@@ -561,6 +669,7 @@ class HarnessBuilder:
             ModelContextCoordinatorCapability(),
             ResolveModelId(resolve_model),
             *authored_capabilities,
+            *default_model_costs,
             UsageCapability(),
         )
         try:
@@ -616,60 +725,6 @@ class HarnessBuilder:
                 )
             )
             for entry in configuration.enabled_plugins
-        )
-
-    @overload
-    def build_code[BuildOutputT](
-        self,
-        agent: AgentSpec,
-        *,
-        output_type: OutputSpec[BuildOutputT],
-        definition_id: str | None = None,
-        model: Model | KnownModelName | str | None = None,
-        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
-        subagents: Sequence[SubagentDefinition] = (),
-        model_recovery: ModelRecoveryPolicy | None = None,
-    ) -> ExecutableAgent[BuildOutputT]: ...
-
-    @overload
-    def build_code(
-        self,
-        agent: AgentSpec,
-        *,
-        output_type: None,
-        definition_id: str | None = None,
-        model: Model | KnownModelName | str | None = None,
-        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
-        subagents: Sequence[SubagentDefinition] = (),
-        model_recovery: ModelRecoveryPolicy | None = None,
-    ) -> ExecutableAgent[dict[str, JsonValue]]: ...
-
-    def build_code(
-        self,
-        agent: AgentSpec,
-        *,
-        output_type: OutputSpec[Any] | None,
-        definition_id: str | None = None,
-        model: Model | KnownModelName | str | None = None,
-        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
-        plugins: Sequence[AbstractHarnessPlugin] = (),
-        subagents: Sequence[SubagentDefinition] = (),
-        model_recovery: ModelRecoveryPolicy | None = None,
-    ) -> ExecutableAgent[Any]:
-        """Convenience constructor retaining the same AgentDefinition build path."""
-        return self.build(
-            AgentDefinition(
-                agent=agent,
-                output_type=output_type,
-                definition_id=definition_id or str(uuid4()),
-                model=model,
-                capabilities=tuple(capabilities),
-                plugins=tuple(plugins),
-                subagents=tuple(subagents),
-                model_recovery=model_recovery or ModelRecoveryPolicy(),
-            )
         )
 
 
@@ -901,8 +956,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 instance=self._bindings.instance,
                 state=context_state,
                 environment=environment,
-                model_binding=self._bindings.model_binding,
+                model_resolver=self._bindings.model_resolver,
                 model_context=self._bindings.model_context,
+                _inherited_model_cost=self._bindings._inherited_model_cost,
                 plugins=plugin_context,
                 subagents=self._executable.subagents,
                 events=self._emitter,
@@ -2067,6 +2123,7 @@ def _validate_built_capability_tree(
     steering_count = 0
     model_context_coordinator_count = 0
     usage_count = 0
+    model_cost_count = 0
     reserved_ids = {
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
         TOOL_SURFACE_CAPABILITY_ID,
@@ -2076,7 +2133,7 @@ def _validate_built_capability_tree(
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
-        MODEL_COST_RUN_CAPABILITY_ID,
+        MODEL_COST_CAPABILITY_ID,
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
@@ -2186,6 +2243,14 @@ def _validate_built_capability_tree(
                     code="capability_scope_invalid",
                 )
             continue
+        if isinstance(capability, AbstractModelCostCapability):
+            model_cost_count += 1
+            if capability_id != MODEL_COST_CAPABILITY_ID:
+                raise DefinitionError(
+                    "The mandatory model-cost Capability has an invalid ID.",
+                    code="capability_scope_invalid",
+                )
+            continue
 
         allowed_definition_reserved = (
             type(capability)
@@ -2273,6 +2338,11 @@ def _validate_built_capability_tree(
             "The built Agent must contain exactly one mandatory Usage Capability.",
             code="capability_scope_invalid",
         )
+    if model_cost_count != 1:
+        raise DefinitionError(
+            "The built Agent must contain exactly one mandatory model-cost Capability.",
+            code="capability_scope_invalid",
+        )
 
 
 def _capture_skill_selection_names(
@@ -2303,7 +2373,6 @@ def _validate_capability_source(
         DocumentsRunCapability,
         WebRunCapability,
         TaskStateRunCapability,
-        ModelCostRunCapability,
         DelegationRunCapability,
     )
     leaves: list[AbstractCapability[AgentContext]] = []
@@ -2334,7 +2403,7 @@ def _validate_capability_source(
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
-        MODEL_COST_RUN_CAPABILITY_ID,
+        MODEL_COST_CAPABILITY_ID,
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
@@ -2370,24 +2439,27 @@ def _validate_capability_source(
             )
         allowed = (
             source == "definition"
-            and type(capability)
-            in (
-                ClientToolsCapability,
-                CodeActCapability,
-                DynamicEnvironmentCapability,
-                RuntimeContextCapability,
-                WorkspaceOutlineCapability,
-                FileContextCapability,
-                HandoffCapability,
-                CompactionCapability,
-                MonitoredProcessCapability,
-                UserInteractionCapability,
-                SkillsCapability,
-                MediaCapability,
-                DocumentsCapability,
-                WebCapability,
-                WorkingStateCapability,
-                DelegationCapability,
+            and (
+                isinstance(capability, AbstractModelCostCapability)
+                or type(capability)
+                in (
+                    ClientToolsCapability,
+                    CodeActCapability,
+                    DynamicEnvironmentCapability,
+                    RuntimeContextCapability,
+                    WorkspaceOutlineCapability,
+                    FileContextCapability,
+                    HandoffCapability,
+                    CompactionCapability,
+                    MonitoredProcessCapability,
+                    UserInteractionCapability,
+                    SkillsCapability,
+                    MediaCapability,
+                    DocumentsCapability,
+                    WebCapability,
+                    WorkingStateCapability,
+                    DelegationCapability,
+                )
             )
         ) or (source == "run" and type(capability) in run_types)
         reserved_type = isinstance(
@@ -2399,7 +2471,7 @@ def _validate_capability_source(
             | ModelContextCoordinatorCapability
             | InvocationPolicyCapability
             | UsageCapability
-            | ModelCostRunCapability
+            | AbstractModelCostCapability
             | ClientToolsCapability
             | ClientToolsRunCapability
             | CodeActCapability

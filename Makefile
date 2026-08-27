@@ -56,9 +56,9 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-code)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
-	@(cd examples/agent-app && uv run --locked agent-app-example basic)
-	@(cd examples/agent-app && uv run --locked agent-app-example local)
-	@(cd examples/agent-app && uv run --locked agent-app-example host)
+	@state_dir=$$(mktemp -d); trap 'rm -rf "$$state_dir"' EXIT; \
+		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "first turn" "second turn"); \
+		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "turn after restart")
 
 .PHONY: examples-build
 examples-build: examples-sync ## Build every example distribution

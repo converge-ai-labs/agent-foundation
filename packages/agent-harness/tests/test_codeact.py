@@ -131,8 +131,8 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:codeact"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(
@@ -187,8 +187,8 @@ async def test_run_program_reads_direct_local_source_and_dispatches_current_tool
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:program"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(_codeact_tools(double, allowed=("double",)), CodeActCapability()),
@@ -229,7 +229,7 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
             yield "child-done"
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="codeact-child-v1",
         model=FunctionModel(stream_function=child_model),
@@ -260,7 +260,7 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
             yield "parent-done"
 
     parent = AgentDefinition(
-        agent=AgentSpec(model="logical:parent"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="codeact-parent-v1",
         model=FunctionModel(stream_function=parent_model),

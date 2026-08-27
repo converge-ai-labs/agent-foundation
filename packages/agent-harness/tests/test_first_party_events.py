@@ -67,8 +67,8 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
         del messages, info
         yield "done"
 
-    success = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    success = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=success_stream),
     )
@@ -94,8 +94,8 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
         raise UnexpectedModelBehavior("provider body must not escape")
         yield "unreachable"
 
-    failing = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    failing = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=failing_stream),
     )
@@ -146,8 +146,8 @@ async def test_invalid_handoff_input_does_not_start_a_context_operation() -> Non
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(HandoffCapability(),),
@@ -179,8 +179,8 @@ async def test_compaction_events_share_operation_identity_and_provider_usage_sna
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -245,8 +245,8 @@ async def test_task_changed_events_are_committed_deltas_and_skip_semantic_noop()
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
@@ -292,8 +292,8 @@ async def test_provider_task_observation_emits_once_at_harness_read_boundaries()
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
@@ -347,8 +347,8 @@ async def test_provider_changes_before_harness_mutation_keep_provider_observed_r
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),

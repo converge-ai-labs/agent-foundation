@@ -99,7 +99,7 @@ flowchart TB
 
     subgraph Runtime[Harness and providers]
         Provider[Environment Provider Managers]
-        Model[Fresh Model binding]
+        Model[Fresh Model resolver]
         Executable[ExecutableAgent]
         Stream[HarnessRunStream]
         State[HarnessState]

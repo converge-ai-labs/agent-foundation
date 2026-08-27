@@ -11,6 +11,7 @@ import a13n_harness.toolsets.delegation as delegation_toolset_module
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
+    AbstractModelCostCapability,
     AgentDefinition,
     AgentIdentityRef,
     AgentInstanceContext,
@@ -23,7 +24,7 @@ from a13n_harness import (
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     ModelCostInput,
-    ModelCostRunCapability,
+    ModelCostQuote,
     NoopEnvironmentRunBinding,
     PluginError,
     PluginRunExchange,
@@ -122,18 +123,25 @@ def _previous_child_id(messages: list[ModelMessage]) -> str | None:
     return None
 
 
-def _child_definition(*, working_state: bool = False) -> AgentDefinition[str]:
+def _child_definition(
+    *,
+    working_state: bool = False,
+    capabilities: tuple[AbstractModelCostCapability, ...] = (),
+) -> AgentDefinition[str]:
     async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del info
         turn = sum(isinstance(message, ModelResponse) for message in messages) + 1
         yield f"child-turn-{turn}"
 
     return AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="child-definition-v1",
         model=FunctionModel(stream_function=child_stream),
-        capabilities=(WorkingStateCapability(),) if working_state else (),
+        capabilities=(
+            *((WorkingStateCapability(),) if working_state else ()),
+            *capabilities,
+        ),
     )
 
 
@@ -143,13 +151,18 @@ def _parent_definition(
     *,
     working_state: bool = False,
     plugins: tuple[AbstractHarnessPlugin, ...] = (),
+    capabilities: tuple[AbstractModelCostCapability, ...] = (),
 ):
     return AgentDefinition(
-        agent=AgentSpec(model="logical:parent"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="parent-definition-v1",
         model=model,
-        capabilities=(DelegationCapability(), WorkingStateCapability()) if working_state else (DelegationCapability(),),
+        capabilities=(
+            DelegationCapability(),
+            *((WorkingStateCapability(),) if working_state else ()),
+            *capabilities,
+        ),
         plugins=plugins,
         subagents=(
             SubagentDefinition(
@@ -395,7 +408,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
         yield "grandchild-done"
 
     grandchild = AgentDefinition(
-        agent=AgentSpec(model="logical:grandchild"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="grandchild-definition-v1",
         model=FunctionModel(stream_function=grandchild_stream),
@@ -418,7 +431,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
         yield "child-done"
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="nested-child-definition-v1",
         model=FunctionModel(stream_function=child_stream),
@@ -586,16 +599,23 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
     assert failed[0].payload["parent_tool_call_id"] == child_payloads[0]["parent_tool_call_id"]
 
 
-async def test_inline_delegation_shares_pricing_without_double_counting() -> None:
-    class FixedCalculator:
-        revision = "pricing-v1"
-
+async def test_inline_delegation_inherits_parent_pricing_without_double_counting() -> None:
+    class FixedCostCapability(AbstractModelCostCapability):
         def __init__(self) -> None:
             self.inputs: list[ModelCostInput] = []
 
-        def calculate(self, value: ModelCostInput) -> Decimal:
+        @property
+        def revision(self) -> str:
+            return "pricing-v1"
+
+        def quote(self, value: ModelCostInput) -> ModelCostQuote:
             self.inputs.append(value)
-            return Decimal("0.25")
+            return ModelCostQuote(
+                cost_usd=Decimal("0.25"),
+                source="custom",
+                pricing_revision=self.revision,
+                rule_id="fixed",
+            )
 
     async def parent_stream(
         messages: list[ModelMessage],
@@ -613,19 +633,18 @@ async def test_inline_delegation_shares_pricing_without_double_counting() -> Non
             return
         yield "done"
 
-    calculator = FixedCalculator()
+    cost_capability = FixedCostCapability()
     executable = HarnessBuilder().build(
         _parent_definition(
             _child_definition(),
             FunctionModel(stream_function=parent_stream),
+            capabilities=(cost_capability,),
         )
     )
     events: list[HarnessEvent] = []
     async with executable.stream(
         "start",
-        bindings=_bindings_factory(
-            extra_capabilities=(ModelCostRunCapability(calculator=calculator),),
-        ),
+        bindings=_bindings_factory(),
     ) as stream:
         parent_run_id = stream.run_id
         async for item in stream:
@@ -637,7 +656,7 @@ async def test_inline_delegation_shares_pricing_without_double_counting() -> Non
     assert result.output_or_raise() == "done"
     assert result.usage.requests == 3
     assert result.usage.cost == Decimal("0.75")
-    assert len(calculator.inputs) == 3
+    assert len(cost_capability.inputs) == 3
     child_usage = [
         event.event.payload["records"]
         for event in events
@@ -647,7 +666,7 @@ async def test_inline_delegation_shares_pricing_without_double_counting() -> Non
     ]
     assert len(child_usage) == 1
     assert child_usage[0][0]["pricing_revision"] == "pricing-v1"
-    assert child_usage[0][0]["custom_pricing_status"] == "applied"
+    assert child_usage[0][0]["pricing_status"] == "applied"
     assert len(result.usage_records) == 2
     assert all(record.run_id == parent_run_id for record in result.usage_records)
 
@@ -846,7 +865,7 @@ async def test_inline_delegation_rejects_invalid_child_lineage_before_model_work
         yield "unexpected"
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=child_stream),
     )
@@ -907,7 +926,7 @@ async def test_inline_delegation_reserves_new_child_capacity_before_dispatch() -
         yield "child-done"
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="capacity-child-v1",
         model=FunctionModel(stream_function=child_stream),
@@ -936,7 +955,7 @@ async def test_inline_delegation_reserves_new_child_capacity_before_dispatch() -
 
     executable = HarnessBuilder().build(
         AgentDefinition(
-            agent=AgentSpec(model="logical:parent"),
+            agent=AgentSpec(),
             output_type=str,
             definition_id="capacity-parent-v1",
             model=FunctionModel(stream_function=parent_stream),
@@ -959,7 +978,7 @@ async def test_inline_delegation_projects_state_budget_failure_before_completed_
         yield "x" * (70 * 1024)
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="large-state-child-v1",
         model=FunctionModel(stream_function=child_stream),
@@ -983,7 +1002,7 @@ async def test_inline_delegation_projects_state_budget_failure_before_completed_
 
     executable = HarnessBuilder().build(
         AgentDefinition(
-            agent=AgentSpec(model="logical:parent"),
+            agent=AgentSpec(),
             output_type=str,
             definition_id="large-state-parent-v1",
             model=FunctionModel(stream_function=parent_stream),
@@ -1017,7 +1036,7 @@ async def test_inline_delegation_output_policy_uses_configured_total_limit() -> 
         yield "unused"
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="output-policy-child-v1",
         model=FunctionModel(stream_function=child_stream),
@@ -1034,7 +1053,7 @@ async def test_inline_delegation_output_policy_uses_configured_total_limit() -> 
 
     executable = HarnessBuilder().build(
         AgentDefinition(
-            agent=AgentSpec(model="logical:parent"),
+            agent=AgentSpec(),
             output_type=str,
             definition_id="output-policy-parent-v1",
             model=FunctionModel(stream_function=parent_stream),

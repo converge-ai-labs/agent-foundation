@@ -23,13 +23,13 @@ from a13n_harness import (
 from pydantic_ai.agent.spec import AgentSpec
 
 child = AgentDefinition(
-    agent=AgentSpec(model="logical:reviewer"),
+    agent=AgentSpec(),
     output_type=str,
     model=reviewer_model,
 )
 
-parent = HarnessBuilder().build_code(
-    AgentSpec(model="logical:coordinator"),
+parent = HarnessBuilder().build(
+    AgentSpec(),
     output_type=str,
     model=coordinator_model,
     capabilities=(DelegationCapability(),),

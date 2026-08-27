@@ -19,9 +19,10 @@ The current mandatory build contribution is deliberately narrow:
 
 | Entry                     | Primitive                                     | Purpose                                                                                                                            | Owner                                                                    |
 | ------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Logical model resolver    | Pydantic `ResolveModelId`                     | Consult fresh `ModelRunBinding` or delegate to native inference                                                                    | [Input, Model, and Output](16-input-model-and-output.md)                 |
+| Logical model resolver    | Pydantic `ResolveModelId`                     | Consult fresh `RunModelResolver` or delegate to native inference                                                                   | [Input, Model, and Output](16-input-model-and-output.md)                 |
 | Typed run dependencies    | `AgentContext`                                | Carry Identity, Environment, model and model-context bindings, events, usage attribution, plugins, children, metadata, and state   | [Capability Model](04-capability-model.md)                               |
 | Usage reporting           | Mandatory `UsageCapability`                   | Attribute mixed usage and flush pending records after every committed model request                                                | [Events, Observability, and Usage](12-events-observability-and-usage.md) |
+| Model-cost valuation      | One `AbstractModelCostCapability`             | Apply default catalog pricing, one code-first replacement, or explicit no-cost behavior before native usage accumulation           | [Events, Observability, and Usage](12-events-observability-and-usage.md) |
 | Active-run steering       | Mandatory `SteeringCapability`                | Bind the public stream to native `RunContext.enqueue()` without exposing a private Pydantic run handle                             | [Public API and Packaging](14-public-api-and-packaging.md)               |
 | Tool-surface resolution   | Capability-contributed `WrapperToolset`       | Resolve declarative managed-tool supersession over the complete prepared candidate surface before CodeAct and final registration   | [Tool Execution](07-tool-execution.md)                                   |
 | Tool execution boundary   | Capability-contributed outer `WrapperToolset` | Bound all function text/JSON returns and enforce managed policy when metadata selects it                                           | [Tool Execution](07-tool-execution.md)                                   |
@@ -33,29 +34,29 @@ Model self-healing remains optional. `SelfHealingModelCapability` installs the `
 
 ## Optional Capability Roles
 
-| Role                              | Preferred Pydantic primitive                                                                         | Owning document                                                          |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Managed function policy           | Fresh typed policy Capability consumed by the core wrapper                                           | [Tool Execution](07-tool-execution.md)                                   |
-| Client-side external tools        | Capability-selected declarations composed into a schema-owning Toolset and native deferred values    | [Tool Execution](07-tool-execution.md)                                   |
-| Dynamic Environment adapter       | Optional model-context Capability composing `FileToolset` and `ShellToolset` over `BoundEnvironment` | [Environment Integration](08-environment-integration.md)                 |
-| Monitored process                 | Environment-backed tool plus a fresh Host observation Capability                                     | [Context and Memory](09-context-and-memory.md)                           |
-| Runtime context                   | Bounded request epilogue with run timing, configured context window, and usage facts                 | [Context and Memory](09-context-and-memory.md)                           |
-| Workspace outline                 | Bounded revision-pinned Environment file-metadata projection on input requests                       | [Context and Memory](09-context-and-memory.md)                           |
-| File context                      | Run-frozen conventional and explicit Environment file contents on input requests                     | [Context and Memory](09-context-and-memory.md)                           |
-| Compaction and handoff            | Same-Agent plain-text history compaction, plus an independent explicit handoff tool and reminder     | [Context and Memory](09-context-and-memory.md)                           |
-| Skills and discovery              | Run-frozen selected catalog and bounded resource Toolset                                             | [Context and Memory](09-context-and-memory.md)                           |
-| Working state                     | Capability using one `AgentContextState` namespace and the model-context subtype                     | [Context and Memory](09-context-and-memory.md)                           |
-| Structured user interaction       | Native deferred client-side tool                                                                     | [Tool Execution](07-tool-execution.md)                                   |
-| Media, documents, and web         | Feature Toolsets over explicit content and network providers                                         | [Context and Memory](09-context-and-memory.md)                           |
-| Provider usage and custom pricing | `AgentContext` attribution seam plus an optional fresh calculator                                    | [Events, Observability, and Usage](12-events-observability-and-usage.md) |
-| Delegation                        | Capability-owned Toolsets over `SubagentCollection`                                                  | [Delegation and Subagents](11-delegation-and-subagents.md)               |
-| Restricted CodeAct orchestration  | Capability-owned wrapper composing run-local Monty runners over typed eligible final tools           | [Restricted CodeAct Orchestration](18-codeact.md)                        |
-| Telemetry                         | Pydantic instrumentation and focused Capabilities                                                    | [Events, Observability, and Usage](12-events-observability-and-usage.md) |
-| Checkpoint observation            | Capability using public complete message boundaries                                                  | [Harness State and Resume](10-snapshot-and-resume.md)                    |
-| Request content compatibility     | Copy-on-write request Filter over native multimodal content                                          | [Input, Model, and Output](16-input-model-and-output.md)                 |
-| Cold-start history reduction      | Copy-on-write Filter over already-consumed ordinary tool returns                                     | [Input, Model, and Output](16-input-model-and-output.md)                 |
-| Model self-healing                | Innermost request wrapper installing one exact `SelfHealingModel` around the effective Model         | [Input, Model, and Output](16-input-model-and-output.md)                 |
-| Provider-specific Agent behavior  | Capability public hooks only when profile/adapter is insufficient                                    | [Input, Model, and Output](16-input-model-and-output.md)                 |
+| Role                             | Preferred Pydantic primitive                                                                         | Owning document                                                          |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Managed function policy          | Fresh typed policy Capability consumed by the core wrapper                                           | [Tool Execution](07-tool-execution.md)                                   |
+| Client-side external tools       | Capability-selected declarations composed into a schema-owning Toolset and native deferred values    | [Tool Execution](07-tool-execution.md)                                   |
+| Dynamic Environment adapter      | Optional model-context Capability composing `FileToolset` and `ShellToolset` over `BoundEnvironment` | [Environment Integration](08-environment-integration.md)                 |
+| Monitored process                | Environment-backed tool plus a fresh Host observation Capability                                     | [Context and Memory](09-context-and-memory.md)                           |
+| Runtime context                  | Bounded request epilogue with run timing, configured context window, and usage facts                 | [Context and Memory](09-context-and-memory.md)                           |
+| Workspace outline                | Bounded revision-pinned Environment file-metadata projection on input requests                       | [Context and Memory](09-context-and-memory.md)                           |
+| File context                     | Run-frozen conventional and explicit Environment file contents on input requests                     | [Context and Memory](09-context-and-memory.md)                           |
+| Compaction and handoff           | Same-Agent plain-text history compaction, plus an independent explicit handoff tool and reminder     | [Context and Memory](09-context-and-memory.md)                           |
+| Skills and discovery             | Run-frozen selected catalog and bounded resource Toolset                                             | [Context and Memory](09-context-and-memory.md)                           |
+| Working state                    | Capability using one `AgentContextState` namespace and the model-context subtype                     | [Context and Memory](09-context-and-memory.md)                           |
+| Structured user interaction      | Native deferred client-side tool                                                                     | [Tool Execution](07-tool-execution.md)                                   |
+| Media, documents, and web        | Feature Toolsets over explicit content and network providers                                         | [Context and Memory](09-context-and-memory.md)                           |
+| Provider usage                   | `AgentContext` attribution seam                                                                      | [Events, Observability, and Usage](12-events-observability-and-usage.md) |
+| Delegation                       | Capability-owned Toolsets over `SubagentCollection`                                                  | [Delegation and Subagents](11-delegation-and-subagents.md)               |
+| Restricted CodeAct orchestration | Capability-owned wrapper composing run-local Monty runners over typed eligible final tools           | [Restricted CodeAct Orchestration](18-codeact.md)                        |
+| Telemetry                        | Pydantic instrumentation and focused Capabilities                                                    | [Events, Observability, and Usage](12-events-observability-and-usage.md) |
+| Checkpoint observation           | Capability using public complete message boundaries                                                  | [Harness State and Resume](10-snapshot-and-resume.md)                    |
+| Request content compatibility    | Copy-on-write request Filter over native multimodal content                                          | [Input, Model, and Output](16-input-model-and-output.md)                 |
+| Cold-start history reduction     | Copy-on-write Filter over already-consumed ordinary tool returns                                     | [Input, Model, and Output](16-input-model-and-output.md)                 |
+| Model self-healing               | Innermost request wrapper installing one exact `SelfHealingModel` around the effective Model         | [Input, Model, and Output](16-input-model-and-output.md)                 |
+| Provider-specific Agent behavior | Capability public hooks only when profile/adapter is insufficient                                    | [Input, Model, and Output](16-input-model-and-output.md)                 |
 
 Native function tools and Toolsets remain valid code-first Pydantic inputs only inside a Capability. A small native `Capability(tools=[...])` or Toolset Capability is the ordinary one-to-one adapter; it does not require a Harness-specific subclass. The owning Capability also owns any tool timeout and stable Capability/Toolset identity because top-level `AgentSpec.tool_timeout` does not implicitly configure Capability-owned Toolsets. `DynamicEnvironmentCapability` is richer because it combines stable Toolsets with native topology notices and participates in the model-context chain, while current-topology projection remains owned by the Environment resource itself. That resource still enters through the fixed `RunBindings.environment` field.
 
@@ -69,6 +70,7 @@ flowchart LR
     Run[RunBindings capabilities] --> PAI
     Resolver[Mandatory ResolveModelId] --> PAI
     Usage[Mandatory usage reporting] --> PAI
+    Pricing[One build-time model-cost Capability] --> PAI
     Steering[Mandatory active-run steering] --> PAI
     Surface[Mandatory tool-surface resolution] --> PAI
     Boundary[Mandatory tool execution boundary] --> PAI
@@ -119,4 +121,4 @@ A documentation catalog provides shared vocabulary without a second factory or c
 
 ### Small Mandatory Core vs. Uniform Feature Set
 
-Only model resolution, shared context/state coordination, active-run steering, mixed-usage reporting, tool-surface resolution, the message-integrity Filter, and the code-owned tool execution boundary are mandatory. Optional Agents may expose very different tool and behavior surfaces, while native Pydantic composition stays authoritative. Without reserved managed metadata or a client definition marker, the boundary preserves ordinary native dispatch and adds only the default redaction, bound, and spill policy for native JSON and textual `ToolReturn` fields; managed authorization, credentials, grants, retries, and events remain opt-in through complete trusted metadata.
+Only model resolution, shared context/state coordination, active-run steering, mixed-usage reporting, one default-on replaceable model-cost role, tool-surface resolution, the message-integrity Filter, and the code-owned tool execution boundary are mandatory. Optional Agents may expose very different tool and behavior surfaces, while native Pydantic composition stays authoritative. Without reserved managed metadata or a client definition marker, the boundary preserves ordinary native dispatch and adds only the default redaction, bound, and spill policy for native JSON and textual `ToolReturn` fields; managed authorization, credentials, grants, retries, and events remain opt-in through complete trusted metadata.

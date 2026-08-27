@@ -77,8 +77,8 @@ class _Allow:
 
 
 async def _run(tool, policy: InvocationPolicyCapability):
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(tool.name, {"value": "3"} if "value" in tool.function_schema.json_schema["properties"] else {}),
         capabilities=(Capability(tools=[tool], id="test-tools"),),
@@ -127,8 +127,8 @@ async def test_resource_resolver_cannot_mutate_digested_dispatch_arguments() -> 
         executed.append(payload["value"])
         return payload["value"]
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model("inspect_payload", {"payload": {"value": 3}}),
         capabilities=(
@@ -227,8 +227,8 @@ async def test_unknown_provider_outcome_is_safe_and_observable() -> None:
     def uncertain() -> str:
         raise ManagedToolProviderError(outcome_known=False)
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model("uncertain", {}),
         capabilities=(
@@ -272,8 +272,8 @@ async def test_managed_dispatch_cancellation_releases_credentials_and_preserves_
         await asyncio.Event().wait()
         return "unreachable"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model("blocking", {}),
         capabilities=(

@@ -29,16 +29,29 @@ def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
         "FileToolset",
         "FileViewRule",
         "HandoffCapability",
+        "GatewayModelProviderFactory",
         "HandoffToolset",
         "MediaCapability",
         "MediaRunCapability",
         "MediaToolset",
         "ModelConfiguration",
-        "ModelCostRunCapability",
+        "AbstractModelCostCapability",
+        "CatalogModelCostCapability",
+        "NoModelCostCapability",
+        "PricingCatalog",
+        "ModelPricingEntry",
+        "OfficialModelCatalog",
+        "OfficialModelEntry",
+        "get_default_pricing_catalog",
+        "get_official_model_catalog",
+        "ModelPatch",
+        "ModelProviderFactory",
+        "RequestHeadersModel",
         "SelfHealingModelCapability",
         "MonitoredProcessCapability",
         "MonitoredProcessRunCapability",
         "MonitoredProcessToolset",
+        "RunModelResolver",
         "RunSkillPaths",
         "RunUsageLedger",
         "RuntimeContextCapability",
@@ -56,6 +69,7 @@ def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
         "WebToolset",
         "WorkingStateCapability",
         "WorkingStateToolset",
+        "infer_model",
     }
 
     assert expected <= set(harness.__all__)
@@ -64,6 +78,9 @@ def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
     assert hasattr(harness, "HarnessStreamEvent")
     assert "HarnessStreamItem" not in harness.__all__
     assert not hasattr(harness, "HarnessStreamItem")
+    assert "ModelRunBinding" not in harness.__all__
+    assert not hasattr(harness, "ModelRunBinding")
+    assert not hasattr(harness.HarnessBuilder, "build_code")
     assert "EnvironmentSkillSource" not in harness.__all__
     assert not hasattr(harness, "EnvironmentSkillSource")
     assert "EnvironmentSkillSource" not in capabilities.__all__

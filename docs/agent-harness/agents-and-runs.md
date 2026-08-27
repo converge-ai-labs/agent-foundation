@@ -4,7 +4,7 @@ Agent Harness keeps Agent construction code-first and process-local. It adds one
 
 ## Definition and Build
 
-Use `HarnessBuilder.build_code()` for direct application composition:
+Use `HarnessBuilder.build()` for direct application composition:
 
 ```python
 from a13n_harness import (
@@ -14,9 +14,8 @@ from a13n_harness import (
     SelfHealingModelCapability,
 )
 
-executable = HarnessBuilder().build_code(
+executable = HarnessBuilder().build(
     AgentSpec(
-        model="logical:support",
         instructions="Answer concisely.",
         model_config=ModelConfiguration(context_window=200_000),
     ),
@@ -34,7 +33,7 @@ Use an explicit `AgentDefinition` when the definition is assembled or retained s
 from a13n_harness import AgentDefinition, HarnessBuilder
 
 agent_definition = AgentDefinition(
-    agent=AgentSpec(model="logical:support"),
+    agent=AgentSpec(),
     output_type=str,
     model=model,
     capabilities=capabilities,
@@ -42,7 +41,7 @@ agent_definition = AgentDefinition(
 executable = HarnessBuilder().build(agent_definition)
 ```
 
-Both methods follow the same validation and construction path. Build is synchronous and inert with respect to model, Environment, and external provider I/O. Self-healing is optional rather than implicitly enabled; selecting `SelfHealingModelCapability()` is recommended for production Agents that need its known one-shot provider-history repairs.
+Both overloads follow the same validation and construction path. Build is synchronous and inert with respect to model, Environment, and external provider I/O. Self-healing is optional rather than implicitly enabled; selecting `SelfHealingModelCapability()` is recommended for production Agents that need its known one-shot provider-history repairs.
 
 ### Build-time values
 
@@ -50,13 +49,69 @@ An `AgentDefinition` fixes:
 
 - the Harness `AgentSpec`, which remains a native Pydantic AI spec and may add resolved model characteristics;
 - one output contract;
-- a concrete or logical model selection;
+- one string or concrete model selection;
 - definition-selected Capabilities;
 - trusted Harness middleware plugins;
 - finite inline child definitions;
-- self-healing and bounded model-recovery policy.
+- self-healing and bounded model-recovery policy;
+- one default-on build-time model-cost policy.
 
 The output contract cannot change per run. Pass a Python output type or Pydantic AI `OutputSpec` through `output_type`, or use `AgentSpec.output_schema`; do not set both.
+
+### Model selection
+
+Use exactly one model source. Put a native or Host-logical string in `AgentSpec.model`:
+
+```python
+executable = HarnessBuilder().build(
+    AgentSpec(model="openai-responses:gpt-5"),
+    output_type=str,
+)
+```
+
+Pass a concrete Pydantic AI Model through `model=` and leave `AgentSpec.model` unset. You can construct it yourself or use the optional Harness helper:
+
+```python
+from a13n_harness import HarnessBuilder, infer_model
+
+model = infer_model(
+    "openai-responses:gpt-5",
+    provider_factory=provider_factory,
+    common_headers={"x-session-id": session_id},
+    patches=(apply_provider_profile,),
+)
+executable = HarnessBuilder().build(
+    AgentSpec(instructions="Answer concisely."),
+    output_type=str,
+    model=model,
+)
+```
+
+`infer_model()` always returns a native Pydantic AI Model. It preserves legacy `openai:` Chat Completions semantics, accepts legacy Google Cloud prefixes, applies synchronous Model patches in order, and adds common request headers without overriding request-specific `ModelSettings.extra_headers`. You can bypass it and pass any native Model directly.
+
+Gateway routes use `gateway@provider:model` and require an explicit factory:
+
+```python
+model = infer_model(
+    "company@openai:gpt-5",
+    gateway_provider_factory=gateway_provider_factory,
+)
+```
+
+The factory receives `(gateway_name, provider_name)` and returns a Pydantic AI `Provider`. It owns credentials, provider SDK configuration, retries, any HTTP client, and that client's lifecycle. Harness deliberately does not read gateway environment variables or create a hidden long-lived client.
+
+For direct-provider model facts, the package includes a small immutable official catalog:
+
+```python
+from a13n_harness import get_official_model_catalog
+
+models = get_official_model_catalog()
+configuration = models["anthropic:claude-sonnet-5"].configuration
+```
+
+Entries contain only a provider-qualified official model ID, objective `ModelConfiguration`, and an official source URL. They do not contain gateway routes, credentials, request presets, reasoning settings, aliases, labels, or application defaults. Lookup is explicit; `HarnessBuilder` does not silently apply catalog configuration.
+
+For run-specific routing, credentials, or tenant policy, pass an async function or async callable object through `RunBindings.model_resolver`. It receives the Pydantic `ModelResolutionContext` and string selection and returns a native Model. No Harness base class is required. A resolver can call Harness `infer_model()` with current Host-owned factories and patches, or return a self-constructed Model.
 
 ### Model configuration
 
@@ -97,7 +152,7 @@ from a13n_harness import RunBindings
 
 bindings = RunBindings.local(
     environment=environment_binding,
-    model_binding=model_binding,
+    model_resolver=model_resolver,
     model_context=model_context_binding,
     capabilities=run_capabilities,
     metadata={"request_kind": "interactive"},
@@ -108,14 +163,14 @@ bindings = RunBindings.local(
 
 Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state.
 
-| Stable definition input     | Fresh run input                     |
-| --------------------------- | ----------------------------------- |
-| `AgentSpec`                 | Identity and Agent instance context |
-| Output contract             | Environment binding                 |
-| Agent behavior Capabilities | Model and model-context bindings    |
-| Direct plugins              | Policy and provider collaborators   |
-| Child topology              | Run-specific Capability selection   |
-| Recovery policy             | Bounded non-authoritative metadata  |
+| Stable definition input     | Fresh run input                          |
+| --------------------------- | ---------------------------------------- |
+| `AgentSpec`                 | Identity and Agent instance context      |
+| Output contract             | Environment binding                      |
+| Agent behavior Capabilities | Model resolver and model-context binding |
+| Direct plugins              | Policy and provider collaborators        |
+| Child topology              | Run-specific Capability selection        |
+| Recovery policy             | Bounded non-authoritative metadata       |
 
 ## Input
 
@@ -225,7 +280,36 @@ Recovery never makes uncertain external side effects exactly once. When a tool o
 
 `result.usage` and `stream.usage` use Pydantic AI's native `RunUsage`. `result.usage_records` additionally contains detached Harness attribution records for committed model requests and provider-reported usage.
 
-Provider integrations can record stable non-model receipts through `AgentContext.record_provider_usage()`. A fresh `ModelCostRunCapability` can add application-selected pricing. Durable aggregation, reconciliation, billing, and exporter delivery remain Host concerns.
+Provider integrations can record stable non-model receipts through `AgentContext.record_provider_usage()`.
+
+Model-cost valuation is enabled by default. `HarnessBuilder` inserts `CatalogModelCostCapability`, which uses an immutable catalog assembled from the pinned `genai-prices` snapshot plus Harness pricing replacements. Read or export the complete snapshot with `get_default_pricing_catalog()`:
+
+```python
+from a13n_harness import get_default_pricing_catalog
+
+pricing = get_default_pricing_catalog()
+entry = pricing["openai:gpt-5.5"]
+exported = pricing.model_dump(mode="json")
+```
+
+To replace prices, create complete `ModelPricingEntry` values and pass a shallow update dictionary. Each value replaces the entire entry at that `provider:model` key; nested fields are not merged:
+
+```python
+from a13n_harness import CatalogModelCostCapability, HarnessBuilder
+
+costs = CatalogModelCostCapability(
+    pricing_updates={replacement.key: replacement},
+)
+executable = HarnessBuilder().build(
+    spec,
+    output_type=str,
+    capabilities=(costs,),
+)
+```
+
+One custom `AbstractModelCostCapability` supplied through build-time `capabilities=` atomically replaces the default. More than one is a definition error. Use `NoModelCostCapability()` to explicitly preserve only provider or upstream-library cost without Harness valuation. Inline child runs inherit the parent's selected policy so the shared usage tree is valued consistently; the same child definition uses its own build-time policy when executed independently.
+
+Pricing failure or model lookup miss does not fail the Agent run. Usage records identify the pricing status, catalog revision, selected rule, and actual cost source. Durable aggregation, reconciliation, negotiated discounts, billing, and exporter delivery remain Host concerns.
 
 ## Correlation
 

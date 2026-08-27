@@ -143,8 +143,8 @@ class _HostProjection:
 
 def test_definition_cannot_replace_mandatory_model_context_coordinator() -> None:
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=FunctionModel(lambda messages, info: "unused"),
             capabilities=(ModelContextCoordinatorCapability(),),
@@ -163,8 +163,8 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
         seen.append(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(_ProjectionPlugin(calls),),
@@ -198,8 +198,8 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
         seen.append(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )

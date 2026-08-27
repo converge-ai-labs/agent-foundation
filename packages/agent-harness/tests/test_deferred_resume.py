@@ -73,8 +73,8 @@ def _build(executed: list[int], *, resolver=None, requires_approval: bool = True
         executed.append(value)
         return value
 
-    return HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    return HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(),
         capabilities=(
@@ -205,8 +205,8 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
         executed.append(value)
         return value
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(),
         capabilities=(Capability(tools=[Tool(change, requires_approval=True)], id="test-tools"),),
@@ -249,8 +249,8 @@ async def test_managed_approval_cannot_remount_to_a_same_named_unmanaged_tool() 
         unmanaged_executed.append(value)
         return value
 
-    replacement = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    replacement = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_model(),
         capabilities=(Capability(tools=[change], id="test-tools"),),

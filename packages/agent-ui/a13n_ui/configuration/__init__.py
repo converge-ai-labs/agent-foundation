@@ -32,6 +32,7 @@ from .models import (
     SourceTransactionEntry,
     SourceTransactionManifest,
     canonical_digest,
+    canonical_json_value,
 )
 from .runtime_manifest import load_envd_runtime_manifest
 from .service import ConfigurationService
@@ -86,5 +87,6 @@ __all__ = [
     "SourceTransactionEntry",
     "SourceTransactionManifest",
     "canonical_digest",
+    "canonical_json_value",
     "load_envd_runtime_manifest",
 ]

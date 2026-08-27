@@ -59,11 +59,11 @@ For each logical run, reconstruct:
 
 - authenticated `AgentInstanceContext`;
 - one fresh Environment run binding or fresh runtime attachment;
-- current model binding and credentials;
-- run Capabilities for invocation policy, approvals, media/documents/Web, monitoring, usage pricing, delegation, or Skill selection;
+- current model resolver and credentials;
+- run Capabilities for invocation policy, approvals, media/documents/Web, monitoring, delegation, or Skill selection;
 - bounded non-authoritative metadata.
 
-Saved messages and Capability state never restore these values. A resume must re-evaluate current policy and provider availability.
+Saved messages and Capability state never restore these values. A resume must re-evaluate current policy and provider availability. Model-cost policy is definition-scoped rather than a fresh run attachment: the Builder inserts the default catalog policy or accepts exactly one code-first replacement, and inline descendants inherit the parent's effective policy.
 
 ## Durable State Boundary
 
@@ -140,12 +140,6 @@ Start with the embedded path and add Host-owned durable boundaries only when the
 
 ## Runnable Example
 
-The `host` layer of the [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates:
+The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, reconstructs fresh bindings, and resumes the same Thread after application restart.
 
-- Host-owned Execution and ExecutionAttempt records;
-- opaque fencing and stale-attempt rejection;
-- selection of a safe interrupted-state candidate;
-- fresh bindings on replacement;
-- a separate Host terminal commit.
-
-Its JSON file store is teaching code, not a prescribed persistence implementation.
+Its single state file is application teaching code, not an Execution ledger, lease, fence, or prescribed production persistence implementation. Add the Host-owned records described above when multiple workers, replacement attempts, side effects, or durable terminal delivery require them.

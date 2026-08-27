@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from copy import deepcopy
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -23,12 +23,17 @@ from a13n_harness._json import dump_json_bytes, is_sensitive_key
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.identity import AgentInstanceContext
+from a13n_harness.pricing import (
+    MODEL_COST_CAPABILITY_ID,
+    AbstractModelCostCapability,
+    ModelCostInput,
+    ModelCostQuote,
+)
 
 if TYPE_CHECKING:
     from a13n_harness.events import HarnessEventEmitter
 
 USAGE_CAPABILITY_ID = "a13n.usage"
-MODEL_COST_RUN_CAPABILITY_ID = "a13n.usage.model-cost.run"
 _MAX_RECORDS = 10_000
 _MAX_REPORT_BYTES = 56 * 1024
 _MAX_REPORT_RECORDS = 64
@@ -36,17 +41,16 @@ _MAX_USAGE_DETAILS = 64
 _MAX_COUNTER = 2**63 - 1
 
 type CostSource = Literal[
+    "catalog",
     "custom",
-    "provider",
-    "genai_prices",
     "provider_or_genai_prices",
     "unknown",
 ]
-type CustomPricingStatus = Literal[
+type PricingStatus = Literal[
     "applied",
     "declined",
     "failed",
-    "not_configured",
+    "disabled",
     "not_reached",
 ]
 type UsageReportReason = Literal["model_request", "terminal"]
@@ -178,8 +182,9 @@ class ModelUsageRecord(BaseModel):
     response_timestamp: datetime
     request_usage: BoundedRequestUsage
     pricing_revision: str | None = Field(default=None, max_length=256)
+    pricing_rule_id: str | None = Field(default=None, max_length=128)
     cost_source: CostSource
-    custom_pricing_status: CustomPricingStatus
+    pricing_status: PricingStatus
 
 
 class ProviderUsageRecord(BaseModel):
@@ -211,45 +216,11 @@ type UsageRecord = ModelUsageRecord | ProviderUsageRecord
 
 
 @dataclass(frozen=True, slots=True)
-class ModelCostInput:
-    """Content-free input to a Host-selected deterministic model cost calculator."""
-
-    model_name: str | None
-    provider_name: str | None
-    provider_url: str | None
-    timestamp: datetime
-    usage: RequestUsage
-
-
-@runtime_checkable
-class ModelCostCalculator(Protocol):
-    @property
-    def revision(self) -> str: ...
-
-    def calculate(self, value: ModelCostInput) -> Decimal | None: ...
-
-
-@dataclass(kw_only=True)
-class ModelCostRunCapability(AbstractCapability[AgentContext]):
-    """Fresh run attachment carrying optional Host model pricing policy."""
-
-    id: str | None = MODEL_COST_RUN_CAPABILITY_ID
-    calculator: ModelCostCalculator = field()
-
-    def __post_init__(self) -> None:
-        if self.id != MODEL_COST_RUN_CAPABILITY_ID:
-            raise ValueError(f"ModelCostRunCapability.id must be {MODEL_COST_RUN_CAPABILITY_ID!r}")
-        if not isinstance(self.calculator, ModelCostCalculator):
-            raise TypeError("calculator must implement ModelCostCalculator")
-        revision = self.calculator.revision
-        if not isinstance(revision, str) or not revision.strip() or len(revision) > 256 or "\x00" in revision:
-            raise ValueError("model cost calculator revision is invalid")
-
-
-@dataclass(frozen=True, slots=True)
 class _PricingOutcome:
-    status: CustomPricingStatus
+    status: PricingStatus
     revision: str | None
+    rule_id: str | None
+    quote_source: Literal["catalog", "custom"] | None
     original_cost_present: bool
     calculated_cost: Decimal | None
     response: ModelResponse
@@ -327,8 +298,9 @@ class RunUsageLedger:
         """Append and immediately report one proven native response commit."""
         ordinal = self._model_ordinal
         self._model_ordinal += 1
-        status: CustomPricingStatus = pricing.status if pricing is not None else "not_reached"
+        status: PricingStatus = pricing.status if pricing is not None else "not_reached"
         revision = pricing.revision if pricing is not None else None
+        rule_id = pricing.rule_id if pricing is not None else None
         cost_source = _cost_source(response, pricing)
         record = ModelUsageRecord(
             record_id=_stable_id("model", self.run_id, str(ordinal)),
@@ -344,8 +316,9 @@ class RunUsageLedger:
             response_timestamp=response.timestamp,
             request_usage=BoundedRequestUsage.from_request_usage(response.usage),
             pricing_revision=revision,
+            pricing_rule_id=rule_id,
             cost_source=cost_source,
-            custom_pricing_status=status,
+            pricing_status=status,
         )
         self._append(record)
         await self._flush(reason="model_request", trigger_record_id=record.record_id)
@@ -397,7 +370,7 @@ class RunUsageLedger:
 
 @dataclass(init=False)
 class UsageCapability(AbstractCapability[AgentContext]):
-    """Core response-commit observer and optional cost hook."""
+    """Core response-commit observer and mandatory model-cost integration."""
 
     id = USAGE_CAPABILITY_ID
 
@@ -419,13 +392,24 @@ class UsageCapability(AbstractCapability[AgentContext]):
 class _UsageActiveCapability(UsageCapability):
     def __init__(self, *, context: AgentContext) -> None:
         self._context = context
-        self._calculator: ModelCostCalculator | Literal[False] | None = False
+        self._cost_capability: AbstractModelCostCapability | None = None
+        self._request_started_at: dict[str, datetime] = {}
         self._pending_pricing: dict[str, _PricingOutcome] = {}
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps is not self._context:
             raise DefinitionError("Usage run replacement cannot cross logical runs.", code="capability_scope_invalid")
         return self
+
+    async def before_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        request_context: ModelRequestContext,
+    ) -> ModelRequestContext:
+        self._require_context(ctx)
+        if ctx.run_id is not None:
+            self._request_started_at[ctx.run_id] = datetime.now(UTC)
+        return request_context
 
     async def after_model_request(
         self,
@@ -435,40 +419,45 @@ class _UsageActiveCapability(UsageCapability):
         response: ModelResponse,
     ) -> ModelResponse:
         self._require_context(ctx)
-        calculator = self._resolve_calculator(ctx)
+        capability = self._resolve_cost_capability(ctx)
         original_cost_present = response.usage.cost is not None
-        revision = calculator.revision if calculator is not None else None
-        status: CustomPricingStatus = "not_configured"
+        revision = capability.revision
+        status: PricingStatus = "disabled" if not capability.enabled else "declined"
         priced = response
         calculated_cost: Decimal | None = None
-        if calculator is not None:
+        quote: ModelCostQuote | None = None
+        if capability.enabled:
             usage = deepcopy(response.usage)
             usage.cost = None
+            request_started_at = (
+                self._request_started_at.pop(ctx.run_id, None) if ctx.run_id is not None else None
+            ) or response.timestamp
             value = ModelCostInput(
                 model_name=response.model_name,
                 provider_name=response.provider_name,
                 provider_url=_safe_provider_url(response.provider_url),
-                timestamp=response.timestamp,
+                request_started_at=request_started_at,
+                response_timestamp=response.timestamp,
                 usage=usage,
             )
             try:
-                calculated = calculator.calculate(value)
-                if calculated is None:
-                    status = "declined"
-                elif not isinstance(calculated, Decimal) or not calculated.is_finite() or calculated < 0:
-                    status = "failed"
-                    await _pricing_diagnostic(ctx, response, revision)
-                else:
+                quote = capability.quote(value)
+                if quote is not None:
+                    if not isinstance(quote, ModelCostQuote):
+                        raise TypeError("model-cost Capability returned an incompatible quote")
                     status = "applied"
-                    calculated_cost = calculated
-                    response.usage.cost = calculated
+                    calculated_cost = quote.cost_usd
+                    response.usage.cost = quote.cost_usd
             except Exception:
                 status = "failed"
+                quote = None
                 await _pricing_diagnostic(ctx, response, revision)
         if ctx.run_id is not None:
             self._pending_pricing[ctx.run_id] = _PricingOutcome(
                 status=status,
-                revision=revision,
+                revision=quote.pricing_revision if quote is not None else revision,
+                rule_id=quote.rule_id if quote is not None else None,
+                quote_source=quote.source if quote is not None else None,
                 original_cost_present=original_cost_present,
                 calculated_cost=calculated_cost,
                 response=priced,
@@ -510,22 +499,23 @@ class _UsageActiveCapability(UsageCapability):
             pricing=_pricing_for_committed_response(pricing, response),
         )
 
-    def _resolve_calculator(self, ctx: RunContext[AgentContext]) -> ModelCostCalculator | None:
-        if self._calculator is not False:
-            return self._calculator
-        attachment = ctx.capabilities.get(MODEL_COST_RUN_CAPABILITY_ID)
-        if attachment is None:
-            self._calculator = None
-            return None
-        if type(attachment) is not ModelCostRunCapability:
-            raise DefinitionError("Model cost binding has an incompatible type.", code="capability_type_mismatch")
-        if MODEL_COST_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
+    def _resolve_cost_capability(self, ctx: RunContext[AgentContext]) -> AbstractModelCostCapability:
+        if self._cost_capability is not None:
+            return self._cost_capability
+        inherited = ctx.deps._inherited_model_cost
+        if inherited is not None:
+            self._cost_capability = inherited
+            return inherited
+        capability = ctx.capabilities.get(MODEL_COST_CAPABILITY_ID)
+        if not isinstance(capability, AbstractModelCostCapability):
+            raise DefinitionError("Model-cost Capability has an incompatible type.", code="capability_type_mismatch")
+        if MODEL_COST_CAPABILITY_ID in ctx.deps._capability_provenance.run_ids:
             raise DefinitionError(
-                "Model cost binding must originate from RunBindings.",
+                "Model-cost Capability cannot originate from RunBindings.",
                 code="capability_scope_invalid",
             )
-        self._calculator = attachment.calculator
-        return attachment.calculator
+        self._cost_capability = capability
+        return capability
 
     def _require_context(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.deps is not self._context:
@@ -603,11 +593,9 @@ def _cost_source(response: ModelResponse, pricing: _PricingOutcome | None) -> Co
         return "unknown"
     if pricing is None:
         return "provider_or_genai_prices"
-    if pricing.status == "applied":
-        return "custom"
-    if pricing.original_cost_present:
-        return "provider"
-    return "genai_prices"
+    if pricing.status == "applied" and pricing.quote_source is not None:
+        return pricing.quote_source
+    return "provider_or_genai_prices"
 
 
 def _stable_id(kind: str, *values: str) -> str:
@@ -640,11 +628,8 @@ def _report_chunks(records: list[UsageRecord]) -> list[list[UsageRecord]]:
 __all__ = [
     "BoundedRequestUsage",
     "CostSource",
-    "CustomPricingStatus",
-    "ModelCostCalculator",
-    "ModelCostInput",
-    "ModelCostRunCapability",
     "ModelUsageRecord",
+    "PricingStatus",
     "ProviderUsage",
     "ProviderUsageRecord",
     "RunUsageLedger",

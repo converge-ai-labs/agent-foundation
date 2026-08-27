@@ -159,6 +159,45 @@ class SkillPackageReferenceRecord(Base):
     )
 
 
+class CompositionSnapshotRecord(Base):
+    """Durable selection of one verified immutable composition snapshot."""
+
+    __tablename__ = "composition_snapshot"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("root_resource_kind", "root_resource_id", "root_content_digest"),
+            (
+                "resource_revision.resource_kind",
+                "resource_revision.resource_id",
+                "resource_revision.content_digest",
+            ),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint("snapshot_kind IN ('agent', 'environment')", name="snapshot_kind"),
+        UniqueConstraint("snapshot_kind", "logical_digest", name="identity"),
+    )
+
+    snapshot_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    logical_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    object_digest: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("immutable_object.logical_digest", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    )
+    generation_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("configuration_generation.generation_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    root_resource_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    root_resource_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    root_content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ConfigurationDiagnosticRecord(Base):
     """Bounded path-free evidence from accepted or rejected reload attempts."""
 
@@ -172,6 +211,7 @@ class ConfigurationDiagnosticRecord(Base):
 
 
 __all__ = [
+    "CompositionSnapshotRecord",
     "ConfigurationDiagnosticRecord",
     "ConfigurationGenerationRecord",
     "CurrentConfigurationRecord",

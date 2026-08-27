@@ -7,6 +7,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from anyio import create_task_group, move_on_after, sleep, to_thread
@@ -17,11 +18,11 @@ from sqlalchemy.exc import StatementError
 
 from a13n_ui import __version__
 from a13n_ui.errors import StoreIntegrityError, StoreLeaseConflict
-from a13n_ui.settings import StorageSettings
 
 from .database import Database, open_database, short_session, transaction
 from .layout import StorageLayout
 from .models import (
+    CompositionSnapshotRecord,
     ImmutableObjectRecord,
     RecoveryDiagnosticRecord,
     ResourceRevisionRecord,
@@ -29,6 +30,9 @@ from .models import (
     StoreLeaseRecord,
 )
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef, RecoveryDiagnostic
+
+if TYPE_CHECKING:
+    from a13n_ui.settings import StorageSettings
 
 
 class StoreDiagnostic(BaseModel):
@@ -168,6 +172,7 @@ class LocalStore:
         ) as session:
             referenced = set((await session.execute(select(ResourceRevisionRecord.object_digest))).scalars())
             referenced.update((await session.execute(select(SkillPackageReferenceRecord.object_digest))).scalars())
+            referenced.update((await session.execute(select(CompositionSnapshotRecord.object_digest))).scalars())
             registrations = tuple(
                 (
                     await session.execute(
