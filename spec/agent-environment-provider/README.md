@@ -2,9 +2,9 @@
 
 ## Overview
 
-This directory defines `agent-environment-provider`, distributed as `converge-agent-environment-provider`. It is the shared Python contract and built-in implementation package for Environment provider definitions, resource management, provider resource state, and fresh runtime attachments.
+This directory defines `agent-environment-provider`, distributed as `a13n-environment-provider`. It is the shared Python contract and built-in implementation package for Environment provider definitions, resource management, provider resource state, and fresh runtime attachments.
 
-Hosts and `converge-agent-harness` consume the same provider keys and configuration schemas. The package performs no durable storage and owns no Harness run, Agent loop, model-facing tool, or provider-neutral Environment operation. A Host chooses whether and how to persist desired provider specifications and resource state; the Harness converts fresh runtime attachments into single-use Environment bindings.
+Hosts and `a13n-harness` consume the same provider keys and configuration schemas. The package performs no durable storage and owns no Harness run, Agent loop, model-facing tool, or provider-neutral Environment operation. A Host chooses whether and how to persist desired provider specifications and resource state; the Harness converts fresh runtime attachments into single-use Environment bindings.
 
 ## Document Catalog
 
@@ -31,7 +31,7 @@ Read all four documents, then the [EIP carrier contract](../agent-envd/03-transp
 
 ### Add a third-party provider
 
-Read `01` and `02`. A third-party factory uses the same provider-specification, manager, resource-state, and attachment contracts and registers one namespaced key through the documented entry-point group.
+Read `01` and `02`. A third-party factory uses the same provider-specification, provider, resource-state, and attachment contracts and registers one namespaced key through the documented entry-point group.
 
 ## Authority Rules
 

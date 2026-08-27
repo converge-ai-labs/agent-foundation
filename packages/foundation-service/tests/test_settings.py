@@ -1,14 +1,14 @@
 from pathlib import Path
 
 import pytest
-from converge_foundation_service.settings import (
+from a13n_service.settings import (
     DatabaseBackend,
     ObjectBackend,
     RedisBackend,
     ServiceRole,
     ServiceSettings,
 )
-from converge_foundation_service.storage.config import (
+from a13n_service.storage.config import (
     LocalObjectConfig,
     PostgreSQLConfig,
     RedisMemoryConfig,

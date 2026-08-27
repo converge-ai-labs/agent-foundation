@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,16 +10,16 @@ from uuid import uuid4
 
 import anyio
 import pytest
+from a13n_service.storage.config import RedisMemoryConfig, RedisServerConfig
+from a13n_service.storage.object_store import LocalObjectStore, ObjectStore, S3ObjectStore
+from a13n_service.storage.redis import open_redis
 from aiobotocore.config import AioConfig
 from aiobotocore.httpxsession import HttpxSession
 from aiobotocore.session import get_session
-from botocore.exceptions import BotoCoreError
-from converge_foundation_service.storage.config import RedisMemoryConfig, RedisServerConfig
-from converge_foundation_service.storage.object_store import LocalObjectStore, ObjectStore, S3ObjectStore
-from converge_foundation_service.storage.redis import open_redis
+from botocore.exceptions import BotoCoreError, ClientError
 from redis.asyncio import Redis
 from testcontainers.core.container import DockerContainer
-from testcontainers.core.wait_strategies import PortWaitStrategy
+from testcontainers.core.wait_strategies import HttpWaitStrategy
 
 MINIO_IMAGE = "quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
 
@@ -57,15 +57,15 @@ class S3Service:
 
 @pytest.fixture(scope="session")
 def s3_service() -> Iterator[S3Service]:
-    access_key = "converge-test-access"
-    secret_key = "converge-test-secret"
+    access_key = "a13n-test-access"
+    secret_key = "a13n-test-secret"
     container = (
         DockerContainer(MINIO_IMAGE)
         .with_env("MINIO_ROOT_USER", access_key)
         .with_env("MINIO_ROOT_PASSWORD", secret_key)
         .with_command("server /data")
         .with_exposed_ports(9000)
-        .waiting_for(PortWaitStrategy(9000))
+        .waiting_for(HttpWaitStrategy(9000, "/minio/health/ready").with_startup_timeout(60).with_poll_interval(0.25))
     )
     with container:
         endpoint = f"http://{container.get_container_host_ip()}:{container.get_exposed_port(9000)}"
@@ -102,8 +102,8 @@ async def s3_object_store(s3_service: S3Service) -> AsyncIterator[S3ObjectStore]
 
 
 @asynccontextmanager
-async def _open_s3_store(service: S3Service) -> AsyncIterator[S3ObjectStore]:
-    bucket = f"converge-storage-{uuid4().hex}"
+async def _open_s3_store(service: S3Service) -> AsyncGenerator[S3ObjectStore]:
+    bucket = f"a13n-storage-{uuid4().hex}"
     config = AioConfig(
         connect_timeout=5,
         read_timeout=30,
@@ -135,11 +135,15 @@ async def _open_s3_store(service: S3Service) -> AsyncIterator[S3ObjectStore]:
 
 
 async def _wait_for_s3(client) -> None:
-    with anyio.fail_after(180):
+    with anyio.fail_after(30):
         while True:
             try:
                 await client.list_buckets()
+            except ClientError as error:
+                if error.response.get("Error", {}).get("Code") != "XMinioServerNotInitialized":
+                    raise
             except BotoCoreError:
-                await anyio.sleep(1)
+                pass
             else:
                 return
+            await anyio.sleep(0.25)

@@ -9,7 +9,7 @@ Agent Harness exposes focused extension points rather than one universal plugin 
 | `EnvironmentProviderBinding`   | Implement one already selected provider-neutral Environment operation revision                      | One binding scope inside one `EnvironmentRunBinding`                     | Only through explicit Environment tools/context  |
 | `EnvironmentRunExtension`      | Hold a resource that needs the complete entered Environment aggregate                               | Entered after state restore; reverse-order exit before provider teardown | No                                               |
 
-Installed entry-point metadata means code is available, not enabled or authorized. Importing `converge_agent_harness` scans no entry points and activates no extension.
+Installed entry-point metadata means code is available, not enabled or authorized. Importing `a13n_harness` scans no entry points and activates no extension.
 
 ## Harness Middleware
 
@@ -22,10 +22,10 @@ A plugin can be supplied directly as an `AbstractHarnessPlugin` or created from 
 Direct objects are the simplest choice for an embedded application:
 
 ```python
-from converge_agent_harness import HarnessBuilder
+from a13n_harness import HarnessBuilder
 
 plugin = AuditPlugin("audit-primary")
-executable = HarnessBuilder().build_code(
+executable = HarnessBuilder().build(
     agent_spec,
     output_type=str,
     model=model,
@@ -40,14 +40,14 @@ Direct and configured plugins enter the same ordering, Agent binding, run bindin
 Register one no-argument factory class:
 
 ```toml
-[project.entry-points."converge_agent_harness.plugins"]
+[project.entry-points."a13n_harness.plugins"]
 "acme.audit" = "acme_harness.plugin:AuditPluginFactory"
 ```
 
 The entry-point name and `plugin_key()` must match:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     AbstractHarnessPlugin,
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
@@ -83,7 +83,7 @@ Factory construction is synchronous and side-effect free. `create_plugin()` retu
 The Harness plugin document is a data schema, not a required file format:
 
 ```python
-from converge_agent_harness import HarnessBuildContext, HarnessBuilder
+from a13n_harness import HarnessBuildContext, HarnessBuilder
 
 configuration = {
     "schema_version": "1",
@@ -125,8 +125,8 @@ Configuration selects stable entry-point keys and never accepts a `module:object
 Configured plugins are disabled by default. A deployment can opt into an environment-selected document:
 
 ```bash
-export CONVERGE_HARNESS_PLUGIN_CONFIG_ENABLED=true
-export CONVERGE_HARNESS_PLUGIN_CONFIG_FILE=/etc/converge/harness-plugins.yaml
+export A13N_HARNESS_PLUGIN_CONFIG_ENABLED=true
+export A13N_HARNESS_PLUGIN_CONFIG_FILE=/etc/a13n/harness-plugins.yaml
 ```
 
 ```python
@@ -178,18 +178,18 @@ Plugins can contribute native Capabilities at Agent binding. They should not imp
 
 Trusted code can implement `EnvironmentProviderBinding` directly when it already owns one process-local resource revision and can expose provider-neutral file, shell, process, output, port, readiness, and portable-state operations.
 
-That is a low-level runtime binding contract. Provider specification catalogs, resource create/resume/pause/destroy Managers, credential handling, and durable provider state are not Harness middleware and are not documented as a Harness plugin system.
+That is a low-level runtime binding contract. Provider specification catalogs, `EnvironmentProvider` lifecycle operations, credential handling, and durable provider state are not Harness middleware and are not documented as a Harness plugin system.
 
 An `EnvironmentProviderBinding` is fresh and single-use. Effectful allocation, authentication, session entry, maintenance tasks, and cleanup-producing work belong inside its async `bind()` scope or in the owning provider layer, never in import-time discovery or an inert factory constructor.
 
 ## Environment Run Extensions
 
-Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `BoundEnvironment`, including zero, one, or several provider bindings.
+Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `Environment`, including zero, one, or several provider bindings.
 
 ```python
 from contextlib import asynccontextmanager
 
-from converge_agent_harness import EnvironmentRunExtensionContext
+from a13n_harness import EnvironmentRunExtensionContext
 
 
 class WorkspaceMarkerExtension:
@@ -214,9 +214,12 @@ class WorkspaceMarkerExtension:
             await context.environment.files.remove(path)
 ```
 
-Register direct extension objects while constructing the aggregate:
+Register direct extension objects through the advanced aggregate route:
 
 ```python
+from a13n_harness.environment.advanced import create_environment_run_binding
+
+
 environment_binding = create_environment_run_binding(
     initial_topology=topology,
     topology_limits=topology_limits,
@@ -232,7 +235,7 @@ Extensions enter after providers are available and portable Environment state is
 A distribution can register a side-effect-free factory under:
 
 ```toml
-[project.entry-points."converge_agent_harness.environment_run_extensions"]
+[project.entry-points."a13n_harness.environment_run_extensions"]
 "acme.workspace-marker" = "acme_environment.extension:WorkspaceMarkerFactory"
 ```
 

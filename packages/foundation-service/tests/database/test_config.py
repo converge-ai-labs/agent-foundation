@@ -1,5 +1,5 @@
 import pytest
-from converge_foundation_service.database.config import MigrationConfig
+from a13n_service.database.config import MigrationConfig
 from pydantic import ValidationError
 
 

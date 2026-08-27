@@ -20,7 +20,7 @@ The default service profile keeps the existing PostgreSQL and Redis endpoints an
 ```python
 from pathlib import Path
 
-from converge_foundation_service.storage import StorageSettings, open_storage
+from a13n_service.storage import StorageSettings, open_storage
 
 settings = StorageSettings.model_validate(
     {
@@ -67,7 +67,7 @@ Consumers use SQLAlchemy directly. Generic storage does not define `get`, `inser
 ```python
 from sqlalchemy import select
 
-from converge_foundation_service.storage import transaction
+from a13n_service.storage import transaction
 
 async with transaction(storage.sessions) as session:
     result = await session.execute(select(Record).where(Record.id == record_id))
@@ -80,14 +80,14 @@ PostgreSQL is the distributed-service backend. SQLite is intended for a single-p
 
 ## Relational Schema and Migrations
 
-Generic relational storage and service schema ownership are deliberately separate:
+Generic relational storage and service schema ownership are deliberately separate. For the OSS distribution in this repository:
 
 - `storage/relational.py` constructs async engines and short sessions for application I/O.
-- `database/metadata.py` aggregates every service-owned ORM model.
-- `database/migrations/` contains one linear Alembic history for the complete service database.
+- `database/metadata.py` provides the explicit common registry selected by the OSS distribution descriptor.
+- `database/migrations/` provides the OSS revision location assembled into one final Alembic graph.
 - `database/migration.py` owns the dedicated synchronous migration connection, bounded PostgreSQL advisory locking, and Alembic invocation.
 
-The Alembic environment does not read process settings or create an engine. The runner supplies one validated connection, so CLI settings, lock policy, and schema comparison have distinct owners.
+The Alembic environment does not read process settings or create an engine. The runner supplies one validated connection and the artifact distribution's resolved metadata and revision graph, so CLI settings, composition, lock policy, and schema comparison have distinct owners. Another product distribution adds reviewed model and revision contributions through its own fixed build descriptor rather than package discovery or runtime edition selection.
 
 Select the database backend, then use the stable service CLI or repository commands:
 
@@ -107,7 +107,7 @@ For the zero-service profile, set `FOUNDATION_DATABASE_BACKEND=sqlite` and `FOUN
 
 ### Add an ORM Model
 
-1. Define the model beside its owning domain using `converge_foundation_service.database.Base`.
+1. Define the model beside its owning domain using `a13n_service.database.Base`.
 2. Import that domain model module explicitly in `database/metadata.py`; there is no package scanning or plugin discovery.
 3. Run `make db-migrate msg="describe the schema change"`. The target rebuilds accepted history in a disposable PostgreSQL database before autogeneration.
 4. Review the generated revision for names, constraints, data loss, lock behavior, rolling compatibility, interruption safety, and downgrade or forward repair.
@@ -132,7 +132,7 @@ Response decoding is disabled for binary safety. The fakeredis backend is proces
 Object keys are opaque names rather than filesystem paths. `put` supports unconditional, create-only, and expected-version publication.
 
 ```python
-from converge_foundation_service.storage import ByteRange, ObjectConflict
+from a13n_service.storage import ByteRange, ObjectConflict
 
 created = await storage.objects.put(
     "artifacts/result.json",
@@ -167,7 +167,7 @@ Deployment mounts NFS before process startup. Application code receives the moun
 ```python
 import anyio
 
-from converge_foundation_service.storage.filesystem import atomic_write, resolve_under_root
+from a13n_service.storage.filesystem import atomic_write, resolve_under_root
 
 destination = await resolve_under_root(
     storage.files_root,
@@ -187,10 +187,10 @@ Confined resolution rejects absolute paths, parent traversal, and symlink escape
 Run the infrastructure suites and package checks from the repository root:
 
 ```bash
-uv run --package converge-foundation-service pytest packages/foundation-service/tests/storage packages/foundation-service/tests/database -q
+uv run --package a13n-service pytest packages/foundation-service/tests/storage packages/foundation-service/tests/database -q
 make lint
 make typecheck
-uv build --package converge-foundation-service
+uv build --package a13n-service
 ```
 
 Container-owned integration tests exercise PostgreSQL, Redis, and S3 HTTP behavior. The S3 startup-probe test also demonstrates that an endpoint missing required conditional-delete semantics is rejected rather than silently accepted.

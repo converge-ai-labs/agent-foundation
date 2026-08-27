@@ -51,7 +51,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: foundation-sdk-rust-crate
-          path: sdk/rust/target/package/converge-foundation-sdk-*.crate
+          path: sdk/rust/target/package/a13n-sdk-*.crate
           if-no-files-found: error
           retention-days: 7
 

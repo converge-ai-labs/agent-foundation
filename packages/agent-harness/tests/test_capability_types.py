@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentContext,
     CapabilityTypeCatalog,
     CapabilityTypeRegistration,
@@ -66,10 +66,10 @@ async def test_builder_uses_only_its_exact_custom_capability_type_catalog() -> N
     )
 
     with pytest.raises(DefinitionError) as missing_catalog:
-        HarnessBuilder().build_code(spec, output_type=str)
+        HarnessBuilder().build(spec, output_type=str)
     assert missing_catalog.value.code == "agent_build_failed"
 
-    executable = HarnessBuilder(capability_type_catalog=_catalog()).build_code(spec, output_type=str)
+    executable = HarnessBuilder(capability_type_catalog=_catalog()).build(spec, output_type=str)
     leaves: list[AbstractCapability[AgentContext]] = []
     executable._agent.root_capability.apply(leaves.append)
     declared = [capability for capability in leaves if isinstance(capability, _DeclaredCapability)]
@@ -105,18 +105,18 @@ async def test_bare_capability_functions_are_rejected_from_definition_and_run_so
         return Capability(id="dynamic")
 
     with pytest.raises(DefinitionError) as definition_error:
-        HarnessBuilder().build_code(
+        HarnessBuilder().build(
             AgentSpec(model="logical:test"),
             output_type=str,
             capabilities=cast(Any, (dynamic,)),
         )
     assert definition_error.value.code == "capability_type_invalid"
 
-    executable = HarnessBuilder().build_code(AgentSpec(model="logical:test"), output_type=str)
+    executable = HarnessBuilder().build(AgentSpec(model="logical:test"), output_type=str)
     with pytest.raises(DefinitionError) as run_error:
         executable.stream(
             "run",
-            bindings=RunBindings.local(capabilities=cast(Any, (dynamic,))),
+            bindings=RunBindings.embedded(capabilities=cast(Any, (dynamic,))),
         )
     assert run_error.value.code == "capability_type_invalid"
 
@@ -139,14 +139,14 @@ async def test_agent_spec_tool_timeout_does_not_apply_to_capability_owned_tools(
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", tool_timeout=0.001),
+    executable = HarnessBuilder().build(
+        AgentSpec(tool_timeout=0.001),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(Capability(tools=[slow_tool], id="slow-feature"),),
     )
 
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
 
@@ -176,8 +176,8 @@ async def test_capability_owned_toolset_is_exposed_and_dispatched() -> None:
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -189,7 +189,7 @@ async def test_capability_owned_toolset_is_exposed_and_dispatched() -> None:
         ),
     )
 
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert toolset_ids

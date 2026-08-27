@@ -6,8 +6,8 @@ import json
 from typing import Any
 
 import pytest
-from converge_agent_envd_client import ControlFrame, EIPSession, EIPTransportFrame, RequestCoordinator
-from converge_agent_envd_client.eip.v1 import (
+from a13n_envd_client import ControlFrame, EIPSession, EIPTransportFrame, RequestCoordinator
+from a13n_envd_client.eip.v1 import (
     ContentDigest,
     DataFrame,
     DataFrameKind,
@@ -45,7 +45,7 @@ from converge_agent_envd_client.eip.v1 import (
     decode_model,
     encode_model,
 )
-from converge_agent_envd_client.errors import EIPProtocolError, EIPSessionStateError
+from a13n_envd_client.errors import EIPProtocolError, EIPSessionStateError
 from pydantic import BaseModel
 
 

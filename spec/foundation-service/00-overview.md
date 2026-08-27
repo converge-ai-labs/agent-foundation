@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control-plane and execution-plane work to separately scalable process roles. It does not split lifecycle ownership across microservices.
+Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control and worker work to separately scalable process roles under the shared [runtime contract](01-runtime-configuration-and-deployment.md). It does not split lifecycle ownership across microservices.
 
-The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation additionally owns durable `Execution` and `ExecutionAttempt` resources for scheduling and recovery. Interactive work correlates the two models; [Triggers](12-connectors-connections-and-triggers.md) accept schedules and verified Connector events as standalone Executions without creating a Session or Turn.
+The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation uses `Turn` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and `TurnAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Turn; Foundation defines no separate durable Execution resource.
 
-The execution worker embeds the public Harness Python API. It reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness in process. Queue delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
+The worker embeds the public Harness Python API. It reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness in process. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -19,8 +19,7 @@ flowchart LR
         Auth[Resource authorization]
         Authoring[Agent and integration authoring]
         Interaction[Session, Thread, Turn, and Item]
-        Lifecycle[Execution lifecycle]
-        ConnectorControl[Connector and Trigger control]
+        Lifecycle[Turn lifecycle]
         Scheduler[Scheduler and reconcilers]
         Feedback[Deferred feedback]
         Publisher[Outbox publisher]
@@ -31,12 +30,13 @@ flowchart LR
         Objects[(Object storage)]
     end
 
-    Coordination[Redis or queue hints]
+    Coordination[Required Redis data flow]
+    LiveBus[Turn-scoped Redis Streams]
 
-    subgraph WorkerRole[Execution role]
+    subgraph WorkerRole[Worker role]
         Worker[Fenced worker]
         Reconstruct[Trusted reconstruction]
-        Provider[Environment Provider Manager]
+        Provider[Environment Provider]
         Observer[HarnessAguiObserver]
         Harness[agent-harness]
     end
@@ -48,46 +48,48 @@ flowchart LR
     Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback
     Authoring & Interaction & Lifecycle & ConnectorControl & Feedback --> Database
     Scheduler --> Database
-    Scheduler -. wakeup .-> Coordination -. notification .-> Worker
+    Scheduler --> Coordination --> Worker
     Worker --> Database
     Worker --> Reconstruct --> Harness
     Worker --> Provider --> Harness
     Provider --> Envd
     Harness --> External
     Harness --> Observer --> Worker
+    Worker -. live AG-UI .-> LiveBus -. authorized subscription .-> API
     Worker --> Database & Objects
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, interaction state, Executions, current ExecutionAttempt generations, dispatch evidence, checkpoints, pending actions, Environment lifecycle, and terminal outcomes. Redis and queue messages reduce discovery latency only. Object storage retains bounded large content under database-selected references.
+PostgreSQL is the distributed authority for accepted resources, Turns, current TurnAttempt generations, dispatch evidence, pending actions, Environment lifecycle, and terminal outcomes. Redis carries coordination signals and each Turn's stable bounded-replay message stream; Redis publication alone never proves a relational lifecycle transition committed. Shared object storage holds the Turn's complete conditionally replaced state, immutable replay snapshot, and bounded large content. The detailed authorities belong to [Durable Turn State](14-turn-persistence.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
 ## Component Boundaries
 
-| Concern                                                       | Owner                                                           | Relationship                                                        |
-| ------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)           | Foundation persists and authorizes its hosted representations       |
-| Organization, Workspace, identity, and resource authorization | [Foundation IAM](04-identity-and-access-management.md)          | Applies to every public and internal product operation              |
-| Durable Agent and integration revisions                       | Foundation control plane                                        | Selects exact serializable inputs and dependency locks              |
-| Connector configuration, account authorization, and Triggers  | [Connector contract](12-connectors-connections-and-triggers.md) | Freezes managed tools and accepts unique unattended occurrences     |
-| Execution and ExecutionAttempt                                | Foundation                                                      | Owns durable scheduling, fencing, recovery, and completion          |
-| Process-local Agent composition and loop                      | Harness                                                         | Built by a trusted Foundation reconstruction adapter                |
-| Provider specification and resource operations                | `converge-agent-environment-provider`                           | Foundation invokes Managers and persists selected provider state    |
-| Runtime Environment attachment and routing                    | Provider package and Harness                                    | Provider supplies a fresh attachment; Harness adapts and enters it  |
-| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                           | Foundation supplies visibility processing, retention, and delivery  |
-| Durable lifecycle events, Items, and usage                    | Foundation                                                      | Commits product facts independently from process-local observations |
-| Client-side effects                                           | External client                                                 | Foundation authenticates feedback but does not claim the effect     |
+| Concern                                                       | Owner                                                         | Relationship                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations       |
+| Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                               |
+| OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning         |
+| Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation              |
+| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks              |
+| Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome       |
+| Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                |
+| Provider specification and Resource operations                | `a13n-environment-provider`                                   | Foundation invokes Providers and persists selected provider state   |
+| Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it  |
+| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery  |
+| Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations |
+| Client-side effects                                           | External client                                               | Foundation authenticates feedback but does not claim the effect     |
 
-Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. Optional commercial integrations implement Foundation ports without replacing the common resource authorizer or durable execution kernel.
+Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
 
 ## Process Roles
 
-One artifact supports three roles:
+One artifact supports two independently deployable roles and their all-in-one composition:
 
-- `all` owns control and execution loops in one process;
+- `all` owns control and worker loops in one process;
 - `control` owns product APIs, authorization, scheduling, control-plane reconciliation, deferred feedback, and outbox publication;
-- `execution` owns worker claiming, Agent reconstruction, Environment resource attachment, Harness invocation, observation consumption, and fenced publication.
+- `worker` owns Turn claiming, Agent reconstruction, Environment resource attachment, Harness invocation, observation consumption, and fenced publication.
 
-These names describe deployment roles, not product resources. An `Execution` remains a durable scheduled-work resource regardless of which role processes it. Rolling overlap is safe only when every background loop is idempotent, leased, or fenced. Execution-only processes expose operational probes but no product API and never migrate the schema.
+These names describe deployment roles, not product resources. A `Turn` remains the durable scheduled-work resource regardless of which role processes it. The [runtime contract](01-runtime-configuration-and-deployment.md) owns the complete component matrix, deployment profiles, readiness, and drain behavior. Worker-only processes expose operational probes but no product API and never migrate the schema.
 
 ## End-to-End Interactive Turn
 
@@ -103,23 +105,23 @@ sequenceDiagram
 
     Caller->>Control: submit Turn with idempotency key
     Control->>Control: authenticate, authorize, resolve exact revisions
-    Control->>DB: commit Turn, user Item, Execution, event, outbox
+    Control->>DB: publish initial state and commit accepted Turn
     Control-->>Caller: durable acceptance
-    Scheduler->>DB: find eligible Execution
-    Scheduler-->>Worker: bounded wakeup hint
-    Worker->>DB: claim next ExecutionAttempt generation
+    Scheduler->>DB: find eligible Turn
+    Scheduler-->>Worker: Redis work signal
+    Worker->>DB: claim next TurnAttempt generation
     Worker->>Worker: reconstruct Agent and safe local inputs
     Worker->>DB: cross fenced effects-possible boundary
     Worker->>Provider: create/resume resource and acquire attachment
     Worker->>Harness: call in-process API with fresh bindings
     Harness-->>Worker: observations, usage records, state, and result candidates
-    Worker->>DB: fenced Items, checkpoint, pending, or terminal commit
+    Worker->>DB: fenced state publication, waiting, or terminal commit
     DB-->>Caller: retained interaction and lifecycle delivery
 ```
 
-The same Execution can receive another ExecutionAttempt after suspension or recoverable worker loss. A new Attempt always creates fresh process-local objects and a fresh Harness Run. It does not create another Turn. Retrying a terminal user intent creates another Turn and Execution rather than rewriting the terminal records.
+The same non-terminal Turn can receive another TurnAttempt after recoverable worker loss. A new attempt always creates fresh process-local objects and a fresh Harness Run. A waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names the waiting Turn. The new Turn receives fresh state and later its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
 
-A standalone Execution starts at durable Execution acceptance and follows the same scheduler, Attempt, dispatch, Harness, checkpoint, and completion contracts while omitting interactive Session and Turn references. Trigger acceptance additionally records the exact Trigger version and source occurrence after current authorization and deduplication.
+Schedules, webhooks, service requests, and asynchronous children accept Turns and follow the same scheduler, TurnAttempt, dispatch, Harness, state, and outcome contracts as interactive work.
 
 ## Dependency Direction
 
@@ -146,11 +148,11 @@ External applications call Foundation through its HTTP API or language SDKs. The
 These facts advance independently:
 
 1. a caller request is authenticated and authorized;
-2. a Turn and initial Item, or a standalone Execution, are durably accepted;
-3. an ExecutionAttempt owns a live fenced lease;
-4. the Attempt crosses the durable effects-possible boundary;
+2. a Turn and its initial complete state are durably accepted;
+3. a TurnAttempt owns a live fenced lease;
+4. the TurnAttempt crosses the durable effects-possible boundary;
 5. Environment management or Harness returns a process-local observation or candidate;
-6. Foundation selects a checkpoint, pending transition, or terminal outcome;
+6. Foundation conditionally publishes complete Turn state and commits a waiting or terminal outcome;
 7. an Item, lifecycle event, AG-UI envelope, or external result is delivered;
 8. immutable usage records are ingested; an optional external capability can price or bill them without changing their identity.
 
@@ -158,13 +160,12 @@ No later fact follows merely because an earlier fact occurred. In particular, qu
 
 ## Invariants
 
-01. Foundation has one domain and authorization model across `all`, `control`, and `execution` roles.
-02. Session, Thread, Turn, and Item follow the shared platform meanings; Execution and ExecutionAttempt own durable scheduling separately.
-03. PostgreSQL is lifecycle authority; coordination loss changes latency, not accepted work.
-04. One ExecutionAttempt starts at most one logical Harness Run.
-05. Process-local Python values and runtime attachments never become Foundation durable payloads.
-06. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
-07. Every authoritative Attempt publication verifies the current generation and legal transition.
-08. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
-09. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
-10. Connector event ingress and outbound lifecycle webhook delivery are separate authenticated protocols and completion boundaries.
+1. Foundation has one domain and authorization model across `all`, `control`, and `worker` roles.
+2. Session, Thread, Turn, and Item follow the shared platform meanings; Turn and TurnAttempt directly own durable scheduling and recovery.
+3. PostgreSQL is accepted lifecycle authority; Redis carries coordination and bounded Turn replay without becoming lifecycle authority.
+4. One TurnAttempt starts at most one logical Harness Run.
+5. Process-local Python values and runtime attachments never become Foundation durable payloads.
+6. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
+7. Every authoritative TurnAttempt publication verifies the current generation and legal transition.
+8. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
+9. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.

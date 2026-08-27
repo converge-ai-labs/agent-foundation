@@ -8,8 +8,8 @@ import pytest
 
 SCRIPT = Path(__file__).parents[1] / "check-agent-distributions.py"
 INTERNAL_REQUIREMENTS = (
-    "converge-agent-environment-provider",
-    "converge-agent-harness",
+    "a13n-environment-provider",
+    "a13n-harness",
 )
 
 

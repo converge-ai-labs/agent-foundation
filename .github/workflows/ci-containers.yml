@@ -13,7 +13,13 @@ on:
       - "LICENSE"
       - "apps/foundation-web/**"
       - "crates/agent-envd/**"
-      - "packages/**"
+      - "packages/agent-envd-client/pyproject.toml"
+      - "packages/agent-environment-provider/pyproject.toml"
+      - "packages/agent-harness/pyproject.toml"
+      - "packages/agent-stream-protocol/pyproject.toml"
+      - "packages/agent-ui/pyproject.toml"
+      - "packages/foundation-service/**"
+      - "packages/logging/**"
       - "pyproject.toml"
       - "scripts/docker-entrypoint.sh"
       - "uv.lock"
@@ -24,15 +30,91 @@ env:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  containers:
-    name: Container images
+  changes:
+    name: Detect container changes
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.matrix.outputs.images }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify image inputs
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            foundation:
+              - '.dockerignore'
+              - '.github/workflows/ci-containers.yml'
+              - 'deploy/containers/foundation-service/Dockerfile'
+              - 'apps/foundation-web/**'
+              - 'packages/agent-envd-client/pyproject.toml'
+              - 'packages/agent-environment-provider/pyproject.toml'
+              - 'packages/agent-harness/pyproject.toml'
+              - 'packages/agent-stream-protocol/pyproject.toml'
+              - 'packages/agent-ui/pyproject.toml'
+              - 'packages/foundation-service/**'
+              - 'packages/logging/**'
+              - 'pyproject.toml'
+              - 'scripts/docker-entrypoint.sh'
+              - 'uv.lock'
+            sandbox:
+              - '.dockerignore'
+              - '.github/workflows/ci-containers.yml'
+              - 'Cargo.lock'
+              - 'Cargo.toml'
+              - 'crates/agent-envd/**'
+              - 'deploy/containers/sandbox/Dockerfile'
+              - 'LICENSE'
+
+      - name: Build image matrix
+        id: matrix
+        env:
+          FOUNDATION_CHANGED: ${{ steps.filter.outputs.foundation }}
+          SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          images = []
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["FOUNDATION_CHANGED"] == "true":
+              images.append({
+                  "name": "foundation-service",
+                  "build_target": "image-foundation-service",
+                  "check_target": "image-check-foundation-service",
+              })
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
+              images.append({
+                  "name": "sandbox",
+                  "build_target": "image-sandbox",
+                  "check_target": "image-check-sandbox",
+              })
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")
+          PY
+
+  containers:
+    name: Container image (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.images) }}
     env:
       DOCKER_BUILDKIT: "1"
     steps:
@@ -41,5 +123,5 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build and smoke-check images
-        run: make image-check
+      - name: Build and smoke-check image
+        run: make ${{ matrix.build_target }} ${{ matrix.check_target }}

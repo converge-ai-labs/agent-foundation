@@ -1,6 +1,6 @@
-from converge_foundation_service.log import build_log_config
-from converge_foundation_service.settings import ServiceSettings
-from converge_logging import LogFormat
+from a13n_logging import LogFormat
+from a13n_service.log import build_log_config
+from a13n_service.settings import ServiceSettings
 from rich.logging import RichHandler
 
 

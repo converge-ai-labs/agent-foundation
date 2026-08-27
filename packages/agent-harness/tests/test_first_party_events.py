@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     CompactionCapability,
     CompactionPolicy,
     CreateTask,
@@ -23,8 +23,8 @@ from converge_agent_harness import (
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
-from converge_agent_harness.capabilities.lifecycle import _safe_error_code
-from converge_agent_harness.events import ContextOperationCompletedPayload
+from a13n_harness.capabilities.lifecycle import _safe_error_code
+from a13n_harness.events import ContextOperationCompletedPayload
 from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -46,7 +46,7 @@ async def _collect_extensions(
     terminal: HarnessRunResultEvent[Any] | None = None
     async with executable.stream(
         prompt,
-        bindings=bindings or RunBindings.local(),
+        bindings=bindings or RunBindings.embedded(),
         previous_state=previous_state,
     ) as stream:
         async for item in stream:
@@ -67,8 +67,8 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
         del messages, info
         yield "done"
 
-    success = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    success = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=success_stream),
     )
@@ -94,8 +94,8 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
         raise UnexpectedModelBehavior("provider body must not escape")
         yield "unreachable"
 
-    failing = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    failing = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=failing_stream),
     )
@@ -146,8 +146,8 @@ async def test_invalid_handoff_input_does_not_start_a_context_operation() -> Non
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(HandoffCapability(),),
@@ -179,8 +179,8 @@ async def test_compaction_events_share_operation_identity_and_provider_usage_sna
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -245,8 +245,8 @@ async def test_task_changed_events_are_committed_deltas_and_skip_semantic_noop()
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
@@ -292,13 +292,13 @@ async def test_provider_task_observation_emits_once_at_harness_read_boundaries()
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
     )
-    bindings = RunBindings.local(
+    bindings = RunBindings.embedded(
         capabilities=(TaskStateRunCapability(source="provider", cell=cell),),
     )
     events, terminal = await _collect_extensions(executable, "Observe", bindings=bindings)
@@ -347,13 +347,13 @@ async def test_provider_changes_before_harness_mutation_keep_provider_observed_r
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
     )
-    bindings = RunBindings.local(
+    bindings = RunBindings.embedded(
         capabilities=(TaskStateRunCapability(source="provider", cell=cell),),
     )
     events, terminal = await _collect_extensions(executable, "Mutate", bindings=bindings)

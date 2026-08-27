@@ -1,14 +1,14 @@
 [project]
-name = "converge-agent-stream-protocol"
+name = "a13n-stream-protocol"
 version = "0.0.0"
-description = "Shared AG-UI projection protocol for Converge agents"
+description = "Shared AG-UI projection protocol for Agent Foundation agents"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "ag-ui-protocol>=0.1.18,<0.2",
-    "converge-agent-harness",
+    "a13n-harness",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.31.1,<2.32",
 ]
@@ -23,8 +23,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["converge_agent_stream_protocol"]
+packages = ["a13n_stream_protocol"]
 
 [tool.deptry]
-known_first_party = ["converge_agent_stream_protocol"]
-package_module_name_map = { "ag-ui-protocol" = "ag_ui", "converge-agent-harness" = "converge_agent_harness", "pydantic-ai-slim" = "pydantic_ai" }
+known_first_party = ["a13n_stream_protocol"]
+package_module_name_map = { "ag-ui-protocol" = "ag_ui", "a13n-harness" = "a13n_harness", "pydantic-ai-slim" = "pydantic_ai" }

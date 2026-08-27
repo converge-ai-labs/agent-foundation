@@ -1,6 +1,6 @@
 # Agent Stream Protocol
 
-`converge-agent-stream-protocol` converts public `converge-agent-harness` stream items into typed [AG-UI](https://docs.ag-ui.com/) events. Use it when a Host needs one consistent projection for a browser, terminal, event store, or another AG-UI consumer without interpreting private Harness state.
+`a13n-stream-protocol` converts public `a13n-harness` stream items into typed [AG-UI](https://docs.ag-ui.com/) events. Use it when a Host needs one consistent projection for a browser, terminal, event store, or another AG-UI consumer without interpreting private Harness state.
 
 The package provides one main class, `HarnessAguiObserver`. One observer:
 
@@ -16,17 +16,17 @@ It does not run or resume an Agent, persist events, assign durable event IDs, re
 ## Install
 
 ```bash
-pip install converge-agent-stream-protocol
+pip install a13n-stream-protocol
 ```
 
-A published Stream Protocol release pins the matching `converge-agent-harness` release. In a repository checkout, both packages resolve from the shared workspace.
+A published Stream Protocol release pins the matching `a13n-harness` release. In a repository checkout, both packages resolve from the shared workspace.
 
 ## Observe a Harness Run
 
 Create one observer for each root or exposed child Run, then route every public source item by its Thread and Run correlation:
 
 ```python
-from converge_agent_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import HarnessAguiObserver
 
 observers: dict[tuple[str, str], HarnessAguiObserver] = {}
 
@@ -67,7 +67,7 @@ The observer uses standard AG-UI events when the semantics match directly:
 | Failed or cancelled Run result                           | `RUN_ERROR`                                                      |
 | Suspended result or another unmatched public observation | Namespaced `CUSTOM` event                                        |
 
-Unmatched Harness extensions use names such as `converge.harness.lifecycle`. Unmatched Pydantic AI events use names such as `converge.pydantic_ai.final_result`. The custom value retains the public Thread, Run, sequence, timestamp, and source-event representation.
+Unmatched Harness extensions use names such as `a13n.harness.lifecycle`. Unmatched Pydantic AI events use names such as `a13n.pydantic_ai.final_result`. The custom value retains the public Thread, Run, sequence, timestamp, and source-event representation.
 
 ### Serialize events
 
@@ -108,8 +108,8 @@ from typing import Any
 
 from ag_ui.core import Event
 from ag_ui.core.events import CustomEvent, TextMessageContentEvent
-from converge_agent_harness import HarnessStreamEvent
-from converge_agent_stream_protocol import HarnessAguiObserver
+from a13n_harness import HarnessStreamEvent
+from a13n_stream_protocol import HarnessAguiObserver
 
 
 def process_event(
@@ -120,7 +120,7 @@ def process_event(
 
     if (
         isinstance(event, CustomEvent)
-        and event.name == "converge.harness.diagnostic"
+        and event.name == "a13n.harness.diagnostic"
     ):
         return None
 

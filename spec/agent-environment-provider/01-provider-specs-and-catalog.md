@@ -35,7 +35,7 @@ The conceptual factory API is process-local:
 
 ```python
 ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP = (
-    "converge_agent_environment_provider.providers"
+    "a13n_environment_provider.providers"
 )
 
 
@@ -57,12 +57,12 @@ class EnvironmentProviderFactory(ABC):
     ) -> type[BaseModel]: ...
 
     @abstractmethod
-    def create_manager(
+    def create_provider(
         self,
         configuration: BaseModel,
         *,
         runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentManager: ...
+    ) -> EnvironmentProvider: ...
 ```
 
 Each factory owns exactly one provider key and one or more explicitly supported configuration schema versions. `configuration_model()` returns the exact frozen Pydantic model for a supported version. The catalog validates `parameters` with `extra="forbid"` behavior, preserves no caller-owned mutable collection, and produces a process-local resolved value:
@@ -75,21 +75,21 @@ class ResolvedEnvironmentProviderSpec:
     factory: EnvironmentProviderFactory
 ```
 
-The resolved value is not serialized. It retains trusted code selected by the Host and can construct a manager from one fresh process-local `EnvironmentProviderRuntime`. That abstract marker has no Host or Harness dependency; each provider owns one exact typed runtime implementation carrying only current credential/client factories and other live collaborators. Runtime values are non-serializable and never enter provider specifications or resource state. Manager construction is synchronous and inert: it captures the runtime but performs no filesystem, Docker, provider, credential, network, daemon, or package-discovery I/O and creates no cleanup obligation.
+The resolved value is not serialized. It retains trusted code selected by the Host and can construct an `EnvironmentProvider` from one fresh process-local `EnvironmentProviderRuntime`. That abstract marker has no Host or Harness dependency; each provider owns one exact typed runtime implementation carrying only current credential/client factories and other live collaborators. Runtime values are non-serializable and never enter provider specifications or resource state. Provider construction is synchronous and inert: it captures the runtime but performs no filesystem, Docker, provider, credential, network, daemon, or package-discovery I/O and creates no cleanup obligation.
 
 ## Built-in and Extension Catalog
 
 The package ships four factories under exact keys:
 
-- `converge.direct-local`;
-- `converge.local-envd`;
-- `converge.docker`;
-- `converge.e2b`.
+- `a13n.direct-local`;
+- `a13n.local-envd`;
+- `a13n.docker`;
+- `a13n.e2b`.
 
 Built-ins are selectable directly and do not depend on installed entry-point metadata. Third-party distributions can register one factory class:
 
 ```toml
-[project.entry-points."converge_agent_environment_provider.providers"]
+[project.entry-points."a13n_environment_provider.providers"]
 "acme.sandbox" = "acme_environment.provider:AcmeEnvironmentProviderFactory"
 ```
 
@@ -132,12 +132,12 @@ class EnvironmentProviderFactoryCatalog(
         spec: EnvironmentProviderSpec,
     ) -> ResolvedEnvironmentProviderSpec: ...
 
-    def create_manager(
+    def create_provider(
         self,
         spec: EnvironmentProviderSpec,
         *,
         runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentManager: ...
+    ) -> EnvironmentProvider: ...
 
 
 def discover_environment_provider_factory_references(
@@ -160,9 +160,9 @@ A selected entry point must resolve to an `EnvironmentProviderFactory` subclass 
 
 Installed, discoverable, selected, schema-valid, deployment-trusted, and caller-authorized are separate states. The package enforces selected-code and schema boundaries; the Host owns policy.
 
-An API value, model value, `HarnessState`, provider parameter, resource-state payload, or database field cannot name an arbitrary `module:object`. A Host selects an exact provider key from its trusted catalog before manager construction. Provider configuration cannot enable another provider, load an extension, or add a Harness Capability.
+An API value, model value, `HarnessState`, provider parameter, resource-state payload, or database field cannot name an arbitrary `module:object`. A Host selects an exact provider key from its trusted catalog before Provider construction. Provider configuration cannot enable another provider, load an extension, or add a Harness Capability.
 
-Provider schemas can perform deterministic semantic validation that is intrinsic to the provider, such as positive resource sizes or mutually exclusive Docker image selectors. Validation that requires credentials, current vendor state, filesystem inspection, network calls, or allocation belongs to an explicit async management operation rather than document decoding.
+Provider schemas can perform deterministic semantic validation that is intrinsic to the provider, such as positive resource sizes or mutually exclusive Docker image selectors. Validation that requires credentials, current vendor state, filesystem inspection, network calls, or allocation belongs to an explicit async Provider operation rather than document decoding.
 
 ## Configuration Evolution
 
@@ -177,12 +177,12 @@ Compatible changes within a schema version can only narrow implementation intern
 | Failure                              | Outcome                                                    |
 | ------------------------------------ | ---------------------------------------------------------- |
 | Invalid provider key or envelope     | Bounded specification error; no target import              |
-| Missing selected key                 | Catalog error before manager construction                  |
+| Missing selected key                 | Catalog error before Provider construction                 |
 | Built-in or entry-point collision    | Complete catalog construction fails                        |
 | Import or factory construction fails | Bounded load error with protected cause                    |
 | Unsupported schema version           | Explicit compatibility error; no fallback                  |
-| Invalid or oversized parameters      | Validation error without manager construction              |
-| Manager constructor raises           | Bounded factory error; no external cleanup may be required |
+| Invalid or oversized parameters      | Validation error without Provider construction             |
+| Provider constructor raises          | Bounded factory error; no external cleanup may be required |
 | Host policy denies a valid spec      | Host denial; package does not substitute another provider  |
 
 Safe errors can include the bounded provider key, schema version, and distribution provenance. They never include parameter values, object representations, credentials, raw vendor exception text, or private installation paths.
@@ -191,7 +191,7 @@ Safe errors can include the bounded provider key, schema version, and distributi
 
 Provider key, configuration schema version, factory API, package version, vendor SDK range, EIP version, and Host persistence schema are independent compatibility axes. The Harness release group pins one provider-package version, but a serialized provider specification remains governed by its own `provider_key` and `schema_version`.
 
-Changing an existing built-in key, making discovery implicit, allowing arbitrary import targets, making factory or manager construction effectful, or treating schema validation as authorization is incompatible.
+Changing an existing built-in key, making discovery implicit, allowing arbitrary import targets, making factory or Provider construction effectful, or treating schema validation as authorization is incompatible.
 
 ## Invariants
 
@@ -200,7 +200,7 @@ Changing an existing built-in key, making discovery implicit, allowing arbitrary
 3. Built-in keys are exact, namespaced, and cannot be shadowed by entry points.
 4. Package metadata is availability, not authorization.
 5. Empty extension selection performs no metadata scan or target import.
-6. Factory and manager construction are deterministic, synchronous, and inert; a fresh typed runtime supplies current live collaborators without ambient credential lookup.
+6. Factory and Provider construction are deterministic, synchronous, and inert; a fresh typed runtime supplies current live collaborators without ambient credential lookup.
 7. Provider configuration never carries live authority, resource state, attachment state, or a Python import target.
 8. Unknown schema versions fail explicitly rather than receiving latest-version defaults.
 9. Host policy can always deny or narrow a schema-valid provider specification.

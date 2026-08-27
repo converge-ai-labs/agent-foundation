@@ -8,13 +8,13 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
+from a13n_ui.settings import StorageSettings
+from a13n_ui.storage.database import open_database, short_session, transaction
+from a13n_ui.storage.metadata import agent_ui_metadata
+from a13n_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
+from a13n_ui.storage.models import StoreLeaseRecord
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from converge_agent_ui.settings import StorageSettings
-from converge_agent_ui.storage.database import open_database, short_session, transaction
-from converge_agent_ui.storage.metadata import agent_ui_metadata
-from converge_agent_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
-from converge_agent_ui.storage.models import StoreLeaseRecord
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -33,6 +33,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
     try:
         assert set(inspect(engine).get_table_names()) == {
             "alembic_version",
+            "composition_snapshot",
             "configuration_diagnostic",
             "configuration_generation",
             "current_configuration",

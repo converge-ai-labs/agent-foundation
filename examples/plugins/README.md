@@ -4,11 +4,11 @@ This standalone project demonstrates the supported configuration and direct-code
 
 ## Composition Matrix
 
-| Boundary                  | Installed entry-point mode                                                                                                                        | Explicit code mode                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Environment provider      | Select an `EnvironmentProviderFactory` from `converge_agent_environment_provider.providers`, then construct a Manager from an exact specification | Supply an `EnvironmentProviderFactory` object directly, then construct the same Manager                    |
-| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `converge_agent_harness.environment_run_extensions`, then call `create_extension()`               | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
-| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build    | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
+| Boundary                  | Installed entry-point mode                                                                                                                     | Explicit code mode                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Environment provider      | Select an `EnvironmentProviderFactory` from `a13n_environment_provider.providers`, then construct a Provider from an exact specification       | Supply an `EnvironmentProviderFactory` object directly, then construct the same Provider                   |
+| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                      | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
+| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
 
 Entry-point metadata provides only a stable key and import target. Harness middleware configuration uses the Harness-owned versioned envelope; YAML is preferred for files, JSON is supported for files and inline environment values, and each plugin package owns only the typed `configuration` payload.
 
@@ -46,8 +46,8 @@ The project is intentionally outside the root release workspace. Its independent
 
 ```toml
 [tool.uv.sources]
-converge-agent-environment-provider = { path = "../../packages/agent-environment-provider", editable = true }
-converge-agent-harness = { path = "../../packages/agent-harness", editable = true }
+a13n-environment-provider = { path = "../../packages/agent-environment-provider", editable = true }
+a13n-harness = { path = "../../packages/agent-harness", editable = true }
 ```
 
 A standalone plugin distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
@@ -57,23 +57,23 @@ A standalone plugin distribution should remove those development sources and dec
 The distribution registers one package factory:
 
 ```toml
-[project.entry-points."converge_agent_environment_provider.providers"]
-"example.workspace" = "converge_plugin_examples.environment:WorkspaceEnvironmentProviderFactory"
+[project.entry-points."a13n_environment_provider.providers"]
+"example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProviderFactory"
 ```
 
-[`environment.py`](src/converge_plugin_examples/environment.py) contains:
+[`environment.py`](src/a13n_plugin_examples/environment.py) contains:
 
 - a strict package-owned schema-version-1 `WorkspaceEnvironmentConfiguration` model;
 - an exact process-local `WorkspaceEnvironmentRuntime` collaborator;
 - a no-argument, side-effect-free `WorkspaceEnvironmentProviderFactory`;
-- a complete `WorkspaceEnvironmentManager` and single-entry managed resource;
+- a complete `WorkspaceEnvironmentProvider` and single-entry Resource;
 - fresh `DirectLocalEnvironmentAttachment` values for Harness transfer.
 
-Specification validation, factory construction, and Manager construction perform no filesystem I/O. `create()` and `resume()` validate the selected existing workspace; neither creates or owns it. Harness binding cleanup, managed-resource scope cleanup, and explicit Provider destroy remain separate operations.
+Specification validation, factory construction, and Provider construction perform no filesystem I/O. `create()` and `resume()` validate the selected existing workspace; neither creates or owns it. Harness binding cleanup, Resource scope cleanup, and explicit Provider destroy remain separate operations.
 
 ### Installed entry-point mode
 
-[`run_environment_entrypoint_demo()`](src/converge_plugin_examples/demo_environment.py) discovers metadata, verifies that `example.workspace` is installed, selects only that key, and constructs two Managers from Host-supplied exact specifications and fresh runtime collaborators.
+[`run_environment_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment.py) discovers metadata, verifies that `example.workspace` is installed, selects only that key, and constructs two Providers from Host-supplied exact specifications and fresh runtime collaborators.
 
 ```bash
 uv run plugin-example-environment-entrypoint
@@ -81,13 +81,13 @@ uv run plugin-example-environment-entrypoint
 
 ### Explicit code mode
 
-[`run_environment_code_demo()`](src/converge_plugin_examples/demo_environment.py) imports and supplies `WorkspaceEnvironmentProviderFactory()` directly. It still invokes the same catalog Manager-construction path, so schema, runtime, state, and lifecycle validation remain identical.
+[`run_environment_code_demo()`](src/a13n_plugin_examples/demo_environment.py) imports and supplies `WorkspaceEnvironmentProviderFactory()` directly. It still invokes the same catalog Provider-construction path, so schema, runtime, state, and lifecycle validation remain identical.
 
 ```bash
 uv run plugin-example-environment-code
 ```
 
-Both paths create two managed resources, acquire and transfer two fresh attachments, assemble one Harness topology, enter and activate the aggregate, verify default and alias-qualified routing, then explicitly destroy the logical Provider resources:
+Both paths create two Resources, acquire and transfer two fresh attachments, assemble one advanced Harness topology, enter and activate the aggregate, and verify default and alias-qualified routing. The source Provider then demonstrates explicit durable lifecycle calls: reconcile create as running, resume the exact validated state into a fresh Resource and attachment, reconcile resume as running, destroy, and reconcile authoritative absence. The example Provider advertises no pause mode, so it reports that pause is unsupported rather than silently changing lifecycle semantics:
 
 ```text
 selection mode: entrypoint
@@ -95,19 +95,21 @@ selected provider: example.workspace
 active aliases: source, docs
 default route: source workspace
 docs route: documentation workspace
+durable lifecycle: running -> running -> absent
+pause supported: False
 ```
 
-Code mode prints the same result with `selection mode: code`.
+Code mode prints the same result with `selection mode: code`. A provider that advertises `EnvironmentPauseMode.FULL` or `FILESYSTEM` adds the explicit pause transition before resume; the complete Host operation sequence is documented in the [Environment guide](../../docs/agent-harness/environments.md#manage-a-durable-provider-lifecycle-explicitly).
 
 ### Real provider checklist
 
 - Use one stable namespaced entry-point name and return the same value from `provider_key()`.
-- Keep configuration, factory, and Manager construction strict, bounded, and side-effect free.
+- Keep configuration, factory, and Provider construction strict, bounded, and side-effect free.
 - Support exact schema versions without fallback or shape inference.
 - Accept current credentials and client factories only through a typed process-local runtime collaborator.
 - Tie every lifecycle call to a Host-generated operation identity and resource correlation.
 - Return provider-owned state before resource-scope entry and validate it exactly on resume, destroy, and reconciliation.
-- Issue only fresh supported attachments while a single-entry managed-resource scope is active.
+- Issue only fresh supported attachments while a single-entry Resource scope is active.
 - Treat `reconcile()` as bounded read-only inspection of one exact prior operation.
 - Keep aliases, permission ceilings, topology, attachment transfer, durable storage, authorization, and scheduling under Host control.
 
@@ -118,11 +120,11 @@ The example uses the public `DirectLocalEnvironmentAttachment` backend to stay f
 The distribution registers a separate aggregate-lifecycle factory:
 
 ```toml
-[project.entry-points."converge_agent_harness.environment_run_extensions"]
-"example.workspace-marker" = "converge_plugin_examples.environment_extension:WorkspaceMarkerExtensionFactory"
+[project.entry-points."a13n_harness.environment_run_extensions"]
+"example.workspace-marker" = "a13n_plugin_examples.environment_extension:WorkspaceMarkerExtensionFactory"
 ```
 
-[`environment_extension.py`](src/converge_plugin_examples/environment_extension.py) contains:
+[`environment_extension.py`](src/a13n_plugin_examples/environment_extension.py) contains:
 
 - strict package-owned `WorkspaceMarkerConfiguration` validation;
 - a no-argument, side-effect-free `WorkspaceMarkerExtensionFactory`;
@@ -132,7 +134,7 @@ The factory receives an `EnvironmentRunExtensionFactoryContext` with separate `e
 
 ### Installed entry-point mode
 
-[`run_environment_extension_entrypoint_demo()`](src/converge_plugin_examples/demo_environment_extension.py) discovers metadata, selects only `example.workspace-marker`, creates one configured instance, registers it on `create_environment_run_binding()`, and exercises the complete scope:
+[`run_environment_extension_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment_extension.py) discovers metadata, selects only `example.workspace-marker`, creates one configured instance, registers it on `create_environment_run_binding()`, and exercises the complete scope:
 
 ```bash
 uv run plugin-example-environment-extension-entrypoint
@@ -140,7 +142,7 @@ uv run plugin-example-environment-extension-entrypoint
 
 ### Explicit code mode
 
-[`run_environment_extension_code_demo()`](src/converge_plugin_examples/demo_environment_extension.py) supplies `WorkspaceMarkerExtensionFactory()` directly without scanning installed metadata, then calls the same catalog method:
+[`run_environment_extension_code_demo()`](src/a13n_plugin_examples/demo_environment_extension.py) supplies `WorkspaceMarkerExtensionFactory()` directly without scanning installed metadata, then calls the same catalog method:
 
 ```bash
 uv run plugin-example-environment-extension-code
@@ -166,7 +168,7 @@ A run extension spans the complete Environment aggregate, not one provider revis
 - Keep factory construction and `create_extension()` side-effect free.
 - Validate the package-owned JSON configuration with a strict schema.
 - Acquire all cleanup-producing resources inside `bind()`.
-- Use only provider-neutral `BoundEnvironment` operations when touching Environment resources.
+- Use only provider-neutral `Environment` operations when touching Environment resources.
 - Make exit finite and clean every owned resource even when the run failed.
 - Do not expect dynamic `controller.apply()` to rebind the extension.
 - Use a Harness plugin for input/result middleware and a Capability for Agent-loop behavior instead.
@@ -176,22 +178,22 @@ A run extension spans the complete Environment aggregate, not one provider revis
 The distribution registers one package factory:
 
 ```toml
-[project.entry-points."converge_agent_harness.plugins"]
-"example.run-recorder" = "converge_plugin_examples.harness:RunRecorderPluginFactory"
+[project.entry-points."a13n_harness.plugins"]
+"example.run-recorder" = "a13n_plugin_examples.harness:RunRecorderPluginFactory"
 ```
 
-[`harness.py`](src/converge_plugin_examples/harness.py) contains:
+[`harness.py`](src/a13n_plugin_examples/harness.py) contains:
 
 - a strict package-owned `RunRecorderConfiguration` model for the `configuration` payload;
 - `RunRecorderPluginFactory`, which receives standardized plugin key/ID, package parameters, and namespaced extensions through `HarnessPluginFactoryContext`;
 - `RunRecorderPlugin`, with stable ordering and fresh exact-type run binding;
 - small immutable observation records in a demo-only in-memory sink that does not retain prompts or model output.
 
-[`records.py`](src/converge_plugin_examples/records.py) holds neutral result types so metadata discovery and demo imports do not import the plugin target early.
+[`records.py`](src/a13n_plugin_examples/records.py) holds neutral result types so metadata discovery and demo imports do not import the plugin target early.
 
 ### Configured installed mode
 
-[`harness-plugins.yaml`](src/converge_plugin_examples/harness-plugins.yaml) is the complete configuration-file example:
+[`harness-plugins.yaml`](src/a13n_plugin_examples/harness-plugins.yaml) is the complete configuration-file example:
 
 ```yaml
 schema_version: "1"
@@ -229,7 +231,7 @@ context = HarnessBuildContext.from_configuration(
 builder = HarnessBuilder(build_context=context)
 ```
 
-[`run_harness_entrypoint_demo()`](src/converge_plugin_examples/demo_harness.py) uses the optional file form and loads the YAML with `HarnessBuildContext.from_file()`. `HarnessBuilder` selects the installed `example.run-recorder` entry point and builds the concrete middleware without exposing the factory or plugin object in `AgentDefinition`:
+[`run_harness_entrypoint_demo()`](src/a13n_plugin_examples/demo_harness.py) uses the optional file form and loads the YAML with `HarnessBuildContext.from_file()`. `HarnessBuilder` selects the installed `example.run-recorder` entry point and builds the concrete middleware without exposing the factory or plugin object in `AgentDefinition`:
 
 ```bash
 uv run plugin-example-harness-entrypoint
@@ -238,8 +240,8 @@ uv run plugin-example-harness-entrypoint
 A hosted create-and-run or create-and-stream path can keep the deployment default disabled and opt one executable construction in without rewriting configuration:
 
 ```bash
-export CONVERGE_HARNESS_PLUGIN_CONFIG_ENABLED=false
-export CONVERGE_HARNESS_PLUGIN_CONFIG_FILE=/etc/converge/harness-plugins.yaml
+export A13N_HARNESS_PLUGIN_CONFIG_ENABLED=false
+export A13N_HARNESS_PLUGIN_CONFIG_FILE=/etc/a13n/harness-plugins.yaml
 ```
 
 ```python
@@ -256,7 +258,7 @@ Use `PYTHONPATH` or `sys.path` for Python packages; the shell executable `PATH` 
 
 ### Explicit code mode
 
-[`run_harness_code_demo()`](src/converge_plugin_examples/demo_harness.py) constructs `RunRecorderPlugin` directly. This mode can inject a Python observation sink that cannot be represented as JSON:
+[`run_harness_code_demo()`](src/a13n_plugin_examples/demo_harness.py) constructs `RunRecorderPlugin` directly. This mode can inject a Python observation sink that cannot be represented as JSON:
 
 ```python
 observations: list[RunObservation] = []

@@ -137,7 +137,7 @@ A plugin can contribute Capabilities through the Harness lifecycle, but Agent UI
 
 ## Model Reconstruction
 
-The resolved Model revision contributes a logical model ID to `AgentSpec`. Every root and child Run receives a fresh Agent UI `ModelRunBinding` that:
+The resolved Model revision contributes a logical model ID to `AgentSpec`. Every root and child Run receives a fresh Agent UI `RunModelResolver` that:
 
 1. verifies the pinned Model revision and current Host policy;
 2. resolves current credential material behind the pinned `credential_ref`;
@@ -243,7 +243,7 @@ An `ExecutableAgent` corresponds to one resolved Agent snapshot and complete chi
 
 Changing any behavior-affecting component creates another logical digest and executable. Agent UI never hot-toggles instructions, plugins, available Skills, default Skill exposure, Capabilities, output, recovery policy, async policy, or child edges inside an active executable. A Session can pin an exact root/child Skill exposure override at creation or fork, but changing that pinned override also requires a fork. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
 
-Run-time values vary only through contracts designed for fresh binding: Identity, current model binding, credentials, exact Skill selection, Environment attachments, policy narrowing, Session-read collaborator, and async-subagent collaborator. Fresh binding realizes the Session-pinned effective Skill selection and can apply current policy narrowing, but it cannot add a Capability, plugin, available Skill, output type, or child edge absent from the snapshot or select a Skill outside that Session policy.
+Run-time values vary only through contracts designed for fresh binding: Identity, current model resolver, credentials, exact Skill selection, Environment attachments, policy narrowing, Session-read collaborator, and async-subagent collaborator. Fresh binding realizes the Session-pinned effective Skill selection and can apply current policy narrowing, but it cannot add a Capability, plugin, available Skill, output type, or child edge absent from the snapshot or select a Skill outside that Session policy.
 
 ## Child Definitions and Async-Only Presentation
 

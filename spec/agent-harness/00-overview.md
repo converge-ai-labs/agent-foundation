@@ -18,6 +18,7 @@ Pydantic AI owns the Agent loop, Models, profiles, Toolsets, Capabilities, messa
 - ordered Environment aggregate extensions entered after state restore and closed before provider teardown;
 - detached `HarnessState` containing messages, Capability namespaces, and optional portable Environment data;
 - a single-consumer event/result stream with deterministic cleanup;
+- optional Host-supplied OpenTelemetry Observation with one Harness logical-run span and native Pydantic Agent/model/tool descendants;
 - narrow Model self-healing and bounded recovery from interrupted model execution.
 
 It does not add a second Agent loop, Model/profile system, Toolset hierarchy, Capability registry, serialized compiler/catalog, universal plugin package manager, or durable workflow engine.
@@ -77,13 +78,14 @@ The trusted Host reconstructs Python objects from its own configuration and depe
 | `HarnessBuilder`                | Resolve an explicit or opted-in ambient plugin context, bind plugins, authorize Capability types, and call `Agent.from_spec()` once                   | Ambient I/O and discovery occur only when explicitly enabled            |
 | Plugin graph                    | Deterministic ordering, fresh run binding, outer middleware, and Capability contribution                                                              | Trusted code; Pydantic owns inner hooks                                 |
 | Plugin configuration            | Validate the narrow JSON envelope and create fresh configured instances through selected factories                                                    | Not an Agent or Environment configuration language                      |
-| `RunBindings`                   | Carry fresh Agent instance, Environment aggregate, optional model binding, run Capabilities, and metadata                                             | No durable state or generic service locator                             |
+| `RunBindings`                   | Carry fresh Agent instance, Environment aggregate, optional model resolver, run Capabilities, and metadata                                            | No durable state or generic service locator                             |
 | Environment attachment adapter  | Convert a fresh shared-package Direct Local or EIP attachment into one single-use Harness provider binding                                            | No provider create, resume, pause, destroy, or resource-state ownership |
 | Environment extension factories | Discover installed metadata and load only explicitly selected aggregate-extension factories into an immutable catalog                                 | No Harness-owned configuration document                                 |
 | Environment run extensions      | Enter ordered aggregate-wide scopes after state restore and exit them before provider teardown                                                        | Trusted code; no model or controller access                             |
 | Environment core                | Enter provider scopes, publish immutable routing, coordinate readiness/state, and serve Host topology updates                                         | Not a Capability, provider factory, or durable command API              |
-| `AgentContext`                  | Share run Identity, Environment facade, state, plugins, child collection, model binding, and metadata                                                 | One context per logical Harness run                                     |
+| `AgentContext`                  | Share run Identity, Environment facade, state, plugins, child collection, model resolver, and metadata                                                | One context per logical Harness run                                     |
 | `HarnessRunStream`              | Lazy single-consumer events, cancellation, state export, model attempts, results, and cleanup                                                         | Not a Host durable `ExecutionAttempt`, queue, replay stream, or lease   |
+| Harness Observation             | Optional logical-run OpenTelemetry span around native Pydantic Agent/model/tool observations                                                          | Host owns SDK, export, sampling, vendor profiles, and durable audit     |
 | `HarnessState`                  | Detached messages, JSON Capability namespaces, and optional portable Environment data                                                                 | Host chooses persistence and checkpoint selection                       |
 | Tool execution boundary         | Mandatory outer wrapper for function dispatch and text/JSON results; managed authority activates only from complete trusted metadata and fresh policy | Native unannotated tools remain trusted in-process code                 |
 | Message integrity Filter        | Mandatory innermost request hook that removes orphan or duplicate ordinary function-tool results                                                      | Not provider rendering or interrupted-history recovery                  |
@@ -146,19 +148,19 @@ These facts are independent. A result candidate retained by `RunCleanupError` is
 
 ## Extension Taxonomy
 
-| Extension                      | Selection                                                                                | Trust boundary                                  |
-| ------------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Harness plugin                 | Direct concrete object, or builder-local configured factory result appended during build | Trusted in-process Python                       |
-| Pydantic Capability            | `AgentSpec`, definition, plugin, or run contribution                                     | Pydantic lifecycle plus caller trust            |
-| Native Model/tool/Toolset      | Concrete `AgentDefinition` field                                                         | Trusted in-process object                       |
-| Run-scoped model resolver      | Fresh `ModelRunBinding`                                                                  | Host/provider policy                            |
-| Environment managed resource   | Reusable Host scope from `converge-agent-environment-provider`                           | Provider lifecycle and resource-state authority |
-| Environment runtime attachment | Fresh single-use Direct Local or EIP attachment from that managed resource               | Host selection and provider enforcement         |
-| Environment provider binding   | Fresh process-local `EnvironmentRunBinding` inputs adapted from an attachment            | Harness run topology and operation scope        |
-| Environment run extension      | Direct object or Host-selected factory result registered on the aggregate                | Trusted aggregate-wide resource scope           |
-| Dynamic Environment Capability | Optional Agent-loop context and Toolset composition                                      | No provider lifecycle or topology authority     |
+| Extension                      | Selection                                                                                   | Trust boundary                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Harness plugin                 | Direct concrete object, or builder-local configured factory result appended during build    | Trusted in-process Python                       |
+| Pydantic Capability            | `AgentSpec`, definition, plugin, or run contribution                                        | Pydantic lifecycle plus caller trust            |
+| Native Model/tool/Toolset      | Concrete `AgentDefinition` field                                                            | Trusted in-process object                       |
+| Run-scoped model resolver      | Fresh `RunModelResolver`                                                                    | Host/provider policy                            |
+| Environment Resource           | Reusable Host-owned scope or Harness-owned ephemeral scope from `a13n-environment-provider` | Provider lifecycle and resource-state authority |
+| Environment runtime attachment | Fresh single-use Direct Local or EIP attachment from that Resource                          | Source owner and provider enforcement           |
+| Environment provider binding   | Fresh process-local `EnvironmentRunBinding` inputs adapted from an attachment               | Harness run topology and operation scope        |
+| Environment run extension      | Direct object or Host-selected factory result registered on the aggregate                   | Trusted aggregate-wide resource scope           |
+| Dynamic Environment Capability | Optional Agent-loop context and Toolset composition                                         | No provider lifecycle or topology authority     |
 
-A hosted system can persist the Harness-owned plugin document and maintain artifact locks without implementing plugin reconstruction itself. Artifact trust, durable revisions, and Environment configuration remain Host contracts. Installed Harness plugin and Environment run-extension entry-point metadata represent availability only, and importing the Harness activates no extension. The Harness owns no configuration document for Environment run extensions. Provider specifications, catalogs, Managers, built-ins, resource state, and runtime attachments belong to the separate [Environment Provider package](../agent-environment-provider/README.md) and remain inert until explicitly selected.
+A hosted system can persist the Harness-owned plugin document and maintain artifact locks without implementing plugin reconstruction itself. Artifact trust, durable revisions, and Environment configuration remain Host contracts. Installed Harness plugin and Environment run-extension entry-point metadata represent availability only, and importing the Harness activates no extension. The Harness owns no configuration document for Environment run extensions. Provider specifications, catalogs, Providers, Resources, built-ins, resource state, and runtime attachments belong to the separate [Environment Provider package](../agent-environment-provider/README.md) and remain inert until explicitly selected.
 
 ## Stable Principles
 
@@ -174,7 +176,8 @@ A hosted system can persist the Harness-owned plugin document and maintain artif
 10. Provider and external side-effect uncertainty is never rewritten as exactly-once success or rollback.
 11. Model-facing resource references are compact, scope-local, non-authoritative selectors; trusted internal, provider, and durable identities retain their owning representations.
 12. Terminal delivery occurs only after cleanup.
-13. Host durability, event projection, external delivery, usage accounting, billing, and payment remain separate facts.
+13. Host durability, event projection, telemetry export, external delivery, usage accounting, billing, and payment remain separate facts.
+14. When [Harness Observation](19-observation-model.md) is enabled, Pydantic AI owns Agent-attempt, model-request, tool, usage, streaming, and cancellation spans, while the Harness owns only the complete logical-run span and focused Harness operations.
 
 ## Trade-offs
 

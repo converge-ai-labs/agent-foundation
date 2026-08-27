@@ -5,15 +5,15 @@ import sys
 import threading
 from pathlib import Path
 
-import converge_agent_harness as harness_module
-import converge_agent_harness.environment as environment_module
-import converge_agent_harness.environment.local as local_module
-import converge_agent_harness.environment.local.binding as local_binding_module
-import converge_agent_harness.environment.local.files as local_files_module
-import converge_agent_harness.environment.local.processes as local_processes_module
-import converge_agent_harness.environment.local.retention as local_retention_module
+import a13n_harness as harness_module
+import a13n_harness.environment as environment_module
+import a13n_harness.environment.local as local_module
+import a13n_harness.environment.local.binding as local_binding_module
+import a13n_harness.environment.local.files as local_files_module
+import a13n_harness.environment.local.processes as local_processes_module
+import a13n_harness.environment.local.retention as local_retention_module
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalProviderRuntime,
     DirectLocalRootConfiguration,
@@ -23,24 +23,26 @@ from converge_agent_environment_provider import (
     EnvironmentProviderSpec,
     build_environment_provider_factory_catalog,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentError,
     EnvironmentOutputPolicy,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     FileQueryRequest,
     FileTextSearchRequest,
     OpaqueOutputReference,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_provider_binding,
     create_environment_run_binding,
 )
-from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
 from pydantic.errors import PydanticInvalidForJsonSchema
 from pydantic_core import PydanticSerializationError
@@ -103,10 +105,10 @@ def test_direct_local_configuration_defaults_and_exact_schema(tmp_path: Path) ->
 
 
 async def test_host_manager_attachment_path_supports_sequential_harness_runs(tmp_path: Path) -> None:
-    catalog = build_environment_provider_factory_catalog(builtin_keys=("converge.direct-local",))
-    manager = catalog.create_manager(
+    catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
+    manager = catalog.create_provider(
         EnvironmentProviderSpec(
-            provider_key="converge.direct-local",
+            provider_key="a13n.direct-local",
             schema_version="1",
             parameters={
                 "environment_id": "host-managed-local",
@@ -425,7 +427,7 @@ async def test_write_destination_inspection_errors_are_normalized(
         assert denied.value.code == "environment_denied"
 
     assert not target.exists()
-    assert not tuple(tmp_path.glob(".converge-write-*"))
+    assert not tuple(tmp_path.glob(".a13n-write-*"))
 
 
 async def test_cancelled_spool_allocation_is_joined_and_removed(
@@ -437,7 +439,7 @@ async def test_cancelled_spool_allocation_is_joined_and_removed(
     spool = tmp_path / "spool"
 
     def blocked_mkdtemp(*, prefix: str) -> str:
-        assert prefix == "converge-output-"
+        assert prefix == "a13n-output-"
         started.set()
         release.wait(timeout=5)
         spool.mkdir()
@@ -644,7 +646,7 @@ async def test_raw_reads_are_at_most_and_stream_writes_publish_only_on_success(t
                 mode="create",
             )
         assert not (tmp_path / "aborted.bin").exists()
-        assert not tuple(tmp_path.glob(".converge-write-*"))
+        assert not tuple(tmp_path.glob(".a13n-write-*"))
 
         streamed = b"".join([chunk async for chunk in environment.files.read_bytes_stream("/workspace/large.bin")])
         assert streamed == b"12345"
@@ -670,7 +672,7 @@ async def test_raw_reads_are_at_most_and_stream_writes_publish_only_on_success(t
         )
         assert streamed_write.bytes_written == 9
         assert (tmp_path / "streamed.bin").read_bytes() == b"123456789"
-        assert not tuple(tmp_path.glob(".converge-write-*"))
+        assert not tuple(tmp_path.glob(".a13n-write-*"))
 
 
 async def test_create_publish_succeeds_when_staging_cleanup_fails(
@@ -682,7 +684,7 @@ async def test_create_publish_succeeds_when_staging_cleanup_fails(
 
     def fail_staging_cleanup_once(path: Path, *args, **kwargs) -> None:
         nonlocal cleanup_failed
-        if path.name.startswith(".converge-write-") and not cleanup_failed:
+        if path.name.startswith(".a13n-write-") and not cleanup_failed:
             cleanup_failed = True
             raise OSError("injected staging cleanup failure")
         original_unlink(path, *args, **kwargs)
@@ -731,7 +733,7 @@ async def test_file_publication_returns_committed_outcome_after_cancellation(
 
     assert result.receipt.outcome == "succeeded"
     assert (tmp_path / "published.txt").read_bytes() == b"published"
-    assert not tuple(tmp_path.glob(".converge-write-*"))
+    assert not tuple(tmp_path.glob(".a13n-write-*"))
 
 
 @pytest.mark.parametrize("cross_binding", [False, True])
@@ -769,7 +771,7 @@ async def test_copy_accepts_source_eof_without_completion_evidence(
         copied = await environment.files.copy("/workspace/value.bin", destination_path)
     assert copied.bytes_copied == 3
     assert destination.read_bytes() == b"abc"
-    assert not tuple(destination.parent.glob(".converge-write-*"))
+    assert not tuple(destination.parent.glob(".a13n-write-*"))
 
 
 async def test_text_read_uses_zero_based_line_offsets_without_splitting_utf8_lines(tmp_path: Path) -> None:

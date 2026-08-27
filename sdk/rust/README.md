@@ -1,4 +1,4 @@
-# converge-foundation-sdk
+# a13n-sdk
 
 Rust SDK crate for Agent Foundation Service.
 
@@ -10,11 +10,11 @@ This `0.0.x` crate reserves the stable package and crate names while the service
 
 ```toml
 [dependencies]
-converge-foundation-sdk = "0.0"
+a13n-sdk = "0.0"
 ```
 
 ```rust
-use converge_foundation_sdk as foundation_sdk;
+use a13n_sdk as foundation_sdk;
 ```
 
 ## Development

@@ -23,12 +23,12 @@ COPY packages/agent-ui/pyproject.toml packages/agent-ui/pyproject.toml
 COPY packages/logging/pyproject.toml packages/logging/pyproject.toml
 COPY packages/foundation-service/pyproject.toml packages/foundation-service/pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --package converge-foundation-service --no-install-workspace
+    uv sync --locked --no-dev --package a13n-service --no-install-workspace
 
 COPY packages/logging packages/logging
 COPY packages/foundation-service packages/foundation-service
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --package converge-foundation-service \
+    uv sync --locked --no-dev --package a13n-service \
     && rm -rf packages/logging/tests packages/foundation-service/tests
 
 FROM python:3.13-slim-bookworm AS runtime

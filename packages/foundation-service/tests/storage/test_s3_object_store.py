@@ -1,8 +1,8 @@
 from typing import Any, cast
 
 import pytest
+from a13n_service.storage.object_store import ObjectConflict, ObjectStoreUnavailable, S3ObjectStore
 from botocore.exceptions import ClientError
-from converge_foundation_service.storage.object_store import ObjectConflict, ObjectStoreUnavailable, S3ObjectStore
 
 pytestmark = pytest.mark.anyio
 

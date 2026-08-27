@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory defines the shared Agent User Interaction Protocol observation boundary distributed as `converge-agent-stream-protocol`. The package converts every public Harness stream item to standard AG-UI events where a direct mapping exists and to a namespaced `CUSTOM` event otherwise.
+This directory defines the shared Agent User Interaction Protocol observation boundary distributed as `a13n-stream-protocol`. The package converts every public Harness stream item to standard AG-UI events where a direct mapping exists and to a namespaced `CUSTOM` event otherwise.
 
 One process-local observer binds to one Harness Run, can apply an optional Host processor, accumulates the resulting events in order, and can atomically reconstruct a fresh instance from a finite Host-supplied public source history. It is not a scheduler, lifecycle authority, Session store, durable event log, durable replay system, transport, browser SDK, or second Agent runtime.
 
@@ -16,7 +16,7 @@ One process-local observer binds to one Harness Run, can apply an optional Host 
 
 ### Observe Harness Runs
 
-Read `00`, then [Harness Events, Observability, and Usage](../agent-harness/12-events-observability-and-usage.md) for the source event and lifecycle contract. Agent Stream Protocol translates that public stream and does not invent missing Harness observations.
+Read `00`, then [Harness Events and Usage](../agent-harness/12-events-observability-and-usage.md) for the source event and lifecycle contract. Agent Stream Protocol translates that public stream and does not invent missing Harness observations.
 
 ### Build Agent UI Surfaces
 
@@ -37,6 +37,6 @@ Read `00`, then [Foundation Service](../foundation-service/README.md) for hosted
 ## Specification Conventions
 
 - Standard AG-UI names and payloads retain their upstream meaning.
-- Project-specific fallback events use the `converge.*` namespace and carry public Harness correlation and event data.
+- Project-specific fallback events use the `a13n.*` namespace and carry public Harness correlation and event data.
 - “Accumulation” means the observer's ordered in-memory sequence.
 - “Observer resumption” means folding one finite Host-supplied public Harness source prefix into a fresh observer; durable retention, cursor and gap semantics, history selection, and replay-to-live cutover remain Host concepts.

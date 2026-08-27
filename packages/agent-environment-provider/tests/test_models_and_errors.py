@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalEnvironmentAttachment,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,

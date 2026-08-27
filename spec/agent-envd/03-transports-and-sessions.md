@@ -171,7 +171,7 @@ or:
 
 ```text
 Content-Length: <decimal byte length>\r\n
-Content-Type: application/vnd.converge.eip-data\r\n
+Content-Type: application/vnd.a13n.eip-data\r\n
 \r\n
 <one EIP binary data frame>
 ```

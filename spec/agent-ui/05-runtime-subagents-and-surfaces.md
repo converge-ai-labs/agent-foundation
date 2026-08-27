@@ -16,7 +16,7 @@ The foreground coordinator consumes every root Harness stream exactly once. Agen
 | Foreground Agent loop and continuation   | Harness                                                       | One entered `HarnessRunStream` with fresh bindings                                                       |
 | Async child presentation                 | Agent UI async-subagent Capability                            | Fixed-background delegate/resume/info/wait/steer/cancel tools over exact built children                  |
 | Async child scheduling and delivery      | Agent UI async-subagent service                               | Supervised tasks, durable metadata/checkpoints, input, cancellation, result retention, and process fence |
-| Environment resource lifecycle           | Agent UI plus Environment Provider Manager                    | Fenced create/resume/pause/destroy and fresh attachments                                                 |
+| Environment resource lifecycle           | Agent UI plus `EnvironmentProvider`                           | Fenced create/resume/pause/destroy and fresh attachments                                                 |
 | Active Environment topology              | Harness                                                       | Adapts complete fresh attachment set into provider-neutral bindings                                      |
 | AG-UI conversion                         | Agent Stream Protocol                                         | One complete observer per root or async-child Run                                                        |
 | Session/state/event persistence          | Agent UI local store                                          | SQLite control facts and compressed immutable payload files                                              |
@@ -56,7 +56,7 @@ class AgentUiApplication(Protocol):
     events: EventApplicationService
 ```
 
-Commands carry stable resource selectors, expected revisions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, provider Manager, Environment attachment, credential, task, lock, or raw `HarnessState`.
+Commands carry stable resource selectors, expected revisions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, `EnvironmentProvider`, Environment attachment, credential, task, lock, or raw `HarnessState`.
 
 All mutation and execution paths are available to both TUI and WebUI according to the same local-user policy. A surface cannot acquire extra authority by reading storage or calling runtime packages directly.
 
@@ -101,7 +101,7 @@ Deleting or replacing current source content never removes immutable snapshots r
 
 ## Local Sandbox Runtime Resolution
 
-Agent UI presents `converge.local-envd` as **Local Sandbox**. This is distinct from Direct Local: it requires a Host-launched envd process, trusted stdio EIP, and successful native isolation. Selecting Direct Local, Docker, or E2B never invokes Host envd acquisition.
+Agent UI presents `a13n.local-envd` as **Local Sandbox**. This is distinct from Direct Local: it requires a Host-launched envd process, trusted stdio EIP, and successful native isolation. Selecting Direct Local, Docker, or E2B never invokes Host envd acquisition.
 
 Each Agent UI release contains one package-owned immutable manifest that pins an exact canonical agent-envd release and, for each supported Linux, macOS, and Windows x86_64/ARM64 target, the exact release archive identity, archive SHA-256, extracted executable SHA-256, and expected executable name. The wheel and sdist contain the manifest but do not bundle all native executables. Release validation rejects missing targets, mutable asset selectors, inconsistent versions, or hashes not reproduced from the selected agent-envd release artifacts.
 
@@ -112,9 +112,9 @@ The Host resolves Local Sandbox in this order:
 3. when the managed executable is absent or fails hash validation, lazily download only the selected immutable archive, verify its embedded manifest hash, extract the one expected executable through bounded staging, verify the executable hash, and atomically publish it;
 4. execute `agent-envd --version` and require the manifest's exact canonical release identity;
 5. execute `agent-envd isolation probe --json` and require successful production-equivalent native isolation;
-6. supply the resolved absolute executable and a private-runtime allocator to the `converge.local-envd` provider runtime; provider attachment entry then launches envd and completes ordinary EIP initialization.
+6. supply the resolved absolute executable and a private-runtime allocator to the `a13n.local-envd` provider runtime; provider attachment entry then launches envd and completes ordinary EIP initialization.
 
-Both the default managed path and an advanced absolute override must report the manifest's exact release identity; the override changes executable location, not Agent UI's selected envd version. Neither path searches ambient `PATH`. Download, hash verification, cache publication, target detection, override validation, and user-facing availability diagnostics belong to the Agent UI Host. The Local Envd Provider owns daemon configuration, private runtime and subprocess lifecycle, and fresh stdio `EIPEnvironmentAttachment`; `converge-agent-envd-client` owns only EIP transport/session behavior.
+Both the default managed path and an advanced absolute override must report the manifest's exact release identity; the override changes executable location, not Agent UI's selected envd version. Neither path searches ambient `PATH`. Download, hash verification, cache publication, target detection, override validation, and user-facing availability diagnostics belong to the Agent UI Host. The Local Envd Provider owns daemon configuration, private runtime and subprocess lifecycle, and fresh stdio `EIPEnvironmentAttachment`; `a13n-envd-client` owns only EIP transport/session behavior.
 
 Artifact resolution and probe failure occur before provider or Harness dispatch. Daemon startup, isolation-descriptor, Environment-identity, required-method, or EIP compatibility failure closes the attempted provider process and leaves Local Sandbox unavailable. Agent UI never falls back to Direct Local, disables isolation, or silently selects an ambient executable.
 
@@ -138,7 +138,7 @@ sequenceDiagram
     App->>Resolver: load pinned Agent and Environment snapshots
     Resolver-->>App: executable and binding factories
     App->>Provider: create/resume fenced Session resources
-    Provider-->>App: managed resources and fresh attachments
+    Provider-->>App: Resources and fresh attachments
     App->>Harness: stream(input, selected HarnessState, fresh RunBindings)
     loop public non-terminal items
         Harness-->>App: Harness stream item
@@ -190,7 +190,7 @@ Environment application commands provide full local product control:
 - reconcile `unknown` operations with provider-specific evidence;
 - subscribe to safe topology/lifecycle changes.
 
-Every effectful operation commits a fence before calling the Provider Manager and commits returned state only under the same fence. The application service never exposes arbitrary vendor API passthrough. Provider credentials enter through fresh runtime collaborators and are absent from commands, SQLite payload columns, AG-UI, model context, and default logs/telemetry.
+Every effectful operation commits a fence before calling the `EnvironmentProvider` and commits returned state only under the same fence. The application service never exposes arbitrary vendor API passthrough. Provider credentials enter through fresh runtime collaborators and are absent from commands, SQLite payload columns, AG-UI, model context, and default logs/telemetry.
 
 When a Run is active, its Harness topology is fixed by the complete fresh attachment set entered for that invocation except where the public Harness topology controller explicitly supports a higher complete revision. Host topology change cannot add a Dynamic Environment Capability or Toolset absent from the Agent snapshot. Environment attachment and provider resource lifecycle remain independent from Agent configuration reload.
 
@@ -253,7 +253,7 @@ The async-subagent service then prepares fresh child authority:
 7. acquire fresh single-use Environment attachments and construct complete child `RunBindings`;
 8. enter `selected_built_subagent.executable.stream()` in a supervised Host task and consume it once.
 
-`dedicated` Environment policy allocates independent `MULTIPLE_FROM_SPEC` Host resources. `shared_root` acquires distinct attachments only from `SHARED` resources. `serialized_root` keeps the accepted job in `queued` until every selected root attachment is released, then acquires fresh sequential attachments. `none` supplies an empty topology. A child never receives the parent's attachment, Model binding, credential, run Capability, plugin run graph, or live scheduler object by inheritance.
+`dedicated` Environment policy allocates independent `MULTIPLE_FROM_SPEC` Host resources. `shared_root` acquires distinct attachments only from `SHARED` resources. `serialized_root` keeps the accepted job in `queued` until every selected root attachment is released, then acquires fresh sequential attachments. `none` supplies an empty topology. A child never receives the parent's attachment, Model resolver, credential, run Capability, plugin run graph, or live scheduler object by inheritance.
 
 A child can expose its own async-subagent Capability over its recursively built collection. The fresh child owner scope records `parent_job_id` and incremented depth, and all parent/edge/Host ceilings can only narrow. There is no separate nesting registry or runtime child builder.
 
@@ -349,7 +349,7 @@ Subscribers never consume the Harness stream, file watcher, SQLite WAL, or event
 
 ## WebUI
 
-WebUI is a complete browser product compiled into `converge-agent-ui`. It exposes pages and workflows for:
+WebUI is a complete browser product compiled into `a13n-ui`. It exposes pages and workflows for:
 
 - Models and credential-reference status;
 - Prompts;
@@ -404,9 +404,9 @@ A renderer-only preference can remain surface-specific. Any operation that affec
 flowchart LR
     Source[Private WebUI source] --> Build[Vite production build]
     Build --> Static[Prepared immutable assets]
-    Python[Agent UI Python source] --> Wheel[converge-agent-ui wheel]
+    Python[Agent UI Python source] --> Wheel[a13n-ui wheel]
     Static --> Wheel
-    Python & Static --> Sdist[converge-agent-ui sdist]
+    Python & Static --> Sdist[a13n-ui sdist]
     Sdist --> Rebuilt[Wheel without Node.js]
 ```
 

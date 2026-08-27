@@ -34,8 +34,9 @@ concurrency:
 jobs:
   harness:
     name: Agent Harness (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - name: Linux
@@ -68,10 +69,11 @@ jobs:
 
       - name: Type-check Agent Harness
         if: matrix.name == 'Linux'
-        run: uv run --locked pyright packages/agent-harness/converge_agent_harness
+        run: uv run --locked pyright packages/agent-harness/a13n_harness
 
       - name: Test Agent Harness
         run: uv run --locked python -m pytest packages/agent-harness/tests
 
       - name: Build Agent Harness distribution
-        run: uv build --package converge-agent-harness --out-dir dist/harness
+        if: matrix.name == 'Linux'
+        run: uv build --package a13n-harness --out-dir dist/harness

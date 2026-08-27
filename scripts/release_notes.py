@@ -17,8 +17,8 @@ TAG_PREFIXES = {
     "sdk-typescript": "release/sdk/typescript/",
 }
 INITIAL_NOTES = {
-    "harness": "Initial release for Converge Agent Harness libraries.",
-    "agent-ui": "Initial release for Converge Agent UI.",
+    "harness": "Initial release for Agent Foundation Harness libraries.",
+    "agent-ui": "Initial release for Agent Foundation UI.",
     "foundation": "Initial release for Agent Foundation.",
     "agent-envd": "Initial release for agent-envd.",
     "foundation-cli": "Initial release for the Agent Foundation CLI.",

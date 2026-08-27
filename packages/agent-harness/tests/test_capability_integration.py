@@ -5,12 +5,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
-from converge_agent_harness import (
-    BoundEnvironment,
+from a13n_harness import (
     BoundProcessHandle,
     CompactionCapability,
     CompactionPolicy,
@@ -21,11 +20,7 @@ from converge_agent_harness import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     FileContextCapability,
     FileContextConfiguration,
     FileSkillSource,
@@ -54,9 +49,16 @@ from converge_agent_harness import (
     WebSearchRequest,
     WebSearchResponse,
     WorkingStateCapability,
+)
+from a13n_harness.environment.advanced import (
+    BoundEnvironment,
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_run_binding,
 )
-from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -188,7 +190,7 @@ def _environment(root: Path):
 
 
 def _bindings(root: Path, monitor: _Monitor) -> RunBindings:
-    return RunBindings.local(
+    return RunBindings.embedded(
         environment=_environment(root),
         metadata={"tenant": "integration-test"},
         capabilities=(
@@ -263,8 +265,8 @@ async def test_core_capabilities_compose_through_run_and_stream(tmp_path: Path) 
         observed_instructions.append(str(info.instructions))
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", name="capability-integration"),
+    executable = HarnessBuilder().build(
+        AgentSpec(name="capability-integration"),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=_definition_capabilities(),

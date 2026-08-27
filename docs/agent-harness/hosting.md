@@ -14,8 +14,8 @@ sequenceDiagram
     Caller->>Host: request work
     Host->>Host: select revision and reconstruct trusted Python values
     Host->>Harness: build AgentDefinition
-    Host->>Host: create current identity, policy, model, and Environment bindings
-    Host->>Harness: run or stream with fresh RunBindings and optional selected state
+    Host->>Host: create current identity, policy, model, and Environment sources or bindings
+    Host->>Harness: run or stream with current sources, fresh bindings, and optional selected state
     Harness->>PAI: execute native Agent loop
     Harness-->>Host: events and one terminal result candidate
     Host->>Host: select checkpoint or commit durable outcome under current fence
@@ -57,13 +57,13 @@ Close the executable when its owning cache entry or process shuts down. Replacem
 
 For each logical run, reconstruct:
 
-- authenticated `AgentInstanceContext`;
-- one fresh Environment run binding or fresh runtime attachment;
-- current model binding and credentials;
-- run Capabilities for invocation policy, approvals, media/documents/Web, monitoring, usage pricing, delegation, or Skill selection;
+- authenticated `AgentInstanceContext` when the embedded default is insufficient;
+- one current Environment Provider, entered Resource, or advanced run binding;
+- current model resolver and credentials;
+- run Capabilities for invocation policy, approvals, media/documents/Web, monitoring, delegation, or Skill selection;
 - bounded non-authoritative metadata.
 
-Saved messages and Capability state never restore these values. A resume must re-evaluate current policy and provider availability.
+Saved messages and Capability state never restore these values. A resume must re-evaluate current policy and provider availability. Model-cost policy is definition-scoped rather than a fresh run attachment: the Builder inserts the default catalog policy or accepts exactly one code-first replacement, and inline descendants inherit the parent's effective policy.
 
 ## Durable State Boundary
 
@@ -121,31 +121,33 @@ Resume through `DeferredToolResume` in a new run. Do not keep a database transac
 
 ## Environments
 
-The Harness begins with a fresh `EnvironmentRunBinding` or runtime attachment. A Host remains responsible for provider selection, resource create/resume/pause/destroy, credentials, desired topology, and authoritative resource-state persistence.
+Environment source type communicates ownership:
 
-If a provider exposes an attachment acquisition scope, retain that scope for the complete lifetime of the adapted Harness binding. Never copy provider credentials or launch state into `HarnessState` or model context.
+- a Provider passed through `environment=` or `environments=` delegates one complete ephemeral Resource lifecycle to the Harness;
+- an already entered Resource is borrowed for one fresh attachment while the Host retains its outer lifecycle;
+- an `EnvironmentRunBinding` in `RunBindings.environment` is the advanced route for exact topology and live controller ownership.
+
+Use Provider input only for a temporary Resource that should be destroyed before terminal result delivery, including a suspended result. Use an entered Resource when the same provider resource must survive sequential runs, deferred continuation, or Host scheduling. A mixed `environments` mapping can contain both forms. With several aliases, set `default_environment` explicitly when `/workspace` should route to one of them; mapping order never grants authority.
+
+The Host remains responsible for provider plugin selection, specification validation, credentials, durable desired topology, and authoritative `EnvironmentProviderResourceState` persistence. It explicitly creates, resumes, pauses, reconciles, and destroys reusable Resources. Each Harness run acquires a fresh attachment and never restores live authority from `HarnessState`.
+
+Advanced attachment and topology assembly lives under `a13n_harness.environment.advanced`. Keep every attachment-acquisition scope open for the complete lifetime of the adapted binding. Never copy provider credentials, Resource objects, attachments, controllers, or provider launch state into `HarnessState` or model context.
 
 ## Minimal vs. Production Host
 
-| Embedded application               | Distributed Host                                 |
-| ---------------------------------- | ------------------------------------------------ |
-| `RunBindings.local()`              | Explicit authenticated instance context          |
-| In-memory selected state           | Durable immutable checkpoints and selection      |
-| Direct Local or no-op Environment  | Provider-managed resources and fresh attachments |
-| Process-local policy collaborators | Current tenant/user policy and credentials       |
-| Direct result handling             | Fenced terminal commit and delivery lifecycle    |
-| Inline child execution             | Optional durable child Execution lifecycle       |
+| Embedded application                            | Distributed Host                                   |
+| ----------------------------------------------- | -------------------------------------------------- |
+| Omit `bindings` or use `RunBindings.embedded()` | Explicit authenticated instance context            |
+| In-memory selected state                        | Durable immutable checkpoints and selection        |
+| No Environment or Harness-owned Provider        | Host-owned Resources and fresh per-run attachments |
+| Process-local policy collaborators              | Current tenant/user policy and credentials         |
+| Direct result handling                          | Fenced terminal commit and delivery lifecycle      |
+| Inline child execution                          | Optional durable child Execution lifecycle         |
 
 Start with the embedded path and add Host-owned durable boundaries only when the product requires them.
 
 ## Runnable Example
 
-The `host` layer of the [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates:
+The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, resumes the same Thread after application restart, creates and destroys a Harness-owned Provider Resource per turn, and optionally retains one Host-owned Resource across sequential turns.
 
-- Host-owned Execution and ExecutionAttempt records;
-- opaque fencing and stale-attempt rejection;
-- selection of a safe interrupted-state candidate;
-- fresh bindings on replacement;
-- a separate Host terminal commit.
-
-Its JSON file store is teaching code, not a prescribed persistence implementation.
+Its single state file is application teaching code, not an Execution ledger, lease, fence, or prescribed production persistence implementation. Add the Host-owned records described above when multiple workers, replacement attempts, side effects, or durable terminal delivery require them.

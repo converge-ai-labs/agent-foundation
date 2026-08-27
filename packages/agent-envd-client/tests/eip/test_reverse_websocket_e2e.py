@@ -8,8 +8,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
-from converge_agent_envd_client import AcceptedWebSocketTransport, EIPMethodError, EIPSession
-from converge_agent_envd_client.eip.v1 import EIPPath, FileWriteMode
+from a13n_envd_client import AcceptedWebSocketTransport, EIPMethodError, EIPSession
+from a13n_envd_client.eip.v1 import EIPPath, FileWriteMode
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
 

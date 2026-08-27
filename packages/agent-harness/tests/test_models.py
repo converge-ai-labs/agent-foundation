@@ -2,18 +2,27 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from copy import copy
+from typing import Any, cast
 
+import a13n_harness.execution as execution_module
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
+    MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
+    MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
+    AgentContext,
+    AgentDefinition,
+    DefinitionError,
     HarnessBuilder,
     HarnessState,
     ModelResolutionError,
-    ModelRunBinding,
     RunBindings,
     SelfHealingModel,
+    SelfHealingModelCapability,
+    SubagentDefinition,
 )
 from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     BinaryContent,
@@ -26,19 +35,27 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.models import Model, ModelRequestParameters, ModelResolutionContext, StreamedResponse
+from pydantic_ai.models import (
+    Model,
+    ModelRequestContext,
+    ModelRequestParameters,
+    ModelResolutionContext,
+    StreamedResponse,
+)
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.providers import Provider
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.tools import RunContext
 
 pytestmark = pytest.mark.anyio
 
 
-class RecordingModelBinding(ModelRunBinding):
+class RecordingModelResolver:
     def __init__(self, model: Model) -> None:
         self.model = model
         self.calls: list[tuple[str, str, str]] = []
 
-    async def resolve_model(
+    async def __call__(
         self,
         context: ModelResolutionContext,
         model_id: str,
@@ -47,36 +64,42 @@ class RecordingModelBinding(ModelRunBinding):
         return self.model
 
 
-async def test_logical_model_is_resolved_from_the_fresh_run_binding() -> None:
+async def test_logical_model_is_resolved_from_an_async_function() -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "resolved"
 
-    binding = RecordingModelBinding(FunctionModel(stream_function=stream))
-    executable = HarnessBuilder().build_code(
+    model = FunctionModel(stream_function=stream)
+    calls: list[tuple[str, str, str]] = []
+
+    async def resolve_model(context: ModelResolutionContext, model_id: str) -> Model:
+        calls.append((context.deps.run_id, context.deps.thread_id, model_id))
+        return model
+
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
 
     result = await executable.run(
         "hello",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.embedded(model_resolver=resolve_model),
     )
 
     assert result.output_or_raise() == "resolved"
     assert result.state is not None
-    assert binding.calls == [
+    assert calls == [
         (result.run_id, result.state.thread_id, "logical:primary"),
     ]
 
 
-async def test_model_binding_observes_state_owned_identity_across_continuation_and_fork() -> None:
+async def test_model_resolver_observes_state_owned_identity_across_continuation_and_fork() -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "resolved"
 
-    binding = RecordingModelBinding(FunctionModel(stream_function=stream))
-    executable = HarnessBuilder().build_code(
+    binding = RecordingModelResolver(FunctionModel(stream_function=stream))
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
@@ -84,17 +107,17 @@ async def test_model_binding_observes_state_owned_identity_across_continuation_a
 
     first = await executable.run(
         "first",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.embedded(model_resolver=binding),
         previous_state=previous,
     )
     second = await executable.run(
         "second",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.embedded(model_resolver=binding),
         previous_state=previous,
     )
     forked = await executable.run(
         "forked",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.embedded(model_resolver=binding),
         previous_state=previous.fork(),
     )
 
@@ -119,58 +142,254 @@ async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None
         seen.append(info.model_settings)
         yield "configured"
 
-    binding = RecordingModelBinding(FunctionModel(stream_function=stream))
+    binding = RecordingModelResolver(FunctionModel(stream_function=stream))
     settings = ModelSettings(temperature=0.25)
-    executable = HarnessBuilder().build_code(
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary", model_settings=settings),
         output_type=str,
     )
 
     result = await executable.run(
         "hello",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.embedded(model_resolver=binding),
     )
 
     assert result.output_or_raise() == "configured"
-    assert seen == [settings]
+    assert result.state is not None
+    assert seen == [
+        ModelSettings(
+            temperature=0.25,
+            openai_prompt_cache_key=result.state.thread_id,
+            extra_headers={"x-session-id": result.state.thread_id},
+        )
+    ]
+    assert settings == ModelSettings(temperature=0.25)
 
 
-async def test_missing_run_binding_delegates_to_native_model_inference() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="test"),
+async def test_builder_uses_harness_model_inference_recursively(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "inferred"
+
+    model = FunctionModel(stream_function=stream)
+    observed: list[tuple[str, object]] = []
+
+    def gateway_provider_factory(gateway_name: str, provider_name: str) -> Provider[Any]:
+        del gateway_name, provider_name
+        return cast(Provider[Any], object())
+
+    def harness_infer_model(
+        model_id: Model | str,
+        *,
+        gateway_provider_factory: object = None,
+    ) -> Model:
+        assert isinstance(model_id, str)
+        observed.append((model_id, gateway_provider_factory))
+        return model
+
+    monkeypatch.setattr(execution_module, "infer_model", harness_infer_model)
+    child = AgentDefinition(
+        agent=AgentSpec(model="company@openai:gpt-5"),
         output_type=str,
     )
+    executable = HarnessBuilder(gateway_provider_factory=gateway_provider_factory).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(lambda messages, info: "parent"),
+        subagents=(
+            SubagentDefinition(
+                name="child",
+                description="Child",
+                agent=child,
+            ),
+        ),
+    )
 
-    result = await executable.run("hello", bindings=RunBindings.local())
+    result = await executable.subagents["child"].executable.run(
+        "hello",
+        bindings=RunBindings.embedded(),
+    )
 
-    assert result.status == "completed"
-    assert isinstance(result.output_or_raise(), str)
+    assert result.output_or_raise() == "inferred"
+    assert observed == [("company@openai:gpt-5", gateway_provider_factory)]
 
 
-async def test_concrete_model_bypasses_the_run_binding() -> None:
+async def test_explicit_request_affinity_overrides_automatic_values() -> None:
+    seen: list[ModelSettings | None] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        seen.append(info.model_settings)
+        yield "configured"
+
+    settings = ModelSettings(
+        temperature=0.25,
+        openai_prompt_cache_key="explicit-cache",
+        extra_headers={"X-Session-ID": "explicit", "X-Request": "request"},
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(model_settings=settings),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+    )
+
+    result = await executable.run("hello", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "configured"
+    assert seen == [settings]
+    assert settings["extra_headers"] == {
+        "X-Session-ID": "explicit",
+        "X-Request": "request",
+    }
+
+
+async def test_automatic_request_affinity_runs_inside_other_innermost_request_wrappers() -> None:
+    seen: list[ModelSettings | None] = []
+
+    class ReplacingSettingsCapability(AbstractCapability[AgentContext]):
+        def get_ordering(self) -> CapabilityOrdering:
+            return CapabilityOrdering(position="innermost")
+
+        async def wrap_model_request(
+            self,
+            ctx: RunContext[AgentContext],
+            *,
+            request_context: ModelRequestContext,
+            handler: WrapModelRequestHandler,
+        ) -> ModelResponse:
+            del ctx
+            updated = copy(request_context)
+            updated.model_settings = ModelSettings(extra_headers={"X-Other": "other"})
+            return await handler(updated)
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        seen.append(info.model_settings)
+        yield "configured"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(ReplacingSettingsCapability(),),
+    )
+
+    result = await executable.run("hello", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "configured"
+    assert result.state is not None
+    assert seen == [
+        ModelSettings(
+            openai_prompt_cache_key=result.state.thread_id,
+            extra_headers={
+                "X-Other": "other",
+                "x-session-id": result.state.thread_id,
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("disabled_environment", "expect_session_header", "expect_prompt_cache_key"),
+    [
+        (MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, False, True),
+        (MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV, True, False),
+    ],
+)
+async def test_model_request_patches_can_be_disabled_independently_at_builder_creation(
+    monkeypatch: pytest.MonkeyPatch,
+    disabled_environment: str,
+    expect_session_header: bool,
+    expect_prompt_cache_key: bool,
+) -> None:
+    seen: list[ModelSettings | None] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        seen.append(info.model_settings)
+        yield "configured"
+
+    monkeypatch.setenv(disabled_environment, "false")
+    builder = HarnessBuilder()
+    monkeypatch.setenv(disabled_environment, "true")
+    executable = builder.build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+    )
+
+    result = await executable.run("hello", bindings=RunBindings.embedded())
+
+    assert result.state is not None
+    expected = ModelSettings()
+    if expect_session_header:
+        expected["extra_headers"] = {"x-session-id": result.state.thread_id}
+    if expect_prompt_cache_key:
+        expected["openai_prompt_cache_key"] = result.state.thread_id
+    assert seen == [expected]
+
+
+@pytest.mark.parametrize(
+    "environment_name",
+    [
+        MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
+        MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
+    ],
+)
+@pytest.mark.parametrize("value", ["", " true", "true ", "enabled", "2"])
+def test_model_request_patch_environment_rejects_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+    environment_name: str,
+    value: str,
+) -> None:
+    monkeypatch.setenv(environment_name, value)
+
+    with pytest.raises(DefinitionError) as exc_info:
+        HarnessBuilder()
+
+    assert exc_info.value.code == "model_request_patch_environment_invalid"
+    assert exc_info.value.details == {"name": environment_name}
+
+
+async def test_concrete_model_bypasses_the_run_resolver() -> None:
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "concrete"
 
     concrete = FunctionModel(stream_function=stream)
-    binding = RecordingModelBinding(concrete)
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:ignored"),
+    binding = RecordingModelResolver(concrete)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=concrete,
     )
 
     result = await executable.run(
         "hello",
-        bindings=RunBindings.local(model_binding=binding),
+        bindings=RunBindings.embedded(model_resolver=binding),
     )
 
     assert result.output_or_raise() == "concrete"
     assert binding.calls == []
 
 
-class InvalidModelBinding(ModelRunBinding):
-    async def resolve_model(
+def test_string_and_concrete_model_sources_are_mutually_exclusive() -> None:
+    concrete = FunctionModel(lambda messages, info: "unused")
+
+    with pytest.raises(DefinitionError) as exc_info:
+        AgentDefinition(
+            agent=AgentSpec(model="logical:primary"),
+            output_type=str,
+            model=concrete,
+        )
+
+    assert exc_info.value.code == "model_selection_conflict"
+
+
+class InvalidModelResolver:
+    async def __call__(
         self,
         context: ModelResolutionContext,
         model_id: str,
@@ -179,8 +398,8 @@ class InvalidModelBinding(ModelRunBinding):
         return Any  # type: ignore[return-value]
 
 
-async def test_invalid_model_binding_result_fails_with_a_typed_error() -> None:
-    executable = HarnessBuilder().build_code(
+async def test_invalid_model_resolver_result_fails_with_a_typed_error() -> None:
+    executable = HarnessBuilder().build(
         AgentSpec(model="logical:primary"),
         output_type=str,
     )
@@ -188,7 +407,7 @@ async def test_invalid_model_binding_result_fails_with_a_typed_error() -> None:
     with pytest.raises(ModelResolutionError) as exc_info:
         await executable.run(
             "hello",
-            bindings=RunBindings.local(model_binding=InvalidModelBinding()),
+            bindings=RunBindings.embedded(model_resolver=InvalidModelResolver()),
         )
 
     assert exc_info.value.code == "model_resolution_invalid"
@@ -238,6 +457,107 @@ def _stale_reasoning_history() -> list[ModelMessage]:
         ModelRequest(parts=[UserPromptPart(content="hello")]),
         ModelResponse(parts=[ThinkingPart(content="reasoning", id="rs_old"), TextPart(content="answer")]),
     ]
+
+
+def _recovering_function_model() -> tuple[FunctionModel, list[int]]:
+    calls: list[int] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise ModelHTTPError(
+                status_code=404,
+                model_name="failing",
+                body={"code": 5008, "message": "Item with id 'rs_old' not found."},
+            )
+        yield "recovered"
+
+    return FunctionModel(stream_function=stream), calls
+
+
+async def test_self_healing_is_not_installed_implicitly() -> None:
+    model, calls = _recovering_function_model()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.embedded(),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.status == "failed"
+    assert calls == [1]
+
+
+async def test_self_healing_capability_wraps_a_concrete_model() -> None:
+    model, calls = _recovering_function_model()
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+        capabilities=(SelfHealingModelCapability(),),
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.embedded(),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.output_or_raise() == "recovered"
+    assert calls == [1, 2]
+
+
+async def test_self_healing_capability_wraps_a_run_resolved_model() -> None:
+    model, calls = _recovering_function_model()
+    binding = RecordingModelResolver(model)
+    executable = HarnessBuilder().build(
+        AgentSpec(model="logical:primary"),
+        output_type=str,
+        capabilities=(SelfHealingModelCapability(),),
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.embedded(model_resolver=binding),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.output_or_raise() == "recovered"
+    assert calls == [1, 2]
+    assert len(binding.calls) == 1
+
+
+async def test_self_healing_capability_wraps_a_natively_inferred_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, calls = _recovering_function_model()
+
+    def infer_model(selection: object, provider_factory: object = None) -> Model:
+        del provider_factory
+        assert selection == "native:test"
+        return model
+
+    monkeypatch.setattr("a13n_harness.models.inference._pydantic_infer_model", infer_model)
+    executable = HarnessBuilder().build(
+        AgentSpec(model="native:test"),
+        output_type=str,
+        capabilities=(SelfHealingModelCapability(),),
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.embedded(),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.output_or_raise() == "recovered"
+    assert calls == [1, 2]
 
 
 async def test_self_healing_retries_once_after_an_exact_history_repair() -> None:
@@ -323,6 +643,22 @@ async def test_self_healing_replaces_inline_images_after_oversized_payload_rejec
     assert isinstance(tool_result, ToolReturnPart)
     assert isinstance(tool_result.content[0], str)
     assert "image was removed" in tool_result.content[0]
+
+
+async def test_self_healing_preserves_an_explicit_empty_rule_set() -> None:
+    error = ModelHTTPError(
+        status_code=404,
+        model_name="failing",
+        body={"code": 5008, "message": "Item with id 'rs_old' not found."},
+    )
+    wrapped = FailingModel(error)
+    model = SelfHealingModel(wrapped, rules=())
+
+    with pytest.raises(ModelHTTPError) as exc_info:
+        await model.request(_stale_reasoning_history(), None, ModelRequestParameters())
+
+    assert exc_info.value is error
+    assert wrapped.calls == 1
 
 
 async def test_self_healing_propagates_unmatched_errors_without_retrying() -> None:

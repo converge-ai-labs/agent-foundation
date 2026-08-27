@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     ColdStartFilterCapability,
     ColdStartFilterConfiguration,
     MessageIntegrityFilterCapability,

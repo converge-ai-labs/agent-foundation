@@ -13,16 +13,16 @@ from email.policy import default
 from pathlib import Path
 
 PACKAGES = {
-    "converge-agent-environment-provider": "converge_agent_environment_provider",
-    "converge-agent-harness": "converge_agent_harness",
-    "converge-agent-stream-protocol": "converge_agent_stream_protocol",
+    "a13n-environment-provider": "a13n_environment_provider",
+    "a13n-harness": "a13n_harness",
+    "a13n-stream-protocol": "a13n_stream_protocol",
 }
 INTERNAL_REQUIREMENTS = {
-    "converge-agent-harness": "converge-agent-environment-provider",
-    "converge-agent-stream-protocol": "converge-agent-harness",
+    "a13n-harness": "a13n-environment-provider",
+    "a13n-stream-protocol": "a13n-harness",
 }
 LOCAL_INSTALL_DEPENDENCIES = {
-    "converge-agent-envd-client": "converge_agent_envd_client",
+    "a13n-envd-client": "a13n_envd_client",
 }
 
 
@@ -138,10 +138,10 @@ def validate_distributions(
                 raise DistributionError(f"Cannot create smoke environment for {distribution}:\n{create.stderr}")
             python = _venv_python(environment)
             install_wheels = [wheels[name] for name in LOCAL_INSTALL_DEPENDENCIES] if require_local_dependencies else []
-            if distribution in {"converge-agent-harness", "converge-agent-stream-protocol"}:
-                install_wheels.append(wheels["converge-agent-environment-provider"])
-            if distribution == "converge-agent-stream-protocol":
-                install_wheels.append(wheels["converge-agent-harness"])
+            if distribution in {"a13n-harness", "a13n-stream-protocol"}:
+                install_wheels.append(wheels["a13n-environment-provider"])
+            if distribution == "a13n-stream-protocol":
+                install_wheels.append(wheels["a13n-harness"])
             install_wheels.append(wheels[distribution])
             install = subprocess.run(
                 [

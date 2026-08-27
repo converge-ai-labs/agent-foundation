@@ -8,18 +8,20 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     AcceptedWebSocketEIPSessionSource,
     EIPEnvironmentAttachment,
     HttpEIPSessionSource,
     StdioEIPSessionSource,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,

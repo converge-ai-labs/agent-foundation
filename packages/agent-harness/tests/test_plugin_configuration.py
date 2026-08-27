@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     DEFAULT_HARNESS_PLUGIN_CONFIG_FILE,
     HARNESS_PLUGIN_CONFIG_ENABLED_ENV,
     HARNESS_PLUGIN_CONFIG_FILE_ENV,
@@ -82,7 +82,7 @@ def _entry(
 
 def _patch_entry_points(monkeypatch: pytest.MonkeyPatch, *entry_points: _FakeEntryPoint) -> None:
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: entry_points,
     )
 
@@ -100,7 +100,7 @@ def test_disabled_environment_ignores_other_sources_and_metadata(monkeypatch: py
     monkeypatch.setenv(HARNESS_PLUGIN_CONFIG_JSON_ENV, "not-json")
     monkeypatch.setenv(HARNESS_PLUGIN_CONFIG_FILE_ENV, "/private/missing/secret.json")
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("disabled builder must not scan metadata")),
     )
 
@@ -397,7 +397,7 @@ def test_builder_call_site_override_can_disable_an_explicit_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("disabled explicit context must not scan metadata")),
     )
     context = HarnessBuildContext.from_configuration(_document(_entry()))
@@ -479,7 +479,7 @@ def test_configured_plugins_append_after_direct_plugins(monkeypatch: pytest.Monk
     context = HarnessBuildContext.from_configuration(_document(_entry("configured-1")))
     direct = _ConfiguredPlugin("direct-1", "direct")
 
-    executable = HarnessBuilder(build_context=context).build_code(
+    executable = HarnessBuilder(build_context=context).build(
         AgentSpec(model="test", name="root"),
         output_type=str,
         plugins=(direct,),
@@ -494,7 +494,7 @@ def test_direct_and_configured_plugin_id_collision_fails(monkeypatch: pytest.Mon
     context = HarnessBuildContext.from_configuration(_document(_entry("same-1")))
 
     with pytest.raises(PluginError) as exc_info:
-        HarnessBuilder(build_context=context).build_code(
+        HarnessBuilder(build_context=context).build(
             AgentSpec(model="test", name="root"),
             output_type=str,
             plugins=(_ConfiguredPlugin("same-1", "direct"),),

@@ -188,12 +188,12 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     ui_manifest = (tmp_path / "packages/agent-ui/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/agent-environment-provider/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in harness_manifest
-    assert '"converge-agent-environment-provider==9.8.7rc2"' in harness_manifest
-    assert '"converge-agent-harness==9.8.7rc2"' in protocol_manifest
+    assert '"a13n-environment-provider==9.8.7rc2"' in harness_manifest
+    assert '"a13n-harness==9.8.7rc2"' in protocol_manifest
     assert 'version = "9.8.7rc2"' in ui_manifest
-    assert '"converge-agent-environment-provider==3.2.1rc4"' in ui_manifest
-    assert '"converge-agent-harness==3.2.1rc4"' in ui_manifest
-    assert '"converge-agent-stream-protocol==3.2.1rc4"' in ui_manifest
+    assert '"a13n-environment-provider==3.2.1rc4"' in ui_manifest
+    assert '"a13n-harness==3.2.1rc4"' in ui_manifest
+    assert '"a13n-stream-protocol==3.2.1rc4"' in ui_manifest
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()
     assert 'version = "9.8.7-rc.2"' in (tmp_path / "Cargo.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/agent-envd-client/pyproject.toml").read_text()
@@ -318,8 +318,8 @@ def test_checker_rejects_provider_dependency_drift(tmp_path: Path) -> None:
     manifest = tmp_path / "packages/agent-harness/pyproject.toml"
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            '"converge-agent-environment-provider==9.8.7"',
-            '"converge-agent-environment-provider>=9.8.7"',
+            '"a13n-environment-provider==9.8.7"',
+            '"a13n-environment-provider>=9.8.7"',
         ),
         encoding="utf-8",
     )
@@ -327,7 +327,7 @@ def test_checker_rejects_provider_dependency_drift(tmp_path: Path) -> None:
     result = run_script(CHECKER, tmp_path, "harness", "9.8.7")
 
     assert result.returncode != 0
-    assert "dependency converge-agent-environment-provider==9.8.7" in result.stderr
+    assert "dependency a13n-environment-provider==9.8.7" in result.stderr
 
 
 def test_checker_rejects_harness_dependency_drift(tmp_path: Path) -> None:
@@ -338,8 +338,8 @@ def test_checker_rejects_harness_dependency_drift(tmp_path: Path) -> None:
     manifest = tmp_path / "packages/agent-stream-protocol/pyproject.toml"
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            '"converge-agent-harness==9.8.7"',
-            '"converge-agent-harness>=9.8.7"',
+            '"a13n-harness==9.8.7"',
+            '"a13n-harness>=9.8.7"',
         ),
         encoding="utf-8",
     )
@@ -347,7 +347,7 @@ def test_checker_rejects_harness_dependency_drift(tmp_path: Path) -> None:
     result = run_script(CHECKER, tmp_path, "harness", "9.8.7")
 
     assert result.returncode != 0
-    assert "dependency converge-agent-harness==9.8.7" in result.stderr
+    assert "dependency a13n-harness==9.8.7" in result.stderr
 
 
 def test_checker_rejects_agent_ui_dependency_drift(tmp_path: Path) -> None:
@@ -359,8 +359,8 @@ def test_checker_rejects_agent_ui_dependency_drift(tmp_path: Path) -> None:
     manifest = tmp_path / "packages/agent-ui/pyproject.toml"
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            '"converge-agent-stream-protocol==3.2.1"',
-            '"converge-agent-stream-protocol==3.2.2"',
+            '"a13n-stream-protocol==3.2.1"',
+            '"a13n-stream-protocol==3.2.2"',
         ),
         encoding="utf-8",
     )
@@ -368,7 +368,7 @@ def test_checker_rejects_agent_ui_dependency_drift(tmp_path: Path) -> None:
     result = run_script(CHECKER, tmp_path, "agent-ui", "9.8.7")
 
     assert result.returncode != 0
-    assert "dependency converge-agent-stream-protocol==3.2.1" in result.stderr
+    assert "dependency a13n-stream-protocol==3.2.1" in result.stderr
 
 
 def test_rejects_invalid_version_without_writing(tmp_path: Path) -> None:

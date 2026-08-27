@@ -56,9 +56,9 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-code)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
-	@(cd examples/agent-app && uv run --locked agent-app-example basic)
-	@(cd examples/agent-app && uv run --locked agent-app-example local)
-	@(cd examples/agent-app && uv run --locked agent-app-example host)
+	@state_dir=$$(mktemp -d); trap 'rm -rf "$$state_dir"' EXIT; \
+		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "first turn" "second turn"); \
+		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "turn after restart")
 
 .PHONY: examples-build
 examples-build: examples-sync ## Build every example distribution
@@ -85,7 +85,7 @@ dev-down: ## Stop local infrastructure and remove its data volumes
 
 .PHONY: agent-ui tui
 agent-ui: sync ## Run Agent UI (default WebUI; append `tui` for terminal UI)
-	@uv run --locked converge-agent-ui $(filter-out agent-ui,$(MAKECMDGOALS))
+	@uv run --locked a13n-ui $(filter-out agent-ui,$(MAKECMDGOALS))
 
 tui: agent-ui
 	@:
@@ -93,7 +93,7 @@ tui: agent-ui
 .PHONY: agent-ui-db-migrate
 agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a disposable database
 	@test -n "$(msg)" || { echo 'msg is required: make agent-ui-db-migrate msg="description"'; exit 2; }
-	@uv run --locked python -m converge_agent_ui.storage.migrations.generate "$(msg)"
+	@uv run --locked python -m a13n_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
 format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
@@ -115,13 +115,13 @@ format: sync foundation-web-sync harness-ui-sync sdk-python-sync sdk-typescript-
 
 .PHONY: deps-check
 deps-check: sync ## Check Python package dependency declarations
-	@(cd packages/agent-envd-client && uv run --locked deptry converge_agent_envd_client)
-	@(cd packages/agent-environment-provider && uv run --locked deptry converge_agent_environment_provider)
-	@(cd packages/agent-harness && uv run --locked deptry converge_agent_harness)
-	@(cd packages/agent-stream-protocol && uv run --locked deptry converge_agent_stream_protocol)
-	@(cd packages/agent-ui && uv run --locked deptry converge_agent_ui)
-	@(cd packages/logging && uv run --locked deptry converge_logging)
-	@(cd packages/foundation-service && uv run --locked deptry converge_foundation_service)
+	@(cd packages/agent-envd-client && uv run --locked deptry a13n_envd_client)
+	@(cd packages/agent-environment-provider && uv run --locked deptry a13n_environment_provider)
+	@(cd packages/agent-harness && uv run --locked deptry a13n_harness)
+	@(cd packages/agent-stream-protocol && uv run --locked deptry a13n_stream_protocol)
+	@(cd packages/agent-ui && uv run --locked deptry a13n_ui)
+	@(cd packages/logging && uv run --locked deptry a13n_logging)
+	@(cd packages/foundation-service && uv run --locked deptry a13n_service)
 
 .PHONY: lint
 lint: sync deps-check ## Run non-mutating repository lint checks
@@ -163,12 +163,15 @@ eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspe
 eip-verify: sync ## Verify checked EIP artifacts without modifying the repository
 	@uv run --locked python -m scripts.eip_codegen verify
 
-.PHONY: eip-test
-eip-test: sync ## Run EIP generation, runtime, cross-language, and wire-model tests
-	@cargo build --locked --package converge-agent-envd
+.PHONY: eip-integration-test
+eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
+	@cargo build --locked --package agent-envd
 	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-harness/tests/test_environment_eip_e2e.py
-	@uv run --locked pyright packages/agent-envd-client/converge_agent_envd_client packages/agent-environment-provider/converge_agent_environment_provider
-	@cargo test --locked --package converge-agent-envd
+	@uv run --locked pyright packages/agent-envd-client/a13n_envd_client packages/agent-environment-provider/a13n_environment_provider
+
+.PHONY: eip-test
+eip-test: eip-integration-test ## Run complete EIP integration and daemon tests
+	@cargo test --locked --package agent-envd
 
 .PHONY: eip-check
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate
@@ -181,7 +184,7 @@ python-build: sync agent-ui-assets ## Build all Python workspace distributions
 .PHONY: harness-python-build
 harness-python-build: ## Build the prepared Harness release-group distributions
 	@rm -rf dist
-	@for package in converge-agent-environment-provider converge-agent-harness converge-agent-stream-protocol; do \
+	@for package in a13n-environment-provider a13n-harness a13n-stream-protocol; do \
 		uv build --package "$$package" --out-dir dist || exit $$?; \
 	done
 
@@ -196,26 +199,26 @@ harness-release-build: harness-python-build ## Build and verify the prepared Har
 .PHONY: agent-ui-build
 agent-ui-build: sync agent-ui-assets ## Build Agent UI for repository development
 	@rm -rf dist
-	@uv build --package converge-agent-ui --out-dir dist
+	@uv build --package a13n-ui --out-dir dist
 	@uv run --locked python scripts/check-agent-ui-distribution.py dist --rebuild-wheel
 
 .PHONY: agent-ui-release-build
 agent-ui-release-build: ## Build and verify Agent UI from prepared assets and release metadata
 	@rm -rf dist
-	@uv build --package converge-agent-ui --out-dir dist
+	@uv build --package a13n-ui --out-dir dist
 	@uv run --no-project python scripts/check-agent-ui-distribution.py dist --rebuild-wheel --require-exact-internal-version
 
 .PHONY: foundation-python-build
 foundation-python-build: sync ## Build only Foundation release-group Python distributions
 	@rm -rf dist
-	@for package in converge-logging converge-foundation-service; do \
+	@for package in a13n-logging a13n-service; do \
 		uv build --package "$$package" --out-dir dist || exit $$?; \
 	done
 
 .PHONY: agent-envd-client-build
 agent-envd-client-build: sync ## Build the agent-envd client Python distributions
 	@rm -rf dist
-	@uv build --package converge-agent-envd-client --out-dir dist
+	@uv build --package a13n-envd-client --out-dir dist
 
 .PHONY: rust-format-check
 rust-format-check: ## Check Rust formatting
@@ -235,7 +238,7 @@ rust-build: ## Build the Rust workspace
 
 .PHONY: rust-package
 rust-package: ## Verify the agent-envd crates.io package
-	@cargo package --locked --allow-dirty --package converge-agent-envd
+	@cargo package --locked --allow-dirty --package agent-envd
 
 .PHONY: rust-check
 rust-check: rust-format-check rust-lint ## Run Rust workspace formatting and lint checks
@@ -473,7 +476,7 @@ images: image-foundation-service image-sandbox ## Build all local container imag
 image-check-foundation-service: ## Smoke-check the existing foundation-service container image
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(FOUNDATION_SERVICE_IMAGE)")" = "app"
 	@docker run --rm --entrypoint sh "$(FOUNDATION_SERVICE_IMAGE)" -c 'test -r /app/web/index.html && ! command -v node'
-	@docker run --rm --entrypoint python "$(FOUNDATION_SERVICE_IMAGE)" -c 'from converge_foundation_service.asgi import app; assert str(app.state.settings.web_dist_dir) == "/app/web"'
+	@docker run --rm --entrypoint python "$(FOUNDATION_SERVICE_IMAGE)" -c 'from a13n_service.asgi import app; assert str(app.state.settings.web_dist_dir) == "/app/web"'
 
 .PHONY: image-check-sandbox
 image-check-sandbox: ## Smoke-check the existing sandbox container image
@@ -526,7 +529,7 @@ check-all: eip-check examples-check-all foundation-web-check-all harness-ui-chec
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
-	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/agent-foundation-cli/target packages/agent-ui/converge_agent_ui/static
+	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/agent-foundation-cli/target packages/agent-ui/a13n_ui/static
 	@npm --prefix apps/foundation-web run clean
 	@npm --prefix apps/harness-ui run clean
 	@npm --prefix sdk/typescript run clean

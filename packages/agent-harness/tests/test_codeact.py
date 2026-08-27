@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     AgentDefinition,
     AgentIdentityRef,
     AgentInstanceContext,
@@ -20,21 +20,23 @@ from converge_agent_harness import (
     DelegationCapability,
     DelegationRunCapability,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
-    NoopEnvironmentRunBinding,
     RunBindings,
     SubagentDefinition,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
+    NoopEnvironmentRunBinding,
     create_environment_run_binding,
 )
-from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
-from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
@@ -131,8 +133,8 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:codeact"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(
@@ -142,7 +144,7 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     )
 
     events: list[HarnessEvent] = []
-    async with executable.stream("run", bindings=RunBindings.local()) as stream:
+    async with executable.stream("run", bindings=RunBindings.embedded()) as stream:
         async for item in stream:
             if isinstance(item, HarnessEvent):
                 events.append(item)
@@ -187,15 +189,15 @@ async def test_run_program_reads_direct_local_source_and_dispatches_current_tool
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:program"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(_codeact_tools(double, allowed=("double",)), CodeActCapability()),
     )
     result = await executable.run(
         "run program",
-        bindings=RunBindings.local(environment=_local_environment(tmp_path)),
+        bindings=RunBindings.embedded(environment=_local_environment(tmp_path)),
     )
 
     assert result.output_or_raise() == "done"
@@ -229,7 +231,7 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
             yield "child-done"
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="codeact-child-v1",
         model=FunctionModel(stream_function=child_model),
@@ -260,7 +262,7 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
             yield "parent-done"
 
     parent = AgentDefinition(
-        agent=AgentSpec(model="logical:parent"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="codeact-parent-v1",
         model=FunctionModel(stream_function=parent_model),

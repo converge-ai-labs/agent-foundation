@@ -1,4 +1,4 @@
-# Events, Observability, and Usage
+# Events and Usage
 
 ## Design Position
 
@@ -6,13 +6,13 @@
 
 Pydantic AI public events remain the source for model output and tool execution, and `RunCancelled` is the source terminal signal for native cancellation. The Harness adds only bounded model-request boundary observations plus correlation, context, state, recovery, managed-invocation, delegation, usage-attribution, and diagnostic events that Pydantic AI does not own. Pydantic AI `RequestUsage`, `RunUsage`, and `UsageLimits` remain authoritative for model-request usage, accumulation, and supported limits. When semantic recovery starts another `ModelAttempt`, events already delivered by the earlier attempt remain observations in the same logical Harness stream and cannot be retracted.
 
-OpenTelemetry uses Pydantic AI's `Instrumentation` Capability plus spans for Harness-owned operations. Durable event delivery, cross-run usage aggregation, valuation, billing, and lifecycle facts belong to the host.
+Durable event delivery, cross-run usage aggregation, valuation, billing, and lifecycle facts belong to the Host. [Harness Observation](19-observation-model.md) separately owns the OpenTelemetry hierarchy, fields, information boundary, and Host export profiles; telemetry never replaces this event or usage contract.
 
-Event and observability behavior inside model, node, or tool execution uses Pydantic Capability hooks with `RunContext[AgentContext]`. A first-class Harness plugin can observe the outer canonical stream and result through `wrap_run`, but it does not install a background event broker, second public stream, usage accumulator, durable log, or broadcast system.
+Event behavior inside model, node, or tool execution uses Pydantic Capability hooks with `RunContext[AgentContext]`. A first-class Harness plugin can observe the outer canonical stream and result through `wrap_run`, but it does not install a background event broker, second public stream, usage accumulator, durable log, or broadcast system.
 
 ## Boundary
 
-The Harness does not define Host lifecycle events, a broker, SSE, webhook, durable replay, cross-process delivery guarantees, an observability backend, a universal resource taxonomy, a durable usage sink, a price catalog, invoices, or payment.
+The Harness does not define Host lifecycle events, a broker, SSE, webhook, durable replay, cross-process delivery guarantees, a telemetry backend, a universal resource taxonomy, a durable usage sink, a price catalog, invoices, or payment. OpenTelemetry ownership and exporter failure are defined by [Harness Observation](19-observation-model.md#sampling-export-and-lifecycle-failure).
 
 ## Event Model
 
@@ -132,29 +132,9 @@ The harness redacts extension payloads before emission. Credentials, grants, tra
 
 A state event or terminal `HarnessRunResultEvent` remains a process-local observation. Plugin middleware can replace a candidate but cannot grant Host durability, forge external side-effect evidence, or retract prior events. The result event is emitted only after final candidate validation and run-scoped teardown succeed, but it is still not a committed host lifecycle transition or durable checkpoint. Teardown failure raises `RunCleanupError` with any frozen primary outcome and produces no terminal event.
 
-## OpenTelemetry
+## Observation Boundary
 
-Pydantic AI's public `Instrumentation` Capability owns Agent-run, model-request, tool-execution, and cancellation spans where provided. Harness observability capabilities add attributes to the logical run and create spans only for Harness-owned context, state, plugin validation, semantic recovery, and delegation operations.
-
-```mermaid
-flowchart LR
-    RUN[Harness run context] --> PAI[Pydantic AI instrumentation]
-    RUN --> HX[Harness-owned spans]
-    PAI --> EXPORT[Configured OTel exporter]
-    HX --> EXPORT
-```
-
-One operation has one owning span path. Harness code enriches upstream spans rather than wrapping them with duplicate model/tool spans. Safe attributes include run ID, Agent instance, capability/tool identifiers, Environment provider and generation, and opaque host correlation. Credentials, grants, prompts, arguments, and results follow content policy. Pydantic instrumentation content capture is disabled unless the same content policy explicitly enables it.
-
-### Vendor Enrichment
-
-The default profile emits standard OpenTelemetry and has no vendor SDK dependency. A vendor Capability can configure an exporter and propagate vendor attributes without replacing Pydantic instrumentation.
-
-The Langfuse profile maps host-approved values to Langfuse `user_id`, `session_id`, tags, metadata, version, environment, and trace naming through the Langfuse OTel-native SDK or equivalent documented attributes. The mapping occurs on the enclosing run observation so Pydantic child spans inherit it. This telemetry `session_id` is an observability grouping value: it does not define or override the provider model-session and prompt-cache affinity derived from each root or child State's `thread_id`.
-
-Inline subagent executions are represented as nested `agent` observations containing their model and tool spans. A visible child Agent does not also receive a sibling dispatch span for the same work. Host-managed asynchronous submission has only a dispatch observation in the parent trace; the independently scheduled child starts its own trace and is correlated by safe Host metadata.
-
-Exporter failure follows OpenTelemetry policy and does not change run outcome. A required audit sink is a host facility, not an OTel exporter mode.
+[Harness Observation](19-observation-model.md) owns OpenTelemetry configuration, span ownership and hierarchy, trace and Thread correlation, the `a13n.*` registry, Langfuse and Logfire Host profiles, content boundaries, and exporter-failure semantics. Events and usage records remain independent process-local projections; one is never reconstructed from the other.
 
 ## Run Usage
 
@@ -175,15 +155,19 @@ The model commit observer uses public Pydantic node, message, and usage boundari
 
 ### Cost Calculation
 
-A fresh optional `ModelCostRunCapability` carries one synchronous deterministic Host calculator. On the normal model-response path, a finite non-negative USD result replaces provider-populated cost before native accumulation; decline, invalid output, or failure falls back without failing the Agent run. The resulting model record names the selected pricing revision, actual cost source, and whether custom pricing was applied, declined, failed, absent, or not reached.
+Model-cost valuation is a default-on build-time Capability role. Every built Agent contains exactly one `AbstractModelCostCapability` alongside the mandatory `UsageCapability`. If build code supplies no implementation, `HarnessBuilder` inserts `CatalogModelCostCapability`; one code-first custom subclass atomically replaces that default; more than one fails with `DefinitionError`. `NoModelCostCapability` is the explicit opt-out and preserves raw provider or upstream-library cost without Harness valuation. Model-cost Capabilities cannot enter through `RunBindings`, plugin contributions, or declarative Capability reconstruction.
 
-Pricing input contains only model/provider identity, safe provider URL when available, timestamp, and a copy of request usage with cost cleared. Prompt and response content, credentials, and arbitrary provider payloads are excluded. Catalog storage, refresh, currency conversion, discounts, invoices, and settlement remain Host concerns. Interrupted or short-circuited paths that bypass the calculator retain the cost actually available and are not retroactively rewritten.
+`CatalogModelCostCapability` freezes one immutable `PricingCatalog` for the Agent definition. The default catalog normalizes the package's pinned `genai-prices` snapshot and then applies the Harness packaged overlay. Entries are keyed by `provider:model`; every `ModelPricingEntry` contains context window, ordered price rules, tiered price components, constraints, source metadata, and revision. The public `get_default_pricing_catalog()` exposes the complete normalized catalog. `PricingCatalog.with_updates()` and `CatalogModelCostCapability(pricing_updates=...)` use shallow dictionary-update semantics: each supplied value is a complete validated `ModelPricingEntry` replacement, never a recursive merge. A catalog revision identifies the resulting immutable content.
+
+On the normal model-response path, the selected Capability receives content-free `ModelCostInput`, returns an optional `ModelCostQuote`, and a finite non-negative USD quote replaces provider-populated cost before native accumulation. Decline, invalid output, lookup miss, or failure falls back without failing the Agent run. The resulting model record names the selected pricing revision, rule and actual cost source, and whether Harness pricing was applied, declined, failed, disabled, or not reached. The default catalog preserves `genai-prices` usage-dimension, tier, start-date, and recurring UTC time-window semantics; request-start time selects conditional pricing.
+
+Pricing input contains only model/provider identity, safe provider URL when available, request-start and response timestamps, and a copy of request usage with cost cleared. Prompt and response content, credentials, and arbitrary provider payloads are excluded. Live price refresh, currency conversion, negotiated discounts, invoices, and settlement remain Host concerns. Interrupted or short-circuited paths that bypass valuation retain the cost actually available and are not retroactively rewritten.
 
 ### Delegation, Resume, and Limits
 
-Inline children share the parent's live `RunUsage` and calculator selection but retain child-correlated attribution records. Their effective limits are narrowed by delegation policy; native checks do not promise an atomic tree-wide budget across concurrent children. The root terminal `HarnessRunResult.usage` therefore covers the complete inline descendant tree, while `HarnessRunResult.usage_records` is the local logical run's attribution snapshot only. Child records remain observable as child-correlated `usage_report` events and are not copied into the parent's local ledger or priced again. A Host that needs a tree-wide attribution view joins those immutable records by run lineage and stable record identity. Host-managed asynchronous children and later or resumed root runs normally use fresh accumulators and ledgers.
+Inline children share the parent's live `RunUsage` and inherit the parent's effective build-time model-cost Capability for the complete inline tree. The propagation is an internal trusted binding, not a Host-selectable `RunBindings` override; a child definition's own Capability remains its policy when that Agent runs independently. Children retain child-correlated attribution records. Their effective limits are narrowed by delegation policy; native checks do not promise an atomic tree-wide budget across concurrent children. The root terminal `HarnessRunResult.usage` therefore covers the complete inline descendant tree, while `HarnessRunResult.usage_records` is the local logical run's attribution snapshot only. Child records remain observable as child-correlated `usage_report` events and are not copied into the parent's local ledger or priced again. A Host that needs a tree-wide attribution view joins those immutable records by run lineage and stable record identity. Host-managed asynchronous children and later or resumed root runs normally use fresh accumulators and ledgers.
 
-Neither `RunUsage`, the attribution ledger, provider receipts, nor a calculator enters `HarnessState`. Imported messages remain historical, so a resumed run reports only newly committed usage. Terminal cumulative `RunUsage` snapshots and child snapshots can overlap and are never summed as independent contributions; durable projections use immutable usage records instead.
+Neither `RunUsage`, the attribution ledger, provider receipts, a pricing catalog, nor a model-cost Capability enters `HarnessState`. Imported messages remain historical, so a resumed run reports only newly committed usage. Terminal cumulative `RunUsage` snapshots and child snapshots can overlap and are never summed as independent contributions; durable projections use immutable usage records instead.
 
 ## Failure Boundary
 
@@ -211,9 +195,9 @@ The event envelope and extension-event schemas evolve independently. Pydantic ev
 05. Pydantic public events remain authoritative for model/tool event shape.
 06. Harness events and OTel are not host lifecycle authority.
 07. `RunUsage` is the only process-local usage accumulator; the Harness result stores a terminal copy.
-08. A Host calculator overrides a normally committed response only when it returns a finite non-negative cost; decline and failure fall back without failing the run, while bypassed paths are reported as `not_reached` rather than falsely attributed.
+08. Every built Agent has exactly one build-time `AbstractModelCostCapability`; it overrides a normally committed response only with a finite non-negative quote, while decline and failure fall back without failing the run and bypassed paths are reported as `not_reached` rather than falsely attributed.
 09. Each proven native model or handled-partial commit creates one stable model record and flushes all pending mixed records in bounded reports; enqueue, imported history, and history processing cannot create model records merely by placing a response in messages.
 10. Provider receipt identity is stable and idempotent; provider usage does not alter native model totals or limits, and conflicting receipt reuse fails closed.
-11. Inline descendants share the root accumulator and calculator selection but retain child-correlated records; Host-managed asynchronous children and later runs use fresh accumulators and ledgers.
-12. Imported message history never becomes new usage for a resumed run, and no usage accumulator, ledger, provider receipt, or calculator enters `HarnessState` or `AgentContextState`.
-13. Sensitive and transient content is absent from pricing input, usage records, default events, and telemetry.
+11. Inline descendants share the root accumulator and inherit the root run's effective model-cost Capability while retaining child-correlated records; Host-managed asynchronous children and later runs use their independently built policy, fresh accumulators, and fresh ledgers.
+12. Imported message history never becomes new usage for a resumed run, and no usage accumulator, ledger, provider receipt, pricing catalog, or model-cost Capability enters `HarnessState` or `AgentContextState`.
+13. Sensitive and transient content is absent from pricing input, usage records, and default events; the separate Observation contract distinguishes safe Harness-authored fields from telemetry-visible upstream Pydantic structural and exception fields.

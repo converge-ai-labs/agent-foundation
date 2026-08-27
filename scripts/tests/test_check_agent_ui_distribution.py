@@ -35,30 +35,29 @@ def _write_wheel(
     }
     with zipfile.ZipFile(path, mode="w") as archive:
         for name, content in files.items():
-            archive.writestr(f"converge_agent_ui/static/{name}", content)
+            archive.writestr(f"a13n_ui/static/{name}", content)
         archive.writestr(
-            "converge_agent_ui/static/asset-manifest.json",
+            "a13n_ui/static/asset-manifest.json",
             json.dumps(manifest),
         )
         archive.writestr(
-            "converge_agent_ui-9.8.7.dist-info/METADATA",
+            "a13n_ui-9.8.7.dist-info/METADATA",
             "\n".join(
                 (
                     "Metadata-Version: 2.4",
-                    "Name: converge-agent-ui",
+                    "Name: a13n-ui",
                     "Version: 9.8.7",
-                    "Requires-Dist: converge-agent-environment-provider"
+                    "Requires-Dist: a13n-environment-provider"
                     + (f"=={provider_version}" if provider_version is not None else ""),
-                    "Requires-Dist: converge-agent-harness"
-                    + (f"=={harness_version}" if harness_version is not None else ""),
-                    "Requires-Dist: converge-agent-stream-protocol"
+                    "Requires-Dist: a13n-harness" + (f"=={harness_version}" if harness_version is not None else ""),
+                    "Requires-Dist: a13n-stream-protocol"
                     + (f"=={protocol_version}" if protocol_version is not None else ""),
                     "",
                 )
             ),
         )
         for name, content in (extra_packaged_files or {}).items():
-            archive.writestr(f"converge_agent_ui/static/{name}", content)
+            archive.writestr(f"a13n_ui/static/{name}", content)
 
 
 def test_validates_declared_shell_assets(tmp_path: Path) -> None:

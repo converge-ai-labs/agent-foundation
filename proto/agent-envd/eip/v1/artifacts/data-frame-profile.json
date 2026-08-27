@@ -58,7 +58,7 @@
   "profile_version": 1,
   "protocol": {
     "eip_major": 1,
-    "package": "converge.agent_envd.eip.v1"
+    "package": "a13n.agent_envd.eip.v1"
   },
   "reset_statuses": {
     "cancelled": 6,

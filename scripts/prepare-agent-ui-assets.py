@@ -7,7 +7,7 @@ from prepare_agent_ui_assets import prepare_assets
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 DEFAULT_SOURCE = REPOSITORY_ROOT / "apps" / "harness-ui" / "dist"
-DEFAULT_TARGET = REPOSITORY_ROOT / "packages" / "agent-ui" / "converge_agent_ui" / "static"
+DEFAULT_TARGET = REPOSITORY_ROOT / "packages" / "agent-ui" / "a13n_ui" / "static"
 
 
 def main() -> None:

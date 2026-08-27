@@ -2,42 +2,97 @@
 
 ## Design Position
 
-The Environment binding aggregate is a Harness-managed, run-scoped resource. It is not a Pydantic Capability, and the underlying provider resource is not owned by the Harness, an Agent, or a Session. A trusted Host supplies one single-use `EnvironmentRunBinding` in `RunBindings`; the Harness enters that aggregate before input production, publishes one stable `BoundEnvironment` through `AgentContext.environment`, and closes it after the logical run reaches its terminal fence and all run-local scopes unwind. Provider lifecycle remains outside that aggregate under Host decisions executed through the Provider Manager.
+Environment is a Harness-managed, run-scoped resource. It is not a Pydantic Capability. An embedded caller supplies no Environment, one `EnvironmentProvider` or entered `EnvironmentResource` through `environment=`, or a named mapping through `environments=`. The Harness normalizes every form into one single-use internal aggregate, enters it before input production, publishes one stable `Environment` through `AgentContext.environment`, and closes it after the logical run reaches its terminal fence and all run-local scopes unwind.
 
-A trusted Host may register ordered `EnvironmentRunExtension` objects when constructing the aggregate. Each extension enters once after portable Environment state restoration and before controller activation, receives the complete stable `BoundEnvironment`, and exits in reverse order while that Environment remains open. This is the narrow process-local lifecycle seam for resources that span the complete Environment aggregate rather than one provider binding.
+Source type defines lifecycle ownership. For a Provider input, the Harness owns an ephemeral Resource: it creates, enters, attaches, exits, and destroys that Resource before terminal result delivery. For an entered Resource input, the Host retains lifecycle ownership: the Harness acquires and releases one fresh attachment but does not exit, pause, or destroy the Resource. One mapping can mix both forms. A continuation that requires reuse of the same Resource therefore uses the Host-owned form; a suspended run still destroys every Harness-owned ephemeral Resource.
+
+An advanced Host can instead place one single-use `EnvironmentRunBinding` in `RunBindings` and retain its paired `EnvironmentTopologyController`. High-level inputs and that advanced binding are mutually exclusive. Both routes enter the same aggregate lifecycle and operation engine; there is no second Environment execution path.
+
+A trusted Host may register ordered `EnvironmentRunExtension` objects when constructing an advanced aggregate. Each extension enters once after portable Environment state restoration and before controller activation, receives the complete stable `Environment`, and exits in reverse order while that Environment remains open. This is the narrow process-local lifecycle seam for resources that span the complete Environment aggregate rather than one provider binding.
 
 The aggregate can contain zero, one, or several provider bindings. Each provider binding establishes trustworthy Environment identity, generation, descriptor, routing, and an enforceable readiness path before publication. Concrete file, shell, process, or port resources may continue preparing asynchronously inside the entered binding scope. Operations wait only for their selected operation family and fail with typed availability rather than relying on a global `ping()` or requiring every backend resource to be ready at run entry.
 
-A Host retains the paired `EnvironmentTopologyController` for the complete entered logical Harness run. It can add, refresh, or remove bindings without replacing `AgentContext.environment`, rebuilding the Agent, changing tool schemas, or waiting for another Harness run. The controller accepts only trusted process-local provider bindings. It prepares replacements before atomic publication, fences stale handles, drains operation leases, and retires removed resources under the same aggregate lifecycle.
+A Host using the advanced route retains the paired `EnvironmentTopologyController` for the complete entered logical Harness run. `HarnessRunStream.environment_controller` exposes the controller associated with either route when trusted code needs its lifecycle state. Advanced code can add, refresh, or remove bindings without replacing `AgentContext.environment`, rebuilding the Agent, changing tool schemas, or waiting for another Harness run. The controller accepts only trusted process-local provider bindings. It prepares replacements before atomic publication, fences stale handles, drains operation leases, and retires removed resources under the same aggregate lifecycle.
 
-`BoundEnvironment` owns the provider-neutral current-topology Model Context Projection. `DynamicEnvironmentCapability` is the optional first-party model adapter: it owns stable guidance, topology observation and enqueue notices, run hooks, and composition of the pure `FileToolset` and `ShellToolset`; those Toolsets expose stable filesystem, shell, process, retained-output, and optional port operations over provider-neutral ports. The Capability does not own provider bindings, readiness tasks, routing snapshots, the current-topology projection, the controller, Environment state, authority, or cleanup. Callers that need only static tools can compose either Toolset directly; a Capability is justified when Agent-loop behavior or notices are required.
+`Environment` owns the provider-neutral current-topology Model Context Projection. `DynamicEnvironmentCapability` is the optional first-party model adapter: it owns stable guidance, topology observation and enqueue notices, run hooks, and composition of the pure `FileToolset` and `ShellToolset`; those Toolsets expose stable filesystem, shell, process, retained-output, and optional port operations over provider-neutral ports. The Capability does not own provider bindings, readiness tasks, routing snapshots, the current-topology projection, the controller, Environment state, authority, or cleanup. Callers that need only static tools can compose either Toolset directly; a Capability is justified when Agent-loop behavior or notices are required.
 
-Environment operations are provider-neutral. Direct Local is the first-party implementation for an embedding process that intentionally grants local roots and commands; its concrete binding plus file and shell facets remain package internals behind the public attachment adapter. The Harness also owns the EIP adapter over generated `converge-agent-envd-client` APIs for daemon-governed resources. Local execution is never forced through a daemon, and a Direct Local binding makes no sandbox claim.
+Environment operations are provider-neutral. Direct Local is the first-party implementation for an embedding process that intentionally grants local roots and commands; its concrete binding plus file and shell facets remain package internals behind the public attachment adapter. The Harness also owns the EIP adapter over generated `a13n-envd-client` APIs for daemon-governed resources. Local execution is never forced through a daemon, and a Direct Local binding makes no sandbox claim.
+
+## Developer-facing inputs
+
+The conceptual public values are:
+
+```python
+type EnvironmentSource = EnvironmentProvider | EnvironmentResource
+
+type EnvironmentEntry = EnvironmentSource | EnvironmentMount
+
+
+class EnvironmentAccess(StrEnum):
+    READ_ONLY = "read_only"
+    FULL = "full"
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentMount:
+    source: EnvironmentSource
+    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
+    working_directory: str | None = "/"
+```
+
+`EnvironmentAccess` is a convenience ceiling, not another authorization system. `FULL` selects the complete current `EnvironmentAction` catalog. `READ_ONLY` selects non-mutating file observations plus process, output, port, and state observations and the release operations required to retire observation resources. Advanced callers can supply an exact `EnvironmentPermissionSet`. A provider descriptor can always narrow the requested ceiling. `working_directory` is `None` or a canonical absolute provider path and never permits `.` or `..` segments.
+
+`ExecutableAgent.run()` and `stream()` expose the same Environment arguments:
+
+```python
+run(
+    input=None,
+    *,
+    environment: EnvironmentEntry | None = None,
+    environments: Mapping[str, EnvironmentEntry] | None = None,
+    default_environment: str | None = None,
+    bindings: RunBindings | None = None,
+    ...,
+)
+```
+
+The rules are:
+
+1. `environment` and `environments` are mutually exclusive.
+2. `default_environment` is valid only with `environments` and must name one supplied alias.
+3. Singular input uses alias `workspace`, logical binding ID `environment-workspace`, and is the default.
+4. A one-entry mapping automatically selects its alias as default.
+5. A mapping with several entries has no default unless `default_environment` is explicit. Mapping insertion order never chooses authority.
+6. Each alias deterministically maps to logical binding ID `environment-{alias}` so compatible continuation state matches across runs.
+7. An empty mapping, invalid alias, invalid mount, or high-level/advanced binding conflict fails before stream entry and before provider effects.
+8. Omitting `bindings` creates fresh embedded `RunBindings`; omitting all Environment inputs creates the same zero-binding aggregate used by advanced Hosts.
+
+A default binding serves `/workspace`; every binding is addressable at `/environment/{alias}`. The high-level mapping is prepared atomically. The Harness does not publish a partial topology: if one entry fails, it releases already prepared entries in reverse order. During teardown it drains operation leases, releases attachments, exits and destroys only Provider-owned Resources, leaves borrowed Resources entered, and reports cleanup failure through the normal `RunCleanupError` boundary. Terminal result delivery occurs only after this cleanup succeeds.
 
 ## Boundary
 
 | Concern                                                                                                                                                             | Owner                                                                                                                                 |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Desired topology, provider selection, logical resource identity, and lifecycle policy                                                                               | Host                                                                                                                                  |
-| Provider specifications, catalogs, Managers, resource state, and fresh runtime attachments                                                                          | [`converge-agent-environment-provider`](../agent-environment-provider/README.md) and selecting Host                                   |
+| Provider specifications, catalogs, Providers, resource state, and fresh runtime attachments                                                                         | [`a13n-environment-provider`](../agent-environment-provider/README.md) and selecting Host                                             |
 | Installed Environment run-extension metadata, explicit entry-point loading, and validated process-local extension factory catalog                                   | Harness Environment run-extension factory boundary and selecting Host                                                                 |
 | Ordered aggregate-wide extension selection and extension-specific resource ownership                                                                                | Host and entered `EnvironmentRunExtension`                                                                                            |
 | Run-scoped aggregate binding, immutable topology, virtual routing, readiness coordination, operation leases, retirement, and portable Environment-state aggregation | Harness Environment core                                                                                                              |
 | Provider-neutral bounded current-topology Model Context Projection                                                                                                  | Entered `BoundEnvironment`                                                                                                            |
 | Model-visible tools, stable guidance, and topology-change enqueue notices                                                                                           | Optional `DynamicEnvironmentCapability`                                                                                               |
 | Monitored-process waiting, wake-up, accepted completion retention, and later delivery                                                                               | Fresh Host collaborator selected by the monitored-process Capability                                                                  |
-| Provider create, resume, pause, destroy, resource state, and managed-resource lifetime                                                                              | Host and [`EnvironmentManager`](../agent-environment-provider/02-resource-management-and-attachments.md)                              |
+| Provider create, resume, pause, destroy, resource state, and Resource lifetime                                                                                      | Host and [`EnvironmentProvider`](../agent-environment-provider/02-resource-management-and-attachments.md)                             |
 | Generation observation, operation execution, run-local session ownership, and binding-local cleanup                                                                 | Entered provider binding                                                                                                              |
 | Direct local path and process enforcement                                                                                                                           | Direct Local provider binding and embedding OS                                                                                        |
 | EIP canonical resources, handles, explicit output offsets, generations, command-output spool, and side-effect evidence                                              | `agent-envd` and its [resource](../agent-envd/04-resource-operations.md) and [output](../agent-envd/06-output-retention.md) contracts |
-| Generated EIP models, codecs, typed stubs, and transport/session runtime                                                                                            | [`converge-agent-envd-client`](../agent-envd/08-protocol-source-client-and-generation.md)                                             |
+| Generated EIP models, codecs, typed stubs, and transport/session runtime                                                                                            | [`a13n-envd-client`](../agent-envd/08-protocol-source-client-and-generation.md)                                                       |
 | Provider lifecycle selection and optional resource-state storage                                                                                                    | Host                                                                                                                                  |
 | Envd inner command isolation                                                                                                                                        | [Execution Isolation](../agent-envd/07-execution-isolation.md)                                                                        |
 | Outer container, VM, and provider resource enforcement                                                                                                              | Selected provider                                                                                                                     |
 
 Provider denial always narrows a Harness allow decision. Binding IDs, paths, handles, cursors, topology versions, and saved state are selectors or observations, never bearer credentials.
 
-The Harness depends on `converge-agent-environment-provider` and the low-level client. It owns direct conversion from shared runtime attachments and generated EIP values to provider-neutral operations, but it does not implement provider management, JSON-RPC, framing, transport authentication, or generated wire models. Docker and E2B integrations live in the provider package and use vendor SDKs only for lifecycle and bootstrap, never as alternate Environment operation backends. Provider credentials remain inside the Manager. EIP transport credentials remain inside the session source and client session. None appear in a published descriptor, model context, operation result, or `EnvironmentState`.
+The Harness depends on `a13n-environment-provider` and the low-level client. It owns direct conversion from shared runtime attachments and generated EIP values to provider-neutral operations, but it does not implement provider management, JSON-RPC, framing, transport authentication, or generated wire models. Docker and E2B integrations live in the provider package and use vendor SDKs only for lifecycle and bootstrap, never as alternate Environment operation backends. Provider credentials remain inside the Provider. EIP transport credentials remain inside the session source and client session. None appear in a published descriptor, model context, operation result, or `EnvironmentState`.
 
 For an EIP-backed binding, trusted stdio, Host-dialed HTTP, and envd-initiated reverse WebSocket are carrier profiles for one EIP method contract, not separate Environment types. An explicit `EIPSessionSource` acquires the selected carrier and returns a fresh initialized session when the binding enters. In every profile the low-level client is the requester and envd is the responder. Reconnect within the same trusted Environment identity and generation creates a fresh EIP session and can be private provider recovery; it never resumes a file transfer or automatically replays a mutation. A generation change requires a fresh binding revision and topology publication and never retargets an operation, provider-neutral cursor, or handle. Direct Local bindings have no carrier negotiation.
 
@@ -388,7 +443,7 @@ class BoundEnvironment(Protocol):
 class EnvironmentRunExtensionContext:
     run_id: str
     instance: AgentInstanceContext
-    environment: BoundEnvironment
+    environment: Environment
 
 
 @runtime_checkable
@@ -478,7 +533,7 @@ def create_noop_environment_run_binding(
 
 `create_environment_run_binding()` is the public constructible aggregate boundary. It validates and defensively captures one complete initial request, positive finite limits, and an ordered tuple of uniquely identified Environment run extensions; returns a fresh single-use `CompositeEnvironmentRunBinding`; and exposes its paired controller through the `EnvironmentRunBinding` protocol. An embedding Host can therefore assemble zero, one, or many provider bindings plus aggregate-wide lifecycle extensions without constructing coordinator internals.
 
-`create_noop_environment_run_binding()` returns the public `NoopEnvironmentRunBinding`, whose entered value is `NoopBoundEnvironment`. It uses the same aggregate coordinator and complete facade with an initially empty binding tuple, deterministic typed selection/unsupported failures, an empty state contribution, and a full paired controller until run close; it is not a second execution path. A Host can later publish a binding through that controller, after which the same stable facade is no longer empty. Omitted limits select finite package defaults, while explicit values can only narrow them. `RunBindings.local()` uses this constructor when no Environment is supplied. Callers observe no `is_noop` flag; `bound.topology.bindings == ()` is the canonical test.
+`create_noop_environment_run_binding()` returns the public `NoopEnvironmentRunBinding`, whose entered value is `NoopBoundEnvironment`. It uses the same aggregate coordinator and complete facade with an initially empty binding tuple, deterministic typed selection/unsupported failures, an empty state contribution, and a full paired controller until run close; it is not a second execution path. A Host can later publish a binding through that controller, after which the same stable facade is no longer empty. Omitted limits select finite package defaults, while explicit values can only narrow them. Run normalization uses this constructor when neither high-level inputs nor an advanced binding are supplied. Callers observe no `is_noop` flag; `bound.topology.bindings == ()` is the canonical test.
 
 `EnvironmentProviderBinding` is trusted, process-local, single-use input. A custom process-local integration can implement it directly in trusted code; first-party Direct Local and EIP bindings are package-owned results of the exhaustive runtime-attachment adapter. It is not an `AbstractHarnessPlugin`, Capability, serialized factory description, or arbitrary import reference. Entering it authenticates or validates the selected logical resource, establishes one immutable observed generation and descriptor, exposes provider-neutral operation implementations, and creates an enforceable readiness path.
 
@@ -494,7 +549,7 @@ Before publication, the aggregate captures one descriptor and one recursively de
 
 `EnvironmentRunBinding` is a paired single-use aggregate and controller. It captures positive immutable topology and state limits before entry. The aggregate validates the supplied Agent instance, enters initial provider scopes, obtains trustworthy identities and descriptors, intersects requested ceilings with provider capabilities and current policy, and publishes one immutable topology. Initial entry transfers every supplied candidate to the aggregate. Failure closes every scope already opened, discards every other candidate, and publishes nothing. Rebinding the aggregate, reusing a transferred provider binding, or applying through a controller paired with another run fails before publication.
 
-A zero-binding aggregate is the no-operation Environment used by `RunBindings.local()` when no provider is supplied. The same `BoundEnvironment` contract covers zero, one, and many bindings. Its facade objects remain stable for the run and resolve each call through the current immutable topology snapshot.
+A zero-binding aggregate is the no-operation Environment used when a run supplies neither high-level Environment input nor an advanced binding. The same internal `BoundEnvironment` contract covers zero, one, and many bindings. Its facade objects remain stable for the run and resolve each call through the current immutable topology snapshot.
 
 ### Environment Run Extensions
 
@@ -510,10 +565,10 @@ The extension receives no `AgentContext`, model, plugin context, topology contro
 
 ### Environment Run Extension Factories
 
-A trusted distribution can register a factory class in the distinct entry-point group `converge_agent_harness.environment_run_extensions`:
+A trusted distribution can register a factory class in the distinct entry-point group `a13n_harness.environment_run_extensions`:
 
 ```toml
-[project.entry-points."converge_agent_harness.environment_run_extensions"]
+[project.entry-points."a13n_harness.environment_run_extensions"]
 "acme.audit" = "acme_environment.run_extension:AuditExtensionFactory"
 ```
 
@@ -521,7 +576,7 @@ The entry-point name is the stable Host-facing `extension_key`. A key identifies
 
 ```python
 ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP = (
-    "converge_agent_harness.environment_run_extensions"
+    "a13n_harness.environment_run_extensions"
 )
 
 
@@ -599,7 +654,7 @@ Discovery, selection, provenance, and loading follow the same fail-closed packag
 
 ### Provider Package and Attachment Adaptation
 
-Provider specification, factory discovery, built-in keys, resource management, provider resource state, and EIP session-source construction belong to [`converge-agent-environment-provider`](../agent-environment-provider/README.md). That package imports no Harness type. A Host uses its `EnvironmentManager` to create or resume one managed resource and acquire a fresh single-use `EnvironmentRuntimeAttachment`.
+Provider specification, factory discovery, built-in keys, resource management, provider resource state, and EIP session-source construction belong to [`a13n-environment-provider`](../agent-environment-provider/README.md). That package imports no Harness type. A Host uses its `EnvironmentProvider` to create or resume one Resource and acquire a fresh single-use `EnvironmentRuntimeAttachment`.
 
 The Harness owns the exhaustive attachment-to-binding adapter:
 
@@ -619,7 +674,7 @@ Provider-package failures retain their stable safe provider classification when 
 
 Direct Local is the first-party Harness operation backend for a `DirectLocalEnvironmentAttachment`. The provider package owns its desired configuration, existing-root validation, logical managed scope, and fresh attachment. The Harness binding owns provider-neutral file, shell, process, output, and port semantics plus run-local processes, staging, retained output, cancellation, and cleanup. Neither layer creates, removes, pauses, or otherwise owns the configured Host directory.
 
-All paths are explicit trusted Host values and are canonicalized at binding entry. The Direct Local Manager has already validated the exact existing root before issuing the attachment. The binding uses that shared root and never removes it. `read_only` removes every file-mutation action from the published descriptor and independently rejects any attempted mutation through the binding. Because Direct Local does not sandbox arbitrary child filesystem effects, a read-only configuration must have no allowed executables or shell profiles; otherwise attachment or binding entry rejects it instead of claiming the root is protected.
+All paths are explicit trusted Host values and are canonicalized at binding entry. The Direct Local Provider has already validated the exact existing root before issuing the attachment. The binding uses that shared root and never removes it. `read_only` removes every file-mutation action from the published descriptor and independently rejects any attempted mutation through the binding. Because Direct Local does not sandbox arbitrary child filesystem effects, a read-only configuration must have no allowed executables or shell profiles; otherwise attachment or binding entry rejects it instead of claiming the root is protected.
 
 Direct Local intentionally permits several Agents, attachments, and ordinary Host processes to use the configured directory concurrently. It provides the documented atomicity of each individual operation but no cross-process transaction, snapshot, exclusive lease, or serializable workspace view. It rejects observed traversal and symlink escape, but it is not a race-hardened filesystem broker against a hostile same-account process replacing ancestor directory entries between observation and use. This does not widen the stated Direct Local process boundary: any allowed child already runs with the embedding OS account and can have ambient filesystem reach. A Host that needs hostile-workload isolation uses an EIP provider rather than presenting Direct Local sharing as that security boundary.
 
@@ -648,7 +703,7 @@ Recovery is layered:
 - a provider binding may reconnect or refresh a session while authenticated identity and generation remain unchanged;
 - an observed generation change marks that binding unavailable and requires a fresh higher binding revision through the controller;
 - Host process loss creates a new Harness run and a fresh `EnvironmentRunBinding`;
-- provider resource loss is recreated or resumed only through the provider Manager according to Host policy and Host-selected provider resource state;
+- provider resource loss is recreated or resumed only through the EnvironmentProvider according to Host policy and Host-selected provider resource state;
 - an ambiguous mutation is reconciled through provider idempotency or receipt evidence and is never replayed merely because readiness or transport recovered.
 
 Readiness and live availability are observations, not authority or continuation state. They are not stored in `HarnessState`.
@@ -854,7 +909,7 @@ The public semantic protocols retain the useful SDK split:
 
 - `FileOperator` is the provider-neutral async file contract;
 - the Direct Local binding maps configured logical roots directly to host files with canonical containment and symlink-escape checks;
-- the Harness-owned EIP file adapter maps the same contract through `converge-agent-envd-client` to an EIP-backed binding;
+- the Harness-owned EIP file adapter maps the same contract through `a13n-envd-client` to an EIP-backed binding;
 - `VirtualFileOperator` is the stable mount-and-routing facade used by `BoundEnvironment.files`;
 - the provider shell and process protocols are the provider-neutral command contracts;
 - Direct Local and EIP-backed bindings are first-class implementations whose concrete facets remain package-owned.
@@ -1590,7 +1645,7 @@ Carrier loss after a mutation is unknown unless `agent-envd` can replay the same
 15. For EIP-backed bindings, trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket do not change method semantics; every later carrier/session initializes fresh without automatic mutation replay or transfer resume.
 16. Binding entry establishes trustworthy identity, descriptors, routing, and readiness paths; it does not imply that unrelated operation resources are already provisioned.
 17. Scoped readiness is typed, idempotent, binding-revision- and generation-bound, requires non-empty aggregate operation coverage across a non-empty selected binding set, and never restores or grants authority.
-18. The Harness owns exhaustive runtime-attachment adaptation but delegates generated wire models, JSON-RPC, raw-transfer carrier mapping, requester session correlation, integrity bookkeeping, and carrier cleanup to `converge-agent-envd-client`; the Environment Provider package owns session sources, while the Host/control service owns reverse-WebSocket listener authentication and attachment routing.
+18. The Harness owns exhaustive runtime-attachment adaptation but delegates generated wire models, JSON-RPC, raw-transfer carrier mapping, requester session correlation, integrity bookkeeping, and carrier cleanup to `a13n-envd-client`; the Environment Provider package owns session sources, while the Host/control service owns reverse-WebSocket listener authentication and attachment routing.
 19. Environment file transfer is client-neutral and model-agnostic; model media conversion and product browser delivery are downstream policies, not envd behavior.
 20. Command and retained-output producers apply finite in-memory, per-capture, active-resource, and aggregate-spool ceilings during incremental production; streamable file, stdin, and search inputs are not converted into arbitrary whole-object provider caps. References, cursors, and process handles are never portable state.
 21. Port operations only observe authorized local TCP state and never imply provider ingress or public exposure.

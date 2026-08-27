@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     ContentFilterCapability,
     ContentFilterConfiguration,
     HarnessBuilder,
@@ -77,8 +77,8 @@ async def test_content_filter_handles_user_and_tool_return_media_without_text_sp
         assert "exceeds request limits" in filtered_content[1]
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -92,7 +92,7 @@ async def test_content_filter_handles_user_and_tool_return_media_without_text_sp
             Capability(tools=[attach], id="content-filter-tools"),
         ),
     )
-    result = await executable.run([safe_image], bindings=RunBindings.local())
+    result = await executable.run([safe_image], bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert safe_image.url == "https://example.com/safe.png"

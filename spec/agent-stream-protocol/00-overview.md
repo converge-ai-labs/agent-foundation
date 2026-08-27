@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`converge-agent-stream-protocol` is the shared process-local adapter from public Harness stream items to Agent User Interaction Protocol events. One `HarnessAguiObserver` converts the items for one Harness Run, uses standard AG-UI events where their semantics match directly, falls back to `CUSTOM` for every other public observation, applies an optional Host processor, and accumulates the resulting events in observation order. A fresh observer can atomically reconstruct that process-local state by folding a finite Host-supplied history of the same public source items before live observation continues.
+`a13n-stream-protocol` is the shared process-local adapter from public Harness stream items to Agent User Interaction Protocol events. One `HarnessAguiObserver` converts the items for one Harness Run, uses standard AG-UI events where their semantics match directly, falls back to `CUSTOM` for every other public observation, applies an optional Host processor, and accumulates the resulting events in observation order. A fresh observer can atomically reconstruct that process-local state by folding a finite Host-supplied history of the same public source items before live observation continues.
 
 The package does not define another execution or lifecycle layer. It does not run or resume an Agent, manufacture missing Harness lifecycle observations, accept application commands, retain or select durable history, assign Host event identities, or own a transport. A Host consumes each live Harness item once, routes each Run to one observer, and decides whether and how to retain source history, persist, broadcast, filter, compact, or render the returned AG-UI events.
 
@@ -26,8 +26,8 @@ The [Harness event contract](../agent-harness/12-events-observability-and-usage.
 
 ```mermaid
 flowchart LR
-    Host[Agent UI or another Host] --> Protocol[converge-agent-stream-protocol]
-    Protocol --> Harness[converge-agent-harness]
+    Host[Agent UI or another Host] --> Protocol[a13n-stream-protocol]
+    Protocol --> Harness[a13n-harness]
     Harness --> Pydantic[Pydantic AI]
     Host --> Store[Host persistence and fan-out]
     Host --> Surface[WebUI or TUI]
@@ -125,8 +125,8 @@ A text or reasoning part delta or end without a preceding start is normalized in
 
 An observation without a direct standard representation is never silently dropped. It becomes:
 
-- `converge.harness.<kind>` for `HarnessExtensionEvent`; or
-- `converge.pydantic_ai.<event_kind>` for another Pydantic AI event.
+- `a13n.harness.<kind>` for `HarnessExtensionEvent`; or
+- `a13n.pydantic_ai.<event_kind>` for another Pydantic AI event.
 
 The `CUSTOM.value` is:
 
@@ -148,7 +148,7 @@ A source item with a direct standard mapping is not duplicated as a second custo
 
 Agent Stream Protocol translates explicit lifecycle facts; it does not create them from local control flow. Constructing or resuming an observer, opening a subscriber, catching an exception, losing a transport, or committing Host state does not by itself emit a run lifecycle event.
 
-Model-request lifecycle extensions emitted by the Harness use the generic custom fallback because they are not equivalent to AG-UI Run lifecycle. Completed, failed, and cancelled terminal results have direct standard AG-UI terminal mappings. A suspended result remains `converge.harness.run_result` with its exact deferred calls and approvals because one aggregate AG-UI interrupt would invent continuation correlation. If a reusable Run-start observation is required, the Harness must first expose that fact publicly; the Protocol does not infer `RUN_STARTED` from the first token or model request.
+Model-request lifecycle extensions emitted by the Harness use the generic custom fallback because they are not equivalent to AG-UI Run lifecycle. Completed, failed, and cancelled terminal results have direct standard AG-UI terminal mappings. A suspended result remains `a13n.harness.run_result` with its exact deferred calls and approvals because one aggregate AG-UI interrupt would invent continuation correlation. If a reusable Run-start observation is required, the Harness must first expose that fact publicly; the Protocol does not infer `RUN_STARTED` from the first token or model request.
 
 A Harness stream that ends through an unhandled exception or cleanup failure without a terminal item does not gain a synthetic terminal event. Host acceptance, persistence commit, cancellation request, reconnect, and external delivery remain separate Host facts.
 

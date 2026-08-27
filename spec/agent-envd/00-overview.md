@@ -20,7 +20,7 @@ flowchart LR
         Control[Host HTTP dialer or<br/>WebSocket listener and EIP requester]
     end
 
-    subgraph Client[converge-agent-envd-client]
+    subgraph Client[a13n-envd-client]
         Generated[Generated models, codecs, and typed requests]
         Runtime[Bounded session and transfer runtime]
     end

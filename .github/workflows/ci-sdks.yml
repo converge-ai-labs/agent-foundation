@@ -12,7 +12,6 @@ on:
       - ".github/workflows/release-foundation-cli.yml"
       - ".pre-commit-config.yaml"
       - "Cargo.toml"
-      - "Makefile"
       - "pyproject.toml"
       - "sdk/**"
   push:
@@ -26,7 +25,6 @@ on:
       - ".github/workflows/release-foundation-cli.yml"
       - ".pre-commit-config.yaml"
       - "Cargo.toml"
-      - "Makefile"
       - "pyproject.toml"
       - "sdk/**"
   workflow_dispatch:
@@ -45,6 +43,7 @@ concurrency:
 jobs:
   changes:
     name: Detect SDK changes
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.filter.outputs.go }}
@@ -87,7 +86,6 @@ jobs:
               - '.github/workflows/ci-sdks.yml'
               - '.github/workflows/release-foundation-cli.yml'
               - '.pre-commit-config.yaml'
-              - 'Makefile'
               - 'sdk/rust/Cargo.toml'
               - 'sdk/rust/Cargo.lock'
               - 'sdk/rust/src/**'
@@ -169,7 +167,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.foundation_cli == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os: [ubuntu-latest, windows-2025]
     steps:

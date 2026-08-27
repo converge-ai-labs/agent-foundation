@@ -1,8 +1,15 @@
 # Agent Application Example
 
-This standalone project shows one Python application adopting `converge-agent-harness` progressively. Start with the minimal embedded Agent, add first-party Capabilities and a Direct Local Environment, then add Host-owned checkpoint selection, fencing, and recovery. The three layers share one explicit Agent build path instead of presenting separate application templates.
+This project is one small, complete application: an offline streaming chat that keeps one conversation across multiple turns, persists `HarnessState`, and resumes the same Thread after the process is restarted.
 
-All commands run offline. Deterministic Pydantic AI `FunctionModel` implementations replace only the external model provider; the Harness build, Agent loop, tools, run lifecycle, state, usage, and result boundaries are real.
+It intentionally uses only:
+
+- one offline Pydantic AI `FunctionModel`;
+- one local demo Environment;
+- one state file;
+- one `ConversationApplication` execution path.
+
+Environment permutations and advanced ownership combinations belong in the Harness Environment tests and documentation, not in this application example.
 
 ## Run It
 
@@ -12,204 +19,131 @@ From the repository root:
 make examples-check-all
 ```
 
-Or run this project directly:
+Or run the application directly:
 
 ```bash
 cd examples/agent-app
 uv sync --locked
-
-uv run agent-app-example basic "Describe the embedded Harness path."
-uv run agent-app-example local
-uv run agent-app-example host
-uv run pytest
+uv run agent-app-example
 ```
 
-Retain the local workspace or Host records in caller-owned directories when you want to inspect them:
+Enter several messages and use `/quit` to stop. The default state file is `.agent-app/conversation-state.json`; the demo Environment workspace is `.agent-app/workspace`.
+
+Start the command again and the next turn resumes the same Harness Thread and message history.
+
+The same lifecycle can be demonstrated non-interactively:
 
 ```bash
-uv run agent-app-example local --workspace ./agent-workspace --review-style Broad
-uv run agent-app-example host --state-dir ./host-state
+uv run agent-app-example \
+  --state ./conversation-state.json \
+  "Remember that the release is Friday." \
+  "When is the release?"
+
+uv run agent-app-example \
+  --state ./conversation-state.json \
+  "Continue after the application restart."
 ```
 
-Do not put `host-state` inside an Agent workspace or disposable Environment. The Host must be able to select a checkpoint after the worker, process, or Environment that produced it is gone.
+Use `--workspace PATH` only when you want the single demo Environment rooted somewhere else.
 
-## Progressive Structure
-
-```text
-src/converge_agent_app_example/
-  application.py  # Shared build path and minimal embedded run
-  workspace.py    # Local Capabilities, tools, suspension, and resume
-  recovery.py     # Host-owned execution and recovery orchestration
-  store.py        # Teaching-only local Host authority store
-  cli.py          # One command exposing the three layers
-```
-
-```mermaid
-flowchart LR
-    Basic[Basic embedded Agent] --> Local[Local tools and working state]
-    Local --> Host[Host persistence and recovery]
-    Shared[Shared explicit build_agent path] --> Basic
-    Shared --> Local
-    Shared --> Host
-```
-
-The layers are alternatives you can run independently, not lifecycle stages that must all execute in one process. Copy only the layer your application needs.
-
-## Layer 1: Basic Embedded Agent
-
-`application.py` contains the normal code-library path:
-
-```python
-executable = build_agent(model=model)
-
-async with executable:
-    result = await executable.run(
-        prompt,
-        bindings=RunBindings.local(),
-    )
-
-output = result.output_or_raise()
-```
-
-`build_agent()` uses:
-
-```python
-HarnessBuilder(configured_plugins_enabled=False).build_code(...)
-```
-
-Disabling configured plugins makes the example composition independent from ambient plugin environment variables. This layer selects no optional Capability, tool, child Agent, or configured Environment operation. `RunBindings.local()` still supplies the required no-op Environment binding internally.
-
-The basic path is:
-
-```mermaid
-flowchart LR
-    App[Python application] --> Spec[AgentSpec]
-    Spec --> Builder[HarnessBuilder]
-    Builder --> Executable[ExecutableAgent]
-    Bindings[Fresh RunBindings.local] --> Run[ExecutableAgent.run]
-    Executable --> Run
-    Run --> Result[HarnessRunResult]
-```
-
-Pass any Pydantic AI model or model name in a real application:
-
-```python
-result = await run_basic_agent(
-    "Explain the change.",
-    model="openai:gpt-5-mini",
-)
-```
-
-Install the matching provider dependency and configure its credentials before using a real model.
-
-## Layer 2: Local Capabilities and Environment
-
-`workspace.py` reuses `build_agent()` and adds definition-selected:
-
-- `DynamicEnvironmentCapability` for file tools;
-- `WorkingStateCapability` for tasks and notes;
-- `UserInteractionCapability` for structured suspension.
-
-For every Harness run, the application creates fresh:
-
-- a Direct Local `ManagedEnvironment` through the Host-facing Provider Manager;
-- a runtime attachment transferred into a Direct Local Harness binding and topology;
-- `InvocationPolicyCapability` authorizing the teaching workspace;
-- `RunBindings` identity and run-local collaborators.
-
-The offline model calls `write`, `task_create`, `note`, and `ask_user_question`. The first run suspends, the application rebuilds the executable and current bindings through a second Provider create/attachment scope, and a second Harness run resumes from the portable `HarnessState` plus a correlated `DeferredToolResume`. The Harness does not resume the Provider resource.
-
-```mermaid
-flowchart LR
-    Model[Offline FunctionModel] --> Agent[Shared Agent build path]
-    Agent --> Capabilities[Definition Capabilities]
-    Capabilities --> Tools[File and working-state tools]
-    Tools --> Boundary[Mandatory execution boundary]
-    Host[Host lifecycle] --> Manager[Direct Local Manager]
-    Manager --> Attachment[Fresh attachment]
-    Attachment --> Boundary
-    Boundary --> Environment[Direct Local workspace]
-    Agent --> Suspend[Structured deferred question]
-    Suspend --> Resume[Fresh executable and bindings]
-```
-
-The allow-all evaluator is appropriate only for this isolated example workspace. A real Host evaluates current identity, tool metadata, normalized arguments, and resources before each managed invocation.
-
-## Layer 3: Host Persistence and Recovery
-
-`recovery.py` and `store.py` add application-owned durable lifecycle authority without treating `HarnessState` as that authority. The example keeps separate:
-
-- the portable continuation candidate exported by Harness;
-- the Host-owned Execution, ExecutionAttempt, opaque fence, selected checkpoint, and terminal result;
-- fresh identity, model, executable, and Environment bindings reconstructed for every attempt.
-
-The first model emits completed thinking, visible text, and unfinished thinking before a simulated interruption. Harness returns a safe state candidate that retains the visible text and completed thinking while excluding unfinished thinking. The Host selects that candidate without committing the Harness-local failure as its terminal result. A reopened Host store then atomically replaces the lost attempt without its fence, builds a fresh model and executable, recreates bindings, resumes from the selected checkpoint, and performs a separate fenced terminal commit.
+## Application Flow
 
 ```mermaid
 sequenceDiagram
-    participant Host
-    participant Store as Host store
+    participant User
+    participant App as ConversationApplication
+    participant State as HarnessState file
+    participant Environment as Demo Environment Provider
     participant Harness
 
-    Host->>Store: create Execution and acquire attempt 1
-    Host->>Harness: run with fresh model, executable, and bindings
-    Harness-->>Host: failed result with safe state candidate
-    Host->>Store: persist and select checkpoint 1
-    Host->>Store: atomically replace lost attempt 1 with attempt 2
-    Host->>Store: reject stale attempt 1 write
-    Host->>Harness: rebuild and resume selected state
-    Harness-->>Host: completed result with new state candidate
-    Host->>Store: select checkpoint 2 and commit completion
+    User->>App: first prompt
+    App->>State: load state or start a new Thread
+    App->>Harness: stream prompt with previous_state and Environment
+    Harness->>Environment: create, enter, acquire fresh attachment
+    Harness-->>App: text events and terminal result
+    Harness->>Environment: release, exit, destroy
+    App->>State: atomically commit completed state
+
+    User->>App: next prompt
+    App->>State: load previous completed state
+    App->>Harness: stream next turn
+    Harness-->>App: continued response and next state
+    App->>State: atomically commit completed state
+
+    Note over App,State: A new process constructs a new application and loads the same state file
 ```
 
-`JsonFileHostStore` writes bounded teaching records:
+The Provider, Resource, attachment, credentials, and grants are fresh authority and are not serialized into `HarnessState`. The checkpoint can contain portable provider-defined Environment continuation state, which the Harness restores only into a compatible freshly bound Environment. Conversation history resumes because the application reloads the last completed state and passes it as `previous_state`.
+
+## Main API
+
+```python
+from pathlib import Path
+
+from a13n_agent_app_example import (
+    ConversationApplication,
+    create_demo_environment,
+)
+
+state_path = Path("conversation-state.json")
+environment = create_demo_environment(Path("workspace"))
+
+async with ConversationApplication(
+    model=model,
+    state_path=state_path,
+    environment=environment,
+) as application:
+    async with application.stream_turn("Hello") as stream:
+        async for text in stream:
+            print(text, end="", flush=True)
+```
+
+`ConversationApplication` owns one reusable `ExecutableAgent` for its process lifetime. For each turn it:
+
+1. serializes turn execution with an async lock;
+2. loads the last successfully committed `HarnessState` if present;
+3. opens one explicitly scoped turn stream with the Environment and `previous_state`;
+4. yields text start and delta events immediately;
+5. closes the Harness stream and Environment lifecycle if the consumer stops early;
+6. requires a successful terminal result;
+7. atomically replaces the state file with the returned continuation state.
+
+Closing the application closes its executable. The Harness owns the demo Provider's temporary Resource lifecycle for each turn: create, Resource entry, attachment acquisition, attachment release, Resource exit, and destroy.
+
+A failed or abandoned turn does not replace the last completed state. Callers must enter `stream_turn()` with `async with`; leaving that scope deterministically closes the Harness stream and temporary Environment lifecycle. The next application instance can therefore recover only from a committed checkpoint.
+
+## Source Layout
 
 ```text
-<state-dir>/
-  executions/
-    execution-1/
-      execution.json
-      checkpoints/
-        checkpoint-1.json
-        checkpoint-2.json
+src/a13n_agent_app_example/
+  application.py  # Multi-turn streaming and HarnessState persistence
+  environment.py  # The single offline demo Environment
+  cli.py          # Interactive and non-interactive entry point
+
+tests/
+  test_application.py  # Multi-turn chat, restart recovery, failure, and cleanup
 ```
 
-The store demonstrates payload-before-authority ordering, orphan-payload reconciliation, immutable checkpoint selection, Host-authorized attempt replacement, fresh fencing, stale-attempt rejection, and terminal separation. Use only one active store caller for a root at a time. Its `asyncio.Lock` does not coordinate separate store instances or processes, so this is not a distributed lease or production database implementation.
+## Using a Real Model
 
-A production Host must reconstruct current authority before every run and keep these facts outside `HarnessState`:
+The runnable CLI uses an offline `FunctionModel`, but `ConversationApplication` accepts any native Pydantic AI `Model`:
 
-| Concern                                                | Durable owner             |
-| ------------------------------------------------------ | ------------------------- |
-| Definition revision and artifact selection             | Host                      |
-| Current identity, policy, grants, and credentials      | Host                      |
-| Desired Environment topology and provider launch state | Host/provider integration |
-| ExecutionAttempt generation, lease, and fence          | Host                      |
-| Selected checkpoint and provenance                     | Host                      |
-| Side-effect reconciliation and pending delivery        | Host/provider integration |
-| Terminal result, lifecycle events, and accounting      | Host/product              |
+```python
+from a13n_harness import infer_model
 
-A checkpoint records observations; it does not make an external mutation exactly once. After an uncertain side effect, reconcile provider state or reuse an operation-specific idempotency contract before replaying work.
+model = infer_model(
+    "openai-responses:gpt-5",
+    provider_factory=provider_factory,
+    patches=(apply_provider_patch,),
+)
+```
 
-## Boundaries Demonstrated
+The caller owns model credentials, SDK clients, retry policy, and client cleanup.
 
-| Part                                         | Basic                     | Local                     | Host                      |
-| -------------------------------------------- | ------------------------- | ------------------------- | ------------------------- |
-| Shared explicit `HarnessBuilder` composition | Yes                       | Yes                       | Yes                       |
-| Fresh run bindings                           | Yes                       | Yes                       | Yes                       |
-| Optional first-party Capabilities            | No                        | Yes                       | No                        |
-| Direct Local Environment tools               | No                        | Yes                       | No                        |
-| Harness suspension and resume                | No                        | Yes                       | Resume after interruption |
-| Host-selected durable checkpoint             | No                        | No                        | Yes                       |
-| Attempt fence and terminal authority         | No                        | No                        | Yes                       |
-| External model provider                      | Deterministic replacement | Deterministic replacement | Deterministic replacement |
+## Boundaries
 
-The Host store and offline models are application teaching code, not additional Agent Foundation APIs.
-
-## Next Steps
-
-- Read the [Agent Harness guide](../../docs/agent-harness/index.md) for the public application surface.
-- Read [State and Resume](../../docs/agent-harness/state-and-resume.md) before persisting continuation data.
-- Read the [Environment Provider guide](../../docs/agent-environment-provider/index.md) for Manager lifecycle, state, attachments, and plugin development.
-- Read [Embedding in a Host](../../docs/agent-harness/hosting.md) before adding durable lifecycle authority.
-- Use the [plugin integration example](../plugins/README.md) for packaged middleware and Environment extensions.
-- Consult the normative [Agent Harness specification](../../spec/agent-harness/README.md) for ownership and compatibility contracts.
+- `HarnessState` is portable conversation continuation data, not live Environment authority.
+- The state file is a small single-process example, not a distributed checkpoint store or lease protocol.
+- The local demo Environment is intentionally the only Environment in this application.
+- Advanced multi-Environment routing and mixed ownership remain documented in the [Environment guide](../../docs/agent-harness/environments.md).
+- Production Host lifecycle and checkpoint authority are documented in [Embedding in a Host](../../docs/agent-harness/hosting.md).

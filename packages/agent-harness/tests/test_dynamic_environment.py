@@ -5,59 +5,61 @@ import json
 import sys
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-import converge_agent_harness.environment.local.retention as local_retention_module
-import converge_agent_harness.execution as execution_module
-import converge_agent_harness.toolsets.files as file_toolset_module
+import a13n_harness.environment.local.retention as local_retention_module
+import a13n_harness.execution as execution_module
+import a13n_harness.toolsets.files as file_toolset_module
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     ArgvCommand,
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentError,
     EnvironmentPath,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
     ModelRecoveryPolicy,
     RunBindings,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_run_binding,
     create_noop_environment_run_binding,
 )
-from converge_agent_harness.environment.dynamic import _DynamicEnvironmentRunCapability
-from converge_agent_harness.environment.files import FileEntriesResult, FileMetadata, FileWriteResult
-from converge_agent_harness.environment.local.binding import (
+from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
+from a13n_harness.environment.files import FileEntriesResult, FileMetadata, FileWriteResult
+from a13n_harness.environment.local.binding import (
     DirectLocalEnvironmentProviderBinding,
     _DirectLocalFilePolicy,
 )
-from converge_agent_harness.environment.local.files import LocalFileOperator
-from converge_agent_harness.environment.models import EnvironmentOperationReceipt
-from converge_agent_harness.environment.providers import FileScopeSelection
-from converge_agent_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
-from converge_agent_harness.plugins import (
+from a13n_harness.environment.local.files import LocalFileOperator
+from a13n_harness.environment.models import EnvironmentOperationReceipt
+from a13n_harness.environment.providers import FileScopeSelection
+from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
+from a13n_harness.plugins import (
     AbstractHarnessPlugin,
     PluginOrdering,
     PluginRunExchange,
     PluginRunNext,
     PluginRunResponse,
 )
-from converge_agent_harness.result import HarnessRunResult
-from converge_agent_harness.tools import (
+from a13n_harness.result import HarnessRunResult
+from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     HarnessTool,
     HarnessToolMetadata,
@@ -65,13 +67,13 @@ from converge_agent_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from converge_agent_harness.toolsets.files import FileToolset
-from converge_agent_harness.toolsets.output import (
+from a13n_harness.toolsets.files import FileToolset
+from a13n_harness.toolsets.output import (
     DEFAULT_TOOL_OUTPUT_CHARS,
     disclose_sequence_field,
     tool_output_size,
 )
-from converge_agent_harness.toolsets.shell import ShellToolset, _CompactReferenceTable, _fit_stream_prefixes
+from a13n_harness.toolsets.shell import ShellToolset, _CompactReferenceTable, _fit_stream_prefixes
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -267,8 +269,8 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2),
         state_limits=EnvironmentStateLimits(),
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -293,7 +295,7 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         default_binding_id="binding-1",
     )
 
-    async with executable.stream("wait", bindings=RunBindings.local(environment=aggregate)) as run:
+    async with executable.stream("wait", bindings=RunBindings.embedded(environment=aggregate)) as run:
         pending = asyncio.create_task(run.__anext__())
         await started.wait()
         await aggregate.controller.apply(request)
@@ -318,13 +320,13 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_s
         calls.append((messages, info))
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
-    result = await executable.run("inspect", bindings=RunBindings.local())
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert len(calls) == 1
@@ -406,15 +408,15 @@ async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", retries={"tools": 2}),
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 2}),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "write",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -465,8 +467,8 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -480,7 +482,7 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
     )
     result = await executable.run(
         "mutate files",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -517,8 +519,8 @@ async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", retries={"tools": 1}),
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 1}),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -532,7 +534,7 @@ async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path
     )
     result = await executable.run(
         "mutate files",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -580,15 +582,15 @@ async def test_copy_streams_across_bindings_while_shell_supersedes_other_mutatio
             assert returns[0].content["ok"] is True
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "copy",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=_two_local_bindings(
                 first_root,
                 second_root,
@@ -633,15 +635,15 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "view",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -710,15 +712,15 @@ async def test_exact_edits_are_agent_friendly_and_failed_batch_is_not_published(
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "edit",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -761,15 +763,15 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "grep",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -832,8 +834,8 @@ async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_p
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -846,7 +848,7 @@ async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_p
     )
     result = await executable.run(
         "write",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -979,15 +981,15 @@ async def test_invalid_compact_reference_returns_stable_managed_tool_result(tmp_
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "inspect",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -1133,15 +1135,15 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "inspect",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=aggregate,
             capabilities=(InvocationPolicyCapability(evaluator=RefreshOnAuthorize()),),
         ),
@@ -1154,7 +1156,7 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
 
 async def test_managed_authorization_is_fenced_by_binding_revision(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path)
-    run_bindings = RunBindings.local(environment=aggregate)
+    run_bindings = RunBindings.embedded(environment=aggregate)
     replacement = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
             environment_id="dynamic-environment-test",
@@ -1243,8 +1245,8 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
         assert json.loads(spilled.read_text(encoding="utf-8")) == produce()
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -1254,7 +1256,7 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
     )
     result = await executable.run(
         "produce",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -1293,15 +1295,15 @@ async def test_unmanaged_large_json_result_crosses_the_same_spill_boundary(tmp_p
         assert json.loads(spilled.read_text(encoding="utf-8")) == produce()
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(Capability(tools=[produce], id="native-large-result-tools"),),
     )
     result = await executable.run(
         "produce",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path)),
     )
 
     assert result.output_or_raise() == "done"
@@ -1357,13 +1359,13 @@ async def test_empty_topology_tool_returns_typed_unavailable_result_after_policy
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
-    result = await executable.run("inspect", bindings=RunBindings.local(capabilities=(_policy(),)))
+    result = await executable.run("inspect", bindings=RunBindings.embedded(capabilities=(_policy(),)))
 
     assert result.output_or_raise() == "done"
     assert observed["ok"] is False
@@ -1396,15 +1398,15 @@ async def test_large_environment_result_is_bounded_without_retry_shaped_failure(
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "read",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -1430,13 +1432,13 @@ async def test_agent_spec_tool_retries_exhaust_once_without_environment_retry_lo
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", retries={"tools": 2}),
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 2}),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
-    result = await executable.run("inspect", bindings=RunBindings.local(capabilities=(_policy(),)))
+    result = await executable.run("inspect", bindings=RunBindings.embedded(capabilities=(_policy(),)))
 
     assert result.status == "failed"
     assert model_calls == 3
@@ -1497,7 +1499,7 @@ async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: boo
         )
 
     @asynccontextmanager
-    async def prepare(selected: EnvironmentPath, action: EnvironmentAction):
+    async def prepare(selected: EnvironmentPath, action: EnvironmentAction) -> AsyncGenerator[Any]:
         nonlocal topology_revision
         source = action is EnvironmentAction.FILE_COPY_SOURCE
         prepared_revisions.append(selected.binding_revision)
@@ -1609,8 +1611,8 @@ async def test_topology_event_adapter_survives_model_recovery_boundary(tmp_path:
     aggregate = create_noop_environment_run_binding(
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2)
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=ModelRecoveryPolicy(
@@ -1621,7 +1623,7 @@ async def test_topology_event_adapter_survives_model_recovery_boundary(tmp_path:
             backoff_max_seconds=0,
         ),
     )
-    async with executable.stream("start", bindings=RunBindings.local(environment=aggregate)) as run:
+    async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         pending = asyncio.create_task(run.__anext__())
         await prompt_started.wait()
         await aggregate.controller.apply(_dynamic_local_request(tmp_path))
@@ -1650,13 +1652,13 @@ async def test_topology_event_from_result_middleware_precedes_terminal_result(tm
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(plugin,),
     )
-    async with executable.stream("start", bindings=RunBindings.local(environment=aggregate)) as run:
+    async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         items = [item async for item in run]
 
     topology_events = _topology_context_events(items)
@@ -1720,13 +1722,13 @@ async def test_emitter_topology_events_pass_through_plugin_middleware(tmp_path: 
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(apply_plugin, transform_plugin),
     )
-    async with executable.stream("start", bindings=RunBindings.local(environment=aggregate)) as run:
+    async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         items = [item async for item in run]
 
     topology_events = _topology_context_events(items)
@@ -1778,13 +1780,13 @@ async def test_terminal_drains_topology_burst_larger_than_emitter_capacity() -> 
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(plugin,),
     )
-    async with executable.stream("start", bindings=RunBindings.local(environment=aggregate)) as run:
+    async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         items = [item async for item in run]
 
     assert len(_topology_context_events(items)) == change_count
@@ -1819,15 +1821,15 @@ async def test_terminal_waits_for_delayed_topology_adapter_drain(
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(plugin,),
     )
 
     async def collect() -> list[Any]:
-        async with executable.stream("start", bindings=RunBindings.local(environment=aggregate)) as run:
+        async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
             return [item async for item in run]
 
     collect_task = asyncio.create_task(collect())
@@ -1913,7 +1915,7 @@ async def test_file_toolset_list_continues_after_a_fully_filtered_raw_page() -> 
 @requires_posix_process_groups
 async def test_process_output_is_drained_once_without_model_output_references(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path, process_output=True)
-    run_bindings = RunBindings.local(environment=aggregate)
+    run_bindings = RunBindings.embedded(environment=aggregate)
 
     async with aggregate.bind(run_id="run-drain", instance=run_bindings.instance) as environment:
         toolset = ShellToolset(
@@ -1953,7 +1955,7 @@ async def test_process_output_is_drained_once_without_model_output_references(tm
 @requires_posix_process_groups
 async def test_process_output_offsets_advance_only_for_delivered_bytes(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path, process_output=True)
-    async with aggregate.bind(run_id="run-offset", instance=RunBindings.local().instance) as environment:
+    async with aggregate.bind(run_id="run-offset", instance=RunBindings.embedded().instance) as environment:
         toolset = ShellToolset(processes=environment.processes, outputs=environment.outputs)
         ctx = cast(Any, SimpleNamespace())
         started = await toolset.environment_process_start(
@@ -1991,7 +1993,7 @@ async def test_process_output_offsets_advance_only_for_delivered_bytes(tmp_path:
 @requires_posix_process_groups
 async def test_process_output_projection_budgets_serialized_replacement_text(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path, process_output=True)
-    async with aggregate.bind(run_id="run-invalid-output", instance=RunBindings.local().instance) as environment:
+    async with aggregate.bind(run_id="run-invalid-output", instance=RunBindings.embedded().instance) as environment:
         toolset = ShellToolset(processes=environment.processes, outputs=environment.outputs)
         ctx = cast(Any, SimpleNamespace())
         started = await toolset.environment_process_start(
@@ -2044,7 +2046,7 @@ async def test_model_process_release_retries_after_partial_output_cleanup(
         return await original_release(store, **kwargs)
 
     monkeypatch.setattr(local_retention_module.LocalRetentionStore, "release", cancel_second)
-    async with aggregate.bind(run_id="run-release", instance=RunBindings.local().instance) as environment:
+    async with aggregate.bind(run_id="run-release", instance=RunBindings.embedded().instance) as environment:
         toolset = ShellToolset(processes=environment.processes, outputs=environment.outputs)
         ctx = cast(Any, SimpleNamespace())
         started = await toolset.environment_process_start(
@@ -2079,7 +2081,7 @@ async def test_model_process_release_retries_after_partial_output_cleanup(
 
 async def test_shell_toolset_composes_directly_over_bound_provider_ports(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path)
-    run_bindings = RunBindings.local(environment=aggregate)
+    run_bindings = RunBindings.embedded(environment=aggregate)
 
     async with aggregate.bind(run_id="run-1", instance=run_bindings.instance) as environment:
         toolset = ShellToolset(
@@ -2209,7 +2211,7 @@ async def test_file_toolset_pins_one_revision_across_compound_write() -> None:
             )
 
         @asynccontextmanager
-        async def open_files(self, selection: FileScopeSelection):
+        async def open_files(self, selection: FileScopeSelection) -> AsyncGenerator[Any]:
             yield revisions[selection.resolved_path.binding_revision]
 
     toolset = FileToolset(cast(Any, revisions[1]), file_scopes=Scopes())

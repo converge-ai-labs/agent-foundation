@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentContext,
     EnvironmentPath,
     HarnessBuilder,
@@ -125,8 +125,8 @@ async def test_tool_runtime_metadata_is_reused_across_inner_recovery_attempts() 
             raise RuntimeError("stream interrupted")
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(capability,),
@@ -138,7 +138,7 @@ async def test_tool_runtime_metadata_is_reused_across_inner_recovery_attempts() 
         ),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert calls == 2

@@ -2,14 +2,14 @@
 
 ## Design Position
 
-Agent UI is the complete local single-user workstation for composing and operating `agent-harness` Agents. The Python distribution `converge-agent-ui` owns reloadable product configuration, explicit local Skill discovery and managed package revisions, immutable Agent and Environment snapshots, Codex-style local Sessions, Environment Provider resource orchestration, foreground root execution, async-only subagent jobs, hybrid local persistence, and one shared application service for WebUI and TUI.
+Agent UI is the complete local single-user workstation for composing and operating `agent-harness` Agents. The Python distribution `a13n-ui` owns reloadable product configuration, explicit local Skill discovery and managed package revisions, immutable Agent and Environment snapshots, Codex-style local Sessions, Environment Provider resource orchestration, foreground root execution, async-only subagent jobs, hybrid local persistence, and one shared application service for WebUI and TUI.
 
 The executable has two presentation modes:
 
 ```text
-converge-agent-ui          # equivalent to `converge-agent-ui webui`
-converge-agent-ui webui
-converge-agent-ui tui
+a13n-ui          # equivalent to `a13n-ui webui`
+a13n-ui webui
+a13n-ui tui
 ```
 
 WebUI is the default. Both modes create the same application service, load the same accepted configuration generation, open the same SQLite metadata and compressed-file stores, execute the same pinned Agents in the same Session Environment, and consume the same retained/live [post-processor AG-UI sequence](../agent-stream-protocol/00-overview.md). A mode changes only presentation and transport lifecycle.
@@ -56,7 +56,7 @@ An Agent is the exact composition of Model, Prompt, Plugin, available Skill, def
 | Desired product definitions                                           | Reloadable Agent UI files          | Models, Prompts, Plugins, local Skill sources/packages, Agents, and Environments accepted as one generation |
 | Immutable resolved composition                                        | Agent UI snapshot resolver         | Publishes content-addressed Agent and Environment snapshots                                                 |
 | Native Agent construction and loop                                    | Harness and Pydantic AI            | Calls public build/stream APIs with fresh bindings                                                          |
-| Provider specification and lifecycle implementation                   | Environment Provider package       | Uses selected factory, Manager, resource state, and fresh attachment contracts                              |
+| Provider specification and lifecycle implementation                   | Environment Provider package       | Uses selected factory, Provider, Resource state, and fresh attachment contracts                             |
 | Local Sandbox envd artifact selection                                 | Agent UI Host                      | Exact release/target manifest, lazy verified cache, override validation, and availability diagnostics       |
 | Session/Turn/resource control state                                   | Agent UI SQLite metadata           | Owns revisions, selections, lifecycle, queues, jobs, and indexes                                            |
 | Harness/provider/snapshot/Skill payloads                              | Agent UI compressed object store   | Stores verified immutable files referenced by SQLite                                                        |
@@ -72,7 +72,7 @@ An Agent is the exact composition of Model, Prompt, Plugin, available Skill, def
 
 ```mermaid
 flowchart TB
-    CLI[converge-agent-ui]
+    CLI[a13n-ui]
     Web[Bundled WebUI]
     TUI[Terminal UI]
 
@@ -98,8 +98,8 @@ flowchart TB
     end
 
     subgraph Runtime[Harness and providers]
-        Provider[Environment Provider Managers]
-        Model[Fresh Model binding]
+        Provider[Environment Providers]
+        Model[Fresh Model resolver]
         Executable[ExecutableAgent]
         Stream[HarnessRunStream]
         State[HarnessState]
@@ -122,7 +122,7 @@ flowchart TB
     Events --> Web & TUI
 ```
 
-The application service is the only product boundary. Neither surface reads configuration or storage directly, constructs a Model/Agent, operates a provider Manager, calls `ExecutableAgent.stream()`, or translates Harness events.
+The application service is the only product boundary. Neither surface reads configuration or storage directly, constructs a Model/Agent, operates a `EnvironmentProvider`, calls `ExecutableAgent.stream()`, or translates Harness events.
 
 ## Configuration and Reload
 
@@ -156,7 +156,7 @@ Environment provider resources can outlive individual Runs and process connectio
 
 Dynamic configuration never changes a Session. Selecting different Agent or Environment behavior for existing history creates an explicit fork. [Sessions, Environments, and State](04-sessions-environments-and-state.md) owns lifecycle and failure semantics.
 
-The built-in **Local Sandbox** option selects `converge.local-envd`, not Direct Local. Agent UI resolves one exact envd executable, the provider owns its required-isolation subprocess/private runtime, and the Harness consumes the resulting fresh EIP attachment. Isolation, launch, or EIP failure is explicit and never falls back to Direct Local.
+The built-in **Local Sandbox** option selects `a13n.local-envd`, not Direct Local. Agent UI resolves one exact envd executable, the provider owns its required-isolation subprocess/private runtime, and the Harness consumes the resulting fresh EIP attachment. Isolation, launch, or EIP failure is explicit and never falls back to Direct Local.
 
 ## Main Run Flow
 
@@ -223,7 +223,7 @@ Binding outside loopback requires an adopting wrapper with appropriate TLS, auth
 
 ## Distribution
 
-The private browser source application under `apps/harness-ui` is built into immutable assets in the `converge-agent-ui` Python distribution. Generated assets are not committed or independently published. The sdist contains prepared assets so building its wheel requires no Node.js. Agent UI releases independently while published metadata pins one exact compatible Harness release group.
+The private browser source application under `apps/harness-ui` is built into immutable assets in the `a13n-ui` Python distribution. Generated assets are not committed or independently published. The sdist contains prepared assets so building its wheel requires no Node.js. Agent UI releases independently while published metadata pins one exact compatible Harness release group.
 
 The same Agent UI release pins one exact agent-envd release and per-target asset/executable hashes in a package-owned manifest. Native envd binaries are not bundled together in the wheel; the Host lazily downloads and verifies only the current target when Local Sandbox is selected. The default never searches `PATH`; an advanced user can select only an explicit absolute executable that reports the same pinned release and passes isolation and EIP compatibility checks.
 

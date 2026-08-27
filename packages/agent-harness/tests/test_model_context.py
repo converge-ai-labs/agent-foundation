@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AbstractHarnessPlugin,
     AbstractModelContextCapability,
     AgentContext,
@@ -19,8 +19,8 @@ from converge_agent_harness import (
     ModelContextRequestKind,
     RunBindings,
 )
-from converge_agent_harness.errors import DefinitionError
-from converge_agent_harness.model_context import (
+from a13n_harness.errors import DefinitionError
+from a13n_harness.model_context import (
     ModelContextCoordinatorCapability,
     _commit_projection,
     _is_retry_boundary,
@@ -143,8 +143,8 @@ class _HostProjection:
 
 def test_definition_cannot_replace_mandatory_model_context_coordinator() -> None:
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=FunctionModel(lambda messages, info: "unused"),
             capabilities=(ModelContextCoordinatorCapability(),),
@@ -163,13 +163,13 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
         seen.append(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(_ProjectionPlugin(calls),),
     )
-    result = await executable.run("hello", bindings=RunBindings.local(model_context=host))
+    result = await executable.run("hello", bindings=RunBindings.embedded(model_context=host))
 
     assert result.output_or_raise() == "done"
     assert calls == ["host:before", "capability:before", "capability:after", "host:after"]
@@ -185,9 +185,7 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     assert text[0].startswith("Current Environment topology")
     assert text[1] == "hello"
     assert text[-2:] == ["plugin context", "host epilogue"]
-    assert any(
-        isinstance(value, str) and value.startswith('<agent-context source="converge-harness">') for value in text
-    )
+    assert any(isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">') for value in text)
 
 
 async def test_host_can_short_circuit_default_projection_without_bypassing_commit() -> None:
@@ -200,12 +198,12 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
         seen.append(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
-    await executable.run("hello", bindings=RunBindings.local(model_context=host))
+    await executable.run("hello", bindings=RunBindings.embedded(model_context=host))
 
     request = seen[0][-1]
     assert isinstance(request, ModelRequest)

@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from converge_agent_harness import AgentContext, HarnessBuilder, HarnessEvent, RunBindings
-from converge_agent_harness.errors import DefinitionError
-from converge_agent_harness.tools import (
+from a13n_harness import AgentContext, HarnessBuilder, HarnessEvent, RunBindings
+from a13n_harness.errors import DefinitionError
+from a13n_harness.tools import (
     ClientToolsCapability,
     HarnessTool,
     HarnessToolMetadata,
@@ -16,8 +16,8 @@ from converge_agent_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from converge_agent_harness.tools.invocation import _apply_result_policy
-from converge_agent_harness.toolsets import (
+from a13n_harness.tools.invocation import _apply_result_policy
+from a13n_harness.toolsets import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     acknowledge_tool_output,
     tool_output_bytes,
@@ -101,8 +101,8 @@ async def test_managed_tool_is_authorized_after_native_argument_validation() -> 
         return {"value": value + 1}
 
     policy = _Policy(InvocationPolicyDecision.allow(), [])
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("add", {"value": "2"}),
         capabilities=(Capability(tools=[HarnessTool(add, harness_metadata=_metadata())], id="test-tools"),),
@@ -110,7 +110,7 @@ async def test_managed_tool_is_authorized_after_native_argument_validation() -> 
 
     async with executable.stream(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
     ) as stream:
         items = [item async for item in stream]
 
@@ -133,8 +133,8 @@ async def test_managed_tool_without_fresh_policy_is_denied_without_dispatch() ->
         executed = True
         return "should not run"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("dangerous", {}),
         capabilities=(
@@ -144,7 +144,7 @@ async def test_managed_tool_without_fresh_policy_is_denied_without_dispatch() ->
             ),
         ),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert executed is False
     assert result.status == "completed"
@@ -155,13 +155,13 @@ async def test_unmanaged_native_tool_keeps_pydantic_semantics() -> None:
     def native(value: int) -> int:
         return value * 2
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("native", {"value": 3}),
         capabilities=(Capability(tools=[native], id="test-tools"),),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
     assert result.status == "completed"
     assert "6" in result.output_or_raise()
 
@@ -181,8 +181,8 @@ async def test_programmatic_tool_manager_dispatch_crosses_the_same_boundary() ->
         )
 
     policy = _Policy(InvocationPolicyDecision.allow(), [])
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("proxy", {}),
         capabilities=(
@@ -194,7 +194,7 @@ async def test_programmatic_tool_manager_dispatch_crosses_the_same_boundary() ->
     )
     result = await executable.run(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
     )
 
     assert result.status == "completed"
@@ -218,8 +218,8 @@ async def test_managed_invocation_rejects_non_finite_programmatic_arguments() ->
         )
 
     policy = _Policy(InvocationPolicyDecision.allow(), [])
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("proxy", {}),
         capabilities=(
@@ -231,7 +231,7 @@ async def test_managed_invocation_rejects_non_finite_programmatic_arguments() ->
     )
     result = await executable.run(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
     )
 
     assert result.status == "completed"
@@ -244,8 +244,8 @@ async def test_strict_policy_rejects_unmanaged_final_function_surface() -> None:
         return "unsafe"
 
     policy = _Policy(InvocationPolicyDecision.allow(), [])
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("native", {}),
         capabilities=(Capability(tools=[native], id="test-tools"),),
@@ -253,7 +253,7 @@ async def test_strict_policy_rejects_unmanaged_final_function_surface() -> None:
     with pytest.raises(DefinitionError) as exc_info:
         await executable.run(
             "go",
-            bindings=RunBindings.local(
+            bindings=RunBindings.embedded(
                 capabilities=(InvocationPolicyCapability(evaluator=policy, strict_managed_tools=True),)
             ),
         )
@@ -261,8 +261,8 @@ async def test_strict_policy_rejects_unmanaged_final_function_surface() -> None:
 
 
 async def test_run_bindings_reject_feature_capabilities_and_reserved_subclasses() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("unused", {}),
     )
@@ -270,7 +270,7 @@ async def test_run_bindings_reject_feature_capabilities_and_reserved_subclasses(
     with pytest.raises(DefinitionError) as feature_error:
         executable.stream(
             "go",
-            bindings=RunBindings.local(capabilities=(Capability(tools=[lambda: "injected"], id="injected"),)),
+            bindings=RunBindings.embedded(capabilities=(Capability(tools=[lambda: "injected"], id="injected"),)),
         )
     assert feature_error.value.code == "capability_scope_invalid"
 
@@ -280,13 +280,13 @@ async def test_run_bindings_reject_feature_capabilities_and_reserved_subclasses(
     with pytest.raises(DefinitionError) as subclass_error:
         executable.stream(
             "go",
-            bindings=RunBindings.local(capabilities=(subclass,)),
+            bindings=RunBindings.embedded(capabilities=(subclass,)),
         )
     assert subclass_error.value.code == "capability_scope_invalid"
 
     with pytest.raises(DefinitionError) as definition_subclass_error:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=_tool_model("unused", {}),
             capabilities=(subclass,),
@@ -296,8 +296,8 @@ async def test_run_bindings_reject_feature_capabilities_and_reserved_subclasses(
 
 async def test_run_policy_cannot_be_installed_as_stale_definition_authority() -> None:
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=_tool_model("unused", {}),
             capabilities=(InvocationPolicyCapability(evaluator=_Policy(InvocationPolicyDecision.allow(), [])),),
@@ -307,8 +307,8 @@ async def test_run_policy_cannot_be_installed_as_stale_definition_authority() ->
 
 async def test_reserved_capabilities_are_rejected_inside_nested_combined_sources() -> None:
     with pytest.raises(DefinitionError) as definition_error:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=_tool_model("unused", {}),
             capabilities=(
@@ -319,15 +319,15 @@ async def test_reserved_capabilities_are_rejected_inside_nested_combined_sources
         )
     assert definition_error.value.code == "capability_scope_invalid"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("unused", {}),
     )
     with pytest.raises(DefinitionError) as run_error:
         executable.stream(
             "go",
-            bindings=RunBindings.local(capabilities=(CombinedCapability([ClientToolsCapability()]),)),
+            bindings=RunBindings.embedded(capabilities=(CombinedCapability([ClientToolsCapability()]),)),
         )
     assert run_error.value.code == "capability_scope_invalid"
 
@@ -359,8 +359,8 @@ async def test_for_run_replacements_cannot_change_reserved_capability_provenance
     def managed() -> str:
         return "done"
 
-    stale_definition = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    stale_definition = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("managed", {}),
         capabilities=(
@@ -369,28 +369,28 @@ async def test_for_run_replacements_cannot_change_reserved_capability_provenance
         ),
     )
     with pytest.raises(DefinitionError) as stale_policy:
-        await stale_definition.run("go", bindings=RunBindings.local())
+        await stale_definition.run("go", bindings=RunBindings.embedded())
     assert stale_policy.value.code == "capability_scope_invalid"
 
-    subclass_definition = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    subclass_definition = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("unused", {}),
         capabilities=(_DefinitionBecomesRunPolicySubclass(),),
     )
     with pytest.raises(DefinitionError) as subclass_policy:
-        await subclass_definition.run("go", bindings=RunBindings.local())
+        await subclass_definition.run("go", bindings=RunBindings.embedded())
     assert subclass_policy.value.code == "capability_scope_invalid"
 
-    runtime_owner = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    runtime_owner = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_tool_model("unused", {}),
     )
     with pytest.raises(DefinitionError) as owner_error:
         await runtime_owner.run(
             "go",
-            bindings=RunBindings.local(capabilities=(_RunBecomesClientOwner(),)),
+            bindings=RunBindings.embedded(capabilities=(_RunBecomesClientOwner(),)),
         )
     assert owner_error.value.code == "capability_scope_invalid"
 
@@ -600,8 +600,8 @@ async def test_duplicate_managed_identity_fails_before_model_request() -> None:
     def two() -> str:
         return "two"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(
@@ -615,7 +615,7 @@ async def test_duplicate_managed_identity_fails_before_model_request() -> None:
         ),
     )
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run("go", bindings=RunBindings.local())
+        await executable.run("go", bindings=RunBindings.embedded())
     assert exc_info.value.code == "managed_tool_id_duplicate"
     assert model_called is False
 
@@ -623,15 +623,15 @@ async def test_duplicate_managed_identity_fails_before_model_request() -> None:
 @dataclass
 class _CompetingBoundary(AbstractCapability[Any]):
     def get_ordering(self) -> CapabilityOrdering:
-        from converge_agent_harness.tools.invocation import ToolExecutionBoundaryCapability
+        from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
 
         return CapabilityOrdering(position="outermost", wraps=(ToolExecutionBoundaryCapability,))
 
 
 async def test_competing_outer_boundary_creates_a_fail_closed_ordering_cycle() -> None:
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=_tool_model("unused", {}),
             capabilities=(_CompetingBoundary(),),

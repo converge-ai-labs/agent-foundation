@@ -7,7 +7,7 @@ Pydantic AI Capabilities are the primary feature-composition mechanism inside th
 Capabilities can enter from four trusted sources:
 
 1. native `AgentSpec.capabilities`;
-2. `AgentDefinition.capabilities` or `HarnessBuilder.build_code(..., capabilities=...)`;
+2. `AgentDefinition.capabilities` or `HarnessBuilder.build(..., capabilities=...)`;
 3. a Harness plugin's Agent-bound contribution;
 4. fresh `RunBindings.capabilities`.
 
@@ -53,7 +53,7 @@ Harness context features use one model-context coordinator, so each owner contri
 A practical general-purpose context composition is:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     FileContextCapability,
     RuntimeContextCapability,
     WorkspaceOutlineCapability,
@@ -79,7 +79,7 @@ For context lifecycle features, Harness `AgentSpec.model_configuration` can reso
 `WorkingStateCapability` can keep tasks and notes inside its portable Capability namespace:
 
 ```python
-from converge_agent_harness import WorkingStateCapability
+from a13n_harness import WorkingStateCapability
 
 capabilities = (WorkingStateCapability(),)
 ```
@@ -99,20 +99,20 @@ See [State and Resume](state-and-resume.md).
 These features separate stable model-facing schemas from fresh provider implementations:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     DocumentsCapability,
     DocumentsRunCapability,
     RunBindings,
 )
 
-executable = HarnessBuilder().build_code(
+executable = HarnessBuilder().build(
     agent_spec,
     output_type=str,
     model=model,
     capabilities=(DocumentsCapability(),),
 )
 
-bindings = RunBindings.local(
+bindings = RunBindings.embedded(
     capabilities=(DocumentsRunCapability(converter=document_converter),),
 )
 ```
@@ -134,7 +134,7 @@ The Harness does not turn monitored processes into a durable background schedule
 `MessageIntegrityFilterCapability` is mandatory and builder-owned. Two optional filters are public:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     ColdStartFilterCapability,
     ColdStartFilterConfiguration,
     ContentFilterCapability,

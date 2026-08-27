@@ -4,14 +4,14 @@ from shutil import copyfile
 
 import anyio
 import pytest
-from converge_foundation_service.database.config import MigrationConfig
-from converge_foundation_service.database.migration import (
+from a13n_service.database.config import MigrationConfig
+from a13n_service.database.migration import (
     MIGRATIONS_PATH,
     DatabaseMigrator,
     MigrationGraphError,
 )
-from converge_foundation_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from converge_foundation_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
+from a13n_service.storage.relational import sync_database_url
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
@@ -186,9 +186,7 @@ def test_postgresql_advisory_lock_wait_is_bounded(pg_url: str) -> None:
 
     try:
         with blocker_engine.connect() as blocker:
-            blocker.execute(
-                text("SELECT pg_advisory_lock(hashtextextended('converge-foundation-service:relational-schema', 0))")
-            )
+            blocker.execute(text("SELECT pg_advisory_lock(hashtextextended('a13n-service:relational-schema', 0))"))
             blocker.commit()
 
             migrator = DatabaseMigrator(
@@ -198,9 +196,7 @@ def test_postgresql_advisory_lock_wait_is_bounded(pg_url: str) -> None:
             with pytest.raises(DBAPIError):
                 migrator.upgrade()
 
-            blocker.execute(
-                text("SELECT pg_advisory_unlock(hashtextextended('converge-foundation-service:relational-schema', 0))")
-            )
+            blocker.execute(text("SELECT pg_advisory_unlock(hashtextextended('a13n-service:relational-schema', 0))"))
             blocker.commit()
     finally:
         blocker_engine.dispose()

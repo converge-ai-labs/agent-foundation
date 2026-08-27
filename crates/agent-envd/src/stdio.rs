@@ -19,7 +19,7 @@ const MAX_HEADER_BYTES: usize = 8 * 1024;
 const MAX_HEADER_LINE_BYTES: usize = 4 * 1024;
 const MAX_HEADER_COUNT: usize = 32;
 const JSON_CONTENT_TYPE: &str = "application/json; charset=utf-8";
-const DATA_CONTENT_TYPE: &str = "application/vnd.converge.eip-data";
+const DATA_CONTENT_TYPE: &str = "application/vnd.a13n.eip-data";
 const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_CONTROL_BURST: usize = 8;
 
@@ -697,9 +697,7 @@ mod tests {
 
         let (mut client, mut server) = duplex(1024);
         client
-            .write_all(
-                b"Content-Length: 65\r\nContent-Type: application/vnd.converge.eip-data\r\n\r\n",
-            )
+            .write_all(b"Content-Length: 65\r\nContent-Type: application/vnd.a13n.eip-data\r\n\r\n")
             .await
             .expect("fixture writes");
         assert!(read_frame(&mut server, 128, 64).await.is_err());

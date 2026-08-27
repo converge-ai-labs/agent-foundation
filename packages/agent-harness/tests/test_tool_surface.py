@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     CodeActCapability,
     CodeActPolicyToolset,
     CodeActToolPolicy,
@@ -15,7 +15,7 @@ from converge_agent_harness import (
     HarnessBuilder,
     RunBindings,
 )
-from converge_agent_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability, CapabilityOrdering
 from pydantic_ai.messages import ModelMessage
@@ -89,14 +89,14 @@ async def test_complete_candidate_surface_resolves_exact_managed_tool_ids() -> N
         ],
         id="surface-test-tools",
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:surface"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(Capability(toolsets=[tools], id="surface-test"),),
     )
 
-    result = await executable.run("inspect", bindings=RunBindings.local())
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert observed_names == {"preferred", "unknown_target"}
@@ -115,15 +115,15 @@ async def test_present_supersession_cycle_fails_before_model_exposure() -> None:
         ],
         id="cycle-test-tools",
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:surface"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(Capability(toolsets=[tools], id="cycle-test"),),
     )
 
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run("inspect", bindings=RunBindings.local())
+        await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert exc_info.value.code == "tool_supersession_cycle"
 
@@ -147,8 +147,8 @@ async def test_codeact_catalog_uses_only_the_effective_surface() -> None:
         runner_description = next(tool.description or "" for tool in info.function_tools if tool.name == "run_code")
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:surface"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(
@@ -157,7 +157,7 @@ async def test_codeact_catalog_uses_only_the_effective_surface() -> None:
         ),
     )
 
-    result = await executable.run("inspect", bindings=RunBindings.local())
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert "preferred" in runner_description
@@ -166,8 +166,8 @@ async def test_codeact_catalog_uses_only_the_effective_surface() -> None:
 
 async def test_wrapper_cannot_be_ordered_outside_the_mandatory_surface() -> None:
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:surface"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=str,
             model=FunctionModel(lambda messages, info: "done"),
             capabilities=(_OutsideCodeActWrapper(), CodeActCapability()),
@@ -177,15 +177,15 @@ async def test_wrapper_cannot_be_ordered_outside_the_mandatory_surface() -> None
 
 
 async def test_run_replacement_cannot_wrap_outside_the_mandatory_surface() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:surface"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(lambda messages, info: "done"),
         capabilities=(_LateOutsideCodeActWrapper(), CodeActCapability()),
     )
 
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run("inspect", bindings=RunBindings.local())
+        await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert exc_info.value.code == "tool_surface_order_invalid"
 
@@ -198,8 +198,8 @@ async def test_file_mutation_candidates_are_visible_without_shell_exec() -> None
         observed_names.update(tool.name for tool in info.function_tools)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:surface"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(
@@ -215,7 +215,7 @@ async def test_file_mutation_candidates_are_visible_without_shell_exec() -> None
         ),
     )
 
-    result = await executable.run("inspect", bindings=RunBindings.local())
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert {"mkdir", "move", "copy", "delete"} <= observed_names

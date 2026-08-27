@@ -51,7 +51,7 @@ target/
 node_modules/
 *.tsbuildinfo
 /apps/harness-ui/dist/
-/packages/agent-ui/converge_agent_ui/static/
+/packages/agent-ui/a13n_ui/static/
 
 # Editors and operating systems
 .DS_Store

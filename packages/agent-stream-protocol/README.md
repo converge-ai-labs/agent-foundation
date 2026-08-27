@@ -1,13 +1,13 @@
 # Agent Stream Protocol
 
-`converge-agent-stream-protocol` observes public `converge-agent-harness` streams as typed AG-UI events. It maps text, reasoning, tool, and terminal observations to standard AG-UI events, exposes every other public observation through a namespaced `CUSTOM` fallback, applies an optional Host processor, and accumulates the resulting events for process-local use.
+`a13n-stream-protocol` observes public `a13n-harness` streams as typed AG-UI events. It maps text, reasoning, tool, and terminal observations to standard AG-UI events, exposes every other public observation through a namespaced `CUSTOM` fallback, applies an optional Host processor, and accumulates the resulting events for process-local use.
 
-The repository directory is `packages/agent-stream-protocol`, the Python distribution is `converge-agent-stream-protocol`, and the import package is `converge_agent_stream_protocol`.
+The repository directory is `packages/agent-stream-protocol`, the Python distribution is `a13n-stream-protocol`, and the import package is `a13n_stream_protocol`.
 
 ## Usage
 
 ```python
-from converge_agent_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import HarnessAguiObserver
 
 observers: dict[tuple[str, str], HarnessAguiObserver] = {}
 
@@ -43,8 +43,8 @@ A Host can filter or adjust converted values before accumulation:
 ```python
 from ag_ui.core import Event
 from ag_ui.core.events import CustomEvent
-from converge_agent_harness import HarnessStreamEvent
-from converge_agent_stream_protocol import HarnessAguiObserver
+from a13n_harness import HarnessStreamEvent
+from a13n_stream_protocol import HarnessAguiObserver
 
 
 def process_event(
@@ -52,7 +52,7 @@ def process_event(
     event: Event,
 ) -> Event | None:
     del source
-    if isinstance(event, CustomEvent) and event.name == "converge.harness.diagnostic":
+    if isinstance(event, CustomEvent) and event.name == "a13n.harness.diagnostic":
         return None
     return event
 
@@ -77,12 +77,12 @@ The Host owns source-history retention and selection, cursors, gaps, replay-to-l
 
 ## Dependencies
 
-The source manifest declares an unversioned dependency on `converge-agent-harness`, so uv resolves Harness from the workspace during repository development. Conversion uses the upstream `ag-ui-protocol` models, Pydantic serialization, and the lightweight `pydantic-ai-slim` event runtime. The package does not depend on Agent UI, a Host persistence model, or a transport framework.
+The source manifest declares an unversioned dependency on `a13n-harness`, so uv resolves Harness from the workspace during repository development. Conversion uses the upstream `ag-ui-protocol` models, Pydantic serialization, and the lightweight `pydantic-ai-slim` event runtime. The package does not depend on Agent UI, a Host persistence model, or a transport framework.
 
 Release automation replaces the workspace-oriented Harness dependency in publishable metadata with an exact same-version requirement. Both the sdist and wheel therefore install only the Harness version released with that Stream Protocol artifact.
 
 ## Versioning
 
-Agent Stream Protocol, `converge-agent-harness`, and `converge-agent-environment-provider` form the Harness release group. A `release/harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and this package pins the exact Harness version. Agent UI is versioned and released independently.
+Agent Stream Protocol, `a13n-harness`, and `a13n-environment-provider` form the Harness release group. A `release/harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and this package pins the exact Harness version. Agent UI is versioned and released independently.
 
 The accepted architecture and compatibility contract are defined in the [Agent Stream Protocol specification](../../spec/agent-stream-protocol/README.md).

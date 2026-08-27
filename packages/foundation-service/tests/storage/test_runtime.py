@@ -1,8 +1,8 @@
 from pathlib import Path
 
 import pytest
-from converge_foundation_service.storage import StorageSettings, open_storage, short_session
-from converge_foundation_service.storage.runtime import StorageStartupError
+from a13n_service.storage import StorageSettings, open_storage, short_session
+from a13n_service.storage.runtime import StorageStartupError
 from sqlalchemy import text
 
 pytestmark = pytest.mark.anyio

@@ -12,9 +12,7 @@ class CustomBuildHook(BuildHookInterface):
         del build_data
         if version == "editable":
             return
-        static_path = Path(self.root) / "converge_agent_ui" / "static"
+        static_path = Path(self.root) / "a13n_ui" / "static"
         required = (static_path / "index.html", static_path / "asset-manifest.json")
         if not all(path.is_file() for path in required):
-            raise RuntimeError(
-                "Harness UI assets are missing; run `make agent-ui-assets` before building converge-agent-ui"
-            )
+            raise RuntimeError("Harness UI assets are missing; run `make agent-ui-assets` before building a13n-ui")

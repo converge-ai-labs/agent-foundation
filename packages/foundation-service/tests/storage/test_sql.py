@@ -3,8 +3,8 @@ from pathlib import Path
 
 import anyio
 import pytest
-from converge_foundation_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from converge_foundation_service.storage.relational import (
+from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
+from a13n_service.storage.relational import (
     async_database_url,
     create_session_factory,
     create_sql_engine,
