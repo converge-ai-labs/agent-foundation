@@ -49,9 +49,10 @@ An empty remote repository is a special case: establish its initial base commit 
 
 ### 4. Validate the change
 
-- Run the most relevant formatting, linting, type-checking, and test commands supported by the repository.
-- Prefer targeted checks for a small change and broader checks when shared or critical behavior changed.
-- If a check cannot run, record the exact reason for the pull request summary.
+- Run `make check` on the final intended working tree before committing. This is the required and sufficient local validation for opening or updating a pull request.
+- Do not require `make check-all` or another full local gate before opening the pull request. Required GitHub CI checks own merge validation.
+- If `make check` changes files, review those changes and rerun it until it passes.
+- If `make check` cannot run, record the exact reason in the pull request summary.
 - Review `git diff --check` and the final diff before staging.
 
 Do not bypass failing checks or Git hooks with flags such as `--no-verify`. Fix failures caused by the change when feasible; otherwise stop and report the blocker.
@@ -136,6 +137,12 @@ gh pr edit --add-reviewer <login-or-org/team>
 - If the pull request is a draft, do not request reviewers yet. Report the matched maintainers and request them when the pull request becomes ready for review.
 - If no eligible independent reviewer remains, report that clearly. Do not invent a reviewer or silently select someone from outside `MAINTAINERS.md`.
 
+#### Check CI merge readiness
+
+- After creating or updating the pull request, run `gh pr checks` once and report the current required-check status.
+- Do not block pull-request creation while checks are pending, and do not wait for completion unless the user asks.
+- A pull request must not merge until its required GitHub CI checks pass. If checks are pending, advise the user to monitor CI before merging; if checks fail, report the failures and do not describe the pull request as merge-ready.
+
 ### 8. Report the result
 
 Return:
@@ -145,5 +152,6 @@ Return:
 - push result
 - pull request URL
 - requested reviewers or the reason none were requested
-- validation commands and outcomes
+- `make check` outcome
+- current GitHub CI status, including a recommendation to monitor pending checks before merge
 - any remaining risks or follow-up work
