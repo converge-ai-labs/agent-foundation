@@ -57,6 +57,12 @@ class EnvironmentProviderFactory(ABC):
     ) -> type[BaseModel]: ...
 
     @abstractmethod
+    def lifecycle_capabilities(
+        self,
+        configuration: BaseModel,
+    ) -> EnvironmentLifecycleCapabilities: ...
+
+    @abstractmethod
     def create_provider(
         self,
         configuration: BaseModel,
@@ -72,10 +78,13 @@ Each factory owns exactly one provider key and one or more explicitly supported 
 class ResolvedEnvironmentProviderSpec:
     spec: EnvironmentProviderSpec
     configuration: BaseModel
+    lifecycle_capabilities: EnvironmentLifecycleCapabilities
     factory: EnvironmentProviderFactory
 ```
 
-The resolved value is not serialized. It retains trusted code selected by the Host and can construct an `EnvironmentProvider` from one fresh process-local `EnvironmentProviderRuntime`. That abstract marker has no Host or Harness dependency; each provider owns one exact typed runtime implementation carrying only current credential/client factories and other live collaborators. Runtime values are non-serializable and never enter provider specifications or resource state. Provider construction is synchronous and inert: it captures the runtime but performs no filesystem, Docker, provider, credential, network, daemon, or package-discovery I/O and creates no cleanup obligation.
+The resolved value is not serialized. It retains trusted code selected by the Host and can construct an `EnvironmentProvider` from one fresh process-local `EnvironmentProviderRuntime`. `lifecycle_capabilities()` is a pure, synchronous inspection of the already validated configuration. It performs no provider construction or external I/O and returns the exact allocation, attachment-concurrency, and pause capabilities that a provider created from that configuration will expose. A Host can therefore validate lifecycle and topology compatibility before acquiring runtime authority or causing provider effects. Catalog construction verifies that the created Provider reports exactly the introspected capabilities and rejects a mismatch.
+
+The runtime abstract marker has no Host or Harness dependency; each provider owns one exact typed runtime implementation carrying only current credential/client factories and other live collaborators. Runtime values are non-serializable and never enter provider specifications or resource state. Provider construction is synchronous and inert: it captures the runtime but performs no filesystem, Docker, provider, credential, network, daemon, or package-discovery I/O and creates no cleanup obligation.
 
 ## Built-in and Extension Catalog
 
@@ -174,16 +183,18 @@ Compatible changes within a schema version can only narrow implementation intern
 
 ## Failure Semantics
 
-| Failure                              | Outcome                                                    |
-| ------------------------------------ | ---------------------------------------------------------- |
-| Invalid provider key or envelope     | Bounded specification error; no target import              |
-| Missing selected key                 | Catalog error before Provider construction                 |
-| Built-in or entry-point collision    | Complete catalog construction fails                        |
-| Import or factory construction fails | Bounded load error with protected cause                    |
-| Unsupported schema version           | Explicit compatibility error; no fallback                  |
-| Invalid or oversized parameters      | Validation error without Provider construction             |
-| Provider constructor raises          | Bounded factory error; no external cleanup may be required |
-| Host policy denies a valid spec      | Host denial; package does not substitute another provider  |
+| Failure                                                         | Outcome                                                    |
+| --------------------------------------------------------------- | ---------------------------------------------------------- |
+| Invalid provider key or envelope                                | Bounded specification error; no target import              |
+| Missing selected key                                            | Catalog error before Provider construction                 |
+| Built-in or entry-point collision                               | Complete catalog construction fails                        |
+| Import or factory construction fails                            | Bounded load error with protected cause                    |
+| Unsupported schema version                                      | Explicit compatibility error; no fallback                  |
+| Invalid or oversized parameters                                 | Validation error without Provider construction             |
+| Capability inspection fails or returns an invalid value         | Bounded factory error before Provider construction         |
+| Provider constructor raises                                     | Bounded factory error; no external cleanup may be required |
+| Provider reports capabilities different from factory inspection | Factory target error; Provider is not returned             |
+| Host policy denies a valid spec                                 | Host denial; package does not substitute another provider  |
 
 Safe errors can include the bounded provider key, schema version, and distribution provenance. They never include parameter values, object representations, credentials, raw vendor exception text, or private installation paths.
 
@@ -195,12 +206,13 @@ Changing an existing built-in key, making discovery implicit, allowing arbitrary
 
 ## Invariants
 
-1. One serialized provider specification contains only a provider key, schema version, and finite credential-free desired parameters.
-2. The selected provider factory is the sole owner of its parameter schema and migration meaning.
-3. Built-in keys are exact, namespaced, and cannot be shadowed by entry points.
-4. Package metadata is availability, not authorization.
-5. Empty extension selection performs no metadata scan or target import.
-6. Factory and Provider construction are deterministic, synchronous, and inert; a fresh typed runtime supplies current live collaborators without ambient credential lookup.
-7. Provider configuration never carries live authority, resource state, attachment state, or a Python import target.
-8. Unknown schema versions fail explicitly rather than receiving latest-version defaults.
-9. Host policy can always deny or narrow a schema-valid provider specification.
+01. One serialized provider specification contains only a provider key, schema version, and finite credential-free desired parameters.
+02. The selected provider factory is the sole owner of its parameter schema and migration meaning.
+03. Built-in keys are exact, namespaced, and cannot be shadowed by entry points.
+04. Package metadata is availability, not authorization.
+05. Empty extension selection performs no metadata scan or target import.
+06. Factory and Provider construction are deterministic, synchronous, and inert; a fresh typed runtime supplies current live collaborators without ambient credential lookup.
+07. Provider configuration never carries live authority, resource state, attachment state, or a Python import target.
+08. Unknown schema versions fail explicitly rather than receiving latest-version defaults.
+09. Factory lifecycle-capability inspection is pure and configuration-aware; a constructed Provider must report the same immutable capability value.
+10. Host policy can always deny or narrow a schema-valid provider specification.

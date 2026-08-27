@@ -117,6 +117,21 @@ class ResolvedAgentSnapshot(StrictModel):
         if len(agent_ids) != len(set(agent_ids)):
             raise ValueError("resolved Agent IDs must be unique")
         known = set(refs)
+        expected_locks = {
+            _lock_identity(dependency)
+            for node in self.resolved_agents
+            for dependency in (
+                node.model.dependency,
+                *(plugin.dependency for plugin in node.plugins),
+            )
+        }
+        actual_locks = tuple(_lock_identity(lock) for lock in self.adapter_locks)
+        if (
+            len(actual_locks) != len(set(actual_locks))
+            or set(actual_locks) != expected_locks
+            or any(lock.dependency_kind not in {"model_adapter", "harness_plugin"} for lock in self.adapter_locks)
+        ):
+            raise ValueError("adapter locks must exactly cover resolved Agent dependencies")
         edges = {
             node.agent_revision: tuple(edge.target_agent for edge in node.subagents) for node in self.resolved_agents
         }
@@ -134,6 +149,12 @@ class ResolvedAgentSnapshot(StrictModel):
         return self
 
 
+class ResolvedEnvironmentLifecycleCapabilities(StrictModel):
+    pause_modes: frozenset[Literal["full", "filesystem"]] = frozenset()
+    resource_allocation: Literal["single_from_spec", "multiple_from_spec"]
+    attachment_concurrency: Literal["single", "shared"]
+
+
 class ResolvedEnvironmentBinding(StrictModel):
     binding_name: _ID
     model_alias: str = Field(min_length=1, max_length=63)
@@ -142,6 +163,7 @@ class ResolvedEnvironmentBinding(StrictModel):
     normalized_parameters: dict[str, JsonValue] = Field(default_factory=dict)
     permission_ceiling: frozenset[str] = frozenset()
     required: bool = True
+    lifecycle_capabilities: ResolvedEnvironmentLifecycleCapabilities
     dependency: DependencyLock
 
 
@@ -160,6 +182,14 @@ class ResolvedEnvironmentSnapshot(StrictModel):
         names = tuple(binding.binding_name for binding in self.bindings)
         if len(names) != len(set(names)):
             raise ValueError("resolved Environment binding names must be unique")
+        expected_locks = {_lock_identity(binding.dependency) for binding in self.bindings}
+        actual_locks = tuple(_lock_identity(lock) for lock in self.provider_locks)
+        if (
+            len(actual_locks) != len(set(actual_locks))
+            or set(actual_locks) != expected_locks
+            or any(lock.dependency_kind != "environment_provider" for lock in self.provider_locks)
+        ):
+            raise ValueError("provider locks must exactly cover resolved Environment bindings")
         expected = canonical_digest(
             self.model_dump(
                 mode="python",
@@ -169,6 +199,15 @@ class ResolvedEnvironmentSnapshot(StrictModel):
         if self.logical_environment_digest != expected:
             raise ValueError("logical Environment digest does not match snapshot content")
         return self
+
+
+def _lock_identity(lock: DependencyLock) -> tuple[str, str, str | None, str | None]:
+    return (
+        lock.dependency_kind,
+        lock.key,
+        lock.distribution_name,
+        lock.distribution_version,
+    )
 
 
 def _require_acyclic(
@@ -213,6 +252,7 @@ __all__ = [
     "ResolvedAgentNode",
     "ResolvedAgentSnapshot",
     "ResolvedEnvironmentBinding",
+    "ResolvedEnvironmentLifecycleCapabilities",
     "ResolvedEnvironmentSnapshot",
     "ResolvedModel",
     "ResolvedPlugin",

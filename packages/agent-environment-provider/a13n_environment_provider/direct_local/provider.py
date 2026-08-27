@@ -72,6 +72,21 @@ class DirectLocalEnvironmentProviderFactory(EnvironmentProviderFactory):
             )
         return DirectLocalProviderConfiguration
 
+    def lifecycle_capabilities(
+        self,
+        configuration: BaseModel,
+    ) -> EnvironmentLifecycleCapabilities:
+        if not isinstance(configuration, DirectLocalProviderConfiguration):
+            raise EnvironmentProviderError(
+                "Direct Local requires DirectLocalProviderConfiguration.",
+                code="provider_spec_invalid",
+                category=EnvironmentProviderErrorCategory.INVALID,
+                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
+                recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
+                context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
+            )
+        return _CAPABILITIES
+
     def create_provider(
         self,
         configuration: BaseModel,

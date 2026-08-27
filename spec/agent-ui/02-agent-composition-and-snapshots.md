@@ -145,7 +145,7 @@ The resolved Model revision contributes a logical model ID to `AgentSpec`. Every
 4. applies the pinned endpoint and model settings;
 5. returns the Model only for that Run's resolver scope.
 
-A Model adapter can reuse a documented reentrant native client or Model internally, but that cache is process-local and keyed by non-secret configuration plus credential generation. A Session snapshot never stores the native value or historic secret. Credential rotation behind one reference can affect a later Run without changing Agent behavior content; changing provider, endpoint, model name, settings, or credential reference creates another Model revision.
+The Agent snapshot locks every selected Model adapter by exact key and Agent UI distribution version. Reconstruction verifies every Model lock as well as every Harness plugin lock before building the definition graph; an allowlisted but unregistered string is never treated as an adapter. A Model adapter can reuse a documented reentrant native client or Model internally, but that cache is process-local and keyed by non-secret configuration plus credential generation. A Session snapshot never stores the native value or historic secret. Credential rotation behind one reference can affect a later Run without changing Agent behavior content; changing provider, endpoint, model name, settings, or credential reference creates another Model revision.
 
 ## Prompt, Skill, and Capability Reconstruction
 
@@ -239,9 +239,11 @@ The snapshot contains every authority-neutral value needed to repeat trusted rec
 
 A Session pins one exact resolved Agent snapshot identity and digest. A dynamic configuration reload can publish another Agent revision and executable, but it does not alter the Session. Applying another Agent composition to existing history requires an explicit [Session fork](04-sessions-environments-and-state.md#forking-and-composition-change).
 
-An `ExecutableAgent` corresponds to one resolved Agent snapshot and complete child graph. Agent UI can cache it by logical Agent digest, Harness release, locked adapter provenance, and activated restart-bound process configuration. A cache entry contains no Session state, credential, Environment resource, or run authority.
+An Agent graph with no managed Skills produces an `ExecutableAgent` that corresponds only to the resolved Agent snapshot and complete child graph. Agent UI caches it by logical Agent digest, Harness release, locked adapter provenance, and activated restart-bound process configuration. Supplying an Environment for compatibility validation does not create another executable identity when no definition-time component depends on that Environment.
 
-Changing any behavior-affecting component creates another logical digest and executable. Agent UI never hot-toggles instructions, plugins, available Skills, default Skill exposure, Capabilities, output, recovery policy, async policy, or child edges inside an active executable. A Session can pin an exact root/child Skill exposure override at creation or fork, but changing that pinned override also requires a fork. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
+A graph with managed Skills produces an executable for one compatibility-validated immutable Agent/Environment snapshot pair. Agent UI's authored `materialization_binding` selects an Environment binding whose resolved `model_alias` is embedded in each explicit `FileSkillSource` root at definition reconstruction, while the actual `FileOperator`, topology revision, and attachment remain fresh Run values. The pair cache key therefore includes both logical digests. This pairing is an Agent UI authoring and materialization-path contract, not a Harness-wide requirement that all definitions bind an Environment at build time. A cache entry contains no Session state, credential, Environment resource, attachment, or run authority.
+
+Changing any behavior-affecting component creates another logical digest and executable. Changing the Environment digest creates another managed-Skill executable pair, even if the selected alias remains textually equal, so reconstruction never reuses a definition across an unvalidated pair. Agent UI never hot-toggles instructions, plugins, available Skills, default Skill exposure, Capabilities, output, recovery policy, async policy, or child edges inside an active executable. A Session can pin an exact root/child Skill exposure override at creation or fork, but changing that pinned override also requires a fork. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
 
 Run-time values vary only through contracts designed for fresh binding: Identity, current model resolver, credentials, exact Skill selection, Environment attachments, policy narrowing, Session-read collaborator, and async-subagent collaborator. Fresh binding realizes the Session-pinned effective Skill selection and can apply current policy narrowing, but it cannot add a Capability, plugin, available Skill, output type, or child edge absent from the snapshot or select a Skill outside that Session policy.
 
@@ -261,8 +263,9 @@ Nested children use the same rule recursively. Each async job invokes the select
 
 A newly accepted configuration generation can add, remove, or change source definitions. Resolution caches are generation-aware, while immutable snapshot and executable caches are digest-aware:
 
-- an unchanged resolved digest can reuse a compatible executable;
-- a changed digest creates another snapshot and executable;
+- an unchanged Agent digest can reuse an Agent-only executable when the graph has no managed Skills;
+- unchanged Agent and Environment digests can reuse a managed-Skill pair executable;
+- a changed required digest creates another snapshot or pair executable;
 - removed current source content does not delete a snapshot pinned by a retained Session;
 - an active Run and its async-subagent jobs retain the snapshot with which they started;
 - package refresh can make a new adapter available but cannot unload or replace code already captured by an executable.

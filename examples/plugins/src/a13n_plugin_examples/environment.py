@@ -37,6 +37,11 @@ from a13n_environment_provider import (
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 PROVIDER_KEY = "example.workspace"
+_CAPABILITIES = EnvironmentLifecycleCapabilities(
+    pause_modes=frozenset(),
+    resource_allocation=EnvironmentResourceAllocation.SINGLE_FROM_SPEC,
+    attachment_concurrency=EnvironmentAttachmentConcurrency.SHARED,
+)
 
 
 class WorkspaceEnvironmentConfiguration(BaseModel):
@@ -92,6 +97,14 @@ class WorkspaceEnvironmentProviderFactory(EnvironmentProviderFactory):
             )
         return WorkspaceEnvironmentConfiguration
 
+    def lifecycle_capabilities(
+        self,
+        configuration: BaseModel,
+    ) -> EnvironmentLifecycleCapabilities:
+        if not isinstance(configuration, WorkspaceEnvironmentConfiguration):
+            raise _error("Invalid example.workspace configuration.", code="provider_spec_invalid")
+        return _CAPABILITIES
+
     def create_provider(
         self,
         configuration: BaseModel,
@@ -114,11 +127,7 @@ class WorkspaceEnvironmentProvider(EnvironmentProvider):
 
     @property
     def lifecycle_capabilities(self) -> EnvironmentLifecycleCapabilities:
-        return EnvironmentLifecycleCapabilities(
-            pause_modes=frozenset(),
-            resource_allocation=EnvironmentResourceAllocation.SINGLE_FROM_SPEC,
-            attachment_concurrency=EnvironmentAttachmentConcurrency.SHARED,
-        )
+        return _CAPABILITIES
 
     async def create(self, *, operation: EnvironmentOperationContext) -> EnvironmentResource:
         self._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key=PROVIDER_KEY)

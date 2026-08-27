@@ -16,6 +16,8 @@ from typing import Any, cast
 
 import yaml
 from a13n_environment_provider import (
+    EnvironmentLifecycleCapabilities,
+    EnvironmentPauseMode,
     EnvironmentProviderSpec,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
@@ -28,6 +30,7 @@ from anyio import to_thread
 from pydantic import JsonValue, ValidationError
 
 from a13n_ui.errors import ConfigurationError
+from a13n_ui.model_adapters import model_adapter_registration
 
 from .models import (
     AgentDefinitionDocument,
@@ -174,7 +177,7 @@ async def load_catalog_candidate(
                 )
             )
 
-    availability, plugin_locks, provider_locks = _availability(settings)
+    availability, model_locks, plugin_locks, provider_locks = _availability(settings)
     selected = _select_precedence(loaded)
     local_directory_ids = {item.directory_id for item in settings.local_directories}
     revisions: list[ResourceRevision] = []
@@ -196,9 +199,10 @@ async def load_catalog_candidate(
         identity = resource_identity(document)
         locks: list[DependencyLock] = []
         if isinstance(document, ModelDefinition):
-            if document.provider_key not in settings.model_adapter_keys:
+            lock = model_locks.get(document.provider_key)
+            if document.provider_key not in settings.model_adapter_keys or lock is None:
                 raise _error("model_adapter_unavailable", "A Model selects an unavailable adapter.")
-            locks.append(DependencyLock(dependency_kind="model_adapter", key=document.provider_key))
+            locks.append(lock)
         elif isinstance(document, PluginInstanceDefinition):
             lock = plugin_locks.get(document.plugin_key)
             if document.plugin_key not in settings.plugin_keys or lock is None:
@@ -213,7 +217,8 @@ async def load_catalog_candidate(
                 if lock is None:
                     raise _error("provider_factory_unavailable", "An Environment selects an unavailable provider.")
                 locks.append(lock)
-                _validate_provider_binding(binding, settings)
+                capabilities = _validate_provider_binding(binding, settings)
+                _validate_environment_lifecycle(document.lifecycle.idle, capabilities)
 
         package_payload: JsonValue | None = None
         normalized_value = cast(dict[str, JsonValue], canonical_json_value(document))
@@ -516,7 +521,26 @@ def _confined_path(root: Path, parent: Path, relative: str) -> Path:
 
 def _availability(
     settings: ConfigurationSettings,
-) -> tuple[tuple[DependencyLock, ...], dict[str, DependencyLock], dict[str, DependencyLock]]:
+) -> tuple[
+    tuple[DependencyLock, ...],
+    dict[str, DependencyLock],
+    dict[str, DependencyLock],
+    dict[str, DependencyLock],
+]:
+    model_locks: dict[str, DependencyLock] = {}
+    for adapter_key in settings.model_adapter_keys:
+        registration = model_adapter_registration(adapter_key)
+        if registration is None:
+            raise _error(
+                "model_adapter_unavailable",
+                "A selected Agent UI Model adapter is unavailable.",
+            )
+        model_locks[adapter_key] = DependencyLock(
+            dependency_kind="model_adapter",
+            key=adapter_key,
+            distribution_name=registration.distribution_name,
+            distribution_version=registration.distribution_version,
+        )
     try:
         discovered_plugins = {item.plugin_key: item for item in discover_harness_plugin_factory_references()}
         plugin_catalog = build_harness_plugin_factory_catalog(plugin_keys=settings.plugin_keys)
@@ -530,34 +554,59 @@ def _availability(
     plugin_locks: dict[str, DependencyLock] = {}
     for registration in plugin_catalog.registrations:
         reference = discovered_plugins.get(registration.plugin_key)
+        distribution_name = registration.distribution_name or (reference.distribution_name if reference else None)
+        distribution_version = registration.distribution_version or (
+            reference.distribution_version if reference else None
+        )
+        if distribution_name is None or distribution_version is None:
+            raise _error(
+                "factory_catalog_invalid",
+                "A selected Harness plugin has incomplete distribution provenance.",
+            )
         plugin_locks[registration.plugin_key] = DependencyLock(
             dependency_kind="harness_plugin",
             key=registration.plugin_key,
-            distribution_name=registration.distribution_name or (reference.distribution_name if reference else None),
-            distribution_version=registration.distribution_version
-            or (reference.distribution_version if reference else None),
+            distribution_name=distribution_name,
+            distribution_version=distribution_version,
         )
     provider_locks: dict[str, DependencyLock] = {}
     for registration in provider_catalog.registrations:
         reference = discovered_providers.get(registration.provider_key)
         builtin = registration.provider_key in settings.builtin_provider_keys
+        distribution_name = (
+            registration.distribution_name
+            or (reference.distribution_name if reference else None)
+            or ("a13n-environment-provider" if builtin else None)
+        )
+        distribution_version = (
+            registration.distribution_version
+            or (reference.distribution_version if reference else None)
+            or (version("a13n-environment-provider") if builtin else None)
+        )
+        if distribution_name is None or distribution_version is None:
+            raise _error(
+                "factory_catalog_invalid",
+                "A selected Environment provider has incomplete distribution provenance.",
+            )
         provider_locks[registration.provider_key] = DependencyLock(
             dependency_kind="environment_provider",
             key=registration.provider_key,
-            distribution_name=registration.distribution_name
-            or (reference.distribution_name if reference else None)
-            or ("a13n-environment-provider" if builtin else None),
-            distribution_version=registration.distribution_version
-            or (reference.distribution_version if reference else None)
-            or (version("a13n-environment-provider") if builtin else None),
+            distribution_name=distribution_name,
+            distribution_version=distribution_version,
         )
     availability = tuple(
-        sorted((*plugin_locks.values(), *provider_locks.values()), key=lambda item: (item.dependency_kind, item.key))
+        sorted(
+            (*model_locks.values(), *plugin_locks.values(), *provider_locks.values()),
+            key=lambda item: (item.dependency_kind, item.key),
+        )
     )
-    return availability, plugin_locks, provider_locks
+    return availability, model_locks, plugin_locks, provider_locks
 
 
-def _validate_provider_binding(binding: Any, settings: ConfigurationSettings) -> None:
+def _validate_provider_binding(
+    binding: Any,
+    settings: ConfigurationSettings,
+) -> EnvironmentLifecycleCapabilities:
     parameters = binding.provider_parameters
     if binding.provider_key == "a13n.direct-local":
         root = parameters.get("root") if isinstance(parameters, dict) else None
@@ -581,7 +630,7 @@ def _validate_provider_binding(binding: Any, settings: ConfigurationSettings) ->
             builtin_keys=settings.builtin_provider_keys,
             extension_keys=settings.extension_provider_keys,
         )
-        catalog.resolve_spec(
+        resolved = catalog.resolve_spec(
             EnvironmentProviderSpec(
                 provider_key=binding.provider_key,
                 schema_version=binding.provider_schema_version,
@@ -590,6 +639,22 @@ def _validate_provider_binding(binding: Any, settings: ConfigurationSettings) ->
         )
     except Exception as exc:
         raise _error("provider_spec_invalid", "An Environment provider specification is invalid.") from exc
+    return resolved.lifecycle_capabilities
+
+
+def _validate_environment_lifecycle(
+    idle_policy: str,
+    capabilities: EnvironmentLifecycleCapabilities,
+) -> None:
+    required_pause_mode = {
+        "pause_full": EnvironmentPauseMode.FULL,
+        "pause_filesystem": EnvironmentPauseMode.FILESYSTEM,
+    }.get(idle_policy)
+    if required_pause_mode is not None and required_pause_mode not in capabilities.pause_modes:
+        raise _error(
+            "environment_lifecycle_incompatible",
+            "An Environment lifecycle policy is unsupported by a selected provider.",
+        )
 
 
 def _validate_graph(revisions: list[ResourceRevision], identities: set[tuple[str, str]]) -> None:
@@ -601,6 +666,11 @@ def _validate_graph(revisions: list[ResourceRevision], identities: set[tuple[str
             document = AgentDefinitionDocument.model_validate(revision.normalized_content, strict=True)
         except ValidationError as exc:
             raise _error("configuration_document_invalid", "An Agent revision is invalid.") from exc
+        if document.async_subagents.tools == "standard":
+            raise _error(
+                "capability_schema_unavailable",
+                "The async-subagent definition Capability is unavailable.",
+            )
         references = (
             document.model,
             document.prompt,

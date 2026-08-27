@@ -1846,6 +1846,30 @@ async def test_terminal_waits_for_delayed_topology_adapter_drain(
     assert items[-1].result.output_or_raise() == "done"
 
 
+async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.mkdir()
+    destination.mkdir()
+    (source / "new.txt").write_text("new")
+    (destination / "old.txt").write_text("old")
+    files = LocalFileOperator(
+        root=tmp_path,
+        read_only=False,
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        binding_id="binding-1",
+        binding_revision=1,
+        generation="generation-1",
+    )
+
+    await files.move("/source", "/destination", replace=True)
+
+    assert not source.exists()
+    assert (destination / "new.txt").read_text() == "new"
+    assert not (destination / "old.txt").exists()
+    assert not tuple(tmp_path.glob(".destination.a13n-replaced-*"))
+
+
 async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path: Path) -> None:
     source = tmp_path / "sample.txt"
     source.write_bytes(b"provider-neutral\n")

@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
 from pathlib import Path
 
+import a13n_ui.composition.reconstruction as reconstruction_module
 import pytest
 import yaml
+from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
+from a13n_harness.environment.local.files import LocalFileOperator
 from a13n_ui.application import open_application
+from a13n_ui.composition.reconstruction import SnapshotSkillMaterializer, _PackageFile
 from a13n_ui.configuration import (
     ConfigurationSettings,
     DefinitionRootSettings,
     LocalDirectorySettings,
 )
-from a13n_ui.errors import CompositionError
+from a13n_ui.errors import CompositionError, ConfigurationError
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 
 pytestmark = pytest.mark.anyio
@@ -38,7 +44,7 @@ def _settings(data_root: Path, definitions: Path, workspace: Path) -> AgentUiSet
                     path=workspace,
                 ),
             ),
-            model_adapter_keys=("a13n.test-model",),
+            model_adapter_keys=("a13n.pydantic-ai",),
             orphan_retention_seconds=60,
         ),
     )
@@ -51,7 +57,7 @@ def _write_composition(definitions: Path, *, instruction: str = "Be concise.") -
             "schema_version": "1",
             "model_id": "model-main",
             "display_name": "Main Model",
-            "provider_key": "a13n.test-model",
+            "provider_key": "a13n.pydantic-ai",
             "model_name": "test-v1",
             "settings": {"temperature": 0},
         },
@@ -130,10 +136,19 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         await application.validate_agent_executable(agent_reference)
 
         assert agent.root_agent.resource_id == "agent-main"
+        assert agent.adapter_locks[0].dependency_kind == "model_adapter"
+        assert agent.adapter_locks[0].key == "a13n.pydantic-ai"
+        assert agent.adapter_locks[0].distribution_name == "a13n-ui"
+        assert agent.adapter_locks[0].distribution_version
         assert environment.environment_revision.resource_id == "environment-main"
         assert environment.bindings[0].normalized_parameters["root"] == {
             "path": str(workspace),
             "read_only": False,
+        }
+        assert environment.bindings[0].lifecycle_capabilities.model_dump(mode="json") == {
+            "pause_modes": [],
+            "resource_allocation": "single_from_spec",
+            "attachment_concurrency": "shared",
         }
         assert compatibility.agent_snapshot_digest == agent.logical_agent_digest
 
@@ -153,6 +168,29 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         assert await restarted.agent_snapshot(agent_reference) == agent
         assert await restarted.environment_snapshot(environment_reference) == environment
         await restarted.validate_agent_executable(agent_reference)
+
+
+async def test_reconstruction_rejects_a_changed_model_adapter_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_application(settings) as application:
+        agent_reference = await application.resolve_agent_snapshot("agent-main")
+        monkeypatch.setattr(
+            reconstruction_module,
+            "model_adapter_registration",
+            lambda _key: None,
+        )
+        with pytest.raises(CompositionError) as error:
+            await application.validate_agent_executable(agent_reference)
+
+    assert error.value.code == "model_adapter_lock_mismatch"
 
 
 async def test_unrelated_reload_reuses_the_logical_agent_snapshot(tmp_path: Path) -> None:
@@ -230,12 +268,44 @@ async def test_skill_reconstruction_uses_the_selected_environment_alias(tmp_path
     assert missing_environment.value.code == "agent_environment_required"
 
 
-async def test_environment_snapshot_rejects_data_root_overlap(tmp_path: Path) -> None:
+@pytest.mark.parametrize("relation", ["equal", "ancestor", "descendant"])
+async def test_environment_snapshot_rejects_data_root_overlap(
+    tmp_path: Path,
+    relation: str,
+) -> None:
     definitions = tmp_path / "definitions"
     data_root = tmp_path / "data"
-    data_root.mkdir()
+    if relation == "equal":
+        workspace = data_root
+    elif relation == "ancestor":
+        workspace = tmp_path
+    else:
+        workspace = data_root / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
     _write_composition(definitions)
-    settings = _settings(data_root, definitions, data_root)
+    settings = _settings(data_root, definitions, workspace)
+
+    async with open_application(settings) as application:
+        with pytest.raises(CompositionError) as overlap:
+            await application.resolve_environment_snapshot("environment-main")
+
+    assert overlap.value.code == "environment_data_root_overlap"
+
+
+async def test_environment_snapshot_resolves_symlinks_before_overlap_check(
+    tmp_path: Path,
+) -> None:
+    real_root = tmp_path / "real-root"
+    data_root = real_root / "data"
+    definitions = tmp_path / "definitions"
+    real_root.mkdir()
+    workspace_link = tmp_path / "workspace-link"
+    try:
+        workspace_link.symlink_to(real_root, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable on this Windows configuration")
+    _write_composition(definitions)
+    settings = _settings(data_root, definitions, workspace_link)
 
     async with open_application(settings) as application:
         with pytest.raises(CompositionError) as overlap:
@@ -272,3 +342,137 @@ async def test_compatibility_rejects_a_missing_required_binding(tmp_path: Path) 
             )
 
     assert incompatible.value.code == "agent_environment_incompatible"
+
+
+async def test_reload_rejects_unsupported_environment_lifecycle_and_async_tools(
+    tmp_path: Path,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_application(settings) as application:
+        accepted = await application.current_configuration()
+        assert accepted is not None
+
+        environment_path = definitions / "environments/environment-main.yaml"
+        environment = yaml.safe_load(environment_path.read_text())
+        environment["lifecycle"]["idle"] = "pause_full"
+        _write_yaml(environment_path, environment)
+        with pytest.raises(ConfigurationError) as lifecycle_error:
+            await application.reload_configuration()
+        assert lifecycle_error.value.code == "environment_lifecycle_incompatible"
+        assert await application.current_configuration() == accepted
+
+        _write_composition(definitions)
+        agent_path = definitions / "agents/agent-main.yaml"
+        agent = yaml.safe_load(agent_path.read_text())
+        agent["async_subagents"] = {"tools": "standard"}
+        _write_yaml(agent_path, agent)
+        with pytest.raises(ConfigurationError) as capability_error:
+            await application.reload_configuration()
+        assert capability_error.value.code == "capability_schema_unavailable"
+        assert await application.current_configuration() == accepted
+
+
+@pytest.mark.parametrize(
+    ("mode", "compatible"),
+    [
+        ("dedicated", False),
+        ("shared_root", True),
+        ("serialized_root", True),
+    ],
+)
+async def test_child_environment_policy_uses_provider_lifecycle_capabilities(
+    tmp_path: Path,
+    mode: str,
+    compatible: bool,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    _write_yaml(
+        definitions / "agents/agent-child.yaml",
+        {
+            "schema_version": "1",
+            "agent_id": "agent-child",
+            "display_name": "Child Agent",
+            "model": {"kind": "model", "resource_id": "model-main"},
+            "prompt": {"kind": "prompt", "resource_id": "prompt-main"},
+            "async_subagents": {"tools": "disabled"},
+        },
+    )
+    agent_path = definitions / "agents/agent-main.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"] = [{"key": "a13n.user-interaction", "schema_version": "1"}]
+    agent["subagents"] = [
+        {
+            "name": "child-worker",
+            "description": "Run child work.",
+            "agent": {"kind": "agent", "resource_id": "agent-child"},
+            "environment": {"mode": mode, "bindings": ["binding-main"]},
+        }
+    ]
+    _write_yaml(agent_path, agent)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_application(settings) as application:
+        agent_reference = await application.resolve_agent_snapshot("agent-main")
+        environment_reference = await application.resolve_environment_snapshot("environment-main")
+        if compatible:
+            result = await application.validate_agent_environment(
+                agent_reference,
+                environment_reference,
+            )
+            assert result.compatible is True
+            await application.validate_agent_executable(
+                agent_reference,
+                environment_reference,
+            )
+        else:
+            with pytest.raises(CompositionError) as error:
+                await application.validate_agent_environment(
+                    agent_reference,
+                    environment_reference,
+                )
+            assert error.value.code == "agent_environment_incompatible"
+
+
+async def test_skill_materializer_replaces_stale_tree_and_handles_concurrent_publish(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "managed"
+    target.mkdir()
+    (target / "stale.txt").write_text("stale")
+    content = b"---\nname: demo\ndescription: Demo\n---\n"
+    package = _PackageFile(
+        path="SKILL.md",
+        content=content,
+        sha256=hashlib.sha256(content).hexdigest(),
+    )
+    materializer = SnapshotSkillMaterializer(
+        "materializer-demo",
+        "/managed",
+        {"demo": (package,)},
+    )
+    files = LocalFileOperator(
+        root=tmp_path,
+        read_only=False,
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        binding_id="binding-main",
+        binding_revision=1,
+        generation="generation-1",
+    )
+
+    await asyncio.gather(
+        materializer.materialize(files=files),
+        materializer.materialize(files=files),
+    )
+    await materializer.materialize(files=files)
+
+    assert (target / "demo" / "SKILL.md").read_bytes() == content
+    assert not (target / "stale.txt").exists()
+    assert not tuple(tmp_path.glob("managed.stage-*"))

@@ -56,7 +56,32 @@ Agent UI's data root is Host authority and is never an executable Session worksp
 
 `binding_name` is a Host identity; `model_alias` is the bounded alias published through Harness topology. Names are unique in one Environment. `default_binding` is absent only for an empty topology and otherwise names one binding. The Environment definition contains no credential, provider resource ID, container/sandbox ID, endpoint resolved at runtime, attachment, EIP session, live provider object, or `HarnessState`.
 
-Resolution captures exact provider specifications, provider factory provenance, permission ceilings, lifecycle policy, and topology into a compressed immutable `ResolvedEnvironmentSnapshot`. It does not provision resources. Dynamic reload can create another snapshot but never changes the Environment pinned by an existing Session.
+Resolution captures exact provider specifications, provider factory provenance, permission ceilings, lifecycle policy, topology, and factory-introspected lifecycle capabilities into a compressed immutable `ResolvedEnvironmentSnapshot`:
+
+```python
+class ResolvedEnvironmentBinding(BaseModel):
+    binding_name: str
+    model_alias: str
+    provider_key: str
+    provider_schema_version: str
+    normalized_parameters: dict[str, JsonValue]
+    permission_ceiling: EnvironmentPermissionSet
+    required: bool
+    lifecycle_capabilities: EnvironmentLifecycleCapabilities
+    dependency: DependencyLock
+
+
+class ResolvedEnvironmentSnapshot(BaseModel):
+    environment_revision: ResourceRevisionRef
+    logical_environment_digest: str
+    definition: EnvironmentDefinitionDocument
+    bindings: tuple[ResolvedEnvironmentBinding, ...]
+    provider_locks: tuple[DependencyLock, ...]
+```
+
+The lifecycle-capability value comes from the selected provider factory's pure inspection of the validated configuration. It is included in the logical digest and is not Agent UI-invented provider policy. Generation acceptance rejects a lifecycle idle mode unsupported by any selected binding. Session compatibility uses the captured allocation and attachment-concurrency values for child policies: `dedicated` requires `multiple_from_spec`, `shared_root` requires `shared`, and `serialized_root` accepts either attachment-concurrency mode because Agent UI serializes acquisition. Provider construction later verifies that the live Provider reports the same capability value.
+
+Snapshot resolution does not construct a Provider or provision resources. Dynamic reload can create another snapshot but never changes the Environment pinned by an existing Session.
 
 ## Session Record
 

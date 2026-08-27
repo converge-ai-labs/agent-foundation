@@ -10,6 +10,8 @@ import pytest
 from a13n_environment_provider import (
     DirectLocalEnvironmentProviderFactory,
     DirectLocalProviderRuntime,
+    EnvironmentAttachmentConcurrency,
+    EnvironmentLifecycleCapabilities,
     EnvironmentOperationContext,
     EnvironmentPauseMode,
     EnvironmentProvider,
@@ -20,6 +22,7 @@ from a13n_environment_provider import (
     EnvironmentProviderSpec,
     EnvironmentReconciliationResult,
     EnvironmentResource,
+    EnvironmentResourceAllocation,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
@@ -36,6 +39,18 @@ class _Runtime(EnvironmentProviderRuntime):
     pass
 
 
+_CAPABILITIES = EnvironmentLifecycleCapabilities(
+    pause_modes=frozenset(),
+    resource_allocation=EnvironmentResourceAllocation.SINGLE_FROM_SPEC,
+    attachment_concurrency=EnvironmentAttachmentConcurrency.SHARED,
+)
+_MISMATCHED_CAPABILITIES = EnvironmentLifecycleCapabilities(
+    pause_modes=frozenset(),
+    resource_allocation=EnvironmentResourceAllocation.SINGLE_FROM_SPEC,
+    attachment_concurrency=EnvironmentAttachmentConcurrency.SINGLE,
+)
+
+
 class _Managed(EnvironmentResource):
     @property
     def state(self) -> EnvironmentProviderResourceState:
@@ -49,8 +64,8 @@ class _Managed(EnvironmentResource):
 
 class _Provider(EnvironmentProvider):
     @property
-    def lifecycle_capabilities(self):
-        raise NotImplementedError
+    def lifecycle_capabilities(self) -> EnvironmentLifecycleCapabilities:
+        return _CAPABILITIES
 
     async def create(self, *, operation: EnvironmentOperationContext):
         raise NotImplementedError
@@ -95,6 +110,13 @@ class _Factory(EnvironmentProviderFactory):
         assert schema_version == "1"
         return _Configuration
 
+    def lifecycle_capabilities(
+        self,
+        configuration: BaseModel,
+    ) -> EnvironmentLifecycleCapabilities:
+        assert isinstance(configuration, _Configuration)
+        return _CAPABILITIES
+
     def create_provider(
         self,
         configuration: BaseModel,
@@ -105,6 +127,28 @@ class _Factory(EnvironmentProviderFactory):
         assert isinstance(runtime, _Runtime)
         self.configurations.append(configuration)
         return _Provider()
+
+
+class _MismatchedProvider(_Provider):
+    @property
+    def lifecycle_capabilities(self) -> EnvironmentLifecycleCapabilities:
+        return _MISMATCHED_CAPABILITIES
+
+
+class _MismatchedFactory(_Factory):
+    @classmethod
+    def provider_key(cls) -> str:
+        return "test.mismatch"
+
+    def create_provider(
+        self,
+        configuration: BaseModel,
+        *,
+        runtime: EnvironmentProviderRuntime,
+    ) -> EnvironmentProvider:
+        assert isinstance(configuration, _Configuration)
+        assert isinstance(runtime, _Runtime)
+        return _MismatchedProvider()
 
 
 class _FakeEntryPoint:
@@ -156,15 +200,15 @@ def test_extension_catalog_loads_only_explicitly_selected_target(
     )
 
     catalog = build_environment_provider_factory_catalog(extension_keys=("test.sandbox",))
-    provider = catalog.create_provider(
-        EnvironmentProviderSpec(
-            provider_key="test.sandbox",
-            schema_version="1",
-            parameters={"name": "first"},
-        ),
-        runtime=_Runtime(),
+    spec = EnvironmentProviderSpec(
+        provider_key="test.sandbox",
+        schema_version="1",
+        parameters={"name": "first"},
     )
+    resolved = catalog.resolve_spec(spec)
+    provider = catalog.create_provider(spec, runtime=_Runtime())
 
+    assert resolved.lifecycle_capabilities == _CAPABILITIES
     assert isinstance(provider, _Provider)
     assert selected.load_count == 1
     assert unselected.load_count == 0
@@ -208,6 +252,24 @@ def test_catalog_rejects_placeholders_and_builtin_shadowing(
     with pytest.raises(EnvironmentProviderError) as exc_info:
         build_environment_provider_factory_catalog(**kwargs)
     assert exc_info.value.code == code
+
+
+def test_catalog_rejects_provider_capabilities_that_differ_from_factory_introspection() -> None:
+    catalog = build_environment_provider_factory_catalog(
+        explicit_factories=(_MismatchedFactory(),),
+    )
+
+    with pytest.raises(EnvironmentProviderError) as exc_info:
+        catalog.create_provider(
+            EnvironmentProviderSpec(
+                provider_key="test.mismatch",
+                schema_version="1",
+                parameters={"name": "first"},
+            ),
+            runtime=_Runtime(),
+        )
+
+    assert exc_info.value.code == "provider_factory_target_invalid"
 
 
 def test_catalog_rejects_unknown_schema_without_latest_fallback() -> None:

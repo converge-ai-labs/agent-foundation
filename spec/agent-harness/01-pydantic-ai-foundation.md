@@ -8,22 +8,22 @@ The Harness does not fork or reproduce the Agent graph, Model interface, Model p
 
 ## Upstream Primitive Mapping
 
-| Pydantic AI primitive              | Harness use                                                                                              |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `Agent` and `AgentSpec`            | One authoritative Agent construction and execution path                                                  |
-| `Model` and `ModelProfile`         | Provider request/response behavior and compatibility                                                     |
-| `ResolveModelId`                   | Thin optional bridge to fresh `RunModelResolver`                                                         |
-| `AbstractCapability[AgentContext]` | Reusable behavior inside the Agent loop                                                                  |
-| `CapabilityOrdering`               | Native Capability dependencies and wrapper order                                                         |
-| Tools and Toolsets                 | Native tool schema, preparation, and dispatch                                                            |
-| `ExternalToolset`                  | Native external/client-side deferral                                                                     |
-| `DeferredToolRequests` and results | Native external-call and approval stop/resume values                                                     |
-| `RunContext[AgentContext]`         | Live messages, usage, limits, capabilities, and typed dependencies                                       |
-| `AgentRunEvents`                   | Lazy event stream, messages, usage, result, cancellation, and cleanup                                    |
-| `ModelMessage` codec               | Portable public conversation history                                                                     |
-| `RunUsage` and `UsageLimits`       | Shared monotonic usage accumulator and native limits                                                     |
-| `Instrumentation`                  | Sole Agent-attempt, model-request, tool, usage, streaming, and cancellation span owner when Host-enabled |
-| `OutputSpec`                       | Validated output and output retry semantics                                                              |
+| Pydantic AI primitive              | Harness use                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `Agent` and `AgentSpec`            | One authoritative Agent construction and execution path                                                              |
+| `Model` and `ModelProfile`         | Provider request/response behavior and compatibility                                                                 |
+| `ResolveModelId`                   | Thin optional bridge to fresh `RunModelResolver`                                                                     |
+| `AbstractCapability[AgentContext]` | Reusable behavior inside the Agent loop                                                                              |
+| `CapabilityOrdering`               | Native Capability dependencies and wrapper order                                                                     |
+| Tools and Toolsets                 | Native tool schema, preparation, and dispatch                                                                        |
+| `ExternalToolset`                  | Native external/client-side deferral                                                                                 |
+| `DeferredToolRequests` and results | Native external-call and approval stop/resume values                                                                 |
+| `RunContext[AgentContext]`         | Live messages, usage, limits, capabilities, and typed dependencies                                                   |
+| `AgentRunEvents`                   | Lazy event stream, messages, usage, result, cancellation, and cleanup                                                |
+| `ModelMessage` codec               | Portable public conversation history                                                                                 |
+| `RunUsage` and `UsageLimits`       | Shared monotonic usage accumulator and native limits                                                                 |
+| `Instrumentation`                  | Sole selected Agent-attempt, model-request, tool, usage, streaming, cancellation span, and native model-metric owner |
+| `OutputSpec`                       | Validated output and output retry semantics                                                                          |
 
 Capability authors import these values directly from Pydantic AI. The Harness does not publish parallel aliases.
 
@@ -38,7 +38,7 @@ The Harness adds:
 - an Environment lifecycle aggregate entered before input and Pydantic work, with a Host-retained controller active across the logical run;
 - portable messages, Capability state, and optional portable Environment state in `HarnessState`;
 - normalized process-local events and result combinations;
-- optional Host-supplied [Harness Observation](19-observation-model.md) around native Pydantic instrumentation;
+- optional independently selected [Harness Observation](19-observation-model.md) traces and metrics around native Pydantic instrumentation;
 - exact Model-history repair and bounded interrupted-execution recovery.
 
 These additions use public Pydantic APIs. There is no definition compiler, serialized plugin spec, Host role registry, or alternate model-resolution framework. The exact Host-supplied custom Capability type catalog exists only to authorize native `AgentSpec` reconstruction and performs no package discovery.
@@ -149,7 +149,7 @@ The repository selects a compatible Pydantic AI release and validates only docum
 - Capability and Toolset composition;
 - lazy `AgentRunEvents` streaming and cancellation;
 - public messages, deferred values, output contracts, and usage;
-- instrumentation hierarchy, convention fields, content switches, and ambient suppression;
+- instrumentation hierarchy, current-context parentage, convention fields, trace-content switches, native metrics, explicit no-op providers, and ambient suppression;
 - interrupted-message states used by bounded recovery.
 
 Each Capability state version and Environment provider-state codec version is independent from the Pydantic package version and Harness envelope version.

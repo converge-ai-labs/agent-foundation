@@ -26,6 +26,7 @@ from a13n_ui.configuration import (
     SourceTransactionManifest,
     load_envd_runtime_manifest,
 )
+from a13n_ui.configuration.loader import load_catalog_candidate
 from a13n_ui.errors import ConfigurationError
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
@@ -50,7 +51,7 @@ def _full_settings(data_root: Path, definition_root: Path, discovery_root: Path)
         configuration=ConfigurationSettings(
             definition_roots=(DefinitionRootSettings(root_id="root-user", path=definition_root, writable=True),),
             local_directories=(LocalDirectorySettings(directory_id="directory-skills", path=discovery_root),),
-            model_adapter_keys=("a13n.test-model",),
+            model_adapter_keys=("a13n.pydantic-ai",),
             orphan_retention_seconds=60,
         ),
     )
@@ -67,7 +68,7 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
             "schema_version": "1",
             "model_id": "model-main",
             "display_name": "Main Model",
-            "provider_key": "a13n.test-model",
+            "provider_key": "a13n.pydantic-ai",
             "model_name": "test-v1",
             "endpoint": None,
             "settings": {"temperature": 0},
@@ -130,6 +131,27 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
         },
     }
     return {relative: _write_yaml(root / relative, value) for relative, value in documents.items()}
+
+
+async def test_model_adapter_selection_requires_a_real_builtin_registration() -> None:
+    with pytest.raises(ConfigurationError) as error:
+        await load_catalog_candidate(
+            ConfigurationSettings(model_adapter_keys=("a13n.unknown",)),
+        )
+
+    assert error.value.code == "model_adapter_unavailable"
+
+    candidate = await load_catalog_candidate(
+        ConfigurationSettings(model_adapter_keys=("a13n.pydantic-ai",)),
+    )
+    model_lock = next(lock for lock in candidate.availability if lock.dependency_kind == "model_adapter")
+    assert model_lock.model_dump(mode="json") == {
+        "dependency_kind": "model_adapter",
+        "key": "a13n.pydantic-ai",
+        "distribution_name": "a13n-ui",
+        "distribution_version": model_lock.distribution_version,
+    }
+    assert model_lock.distribution_version
 
 
 async def test_catalog_accepts_restarts_rejects_invalid_and_applies_batch(tmp_path: Path) -> None:
@@ -533,7 +555,7 @@ def test_literal_credentials_are_rejected_from_model_content() -> None:
         "schema_version": "1",
         "model_id": "model-main",
         "display_name": "Main Model",
-        "provider_key": "a13n.test-model",
+        "provider_key": "a13n.pydantic-ai",
         "model_name": "test-v1",
         "endpoint": None,
         "settings": {},

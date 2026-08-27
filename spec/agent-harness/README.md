@@ -29,7 +29,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native input, thin model resolution, self-healing, semantic recovery, streaming, and output                                             |
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                           |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch                 |
-| [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry ownership, hierarchy, correlation, information boundary, Host profiles, and exporter-failure semantics                    |
+| [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics            |
 
 ## Reading Paths
 

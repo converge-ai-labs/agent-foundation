@@ -8,19 +8,19 @@ The Host also owns durable acceptance, worker `ExecutionAttempt` values, leases,
 
 ## Boundary
 
-| Concern                                     | Host                                          | Harness                                  |
-| ------------------------------------------- | --------------------------------------------- | ---------------------------------------- |
-| Authoring schema, Presets, revision, locks  | Owns                                          | No durable schema                        |
-| Trusted direct Python object reconstruction | Owns                                          | Validates process-local composition      |
-| Optional plugin configuration/loading       | Persists or supplies deployment input         | Owns document, loading, and application  |
-| Agent Identity and provider policy          | Issues/evaluates                              | Carries through fresh bindings           |
-| Environment Providers and Resources         | Chooses source and durable ownership policy   | Owns only explicitly ephemeral inputs    |
-| Environment and model resolution            | Supplies optional sources/bindings and policy | Normalizes, enters, and closes run scope |
-| Agent loop and outer middleware             | Delegates                                     | Owns process-locally                     |
-| Internal `ModelAttempt` values              | Observes one logical run                      | Owns bounded recovery                    |
-| Worker crash and durable replay             | Owns                                          | Exports portable state only              |
-| Durable completion and delivery             | Owns                                          | Returns a candidate                      |
-| Observation provider and export lifecycle   | Owns                                          | Uses explicit providers when supplied    |
+| Concern                                                    | Host                                          | Harness                                             |
+| ---------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------- |
+| Authoring schema, Presets, revision, locks                 | Owns                                          | No durable schema                                   |
+| Trusted direct Python object reconstruction                | Owns                                          | Validates process-local composition                 |
+| Optional plugin configuration/loading                      | Persists or supplies deployment input         | Owns document, loading, and application             |
+| Agent Identity and provider policy                         | Issues/evaluates                              | Carries through fresh bindings                      |
+| Environment Providers and Resources                        | Chooses source and durable ownership policy   | Owns only explicitly ephemeral inputs               |
+| Environment and model resolution                           | Supplies optional sources/bindings and policy | Normalizes, enters, and closes run scope            |
+| Agent loop and outer middleware                            | Delegates                                     | Owns process-locally                                |
+| Internal `ModelAttempt` values                             | Observes one logical run                      | Owns bounded recovery                               |
+| Worker crash and durable replay                            | Owns                                          | Exports portable state only                         |
+| Durable completion and delivery                            | Owns                                          | Returns a candidate                                 |
+| Observation providers, signal policy, and export lifecycle | Owns                                          | Uses independently selected providers when supplied |
 
 ## Definition Mapping
 
@@ -125,9 +125,11 @@ A normal result becomes durable only through a fenced Host transaction. `RunClea
 
 ## Observation Integration
 
-The Host constructs the OpenTelemetry SDK providers, `Resource`, sampler, processors, exporters, and vendor profiles and passes the exact provider objects through `HarnessInstrumentation` when constructing `HarnessBuilder`. It owns W3C context extraction and injection, span links for independently scheduled work, trusted processor or collector sanitization, bounded shutdown flush, and process shutdown. The Harness configures no global provider and remains inert when instrumentation is absent.
+The Host independently constructs the OpenTelemetry SDK tracer and meter providers, `Resource`, sampler, span processors, metric readers, exporters, and vendor profiles and passes either or both exact provider objects through `HarnessInstrumentation` when constructing `HarnessBuilder`. It selects summary, standard, or verbose traces independently from standard metrics. It owns W3C context extraction and injection, span links for independently scheduled work, trace-level export filtering, trusted processor or collector sanitization, bounded shutdown flush, and process shutdown. The Harness configures no global provider and remains inert when instrumentation is absent.
 
-Telemetry grouping, including a Langfuse product session, never selects Harness State, provider model session, prompt-cache affinity, durable execution, or delivery. The Host supplies a conforming non-throwing provider stack; the Harness guards its own telemetry boundaries, while a provider that raises through Pydantic-owned instrumentation is trusted Host composition failure rather than an Agent outcome. A fail-closed audit requirement uses a separate Host-owned durable facility. The complete contract belongs to [Harness Observation](19-observation-model.md).
+A Host may make one generic OpenTelemetry, Langfuse, or Logfire span current before entering the Harness. The Harness accepts that parent through standard current context only and creates `harness.run` beneath it; no live span or vendor object enters `RunBindings` or another Harness argument. Combined backends retain exactly one Host root and attach multiple processors/exporters to the same provider. If Langfuse does not own that root, its export predicate must retain the root's instrumentation scope.
+
+An executable Host may map `A13N_HARNESS_TRACE_LEVEL`, `A13N_HARNESS_TRACE_CONTENT`, and `A13N_HARNESS_METRICS` into the typed builder value; the Harness library never reads them, and explicit Host code wins. Standard `OTEL_*` configuration continues to own SDK/export behavior. Telemetry grouping, including a Langfuse product session, never selects Harness State, provider model session, prompt-cache affinity, durable execution, or delivery. The Host supplies a conforming non-throwing provider stack; the Harness guards its own telemetry boundaries, while a provider that raises through Pydantic-owned instrumentation is trusted Host composition failure rather than an Agent outcome. A fail-closed audit requirement uses a separate Host-owned durable facility. The complete contract belongs to [Harness Observation](19-observation-model.md).
 
 ## Embedded Profile
 

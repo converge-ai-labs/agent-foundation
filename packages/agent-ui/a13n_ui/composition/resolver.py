@@ -39,6 +39,7 @@ from .models import (
     ResolvedAgentNode,
     ResolvedAgentSnapshot,
     ResolvedEnvironmentBinding,
+    ResolvedEnvironmentLifecycleCapabilities,
     ResolvedEnvironmentSnapshot,
     ResolvedModel,
     ResolvedPlugin,
@@ -283,6 +284,12 @@ class SnapshotResolver:
                 canonical_json_value(resolved.configuration),
             )
             _reject_data_root_overlap(normalized, self._data_root)
+            lifecycle_capabilities = ResolvedEnvironmentLifecycleCapabilities(
+                pause_modes=frozenset(mode.value for mode in resolved.lifecycle_capabilities.pause_modes),
+                resource_allocation=resolved.lifecycle_capabilities.resource_allocation.value,
+                attachment_concurrency=resolved.lifecycle_capabilities.attachment_concurrency.value,
+            )
+            _validate_environment_lifecycle(document.lifecycle.idle, lifecycle_capabilities)
             bindings.append(
                 ResolvedEnvironmentBinding(
                     binding_name=binding.binding_name,
@@ -292,6 +299,7 @@ class SnapshotResolver:
                     normalized_parameters=normalized,
                     permission_ceiling=binding.permission_ceiling,
                     required=binding.required,
+                    lifecycle_capabilities=lifecycle_capabilities,
                     dependency=lock,
                 )
             )
@@ -377,10 +385,43 @@ def validate_compatibility(
                     code="agent_environment_incompatible",
                     details={"agent_id": node.agent_id, "child_name": edge.name},
                 )
+            selected_bindings = tuple(bindings[name] for name in sorted(selected))
+            if edge.environment.mode == "dedicated" and any(
+                binding.lifecycle_capabilities.resource_allocation != "multiple_from_spec"
+                for binding in selected_bindings
+            ):
+                raise CompositionError(
+                    "A dedicated child requires providers that allocate multiple resources from one specification.",
+                    code="agent_environment_incompatible",
+                    details={"agent_id": node.agent_id, "child_name": edge.name},
+                )
+            if edge.environment.mode == "shared_root" and any(
+                binding.lifecycle_capabilities.attachment_concurrency != "shared" for binding in selected_bindings
+            ):
+                raise CompositionError(
+                    "A shared-root child requires providers with shared attachment concurrency.",
+                    code="agent_environment_incompatible",
+                    details={"agent_id": node.agent_id, "child_name": edge.name},
+                )
     return AgentEnvironmentCompatibility(
         agent_snapshot_digest=agent.logical_agent_digest,
         environment_snapshot_digest=environment.logical_environment_digest,
     )
+
+
+def _validate_environment_lifecycle(
+    idle_policy: str,
+    capabilities: ResolvedEnvironmentLifecycleCapabilities,
+) -> None:
+    required_pause_mode = {
+        "pause_full": "full",
+        "pause_filesystem": "filesystem",
+    }.get(idle_policy)
+    if required_pause_mode is not None and required_pause_mode not in capabilities.pause_modes:
+        raise CompositionError(
+            "An Environment lifecycle policy is unsupported by a selected provider.",
+            code="environment_lifecycle_incompatible",
+        )
 
 
 def _validate_requirements(document: AgentDefinitionDocument) -> None:
@@ -539,9 +580,7 @@ def _provider_registration_matches(
     if distribution_name is None and lock.distribution_name == "a13n-environment-provider":
         distribution_name = "a13n-environment-provider"
         distribution_version = _package_version(distribution_name)
-    return (lock.distribution_name is None or lock.distribution_name == distribution_name) and (
-        lock.distribution_version is None or lock.distribution_version == distribution_version
-    )
+    return lock.distribution_name == distribution_name and lock.distribution_version == distribution_version
 
 
 def _package_version(distribution: str) -> str:

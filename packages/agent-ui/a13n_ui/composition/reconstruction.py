@@ -43,6 +43,7 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_ui.configuration import CatalogRepository, DependencyLock
 from a13n_ui.errors import CompositionError
+from a13n_ui.model_adapters import model_adapter_registration
 
 from .models import (
     ResolvedAgentNode,
@@ -66,6 +67,7 @@ class SnapshotSkillMaterializer:
         self._materializer_id = materializer_id
         self._target_root = target_root
         self._files = {name: tuple(values) for name, values in files.items()}
+        self._lock = Lock()
 
     @property
     def materializer_id(self) -> str:
@@ -76,9 +78,14 @@ class SnapshotSkillMaterializer:
         return self._target_root
 
     async def materialize(self, *, files: FileOperator) -> None:
+        async with self._lock:
+            await self._materialize(files)
+
+    async def _materialize(self, files: FileOperator) -> None:
         if await self._matches_target(files):
             return
         stage = f"{self.target_root}.stage-{uuid4().hex}"
+        error: BaseException | None = None
         try:
             await files.mkdir(stage, parents=True, exist_ok=False)
             for skill_name, package in sorted(self._files.items()):
@@ -100,17 +107,33 @@ class SnapshotSkillMaterializer:
                             code="skill_materialization_mismatch",
                         )
             try:
-                await files.move(stage, self.target_root, replace=False)
-            except EnvironmentError as exc:
-                if exc.code != "environment_conflict" or not await self._matches_target(files):
+                await files.move(stage, self.target_root, replace=True)
+            except EnvironmentError:
+                if not await self._matches_target(files):
                     raise
-        except BaseException as error:
+            if not await self._matches_target(files):
+                raise CompositionError(
+                    "The managed Skill target does not match its immutable package set after publication.",
+                    code="skill_materialization_mismatch",
+                )
+        except BaseException as exc:
+            error = exc
+            raise
+        finally:
             try:
-                await files.remove(stage, recursive=True)
+                await files.stat(stage)
             except EnvironmentError as cleanup_error:
                 if cleanup_error.code != "environment_not_found":
+                    if error is None:
+                        raise
                     error.add_note(f"Skill materialization cleanup failed with {cleanup_error.code}.")
-            raise
+            else:
+                try:
+                    await files.remove(stage, recursive=True)
+                except EnvironmentError as cleanup_error:
+                    if error is None:
+                        raise
+                    error.add_note(f"Skill materialization cleanup failed with {cleanup_error.code}.")
 
     async def _matches_target(self, files: FileOperator) -> bool:
         try:
@@ -120,10 +143,7 @@ class SnapshotSkillMaterializer:
                 return False
             raise
         if metadata.kind != "directory":
-            raise CompositionError(
-                "The managed Skill target is not a directory.",
-                code="skill_materialization_mismatch",
-            )
+            return False
         expected_entries: set[str] = set()
         expected_files: list[tuple[str, _PackageFile]] = []
         for skill_name, package in self._files.items():
@@ -134,30 +154,34 @@ class SnapshotSkillMaterializer:
                 parts = relative.split("/")
                 expected_entries.update("/".join(parts[:index]) for index in range(1, len(parts)))
                 expected_files.append((relative, item))
-        result = await files.query(
-            FileQueryRequest(
-                root=self.target_root,
-                pattern="**",
-                recursive=True,
-                include_hidden=True,
-                offset=0,
-                max_results=len(expected_entries) + 1,
+        try:
+            result = await files.query(
+                FileQueryRequest(
+                    root=self.target_root,
+                    pattern="**",
+                    recursive=True,
+                    include_hidden=True,
+                    offset=0,
+                    max_results=len(expected_entries) + 1,
+                )
             )
-        )
+        except EnvironmentError as exc:
+            if exc.code == "environment_not_found":
+                return False
+            raise
         prefix = f"{self.target_root}/"
         actual = {entry.path.removeprefix(prefix) for entry in result.entries if entry.path != self.target_root}
         if result.has_more or actual != expected_entries:
-            raise CompositionError(
-                "The managed Skill target does not match its immutable package set.",
-                code="skill_materialization_mismatch",
-            )
-        for relative, item in expected_files:
-            copied = await files.read_bytes(f"{self.target_root}/{relative}")
-            if hashlib.sha256(copied).hexdigest() != item.sha256:
-                raise CompositionError(
-                    "The managed Skill target failed digest verification.",
-                    code="skill_materialization_mismatch",
-                )
+            return False
+        try:
+            for relative, item in expected_files:
+                copied = await files.read_bytes(f"{self.target_root}/{relative}")
+                if hashlib.sha256(copied).hexdigest() != item.sha256:
+                    return False
+        except EnvironmentError as exc:
+            if exc.code == "environment_not_found":
+                return False
+            raise
         return True
 
 
@@ -214,17 +238,19 @@ class AgentReconstructor:
         snapshot: ResolvedAgentSnapshot,
         environment: ResolvedEnvironmentSnapshot | None = None,
     ) -> ExecutableAgent[Any]:
-        if environment is None and any(node.skills for node in snapshot.resolved_agents):
+        requires_environment = any(node.skills for node in snapshot.resolved_agents)
+        if environment is None and requires_environment:
             raise CompositionError(
                 "An Agent with managed Skills requires a compatible Environment snapshot.",
                 code="agent_environment_required",
             )
+        selected_environment = environment if requires_environment else None
         cache_key = snapshot.logical_agent_digest
-        if environment is not None:
-            cache_key = f"{cache_key}:{environment.logical_environment_digest}"
+        if selected_environment is not None:
+            cache_key = f"{cache_key}:{selected_environment.logical_environment_digest}"
 
         async def build() -> ExecutableAgent[Any]:
-            return await self._build(snapshot, environment)
+            return await self._build(snapshot, selected_environment)
 
         return await self._cache.get_or_build(cache_key, build)
 
@@ -238,6 +264,19 @@ class AgentReconstructor:
                 "The Agent snapshot selects another Harness release.",
                 code="harness_release_mismatch",
             )
+        for lock in snapshot.adapter_locks:
+            if lock.dependency_kind != "model_adapter":
+                continue
+            registration = model_adapter_registration(lock.key)
+            if registration is None or (
+                lock.distribution_name != registration.distribution_name
+                or lock.distribution_version != registration.distribution_version
+            ):
+                raise CompositionError(
+                    "A locked Agent UI Model adapter changed after snapshot publication.",
+                    code="model_adapter_lock_mismatch",
+                    details={"model_adapter_key": lock.key},
+                )
         plugin_keys = tuple(lock.key for lock in snapshot.adapter_locks if lock.dependency_kind == "harness_plugin")
         try:
             plugin_catalog = build_harness_plugin_factory_catalog(plugin_keys=plugin_keys)
@@ -468,8 +507,9 @@ def _registration_matches(
     lock: DependencyLock,
     registration: HarnessPluginFactoryRegistration,
 ) -> bool:
-    return (lock.distribution_name is None or lock.distribution_name == registration.distribution_name) and (
-        lock.distribution_version is None or lock.distribution_version == registration.distribution_version
+    return (
+        lock.distribution_name == registration.distribution_name
+        and lock.distribution_version == registration.distribution_version
     )
 
 

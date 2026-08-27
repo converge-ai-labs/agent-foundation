@@ -17,7 +17,7 @@ from .errors import (
     EnvironmentProviderRecoveryHint,
 )
 from .management import EnvironmentProvider, EnvironmentProviderRuntime
-from .models import EnvironmentProviderSpec
+from .models import EnvironmentLifecycleCapabilities, EnvironmentProviderSpec
 
 ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP = "a13n_environment_provider.providers"
 _RESERVED_BUILTIN_KEYS = frozenset(
@@ -34,6 +34,7 @@ _RESERVED_BUILTIN_KEYS = frozenset(
 class ResolvedEnvironmentProviderSpec:
     spec: EnvironmentProviderSpec
     configuration: BaseModel
+    lifecycle_capabilities: EnvironmentLifecycleCapabilities
     factory: EnvironmentProviderFactory
 
 
@@ -69,6 +70,12 @@ class EnvironmentProviderFactory(ABC):
     @classmethod
     @abstractmethod
     def configuration_model(cls, schema_version: str) -> type[BaseModel]: ...
+
+    @abstractmethod
+    def lifecycle_capabilities(
+        self,
+        configuration: BaseModel,
+    ) -> EnvironmentLifecycleCapabilities: ...
 
     @abstractmethod
     def create_provider(
@@ -173,7 +180,26 @@ class EnvironmentProviderFactoryCatalog(Mapping[str, EnvironmentProviderFactory]
                 ),
                 details={"validation_error_count": exc.error_count()},
             ) from exc
-        return ResolvedEnvironmentProviderSpec(spec=spec, configuration=configuration, factory=factory)
+        try:
+            capabilities = factory.lifecycle_capabilities(configuration)
+        except EnvironmentProviderError:
+            raise
+        except Exception as exc:
+            raise _factory_failure(
+                spec.provider_key,
+                "Factory lifecycle capabilities could not be resolved.",
+            ) from exc
+        if not isinstance(capabilities, EnvironmentLifecycleCapabilities):
+            raise _factory_target_error(
+                spec.provider_key,
+                "Factory lifecycle capabilities must be EnvironmentLifecycleCapabilities.",
+            )
+        return ResolvedEnvironmentProviderSpec(
+            spec=spec,
+            configuration=configuration,
+            lifecycle_capabilities=capabilities,
+            factory=factory,
+        )
 
     def create_provider(
         self,
@@ -201,6 +227,23 @@ class EnvironmentProviderFactoryCatalog(Mapping[str, EnvironmentProviderFactory]
             raise _factory_target_error(
                 spec.provider_key,
                 "Provider factory returned a value that is not an EnvironmentProvider.",
+            )
+        try:
+            provider_capabilities = provider.lifecycle_capabilities
+        except EnvironmentProviderError:
+            raise
+        except Exception as exc:
+            raise _factory_failure(
+                spec.provider_key,
+                "Provider lifecycle capabilities could not be read.",
+            ) from exc
+        if (
+            not isinstance(provider_capabilities, EnvironmentLifecycleCapabilities)
+            or provider_capabilities != resolved.lifecycle_capabilities
+        ):
+            raise _factory_target_error(
+                spec.provider_key,
+                "Provider lifecycle capabilities differ from factory introspection.",
             )
         return provider
 

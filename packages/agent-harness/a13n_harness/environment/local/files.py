@@ -16,6 +16,7 @@ from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterat
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from ..files import (
     FileCopyResult,
@@ -681,11 +682,28 @@ class LocalFileOperator:
         )
         self._require_writable(source_native)
         self._require_writable(destination_native)
+        if source_native == destination_native:
+            return
         if destination_native.exists() and not replace:
             raise EnvironmentError("Move destination exists.", code="environment_conflict")
         if destination_native.is_symlink():
             raise EnvironmentError("Move destination symlink is denied.", code="environment_denied")
-        (os.replace if replace else os.rename)(source_native, destination_native)
+        if not replace or not destination_native.exists():
+            (os.replace if replace else os.rename)(source_native, destination_native)
+            return
+
+        backup = destination_native.with_name(f".{destination_native.name}.a13n-replaced-{uuid4().hex}")
+        os.rename(destination_native, backup)
+        try:
+            os.replace(source_native, destination_native)
+        except BaseException:
+            if destination_native.exists():
+                _remove_native_path(backup)
+            else:
+                os.replace(backup, destination_native)
+            raise
+        else:
+            _remove_native_path(backup)
 
     async def remove(
         self,
@@ -835,6 +853,13 @@ def _read_text_page(
 
         has_more = bool(file.read(1))
     return "".join(selected), len(selected), has_more, tuple(truncated_lines)
+
+
+def _remove_native_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
 
 
 def _environment_error_from_os(exc: OSError, *, action: str) -> EnvironmentError:

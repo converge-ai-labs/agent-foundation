@@ -18,7 +18,7 @@ Pydantic AI owns the Agent loop, Models, profiles, Toolsets, Capabilities, messa
 - ordered Environment aggregate extensions entered after state restore and closed before provider teardown;
 - detached `HarnessState` containing messages, Capability namespaces, and optional portable Environment data;
 - a single-consumer event/result stream with deterministic cleanup;
-- optional Host-supplied OpenTelemetry Observation with one Harness logical-run span and native Pydantic Agent/model/tool descendants;
+- optional independently selected OpenTelemetry traces and metrics, with summary tracing as the low-detail enabled default;
 - narrow Model self-healing and bounded recovery from interrupted model execution.
 
 It does not add a second Agent loop, Model/profile system, Toolset hierarchy, Capability registry, serialized compiler/catalog, universal plugin package manager, or durable workflow engine.
@@ -85,7 +85,7 @@ The trusted Host reconstructs Python objects from its own configuration and depe
 | Environment core                | Enter provider scopes, publish immutable routing, coordinate readiness/state, and serve Host topology updates                                         | Not a Capability, provider factory, or durable command API              |
 | `AgentContext`                  | Share run Identity, Environment facade, state, plugins, child collection, model resolver, and metadata                                                | One context per logical Harness run                                     |
 | `HarnessRunStream`              | Lazy single-consumer events, cancellation, state export, model attempts, results, and cleanup                                                         | Not a Host durable `ExecutionAttempt`, queue, replay stream, or lease   |
-| Harness Observation             | Optional logical-run OpenTelemetry span around native Pydantic Agent/model/tool observations                                                          | Host owns SDK, export, sampling, vendor profiles, and durable audit     |
+| Harness Observation             | Optional independently selected trace levels and metrics nested under one current Host OTel parent when present                                       | Host owns root, SDK, filtering, export, sampling, vendors, and audit    |
 | `HarnessState`                  | Detached messages, JSON Capability namespaces, and optional portable Environment data                                                                 | Host chooses persistence and checkpoint selection                       |
 | Tool execution boundary         | Mandatory outer wrapper for function dispatch and text/JSON results; managed authority activates only from complete trusted metadata and fresh policy | Native unannotated tools remain trusted in-process code                 |
 | Message integrity Filter        | Mandatory innermost request hook that removes orphan or duplicate ordinary function-tool results                                                      | Not provider rendering or interrupted-history recovery                  |
@@ -177,7 +177,7 @@ A hosted system can persist the Harness-owned plugin document and maintain artif
 11. Model-facing resource references are compact, scope-local, non-authoritative selectors; trusted internal, provider, and durable identities retain their owning representations.
 12. Terminal delivery occurs only after cleanup.
 13. Host durability, event projection, telemetry export, external delivery, usage accounting, billing, and payment remain separate facts.
-14. When [Harness Observation](19-observation-model.md) is enabled, Pydantic AI owns Agent-attempt, model-request, tool, usage, streaming, and cancellation spans, while the Harness owns only the complete logical-run span and focused Harness operations.
+14. [Harness Observation](19-observation-model.md) independently selects traces and metrics: the Harness owns logical-run and focused-operation telemetry, while Pydantic AI owns its native Agent/model/tool spans and model metrics.
 
 ## Trade-offs
 

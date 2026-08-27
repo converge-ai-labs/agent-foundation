@@ -125,9 +125,11 @@ class ModelDefinition(BaseModel):
     credential_ref: str | None
 ```
 
-`provider_key` selects an Agent UI-supported model adapter that returns a native Pydantic AI Model through a fresh Harness `RunModelResolver`. `credential_ref` names a resolver entry but contains no secret. `endpoint` is a credential-free network location and rejects URL user information or secret query parameters. A credential value can rotate under the same reference and affect later Runs without changing a pinned Model revision; changing the reference, endpoint, provider, model name, or model settings creates different revision content.
+`provider_key` selects an Agent UI-supported model adapter that returns a native Pydantic AI Model through a fresh Harness `RunModelResolver`. The built-in `a13n.pydantic-ai` adapter is Agent UI-owned code in the `a13n-ui` distribution. Process settings explicitly allow its key; arbitrary configured strings, import targets, and ambient entry points do not create adapters. Candidate generation records the selected adapter key plus exact distribution name/version in dependency provenance, and reconstruction verifies that lock before Harness build.
 
-Installed provider packages and model names are validated as far as possible without credential or network I/O. Connectivity and credential validity remain runtime facts.
+`credential_ref` names a resolver entry but contains no secret. `endpoint` is a credential-free network location and rejects URL user information or secret query parameters. A credential value can rotate under the same reference and affect later Runs without changing a pinned Model revision; changing the reference, endpoint, provider, model name, or model settings creates different revision content.
+
+Installed adapter code and model names are validated as far as possible without credential or network I/O. Connectivity, native Model construction, and credential validity remain fresh Run facts.
 
 ### Prompts
 
