@@ -184,4 +184,4 @@ The API uses the shared bounded errors and stable codes enforced by the [HTTP in
 6. Replay cursors, identifiers, receipts, and signed URLs grant no authority by possession.
 7. API read models contain no process-local object, provider resource-state data, attachment, credential, or Secret value.
 8. SDKs and the CLI consume this API rather than defining parallel lifecycle or retry semantics.
-9. Connector Provider catalog routes never install or import caller-selected code, and public Execution routes never forge Trigger or Connection selections.
+9. Connector Provider catalog routes never install or import caller-selected code, and public Turn routes never forge Trigger or Connection selections.

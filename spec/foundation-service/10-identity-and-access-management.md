@@ -417,7 +417,7 @@ No credential contains a role snapshot. Identifier possession, an earlier allow,
 
 Product RBAC decides whether a User or Service Account may invoke an Agent. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current Agent invocation permission, the immutable Agent revision, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. Every newly claimed TurnAttempt and every accepted child or retry Turn obtains fresh authority instead of retaining a role snapshot.
 
-The [Connector contract](12-connectors-connections-and-triggers.md#management-and-ingress-surfaces) defines Connector, Connection, and Trigger actions. Workspace roles map those actions as specified above. Connector-backed execution and Trigger acceptance reauthorize the current Principal, resource eligibility, and required run grants; no role snapshot or role name enters Harness.
+The [Connector contract](23-connectors-connections-and-triggers.md#management-and-ingress-surfaces) defines Connector, Connection, and Trigger actions. Workspace roles map those actions as specified above. Connector-backed Agent work and Trigger acceptance reauthorize the current Principal, resource eligibility, and required run grants; no role snapshot or role name enters Harness.
 
 ## Lifecycle and Revocation
 

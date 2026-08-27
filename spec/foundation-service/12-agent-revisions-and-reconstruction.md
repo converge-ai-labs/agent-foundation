@@ -106,4 +106,4 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 5. Every TurnAttempt reconstructs fresh authority and bindings without mutating the selected revision.
 6. Replacement workers preserve stable Thread identity and change TurnAttempt generation and transient Harness Run correlation.
 7. A retained checkpoint is used only under explicitly compatible Agent and state contracts.
-8. Connector tool contracts and Provider artifacts are frozen by the Agent revision; Connection authority and credentials remain fresh per Attempt.
+8. Connector tool contracts and Provider artifacts are frozen by the Agent revision; Connection authority and credentials remain fresh per TurnAttempt.
