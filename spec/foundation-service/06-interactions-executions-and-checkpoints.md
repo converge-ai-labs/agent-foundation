@@ -161,8 +161,6 @@ Interactive acceptance authenticates and authorizes the caller, validates Sessio
 
 Public standalone acceptance performs the same checks for its Workspace and caller-authorized source state while omitting interaction records. It cannot claim Trigger identity or override a Connection selected by the Agent revision and current selection rules. The same principal, scope, key, and canonical request return the original acceptance receipt; reuse with different content conflicts. A lost response after possible acceptance remains unknown until the caller repeats the same key or reads authoritative state.
 
-Trigger acceptance is an internal sibling path. One short transaction reauthorizes the Trigger Principal, resolves the Agent's Connector selections, reserves the source occurrence key, and commits the Trigger source metadata, standalone Execution, lifecycle event, and outbox intent. Duplicate occurrence identity returns the prior accepted Execution and never creates another one.
-
 ## Cancellation and Unknown Outcome
 
 Cancellation is durable intent followed by cooperative enforcement. A worker checks cancellation before expensive or effectful boundaries and attempts a generation-fenced outcome commit. Cancellation never claims rollback of model, tool, child, Environment, provider, or client effects.

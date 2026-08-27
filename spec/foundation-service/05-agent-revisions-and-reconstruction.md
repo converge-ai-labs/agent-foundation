@@ -46,11 +46,11 @@ flowchart LR
     Adapter --> Definition[Process-local AgentDefinition]
 ```
 
-Materialization validates resource scope, references, schemas, permission to bind each resource, Secret requirement form, Connector tool discovery snapshot, model-visible name collisions, dependency compatibility, and all required locks before committing the immutable revision. Provider discovery can use an explicitly eligible Connection but never auto-binds it. The client selects Provider tool names; Foundation validates and freezes their full schemas and Harness metadata rather than accepting a caller-authored tool contract. The revision records identity and compatibility, not live authority. Current credentials, Connection eligibility, RoleBindings, run grants, Provider availability, Secret eligibility, and Environment bindings are resolved freshly for every `ExecutionAttempt` and Harness Run.
+Materialization validates resource scope, references, schemas, permission to bind each resource, Secret requirement form, [Connector declarations](12-connectors-connections-and-triggers.md#agent-connector-declarations), dependency compatibility, and all required locks before committing the immutable revision. The revision records identity and compatibility, not live authority. Current credentials, Connection eligibility, RoleBindings, run grants, Provider availability, Secret eligibility, and Environment bindings are resolved freshly for every `ExecutionAttempt` and Harness Run.
 
 ## Dependency Locks
 
-A dependency lock identifies every package, external content unit, adapter, or schema whose change could alter reconstruction, Capability behavior, state compatibility, security, or output semantics. It includes exact package or content identities, trusted adapter keys, selected Connector Provider artifacts, relevant schema or codec compatibility, and integrity digests when content is externally materialized. `ConnectorRevision.provider_config_version` versions the Provider's configuration schema; it does not replace the exact package or artifact lock stored here.
+A dependency lock identifies every package, external content unit, adapter, or schema whose change could alter reconstruction, Capability behavior, state compatibility, security, or output semantics. It includes exact package or content identities, trusted adapter keys, selected Connector Provider artifacts, relevant schema or codec compatibility, and integrity digests when content is externally materialized.
 
 Package installation or entry-point availability grants no trust. The deployment selects allowed adapter and plugin keys, verifies the exact lock, and imports only those installed targets. A durable row never contains an arbitrary module, class, file path, shell command, or remote code URL for execution.
 
@@ -76,7 +76,7 @@ sequenceDiagram
 
 Reconstruction is deterministic with respect to the revision and declared locks, while live authority and provider reachability are intentionally fresh. The worker assigns a stable `AgentInstanceRef` to each independently advancing root, child, or fork history. A replacement worker preserves that reference for the same Thread, when one exists, but uses a new `ExecutionAttempt`, transient Harness Run correlation, and fresh bindings.
 
-The worker validates the complete definition before starting model or tool work. It resolves every Connector declaration to exactly one eligible Connection or an explicitly connectionless Provider, verifies the locked Provider artifact and frozen tool contract, and constructs one process-local managed Toolset over the Harness tool boundary. It does not partially execute a revision whose output schema, Capability state codec, plugin contract, Connector Provider, model integration, Environment provider, or dependency lock is incompatible.
+The worker validates the complete definition, including Connector declarations and locked Provider artifacts, before starting model or tool work. It does not partially execute a revision whose output schema, Capability state codec, plugin contract, Connector Provider, model integration, Environment provider, or dependency lock is incompatible. Connector-specific reconstruction and Connection eligibility follow the [Connector contract](12-connectors-connections-and-triggers.md#connection-selection-and-attempt-preparation).
 
 ## Continuation Compatibility
 
@@ -86,17 +86,15 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 
 ## Failure Semantics
 
-| Failure                                         | Outcome                                                                     |
-| ----------------------------------------------- | --------------------------------------------------------------------------- |
-| Missing revision or lock                        | Execution fails before Harness construction                                 |
-| Content digest or package lock mismatch         | Execution fails closed and records bounded incompatibility evidence         |
-| Unknown adapter or plugin key                   | Revision is not reconstructed; no ambient import fallback occurs            |
-| Connector Provider or tool lock mismatch        | Execution fails before Harness construction; no current schema is adopted   |
-| Connection is missing, ambiguous, or ineligible | Execution fails before Harness construction; tools are not silently omitted |
-| Model binding required but unavailable          | Execution fails before native model inference                               |
-| Credential or policy unavailable                | Fresh binding fails; the immutable revision is not rewritten                |
-| Checkpoint incompatible with revision           | Continuation fails before Harness entry; display history is not substituted |
-| Worker lost during reconstruction               | Lease recovery uses a new generation; no process-local object is restored   |
+| Failure                                 | Outcome                                                                     |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| Missing revision or lock                | Execution fails before Harness construction                                 |
+| Content digest or package lock mismatch | Execution fails closed and records bounded incompatibility evidence         |
+| Unknown adapter or plugin key           | Revision is not reconstructed; no ambient import fallback occurs            |
+| Model binding required but unavailable  | Execution fails before native model inference                               |
+| Credential or policy unavailable        | Fresh binding fails; the immutable revision is not rewritten                |
+| Checkpoint incompatible with revision   | Continuation fails before Harness entry; display history is not substituted |
+| Worker lost during reconstruction       | Lease recovery uses a new generation; no process-local object is restored   |
 
 ## Invariants
 

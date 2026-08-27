@@ -26,7 +26,7 @@ flowchart TB
     Deployment[Foundation deployment]
     Organization[Organization]
     Workspace[Workspace]
-    Resource[Agent, Connector, Connection, Trigger, Secret, Execution, Environment, or other resource]
+    Resource[Agent, Secret, Session, Thread, Turn, Execution, Environment, or other resource]
 
     Deployment --> Organization --> Workspace --> Resource
 ```
@@ -60,7 +60,7 @@ Foundation recognizes exactly these OSS Principal kinds:
 - `user` is one platform-wide human identity;
 - `service_account` is one non-human identity owned by a Workspace.
 
-A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. Agent, Agent revision, Connector, Connection, Trigger, Session, Execution, credential, and Secret identities are not Principals. A personal Connection or Trigger stores an exact `PrincipalRef` but does not become that Principal or confer its authority. Product authorization targets the stable Agent ID, while an accepted invocation selects the exact immutable Agent revision separately.
+A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. Agent, Agent revision, Session, Execution, credential, and Secret identities are not Principals. Product authorization targets the stable Agent ID, while an accepted invocation selects the exact immutable Agent revision separately.
 
 The conceptual references are:
 
@@ -416,21 +416,7 @@ No credential contains a role snapshot. Identifier possession, an earlier allow,
 
 Product RBAC decides whether a User or Service Account may invoke an Agent. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current Agent invocation permission, the immutable Agent revision, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. A resumed or retried Execution obtains fresh authority instead of retaining a role snapshot.
 
-The Connector domain owns these stable product actions:
-
-| Action                | Meaning                                                                         |
-| --------------------- | ------------------------------------------------------------------------------- |
-| `connector.read`      | Read safe Provider catalog, Connector, revision, and tool metadata              |
-| `connector.create`    | Create a Workspace Connector and its first revision                             |
-| `connector.configure` | Create another immutable revision or change stable Connector lifecycle metadata |
-| `connection.read`     | Read a safe eligible Connection projection                                      |
-| `connection.manage`   | Establish, refresh, disable, reauthorize, or revoke an eligible Connection      |
-| `trigger.read`        | Read safe Trigger configuration and lifecycle status                            |
-| `trigger.configure`   | Create, update, enable, disable, reconcile, or delete a Trigger                 |
-
-Viewer includes safe read actions. Runner receives `connection.read` and `connection.manage` only when the Connection `principal_ref` equals the current Principal. Builder receives Workspace Connector, shared Connection, and Trigger management. A User-backed Trigger can bind only the current User; Workspace Admin identity authority can bind a Service Account Trigger and manage Service Account Connections. No caller can create or transfer a personal Connection for another User, bind a Trigger to another User, or reveal any Connection credential.
-
-Model-triggerable Connector work additionally requires the run grants `connector.use`, `secret.use`, and `tool.call`. Each grant names the selected resource and allowed operation; no role name is carried into Harness. Effective authority is the intersection of the accepted Agent revision, the resolved Connection, current Principal and RoleBindings, current Connection status, and current grants. Trigger acceptance performs the same invocation authorization for its stored Principal before creating an Execution.
+The [Connector contract](12-connectors-connections-and-triggers.md#management-and-ingress-surfaces) defines Connector, Connection, and Trigger actions. Workspace roles map those actions as specified above. Connector-backed execution and Trigger acceptance reauthorize the current Principal, resource eligibility, and required run grants; no role snapshot or role name enters Harness.
 
 ## Lifecycle and Revocation
 

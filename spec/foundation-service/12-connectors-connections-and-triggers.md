@@ -30,7 +30,8 @@ compatibility remain independent checks.
 | Connector, ConnectorRevision, Connection, and Trigger resources                         | This document                                                               | Owns identity, fields, lifecycles, and compatibility                               |
 | Agent revision and dependency locks                                                     | [Agent Revisions](05-agent-revisions-and-reconstruction.md)                 | Freeze exact Connector declarations and trusted provider artifacts                 |
 | Tool composition, schema validation, managed authorization, and result safety           | [Harness Tool Execution](../agent-harness/07-tool-execution.md)             | Foundation reconstructs one managed Toolset over the accepted Harness boundary     |
-| Principal, RoleBinding, product permission, and run-grant meaning                       | [Foundation IAM](04-identity-and-access-management.md)                      | Reauthorizes management, Trigger acceptance, and every Attempt                     |
+| Principal, RoleBinding, and built-in role mapping                                       | [Foundation IAM](04-identity-and-access-management.md)                      | Reauthorizes management, Trigger acceptance, and every Attempt                     |
+| Connector product actions and run-grant requirements                                    | This document                                                               | Defines resource-specific authority checked through Foundation IAM                 |
 | Secret encryption and owner lifecycle                                                   | [Secret Management](01-secret-management.md)                                | Stores Connection and Trigger credential material without public plaintext reads   |
 | Execution, Attempt, fencing, and recovery                                               | [Executions and Checkpoints](06-interactions-executions-and-checkpoints.md) | Runs accepted Trigger and interactive work through one lifecycle                   |
 | Lifecycle events and outbound delivery                                                  | [Events and Delivery](10-events-usage-and-delivery.md)                      | Publishes committed resource and Execution facts independently from inbound events |
@@ -591,6 +592,26 @@ contract exposes these operation groups:
 - Connection setup, metadata reads, rename, disable, enable, refresh,
   reauthorize, and terminal revoke; and
 - Trigger create/read/update/delete plus enable and disable commands.
+
+The stable product actions are:
+
+| Action                | Meaning                                                                         |
+| --------------------- | ------------------------------------------------------------------------------- |
+| `connector.read`      | Read safe Provider catalog, Connector, revision, and tool metadata              |
+| `connector.create`    | Create a Workspace Connector and its first revision                             |
+| `connector.configure` | Create another immutable revision or change stable Connector lifecycle metadata |
+| `connection.read`     | Read a safe eligible Connection projection                                      |
+| `connection.manage`   | Establish, refresh, disable, reauthorize, or revoke an eligible Connection      |
+| `trigger.read`        | Read safe Trigger configuration and lifecycle status                            |
+| `trigger.configure`   | Create, update, enable, disable, reconcile, or delete a Trigger                 |
+
+Model-triggerable Connector work additionally requires the run grants
+`connector.use`, `secret.use`, and `tool.call`. Each grant names the selected
+resource and allowed operation; no role name enters Harness. Effective authority
+intersects the accepted Agent revision, resolved Connection, current Principal and
+RoleBindings, current resource status, and current grants. Trigger acceptance
+performs the same invocation authorization for its stored Principal before creating
+an Execution.
 
 Creates and stateful commands accept the shared idempotency contract. Mutable
 resource changes use `expected_version`. Collection reads are bounded,

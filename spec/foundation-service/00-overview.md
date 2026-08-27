@@ -36,7 +36,6 @@ flowchart LR
     subgraph WorkerRole[Execution role]
         Worker[Fenced worker]
         Reconstruct[Trusted reconstruction]
-        ConnectorRuntime[Connector Provider adapters]
         Provider[Environment Provider Manager]
         Observer[HarnessAguiObserver]
         Harness[agent-harness]
@@ -51,7 +50,7 @@ flowchart LR
     Scheduler --> Database
     Scheduler -. wakeup .-> Coordination -. notification .-> Worker
     Worker --> Database
-    Worker --> Reconstruct --> ConnectorRuntime --> Harness
+    Worker --> Reconstruct --> Harness
     Worker --> Provider --> Harness
     Provider --> Envd
     Harness --> External
