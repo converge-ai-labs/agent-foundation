@@ -44,8 +44,9 @@ concurrency:
 jobs:
   provider:
     name: Agent Environment Provider (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - name: Linux
@@ -75,10 +76,11 @@ jobs:
 
       - name: Type-check Agent Environment Provider
         if: matrix.name == 'Linux'
-        run: uv run --locked pyright packages/agent-environment-provider/converge_agent_environment_provider
+        run: uv run --locked pyright packages/agent-environment-provider/a13n_environment_provider
 
       - name: Test Agent Environment Provider
         run: uv run --locked python -m pytest packages/agent-environment-provider/tests
 
       - name: Build Agent Environment Provider distribution
-        run: uv build --package converge-agent-environment-provider --out-dir dist/provider
+        if: matrix.name == 'Linux'
+        run: uv build --package a13n-environment-provider --out-dir dist/provider

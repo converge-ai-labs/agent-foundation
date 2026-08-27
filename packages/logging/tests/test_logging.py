@@ -1,7 +1,7 @@
 import json
 import logging
 
-from converge_logging import (
+from a13n_logging import (
     ContextFilter,
     JsonFormatter,
     LogFormat,
@@ -13,7 +13,7 @@ from rich.logging import RichHandler
 
 def _record() -> logging.LogRecord:
     record = logging.LogRecord(
-        name="converge.test",
+        name="a13n.test",
         level=logging.INFO,
         pathname=__file__,
         lineno=10,
@@ -35,7 +35,7 @@ def test_json_formatter_preserves_structured_fields() -> None:
 def test_pretty_formatter_preserves_event_context() -> None:
     output = PrettyFormatter().format(_record())
 
-    assert output == 'converge.test session_started session_id="session-1"'
+    assert output == 'a13n.test session_started session_id="session-1"'
 
 
 def test_context_filter_adds_defaults_without_replacing_call_site_fields() -> None:
@@ -48,8 +48,8 @@ def test_context_filter_adds_defaults_without_replacing_call_site_fields() -> No
 
 
 def test_logging_config_selects_pretty_and_json_handlers() -> None:
-    pretty = build_logging_config(log_format=LogFormat.pretty, logger_names=["converge"])
-    json_config = build_logging_config(log_format=LogFormat.json, logger_names=["converge"])
+    pretty = build_logging_config(log_format=LogFormat.pretty, logger_names=["a13n"])
+    json_config = build_logging_config(log_format=LogFormat.json, logger_names=["a13n"])
 
     assert pretty["handlers"]["default"]["()"] is RichHandler
     assert json_config["handlers"]["default"]["class"] == "logging.StreamHandler"

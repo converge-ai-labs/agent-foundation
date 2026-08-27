@@ -5,9 +5,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-import converge_agent_harness.environment.coordinator as environment_coordinator
+import a13n_harness.environment.coordinator as environment_coordinator
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     EnvironmentAction,
@@ -31,7 +31,7 @@ from converge_agent_harness import (
     create_environment_run_binding,
     create_noop_environment_run_binding,
 )
-from converge_agent_harness.environment.commands import (
+from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandRequest,
@@ -40,8 +40,8 @@ from converge_agent_harness.environment.commands import (
     ProcessStartResult,
     ProcessStatus,
 )
-from converge_agent_harness.environment.models import EnvironmentOperationReceipt
-from converge_agent_harness.environment.retention import (
+from a13n_harness.environment.models import EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
     EnvironmentOutputCapture,
     EnvironmentOutputPolicy,
     OpaqueProcessHandle,

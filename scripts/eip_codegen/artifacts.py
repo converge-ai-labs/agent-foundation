@@ -18,7 +18,7 @@ def _write_json(path: Path, value: object) -> None:
 
 
 def _load_models(models_path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location("converge_generated_eip_models", models_path)
+    spec = importlib.util.spec_from_file_location("a13n_generated_eip_models", models_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load generated EIP models")
     module = importlib.util.module_from_spec(spec)
@@ -145,7 +145,7 @@ def build_data_frame_artifact(profile: DataFrameProfile) -> dict[str, object]:
         offset += width
     return {
         "generated": True,
-        "protocol": {"package": "converge.agent_envd.eip.v1", "eip_major": profile.eip_major},
+        "protocol": {"package": "a13n.agent_envd.eip.v1", "eip_major": profile.eip_major},
         "magic_ascii": profile.magic.decode("ascii"),
         "profile_version": profile.profile_version,
         "header_bytes": profile.header_bytes,
@@ -168,7 +168,7 @@ def write_artifacts(
     records = method_records(index, options)
     inventory = {
         "generated": True,
-        "protocol": {"package": "converge.agent_envd.eip.v1", "version": "1.0"},
+        "protocol": {"package": "a13n.agent_envd.eip.v1", "version": "1.0"},
         "method_count": len(records),
         "methods": records,
     }

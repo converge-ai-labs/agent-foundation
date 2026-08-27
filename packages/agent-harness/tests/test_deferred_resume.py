@@ -5,8 +5,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import pytest
-from converge_agent_harness import DeferredToolResume, DefinitionError, HarnessBuilder, RunBindings, RunError
-from converge_agent_harness.tools import (
+from a13n_harness import DeferredToolResume, DefinitionError, HarnessBuilder, RunBindings, RunError
+from a13n_harness.tools import (
     HarnessTool,
     HarnessToolMetadata,
     InvocationPolicyCapability,
@@ -216,7 +216,7 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
     call_id = requests.approvals[0].tool_call_id
-    assert "converge.harness.managed-tool-id" not in requests.metadata.get(call_id, {})
+    assert "a13n.harness.managed-tool-id" not in requests.metadata.get(call_id, {})
 
     second = await executable.run(
         bindings=RunBindings.local(),
@@ -241,7 +241,7 @@ async def test_managed_approval_cannot_remount_to_a_same_named_unmanaged_tool() 
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
     call_id = requests.approvals[0].tool_call_id
-    assert requests.metadata[call_id]["converge.harness.managed-tool-id"] == "change"
+    assert requests.metadata[call_id]["a13n.harness.managed-tool-id"] == "change"
 
     unmanaged_executed: list[int] = []
 

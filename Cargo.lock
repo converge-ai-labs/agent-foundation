@@ -3,6 +3,41 @@
 version = 4
 
 [[package]]
+name = "agent-envd"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "bytes",
+ "cap-primitives",
+ "cap-std",
+ "chrono",
+ "fs2",
+ "futures-util",
+ "getrandom 0.3.4",
+ "globset",
+ "heck",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "libc",
+ "prost",
+ "prost-build",
+ "prost-reflect",
+ "prost-types",
+ "regex",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "url",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -172,41 +207,6 @@ name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
-
-[[package]]
-name = "converge-agent-envd"
-version = "0.0.0"
-dependencies = [
- "base64",
- "bytes",
- "cap-primitives",
- "cap-std",
- "chrono",
- "fs2",
- "futures-util",
- "getrandom 0.3.4",
- "globset",
- "heck",
- "http-body-util",
- "hyper",
- "hyper-util",
- "libc",
- "prost",
- "prost-build",
- "prost-reflect",
- "prost-types",
- "regex",
- "rustls",
- "rustls-native-certs",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite",
- "url",
-]
 
 [[package]]
 name = "core-foundation"

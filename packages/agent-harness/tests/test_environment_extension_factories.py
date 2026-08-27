@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     EnvironmentError,
     EnvironmentRunExtensionFactory,
     EnvironmentRunExtensionFactoryContext,
@@ -121,7 +121,7 @@ def test_discovery_reads_metadata_without_importing_targets(monkeypatch: pytest.
     first = _FakeEntryPoint("test.extension", _Factory)
     second = _FakeEntryPoint("test.other", _OtherFactory, distribution="other-plugin", version="2.0")
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (second, first),
     )
 
@@ -135,7 +135,7 @@ def test_discovery_reads_metadata_without_importing_targets(monkeypatch: pytest.
 
 def test_empty_selection_does_not_scan_entry_points(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("empty selection must not scan metadata")),
     )
 
@@ -146,7 +146,7 @@ def test_catalog_loads_only_selected_target_and_records_provenance(monkeypatch: 
     selected = _FakeEntryPoint("test.extension", _Factory)
     unselected = _FakeEntryPoint("test.other", RuntimeError("must not load"))
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (unselected, selected),
     )
 
@@ -164,7 +164,7 @@ def test_catalog_loads_only_selected_target_and_records_provenance(monkeypatch: 
 
 def test_explicit_factory_needs_no_metadata_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
 
@@ -193,7 +193,7 @@ def test_catalog_rejects_missing_and_duplicate_selection(
     code: str,
 ) -> None:
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: entries,
     )
 
@@ -206,7 +206,7 @@ def test_catalog_rejects_missing_and_duplicate_selection(
 def test_catalog_preflights_explicit_collision_before_import(monkeypatch: pytest.MonkeyPatch) -> None:
     entry_point = _FakeEntryPoint("test.extension", _Factory)
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -224,7 +224,7 @@ def test_catalog_preflights_explicit_collision_before_import(monkeypatch: pytest
 def test_catalog_rejects_invalid_entry_point_target(monkeypatch: pytest.MonkeyPatch, target: object) -> None:
     entry_point = _FakeEntryPoint("test.extension", target)
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -237,7 +237,7 @@ def test_catalog_rejects_invalid_entry_point_target(monkeypatch: pytest.MonkeyPa
 def test_catalog_rejects_mismatched_extension_key(monkeypatch: pytest.MonkeyPatch) -> None:
     entry_point = _FakeEntryPoint("test.extension", _MismatchedKeyFactory)
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (entry_point,),
     )
 

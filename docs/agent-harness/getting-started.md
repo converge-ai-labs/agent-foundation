@@ -5,10 +5,10 @@ This guide builds and runs the smallest useful Agent Harness application. It use
 ## Requirements
 
 - Python 3.13 or later
-- `converge-agent-harness`
+- `a13n-harness`
 
 ```bash
-pip install converge-agent-harness
+pip install a13n-harness
 ```
 
 The package includes Pydantic AI's slim runtime. Add the model-provider dependency required by your application separately.
@@ -21,7 +21,7 @@ Create `app.py`:
 import asyncio
 from collections.abc import AsyncIterator
 
-from converge_agent_harness import HarnessBuilder, RunBindings
+from a13n_harness import HarnessBuilder, RunBindings
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -109,7 +109,7 @@ When `previous_state` is supplied, the second run continues the same Thread and 
 The minimal Agent has the mandatory Harness boundaries but no optional tools. Add behavior through definition-selected Capabilities:
 
 ```python
-from converge_agent_harness import RuntimeContextCapability, WorkingStateCapability
+from a13n_harness import RuntimeContextCapability, WorkingStateCapability
 
 executable = HarnessBuilder().build_code(
     AgentSpec(model="logical:example"),
@@ -126,8 +126,8 @@ Definition Capabilities describe stable Agent behavior. Provider clients, author
 
 ## Next Steps
 
-- Run the repository's [General Agent example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/general-agent) for this minimal path as an independent application with an injectable model.
+- Run the `basic` layer of the repository's [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) for this minimal path with an injectable model.
 - Read [Agents and Runs](agents-and-runs.md) for the complete build, stream, result, and cleanup path.
 - Read [Capabilities](capabilities.md) to choose optional first-party behavior.
 - Read [Environments](environments.md) before exposing files, shell commands, processes, or ports.
-- Run the [Local Agent example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/local-agent) for a complete offline tool, working-state, suspension, and resume flow.
+- Continue with the example's `local` layer for a complete offline tool, working-state, suspension, and resume flow.

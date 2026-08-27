@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentContext,
     EnvironmentPath,
     HarnessBuilder,

@@ -43,7 +43,7 @@ flowchart TB
     Monty --> Result[Bounded outer result]
 ```
 
-`CodeActCapability` wraps each Agent's assembled non-output Toolset after that Agent's own filtering. A root Agent, named child, and self fork each receive an independent run-local wrapper, catalog, `ToolManager` view, interpreter state, and execution budget. A parent catalog is never copied into a child.
+`CodeActCapability` wraps each Agent's effective non-output Toolset after mandatory tool-surface resolution. It never catalogs a candidate that declarative managed-tool supersession removed. A root Agent, named child, and self fork each receive an independent run-local wrapper, catalog, `ToolManager` view, interpreter state, and execution budget. A parent catalog is never copied into a child.
 
 ## Public Configuration
 
@@ -91,7 +91,7 @@ An effective true policy means only that the owner supports programmatic invocat
 The effective execution catalog is the intersection of:
 
 - tools present in the current run-step's final `ToolManager` directory;
-- current Agent and Capability availability/filtering;
+- current Agent and Capability availability plus mandatory tool-surface resolution;
 - effective typed CodeAct policy;
 - ordinary function tools supported by the nested dispatch contract; and
 - valid, collision-free sandbox callable names.

@@ -33,8 +33,8 @@ def _run_entrypoint(
     return calls.read_text().splitlines()
 
 
-def test_execution_role_never_migrates(tmp_path: Path) -> None:
-    assert _run_entrypoint(tmp_path, role="execution", auto_migrate="true") == [
+def test_worker_role_never_migrates(tmp_path: Path) -> None:
+    assert _run_entrypoint(tmp_path, role="worker", auto_migrate="true") == [
         "db current --check-heads",
         "serve",
     ]
@@ -51,13 +51,13 @@ def test_control_role_checks_heads_when_auto_migrate_is_disabled(tmp_path: Path)
     ]
 
 
-def test_cli_role_override_cannot_accidentally_migrate_execution(tmp_path: Path) -> None:
+def test_cli_role_override_cannot_accidentally_migrate_worker(tmp_path: Path) -> None:
     assert _run_entrypoint(
         tmp_path,
         role="all",
         auto_migrate="true",
-        serve_args=("--role", "execution"),
-    ) == ["db current --check-heads", "serve --role execution"]
+        serve_args=("--role", "worker"),
+    ) == ["db current --check-heads", "serve --role worker"]
 
 
 def test_invalid_role_fails_before_running_database_commands(tmp_path: Path) -> None:

@@ -1,7 +1,7 @@
 from importlib.metadata import version
 
-from converge_agent_stream_protocol import __version__
+from a13n_stream_protocol import __version__
 
 
 def test_package_exposes_distribution_version() -> None:
-    assert __version__ == version("converge-agent-stream-protocol")
+    assert __version__ == version("a13n-stream-protocol")

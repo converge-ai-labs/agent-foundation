@@ -5,9 +5,9 @@ import json
 import time
 from typing import Any
 
-import converge_agent_envd_client.requester as requester_module
+import a13n_envd_client.requester as requester_module
 import pytest
-from converge_agent_envd_client import (
+from a13n_envd_client import (
     ControlFrame,
     EIPMethodError,
     EIPProtocolError,
@@ -18,7 +18,7 @@ from converge_agent_envd_client import (
     EIPTransportFrame,
     RequestCoordinator,
 )
-from converge_agent_envd_client.eip.v1 import (
+from a13n_envd_client.eip.v1 import (
     DataFrame,
     DataFrameKind,
     DataResetStatus,

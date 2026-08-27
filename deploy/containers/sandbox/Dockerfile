@@ -7,7 +7,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/agent-envd crates/agent-envd
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release --locked --package converge-agent-envd
+    cargo build --release --locked --package agent-envd
 
 FROM debian:bookworm-slim AS runtime
 

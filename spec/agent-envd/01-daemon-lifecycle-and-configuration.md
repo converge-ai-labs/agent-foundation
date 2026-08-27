@@ -179,17 +179,19 @@ stateDiagram-v2
     [*] --> Starting
     Starting --> LocallyReady: config, owners, runtime, and required isolation probe succeed
     Starting --> Failed: required startup step fails
+    LocallyReady --> StdioReady: trusted stdio selected
     LocallyReady --> Listening: HTTP listener selected
     LocallyReady --> CarrierConnecting: reverse WebSocket selected
-    LocallyReady --> Serving: trusted stdio initialize succeeds
+    StdioReady --> Serving: initialize succeeds
+    StdioReady --> Draining: parent loss or fatal framing/initialization failure
     Listening --> Serving: authenticated HTTP initialize succeeds
     CarrierConnecting --> Serving: WebSocket upgrade and initialize succeed
     CarrierConnecting --> CarrierConnecting: recoverable reconnect
     CarrierConnecting --> Draining: generation-fatal attachment failure
+    Serving --> StdioReady: stdio session closes cleanly
     Serving --> Listening: HTTP session closes
     Serving --> CarrierConnecting: reverse-WebSocket carrier loss
-    Serving --> Draining: shutdown or fatal ownership fault
-    LocallyReady --> Draining: stdio parent loss
+    Serving --> Draining: shutdown, stdio parent loss, or fatal ownership fault
     Draining --> Stopped: bounded cleanup succeeds
     Draining --> Failed: cleanup remains uncertain
     Failed --> [*]
@@ -219,7 +221,7 @@ Readiness has two distinct facts:
 - **local readiness**: configuration, generation-private state, mounts, owners, and isolation probe are usable;
 - **carrier readiness**: one current trusted carrier has completed EIP initialization for the expected Environment and generation.
 
-In stdio mode, successful `initialize` is the usable readiness boundary. Stdout contains only framed EIP messages; startup diagnostics use stderr and process exit.
+In stdio mode, successful `initialize` is the usable readiness boundary for each logical session. After a successful `session.close` response and session cleanup, the generation-owned carrier returns to local `StdioReady` state and requires another `initialize` before admitting work. Stdout contains only framed EIP messages; startup diagnostics use stderr and process exit.
 
 In HTTP mode, the provider obtains the configured listener address through its trusted launch boundary and the client observes carrier readiness only after authenticated initialization. In reverse-WebSocket mode, the provider observes local readiness through that launch boundary while the control service observes carrier readiness from the initialized connection. There is no readiness JSON line and no `/healthz` or `/readyz` route. Consumers dispatch only after carrier readiness. Losing carrier readiness leaves local generation-owned resources intact while a fresh session can be established.
 

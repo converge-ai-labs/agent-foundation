@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pytest
-from converge_foundation_service.storage.config import StorageSettings
+from a13n_service.storage.config import StorageSettings
 from pydantic import ValidationError
 
 

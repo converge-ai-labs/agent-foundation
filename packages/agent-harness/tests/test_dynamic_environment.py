@@ -11,16 +11,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-import converge_agent_harness.environment.local.retention as local_retention_module
-import converge_agent_harness.execution as execution_module
-import converge_agent_harness.toolsets.files as file_toolset_module
+import a13n_harness.environment.local.retention as local_retention_module
+import a13n_harness.execution as execution_module
+import a13n_harness.toolsets.files as file_toolset_module
 import pytest
-from converge_agent_harness import (
-    ArgvCommand,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalProcessPolicy,
+from a13n_environment_provider import (
+    DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
+)
+from a13n_harness import (
+    ArgvCommand,
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
@@ -39,22 +39,25 @@ from converge_agent_harness import (
     create_environment_run_binding,
     create_noop_environment_run_binding,
 )
-from converge_agent_harness.environment.dynamic import _DynamicEnvironmentRunCapability
-from converge_agent_harness.environment.files import FileEntriesResult, FileMetadata, FileWriteResult
-from converge_agent_harness.environment.local.binding import DirectLocalFilePolicy
-from converge_agent_harness.environment.local.files import LocalFileOperator
-from converge_agent_harness.environment.models import EnvironmentOperationReceipt
-from converge_agent_harness.environment.providers import FileScopeSelection
-from converge_agent_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
-from converge_agent_harness.plugins import (
+from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
+from a13n_harness.environment.files import FileEntriesResult, FileMetadata, FileWriteResult
+from a13n_harness.environment.local.binding import (
+    DirectLocalEnvironmentProviderBinding,
+    _DirectLocalFilePolicy,
+)
+from a13n_harness.environment.local.files import LocalFileOperator
+from a13n_harness.environment.models import EnvironmentOperationReceipt
+from a13n_harness.environment.providers import FileScopeSelection
+from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
+from a13n_harness.plugins import (
     AbstractHarnessPlugin,
     PluginOrdering,
     PluginRunExchange,
     PluginRunNext,
     PluginRunResponse,
 )
-from converge_agent_harness.result import HarnessRunResult
-from converge_agent_harness.tools import (
+from a13n_harness.result import HarnessRunResult
+from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     HarnessTool,
     HarnessToolMetadata,
@@ -62,13 +65,13 @@ from converge_agent_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from converge_agent_harness.toolsets.files import FileToolset
-from converge_agent_harness.toolsets.output import (
+from a13n_harness.toolsets.files import FileToolset
+from a13n_harness.toolsets.output import (
     DEFAULT_TOOL_OUTPUT_CHARS,
     disclose_sequence_field,
     tool_output_size,
 )
-from converge_agent_harness.toolsets.shell import ShellToolset, _CompactReferenceTable, _fit_stream_prefixes
+from a13n_harness.toolsets.shell import ShellToolset, _CompactReferenceTable, _fit_stream_prefixes
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -183,14 +186,10 @@ def _policy() -> InvocationPolicyCapability:
 
 def _local_binding(root: Path, *, process_output: bool = False):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
-            processes=(
-                DirectLocalProcessPolicy(allowed_executables=frozenset({_PROCESS_EXECUTABLE}))
-                if process_output
-                else DirectLocalProcessPolicy()
-            ),
+            root=DirectLocalRootConfiguration(path=root),
+            allowed_executables=(frozenset({_PROCESS_EXECUTABLE}) if process_output else frozenset()),
         )
     )
     request = EnvironmentTopologyRequest(
@@ -209,6 +208,45 @@ def _local_binding(root: Path, *, process_output: bool = False):
     )
     return create_environment_run_binding(
         initial_topology=request,
+        topology_limits=EnvironmentTopologyLimits(),
+        state_limits=EnvironmentStateLimits(),
+    )
+
+
+def _two_local_bindings(
+    first_root: Path,
+    second_root: Path,
+    *,
+    first_operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
+    second_operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
+):
+    bindings = tuple(
+        EnvironmentBindingRequest(
+            binding_id=f"binding-{index}",
+            binding_revision=1,
+            alias=alias,
+            permission_ceiling=EnvironmentPermissionSet(
+                operations=first_operations if index == 1 else second_operations
+            ),
+            default_working_directory="/",
+            provider_binding=DirectLocalEnvironmentProviderBinding(
+                DirectLocalProviderConfiguration(
+                    environment_id=f"dynamic-environment-{index}",
+                    root=DirectLocalRootConfiguration(path=root),
+                )
+            ),
+        )
+        for index, (alias, root) in enumerate(
+            (("local", first_root), ("shared", second_root)),
+            start=1,
+        )
+    )
+    return create_environment_run_binding(
+        initial_topology=EnvironmentTopologyRequest(
+            topology_version=1,
+            bindings=bindings,
+            default_binding_id="binding-1",
+        ),
         topology_limits=EnvironmentTopologyLimits(),
         state_limits=EnvironmentStateLimits(),
     )
@@ -235,9 +273,9 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         model=FunctionModel(stream_function=stream),
     )
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=tmp_path),
         )
     )
     request = EnvironmentTopologyRequest(
@@ -301,8 +339,10 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_s
         for tool in info.function_tools
         if tool.metadata is not None and HARNESS_TOOL_METADATA_KEY in tool.metadata
     }
-    assert {"mkdir", "move", "copy", "delete"}.isdisjoint(names)
+    assert {"mkdir", "move", "delete"}.isdisjoint(names)
+    assert "copy" in names
     assert metadata["edit"].effects == frozenset({"read", "write"})
+    assert metadata["copy"].effects == frozenset({"read", "write"})
     assert metadata["environment_shell_exec"].effects == frozenset(
         {"read", "write", "delete", "execute", "external_communication"}
     )
@@ -385,6 +425,182 @@ async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_
     assert tool_results[1]["bytes_written"] == 3
     assert "revision" not in tool_results[0]
     assert "revision" not in tool_results[1]
+
+
+async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None:
+    (tmp_path / "source.txt").write_text("value", encoding="utf-8")
+    observed_results: list[dict[str, Any]] = []
+    calls = (
+        ("mkdir", {"paths": ["folder"], "parents": False}),
+        (
+            "move",
+            {"pairs": [{"src": "source.txt", "dst": "folder/moved.txt"}], "overwrite": False},
+        ),
+        (
+            "copy",
+            {"pairs": [{"src": "folder/moved.txt", "dst": "copied.txt"}], "overwrite": False},
+        ),
+        ("delete", {"paths": ["folder"], "recursive": True, "force": False}),
+    )
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        observed_results[:] = [cast(dict[str, Any], part.content) for part in returns]
+        assert {"mkdir", "move", "copy", "delete"} <= {tool.name for tool in info.function_tools}
+        if len(returns) < len(calls):
+            name, arguments = calls[len(returns)]
+            yield {
+                0: DeltaToolCall(
+                    name=name,
+                    json_args=json.dumps(arguments),
+                    tool_call_id=f"{name}-1",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            DynamicEnvironmentCapability(
+                _configuration(
+                    shell_tools=False,
+                    process_tools=False,
+                )
+            ),
+        ),
+    )
+    result = await executable.run(
+        "mutate files",
+        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert len(observed_results) == len(calls)
+    assert all(item["ok"] is True for item in observed_results)
+    assert not (tmp_path / "source.txt").exists()
+    assert not (tmp_path / "folder").exists()
+    assert (tmp_path / "copied.txt").read_text(encoding="utf-8") == "value"
+
+
+async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path) -> None:
+    model_calls = 0
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal model_calls
+        del messages, info
+        model_calls += 1
+        if model_calls == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="mkdir",
+                    json_args=json.dumps(
+                        {
+                            "paths": [
+                                "/environment/missing/rejected",
+                                "/workspace/must-not-exist",
+                            ],
+                            "parents": False,
+                        }
+                    ),
+                    tool_call_id="mkdir-1",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test", retries={"tools": 1}),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            DynamicEnvironmentCapability(
+                _configuration(
+                    shell_tools=False,
+                    process_tools=False,
+                )
+            ),
+        ),
+    )
+    result = await executable.run(
+        "mutate files",
+        bindings=RunBindings.local(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert model_calls == 2
+    assert not (tmp_path / "must-not-exist").exists()
+
+
+async def test_copy_streams_across_bindings_while_shell_supersedes_other_mutations(tmp_path: Path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    first_root.mkdir()
+    second_root.mkdir()
+    (first_root / "source.txt").write_text("cross-binding", encoding="utf-8")
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and part.tool_name == "copy"
+        ]
+        names = {tool.name for tool in info.function_tools}
+        assert "copy" in names
+        assert {"mkdir", "move", "delete"}.isdisjoint(names)
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="copy",
+                    json_args=json.dumps(
+                        {
+                            "pairs": [
+                                {
+                                    "src": "/workspace/source.txt",
+                                    "dst": "/environment/shared/copied.txt",
+                                }
+                            ],
+                            "overwrite": False,
+                        }
+                    ),
+                    tool_call_id="copy-1",
+                )
+            }
+        else:
+            assert returns[0].content["ok"] is True
+            yield "done"
+
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "copy",
+        bindings=RunBindings.local(
+            environment=_two_local_bindings(
+                first_root,
+                second_root,
+                first_operations=frozenset({EnvironmentAction.FILE_COPY_SOURCE}),
+                second_operations=frozenset({EnvironmentAction.FILE_COPY_DESTINATION}),
+            ),
+            capabilities=(_policy(),),
+        ),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert (second_root / "copied.txt").read_text(encoding="utf-8") == "cross-binding"
 
 
 async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -> None:
@@ -863,9 +1079,9 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
     (tmp_path / "value.txt").write_text("value")
     aggregate = _local_binding(tmp_path)
     replacement = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=tmp_path),
         )
     )
     refresh = EnvironmentTopologyRequest(
@@ -940,9 +1156,9 @@ async def test_managed_authorization_is_fenced_by_binding_revision(tmp_path: Pat
     aggregate = _local_binding(tmp_path)
     run_bindings = RunBindings.local(environment=aggregate)
     replacement = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=tmp_path, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=tmp_path),
         )
     )
     refresh = EnvironmentTopologyRequest(
@@ -1340,9 +1556,9 @@ class _ApplyTopologyAfterResultPlugin(AbstractHarnessPlugin):
 
 def _dynamic_local_request(root: Path) -> EnvironmentTopologyRequest:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="environment-event-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=root),
         )
     )
     return EnvironmentTopologyRequest(
@@ -1634,7 +1850,7 @@ async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=DirectLocalFilePolicy(),
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
         binding_revision=1,
         generation="generation-1",
@@ -1888,7 +2104,7 @@ async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_er
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=DirectLocalFilePolicy(),
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
         binding_revision=1,
         generation="generation-1",
@@ -1912,7 +2128,7 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=DirectLocalFilePolicy(),
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
         binding_revision=1,
         generation="generation-1",
@@ -2013,7 +2229,7 @@ async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) ->
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=DirectLocalFilePolicy(),
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
         binding_revision=1,
         generation="generation-1",
@@ -2035,7 +2251,7 @@ async def test_direct_local_create_is_exclusive_under_concurrency(tmp_path: Path
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=DirectLocalFilePolicy(),
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
         binding_revision=1,
         generation="generation-1",
@@ -2065,7 +2281,7 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=DirectLocalFilePolicy(),
+        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
         binding_revision=1,
         generation="generation-1",

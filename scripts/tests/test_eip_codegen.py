@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
-from converge_agent_envd_client.eip.v1 import EIP_DESCRIPTOR_SHA256
+from a13n_envd_client.eip.v1 import EIP_DESCRIPTOR_SHA256
 
 from scripts.eip_codegen.__main__ import (
     ARTIFACT_PATH,

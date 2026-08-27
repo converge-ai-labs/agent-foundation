@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentContext,
     CapabilityTypeCatalog,
     CapabilityTypeRegistration,

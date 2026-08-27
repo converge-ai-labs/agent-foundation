@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
-from converge_agent_harness import DefinitionError
-from converge_agent_harness.tools import HarnessToolMetadata, ToolOutputPolicy
-from converge_agent_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness import DefinitionError
+from a13n_harness.tools import HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from pydantic import ValidationError
 
 
@@ -16,6 +16,7 @@ def test_harness_tool_metadata_is_detached_and_normalized() -> None:
             "credential_audiences": [" storage "],
             "idempotency": "read_only",
             "output_policy": policy.model_dump(),
+            "superseded_by_tool_ids": [" tools.shell "],
         }
     )
 
@@ -24,6 +25,7 @@ def test_harness_tool_metadata_is_detached_and_normalized() -> None:
     assert metadata.effects == frozenset({"read"})
     assert metadata.credential_audiences == ("storage",)
     assert metadata.output_policy is not policy
+    assert metadata.superseded_by_tool_ids == frozenset({"tools.shell"})
 
 
 @pytest.mark.parametrize(
@@ -51,6 +53,20 @@ def test_invalid_reserved_metadata_fails_instead_of_downgrading(value: object) -
     with pytest.raises(DefinitionError) as exc_info:
         normalize_harness_tool_metadata(value)
     assert exc_info.value.code == "tool_metadata_invalid"
+
+
+def test_tool_cannot_declare_self_supersession() -> None:
+    with pytest.raises(DefinitionError) as exc_info:
+        HarnessToolMetadata(
+            tool_id="files.read",
+            effects=frozenset({"read"}),
+            credential_audiences=(),
+            idempotency="read_only",
+            output_policy=ToolOutputPolicy(max_inline_bytes=512, max_output_bytes=1024),
+            superseded_by_tool_ids=frozenset({"files.read"}),
+        )
+
+    assert exc_info.value.code == "tool_supersession_self_reference"
 
 
 def test_output_policy_requires_finite_ordered_limits() -> None:

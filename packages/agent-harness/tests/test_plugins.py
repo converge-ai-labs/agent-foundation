@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
     BoundEnvironment,

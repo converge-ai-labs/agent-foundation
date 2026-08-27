@@ -7,9 +7,9 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
-import converge_agent_harness.toolsets.delegation as delegation_toolset_module
+import a13n_harness.toolsets.delegation as delegation_toolset_module
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AbstractHarnessPlugin,
     AgentDefinition,
     AgentIdentityRef,
@@ -34,14 +34,14 @@ from converge_agent_harness import (
     WorkingState,
     WorkingStateCapability,
 )
-from converge_agent_harness.capabilities.delegation import DELEGATION_CAPABILITY_ID
-from converge_agent_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
-from converge_agent_harness.tools import (
+from a13n_harness.capabilities.delegation import DELEGATION_CAPABILITY_ID
+from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
+from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     InvocationPolicyCapability,
     InvocationPolicyDecision,
 )
-from converge_agent_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import ToolFailed
@@ -59,7 +59,7 @@ async def _allow(*args: Any, **kwargs: Any) -> InvocationPolicyDecision:
 
 def _owned_context_part_indexes(message: ModelRequest) -> set[int]:
     metadata = message.metadata or {}
-    ownership = metadata.get("converge.model-context-overlay")
+    ownership = metadata.get("a13n.model-context-overlay")
     if not isinstance(ownership, dict):
         return set()
     parts = ownership.get("parts")

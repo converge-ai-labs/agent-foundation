@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 
 import pytest
-from converge_agent_harness import HarnessBuilder, HarnessEvent, HarnessState, ModelRecoveryPolicy, RunBindings
-from converge_agent_harness.recovery import INTERRUPTED_TOOL_RESULT, normalize_interrupted_history
+from a13n_harness import HarnessBuilder, HarnessEvent, HarnessState, ModelRecoveryPolicy, RunBindings
+from a13n_harness.recovery import INTERRUPTED_TOOL_RESULT, normalize_interrupted_history
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -634,7 +634,7 @@ async def test_recovery_backoff_is_full_jitter_and_capped(monkeypatch: pytest.Mo
         ceilings.append(maximum)
         return maximum
 
-    monkeypatch.setattr("converge_agent_harness.recovery.random.uniform", use_ceiling)
+    monkeypatch.setattr("a13n_harness.recovery.random.uniform", use_ceiling)
     policy = ModelRecoveryPolicy(
         enabled=True,
         backoff_initial_seconds=2,
@@ -840,7 +840,6 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
         AgentSpec(model="logical:test"),
         output_type=str,
         model=SuspendingModel(FunctionModel(stream_function=stream)),
-        self_healing=False,
         model_recovery=_recovery_policy(max_attempts=5),
     )
 

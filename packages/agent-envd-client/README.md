@@ -1,6 +1,6 @@
 # Agent Envd Client
 
-`converge-agent-envd-client` is the Python client for the Agent Environment Interaction Protocol (EIP). It belongs to the agent-envd release group and is versioned and published together with `converge-agent-envd`.
+`a13n-envd-client` is the Python client for the Agent Environment Interaction Protocol (EIP). It belongs to the agent-envd release group and is versioned and published together with `agent-envd`.
 
 ## Available surface
 
@@ -24,7 +24,7 @@ The process launch below is illustrative fixture code. Production launch configu
 import asyncio
 import os
 
-from converge_agent_envd_client import EIPSession, StdioTransport
+from a13n_envd_client import EIPSession, StdioTransport
 
 
 async def main() -> None:

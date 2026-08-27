@@ -40,7 +40,7 @@ Capability presence does not itself authorize external work. Tools that cross a 
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `DocumentsRunCapability`                                       |
 | `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebRunCapability` with current client and policy              |
 | `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
-| `CompactionCapability`         | Bounded same-model compaction before a configured threshold                                 | `HandoffCapability` in the same definition                     |
+| `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
 | `DelegationCapability`         | Blocking inline child delegation                                                            | Declared subagents and `DelegationRunCapability`               |
 | `CodeActCapability`            | Restricted `run_code` and optional `run_program`                                            | Explicit eligible tools and Environment files for programs     |
 
@@ -53,7 +53,7 @@ Harness context features use one model-context coordinator, so each owner contri
 A practical general-purpose context composition is:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     FileContextCapability,
     RuntimeContextCapability,
     WorkspaceOutlineCapability,
@@ -72,12 +72,14 @@ capabilities = (
 
 All three have explicit byte, item, depth, or line bounds. Configure them to match the Environment and target model rather than treating their defaults as universal.
 
+For context lifecycle features, Harness `AgentSpec.model_configuration` can resolve model-relative defaults once at build time; callers supply it through the `model_config` construction key. With a known context window, an otherwise unconfigured `HandoffCapability()` warns at 65% and `CompactionCapability()` compacts at 90%. Explicit token settings override these values, and the Capabilities remain opt-in.
+
 ## Working State
 
 `WorkingStateCapability` can keep tasks and notes inside its portable Capability namespace:
 
 ```python
-from converge_agent_harness import WorkingStateCapability
+from a13n_harness import WorkingStateCapability
 
 capabilities = (WorkingStateCapability(),)
 ```
@@ -97,7 +99,7 @@ See [State and Resume](state-and-resume.md).
 These features separate stable model-facing schemas from fresh provider implementations:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     DocumentsCapability,
     DocumentsRunCapability,
     RunBindings,
@@ -132,7 +134,7 @@ The Harness does not turn monitored processes into a durable background schedule
 `MessageIntegrityFilterCapability` is mandatory and builder-owned. Two optional filters are public:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     ColdStartFilterCapability,
     ColdStartFilterConfiguration,
     ContentFilterCapability,

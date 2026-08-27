@@ -1,5 +1,5 @@
 [project]
-name = "converge-agent-foundation"
+name = "a13n-workspace"
 version = "0.0.0"
 description = "Cloud foundation with an agent harness, hosted agents, and observability"
 readme = "README.md"
@@ -35,11 +35,11 @@ default-groups = ["dev", "docs"]
 package = false
 
 [tool.uv.sources]
-converge-agent-envd-client = { workspace = true }
-converge-agent-environment-provider = { workspace = true }
-converge-agent-harness = { workspace = true }
-converge-agent-stream-protocol = { workspace = true }
-converge-logging = { workspace = true }
+a13n-envd-client = { workspace = true }
+a13n-environment-provider = { workspace = true }
+a13n-harness = { workspace = true }
+a13n-stream-protocol = { workspace = true }
+a13n-logging = { workspace = true }
 
 [tool.ruff]
 target-version = "py313"
@@ -52,13 +52,13 @@ ignore = ["E501"]
 
 [tool.pyright]
 include = [
-    "packages/agent-envd-client/converge_agent_envd_client",
-    "packages/agent-environment-provider/converge_agent_environment_provider",
-    "packages/agent-harness/converge_agent_harness",
-    "packages/agent-stream-protocol/converge_agent_stream_protocol",
-    "packages/agent-ui/converge_agent_ui",
-    "packages/logging/converge_logging",
-    "packages/foundation-service/converge_foundation_service",
+    "packages/agent-envd-client/a13n_envd_client",
+    "packages/agent-environment-provider/a13n_environment_provider",
+    "packages/agent-harness/a13n_harness",
+    "packages/agent-stream-protocol/a13n_stream_protocol",
+    "packages/agent-ui/a13n_ui",
+    "packages/logging/a13n_logging",
+    "packages/foundation-service/a13n_service",
     "scripts/check-agent-distributions.py",
     "scripts/check-agent-ui-distribution.py",
     "scripts/check_agent_ui_distribution.py",

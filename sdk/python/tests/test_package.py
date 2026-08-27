@@ -1,7 +1,7 @@
 from importlib.metadata import version
 
-import converge_foundation_sdk
+import a13n_sdk
 
 
 def test_package_version_matches_distribution() -> None:
-    assert converge_foundation_sdk.__version__ == version("converge-foundation-sdk")
+    assert a13n_sdk.__version__ == version("a13n-sdk")

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AbstractHarnessPlugin,
     AbstractModelContextCapability,
     AgentContext,
@@ -19,8 +19,8 @@ from converge_agent_harness import (
     ModelContextRequestKind,
     RunBindings,
 )
-from converge_agent_harness.errors import DefinitionError
-from converge_agent_harness.model_context import (
+from a13n_harness.errors import DefinitionError
+from a13n_harness.model_context import (
     ModelContextCoordinatorCapability,
     _commit_projection,
     _is_retry_boundary,
@@ -185,9 +185,7 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     assert text[0].startswith("Current Environment topology")
     assert text[1] == "hello"
     assert text[-2:] == ["plugin context", "host epilogue"]
-    assert any(
-        isinstance(value, str) and value.startswith('<agent-context source="converge-harness">') for value in text
-    )
+    assert any(isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">') for value in text)
 
 
 async def test_host_can_short_circuit_default_projection_without_bypassing_commit() -> None:

@@ -4,11 +4,11 @@ This file explains the engineering choices shared by deployable Python services.
 
 ## Service Shape
 
-`foundation-service` ships one package and container image with three roles:
+`foundation-service` ships one package and container image with two independently deployable roles and their all-in-one composition:
 
-- `all`: control and execution in one process;
+- `all`: control and worker in one process;
 - `control`: APIs, scheduling, and control-plane maintenance;
-- `execution`: execution workers only.
+- `worker`: Turn workers only.
 
 A role is a process ownership and scaling boundary, not a separate product, schema, tenant, or authorization boundary. Every background loop must have one explicit owning role, and overlap during rolling deployment must be safe through durable leases, fencing, or idempotency.
 
@@ -20,7 +20,7 @@ Organize business code by feature and add layers only for a real capability; do 
 - Application services own use-case orchestration and short transaction boundaries. They do not import FastAPI or encode HTTP status.
 - Repositories own SQLAlchemy queries, may flush, and never commit. ORM objects stay inside the persistence boundary and are not API responses or Harness contracts.
 - Durable asynchronous lifecycles use idempotent reconcilers and fenced workers. Model, tool, queue, and stream waits happen outside database transactions.
-- Process-role wiring selects routers, reconcilers, and workers; `control` and `execution` do not duplicate feature or domain models.
+- Process-role wiring selects routers, reconcilers, and workers; `control` and `worker` do not duplicate feature or domain models.
 
 ## HTTP Namespace and Browser Applications
 
@@ -28,7 +28,7 @@ Product-facing HTTP APIs use the `/api` namespace. Keep OpenAPI schemas and inte
 
 Operational liveness and readiness probes use explicit paths such as `/healthz` and `/readyz` outside `/api`. They expose only bounded process and dependency state and are not product resources. Browser history fallback must never turn an unknown `/api` request or an operational probe into an HTML application response.
 
-A browser application deployed with a service lives under `apps/`, remains private rather than becoming a language package, and builds reproducibly from its own lock file. Production images build immutable browser assets in a dedicated stage, copy only the output into the non-root runtime image, and require no Node.js runtime. The service can serve those assets from `/` for roles that own product ingress. Execution-only roles do not expose the browser application or product APIs.
+A browser application deployed with a service lives under `apps/`, remains private rather than becoming a language package, and builds reproducibly from its own lock file. Production images build immutable browser assets in a dedicated stage, copy only the output into the non-root runtime image, and require no Node.js runtime. The service can serve those assets from `/` for roles that own product ingress. Worker-only roles do not expose the browser application or product APIs.
 
 During local development, the browser dev server uses relative `/api` URLs and proxies that namespace unchanged to the backend. Repository commands start and stop the frontend and backend as one development stack while preserving each process's native diagnostics and shutdown behavior. Production remains same-origin and does not add CORS merely to accommodate local tooling.
 
@@ -46,7 +46,7 @@ Create process-wide engines and clients during FastAPI lifespan, store them in e
 
 ## Database Sessions and Transactions
 
-All service code obtains the canonical engine and session factory from `open_storage()` and uses `short_session()` and `transaction()` from `converge_foundation_service.storage`. Do not construct local engines or session makers.
+All service code obtains the canonical engine and session factory from `open_storage()` and uses `short_session()` and `transaction()` from `a13n_service.storage`. Do not construct local engines or session makers.
 
 An `AsyncSession` is a mutable unit of work. Never share it across concurrent tasks or store it in a singleton. Keep each transaction around one small database operation, and do not hold a session, connection, transaction, or lock while waiting for:
 
@@ -66,7 +66,9 @@ Complete authentication, authorization, and initial reads in a short session tha
 
 ## Migrations
 
-Alembic metadata comes from `converge_foundation_service.database.metadata`. Every concrete ORM model must be imported into that explicit registry before generating a revision. Domains own model meaning, while Foundation Service owns one combined metadata registry and one linear migration history.
+Each Foundation Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; Foundation Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, tenant state, and runtime edition selection never change migration contents.
+
+The OSS artifact resolves its registry from `a13n_service.database.metadata` and its service revision location. A private EE or Cloud artifact adds reviewed model and revision contributions through its own fixed descriptor before invoking the same generator and runner contract. Generation, current-head verification, migration application, and readiness must consume the same resolved composition.
 
 Use the repository workflow rather than creating files manually:
 
@@ -74,13 +76,13 @@ Use the repository workflow rather than creating files manually:
 make db-migrate msg="add session lease fields"
 ```
 
-The command starts local PostgreSQL if needed, creates a disposable database, replays all existing history, autogenerates the model diff, formats the revision, and drops the database. This prevents a developer's normal database from hiding a missing migration. File names use `YYYYMMDD_<revision>_<slug>.py` and history stays linear unless a parallel branch is deliberately reviewed.
+For this repository, the command selects the OSS artifact descriptor, starts local PostgreSQL if needed, creates a disposable database, replays its complete history, autogenerates the model diff against its final metadata, formats the revision, and drops the database. The owning repository for another distribution invokes the same workflow with that distribution's fixed descriptor. This prevents a developer's normal database or ambient package set from hiding a missing migration. File names use `YYYYMMDD_<revision>_<slug>.py` and the final graph has at most one head; a deliberately reviewed merge revision reconciles concurrent branches before release.
 
 Autogenerate is only a draft. Review names, constraints, server defaults, nullability, indexes, data loss, downgrade behavior, lock level, scans or rewrites, old/new rolling compatibility, and interruption safety. Prefer additive expand-and-contract changes. Put large backfills in bounded restartable jobs rather than startup migrations, and prefer application rollback or forward repair over destructive schema downgrade.
 
 ### Auto migration and locking
 
-The shared image enables auto migration by default for `all` and `control`, with PostgreSQL advisory locking serializing concurrent rollout replicas. Deployments that use a dedicated singleton migration job disable replica auto migration. The `execution` role never migrates; a non-owner performs `db current --check-heads` and fails closed when schema is incompatible.
+The shared image enables auto migration by default for `all` and `control`, with PostgreSQL advisory locking serializing concurrent rollout replicas. Deployments that use a dedicated singleton migration job disable replica auto migration. The `worker` role never migrates; a non-owner performs `db current --check-heads` and fails closed when schema is incompatible.
 
 PostgreSQL migrations use a dedicated synchronous `NullPool` connection and a service-scoped session advisory lock. The same connection holds the lock across revision inspection, transactional DDL, reviewed autocommit blocks, and stamping. Advisory-lock waiting temporarily uses `lock_timeout=0` and its own bounded `statement_timeout`; after acquisition, the normal short DDL lock timeout is restored. This keeps replica serialization independent from table-lock safety.
 
@@ -95,7 +97,7 @@ These values apply only to migration connections. Override them only for a revie
 
 ## Logging
 
-Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `converge-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout or stderr.
+Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `a13n-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout or stderr.
 
 Prefer stable event names and structured fields. Include service, role, build version, request or trace ID, and applicable conversation/session/run IDs. Log exceptions with stack traces at the boundary that handles them. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
 

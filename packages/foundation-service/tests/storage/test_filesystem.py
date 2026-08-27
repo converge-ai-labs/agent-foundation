@@ -2,7 +2,7 @@ from pathlib import Path
 
 import anyio
 import pytest
-from converge_foundation_service.storage.filesystem import atomic_write, prepare_root, resolve_under_root
+from a13n_service.storage.filesystem import atomic_write, prepare_root, resolve_under_root
 
 pytestmark = pytest.mark.anyio
 

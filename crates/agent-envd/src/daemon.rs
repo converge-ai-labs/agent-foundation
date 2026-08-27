@@ -1421,14 +1421,15 @@ impl EipHandler for Daemon {
         params: eip::ReceiptGetParams,
     ) -> Result<eip::ReceiptGetResult, EIPError> {
         self.ensure_initialized()?;
+        // Snapshot the target before this observation competes for ledger capacity. The
+        // target may itself be reclaimable reconciliation evidence.
+        let receipt = self.operations.receipt_by_operation(&params.operation_id);
         let operation = match self.admit_record("receipt.get", &params.context, &params)? {
             BeginOutcome::Replay(value) => return self.decode_replay(value),
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
-        let receipt = self
-            .operations
-            .receipt_by_operation(&params.operation_id)
+        let receipt = receipt
             .ok_or_else(|| protocol_error(ErrorType::NotFoundOrDenied, "receipt was not found"))?;
         let result = eip::ReceiptGetResult { receipt };
         operation.finish(&result, None).map_err(map_ledger_error)?;

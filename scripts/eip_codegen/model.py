@@ -6,7 +6,7 @@ from typing import Any
 
 from google.protobuf import descriptor_pb2
 
-EIP_PACKAGE = "converge.agent_envd.eip.v1"
+EIP_PACKAGE = "a13n.agent_envd.eip.v1"
 EIP_PREFIX = f".{EIP_PACKAGE}."
 
 

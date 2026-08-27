@@ -1,5 +1,5 @@
 [project]
-name = "converge-agent-envd-client"
+name = "a13n-envd-client"
 version = "0.0.0"
 description = "Low-level Python client for the Agent Environment Interaction Protocol"
 readme = "README.md"
@@ -22,8 +22,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["converge_agent_envd_client"]
+packages = ["a13n_envd_client"]
 
 [tool.deptry]
-known_first_party = ["converge_agent_envd_client"]
+known_first_party = ["a13n_envd_client"]
 package_module_name_map = { "httpx2" = "httpx2" }

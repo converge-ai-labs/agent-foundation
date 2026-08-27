@@ -13,7 +13,8 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 | Concern                                                            | Owner                                                    |
 | ------------------------------------------------------------------ | -------------------------------------------------------- |
 | Function-tool definition/validation, tool manager, deferred values | Pydantic AI                                              |
-| Optional Harness tool metadata and managed invocation wrapper      | Harness                                                  |
+| Optional Harness tool metadata and effective-surface resolution    | Harness                                                  |
+| Managed invocation wrapper and final tool-surface recording        | Harness                                                  |
 | Agent policy and credential decisions for managed tools            | Harness boundary plus fresh `InvocationPolicyCapability` |
 | Remote operation and side-effect evidence                          | Tool provider                                            |
 | Grant signing and authenticated transport                          | Host security or provider adapter                        |
@@ -72,9 +73,10 @@ class HarnessToolMetadata:
     idempotency: IdempotencySemantics
     output_policy: ToolOutputPolicy
     resource_resolver: ToolResourceResolver | None = None
+    superseded_by_tool_ids: frozenset[str] = frozenset()
 ```
 
-`HarnessToolMetadata` is stored under a reserved key in Pydantic AI `ToolDefinition.metadata`; there is no parallel tool binding object. Pydantic fields retain ownership of name, schema, kind, strictness, timeout, sequential execution, deferred loading, and the optional runtime `toolset_id`. `tool_id` is the stable policy identity before model-visible renaming or prefixing. It is unique within one assembled run: a second function-tool definition with the same ID fails before either definition enters a model request, even when visible names differ. Intentional aliases therefore use distinct policy IDs and can share a host-owned implementation reference outside this contract.
+`HarnessToolMetadata` is stored under a reserved key in Pydantic AI `ToolDefinition.metadata`; there is no parallel tool binding object. Pydantic fields retain ownership of name, schema, kind, strictness, timeout, sequential execution, deferred loading, and the optional runtime `toolset_id`. `tool_id` is the stable policy identity before model-visible renaming or prefixing. It is unique within one prepared candidate surface: a second function-tool definition with the same ID fails before surface resolution, even when visible names differ. Intentional aliases therefore use distinct policy IDs and can share a host-owned implementation reference outside this contract.
 
 `ToolEffect` is a small conservative policy hint, not an execution result or authorization grant. `read` observes state; `write` creates or changes state; `delete` removes state; `execute` starts code or a process; and `external_communication` sends data or a message outside the selected Environment. A tool declares every applicable value, so a shell command commonly declares `execute` plus `write`, and an HTTP-post tool commonly declares `external_communication` plus `write`. The actual provider receipt remains the evidence of what occurred. The former `create` and `update` distinction is intentionally collapsed because generic policy cannot classify upsert, patch, append, and replacement consistently before provider resolution.
 
@@ -82,9 +84,36 @@ class HarnessToolMetadata:
 
 `HarnessTool` is an optional thin subclass of Pydantic AI `Tool[AgentContext]` that attaches complete Harness metadata for first-party or policy-managed tools. Using that subclass is not required: any Toolset that places a structurally valid `HarnessToolMetadata` instance or mapping under the reserved key participates through duck typing. The Harness does not infer identity, effects, credentials, resources, or idempotency from function names, Python annotations, JSON schemas, or module origin. A reserved key with an invalid or incomplete value fails toolset assembly instead of silently downgrading the tool to unmanaged dispatch.
 
-An ordinary function-tool definition without the reserved metadata remains callable and is not assigned guessed authorization metadata. Its native JSON and `ToolReturn` textual fields still cross the code-owned default output boundary; arbitrary non-JSON native return values retain Pydantic semantics. When `resource_resolver` is absent, managed authorization is explicitly tool- and action-level and `resources` is empty; provider-specific resource enforcement still applies. The current run's `InvocationPolicyCapability` can select a strict profile that rejects unannotated model-visible function tools. Static, dynamic, and deferred definitions are checked at their run-time Toolset preparation boundary before they can enter a model request; strictness is not a hidden builder option or immutable executable field. This is an explicit run policy rather than the base behavior. Availability, tags, and instruction helpers do not define another tool lifecycle.
+An ordinary function-tool definition without the reserved metadata remains callable and is not assigned guessed authorization metadata. Its native JSON and `ToolReturn` textual fields still cross the code-owned default output boundary; arbitrary non-JSON native return values retain Pydantic semantics. When `resource_resolver` is absent, managed authorization is explicitly tool- and action-level and `resources` is empty; provider-specific resource enforcement still applies. The current run's `InvocationPolicyCapability` can select a strict profile that rejects unannotated model-visible function tools. Static, dynamic, and deferred definitions are checked at their run-time Toolset preparation boundary before they can enter a model request; strictness is not a hidden builder option or immutable executable field. This is an explicit run policy rather than the base behavior.
 
 Capability authors assign any required timeout on their owned `Tool`, `FunctionToolset`, or custom Toolset. `AgentSpec.tool_timeout` configures native Agent-level tools and does not implicitly propagate into Capability-owned Toolsets; because the Harness exposes no top-level Agent tools, a feature must not rely on that field for its dispatch deadline.
+
+### Tool Surface Resolution
+
+Every run-step has a **candidate tool surface** produced after Pydantic prepares all ordinary contributing Toolsets. The Harness-owned `ToolSurfaceCapability` wraps that complete candidate surface exactly once and produces the **effective tool surface** consumed by later wrappers, CodeAct, the final Tool Manager, and model requests. Feature Toolsets contribute candidates declaratively and never coordinate visibility through mutable `AgentContext` state or preparation order.
+
+For a managed function or unapproved tool, `superseded_by_tool_ids` names exact stable managed `tool_id` values whose prepared presence makes the declaring candidate redundant. Resolution performs these steps over one complete prepared candidate mapping:
+
+1. normalize every candidate's reserved managed metadata and reject invalid kinds or duplicate candidate `tool_id` values;
+2. collect the complete set of prepared managed tool IDs without considering authorization outcomes;
+3. validate that no declaration targets its own ID and that present declarations do not form a directed supersession cycle; and
+4. omit each managed candidate whose `superseded_by_tool_ids` intersects the prepared ID set, preserving every other candidate unchanged.
+
+A target does not need to be present or known to the current executable; an absent target has no effect. Presence means that the target survived its owning Toolset's normal run-step preparation and appears in the same candidate surface. It does not mean that invocation policy will authorize the target, that an Environment currently has a ready binding, or that the target will succeed. Supersession is therefore a schema and routing simplification, not fallback selection, authorization, capability discovery, name-collision handling, or runtime health checking.
+
+Only managed function and unapproved tools participate. External client tools, provider-native tools, output tools, and unmanaged native tools neither declare nor satisfy this relation. A candidate visible-name collision remains owned by Pydantic Toolset composition and fails independently; supersession never chooses a winner by name. Toolsets must keep any guidance required to invoke a supersedable tool in that tool's own description or schema rather than publishing unconditional standalone instructions that become false when the tool is absent.
+
+Wrapper ordering is part of the contract:
+
+```mermaid
+flowchart LR
+    Candidates[Ordinary prepared Toolsets] --> Surface[Mandatory tool-surface resolution]
+    Surface --> CodeAct[Optional CodeAct wrapper]
+    CodeAct --> Boundary[Mandatory tool-execution boundary]
+    Boundary --> Manager[Final Tool Manager and model request]
+```
+
+When CodeAct is absent, the execution boundary directly wraps surface resolution. CodeAct builds and validates its catalog only from the effective surface, then adds its runner tools. The execution boundary normalizes, authorizes, bounds, and records only that final effective surface. `AgentContext` may retain the resulting managed surface snapshot for resume validation and diagnostics, but that snapshot is an output of resolution and never an input used by sibling Toolsets.
 
 ### Passive Tool Runtime Metadata
 
@@ -92,7 +121,7 @@ A Toolset may define a public `ToolMetadataKey[T]` and immutable value class whe
 
 This registry is not Pydantic `ToolDefinition.metadata`, which describes one assembled tool to the execution boundary. It does not add a Capability lifecycle, ordering graph, tool lookup, dispatch path, callable hook, authorization grant, provider client, or portable state channel. A feature that needs active behavior or another live collaborator still uses a Capability, Toolset, fixed `AgentContext` field, or typed plugin/run binding as appropriate.
 
-The Harness always installs exactly one code-owned `ToolExecutionBoundaryCapability`. Its `get_wrapper_toolset()` contribution is a `ToolExecutionBoundaryToolset` ordered outermost around Pydantic's complete assembled non-output Toolset, after per-step preparation; Host code cannot replace its preparation, dispatch, or textual-result algorithm. It declares `CapabilityOrdering(position="outermost", wraps=(AbstractCapability,))`, so it sorts before AgentSpec, definition, plugin, run, instrumentation, and other same-tier Capabilities regardless of contribution order. An incompatible Capability that attempts to wrap this boundary creates an ordering cycle and fails run setup before tool exposure rather than weakening the boundary. The wrapper therefore sees function, unapproved, and external definitions, branches on `ToolDefinition.kind`, and never intercepts output or provider-native tools. It normalizes managed function metadata, enforces final client-tool names, and delegates ordinary external deferral to Pydantic without calling an external function body.
+The Harness always installs exactly one code-owned `ToolExecutionBoundaryCapability`. Its `get_wrapper_toolset()` contribution is a `ToolExecutionBoundaryToolset` ordered outermost around the effective non-output Toolset after per-step preparation, mandatory surface resolution, and optional CodeAct composition; Host code cannot replace its preparation, dispatch, or textual-result algorithm. It declares `CapabilityOrdering(position="outermost", wraps=(AbstractCapability,))`, so it sorts before AgentSpec, definition, plugin, run, instrumentation, and other same-tier Capabilities regardless of contribution order. An incompatible Capability that attempts to wrap this boundary creates an ordering cycle and fails run setup before tool exposure rather than weakening the boundary. The wrapper therefore sees function, unapproved, and external definitions, branches on `ToolDefinition.kind`, and never intercepts output or provider-native tools. It normalizes managed function metadata, enforces final client-tool names, and delegates ordinary external deferral to Pydantic without calling an external function body.
 
 Current managed authority enters through exactly one fresh `InvocationPolicyCapability` in `RunBindings.capabilities`; feature-specific setup and dispatch require its documented public type and stable Capability ID and reject incompatible values before model exposure. The policy Capability can retain a typed evaluator, approval verifier, credential broker, and invocation-grant broker, but those grant nothing without the current run's Identity and invocation context. When no policy provider is supplied, managed metadata-aware tools are denied while unmanaged native tools retain their ordinary trusted semantics. An embedded caller that enables managed Environment tools supplies the same `InvocationPolicyCapability` with its explicit local evaluator; after that allow decision, the live `BoundEnvironment` independently narrows the call through captured Identity, binding ceilings, readiness, and provider policy. There is no specialized local-policy Capability, class-free role registry, serialized component bundle, or model-authored ID that can create this authority.
 

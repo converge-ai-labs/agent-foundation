@@ -9,14 +9,14 @@ import sys
 from pathlib import Path
 
 import pytest
-from converge_agent_envd_client import (
+from a13n_envd_client import (
     EIPMethodError,
     EIPSession,
     EIPTransportClosedError,
     RequestCoordinator,
     StdioTransport,
 )
-from converge_agent_envd_client.eip.v1 import (
+from a13n_envd_client.eip.v1 import (
     ArgvCommand,
     CommandEnvironment,
     CommandNetwork,

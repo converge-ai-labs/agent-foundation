@@ -4,7 +4,7 @@
 
 Agent Foundation uses four shared public interaction concepts: `Session`, `Thread`, `Turn`, and `Item`. They describe Host-owned interaction scope, independently advancing Agent history, accepted advancement, and user-visible semantic output. Subsystems use these names consistently instead of defining competing session, lineage, conversation, or run hierarchies.
 
-This contract owns the cross-platform meaning and relationships of the four concepts. Each Host owns its concrete persistence schema and lifecycle transitions. Process-local Harness execution and durable Foundation execution remain separate subsystem contracts.
+This contract owns the cross-platform meaning and relationships of the four concepts. Each Host owns its concrete persistence schema and lifecycle transitions. Process-local Harness execution remains separate from a Host's durable Turn and worker-attempt contracts.
 
 ## Public Concepts
 

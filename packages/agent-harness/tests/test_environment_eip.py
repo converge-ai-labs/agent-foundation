@@ -5,17 +5,17 @@ import base64
 from typing import Any, cast
 
 import pytest
-from converge_agent_envd_client.eip import v1 as eip
-from converge_agent_envd_client.errors import EIPTransportError
-from converge_agent_harness.environment import (
+from a13n_envd_client.eip import v1 as eip
+from a13n_envd_client.errors import EIPTransportError
+from a13n_harness.environment import (
     ArgvCommand,
     CommandRequest,
     EnvironmentError,
     EnvironmentOutputPolicy,
 )
-from converge_agent_harness.environment.eip.files import EIPFileOperator
-from converge_agent_harness.environment.eip.output import EIPOutputRegistry
-from converge_agent_harness.environment.eip.processes import (
+from a13n_harness.environment.eip.files import EIPFileOperator
+from a13n_harness.environment.eip.output import EIPOutputRegistry
+from a13n_harness.environment.eip.processes import (
     EIPProcessOperations,
     _ProcessConversions,
     convert_command_request,

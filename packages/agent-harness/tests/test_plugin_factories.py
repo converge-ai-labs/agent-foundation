@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     HARNESS_PLUGIN_ENTRY_POINT_GROUP,
     AbstractHarnessPlugin,
     HarnessBuildContext,
@@ -130,7 +130,7 @@ def test_discovery_reads_metadata_without_importing_targets(monkeypatch: pytest.
     first = _FakeEntryPoint("test.plugin", _Factory)
     second = _FakeEntryPoint("test.other", _OtherFactory, distribution="other-plugin", version="2.0")
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (second, first),
     )
 
@@ -157,7 +157,7 @@ def test_new_builder_finds_completed_distribution_added_to_import_path(
     package = plugin_root / module_name
     package.mkdir()
     (package / "__init__.py").write_text(
-        f'''from converge_agent_harness import AbstractHarnessPlugin, HarnessPluginFactory
+        f'''from a13n_harness import AbstractHarnessPlugin, HarnessPluginFactory
 
 
 class RuntimeAddedPlugin(AbstractHarnessPlugin):
@@ -233,7 +233,7 @@ def test_discovery_sanitizes_metadata_enumeration_failure(monkeypatch: pytest.Mo
         del args, kwargs
         raise OSError("/private/install/path: secret")
 
-    monkeypatch.setattr("converge_agent_harness.plugin_factories.importlib.metadata.entry_points", fail_scan)
+    monkeypatch.setattr("a13n_harness.plugin_factories.importlib.metadata.entry_points", fail_scan)
 
     with pytest.raises(PluginError) as exc_info:
         discover_harness_plugin_factory_references()
@@ -251,7 +251,7 @@ def test_empty_selection_does_not_scan_entry_points(monkeypatch: pytest.MonkeyPa
     def reject_scan() -> tuple[()]:
         raise AssertionError("empty selection must not scan installed metadata")
 
-    monkeypatch.setattr("converge_agent_harness.plugin_factories._entry_points", reject_scan)
+    monkeypatch.setattr("a13n_harness.plugin_factories._entry_points", reject_scan)
 
     assert len(build_harness_plugin_factory_catalog()) == 0
 
@@ -260,7 +260,7 @@ def test_catalog_loads_only_selected_target_and_records_provenance(monkeypatch: 
     selected = _FakeEntryPoint("test.plugin", _Factory)
     unselected = _FakeEntryPoint("test.other", RuntimeError("must not load"))
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (unselected, selected),
     )
 
@@ -279,7 +279,7 @@ def test_catalog_loads_only_selected_target_and_records_provenance(monkeypatch: 
 
 def test_explicit_factories_need_no_metadata_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("must not scan")),
     )
 
@@ -307,7 +307,7 @@ def test_catalog_rejects_missing_and_duplicate_selection(
     entries: tuple[_FakeEntryPoint, ...],
     code: str,
 ) -> None:
-    monkeypatch.setattr("converge_agent_harness.plugin_factories._entry_points", lambda: entries)
+    monkeypatch.setattr("a13n_harness.plugin_factories._entry_points", lambda: entries)
 
     with pytest.raises(PluginError) as exc_info:
         build_harness_plugin_factory_catalog(plugin_keys=selected)
@@ -318,7 +318,7 @@ def test_catalog_rejects_missing_and_duplicate_selection(
 def test_catalog_preflights_missing_selection_before_import(monkeypatch: pytest.MonkeyPatch) -> None:
     entry_point = _FakeEntryPoint("test.plugin", _Factory)
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -334,7 +334,7 @@ def test_catalog_preflights_missing_selection_before_import(monkeypatch: pytest.
 def test_catalog_preflights_explicit_collision_before_import(monkeypatch: pytest.MonkeyPatch) -> None:
     entry_point = _FakeEntryPoint("test.plugin", _Factory)
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -355,7 +355,7 @@ def test_catalog_rejects_invalid_entry_point_target(
 ) -> None:
     entry_point = _FakeEntryPoint("test.plugin", target)
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -369,7 +369,7 @@ def test_catalog_sanitizes_distribution_metadata_failure(monkeypatch: pytest.Mon
     entry_point = _FakeEntryPoint("test.plugin", _Factory)
     entry_point.dist = _FailingDistribution()
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -392,7 +392,7 @@ def test_catalog_sanitizes_entry_point_load_failure(monkeypatch: pytest.MonkeyPa
         value="private.module:factory",
     )
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -414,7 +414,7 @@ def test_catalog_rejects_factory_that_needs_constructor_arguments(
 ) -> None:
     entry_point = _FakeEntryPoint("test.plugin", _RequiresArgumentFactory)
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (entry_point,),
     )
 
@@ -427,7 +427,7 @@ def test_catalog_rejects_factory_that_needs_constructor_arguments(
 def test_catalog_rejects_mismatched_plugin_key(monkeypatch: pytest.MonkeyPatch) -> None:
     entry_point = _FakeEntryPoint("test.plugin", _MismatchedFactory)
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (entry_point,),
     )
 

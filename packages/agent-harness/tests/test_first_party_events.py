@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     CompactionCapability,
     CompactionPolicy,
     CreateTask,
@@ -23,8 +23,8 @@ from converge_agent_harness import (
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
-from converge_agent_harness.capabilities.lifecycle import _safe_error_code
-from converge_agent_harness.events import ContextOperationCompletedPayload
+from a13n_harness.capabilities.lifecycle import _safe_error_code
+from a13n_harness.events import ContextOperationCompletedPayload
 from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -158,30 +158,21 @@ async def test_invalid_handoff_input_does_not_start_a_context_operation() -> Non
     assert _payloads(events, "context") == []
 
 
-async def test_compaction_events_share_operation_identity_and_snapshot_request_indexes() -> None:
+async def test_compaction_events_share_operation_identity_and_provider_usage_snapshot() -> None:
     calls = 0
 
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
-        del messages, info
+        del messages
         calls += 1
-        if calls == 1:
-            yield {
-                0: DeltaToolCall(
-                    name="summarize",
-                    json_args=json.dumps({"content": "Compacted continuation"}),
-                    tool_call_id="compact-1",
-                )
-            }
+        if info.model_settings is not None and info.model_settings.get("tool_choice") == "none":
+            yield "Compacted continuation"
         else:
             yield "done"
 
     previous = HarnessState.new(
         message_history=(
-            ModelRequest(
-                parts=[UserPromptPart(content="Original long task")],
-                metadata={"converge.context": "compaction", "converge.restored-boundary": "1"},
-            ),
+            ModelRequest(parts=[UserPromptPart(content="Original long task")]),
             ModelResponse(
                 parts=[TextPart(content="Long response")],
                 usage=RequestUsage(input_tokens=2_100, output_tokens=100),
@@ -192,25 +183,22 @@ async def test_compaction_events_share_operation_identity_and_snapshot_request_i
         AgentSpec(model="logical:test"),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(
-            HandoffCapability(),
-            CompactionCapability(CompactionPolicy(trigger_tokens=2_000, target_tokens=1_000)),
-        ),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
     events, terminal = await _collect_extensions(executable, "Continue", previous_state=previous)
 
     assert terminal.result.status == "completed"
+    assert calls == 2
     context = _payloads(events, "context")
     assert [event["type"] for event in context] == [
         "context_snapshot",
         "compaction_started",
-        "compaction_prepared",
-        "context_snapshot",
         "compaction_completed",
     ]
-    snapshots = [event for event in context if event["type"] == "context_snapshot"]
-    assert [event["request_index"] for event in snapshots] == [0, 1]
-    assert [event["compaction_pending"] for event in snapshots] == [False, True]
+    snapshot = context[0]
+    assert snapshot["request_index"] == 0
+    assert snapshot["request_tokens"] == 2_200
+    assert snapshot["trigger_tokens"] == 2_000
     operations = [event for event in context if event["type"].startswith("compaction_")]
     operation_ids = {event["operation_id"] for event in operations}
     assert len(operation_ids) == 1

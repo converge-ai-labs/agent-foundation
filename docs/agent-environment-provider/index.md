@@ -1,11 +1,11 @@
 # Environment Providers
 
-`converge-agent-environment-provider` is the shared Host-facing contract for Environment specifications, provider plugins, resource lifecycle Managers, provider state, and fresh runtime attachments.
+`a13n-environment-provider` is the shared Host-facing contract for Environment specifications, provider plugins, resource lifecycle Managers, provider state, and fresh runtime attachments.
 
 A Host and the Harness both depend on this package for different reasons:
 
 - the Host loads trusted provider plugins, validates exact specifications, supplies runtime collaborators, chooses lifecycle operations, retains provider state, and acquires attachments;
-- `converge-agent-harness` consumes the shared attachment types and converts them into provider-neutral run bindings;
+- `a13n-harness` consumes the shared attachment types and converts them into provider-neutral run bindings;
 - a provider plugin implements the Provider package contracts and does not import Harness internals.
 
 The Harness never discovers a provider plugin and never calls `create()`, `resume()`, `pause()`, `destroy()`, or `reconcile()`. Those are Host decisions performed through the selected Manager before or after a Harness run.
@@ -30,13 +30,12 @@ A typical Host path is:
 
 ```python
 factory_catalog = build_environment_provider_factory_catalog(
-    builtin_keys=("converge.direct-local",),
+    builtin_keys=("a13n.direct-local",),
     extension_keys=selected_provider_keys,
 )
 
-resolved = factory_catalog.resolve_spec(provider_spec)
-manager = resolved.factory.create_manager(
-    resolved.configuration,
+manager = factory_catalog.create_manager(
+    provider_spec,
     runtime=provider_runtime,
 )
 
@@ -56,6 +55,8 @@ async with managed:
 
 The Host keeps the attachment-acquisition scope open until the adapted Harness binding has closed. Exiting the Harness binding or `ManagedEnvironment` closes process-local resources only. The Host separately decides whether a reusable provider resource should later remain available, resume, pause, or be destroyed.
 
+A later Harness run always receives a fresh attachment and binding. Harness continuation restores `HarnessState`; it never invokes Manager `resume()`. Provider `resume()` is a separate Host lifecycle decision based on persisted `EnvironmentProviderResourceState`.
+
 ## Lifecycle and Cleanup Boundaries
 
 Cleanup has three independent layers:
@@ -70,7 +71,7 @@ A provider plugin implements the complete Manager interface even when one action
 
 ## Direct Local Sharing
 
-`converge.direct-local` exposes one existing Host directory. The directory has no Agent, Session, Harness, or Provider owner.
+`a13n.direct-local` exposes one existing Host directory. The directory has no Agent, Session, Harness, or Provider owner.
 
 - the Host creates, selects, retains, backs up, shares, and removes the directory;
 - Direct Local validates it and issues fresh shared attachments;
@@ -139,11 +140,11 @@ class AcmeSandboxFactory(EnvironmentProviderFactory):
 Register the factory class through the Provider entry-point group:
 
 ```toml
-[project.entry-points."converge_agent_environment_provider.providers"]
+[project.entry-points."a13n_environment_provider.providers"]
 "acme.sandbox" = "acme_environment.provider:AcmeSandboxFactory"
 ```
 
-Metadata discovery imports nothing. The Host explicitly selects extension keys when building an immutable factory catalog; an empty extension selection performs no metadata scan or target import. A plugin key cannot shadow a built-in key.
+Metadata discovery imports nothing. The Host explicitly selects extension keys when building an immutable factory catalog; an empty extension selection performs no metadata scan or target import. A plugin key cannot shadow a built-in key. Unknown keys and schema versions fail exactly: there is no legacy entry-point group, latest-version inference, fallback provider, or placeholder built-in.
 
 ### Manager Requirements
 

@@ -5,19 +5,20 @@ import sys
 from pathlib import Path
 
 import pytest
-from converge_agent_harness import (
-    EnvironmentError,
+from a13n_environment_provider import (
+    EnvironmentProviderError,
+    EnvironmentProviderSpec,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
 
-from converge_plugin_examples.demo_environment import (
+from a13n_plugin_examples.demo_environment import (
     PROVIDER_KEY,
     run_environment_code_demo,
     run_environment_entrypoint_demo,
 )
 
-PLUGIN_MODULE = "converge_plugin_examples.environment"
+PLUGIN_MODULE = "a13n_plugin_examples.environment"
 
 
 def _workspace_roots(tmp_path: Path) -> tuple[Path, Path]:
@@ -37,20 +38,26 @@ def test_environment_entrypoint_metadata_is_lazy_and_selection_is_explicit(tmp_p
     assert PROVIDER_KEY in {reference.provider_key for reference in references}
     assert PLUGIN_MODULE not in sys.modules
 
-    catalog = build_environment_provider_factory_catalog(provider_keys=(PROVIDER_KEY,))
+    catalog = build_environment_provider_factory_catalog(extension_keys=(PROVIDER_KEY,))
     assert PLUGIN_MODULE in sys.modules
     registration = catalog.registrations[0]
     assert registration.provider_key == PROVIDER_KEY
-    assert registration.import_target == ("converge_plugin_examples.environment:WorkspaceEnvironmentProviderFactory")
+    assert registration.import_target == ("a13n_plugin_examples.environment:WorkspaceEnvironmentProviderFactory")
 
-    binding = catalog.create_provider_binding(
-        PROVIDER_KEY,
-        {
-            "root": str(tmp_path / "not-created-by-the-factory"),
-            "environment_id": "workspace-inert",
-        },
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
+
+    manager = catalog.create_manager(
+        EnvironmentProviderSpec(
+            provider_key=PROVIDER_KEY,
+            schema_version="1",
+            parameters={
+                "root": str(tmp_path / "not-created-by-the-factory"),
+                "environment_id": "workspace-inert",
+            },
+        ),
+        runtime=WorkspaceEnvironmentRuntime(),
     )
-    assert binding.environment_id == "workspace-inert"
+    assert manager.lifecycle_capabilities.resource_allocation.value == "single_from_spec"
     assert not (tmp_path / "not-created-by-the-factory").exists()
 
 
@@ -58,34 +65,48 @@ def test_environment_explicit_factory_needs_no_metadata_scan(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from converge_plugin_examples.environment import WorkspaceEnvironmentProviderFactory
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentProviderFactory
 
     monkeypatch.setattr(
-        "converge_agent_harness.environment.provider_factories._entry_points",
+        "a13n_environment_provider.factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
     catalog = build_environment_provider_factory_catalog(explicit_factories=(WorkspaceEnvironmentProviderFactory(),))
 
     assert catalog.registrations[0].import_target is None
-    binding = catalog.create_provider_binding(
-        PROVIDER_KEY,
-        {
-            "root": str(tmp_path / "still-inert"),
-            "environment_id": "workspace-code",
-        },
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
+
+    manager = catalog.create_manager(
+        EnvironmentProviderSpec(
+            provider_key=PROVIDER_KEY,
+            schema_version="1",
+            parameters={
+                "root": str(tmp_path / "still-inert"),
+                "environment_id": "workspace-code",
+            },
+        ),
+        runtime=WorkspaceEnvironmentRuntime(),
     )
-    assert binding.environment_id == "workspace-code"
+    assert manager.lifecycle_capabilities.attachment_concurrency.value == "shared"
     assert not (tmp_path / "still-inert").exists()
 
 
 def test_environment_provider_factory_rejects_invalid_json_configuration() -> None:
-    catalog = build_environment_provider_factory_catalog(provider_keys=(PROVIDER_KEY,))
+    catalog = build_environment_provider_factory_catalog(extension_keys=(PROVIDER_KEY,))
 
-    with pytest.raises(EnvironmentError) as exc_info:
-        catalog.create_provider_binding(PROVIDER_KEY, {"environment_id": "missing-root"})
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
-    assert exc_info.value.code == "environment_provider_factory_failed"
-    assert isinstance(exc_info.value.__cause__, ValueError)
+    with pytest.raises(EnvironmentProviderError) as exc_info:
+        catalog.create_manager(
+            EnvironmentProviderSpec(
+                provider_key=PROVIDER_KEY,
+                schema_version="1",
+                parameters={"environment_id": "missing-root"},
+            ),
+            runtime=WorkspaceEnvironmentRuntime(),
+        )
+
+    assert exc_info.value.code == "provider_spec_invalid"
 
 
 def test_environment_entrypoint_demo_routes_two_bindings(tmp_path: Path) -> None:

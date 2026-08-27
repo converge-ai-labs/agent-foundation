@@ -1,9 +1,9 @@
 from pathlib import Path
 
 import pytest
+from a13n_service.cli import main
+from a13n_service.settings import ServiceRole, get_settings
 from click.testing import CliRunner
-from converge_foundation_service.cli import main
-from converge_foundation_service.settings import ServiceRole, get_settings
 from fastapi import FastAPI
 
 
@@ -21,15 +21,15 @@ def test_serve_role_override_does_not_construct_environment_app(
         del kwargs
         served_apps.append(app)
 
-    monkeypatch.setattr("converge_foundation_service.cli.uvicorn.run", capture_app)
+    monkeypatch.setattr("a13n_service.cli.uvicorn.run", capture_app)
     try:
-        result = CliRunner().invoke(main, ["serve", "--role", "execution"])
+        result = CliRunner().invoke(main, ["serve", "--role", "worker"])
     finally:
         get_settings.cache_clear()
 
     assert result.exit_code == 0, result.output
     assert len(served_apps) == 1
-    assert served_apps[0].state.settings.role is ServiceRole.execution
+    assert served_apps[0].state.settings.role is ServiceRole.worker
 
 
 def test_database_cli_delegates_to_service_migrator(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,7 +39,7 @@ def test_database_cli_delegates_to_service_migrator(monkeypatch: pytest.MonkeyPa
         def upgrade(self, revision: str) -> None:
             revisions.append(revision)
 
-    monkeypatch.setattr("converge_foundation_service.cli._migrator", lambda: Migrator())
+    monkeypatch.setattr("a13n_service.cli._migrator", lambda: Migrator())
 
     result = CliRunner().invoke(main, ["db", "upgrade", "--revision", "head"])
 

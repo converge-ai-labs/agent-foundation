@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness import (
     ArgvCommand,
     CommandLimits,
     CommandRequest,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalProcessPolicy,
-    DirectLocalRootConfiguration,
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
@@ -33,7 +33,8 @@ from converge_agent_harness import (
     RunBindings,
     create_environment_run_binding,
 )
-from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -54,10 +55,10 @@ def _configuration(*, max_reference_entries: int = 64) -> DynamicEnvironmentConf
 
 def _local_binding(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="monitored-process-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
-            processes=DirectLocalProcessPolicy(allowed_executables=frozenset({_PROCESS_EXECUTABLE})),
+            root=DirectLocalRootConfiguration(path=root),
+            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
         )
     )
     return create_environment_run_binding(

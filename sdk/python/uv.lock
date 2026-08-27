@@ -12,7 +12,7 @@ wheels = [
 ]
 
 [[package]]
-name = "converge-foundation-sdk"
+name = "a13n-sdk"
 version = "0.0.0"
 source = { editable = "." }
 

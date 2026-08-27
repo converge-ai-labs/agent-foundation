@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 from typing import cast
 
-import converge_agent_envd_client.stdio as stdio_module
+import a13n_envd_client.stdio as stdio_module
 import pytest
-from converge_agent_envd_client import ControlFrame, EIPProtocolError, StdioTransport
-from converge_agent_envd_client.eip.v1 import (
+from a13n_envd_client import ControlFrame, EIPProtocolError, StdioTransport
+from a13n_envd_client.eip.v1 import (
     DataFrame,
     DataFrameKind,
     decode_data_frame,
@@ -99,7 +99,7 @@ def test_stdio_receive_demultiplexes_interleaved_control_and_data_frames() -> No
         data = DataFrame(kind=DataFrameKind.CHUNK, handle="reader-one", offset=2, payload=b"abc")
         encoded = encode_data_frame(data, max_frame_bytes=1024)
         reader.feed_data(outer_frame("application/json; charset=utf-8", b"{}"))
-        reader.feed_data(outer_frame("application/vnd.converge.eip-data", encoded))
+        reader.feed_data(outer_frame("application/vnd.a13n.eip-data", encoded))
 
         transport = StdioTransport(
             reader,
@@ -125,7 +125,7 @@ def test_stdio_send_encodes_binary_frames_under_one_outer_frame() -> None:
         await transport.send(frame)
 
         header, payload = bytes(writer.buffer).split(b"\r\n\r\n", 1)
-        assert b"Content-Type: application/vnd.converge.eip-data" in header
+        assert b"Content-Type: application/vnd.a13n.eip-data" in header
         assert decode_data_frame(payload, max_frame_bytes=1024) == frame
         await transport.close()
 
@@ -136,7 +136,7 @@ def test_stdio_rejects_malformed_binary_body_without_treating_it_as_json() -> No
     async def scenario() -> None:
         reader = asyncio.StreamReader()
         writer = CapturingWriter()
-        reader.feed_data(outer_frame("application/vnd.converge.eip-data", b"not-a-data-frame"))
+        reader.feed_data(outer_frame("application/vnd.a13n.eip-data", b"not-a-data-frame"))
         transport = StdioTransport(
             reader,
             cast(asyncio.StreamWriter, writer),

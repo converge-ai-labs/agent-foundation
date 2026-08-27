@@ -1,13 +1,13 @@
 # Agent Harness
 
-`converge-agent-harness` is an embeddable, process-local runtime for building Pydantic AI agents with typed run bindings, provider-neutral tools and Environments, portable continuation state, normalized events, usage attribution, inline delegation, and restricted CodeAct orchestration.
+`a13n-harness` is an embeddable, process-local runtime for building Pydantic AI agents with typed run bindings, provider-neutral tools and Environments, portable continuation state, normalized events, usage attribution, inline delegation, and restricted CodeAct orchestration.
 
 It is a Python code library, not a hosted service or a second Agent framework.
 
 ## Start Here
 
 ```bash
-pip install converge-agent-harness
+pip install a13n-harness
 ```
 
 The smallest application follows one path:
@@ -111,9 +111,7 @@ Installed extension metadata means code is available, not authorized. Saved stat
 
 ## Runnable Examples
 
-- [General Agent](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/general-agent): the minimal application-owned build, fresh bindings, run, and result path with an injected deterministic model.
-- [Local Agent](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/local-agent): real Direct Local file tools, embedded working state, structured suspension, rebuild, and resume under a deterministic model.
-- [Host Persistence](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/hosting): Host-owned attempts, fencing, checkpoint selection, and terminal commit.
+- [Agent Application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app): one progressive project covering the minimal embedded run, Direct Local tools and structured resume, then Host-owned attempts, fencing, checkpoint selection, and terminal commit.
 - [Plugin Integration](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins): packaged middleware and Environment extension discovery.
 
 The examples use deterministic `FunctionModel` implementations so their Agent loops and tool boundaries are reproducible without external model credentials.

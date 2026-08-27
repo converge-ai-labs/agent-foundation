@@ -14,7 +14,7 @@ Both execute through the canonical Harness and Pydantic AI boundaries, so policy
 A parent definition owns a finite collection of immediate child definitions:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     AgentDefinition,
     DelegationCapability,
     HarnessBuilder,
@@ -86,7 +86,7 @@ The runtime is based on Monty and has no ambient filesystem, network, process, e
 A tool owner explicitly wraps eligible tools with a typed policy:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     CodeActCapability,
     CodeActPolicyToolset,
     CodeActToolPolicy,

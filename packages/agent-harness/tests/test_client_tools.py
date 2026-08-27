@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     DeferredToolResume,
     DefinitionError,
     HarnessBuilder,
@@ -14,7 +14,7 @@ from converge_agent_harness import (
     RunError,
     RuntimeContextCapability,
 )
-from converge_agent_harness.tools import (
+from a13n_harness.tools import (
     ClientToolDefinition,
     ClientToolsCapability,
     ClientToolsetDefinition,

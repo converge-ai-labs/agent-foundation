@@ -57,10 +57,10 @@ This document deliberately contains no Python import target, artifact URL, crede
 ## Build Context and Source Resolution
 
 ```python
-HARNESS_PLUGIN_CONFIG_ENABLED_ENV = "CONVERGE_HARNESS_PLUGIN_CONFIG_ENABLED"
-HARNESS_PLUGIN_CONFIG_JSON_ENV = "CONVERGE_HARNESS_PLUGIN_CONFIG_JSON"
+HARNESS_PLUGIN_CONFIG_ENABLED_ENV = "A13N_HARNESS_PLUGIN_CONFIG_ENABLED"
+HARNESS_PLUGIN_CONFIG_JSON_ENV = "A13N_HARNESS_PLUGIN_CONFIG_JSON"
 HARNESS_PLUGIN_CONFIG_FILE_ENV = (
-    "CONVERGE_HARNESS_PLUGIN_CONFIG_FILE"
+    "A13N_HARNESS_PLUGIN_CONFIG_FILE"
 )
 DEFAULT_HARNESS_PLUGIN_CONFIG_FILE = "harness-plugins.yaml"
 
@@ -131,10 +131,10 @@ class HarnessBuildContext:
 
 An explicit `HarnessBuildContext` passed to `HarnessBuilder` is the authoritative source and causes no environment lookup. A call-site `configured_plugins_enabled` value may still override whether that explicit source is applied for the executable being created; `True` requires the context to contain a configuration, while `False` ignores its entries without metadata discovery. The class constructors select exactly one explicit programmatic mapping, inline JSON or restricted YAML value, or file. `from_environment(enabled=None)` behaves as follows:
 
-1. When `enabled` is `True` or `False`, that trusted call-site override decides application without reading `CONVERGE_HARNESS_PLUGIN_CONFIG_ENABLED`. This lets a Host keep the deployment default false while explicitly enabling one Agent construction path. `False` returns the disabled context without inspecting any configuration source.
-2. When `enabled` is `None`, read `CONVERGE_HARNESS_PLUGIN_CONFIG_ENABLED`. Missing or a recognized false value returns the disabled context without reading either configuration variable, resolving the current directory, opening a file, or scanning package metadata. A recognized true value enables loading; invalid boolean text fails explicitly.
-3. If `CONVERGE_HARNESS_PLUGIN_CONFIG_JSON` is present, parse it as strict inline JSON. It takes precedence even when the file variable is also present.
-4. Otherwise, if `CONVERGE_HARNESS_PLUGIN_CONFIG_FILE` is present, read the `.yaml`, `.yml`, or `.json` path according to its suffix.
+1. When `enabled` is `True` or `False`, that trusted call-site override decides application without reading `A13N_HARNESS_PLUGIN_CONFIG_ENABLED`. This lets a Host keep the deployment default false while explicitly enabling one Agent construction path. `False` returns the disabled context without inspecting any configuration source.
+2. When `enabled` is `None`, read `A13N_HARNESS_PLUGIN_CONFIG_ENABLED`. Missing or a recognized false value returns the disabled context without reading either configuration variable, resolving the current directory, opening a file, or scanning package metadata. A recognized true value enables loading; invalid boolean text fails explicitly.
+3. If `A13N_HARNESS_PLUGIN_CONFIG_JSON` is present, parse it as strict inline JSON. It takes precedence even when the file variable is also present.
+4. Otherwise, if `A13N_HARNESS_PLUGIN_CONFIG_FILE` is present, read the `.yaml`, `.yml`, or `.json` path according to its suffix.
 5. Otherwise, read the preferred `harness-plugins.yaml` from the current working directory at call time.
 6. If the selected source is absent, unreadable, malformed, unsupported, or oversized, fail closed. Enabling configuration never silently becomes an empty plugin set because a source is missing.
 
@@ -142,17 +142,17 @@ Boolean parsing is case-insensitive and accepts `1`, `true`, `yes`, and `on` as 
 
 ## Package Factory Catalog
 
-A trusted distribution may register a no-argument Harness plugin factory class under `converge_agent_harness.plugins`:
+A trusted distribution may register a no-argument Harness plugin factory class under `a13n_harness.plugins`:
 
 ```toml
-[project.entry-points."converge_agent_harness.plugins"]
+[project.entry-points."a13n_harness.plugins"]
 "acme.audit" = "acme_harness.plugin:AuditPluginFactory"
 ```
 
 The entry-point name is the stable plugin factory key. It selects installed integration code; the configured `plugin_id` identifies one concrete instance.
 
 ```python
-HARNESS_PLUGIN_ENTRY_POINT_GROUP = "converge_agent_harness.plugins"
+HARNESS_PLUGIN_ENTRY_POINT_GROUP = "a13n_harness.plugins"
 
 
 @dataclass(frozen=True, slots=True)

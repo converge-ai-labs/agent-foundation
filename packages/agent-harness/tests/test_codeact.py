@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_environment_provider import (
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness import (
     AgentDefinition,
     AgentIdentityRef,
     AgentInstanceContext,
@@ -15,9 +19,6 @@ from converge_agent_harness import (
     CodeActToolPolicy,
     DelegationCapability,
     DelegationRunCapability,
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalEnvironmentProviderBinding,
-    DirectLocalRootConfiguration,
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentPermissionSet,
@@ -32,7 +33,8 @@ from converge_agent_harness import (
     SubagentDefinition,
     create_environment_run_binding,
 )
-from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
@@ -67,9 +69,9 @@ def _codeact_tools(*tools: Any, allowed: tuple[str, ...]) -> Capability[Any]:
 
 def _local_environment(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalEnvironmentConfiguration(
+        DirectLocalProviderConfiguration(
             environment_id="codeact-test",
-            root=DirectLocalRootConfiguration(path=root, ownership="caller_owned"),
+            root=DirectLocalRootConfiguration(path=root),
         )
     )
     return create_environment_run_binding(

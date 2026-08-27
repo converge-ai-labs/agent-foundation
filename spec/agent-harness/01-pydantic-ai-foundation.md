@@ -61,18 +61,18 @@ A hosted service owns any durable schema, Preset materialization, adapter config
 
 ## Model Mapping
 
-A concrete native Model is used directly and optionally wrapped in `SelfHealingModel`. A string model selection reaches the thin resolver:
+A concrete native Model is used directly. A string model selection reaches the thin resolver:
 
 - with `RunBindings.model_binding`, the fresh binding returns a native Model or raises;
 - without a binding, the resolver returns `None` and Pydantic continues its native inference chain.
 
-The resolved native Model carries its own effective profile and provider adapter behavior. The Harness does not duplicate settings/profile merge logic.
+The resolved native Model carries its own effective profile and provider adapter behavior. The Harness does not duplicate settings/profile merge logic. When explicitly selected, `SelfHealingModelCapability` uses the public request wrapper hook to install `SelfHealingModel` around the final effective Model after concrete selection, logical resolution, or native inference.
 
 Recovery ownership is intentionally split:
 
 - Pydantic owns provider-suspended continuation and output validation retries;
 - provider/client configuration owns transport retry;
-- `SelfHealingModel` owns one exact replay after an effective history repair;
+- optional `SelfHealingModelCapability` installs the request-local wrapper, while `SelfHealingModel` owns one exact replay after an effective history repair;
 - the Harness coordinates bounded `ModelAttempt` recovery after recoverable model interruption.
 
 ## Plugin and Capability Mapping

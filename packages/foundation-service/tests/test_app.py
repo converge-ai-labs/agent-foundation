@@ -3,8 +3,8 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from converge_foundation_service.app import create_app
-from converge_foundation_service.settings import ServiceRole, ServiceSettings
+from a13n_service.app import create_app
+from a13n_service.settings import ServiceRole, ServiceSettings
 from fastapi import FastAPI
 
 
@@ -40,10 +40,10 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
 
 
 def test_health_reports_process_role() -> None:
-    response = request(create_app(ServiceSettings(_env_file=None, role=ServiceRole.execution)), "/healthz")
+    response = request(create_app(ServiceSettings(_env_file=None, role=ServiceRole.worker)), "/healthz")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "role": "execution"}
+    assert response.json() == {"status": "ok", "role": "worker"}
 
 
 def test_control_plane_openapi_uses_api_namespace() -> None:
@@ -86,9 +86,9 @@ def test_web_fallback_never_handles_api_paths(tmp_path: Path) -> None:
         assert response.json() == {"detail": "API route not found"}
 
 
-def test_execution_role_serves_only_operational_endpoints(tmp_path: Path) -> None:
+def test_worker_role_serves_only_operational_endpoints(tmp_path: Path) -> None:
     web_dist = create_web_dist(tmp_path / "web")
-    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.execution, web_dist_dir=web_dist))
+    app = create_app(ServiceSettings(_env_file=None, role=ServiceRole.worker, web_dist_dir=web_dist))
 
     assert request(app, "/healthz").status_code == 200
     assert request(app, "/api/openapi.json").status_code == 404

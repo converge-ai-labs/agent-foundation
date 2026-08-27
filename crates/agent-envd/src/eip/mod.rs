@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn generated_registry_has_complete_v1_surface() {
         assert_eq!(EIP_PROTOCOL_VERSION, "1.0");
-        assert_eq!(EIP_PROTO_PACKAGE, "converge.agent_envd.eip.v1");
+        assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
         assert_eq!(METHODS.len(), 34);
         assert!(
             METHODS

@@ -7,8 +7,8 @@ import socket
 from pathlib import Path
 
 import pytest
-from converge_agent_envd_client import EIPSession, EIPTransportError, HttpTransport
-from converge_agent_envd_client.eip.v1 import EIPPath, FileWriteMode
+from a13n_envd_client import EIPSession, EIPTransportError, HttpTransport
+from a13n_envd_client.eip.v1 import EIPPath, FileWriteMode
 
 _TOKEN = "test-http-attachment-token"
 _ENVIRONMENT_ID = "env-http-e2e"

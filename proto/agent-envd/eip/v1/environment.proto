@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package converge.agent_envd.eip.v1;
+package a13n.agent_envd.eip.v1;
 
 import "agent-envd/eip/v1/common.proto";
 import "agent-envd/eip/v1/options.proto";

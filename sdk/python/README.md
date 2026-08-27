@@ -1,4 +1,4 @@
-# converge-foundation-sdk
+# a13n-sdk
 
 Python SDK package for Agent Foundation Service.
 
@@ -9,13 +9,13 @@ This `0.0.x` package reserves the stable distribution and import names while the
 ## Installation
 
 ```bash
-uv add converge-foundation-sdk
+uv add a13n-sdk
 ```
 
 ```python
-import converge_foundation_sdk
+import a13n_sdk
 
-print(converge_foundation_sdk.__version__)
+print(a13n_sdk.__version__)
 ```
 
 ## Development

@@ -49,14 +49,14 @@ Configured plugin instances are created by `HarnessBuilder` from an explicit `Ha
 
 A declarative object JSON Schema remains in native `AgentSpec.output_schema` and is the build-time output source when no process-local `OutputSpec` is supplied. The worker never changes output type per run.
 
-The resulting value is an ordinary `AgentDefinition`. An operator may pass an explicit Harness Build Context from the Harness plugin document or opt deployment environment loading in. The builder imports only enabled `converge_agent_harness.plugins` keys, creates fresh instances for each root and nested definition, and merges them after direct plugins. Entry-point availability never grants trust, and configuration identifies a key rather than an import target. The Harness does not verify Host artifact digests or inspect Preset provenance.
+The resulting value is an ordinary `AgentDefinition`. An operator may pass an explicit Harness Build Context from the Harness plugin document or opt deployment environment loading in. The builder imports only enabled `a13n_harness.plugins` keys, creates fresh instances for each root and nested definition, and merges them after direct plugins. Entry-point availability never grants trust, and configuration identifies a key rather than an import target. The Harness does not verify Host artifact digests or inspect Preset provenance.
 
 ## Run Mapping
 
 For each logical run the Host constructs `RunBindings` with:
 
 - the trusted `AgentInstanceContext`;
-- one fresh `EnvironmentRunBinding` and its paired `EnvironmentTopologyController` retained by the Host; custom provider-neutral bindings can be constructed directly by trusted code, while first-party Direct Local and EIP bindings are adapted from a fresh single-use `EnvironmentRuntimeAttachment` acquired through `converge-agent-environment-provider`;
+- one fresh `EnvironmentRunBinding` and its paired `EnvironmentTopologyController` retained by the Host; custom provider-neutral bindings can be constructed directly by trusted code, while first-party Direct Local and EIP bindings are adapted from a fresh single-use `EnvironmentRuntimeAttachment` acquired through `a13n-environment-provider`;
 - an optional fresh `ModelRunBinding`;
 - fresh run Capabilities;
 - bounded non-authoritative metadata.

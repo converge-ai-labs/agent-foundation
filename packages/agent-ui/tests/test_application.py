@@ -8,22 +8,22 @@ from pathlib import Path
 from threading import Event
 from typing import NoReturn
 
-import converge_agent_ui.application as application_module
-import converge_agent_ui.storage.runtime as storage_runtime
+import a13n_ui.application as application_module
+import a13n_ui.storage.runtime as storage_runtime
 import pytest
-from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep, sleep_forever
-from anyio import Event as AsyncEvent
-from anyio.abc import TaskStatus
-from converge_agent_ui.application import AgentUiApplication, ApplicationState, open_application
-from converge_agent_ui.errors import (
+from a13n_ui.application import AgentUiApplication, ApplicationState, open_application
+from a13n_ui.errors import (
     ApplicationStateError,
     ObjectIntegrityError,
     StoreIntegrityError,
     StoreLeaseConflict,
 )
-from converge_agent_ui.settings import AgentUiSettings, StorageSettings
-from converge_agent_ui.storage import ObjectEnvelope, ObjectKind, short_session
-from converge_agent_ui.storage.models import StoreLeaseRecord
+from a13n_ui.settings import AgentUiSettings, StorageSettings
+from a13n_ui.storage import ObjectEnvelope, ObjectKind, short_session
+from a13n_ui.storage.models import StoreLeaseRecord
+from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep, sleep_forever
+from anyio import Event as AsyncEvent
+from anyio.abc import TaskStatus
 from pydantic import JsonValue
 
 pytestmark = pytest.mark.anyio
@@ -197,13 +197,16 @@ async def test_store_lease_heartbeats_and_releases_last(tmp_path: Path) -> None:
             assert initial is not None
             acquired_at = initial.acquired_at
             initial_heartbeat = initial.heartbeat_at
-        await sleep(0.06)
-        async with short_session(store.database.sessions) as session:
-            updated = await session.get(StoreLeaseRecord, 1)
-            assert updated is not None
-            assert updated.process_generation == application._store.process_generation
-            assert _comparable(updated.heartbeat_at) > _comparable(initial_heartbeat)
-            assert _comparable(updated.heartbeat_at) >= _comparable(acquired_at)
+        with fail_after(2):
+            while True:
+                async with short_session(store.database.sessions) as session:
+                    updated = await session.get(StoreLeaseRecord, 1)
+                    assert updated is not None
+                    assert updated.process_generation == application._store.process_generation
+                    if _comparable(updated.heartbeat_at) > _comparable(initial_heartbeat):
+                        break
+                await sleep(0.01)
+        assert _comparable(updated.heartbeat_at) >= _comparable(acquired_at)
 
     async with storage_runtime.open_database(tmp_path / "metadata.sqlite3", settings.storage) as database:
         async with short_session(database.sessions) as session:

@@ -4,7 +4,7 @@ import sys
 
 def test_module_entrypoint_exposes_surface_help() -> None:
     result = subprocess.run(
-        [sys.executable, "-m", "converge_agent_ui", "--help"],
+        [sys.executable, "-m", "a13n_ui", "--help"],
         check=False,
         capture_output=True,
         text=True,

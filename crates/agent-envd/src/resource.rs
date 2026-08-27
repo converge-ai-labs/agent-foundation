@@ -2238,7 +2238,12 @@ mod tests {
 
         let fixture = Fixture::read_only();
         let invalid = std::ffi::OsString::from_vec(vec![b'b', b'a', b'd', 0xff]);
-        fs::write(fixture.native.join(invalid), "content").expect("non-UTF-8 fixture");
+        if let Err(error) = fs::write(fixture.native.join(invalid), "content") {
+            if error.raw_os_error() == Some(libc::EILSEQ) {
+                return;
+            }
+            panic!("non-UTF-8 fixture: {error}");
+        }
         fs::write(fixture.native.join("valid.txt"), "content").expect("UTF-8 fixture");
 
         let listed = fixture

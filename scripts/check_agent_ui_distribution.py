@@ -19,13 +19,13 @@ from pathlib import Path, PurePosixPath
 from typing import ClassVar
 from urllib.parse import unquote, urlsplit
 
-DISTRIBUTION_STEM = "converge_agent_ui"
+DISTRIBUTION_STEM = "a13n_ui"
 MANIFEST_NAME = "asset-manifest.json"
-PACKAGE_PREFIX = PurePosixPath("converge_agent_ui/static")
+PACKAGE_PREFIX = PurePosixPath("a13n_ui/static")
 INTERNAL_PACKAGES = (
-    "converge-agent-environment-provider",
-    "converge-agent-harness",
-    "converge-agent-stream-protocol",
+    "a13n-environment-provider",
+    "a13n-harness",
+    "a13n-stream-protocol",
 )
 
 
@@ -231,7 +231,7 @@ def rebuild_wheel_from_sdist(sdist: Path, *, require_exact_internal_version: boo
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Validate converge-agent-ui wheel and sdist contents.")
+    parser = argparse.ArgumentParser(description="Validate a13n-ui wheel and sdist contents.")
     parser.add_argument("dist_dir", type=Path)
     parser.add_argument("--rebuild-wheel", action="store_true")
     parser.add_argument("--require-exact-internal-version", action="store_true")
@@ -241,7 +241,7 @@ def main() -> None:
     sdists = sorted(args.dist_dir.glob(f"{DISTRIBUTION_STEM}-*.tar.gz"))
     if len(wheels) != 1 or len(sdists) != 1:
         raise SystemExit(
-            f"Expected one converge-agent-ui wheel and sdist in {args.dist_dir}; "
+            f"Expected one a13n-ui wheel and sdist in {args.dist_dir}; "
             f"found {len(wheels)} wheel(s) and {len(sdists)} sdist(s)"
         )
 

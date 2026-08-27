@@ -1,6 +1,6 @@
 # Integrate Skill Discovery in a Host
 
-`converge-agent-harness` keeps Skill discovery reusable outside Agent execution. A Host chooses one of two explicit modes:
+`a13n-harness` keeps Skill discovery reusable outside Agent execution. A Host chooses one of two explicit modes:
 
 | Host situation                                                 | API                                              | Result                         | Consistency owner                                                                          |
 | -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------ |
@@ -85,7 +85,7 @@ Follow the repository review workflow.
 Use direct scanning when the Host already owns a non-virtual FileOperator and controls its lifetime and retargeting. Roots are canonical absolute paths in that operator's namespace: repeated separators, traversal segments, and a trailing slash other than `/` are rejected. For example, a root-confined local operator whose `/` is the project directory uses `/.agents/skills`, not `/workspace/.agents/skills`:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     FileSkillSource,
     FileOperator,
     SkillCatalogItem,
@@ -117,7 +117,7 @@ This mode intentionally has no Environment topology or binding-revision semantic
 Use Environment-aware scanning when paths can route through `/workspace` or `/environment/{alias}` and topology can change while the Host is active:
 
 ```python
-from converge_agent_harness import BoundEnvironment, BoundSkillCatalog, SkillManager
+from a13n_harness import BoundEnvironment, BoundSkillCatalog, SkillManager
 
 
 async def scan_environment_skills(
@@ -155,7 +155,7 @@ Do not persist `EnvironmentPath` values as durable authority. They describe one 
 Retain the canonical workspace source and append Host roots with normal later-source precedence:
 
 ```python
-from converge_agent_harness import FileSkillSource, SkillManager
+from a13n_harness import FileSkillSource, SkillManager
 
 manager = SkillManager.default(
     additional_sources=(
@@ -177,7 +177,7 @@ With `required=False`, each missing, unroutable, or unsupported root is skipped 
 A trusted Host adapter can implement `SkillMaterializer` to populate one declared source root before scanning:
 
 ```python
-from converge_agent_harness import FileOperator
+from a13n_harness import FileOperator
 
 
 class ManagedSkillMaterializer:
@@ -197,7 +197,7 @@ class ManagedSkillMaterializer:
 Pass the manager to the definition-selected `SkillsCapability`. The Capability uses Environment-aware scanning, publishes exact `SkillPath` values, injects bounded routing instructions, observes ordinary `SKILL.md` reads, and fences the selected catalog at model and tool boundaries.
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     RunBindings,
     SkillSelectionRunCapability,
     SkillsCapability,

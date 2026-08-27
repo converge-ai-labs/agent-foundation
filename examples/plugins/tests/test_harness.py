@@ -4,7 +4,7 @@ import asyncio
 import sys
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     HarnessPluginFactoryContext,
     PluginError,
     RunBindings,
@@ -12,16 +12,16 @@ from converge_agent_harness import (
     discover_harness_plugin_factory_references,
 )
 
-from converge_plugin_examples.demo_harness import (
+from a13n_plugin_examples.demo_harness import (
     PLUGIN_KEY,
     build_code_demo_agent,
     build_configured_demo_agent,
     run_harness_code_demo,
     run_harness_entrypoint_demo,
 )
-from converge_plugin_examples.records import RunObservation
+from a13n_plugin_examples.records import RunObservation
 
-PLUGIN_MODULE = "converge_plugin_examples.harness"
+PLUGIN_MODULE = "a13n_plugin_examples.harness"
 
 
 def test_harness_entrypoint_metadata_is_lazy_and_selection_is_explicit() -> None:
@@ -35,7 +35,7 @@ def test_harness_entrypoint_metadata_is_lazy_and_selection_is_explicit() -> None
     assert PLUGIN_MODULE in sys.modules
     registration = catalog.registrations[0]
     assert registration.plugin_key == PLUGIN_KEY
-    assert registration.import_target == ("converge_plugin_examples.harness:RunRecorderPluginFactory")
+    assert registration.import_target == ("a13n_plugin_examples.harness:RunRecorderPluginFactory")
 
     plugin = catalog.create_plugin(
         HarnessPluginFactoryContext(
@@ -45,7 +45,7 @@ def test_harness_entrypoint_metadata_is_lazy_and_selection_is_explicit() -> None
             extensions={"example": {"test": True}},
         )
     )
-    from converge_plugin_examples.harness import RunRecorderPlugin
+    from a13n_plugin_examples.harness import RunRecorderPlugin
 
     assert isinstance(plugin, RunRecorderPlugin)
     assert plugin.plugin_id == "recorder-selected"
@@ -56,7 +56,7 @@ def test_harness_explicit_concrete_plugin_needs_no_metadata_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "converge_agent_harness.plugin_factories._entry_points",
+        "a13n_harness.plugin_factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("code mode must not scan metadata")),
     )
     observations: list[RunObservation] = []
