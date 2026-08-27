@@ -29,7 +29,7 @@ flowchart TB
 
     subgraph Service[foundation-service]
         Control[Control plane]
-        Definitions[Host-owned definition revisions]
+        Definitions[Agent and integration revisions]
         Lifecycle[Durable Turns and TurnAttempts]
         Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
@@ -117,7 +117,7 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 | `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                              | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                         |
 | Foundation SDKs              | Language-typed access to the public Foundation Service `/api` contract                                                                                                                                      | Service internals, product policy, or durable lifecycle authority                                                        |
 | `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                      | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control             |
-| `foundation-service`         | Managed Secrets, Host-owned definition/Presets/revisions, reconstruction locks, durable Turns/TurnAttempts, client tools, APIs, events, usage records, and optional web projection                          | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning                     |
+| `foundation-service`         | Managed Secrets, Agent/Model Integration/Connector revisions, Presets, reconstruction locks, durable Turns/TurnAttempts, client tools, APIs, events, usage records, and optional web projection             | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning                     |
 | Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                                 | Harness internals and provider implementation                                                                            |
 
 ## Harness Foundation
@@ -130,7 +130,7 @@ The Harness is built directly on Pydantic AI 2:
 - high-level run arguments supply optional Provider or Resource sources, while `RunBindings` supplies a fresh Agent instance, optional advanced Environment aggregate, optional async `RunModelResolver`, run Capabilities, and metadata;
 - one logical Harness Run owns one context, Environment, plugin graph, state coordinator, usage accumulator, public `run_id`, and stable Thread correlation;
 - bounded model recovery can start several `ModelAttempt` values with unique upstream model-attempt IDs inside that Run;
-- `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired topology, provider incarnation envelope, and launch payload remain Host-owned;
+- `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired topology, selected provider resource-state envelopes, and provider launch or reattachment data remain Host-owned;
 - Pydantic AI owns native Model profiles, transport/output retries, provider-suspended continuation, deferred external calls/approvals, Toolsets, messages, events, and usage.
 
 Harness middleware plugins are trusted concrete objects, and the Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment provider specifications, factories, Providers, Resources, and built-ins belong to `a13n-environment-provider`; the Harness can own an already constructed Provider through `ephemeral()` or borrow a fresh attachment from an entered Resource. A Host owns serializable Agent schemas, artifact locks, package trust, optional provider resource-state storage, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
@@ -168,7 +168,7 @@ The Harness adapts EIP through `a13n-envd-client`; other trusted consumers can u
 
 Agent UI exposes `a13n.local-envd` as Local Sandbox. Its release pins one exact agent-envd version and target hashes, lazily downloads only the selected Host binary into an Agent UI-managed runtime cache, and never searches ambient `PATH`; an advanced absolute executable override must pass version, isolation, and EIP compatibility checks. Direct Local, Docker, and E2B do not trigger this Host download.
 
-Provider-defined portable backend data can enter only the explicit `HarnessState.environment_state` field after fresh bindings are selected. Provider resource-incarnation evidence and optional launch or reattachment data remain in Host continuation state. Live clients, sockets, credentials, process handles, readiness, controllers, and provider authority do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns neither provider lifecycle nor state.
+Provider-defined portable backend data can enter only the explicit `HarnessState.environment_state` field after fresh bindings are selected. Provider resource identity and generation evidence plus optional launch or reattachment data remain in Host continuation state. Live clients, sockets, credentials, process handles, readiness, controllers, and provider authority do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns neither provider lifecycle nor state.
 
 ## Foundation Client Surfaces
 
@@ -185,7 +185,7 @@ Foundation Service adds durability without changing Harness execution semantics:
 ```mermaid
 flowchart LR
     Ingress[API or webhook] --> Control[Control plane]
-    Control --> Durable[Definitions and Turns]
+    Control --> Durable[Agent revisions and Turns]
     Durable --> Queue[Scheduling]
     Queue --> Worker[Worker]
     Worker --> Reconstruct[Trusted adapters]
@@ -194,7 +194,7 @@ flowchart LR
     Candidate --> Durable
 ```
 
-Foundation definitions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. A worker verifies exact dependency/artifact locks, reconstructs native Pydantic/Harness objects, resolves current authorized Connections and operator-approved Environment providers, materializes current desired topology from encrypted launch-envelope entries, durably advances an unrepresented replacement resource's binding/topology incarnation revisions, and supplies fresh `RunBindings` to the same public API as an embedded application. The worker retains the paired Environment controller only for that active logical run.
+Foundation Agent revisions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. A worker verifies their exact dependency and artifact locks, reconstructs native Pydantic/Harness objects, resolves current authorized Connections and operator-approved Environment providers, reads desired topology separately from selected encrypted provider resource state, resumes or reconciles the selected resources, acquires fresh runtime attachments, and publishes fresh run-local Harness binding versions and topology. Foundation can record a TurnAttempt-scoped effective-topology observation, while the worker retains the paired Environment controller only for that active logical run.
 
 Every Foundation Agent invocation selects or creates a Session and Thread and
 accepts one durable Turn. One `TurnAttempt` starts at most one logical Harness
@@ -211,7 +211,10 @@ or checkpoint-history object.
 
 Client-side tools use native Pydantic deferred values. Foundation seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. Asynchronous children use independent Threads and Turns rather than Pydantic deferred spawn calls.
 
-Foundation's [Turn persistence](foundation-service/14-turn-persistence.md) owns
+Foundation's [Thread persistence](foundation-service/24-thread-persistence.md)
+owns one independent versioned relational Thread resource, its Session
+membership, active Turn, and selected continuation head. [Turn
+persistence](foundation-service/14-turn-persistence.md) owns
 durable Agent-work identity, scheduling, the recovery budget, the interactive
 recovery boundary, and complete Turn-state object schema. [Turn Attempt
 persistence](foundation-service/15-turn-attempt-persistence.md) owns the

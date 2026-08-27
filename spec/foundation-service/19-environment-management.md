@@ -57,7 +57,7 @@ class EnvironmentOperation:
 
 The encrypted state envelope contains the exact provider key, provider state version, ciphertext for one `EnvironmentProviderResourceState`, and Host metadata required for selection and retention. Foundation treats the provider data as sensitive opaque content. It never copies provider state into `HarnessState`, Items, ordinary events, model context, or API responses.
 
-Foundation does not persist a generic incarnation that combines product Environment identity, provider resource identity, Harness binding revision, envd generation, or EIP session identity. Those values have different owners and fencing rules. A TurnAttempt-scoped effective-topology projection can record which bindings were successfully published for diagnosis and recovery, but it is an observation rather than provider lifecycle authority.
+Foundation does not persist a generic incarnation that combines product Environment identity, provider resource identity, Harness binding version, envd generation, or EIP session identity. Those values have different owners and fencing rules. A TurnAttempt-scoped effective-topology projection can record which bindings were successfully published for diagnosis and recovery, but it is an observation rather than provider lifecycle authority.
 
 ## Management and Run Flow
 
@@ -92,7 +92,7 @@ The worker crosses its durable `effects_possible` boundary before invoking a Pro
 
 Foundation stores authorized desired topology separately from provider lifecycle state. During an entered Harness Run, the current worker can materialize an authorized desired change and publish it through the paired `EnvironmentTopologyController`. Desired acceptance, provider resource operation, effective Harness publication, and teardown are separate fenced facts.
 
-The TurnAttempt-scoped effective projection contains safe binding identity, revision, availability, and selected Environment-resource references. It cannot replace `EnvironmentProviderResourceState`, grant attachment authority, or prove provider cleanup.
+The TurnAttempt-scoped effective projection contains safe binding identity, version, availability, and selected Environment-resource references. It cannot replace `EnvironmentProviderResourceState`, grant attachment authority, or prove provider cleanup.
 
 ## Reconciliation
 

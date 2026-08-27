@@ -10,17 +10,26 @@ A Turn selects exact immutable inputs at durable acceptance. It never resolves `
 
 An `Agent` is a stable Workspace-owned resource for authoring, policy, and invocation. It is an authorization target, not an IAM Principal. Its versioned mutable metadata selects one published immutable `AgentRevision`. An `AgentPreset` is a reusable typed authoring input; it is not an executable object and does not override an Agent revision after materialization.
 
-An `AgentRevision` is an immutable executable snapshot associated with one Agent. It contains only Foundation-owned serializable data and exact references, including:
+An `AgentRevision` is an independently addressable immutable executable revision associated with one Agent. Its opaque `AgentRevisionId` is the canonical durable reference used by Turns, Triggers, events, and APIs. `agent_id` and positive integer `version` place the revision in its owning Agent lineage but are not a second reference form:
+
+```python
+class AgentRevisionRef:
+    id: AgentRevisionId
+    agent_id: AgentId
+    version: int
+```
+
+Resolving an Agent ID and version returns this exact reference or fails; it never manufactures a different identity. The complete revision contains only Foundation-owned serializable data and exact references, including:
 
 - logical Agent instructions and typed input/output declarations;
-- selected model-integration revision, concrete Harness model configuration, and concrete native model settings;
+- one exact `ModelIntegrationRevisionId`, concrete Harness model configuration, and concrete native model settings;
 - Capability, Tool, Skill, Connector, and Environment declarations under their owning Foundation schemas;
 - non-secret Secret requirements that bind an exact Workspace-owned Secret reference or declare an invoking-User Secret key under [Secret Management](11-secret-management.md);
 - direct trusted adapter keys and bounded adapter configuration;
 - optional Harness plugin configuration under the Harness-owned document contract;
 - exact dependency, package, content-digest, and schema compatibility locks.
 
-A `ModelIntegration` is a stable Workspace or Organization resource describing a trusted model-provider integration. A `ModelIntegrationRevision` is immutable and selects exact provider type, routing configuration, supported model surface, compatibility facts, and non-secret credential references. Hosted profiles that use logical model aliases require an explicit `RunModelResolver` and fail closed rather than delegating to ambient native inference.
+A `ModelIntegration` is a stable Workspace or Organization resource describing a trusted model-provider integration. A `ModelIntegrationRevision` is independently addressable by `ModelIntegrationRevisionId`, is immutable, and selects exact provider type, routing configuration, supported model surface, compatibility facts, and non-secret credential references. The selected ID belongs to the `AgentRevision`; a Turn cannot override or duplicate that selection. Hosted profiles that use logical model aliases require an explicit `RunModelResolver` and fail closed rather than delegating to ambient native inference.
 
 Secret requirements never contain a Secret value. A Workspace-owned requirement stores the exact Secret resource reference. A User-owned requirement stores only the validated key resolved for the active invoking User; a Service Account cannot satisfy it. Connector declarations contain no credential or Provider-private state. Current Secret eligibility, Connection status, values, credentials, RoleBindings, and run grants are resolved freshly rather than captured in the immutable revision.
 
@@ -28,7 +37,7 @@ A Foundation authoring API may accept Harness model-configuration or model-setti
 
 Changing materialized Agent content, a selected integration revision, or a dependency lock creates another Agent revision. Prior revisions selected by retained Turns remain addressable for their documented retention period.
 
-The revision boundary exists to prevent accepted or waiting work from changing underneath the worker. For example, a Builder can materialize revision `agent-revision-7` from exact Preset, Model Integration, Tool, Skill, Connector, and Environment revisions, submit a Turn, and then change the Agent's authoring head before a worker claims its first TurnAttempt. The worker still reconstructs `agent-revision-7`; it never reads the newer mutable head or resolves a current default.
+The revision boundary exists to prevent accepted or waiting work from changing underneath the worker. For example, a Builder can materialize an `AgentRevision` at version `7` from exact Preset, Model Integration, Tool, Skill, Connector, and Environment revisions, submit its opaque `AgentRevisionId` with a Turn, and then change the Agent's authoring head before a worker claims its first TurnAttempt. The worker still reconstructs that exact revision ID; it never reads the newer mutable head or resolves a current default.
 
 ## Revision Relationships
 
@@ -99,7 +108,7 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 
 ## Invariants
 
-1. A Turn selects one exact immutable Agent revision and exact integration revisions; it never resolves a mutable Agent head at worker claim time.
+1. A Turn stores one exact `AgentRevisionId`; the selected revision owns its exact integration revisions and the worker never resolves a mutable Agent head at claim time.
 2. A revision contains serializable Foundation data and references only, never live Python objects or credentials.
 3. Dependency locks and content digests are verified before Harness construction.
 4. Package presence does not authorize an adapter, plugin, Capability, provider, or import target.

@@ -7,7 +7,7 @@ tool projection, and unattended Trigger acceptance without turning provider code
 or external event delivery into product authority. A `ConnectorProvider` is
 trusted deployment code. `Connector`, `ConnectorRevision`, `Connection`, and
 `Trigger` are Foundation-owned Workspace data. `ConnectorRevision`, like
-`AgentRevision`, is an immutable definition snapshot; the other three resources
+`AgentRevision`, is an independently addressable immutable revision; the other three resources
 have explicit mutable lifecycles.
 
 An Agent revision selects exact Connector revisions and freezes its complete
@@ -35,6 +35,7 @@ compatibility remain independent checks.
 | Connector product actions and run-grant requirements                                    | This document                                                                                                                         | Defines resource-specific authority checked through Foundation IAM               |
 | Secret encryption and owner lifecycle                                                   | [Secret Management](11-secret-management.md)                                                                                          | Stores Connection and Trigger credential material without public plaintext reads |
 | Session, Thread, Turn, and TurnAttempt lifecycle                                        | [Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                                                            | Runs Trigger and interactive work through the same accepted lifecycle            |
+| Thread creation and versioned advancement                                               | [Durable Thread Persistence](24-thread-persistence.md)                                                                                | Commits an independent Thread row with the accepted root Turn                    |
 | Turn selections and durable Trigger correlation                                         | [Durable Turn State](14-turn-persistence.md)                                                                                          | Persists immutable acceptance facts reused by replacement TurnAttempts           |
 | Lifecycle publication and outbound delivery                                             | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) and [Events and Delivery](20-events-usage-and-delivery.md) | Publishes committed resource and Turn facts independently from inbound events    |
 | Public route catalog and shared HTTP behavior                                           | [Management API](21-management-api.md)                                                                                                | Exposes resources and commands under `/api/v1`                                   |
@@ -182,7 +183,7 @@ ConnectorRevision is immutable. Its `version` begins at `1` and increases
 monotonically within one Connector. Creation validates the exact Provider and
 config version before commit. An exact semantic no-op creates no new revision.
 Restoring old configuration copies it into a higher version rather than moving a
-current pointer. The revision contains no Secret, Connection, tool snapshot,
+current pointer. The revision contains no Secret, Connection, frozen tool contract,
 Python target, package version, or mutable Connector metadata.
 
 Provider selection may change in a later ConnectorRevision. Existing Connections
@@ -584,10 +585,11 @@ Occurrence handling invokes the common root Turn acceptance operation. It
 validates and publishes the initial root state, then its short acceptance
 transaction rechecks Trigger state, current Principal and target authorization,
 exact Provider and Connection eligibility, Agent Connector resolution, and the
-unique occurrence key. That transaction commits the root Turn, its Session and
-root Thread identities, resolved Connection selections, Trigger source metadata,
-lifecycle events, and outbox intents. A duplicate returns the prior Turn receipt
-or a successful webhook acknowledgement and creates no second Turn.
+unique occurrence key. That transaction commits the versioned root Thread row,
+root Turn, Session relationship, resolved Connection selections, Trigger source
+metadata, lifecycle events, and outbox intents. A duplicate returns the prior
+Turn receipt or a successful webhook acknowledgement and creates no second
+Thread or Turn.
 
 Trigger ingress is at-least-once and Turn acceptance is at-most-once for one
 unique occurrence. Neither claim makes model, tool, or external side effects
@@ -742,8 +744,8 @@ between several accounts remains an explicit authoring action.
 ## Invariants
 
 01. ConnectorProvider is trusted deployment code discovered by one fixed entry-point group; package presence alone never grants import or execution authority.
-02. Connector, ConnectorRevision, Connection, and Trigger are tenant-consistent Workspace data, while only ConnectorRevision and AgentRevision are immutable definition snapshots.
-03. ConnectorRevision contains bounded non-secret Provider configuration and never contains a credential, code target, live object, or tool snapshot.
+02. Connector, ConnectorRevision, Connection, and Trigger are tenant-consistent Workspace data, while only ConnectorRevision and AgentRevision are immutable revisions.
+03. ConnectorRevision contains bounded non-secret Provider configuration and never contains a credential, code target, live object, or frozen tool contract.
 04. Connection credential material exists only in Connection-owned managed Secrets; public Connection data contains bounded non-secret account and Provider state.
 05. AgentRevision freezes exact ConnectorRevision references, complete managed tool declarations, and Provider dependency locks without storing live authority.
 06. Turn acceptance resolves every unpinned required Connection once; a Turn submission cannot override or substitute that selection.

@@ -6,7 +6,8 @@ Foundation Service uses the `Turn` as its only durable schedulable Agent-work
 identity. Every Foundation-managed operation that invokes an Agent first
 selects or creates a Session and Thread and accepts a Turn. Scheduled triggers,
 webhooks, and asynchronous child Agents differ only by Turn trigger and lineage
-data.
+data. The independent Thread row and its allocation or advancement are owned by
+[Durable Thread Persistence](24-thread-persistence.md).
 
 Reconciliation or maintenance work that does not invoke an Agent belongs to
 its owning domain and does not manufacture a Turn or `TurnAttempt`. If such a
@@ -24,7 +25,8 @@ under the same Turn.
 
 | Resource      | Responsibilities                                                                                                                                                                                                                                                                                                                                                       |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact definition selections, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                                   |
+| `Thread`      | Owns Session membership, origin, version, the active Turn, selected continuation head, and latest accepted Turn. It serializes whether another Turn can be accepted but does not schedule or execute that Turn.                                                                                                                                                        |
+| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact AgentRevision selection, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                                 |
 | `TurnAttempt` | Owns one worker generation's lease, fence, worker and Harness Run correlation, bounded dispatch, usage and failure audit, and generation outcome. It does not own accepted input, lineage, state, durable outcome, credentials, live bindings, or presentation data, and it cannot independently authorize a successor. Terminal attempts are immutable audit records. |
 
 ## Boundaries
@@ -46,11 +48,16 @@ an attempt in the same transaction: the Turn first becomes `accepted`, and a
 later scheduler claim creates attempt number one.
 
 A later attempt preserves the Turn ID, Session, Thread, parent edge, accepted
-input, exact definition selections, recovery policy, and deterministic state
+input, exact AgentRevision selection, recovery policy, and deterministic state
 key. It receives a new attempt ID, attempt number, fence, lease, worker
 generation, fresh bindings, and, after entry, a fresh Harness Run. By contrast,
 root acceptance, continuation, authenticated waiting feedback, fork, and an
 authorized retry of sealed intent allocate another Turn and another state key.
+
+Root, fork, and child acceptance create a Thread with its first Turn;
+continuation, feedback, and retry advance an existing Thread version. Creating
+another TurnAttempt under the same active Turn changes neither Thread references
+nor Thread version.
 
 The allocation decision is normative. Only the successful operations listed
 below allocate a new identity. Every other event allocates neither identity; it
@@ -245,13 +252,16 @@ additionally supplies the current opaque object version and conditionally
 replaces the same deterministic state key.
 
 A waiting or completed outcome transaction validates the current running
-attempt and Turn versions, selects the already written state outcome candidate
-by its exact digest and checkpoint sequence, seals the Turn, terminalizes the
-attempt as `succeeded`, clears
-`current_turn_attempt_id`, charges known usage, and appends lifecycle facts.
-Failed or cancelled Turn commits terminalize a current attempt when one exists.
-State and payload publication required by the Turn occurs before the
-transaction as defined by the Turn contract.
+attempt, Turn version, and Thread active selection, selects the already written
+state outcome candidate by its exact digest and checkpoint sequence, seals the
+Turn, terminalizes the attempt as `succeeded`, clears
+`current_turn_attempt_id`, clears the Thread's active Turn, selects this Turn as
+the Thread head and latest Turn, increments the Thread version, charges known
+usage, and appends lifecycle facts. Failed or cancelled Turn commits
+terminalize a current attempt when one exists, clear the Thread's active Turn,
+preserve its prior head, retain the terminal Turn as latest, and increment the
+Thread version. State and payload publication required by the Turn occurs
+before the transaction as defined by the Turn contract.
 
 A known attempt failure commits atomically with its Turn transition and charges
 known usage. A failure before Harness entry has no attempt-owned tool dispatch
@@ -274,8 +284,10 @@ The same transaction then:
 
 - returns the Turn to `accepted` with a bounded `available_at` when the selected
   state is valid and the recovery budget remains available; or
-- seals the Turn as `failed` when state is invalid or incompatible, preparation
-  is non-retryable, or the recovery budget is exhausted.
+- seals the Turn as `failed`, clears the Thread's active Turn, preserves its
+  prior head, retains the failed Turn as latest, and increments the Thread
+  version when state is invalid or incompatible, preparation is non-retryable,
+  or the recovery budget is exhausted.
 
 An `unknown_outcome` alone never blocks a later claim and does not assert that
 the operation failed, succeeded, rolled back, or is safe to repeat. A later

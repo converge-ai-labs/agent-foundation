@@ -17,13 +17,14 @@ no relational table, object type, lifecycle state, or public route.
 | Data or decision        | Authority                                                                                                                                               |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Interaction identity    | The [Platform Interaction Model](../interaction-model.md) defines Session, Thread, Turn, and Item. Their identifiers select data but grant no access.   |
+| Thread resource         | [Durable Thread Persistence](24-thread-persistence.md) owns Session membership, origin, version, active Turn, and selected continuation head.           |
 | Turn history            | [Durable Turn State](14-turn-persistence.md) owns Turn lineage, status, exact input, and exact output.                                                  |
 | Retained Items          | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) owns complete `TurnReplaySnapshot` objects. They are projections, not state. |
 | Read access and shaping | The Foundation reader applies current authorization, filters queries, verifies retained objects, and returns a safe bounded projection.                 |
 
 ## Definition Policy and Run Grant
 
-An immutable definition revision can contain this conceptual policy:
+An immutable Agent revision can contain this conceptual policy:
 
 ```python
 class InteractionReadPolicy:
@@ -141,7 +142,7 @@ Policy schema version `1` exposes these tools:
 | Tool                        | Required semantic data                                                                                                                                  | Source entity and fields                                                                                                                                                                                                                                                                            |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `list_interaction_sessions` | A cursor/limit-bounded page of authorized Sessions, ordered by latest Turn activity                                                                     | Authorized `Turn` rows grouped by `session_id`; use Turn status and activity timestamps                                                                                                                                                                                                             |
-| `list_interaction_threads`  | A cursor/limit-bounded page of authorized Threads in one selected Session, including recent Turn status and activity                                    | Authorized `Turn` rows filtered by `session_id` and grouped by `thread_id`; use Turn status and activity timestamps                                                                                                                                                                                 |
+| `list_interaction_threads`  | A cursor/limit-bounded page of authorized Threads in one selected Session, including recent Turn status and activity                                    | Authorized `Thread` rows filtered by `session_id`; join only the exact `latest_turn_id` for status and activity                                                                                                                                                                                     |
 | `search_interaction_turns`  | A cursor/limit-bounded page of Turn references, status, timestamps, and input/output snippets matching a query and optional Session or Thread filter    | Authorized `Turn` rows; search only `input_text` and `output_text`, and return `id`, `session_id`, `thread_id`, status, and timestamps                                                                                                                                                              |
 | `list_thread_turns`         | A cursor/limit-bounded page of one selected Thread's Turn lineage, status, timestamps, and input/output snippets, optionally constrained to one Session | Authorized `Turn` rows filtered by `thread_id` and optional `session_id`; use `id`, `parent_turn_id`, status, timestamps, `input_text`, and `output_text`                                                                                                                                           |
 | `read_interaction_turn`     | One selected Turn's identity, lineage, status, failure or waiting summary, bounded input/output text, and an optional Item-cursor/limit-bounded page    | The authorized `Turn` row supplies identity, `parent_turn_id`, status, timestamps, failure, pending summary, `input_text`, and `output_text`; verified `TurnReplaySnapshot.items` from the derived `tenants/{tenant_id}/turns/{turn_id}/replay/version-1.json` supplies retained Items when allowed |
@@ -161,9 +162,11 @@ follow these rules:
 1. Authorize the target and query scope before filtering, ordering, aggregation,
    pagination, snippet construction, or object selection. Never fetch a broader
    unauthorized result and filter it afterward.
-2. Derive Session and Thread listings from authorized Turn rows. Search only
-   bounded Turn `input_text` and `output_text`, with Unicode-friendly matching.
-   Do not infer a Thread head or state edge from timestamps.
+2. Derive Session listings from authorized Turn rows, but read Thread listings
+   from authorized durable Thread rows and join only their explicit Turn
+   references. Search only bounded Turn `input_text` and `output_text`, with
+   Unicode-friendly matching. Do not infer a Thread resource, head, active Turn,
+   latest Turn, or state edge from timestamps.
 3. Do not read the current unsealed Turn. Other unsealed Turns can appear only as
    status summaries. Return Items only from a complete verified
    `TurnReplaySnapshot`; report unavailable replay instead of reconstructing it.
@@ -198,7 +201,7 @@ or cross-tenant existence signals.
 
 Policy version `1`, tool names and arguments, and result semantics form one
 model-visible compatibility line. Breaking changes require a new policy version
-and immutable definition revision. Additive result fields are compatible only
+and immutable Agent revision. Additive result fields are compatible only
 when readers ignore unknown fields. Internal reader and repository code can
 change without a version when observable behavior and authority stay the same.
 
@@ -221,8 +224,9 @@ long histories require multiple tool calls.
    `RunBindings.capabilities`.
 4. The reader reauthorizes every operation and page. Model arguments,
    identifiers, metadata, object keys, and cursors grant no access.
-5. Turn rows remain history authority. Items come only from verified replay, and
-   current partial or hidden Turn state is never exposed.
+5. Thread rows remain Thread-resource authority, Turn rows remain history
+   authority, Items come only from verified replay, and current partial or
+   hidden Turn state is never exposed.
 6. A bound plugin keeps no open storage resource, credential, or mutable unit of
    work between calls.
 7. Every result is read-only, bounded, redacted, cancellation-aware, and explicit

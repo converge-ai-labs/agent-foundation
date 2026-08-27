@@ -17,6 +17,26 @@ Subsystem specifications continue to own their concrete objects, schemas, lifecy
 | Upstream, provider, and external identifiers and versions | Their defining owner   | Preserved rather than re-encoded as Foundation values |
 | Authentication and authorization                          | Host or product policy | Never inferred from an identifier or reference        |
 
+## Core Terms
+
+The following terms describe different data and lifecycle axes. They are not synonyms merely because a value is immutable, numeric, content-addressed, or assembled from other values.
+
+| Term         | Canonical meaning                                                                                                                                                                                                          | Representation                                                                                          |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `version`    | An owner-defined scalar that identifies one committed form within a domain-object, schema, protocol, package, or codec version domain.                                                                                     | An integer or string interpreted by its owner; it selects or interprets content but is not the content. |
+| `revision`   | A complete immutable content record or materialization associated with a stable resource or artifact. A revision can contain normalized content and aggregate exact references to other revisions.                         | A structured content value. A revision ID, reference, or content digest identifies that value.          |
+| `snapshot`   | A complete immutable capture or derived projection frozen at a defined boundary. A snapshot can aggregate revisions, state, configuration, and locks, but is not by default a published member of a resource lineage.      | A structured content value. A snapshot reference or digest identifies that value.                       |
+| `state`      | The values that describe an owner's condition or continuation data within a named scope. State can be mutable or immutable, transient or durable, and complete or partial as defined by its owner.                         | A typed value or payload; the term alone implies no persistence, immutability, or resumability.         |
+| `checkpoint` | A complete state value durably selected at a valid continuation boundary from which the owning workflow can resume or recover.                                                                                             | A state value plus its durable selection or commit fact; it need not be an independent resource.        |
+| `generation` | An owner-scoped incarnation of a replaceable runtime, attempt, accepted configuration set, or similar lifecycle participant. It distinguishes values, observations, or work whose validity is limited to that incarnation. | An integer or opaque value; ordering exists only when the owning contract defines it.                   |
+| `fence`      | An exclusion boundary or owner-validated proof used to reject a protected action from a stale, superseded, cancelled, or terminal participant.                                                                             | A lifecycle boundary or a validated token, commonly monotonically increasing when persisted.            |
+
+Immutability and aggregation do not choose between `revision` and `snapshot`. Use `revision` when the value belongs to the published content lineage of a stable resource or artifact. Use `snapshot` when the value is a point-in-time capture or a derived projection outside that lineage. If an owning model does not establish that semantic difference, it exposes only one of the two concepts.
+
+`Revision` and `Snapshot` type names denote the complete content values. Names ending in `RevisionRef` or `SnapshotRef` denote typed references; fields ending in `_id` or `_digest` denote their scalar identities. A `version` field is the owner-defined scalar position or compatibility value, not an alias for the corresponding content object. First-party scalar progress and compare-and-swap fields use `version`, never `revision`; a structured revision can carry its own `version` within the stable resource lineage that publishes it.
+
+A checkpoint is stronger than ordinary state or a point-in-time snapshot: its owner has validated completeness and durably selected it for continuation. A generation identifies an incarnation; a fence excludes obsolete or terminal participants. Neither term supplies content-version or compatibility meaning unless its owning contract states that separately.
+
 ## Object Identity
 
 Every independently addressable Foundation-owned object has one stable opaque identifier in the form `<kind-prefix>_<random-suffix>`.
@@ -40,12 +60,14 @@ A versioned Foundation-owned domain object has one stable object ID and a positi
 
 - A committed version never changes in place.
 - A material change creates a later monotonically increasing version under the same object ID.
-- A durable selection records the exact object ID and version. It never relies on an unresolved `latest` selector during execution or recovery.
+- A durable selection records the exact object ID and version or the exact ID of an independently addressable immutable revision. It never relies on an unresolved `latest` selector during execution or recovery.
 - Absence is represented explicitly rather than by version `0`.
 
 An owning contract states whether prior versions remain addressable or only the current version is retained. A mutation that protects against a stale write uses `expected_version` against the current version. An idempotent replay is resolved before that precondition is evaluated, and a semantic no-op does not create a new version.
 
-Foundation domain models do not introduce a second generic `revision` counter for mutable objects. `revision` remains valid only when an owning contract uses it for a different established concept, such as a database migration, artifact or protocol revision, routing incarnation, or externally owned term. Sequences, ordinals, offsets, and generations likewise retain their distinct meanings and are not renamed to versions merely because they are numeric.
+Foundation domain models do not introduce a second generic scalar `revision` counter for mutable objects. An owning contract can expose an immutable content record such as `AgentRevision` together with its explicit revision reference or digest, but stale-write protection still uses the mutable object's `version`. Database migrations, protocols, artifacts, and external systems retain their owner-defined revision semantics.
+
+Sequences, ordinals, offsets, generations, and fences retain their distinct meanings and are not renamed to versions merely because they are numeric. A generation change or fence advance does not create a new domain-object version unless the owning contract commits a corresponding material change.
 
 Package releases, protocol major/minor identities, Git or artifact revisions, and upstream or provider codec versions follow their owning compatibility contracts. They do not become integer domain-object versions by crossing a Foundation boundary.
 
@@ -73,12 +95,16 @@ Data that affects authority, execution behavior, compatibility, or recovery is r
 
 ## Invariants
 
-1. Every independently addressable Foundation-owned object has one immutable, non-reused, kind-prefixed opaque ID.
-2. Foundation-owned object IDs encode no authority, ordering, ownership, or deployment information.
-3. External identities and compact scoped references preserve their owning formats and are never relabeled as Foundation-owned object IDs.
-4. A versioned Foundation-owned domain object uses a stable ID and positive integer versions beginning at `1`.
-5. Stale-write protection uses `expected_version`, not a parallel generic revision counter.
-6. Durable work selects exact versions rather than resolving `latest` during execution or recovery.
-7. Public interfaces favor concise domain language, while internal models make ambiguous meanings explicit through names and types.
-8. Identifier possession never replaces authentication, authorization, scope, or lifecycle validation.
-9. Durable data is interpreted only through its recorded compatibility facts; unknown required versions fail unless explicitly migrated.
+01. Every independently addressable Foundation-owned object has one immutable, non-reused, kind-prefixed opaque ID.
+02. Foundation-owned object IDs encode no authority, ordering, ownership, or deployment information.
+03. External identities and compact scoped references preserve their owning formats and are never relabeled as Foundation-owned object IDs.
+04. A versioned Foundation-owned domain object uses a stable ID and positive integer versions beginning at `1`.
+05. Stale-write protection uses `expected_version`, not a parallel generic revision counter.
+06. Durable work selects exact object versions or immutable revision identities rather than resolving `latest` during execution or recovery.
+07. Public interfaces favor concise domain language, while internal models make ambiguous meanings explicit through names and types.
+08. Identifier possession never replaces authentication, authorization, scope, or lifecycle validation.
+09. Durable data is interpreted only through its recorded compatibility facts; unknown required versions fail unless explicitly migrated.
+10. A revision and a snapshot denote complete immutable content values; their references, IDs, or digests identify those values.
+11. A revision can aggregate other revisions, while a snapshot remains distinct only when it is a capture or derived projection outside a resource's published revision lineage.
+12. State becomes a checkpoint only after its owner validates completeness and durably selects it at a continuation boundary.
+13. Generations distinguish replaceable incarnations, and fences reject obsolete or terminal participants; neither is a content version by default.

@@ -4,7 +4,7 @@
 
 Foundation Service is the optional modular durable Host for Agent Foundation. It keeps one product schema, authorization boundary, executable package, and container image while assigning control and worker work to separately scalable process roles under the shared [runtime contract](01-runtime-configuration-and-deployment.md). It does not split lifecycle ownership across microservices.
 
-The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation uses `Turn` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and `TurnAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Turn; Foundation defines no separate durable Execution resource.
+The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Turn` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and uses `TurnAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Turn; Foundation defines no separate durable Execution resource.
 
 The worker embeds the public Harness Python API. It reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness in process. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
@@ -60,24 +60,25 @@ flowchart LR
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, Turns, current TurnAttempt generations, dispatch evidence, pending actions, Environment lifecycle, and terminal outcomes. Redis carries coordination signals and each Turn's stable bounded-replay message stream; Redis publication alone never proves a relational lifecycle transition committed. Shared object storage holds the Turn's complete conditionally replaced state, immutable replay snapshot, and bounded large content. The detailed authorities belong to [Durable Turn State](14-turn-persistence.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
+PostgreSQL is the distributed authority for accepted resources, Thread version and head selection, Turns, current TurnAttempt generations, dispatch evidence, pending actions, Environment lifecycle, and terminal outcomes. Redis carries coordination signals and each Turn's stable bounded-replay message stream; Redis publication alone never proves a relational lifecycle transition committed. Shared object storage holds the Turn's complete conditionally replaced state, immutable replay snapshot, and bounded large content. The detailed authorities belong to [Durable Thread Persistence](24-thread-persistence.md), [Durable Turn State](14-turn-persistence.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
 ## Component Boundaries
 
-| Concern                                                       | Owner                                                         | Relationship                                                        |
-| ------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations       |
-| Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                               |
-| OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning         |
-| Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation              |
-| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks              |
-| Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome       |
-| Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                |
-| Provider specification and Resource operations                | `a13n-environment-provider`                                   | Foundation invokes Providers and persists selected provider state   |
-| Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it  |
-| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery  |
-| Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations |
-| Client-side effects                                           | External client                                               | Foundation authenticates feedback but does not claim the effect     |
+| Concern                                                       | Owner                                                         | Relationship                                                                 |
+| ------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations                |
+| Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                        |
+| OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                  |
+| Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                       |
+| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks                       |
+| Durable Thread resource                                       | Foundation                                                    | Owns Session membership, origin, active Turn, continuation head, and version |
+| Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                |
+| Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                         |
+| Provider specification and Resource operations                | `a13n-environment-provider`                                   | Foundation invokes Providers and persists selected provider state            |
+| Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it           |
+| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery           |
+| Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations          |
+| Client-side effects                                           | External client                                               | Foundation authenticates feedback but does not claim the effect              |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
 
@@ -105,7 +106,7 @@ sequenceDiagram
 
     Caller->>Control: submit Turn with idempotency key
     Control->>Control: authenticate, authorize, resolve exact revisions
-    Control->>DB: publish initial state and commit accepted Turn
+    Control->>DB: publish initial state and commit Thread advancement and Turn
     Control-->>Caller: durable acceptance
     Scheduler->>DB: find eligible Turn
     Scheduler-->>Worker: Redis work signal
@@ -148,7 +149,7 @@ External applications call Foundation through its HTTP API or language SDKs. The
 These facts advance independently:
 
 1. a caller request is authenticated and authorized;
-2. a Turn and its initial complete state are durably accepted;
+2. a Thread creation or versioned advancement, Turn, and initial complete state are durably accepted;
 3. a TurnAttempt owns a live fenced lease;
 4. the TurnAttempt crosses the durable effects-possible boundary;
 5. Environment management or Harness returns a process-local observation or candidate;
@@ -161,7 +162,7 @@ No later fact follows merely because an earlier fact occurred. In particular, qu
 ## Invariants
 
 1. Foundation has one domain and authorization model across `all`, `control`, and `worker` roles.
-2. Session, Thread, Turn, and Item follow the shared platform meanings; Turn and TurnAttempt directly own durable scheduling and recovery.
+2. Session, Thread, Turn, and Item follow the shared platform meanings; Thread owns versioned advancement selection, while Turn and TurnAttempt directly own durable scheduling and recovery.
 3. PostgreSQL is accepted lifecycle authority; Redis carries coordination and bounded Turn replay without becoming lifecycle authority.
 4. One TurnAttempt starts at most one logical Harness Run.
 5. Process-local Python values and runtime attachments never become Foundation durable payloads.

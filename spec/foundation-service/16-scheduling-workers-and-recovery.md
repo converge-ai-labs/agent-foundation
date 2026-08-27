@@ -4,7 +4,7 @@
 
 Foundation scheduling converts durable eligible Turn state into fenced TurnAttempt ownership. PostgreSQL remains authoritative for eligibility, attempt generations, leases, dispatch phase, recovery budget, and Turn outcomes. Redis carries distributed discovery and coordination signals, but no Redis message creates or transfers durable TurnAttempt ownership.
 
-Workers are process-role loops, not durable product owners. A deployment scales the `worker` role by adding processes or replicas that compete through the same claim contract. [Durable Turn State](14-turn-persistence.md) owns schedulable Turn state and budget; [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) owns the attempt lease, fence, and loss transaction.
+Workers are process-role loops, not durable product owners. A deployment scales the `worker` role by adding processes or replicas that compete through the same claim contract. [Durable Thread Persistence](24-thread-persistence.md) owns active-Turn and continuation-head selection; [Durable Turn State](14-turn-persistence.md) owns schedulable Turn state and budget; [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) owns the attempt lease, fence, and loss transaction.
 
 ## Scheduling Contract
 
@@ -52,7 +52,7 @@ Fencing applies to:
 - pending-action acceptance;
 - Environment desired and effective observations;
 - child acceptance and result incorporation; and
-- terminal Turn outcomes.
+- terminal Turn outcomes and their atomic Thread active/head update.
 
 Usage ingestion has the narrow exception defined by [Events, Usage, and Delivery](20-events-usage-and-delivery.md): an immutable UsageRecord that proves already incurred usage can arrive after lease loss under its original TurnAttempt attribution, but it cannot advance Turn lifecycle.
 
@@ -78,6 +78,12 @@ A reconciler detects an expired lease under a lock that verifies the current Tur
 | Environment-management or other non-Agent provider operation remains unknown | The owning domain applies its exact idempotency or reconciliation contract before depending on that operation |
 | Selected revision or state is permanently incompatible                       | Turn seals as `failed` with a bounded durable reason                                                          |
 | Recovery budget is exhausted                                                 | Turn seals as `failed`; no later TurnAttempt is admitted                                                      |
+
+Every recovery path that seals a Turn as failed atomically clears that Turn from
+its Thread's active selection, preserves the prior continuation head, records
+the failed Turn as latest, and advances the Thread version. Returning the same
+Turn to `accepted` for another TurnAttempt leaves Thread selection and version
+unchanged.
 
 The `pre_dispatch` conclusion comes from the fenced TurnAttempt record, not from missing logs, receipts, heartbeats, or telemetry. For Agent tool calls, Foundation compares durable dispatch records with the complete committed Harness state and classifies every unmatched call as `unknown_outcome`; it does not inspect provider business state before admitting another TurnAttempt. Lack of evidence never becomes proof of no side effect.
 
@@ -126,4 +132,5 @@ Shutdown never extends a lease indefinitely or marks unfinished local work succe
 07. Replacement TurnAttempts use fresh process-local values and only complete conditionally committed Turn state.
 08. Unknown Agent tool outcomes are shown to the next Agent rather than blindly replayed; non-Agent domains retain their owning reconciliation contracts.
 09. Waiting and terminal Turns are sealed; feedback or retry creates another Turn.
-10. Late immutable usage evidence cannot mutate Turn lifecycle state.
+10. Terminal Turn sealing atomically updates the owning Thread under the same fence.
+11. Late immutable usage evidence cannot mutate Turn lifecycle state.
