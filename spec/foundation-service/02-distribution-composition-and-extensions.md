@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Foundation Service is a modular monolith assembled explicitly at the executable boundary. The OSS distribution combines the common Foundation kernel with the capabilities accepted for OSS. EE and Cloud distributions can combine the same common contracts with additional private capabilities without introducing edition conditionals into shared domain behavior or replacing the common authorization and durable execution kernels.
+Foundation Service is a modular monolith assembled explicitly at the executable boundary. A product distribution is the complete application composition embedded in one build artifact: it determines which APIs, role components, authorization contributions, configuration namespaces, relational models, and migration revisions exist in that service. The OSS distribution combines the common Foundation kernel with the capabilities accepted for OSS. EE and Cloud distributions combine the same common contracts with additional private capabilities without introducing edition conditionals into shared domain behavior or replacing the common authorization and durable execution kernels.
 
-A distribution is a build- and startup-selected application composition, not a tenant resource, runtime plugin marketplace, or row-level product plan. Package presence alone never changes the running service.
+A distribution identifies the product release composition, not where or for whom one process runs. It is not a tenant resource, deployment environment, license decision, runtime plugin marketplace, row-level product plan, or process role. The distribution determines which capabilities exist; the runtime role determines whether one process runs the distribution's control components, worker components, or their `all` union. Package presence alone never changes the running service.
 
 ## Boundaries
 
@@ -33,11 +33,24 @@ flowchart BT
 
 Common Foundation code never imports EE or Cloud code. An EE or Cloud distribution depends inward on a compatible common Foundation release and imports only explicit public composition surfaces. The OSS composition is a sibling composition, not a superclass whose singleton-Organization behavior is inherited by commercial distributions.
 
-Automatic entry-point discovery, package scanning, filename conventions, and import side effects never select a capability. The executable selects exactly one distribution. Missing, invalid, or incompatible distribution input fails startup instead of silently falling back to OSS.
+Each OSS, EE, or Cloud build artifact fixes exactly one trusted distribution descriptor. Runtime configuration selects only operational values such as role, endpoints, and limits; no CLI option, configuration field, environment variable, tenant value, or license response selects the distribution or names an import target. Automatic entry-point discovery, package scanning, filename conventions, and import side effects never select a capability. A missing, invalid, or incompatible descriptor fails the build or startup instead of silently falling back to OSS.
+
+```mermaid
+flowchart TB
+    OSSArtifact[OSS build artifact] --> OSS[OSS distribution descriptor]
+    EEArtifact[EE build artifact] --> EE[EE distribution descriptor]
+    CloudArtifact[Cloud build artifact] --> Cloud[Cloud distribution descriptor]
+    OSS --> Common[Common Foundation capabilities]
+    EE --> Common
+    Cloud --> Common
+    EE --> EEFeatures[EE-owned capabilities]
+    Cloud --> CloudFeatures[Cloud-owned capabilities]
+    OSS & EE & Cloud --> Roles[Runtime role: control, worker, or all]
+```
 
 ## Composition Contract
 
-Before runtime validation, the selected distribution declares one final set of:
+Before configuration parsing and runtime validation, the artifact's distribution descriptor declares one final set of:
 
 - product routers and browser surfaces by process role;
 - critical control and worker components;
@@ -51,7 +64,7 @@ The declaration is data used for deterministic assembly, not a service locator. 
 
 Duplicate route method and path pairs, component identities, authorization action keys, relational table names, model registrations, or migration revision identities fail composition before resources open. A capability cannot override another contribution by registration order.
 
-`all` receives the exact union of the selected distribution's control and worker components. Composition deduplicates shared process resources and never constructs parallel schemas, authorizers, or domain models for the two roles.
+`all` receives the exact union of the artifact distribution's control and worker components. Composition deduplicates shared process resources and never constructs parallel schemas, authorizers, or domain models for the two roles.
 
 ## OSS Composition
 
@@ -74,13 +87,13 @@ A distribution that requires license or operator configuration validates it befo
 
 ## Configuration Composition
 
-The selected distribution finalizes one typed configuration schema before the [runtime](01-runtime-configuration-and-deployment.md) parses values. Common section names and meanings remain stable. A distribution can add its own explicit namespace, but cannot shadow a common field or make an unknown common value valid under a different interpretation.
+The artifact's distribution descriptor finalizes one typed configuration schema before the [runtime](01-runtime-configuration-and-deployment.md) parses values. Common section names and meanings remain stable. A distribution can add its own explicit namespace, but cannot shadow a common field or make an unknown common value valid under a different interpretation.
 
-Secrets supplied for an extension follow the same redaction and process-local handling as common secrets. Configuration never installs code, names an arbitrary import target, or enables a capability absent from the selected distribution.
+Secrets supplied for an extension follow the same redaction and process-local handling as common secrets. Configuration never installs code, names an arbitrary import target, or enables a capability absent from the artifact distribution.
 
 ## Relational Composition
 
-The selected distribution explicitly contributes every concrete relational model exactly once. The final metadata is the target schema for that distribution. Importing an installed package or storage helper never changes it.
+The artifact's distribution descriptor explicitly contributes every concrete relational model exactly once. The final metadata is the target schema for that distribution. Importing an installed package or storage helper never changes it.
 
 Common and extension revisions participate in one final ordered graph with at most one head. Revision locations can remain package-owned, but they are assembled explicitly and do not become independently applied histories. A distribution release verifies that its complete graph upgrades from every supported predecessor and matches its complete metadata.
 
@@ -90,14 +103,14 @@ The complete migration authority and application lifecycle are owned by [Relatio
 
 ## Failure Semantics
 
-| Failure                                                | Observable outcome                                        |
-| ------------------------------------------------------ | --------------------------------------------------------- |
-| Selected distribution cannot be loaded                 | Process exits before configuration or resources           |
-| Common and distribution versions are incompatible      | Process exits before schema inspection or traffic         |
-| Contribution identity conflicts                        | Composition fails with the conflicting safe identity      |
-| Required extension configuration or license is invalid | Process remains unready and fails startup                 |
-| Final metadata and migration graph differ              | Build verification or startup fails closed                |
-| Database contains an unsupported distribution revision | Schema compatibility fails; no automatic downgrade occurs |
+| Failure                                                | Observable outcome                                                          |
+| ------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Artifact distribution descriptor is missing or invalid | Build verification or startup fails before parsing deployment configuration |
+| Common and distribution versions are incompatible      | Process exits before schema inspection or traffic                           |
+| Contribution identity conflicts                        | Composition fails with the conflicting safe identity                        |
+| Required extension configuration or license is invalid | Process remains unready and fails startup                                   |
+| Final metadata and migration graph differ              | Build verification or startup fails closed                                  |
+| Database contains an unsupported distribution revision | Schema compatibility fails; no automatic downgrade occurs                   |
 
 ## Compatibility
 
@@ -111,7 +124,7 @@ Explicit composition requires each distribution to enumerate its application sur
 
 ## Invariants
 
-01. The executable selects exactly one explicit distribution before runtime resources open.
+01. Each executable artifact contains exactly one trusted distribution descriptor before configuration parsing or runtime resource construction.
 02. Common Foundation code never imports EE or Cloud code.
 03. Package installation alone never enables a capability or changes a schema.
 04. A distribution composes one authorizer, one durable execution kernel, one metadata registry, and one migration graph.
@@ -121,3 +134,4 @@ Explicit composition requires each distribution to enumerate its application sur
 08. Invalid extension input fails closed and never falls back to OSS.
 09. An extension adds behavior through an owned capability or narrow port and cannot reinterpret common contracts.
 10. Every final distribution schema has at most one migration head.
+11. Runtime input, tenant state, and license response never select or replace the artifact's distribution.

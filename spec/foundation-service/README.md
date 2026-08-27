@@ -52,9 +52,9 @@ The current package establishes these service-wide roots:
 | `packages/foundation-service/a13n_service/settings.py`           | Maps process environment into typed provider and migration configuration               |
 | `packages/foundation-service/a13n_service/app.py`                | Owns FastAPI lifespan, constructs one storage resource set, and exposes readiness      |
 | `packages/foundation-service/a13n_service/storage/`              | Generic backend configuration, construction, lifecycle, and capability semantics       |
-| `packages/foundation-service/a13n_service/database/metadata.py`  | Explicit registry of all service-owned relational models                               |
+| `packages/foundation-service/a13n_service/database/metadata.py`  | Explicit common registry selected by the OSS distribution descriptor                   |
 | `packages/foundation-service/a13n_service/database/migration.py` | Programmatic Alembic runner and bounded migration coordination                         |
-| `packages/foundation-service/a13n_service/database/migrations/`  | Single ordered revision history                                                        |
+| `packages/foundation-service/a13n_service/database/migrations/`  | OSS distribution revision location assembled into its final graph                      |
 | `packages/foundation-service/a13n_service/cli.py`                | Stable `foundation-service serve` and `foundation-service db ...` executable interface |
 
 These roots are boundaries, not a requirement that every capability become a subpackage. Small capabilities remain focused modules; a capability gains a subdirectory only when it owns several cohesive implementations or contracts. Runnable configuration and migration usage live in the [Foundation Service package guide](../../packages/foundation-service/README.md).
@@ -64,7 +64,7 @@ These roots are boundaries, not a requirement that every capability become a sub
 - The control role accepts resources and commands, commits immutable selections, and owns durable lifecycle authority.
 - The worker role claims fenced `ExecutionAttempt` leases and invokes Harness in-process. It does not expose another product API or run migrations.
 - PostgreSQL is authoritative for accepted lifecycle state and fencing. Real Redis is required for distributed data flow and coordination; each owning domain defines its Redis retention and replay semantics, and Redis delivery alone never proves a relational transition.
-- The selected distribution explicitly composes the complete configuration, routers, role components, authorization contributions, metadata, and migration graph; installed packages never change the service implicitly.
+- The artifact's distribution descriptor explicitly composes the complete configuration, routers, role components, authorization contributions, metadata, and migration graph; installed packages never change the service implicitly.
 - Foundation records contain only Foundation-owned serializable data. They contain no Python class, plugin instance, native Model, Toolset, Capability, callable, client, credential, provider attachment, or live controller.
 - The worker verifies exact locks and uses trusted installed adapters to reconstruct a process-local Harness `AgentDefinition` and fresh `RunBindings`.
 - Foundation consumes the canonical Environment Provider types and `HarnessAguiObserver`; it does not create parallel provider or Harness-event models.

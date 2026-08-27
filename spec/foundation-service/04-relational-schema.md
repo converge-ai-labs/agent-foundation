@@ -18,11 +18,13 @@ This lifecycle is separate from the generic [relational storage capability](03-s
 | Migration application                         | Deployment-owned migration runner    | Applies accepted revisions before a role accepts schema-dependent work                                            |
 | Backup, restore, and database provisioning    | Deployment                           | Supplies and protects the database independently of application migrations                                        |
 
-Domains and extension packages can own revision files and locations, but the selected distribution explicitly assembles them into one graph. They are never applied as independent histories inside one Foundation Service database. The final graph has one compatibility fact for a process that uses several domains in one transaction.
+Domains and extension packages can own revision files and locations, but the artifact's distribution descriptor explicitly assembles them into one graph. They are never applied as independent histories inside one Foundation Service database. The final graph has one compatibility fact for a process that uses several domains in one transaction.
 
 ## Metadata and Revision Authority
 
 The final distribution metadata registry explicitly includes every concrete ORM model. Importing a storage helper, scanning installed packages, or discovering modules by naming convention never changes the schema. A model absent from the final registry is absent from migration comparison and is therefore not a deployed table for that distribution.
+
+The artifact's fixed distribution descriptor supplies the resolved metadata registry and ordered revision locations to every schema operation. Revision generation, current-head verification, migration application, and readiness all consume that same resolved composition. The migration runner never reconstructs distribution contents from ambient imports, package installation, runtime tenant state, or a separately parsed edition value.
 
 The following internal Python shape is representative; concrete fields and invariants remain owned by the domain:
 
@@ -54,7 +56,7 @@ Migration application uses a dedicated synchronous database connection because i
 
 ## Generation and Review
 
-A new revision is generated only after replaying the selected distribution's complete accepted graph into a disposable PostgreSQL database. Autogeneration compares that database with the complete final metadata and produces a candidate revision. The candidate is then reviewed as executable deployment code.
+A new revision is generated only after replaying the artifact distribution's complete accepted graph into a disposable PostgreSQL database. Autogeneration compares that database with the complete final metadata and produces a candidate revision. The candidate is then reviewed as executable deployment code.
 
 Review verifies at least:
 
@@ -88,7 +90,7 @@ sequenceDiagram
     Process-->>Deploy: Ready
 ```
 
-A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply the selected distribution graph before becoming ready. Concurrent PostgreSQL runners serialize through one service-scoped advisory lock with a bounded wait. Worker-only processes never apply migrations and fail closed when the database is not at the expected distribution head.
+A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply the artifact distribution graph before becoming ready. Concurrent PostgreSQL runners serialize through one service-scoped advisory lock with a bounded wait. Worker-only processes never apply migrations and fail closed when the database is not at the expected distribution head.
 
 SQLite belongs to the single-process profile. One owning process applies history to a file-backed database before opening the service for work. In-memory SQLite cannot retain migration state across connections and is not a service migration target; SQLite files on NFS and multi-process migration coordination are also unsupported.
 
@@ -120,7 +122,7 @@ Supporting SQLite and PostgreSQL constrains the default schema to a tested porta
 
 ## Invariants
 
-01. Each selected distribution has one combined relational metadata registry and one ordered migration graph.
+01. Each artifact distribution has one combined relational metadata registry and one ordered migration graph.
 02. A domain owns schema meaning; the service owns revision ordering and application.
 03. Generic storage code does not import domain models or run migrations.
 04. Runtime table creation never substitutes for revision history.
@@ -131,3 +133,4 @@ Supporting SQLite and PostgreSQL constrains the default schema to a tested porta
 09. Installed packages never change metadata or migration contents through discovery.
 10. Worker-only processes check the expected distribution head and never mutate it.
 11. Unknown, unsupported-distribution, or failed migration state blocks readiness and is never bypassed by automatic stamping.
+12. Generation, verification, migration, and readiness consume the same artifact-fixed distribution metadata and revision graph.

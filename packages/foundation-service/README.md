@@ -80,14 +80,14 @@ PostgreSQL is the distributed-service backend. SQLite is intended for a single-p
 
 ## Relational Schema and Migrations
 
-Generic relational storage and service schema ownership are deliberately separate:
+Generic relational storage and service schema ownership are deliberately separate. For the OSS distribution in this repository:
 
 - `storage/relational.py` constructs async engines and short sessions for application I/O.
-- `database/metadata.py` aggregates every service-owned ORM model.
-- `database/migrations/` contains one linear Alembic history for the complete service database.
+- `database/metadata.py` provides the explicit common registry selected by the OSS distribution descriptor.
+- `database/migrations/` provides the OSS revision location assembled into one final Alembic graph.
 - `database/migration.py` owns the dedicated synchronous migration connection, bounded PostgreSQL advisory locking, and Alembic invocation.
 
-The Alembic environment does not read process settings or create an engine. The runner supplies one validated connection, so CLI settings, lock policy, and schema comparison have distinct owners.
+The Alembic environment does not read process settings or create an engine. The runner supplies one validated connection and the artifact distribution's resolved metadata and revision graph, so CLI settings, composition, lock policy, and schema comparison have distinct owners. Another product distribution adds reviewed model and revision contributions through its own fixed build descriptor rather than package discovery or runtime edition selection.
 
 Select the database backend, then use the stable service CLI or repository commands:
 

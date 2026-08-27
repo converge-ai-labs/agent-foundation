@@ -22,19 +22,38 @@ Messages, reasoning units permitted by visibility policy, tool calls, commands, 
 
 ```mermaid
 flowchart LR
-    Harness[HarnessRunStream]
-    Observer[HarnessAguiObserver]
-    Processor[Foundation visibility processor]
-    Live[Live AG-UI delivery]
-    Item[Optional durable Item]
-    Envelope[Foundation delivery envelope]
+    subgraph Worker[Worker role]
+        Harness[HarnessRunStream]
+        Observer[HarnessAguiObserver]
+        Processor[Foundation visibility processor]
+        LivePublisher[Bounded live publisher]
+        Item[Optional durable Item]
+        Harness --> Observer --> Processor
+        Processor --> LivePublisher
+        Processor --> Item
+    end
 
-    Harness --> Observer --> Processor
-    Processor --> Live --> Envelope
-    Processor --> Item --> Envelope
+    InProcess[In-process live bus]
+    Redis[Redis Pub/Sub]
+
+    subgraph Control[Control role]
+        LiveSubscriber[Authorized live subscriber]
+        Envelope[Foundation delivery envelope]
+        LiveSubscriber --> Envelope
+    end
+
+    LivePublisher -->|single process| InProcess --> LiveSubscriber
+    LivePublisher -->|distributed| Redis --> LiveSubscriber
+    Item --> Envelope
 ```
 
-One observer belongs to one Harness Run and is consumed by its current worker. The optional Foundation Host processor applies authorization, redaction, visibility, and stable Item projection policy without changing upstream event meaning. Observer accumulation is process-local; Foundation owns any persisted source history, replay cursor, gap, and replay-to-live cutover.
+One observer belongs to one Harness Run and is consumed by its current worker. The optional Foundation Host processor applies authorization, redaction, visibility, and stable Item projection policy without changing upstream event meaning. The processor emits only bounded safe live payloads; credentials, private state, arbitrary logs, and unbounded content never enter the live transport.
+
+In an `all` single-process deployment, a bounded in-process bus carries live observations to the ingress component. In a distributed deployment, the worker publishes them through Redis Pub/Sub and the control replica holding an authorized client connection subscribes to the exact Harness Run stream durably bound to the current ExecutionAttempt. Pub/Sub is broadcast rather than consumer-group work distribution: every control replica with an authorized local subscriber for that stream can receive the same observation. Redis channel possession, naming, or receipt grants no product authority; control authenticates and authorizes the client against current Foundation state before attaching the subscription.
+
+The live channel is keyed by Harness Run identity and carries the envelope's process-local sequence. A replacement ExecutionAttempt creates a new Harness Run and therefore a different channel and live stream. Redis Pub/Sub is at-most-once: subscriber absence or transport failure can lose live observations, and the worker never delays Harness execution waiting for a live subscriber. Worker publication queues, control subscription queues, and client connection queues are bounded. A detected sequence discontinuity, queue overflow, subscriber failure, Redis disconnect, or client disconnect ends the affected live attachment with an explicit live-gap indication. Undetected loss remains possible and is repaired only by later retained Items or lifecycle state, never by replaying token fragments. Observer accumulation remains process-local, while Foundation owns any persisted source history, replay cursor, retained gap, and replay-to-live cutover.
+
+The connection-scoped `live_gap` indication identifies the Harness Run stream, the last delivered sequence when known, and a bounded reason. It is transport control rather than a retained `FoundationDeliveryEnvelope`; it does not advance a durable cursor or imply that the Execution stopped. A client responds by reading authorized current state and waiting for retained Items or lifecycle delivery rather than requesting token-fragment replay.
 
 A live-only envelope is explicitly labeled as such. If the same semantic content later commits as an Item, delivery uses the durable Item identity and marks it as retained. It does not silently reuse a transient observer event ID as the Item or lifecycle-event ID.
 
@@ -112,7 +131,7 @@ class FoundationDeliveryEnvelope:
 
 The schema is conceptual. Retained lifecycle events and Items enter one durable stream per Workspace. Their `stream_id` is the Workspace ID, `stream_generation` identifies the current retention generation, and `sequence` increases monotonically in that stream. Replaying a retained source in the same stream generation preserves its delivery ID and sequence. Resource-scoped subscriptions filter this Workspace stream, so omitted sequence values are expected and do not imply a gap.
 
-A live AG-UI envelope instead uses `stream_kind="harness_live"`, the Harness Run ID as `stream_id`, generation `1`, and a process-local sequence. A replacement Attempt creates another Harness Run and therefore another live stream identity. Live envelopes are explicitly non-replayable and never advance a durable cursor. A cursor covers only a Workspace retained stream, is opaque, scoped to authorization and filters, and grants no authority.
+A live AG-UI envelope instead uses `stream_kind="harness_live"`, the Harness Run ID as `stream_id`, generation `1`, and a process-local sequence. A replacement Attempt creates another Harness Run and therefore another live stream identity. Live envelopes are explicitly non-replayable and never advance a durable cursor. Redis Pub/Sub carries but does not retain or authorize them. A cursor covers only a Workspace retained stream, is opaque, scoped to authorization and filters, and grants no authority.
 
 Reconnect replays retained lifecycle events and Items and reports `replay_gap` when the cursor generation differs or its sequence precedes the retained floor. The gap response includes the current generation, retained floor, high watermark, and authorized resource links required to rebuild current state; it does not synthesize the missing history. Live AG-UI observations are not silently promoted into another retained record class. Replay never reconstructs missing Harness continuation from Items, AG-UI data, or lifecycle events.
 
@@ -171,19 +190,19 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, Item, 
 
 ## Failure Semantics
 
-| Failure                                            | Outcome                                                                       |
-| -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Publisher lease expires                            | A new generation retries; stale completion is fenced                          |
-| Webhook or sink delivery exhausts retries          | Destination record is dead-lettered; source remains replayable                |
-| Client disconnects                                 | Execution continues according to durable state                                |
-| Replay range expires                               | Client receives an explicit gap and current authorized state                  |
-| Replay-to-live buffer overflows                    | Stream closes with an explicit gap rather than omitting retained envelopes    |
-| Observer or live delivery fails                    | No lifecycle fact is invented; retained sources remain authoritative          |
-| Usage report repeats or overlaps terminal snapshot | `record_id` deduplication prevents double counting                            |
-| Stale Attempt supplies valid late usage            | Usage is attributed and retained without lifecycle mutation                   |
-| Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                        |
-| Object upload and owning-record commit diverge     | Cleanup or an explicit content-read failure preserves owning-record authority |
-| Optional cost capability unavailable               | Raw usage remains durable and ordinary Foundation operation is unaffected     |
+| Failure                                            | Outcome                                                                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Publisher lease expires                            | A new generation retries; stale completion is fenced                                                             |
+| Webhook or sink delivery exhausts retries          | Destination record is dead-lettered; source remains replayable                                                   |
+| Client disconnects                                 | Execution continues according to durable state                                                                   |
+| Replay range expires                               | Client receives an explicit gap and current authorized state                                                     |
+| Replay-to-live buffer overflows                    | Stream closes with an explicit gap rather than omitting retained envelopes                                       |
+| In-process or Redis live transport fails           | Detected loss ends the attachment with `live_gap`; Execution continues and retained sources remain authoritative |
+| Usage report repeats or overlaps terminal snapshot | `record_id` deduplication prevents double counting                                                               |
+| Stale Attempt supplies valid late usage            | Usage is attributed and retained without lifecycle mutation                                                      |
+| Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                                                           |
+| Object upload and owning-record commit diverge     | Cleanup or an explicit content-read failure preserves owning-record authority                                    |
+| Optional cost capability unavailable               | Raw usage remains durable and ordinary Foundation operation is unaffected                                        |
 
 ## Invariants
 
@@ -197,3 +216,4 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, Item, 
 08. Object references and signed delivery URLs grant no product authority.
 09. Telemetry observes the system and never acts as durable lifecycle authority.
 10. Retained delivery sequence is Workspace-scoped; live observation sequence is process-local and non-replayable.
+11. Distributed live observations travel worker-to-control through Redis Pub/Sub without becoming durable or authoritative.

@@ -2,16 +2,16 @@
 
 ## Design Position
 
-Foundation Service ships one executable package and one container image. The same executable starts a `control` role, a `worker` role, or the all-in-one `all` composition. Configuration, schema preparation, resource construction, component startup, readiness, draining, and shutdown follow one process lifecycle regardless of whether the executable is invoked directly or through a container entrypoint.
+Each Foundation Service product distribution ships one executable package and one container image. That build artifact fixes exactly one trusted distribution descriptor and starts it as a `control` role, a `worker` role, or the all-in-one `all` composition. Configuration, schema preparation, resource construction, component startup, readiness, draining, and shutdown follow one process lifecycle regardless of whether the executable is invoked directly or through a container entrypoint.
 
-Runtime owns process behavior, not domain behavior. It selects an accepted distribution, validates one effective configuration, starts only the components assigned to the selected role, and fails closed when the deployment cannot preserve their required semantics.
+Runtime owns process behavior, not domain behavior. It loads the distribution fixed by the artifact, validates one effective configuration, starts only the components assigned to the selected role, and fails closed when the deployment cannot preserve their required semantics.
 
 ## Boundaries
 
 | Concern                                                             | Owner                                                                     | Relationship                                                        |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Configuration sources, precedence, role, and deployment profile     | Runtime                                                                   | Produces one immutable effective configuration                      |
-| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md) | Supplies the explicit application composition selected at startup   |
+| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md) | Supplies the explicit application composition fixed by the artifact |
 | Backend construction and capability semantics                       | [Storage](03-storage.md)                                                  | Constructs the selected typed clients and roots                     |
 | Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                              | Prepares or verifies the final distribution schema before readiness |
 | Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                   | Exposes only the surfaces owned by the selected role                |
@@ -58,7 +58,7 @@ root = "/var/lib/foundation"
 
 The example defines section ownership, not an exhaustive setting catalog. The executable package documents concrete fields and environment names. An environment variable maps to its section and field under the `FOUNDATION_` prefix. Unknown TOML sections and fields are rejected; a misspelled or distribution-unsupported setting never disappears silently.
 
-The final distribution supplies the complete typed configuration schema before values are parsed. Distribution-specific settings live in an explicit namespaced section and cannot reinterpret a common field. Secret-bearing values can come from the selected TOML file or environment. They remain redacted from representations, logs, traces, errors, probes, and generated configuration output. The deployment protects any file or environment source containing credentials.
+The artifact's fixed distribution descriptor supplies the complete typed configuration schema before values are parsed. No CLI option, TOML field, or environment variable selects a distribution or names an import target. Distribution-specific settings live in an explicit namespaced section and cannot reinterpret a common field. Secret-bearing values can come from the selected TOML file or environment. They remain redacted from representations, logs, traces, errors, probes, and generated configuration output. The deployment protects any file or environment source containing credentials.
 
 Configuration is immutable after startup. Changing a setting requires a new process. The service performs no partial or hot reload that could leave replicas or role components using different configuration generations.
 
@@ -115,7 +115,7 @@ stateDiagram-v2
 
 Startup performs these ordered gates:
 
-1. select the distribution and load the effective configuration;
+1. load the artifact's fixed distribution descriptor and effective configuration;
 2. validate the role, distribution, and deployment profile as one unit;
 3. configure process logging once;
 4. apply or verify the final relational schema;
@@ -173,7 +173,7 @@ The effective configuration is deployment input, not a durable product resource 
 
 ## Invariants
 
-01. One executable and image support `control`, `worker`, and their `all` composition.
+01. One executable and image per product distribution support `control`, `worker`, and their `all` composition.
 02. One immutable effective configuration is resolved before any service resource or background component starts.
 03. No configuration file is loaded unless its path is explicit.
 04. Distributed deployments require PostgreSQL, real Redis, and shared object storage.
@@ -183,3 +183,4 @@ The effective configuration is deployment input, not a durable product resource 
 08. A critical component cannot fail silently while the process remains ready.
 09. Drain stops new work before bounded component and resource cleanup.
 10. Runtime failure never selects a weaker backend, role, or distribution automatically.
+11. Runtime configuration never selects a distribution or arbitrary code target; the build artifact fixes one trusted distribution descriptor.

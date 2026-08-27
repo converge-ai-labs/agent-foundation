@@ -66,7 +66,9 @@ Complete authentication, authorization, and initial reads in a short session tha
 
 ## Migrations
 
-Alembic metadata comes from `a13n_service.database.metadata`. Every concrete ORM model must be imported into that explicit registry before generating a revision. Domains own model meaning, while Foundation Service owns one combined metadata registry and one linear migration history.
+Each Foundation Service build artifact supplies one final metadata registry and ordered migration graph through its fixed distribution descriptor. Domains own model and revision meaning; the distribution explicitly assembles their contributions; Foundation Service owns one resolved registry, one graph, and at most one head for that artifact. Package scanning, import side effects, tenant state, and runtime edition selection never change migration contents.
+
+The OSS artifact resolves its registry from `a13n_service.database.metadata` and its service revision location. A private EE or Cloud artifact adds reviewed model and revision contributions through its own fixed descriptor before invoking the same generator and runner contract. Generation, current-head verification, migration application, and readiness must consume the same resolved composition.
 
 Use the repository workflow rather than creating files manually:
 
@@ -74,7 +76,7 @@ Use the repository workflow rather than creating files manually:
 make db-migrate msg="add session lease fields"
 ```
 
-The command starts local PostgreSQL if needed, creates a disposable database, replays all existing history, autogenerates the model diff, formats the revision, and drops the database. This prevents a developer's normal database from hiding a missing migration. File names use `YYYYMMDD_<revision>_<slug>.py` and history stays linear unless a parallel branch is deliberately reviewed.
+For this repository, the command selects the OSS artifact descriptor, starts local PostgreSQL if needed, creates a disposable database, replays its complete history, autogenerates the model diff against its final metadata, formats the revision, and drops the database. The owning repository for another distribution invokes the same workflow with that distribution's fixed descriptor. This prevents a developer's normal database or ambient package set from hiding a missing migration. File names use `YYYYMMDD_<revision>_<slug>.py` and the final graph has at most one head; a deliberately reviewed merge revision reconciles concurrent branches before release.
 
 Autogenerate is only a draft. Review names, constraints, server defaults, nullability, indexes, data loss, downgrade behavior, lock level, scans or rewrites, old/new rolling compatibility, and interruption safety. Prefer additive expand-and-contract changes. Put large backfills in bounded restartable jobs rather than startup migrations, and prefer application rollback or forward repair over destructive schema downgrade.
 

@@ -31,6 +31,7 @@ flowchart LR
     end
 
     Coordination[Required Redis data flow]
+    LiveBus[Redis live observation fan-out]
 
     subgraph WorkerRole[Worker role]
         Worker[Fenced worker]
@@ -54,11 +55,12 @@ flowchart LR
     Provider --> Envd
     Harness --> External
     Harness --> Observer --> Worker
+    Worker -. live AG-UI .-> LiveBus -. authorized subscription .-> API
     Worker --> Database & Objects
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, interaction state, Executions, current ExecutionAttempt generations, dispatch evidence, checkpoints, pending actions, Environment lifecycle, and terminal outcomes. Real Redis is a required distributed dependency for coordination and feature-owned data flow. Each owning feature defines the identity, retention, replay, and authority of its Redis data; Redis publication alone never proves that a relational lifecycle transition committed. Shared object storage retains bounded large content under database-selected references.
+PostgreSQL is the distributed authority for accepted resources, interaction state, Executions, current ExecutionAttempt generations, dispatch evidence, checkpoints, pending actions, Environment lifecycle, and terminal outcomes. Real Redis is a required distributed dependency for coordination and feature-owned data flow, including non-replayable worker-to-control live observations. Each owning feature defines the identity, retention, replay, and authority of its Redis data; Redis publication alone never proves that a relational lifecycle transition committed. Shared object storage retains bounded large content under database-selected references. The complete live delivery contract belongs to [Events, Interaction Projection, Usage, and Delivery](17-events-usage-and-delivery.md#harness-observation-path).
 
 ## Component Boundaries
 
@@ -71,7 +73,7 @@ PostgreSQL is the distributed authority for accepted resources, interaction stat
 | Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks              |
 | Execution and ExecutionAttempt                                | Foundation                                                    | Owns durable scheduling, fencing, recovery, and completion          |
 | Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                |
-| Provider specification and resource operations                | `a13n-environment-provider`                                  | Foundation invokes Managers and persists selected provider state    |
+| Provider specification and resource operations                | `a13n-environment-provider`                                   | Foundation invokes Managers and persists selected provider state    |
 | Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it  |
 | Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery  |
 | Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations |
