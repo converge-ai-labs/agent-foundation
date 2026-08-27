@@ -79,7 +79,7 @@ PostgreSQL is the distributed authority for accepted resources, Turns, current T
 | Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations |
 | Client-side effects                                           | External client                                               | Foundation authenticates feedback but does not claim the effect     |
 
-Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable execution kernel.
+Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
 
 ## Process Roles
 
@@ -119,7 +119,7 @@ sequenceDiagram
     DB-->>Caller: retained interaction and lifecycle delivery
 ```
 
-The same non-terminal Turn can receive another TurnAttempt after recoverable worker loss. A new attempt always creates fresh process-local objects and a fresh Harness Run. A waiting Turn is sealed; authenticated feedback accepts a child Turn with fresh state and later receives its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
+The same non-terminal Turn can receive another TurnAttempt after recoverable worker loss. A new attempt always creates fresh process-local objects and a fresh Harness Run. A waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names the waiting Turn. The new Turn receives fresh state and later its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
 
 Schedules, webhooks, service requests, and asynchronous children accept Turns and follow the same scheduler, TurnAttempt, dispatch, Harness, state, and outcome contracts as interactive work.
 
@@ -166,6 +166,6 @@ No later fact follows merely because an earlier fact occurred. In particular, qu
 4. One TurnAttempt starts at most one logical Harness Run.
 5. Process-local Python values and runtime attachments never become Foundation durable payloads.
 6. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
-7. Every authoritative Attempt publication verifies the current generation and legal transition.
+7. Every authoritative TurnAttempt publication verifies the current generation and legal transition.
 8. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
 9. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.

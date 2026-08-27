@@ -24,7 +24,7 @@ The shared operation boundary is not a generic repository, application service b
 
 A mutable resource exposes one monotonically increasing domain `version` when concurrent updates can be lost. A state-sensitive mutation compares the caller's expected version with the current locked resource version in the same short transaction that applies the change. A mismatch changes nothing and reports a conflict.
 
-Immutable revisions and append-only records do not gain an artificial version. Internal worker publication additionally verifies the current ExecutionAttempt ID and generation under the owning fencing contract; a matching resource version does not bypass a stale worker fence.
+Immutable revisions and append-only records do not gain an artificial version. Internal worker publication additionally verifies the current TurnAttempt ID and generation under the owning fencing contract; a matching resource version does not bypass a stale worker fence.
 
 ## Idempotency Evidence
 
@@ -120,7 +120,7 @@ Ordering is scoped, not global. An owning domain assigns a monotonic sequence wh
 
 ## Worker Publication and External Effects
 
-A worker can commit state, events, Items, usage evidence, and outbox intents only under the current ExecutionAttempt fence. It does not bypass the relational commit by publishing a lifecycle result directly to Redis or a client.
+A worker can commit state, events, Items, usage evidence, and outbox intents only under the current TurnAttempt fence. It does not bypass the relational commit by publishing a lifecycle result directly to Redis or a client.
 
 Before an external effect can occur, the worker commits the owning dispatch boundary. After an unknown external outcome, it retries only when the same external idempotency identity or authoritative evidence makes repetition safe. Missing logs, Redis messages, telemetry, or receipts never prove that no effect occurred.
 
@@ -136,7 +136,7 @@ Before an external effect can occur, the worker commits the owning dispatch boun
 | Publisher crashes before acknowledgement             | Source can be delivered again                                                       | Stable identity deduplicates downstream              |
 | Redis or another sink is unavailable                 | Outbox remains pending; affected runtime is unready when the dependency is required | Restore dependency and resume bounded publication    |
 | Permanent delivery rejection                         | Intent remains durably failed and observable                                        | Correct configuration or use owning repair operation |
-| Stale worker publishes                               | Fenced transaction rejects the mutation and outbox                                  | Current Attempt or reconciler decides outcome        |
+| Stale worker publishes                               | Fenced transaction rejects the mutation and outbox                                  | Current TurnAttempt or reconciler decides outcome    |
 
 ## Compatibility
 
@@ -156,7 +156,7 @@ The outbox adds relational records, publisher lag, and duplicate-delivery handli
 04. No relational transaction spans Redis, object storage, provider, client, or other external I/O.
 05. Outbox publication is at least once and preserves one stable source identity across retries.
 06. Publication acknowledgement never defines the underlying domain transition.
-07. Worker-originated durable publication verifies the current Attempt fence.
+07. Worker-originated durable publication verifies the current TurnAttempt fence.
 08. Missing evidence never proves that an external effect did not occur.
 09. Redis availability is required in distributed operation, but Redis delivery alone never proves relational commitment.
 10. The shared operation contract does not introduce event sourcing, a generic repository, or a second unit-of-work abstraction.

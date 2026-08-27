@@ -4,7 +4,7 @@
 
 Foundation turns Harness suspension and Host-managed child work into durable Turn lifecycles without retaining a worker across human or external waits. Approval, client-tool execution, structured user input, and awaited child results are frozen pending facts inside one sealed waiting Turn and its complete state object. They are not independent mutable resources or relational rows.
 
-Authenticated feedback never reopens the waiting Turn. Once the exact pending set has a complete authorized resolution, Foundation accepts a child Turn initialized from the waiting parent's sealed state. The child receives a fresh TurnAttempt and Harness Run when scheduled.
+Authenticated feedback never reopens the waiting Turn. Once the exact pending set has a complete authorized resolution, Foundation accepts a new Turn whose `parent_turn_id` names the waiting Turn and whose state is initialized from that parent's sealed state. The new Turn receives a fresh TurnAttempt and Harness Run when scheduled.
 
 An asynchronous subagent is an independent child Turn in its own child Thread under the same Session. It has its own TurnAttempts, Harness Runs, state key, cancellation, Environment attachments, usage, retained replay, and result-delivery state. The Harness continues to own native Pydantic deferred values and blocking inline delegation; Foundation does not encode pending authority in `HarnessState` or reinterpret asynchronous submission as an unfinished Pydantic tool call.
 
@@ -34,7 +34,7 @@ class WaitingTurnFeedback:
 
 The native deferred envelope preserves the complete request and suspended message/tool-surface identity. It carries no credential or ambient authority. Foundation separately authorizes who may inspect, approve, reject, execute, answer, or incorporate each call.
 
-Feedback names the exact waiting Turn and sealed-state digest, covers every pending call exactly once under `resolution_policy="all"`, and uses the native result type required by that call kind. Approval denial is a native approval result, not a mutation of the parent pending summary. Expiration and cancellation create no successful resolution and no child Turn. Scoped idempotency maps repeated equivalent feedback to the same accepted child Turn; different content conflicts.
+Feedback names the exact waiting Turn and sealed-state digest, covers every pending call exactly once under `resolution_policy="all"`, and uses the native result type required by that call kind. Approval denial is a native approval result, not a mutation of the parent pending summary. Expiration and cancellation create no successful resolution and no new Turn. Scoped idempotency maps repeated equivalent feedback to the same accepted new Turn; different content conflicts.
 
 ## Suspension and Feedback Turn
 
@@ -52,18 +52,18 @@ sequenceDiagram
     Worker-->>Worker: close TurnAttempt resources and release lease
     Responder->>Durable: authenticated idempotent feedback
     Durable->>Durable: validate exact waiting parent and complete pending set
-    Durable->>Durable: initialize and accept feedback child Turn
-    NextWorker->>Durable: claim child TurnAttempt
-    NextWorker->>Harness: fresh bindings, child state, DeferredToolResume
+    Durable->>Durable: initialize and accept new Turn with waiting parent
+    NextWorker->>Durable: claim new Turn's first TurnAttempt
+    NextWorker->>Harness: fresh bindings, new Turn state, DeferredToolResume
 ```
 
 Suspension first conditionally publishes the complete waiting state candidate at the Turn's deterministic state key. One fenced relational transition then seals the Turn, terminalizes the source TurnAttempt, copies the bounded pending summary to the Turn row, commits lifecycle facts, and selects the exact state digest and checkpoint sequence. The worker closes Harness, Environment, credential, provider, socket, and database resources.
 
-Feedback authenticates the responder, authorizes every exact pending action in the frozen request set, checks expiration and current resource versions, and applies an idempotency key. The waiting parent remains immutable. Once the complete set is resolved, Foundation initializes a same-Thread child Turn from the parent's sealed state, records the consumed pending identities, accepts the child, and associates any response Items with that child Turn.
+Feedback authenticates the responder, authorizes every exact pending action in the frozen request set, checks expiration and current resource versions, and applies an idempotency key. The waiting parent remains immutable. Once the complete set is resolved, Foundation initializes a new Turn in the same Thread from the parent's sealed state, sets `parent_turn_id` to that waiting Turn, records the consumed pending identities, accepts the new Turn, and associates any response Items with it.
 
 The replacement worker reconstructs the exact Agent revision and tool surface, supplies fresh bindings, and passes the authoritative request and complete results through native `DeferredToolResume`. Approval and external execution remain separate facts: approval does not prove the client effect occurred, and client success does not retroactively prove approval.
 
-Invalid, incomplete, stale, expired, or unauthorized feedback creates no child Turn and leaves the waiting parent unchanged.
+Invalid, incomplete, stale, expired, or unauthorized feedback creates no new Turn and leaves the waiting parent unchanged.
 
 ## Asynchronous Child Turns
 
@@ -147,7 +147,7 @@ stateDiagram-v2
 
 Transport notification does not change this state. The exact child result can be offered repeatedly while it remains `available`; only the transaction that initializes and accepts a successor Turn from a valid parent edge can advance it to `selected`. That transaction records the target Turn and initialized state digest, so worker loss cannot incorporate the result into the same parent lineage twice.
 
-If a parent sealed as waiting for the child, result availability supplies the exact internal feedback needed to accept a same-Thread child Turn from that waiting parent. If the parent completed independently, the result remains available for an explicitly selected later Turn rather than reopening terminal state.
+If a parent sealed as waiting for the child, result availability supplies the exact internal feedback needed to accept a new Turn in the same Thread with `parent_turn_id` naming that waiting Turn. If the parent completed independently, the result remains available for an explicitly selected later Turn rather than reopening terminal state.
 
 Result content is bounded and authorized at read and incorporation time. Larger content uses an authorized Item-owned reference under the [large-content contract](20-events-usage-and-delivery.md#large-content). Delivery never transfers the child's credentials, provider resource state, live Environment attachment, private Capability state, or complete trace.
 
@@ -156,10 +156,10 @@ Result content is bounded and authorized at read and incorporation time. Larger 
 | Condition                                     | Outcome                                                                |
 | --------------------------------------------- | ---------------------------------------------------------------------- |
 | Worker lost after waiting commit              | Waiting Turn remains sealed without worker ownership                   |
-| Feedback duplicated                           | Original feedback or child-Turn acceptance receipt is returned         |
+| Feedback duplicated                           | Original feedback or the new Turn's acceptance receipt is returned     |
 | Feedback targets stale or closed action       | Request conflicts without changing the waiting Turn                    |
 | Feedback responder unauthorized               | Request is denied without disclosing private pending content           |
-| Resume surface differs from suspended surface | Feedback child Turn fails before Harness resume                        |
+| Resume surface differs from suspended surface | New feedback Turn fails before Harness resume                          |
 | Child acknowledgement lost                    | Same operation identity returns the existing child Turn                |
 | Child fails                                   | Sealed failure is frozen and delivered under parent policy             |
 | Parent worker lost after child acceptance     | Child remains durable; delivery ledger preserves the relationship      |
@@ -168,9 +168,9 @@ Result content is bounded and authorized at read and incorporation time. Larger 
 ## Invariants
 
 1. Waiting for approval, client tools, user input, or child completion holds no TurnAttempt lease.
-2. A waiting Turn is sealed; feedback and awaited child delivery create a child Turn rather than reopening it.
+2. A waiting Turn is sealed; feedback and awaited child delivery create a new Turn whose `parent_turn_id` names the waiting Turn rather than reopening it.
 3. Pending requests and feedback remain native typed values associated with one exact sealed waiting state.
-4. Every feedback continuation receives a fresh TurnAttempt and Harness Run under the child Turn.
+4. Every feedback continuation receives a fresh TurnAttempt and Harness Run under the new Turn.
 5. Approval and external client effect are independent facts.
 6. An asynchronous child is an independent Turn in an independent Thread under the same Session.
 7. Child acceptance, completion, notification, successor acceptance, and result selection are separate facts.

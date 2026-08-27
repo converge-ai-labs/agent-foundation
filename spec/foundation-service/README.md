@@ -18,7 +18,7 @@ Session -> Thread -> Turn -> TurnAttempt -> Harness Run -> ModelAttempt
 
 Every Foundation-managed Agent invocation accepts a Turn belonging to exactly one Session and Thread. Interactive requests, schedules, webhooks, service requests, and asynchronous children use the same Turn scheduler and recovery contract.
 
-A non-terminal Turn can span several process-local Harness Runs when worker recovery creates another TurnAttempt. A waiting Turn is sealed; authenticated feedback accepts a child Turn with fresh state, TurnAttempt, bindings, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
+A non-terminal Turn can span several process-local Harness Runs when worker recovery creates another TurnAttempt. A waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and, when scheduled, its own TurnAttempt, bindings, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
 
 ## Specification Catalog
 
@@ -42,7 +42,7 @@ A non-terminal Turn can span several process-local Harness Runs when worker reco
 | [18 Deferred Actions and Children](18-deferred-actions-and-children.md)                     | Approval, client tools, user input, sealed waiting Turns, asynchronous child Turns, result delivery, and cancellation           |
 | [19 Environment Management](19-environment-management.md)                                   | Host use of provider specifications, resource state, operations, attachments, reconciliation, and envd boundary                 |
 | [20 Events, Usage, and Delivery](20-events-usage-and-delivery.md)                           | Harness observation, AG-UI and Item projection, lifecycle events, delivery, raw usage, large content, and telemetry             |
-| [21 Management API](21-management-api.md)                                                   | Public resource routes, interactive and standalone submission, commands, read models, replay, and compatibility                 |
+| [21 Management API](21-management-api.md)                                                   | Public resource routes, existing-Thread and root Turn submission, commands, read models, replay, and compatibility              |
 | [22 Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                         | Agent-facing authorized retrieval of retained Turn lineage and interaction projections                                          |
 
 Read `00`, `01`, and `02` before changing process startup, roles, or distribution contents. Read `03`, `04`, and `06` before introducing a durable capability. Read `05`, `10`, and `21` before changing public ingress. Read `13` through `17` together before changing the Turn, control, worker, recovery, or stream boundary. Read `18` before changing waiting feedback or asynchronous children. Read the shared interaction model before changing Session, Thread, Turn, or Item semantics. Read the Environment Provider and Agent Stream Protocol catalogs before adding provider or event adapters.

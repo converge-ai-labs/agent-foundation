@@ -14,7 +14,7 @@ IAM authorizes a caller to inspect, change, invoke, or administer Foundation res
 | Password, browser session, invitation, reset token, and API key | This document                                                          | Defines authentication and credential lifecycle                                  |
 | RoleBinding, built-in roles, and product authorization          | This document                                                          | Defines the only durable product grant model                                     |
 | Managed Secret value protection                                 | [Secret Management](11-secret-management.md)                           | Uses IAM scope and authorization without treating a Secret as a login credential |
-| Agent revision and execution identity                           | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
+| Agent revision, Turn, and TurnAttempt identity                  | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
 | Model-triggered tool and Environment authority                  | Harness run grants and providers                                       | Narrows an authorized invocation independently from product RBAC                 |
 | OSS, EE, and Cloud capability composition                       | [Distribution boundary](02-distribution-composition-and-extensions.md) | Adds capabilities without edition fields or bypassing common IAM checks          |
 
@@ -25,7 +25,7 @@ flowchart TB
     Deployment[Foundation deployment]
     Organization[Organization]
     Workspace[Workspace]
-    Resource[Agent, Secret, Session, Thread, Turn, Execution, Environment, or other resource]
+    Resource[Agent, Secret, Session, Thread, Turn, TurnAttempt, Environment, or other resource]
 
     Deployment --> Organization --> Workspace --> Resource
 ```
@@ -59,7 +59,7 @@ Foundation recognizes exactly these OSS Principal kinds:
 - `user` is one platform-wide human identity;
 - `service_account` is one non-human identity owned by a Workspace.
 
-A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. Agent, Agent revision, Session, Execution, credential, and Secret identities are not Principals. Product authorization targets the stable Agent ID, while an accepted invocation selects the exact immutable Agent revision separately.
+A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. Agent, Agent revision, Session, Thread, Turn, TurnAttempt, credential, and Secret identities are not Principals. Product authorization targets the stable Agent ID, while an accepted Turn selects the exact immutable Agent revision separately.
 
 The conceptual references are:
 
@@ -299,7 +299,7 @@ Removing a User's access to a key boundary permanently revokes that boundary's P
 | `occurred_at`     | Immutable event time                                                               |
 | `request_id`      | Safe request correlation ID when applicable                                        |
 
-Security audit events are append-only and distinct from Execution lifecycle events, application logs, traces, and UsageRecords. Login, password, email, User status, invitation, RoleBinding, API key, Service Account, Workspace, and Secret security mutations emit events. Events contain no secret material or credential verifier.
+Security audit events are append-only and distinct from Turn and TurnAttempt lifecycle events, application logs, traces, and UsageRecords. Login, password, email, User status, invitation, RoleBinding, API key, Service Account, Workspace, and Secret security mutations emit events. Events contain no secret material or credential verifier.
 
 A successful security-sensitive mutation commits its audit event in the same short transaction as the authoritative state change under [Durable Operations and Outbox](06-durable-operations-and-outbox.md#atomic-durable-commit). Authentication failures and denied attempts emit through a separate bounded path because no resource mutation transaction exists; audit unavailability never converts a denial into an allow.
 
@@ -354,7 +354,7 @@ An Organization role applies only to a User. The last effective Organization Adm
 | Role key  | Permissions                                                                                                                                                                                                     |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `viewer`  | Read safe Workspace metadata, resources, and histories; read Secret metadata but never Secret values                                                                                                            |
-| `runner`  | Viewer permissions; invoke every Agent; cancel and retry every Execution in the Workspace                                                                                                                       |
+| `runner`  | Viewer permissions; invoke every Agent; cancel active Turns and retry eligible sealed Turns in the Workspace                                                                                                    |
 | `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration; create, replace, delete, and bind Workspace Secrets                                                                    |
 | `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit |
 
@@ -362,7 +362,7 @@ The role table does not decide whether Tool, Skill, Connector, Environment, or a
 
 A Runner can invoke an Agent that uses configured Secrets but cannot inspect a Secret value, change Secret metadata, or change an Agent-to-Secret binding. Secret plaintext is never a role permission.
 
-Direct Agent RoleBindings reuse `viewer`, `runner`, and `builder` as resource-level permission bundles. At Agent scope, Viewer grants Agent and associated Execution reads, Runner adds invocation, cancellation, and retry, and Builder adds Agent update, deletion, and Agent-owned configuration management; it grants no Agent creation, Workspace Secret management, or identity management. The common schema accepts these bindings now so later management surfaces can restrict a Principal to selected Agents without introducing another authorization model.
+Direct Agent RoleBindings reuse `viewer`, `runner`, and `builder` as resource-level permission bundles. At Agent scope, Viewer grants Agent and associated Turn and TurnAttempt reads, Runner adds invocation, active-Turn cancellation, and eligible sealed-Turn retry, and Builder adds Agent update, deletion, and Agent-owned configuration management; it grants no Agent creation, Workspace Secret management, or identity management. The common schema accepts these bindings now so later management surfaces can restrict a Principal to selected Agents without introducing another authorization model.
 
 ## Authorization Contract
 
@@ -415,7 +415,7 @@ No credential contains a role snapshot. Identifier possession, an earlier allow,
 
 ## Product Authorization and Run Grants
 
-Product RBAC decides whether a User or Service Account may invoke an Agent. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current Agent invocation permission, the immutable Agent revision, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. A resumed or retried Execution obtains fresh authority instead of retaining a role snapshot.
+Product RBAC decides whether a User or Service Account may invoke an Agent. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current Agent invocation permission, the immutable Agent revision, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. Every newly claimed TurnAttempt and every accepted child or retry Turn obtains fresh authority instead of retaining a role snapshot.
 
 ## Lifecycle and Revocation
 

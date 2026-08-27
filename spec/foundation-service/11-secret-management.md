@@ -162,7 +162,7 @@ Every active Secret value is encrypted directly under one operator-configured 25
 
 Authenticated additional data uses a stable length-prefixed encoding that binds the exact `id`, `organization_id`, `workspace_id`, `owner_type`, `owner_id`, `key`, `version`, and `encryption_key_id`. Copying ciphertext to another tenant, row, owner, key, version, or key identifier therefore fails authentication rather than returning another Secret's plaintext.
 
-Every role that includes Secret management or runtime Secret resolution loads the configured master key. A `control` process uses it for accepted Secret writes and key migration. A `worker` process uses it only to resolve authorized Secret bindings for a fenced Execution. An `all` process owns both paths. A worker exposes no Secret management route, and no role receives decryption authority merely from a public API permission.
+Every role that includes Secret management or runtime Secret resolution loads the configured master key. A `control` process uses it for accepted Secret writes and key migration. A `worker` process uses it only to resolve authorized Secret bindings for a fenced TurnAttempt. An `all` process owns both paths. A worker exposes no Secret management route, and no role receives decryption authority merely from a public API permission.
 
 Possessing the symmetric key gives each such process cryptographic decryption capability. The distinction between management and runtime resolution is therefore an API, authorization, and code-path boundary rather than cryptographic separation.
 

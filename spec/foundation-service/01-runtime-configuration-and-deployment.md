@@ -73,7 +73,7 @@ Foundation supports two profiles:
 
 The distributed profile requires PostgreSQL, real Redis, and shared object storage. It rejects SQLite, process-local Redis, and local object storage before opening service traffic. A mounted shared filesystem can satisfy a domain that explicitly owns filesystem semantics, but it does not replace shared object storage or make SQLite and local object locking distributed.
 
-Real Redis is a required distributed data-flow and coordination dependency. Required does not mean universally authoritative: each owning domain defines the identity, retention, replay, and authority of the values it places in Redis. Durable Foundation resource state, ExecutionAttempt fencing, and accepted lifecycle transitions remain relational facts unless an owning specification explicitly establishes a different authority.
+Real Redis is a required distributed data-flow and coordination dependency. Required does not mean universally authoritative: each owning domain defines the identity, retention, replay, and authority of the values it places in Redis. Durable Foundation resource state, TurnAttempt fencing, and accepted lifecycle transitions remain relational facts unless an owning specification explicitly establishes a different authority.
 
 ## Process Roles
 
@@ -85,7 +85,7 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 | Authentication and authorization ingress  |       Yes |       No |   Yes |
 | Scheduling and control reconcilers        |       Yes |       No |   Yes |
 | Outbox publication                        |       Yes |       No |   Yes |
-| Execution claiming and lease renewal      |        No |      Yes |   Yes |
+| Turn claiming and lease renewal           |        No |      Yes |   Yes |
 | Harness and Environment invocation        |        No |      Yes |   Yes |
 | Operational liveness and readiness probes |       Yes |      Yes |   Yes |
 | Automatic migration when enabled          |       Yes |    Never |   Yes |
@@ -147,7 +147,7 @@ Probe responses expose only bounded status, role, build identity, and safe depen
 
 Drain makes readiness fail before the process stops accepting new work.
 
-A control process rejects new product mutations and streaming connections, then stops ingress, scheduling, reconcilers, and publishers in an order that preserves committed state. A worker stops claiming new Executions, continues active work only until the configured drain deadline, and then commits an authoritative transition or relinquishes ownership for lease recovery. Shutdown never extends a lease indefinitely or reports unfinished work as successful.
+A control process rejects new product mutations and streaming connections, then stops ingress, scheduling, reconcilers, and publishers in an order that preserves committed state. A worker stops claiming new Turns, continues active work only until the configured drain deadline, and then commits an authoritative transition or relinquishes ownership for lease recovery. Shutdown never extends a lease indefinitely or reports unfinished work as successful.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 

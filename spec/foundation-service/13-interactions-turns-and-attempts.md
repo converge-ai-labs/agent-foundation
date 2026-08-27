@@ -17,7 +17,7 @@ flowchart TB
     ChildThread[Child Thread]
     ParentTurn[Parent Turn]
     WaitingTurn[Waiting Turn]
-    FeedbackTurn[Feedback child Turn]
+    FeedbackTurn[New feedback Turn]
     Attempt1[TurnAttempt generation 1]
     Attempt2[TurnAttempt generation 2]
     Run1[Harness Run]
@@ -43,9 +43,9 @@ Turn acceptance authenticates and authorizes the caller or internal principal, v
 The accepted operation chooses exactly one lineage form:
 
 - a root invocation creates a root Turn for a selected or newly created Session and Thread;
-- ordinary continuation creates a child Turn that preserves `thread_id` and initializes state from the exact sealed parent;
-- authenticated feedback creates a child Turn from the exact sealed waiting parent and consumes its complete pending set;
-- fork creates a child Turn in a new Thread and applies the Harness fork contract; and
+- ordinary continuation accepts a new Turn that preserves `thread_id`, sets `parent_turn_id` to the exact sealed previous Turn, and initializes state from that parent;
+- authenticated feedback accepts a new Turn that sets `parent_turn_id` to the exact sealed waiting Turn and consumes its complete pending set;
+- fork accepts a new Turn in a new Thread, sets `parent_turn_id` to the selected sealed source Turn, and applies the Harness fork contract; and
 - retry of terminal intent creates an explicit successor Turn and never mutates the terminal record.
 
 The same principal, scope, idempotency key, and canonical request return the original acceptance receipt. Reuse with different content conflicts. A lost response after possible acceptance remains unknown until the caller repeats the same key or reads authoritative Turn state.
@@ -54,7 +54,7 @@ The same principal, scope, idempotency key, and canonical request return the ori
 
 A Turn begins as `accepted`. Claiming work creates a new TurnAttempt, selects it as the current generation, and moves the Turn to `running`. A recoverable lost attempt returns the same Turn to `accepted` within its durable recovery budget. A waiting or completed Harness outcome first publishes a complete matching state candidate and then seals the Turn as `waiting` or `completed` with that exact state digest and checkpoint sequence.
 
-`waiting`, `completed`, `failed`, and `cancelled` are sealed Turn outcomes. They are never returned to `accepted` or `running`. Pending feedback does not reopen a waiting Turn: once the full feedback set is authenticated and accepted, Foundation creates a child Turn and leaves the waiting parent unchanged.
+`waiting`, `completed`, `failed`, and `cancelled` are sealed Turn outcomes. They are never returned to `accepted` or `running`. Pending feedback does not reopen a waiting Turn: once the full feedback set is authenticated and accepted, Foundation accepts a new Turn whose `parent_turn_id` names that waiting Turn and leaves the parent unchanged.
 
 A TurnAttempt is an immutable audit record after it reaches `succeeded`, `failed`, `lost`, or `cancelled`. Replacing an attempt creates a new generation with a fresh lease, Harness Run, Environment attachment, controller, clients, credentials, and bindings. It never restores another process's task, socket, database session, live provider handle, controller, or Harness Run.
 

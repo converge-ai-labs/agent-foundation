@@ -66,7 +66,7 @@ Operational probe failures use a smaller bounded operational representation and 
 
 SSE and WebSocket routes authenticate, authorize, and complete initial database reads in closed short sessions before constructing the streaming response. The stream receives immutable detached values and process-wide factories, never a yielded database session through its dependency graph.
 
-Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never cancels an Execution unless the client separately submits an authorized cancellation command.
+Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never cancels a Turn unless the client separately submits an authorized cancellation command.
 
 When the process begins draining, it rejects new streams, signals or closes existing streams according to their owning reconnect contract, and releases subscriptions within the drain deadline. A reconnect uses the owning durable cursor or reports an explicit replay gap; it does not treat a transport connection as execution authority.
 
@@ -86,7 +86,7 @@ The service does not keep accepting work that it cannot durably authorize or acc
 | Request validation fails                      | Shared `400` with safe field details  | No product mutation                                      |
 | Required dependency is unavailable            | Shared `503`; process is unready      | Previously committed work remains under its owner        |
 | Response is lost after commit                 | Client outcome is unknown             | Same idempotency key or authoritative read reconciles it |
-| Stream disconnects                            | Delivery stops                        | Execution and retained sources remain independent        |
+| Stream disconnects                            | Delivery stops                        | Turn and retained sources remain independent             |
 | Unexpected exception                          | Shared generic `500` with request ID  | Transaction rollback or owning reconciliation applies    |
 
 ## Compatibility
@@ -104,6 +104,6 @@ A new common ingress check can be added when it rejects only requests outside th
 05. Middleware carries transport context and never owns resource authorization or a long-lived database session.
 06. Every `/api` error uses the shared bounded error envelope; framework-native error bodies do not escape.
 07. Streaming responses receive no yielded database session.
-08. Client disconnect and transport delivery never define Execution cancellation or completion.
+08. Client disconnect and transport delivery never define Turn cancellation or completion.
 09. Drain rejects new work before closing streams and ingress.
 10. An open HTTP socket does not make an unready process product-available.

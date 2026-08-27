@@ -208,7 +208,7 @@ Harness Run from the same Turn's latest conditionally committed state. Every Tur
 replaces that key at complete checkpoints and exposes no separate base, result,
 or checkpoint-history object.
 
-Client-side tools use native Pydantic deferred values. Foundation seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a child Turn that starts a later run with fresh bindings. Asynchronous children use independent Threads and Turns rather than Pydantic deferred spawn calls.
+Client-side tools use native Pydantic deferred values. Foundation seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. Asynchronous children use independent Threads and Turns rather than Pydantic deferred spawn calls.
 
 Foundation's [Turn persistence](foundation-service/14-turn-persistence.md) owns
 durable Agent-work identity, scheduling, the recovery budget, the interactive

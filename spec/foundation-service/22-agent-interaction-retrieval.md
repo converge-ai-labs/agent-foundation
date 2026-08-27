@@ -222,7 +222,7 @@ long histories require multiple tool calls.
 4. The reader reauthorizes every operation and page. Model arguments,
    identifiers, metadata, object keys, and cursors grant no access.
 5. Turn rows remain history authority. Items come only from verified replay, and
-   current partial or hidden execution state is never exposed.
+   current partial or hidden Turn state is never exposed.
 6. A bound plugin keeps no open storage resource, credential, or mutable unit of
    work between calls.
 7. Every result is read-only, bounded, redacted, cancellation-aware, and explicit

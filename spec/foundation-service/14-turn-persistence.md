@@ -24,10 +24,10 @@ stores no separate `base_state`, `result_state`, or selectable checkpoint
 history.
 
 Worker recovery can resume the same Turn from its latest valid state object;
-`continue` and `fork` instead initialize a child Turn from frozen parent state.
+`continue` and `fork` instead initialize a new Turn from frozen parent state.
 The [Turn Attempt contract](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary)
-owns the complete identity-allocation boundary. No child state write mutates
-the parent.
+owns the complete identity-allocation boundary. No state write for the new Turn
+mutates the parent.
 
 This is a Foundation Host policy above the Harness state API. Harness exports
 complete detached state but does not select or authorize a durable recovery
@@ -248,7 +248,8 @@ complete message history.
 `waiting` is a sealed Turn outcome. It contains a bounded `pending` summary;
 the frozen Turn state contains the authoritative deferred requests, effective
 client-tool surface, and Host provider continuation. Authenticated feedback is
-the accepted input of a child Turn initialized from that waiting state.
+the accepted input of a new Turn whose `parent_turn_id` names the waiting Turn
+and whose state is initialized from that waiting state.
 
 ### Turn Lifecycle
 
@@ -347,7 +348,7 @@ flowchart LR
 
 The lineage rules are:
 
-1. A root Turn has `parent_turn_id=null`, `lineage_kind=root`, and a child-owned
+1. A root Turn has `parent_turn_id=null`, `lineage_kind=root`, and a Turn-owned
    state initialized with `HarnessState.new()`.
 2. An ordinary continuation has `lineage_kind=continue`, uses a completed
    parent in the same Thread, and initializes its state from the parent's frozen
@@ -369,7 +370,7 @@ with a given `(thread_id, parent_turn_id)` can be active or seal as `waiting` or
 `completed`; failed and cancelled siblings do not block a later accepted
 advancement from the same eligible parent. Acceptance locks or conditionally
 updates the selected parent and fails with a conflict if another advancing
-child already won. An explicit fork creates a new Thread.
+successor already won. An explicit fork creates a new Thread.
 
 A lineage read follows `parent_turn_id` from an explicitly selected head. It is
 tenant-scoped, cycle-safe, and bounded. Created time and event order are not
@@ -389,7 +390,8 @@ The public route, response, authorization, and failure contract are owned by
 
 Each accepted Turn owns one `TurnStateEnvelope`. It combines Harness portable
 state with Host continuation required to resume the same Turn or initialize a
-child Turn. It contains data and correlation, never current authority.
+new Turn from a selected parent. It contains data and correlation, never current
+authority.
 
 ```python
 type ContinuationScope = Literal["same_thread", "portable"]
@@ -510,12 +512,12 @@ The envelope separates two state classes:
 The envelope contains data and correlation only; current policy, credentials,
 live resources, and process-local objects are resolved afresh.
 
-`continuation_scope` bounds child initialization:
+`continuation_scope` bounds initialization of a new Turn:
 
-| Scope         | Permitted reuse                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| `same_thread` | A child Turn preserving `thread_id`                                                                     |
-| `portable`    | A child in the same Thread or an explicit fork after current authorization and compatibility validation |
+| Scope         | Permitted reuse                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------- |
+| `same_thread` | A new Turn preserving `thread_id` and naming the exact previous Turn through `parent_turn_id`              |
+| `portable`    | A new Turn in the same Thread or an explicit fork after current authorization and compatibility validation |
 
 Fork drops entries that are not portable. A missing optional entry causes fresh
 provider materialization. A required entry that is unavailable, incompatible,
@@ -525,17 +527,17 @@ malformed, or unauthorized fails before model or tool work.
 
 | Concern                                       | Root Turn                                                   | Continue or waiting-feedback Turn                                                    | Fork Turn                                                                       |
 | --------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| Turn and state identity                       | Allocate a Turn and deterministic child-owned state key     | Allocate a child Turn and new key; name the exact sealed parent                      | Allocate a child Turn, new Thread, and new key                                  |
+| Turn and state identity                       | Allocate a Turn and deterministic Turn-owned state key      | Allocate a new Turn and new key; name the exact sealed parent                        | Allocate a new Turn, new Thread, and new key                                    |
 | Harness state                                 | Create `HarnessState.new()`                                 | Copy the parent's frozen Harness state and preserve `thread_id`                      | Apply `HarnessState.fork()` and use its new `thread_id`                         |
 | Host provider continuation                    | Build from desired topology and current provider selections | Retain eligible entries; waiting feedback retains the exact deferred value initially | Retain only eligible `portable` entries; clear parent outcome and deferred data |
-| Accepted input                                | Store on the Turn; initial state marks it pending           | Store child input on the Turn; initial state marks it pending                        | Store child input on the Turn; initial state marks it pending                   |
-| Definition and integration                    | Pin exact child selections                                  | Pin exact child selections and validate inherited data                               | Pin exact child selections and validate portable inherited data                 |
+| Accepted input                                | Store on the Turn; initial state marks it pending           | Store new input on the new Turn; initial state marks it pending                      | Store new input on the new Turn; initial state marks it pending                 |
+| Definition and integration                    | Pin exact Turn selections                                   | Pin exact selections for the new Turn and validate inherited data                    | Pin exact selections for the new Turn and validate portable inherited data      |
 | Policy, Secrets, bindings, tools, and clients | Resolve fresh for the Harness Run                           | Resolve fresh and reauthorize retained selectors                                     | Resolve fresh and reauthorize retained portable selectors                       |
 
-Child initialization always writes a complete child-owned envelope with
+Initialization of a new Turn always writes a complete Turn-owned envelope with
 `checkpoint_seq=0`. It does not reference the parent state as a base, retain the
-parent's outcome candidate as the child's outcome, or create another state
-field on the child Turn. Parent state is only immutable source data for this
+parent's outcome candidate as the new Turn's outcome, or create another state
+field on the new Turn. Parent state is only immutable source data for this
 initialization.
 
 ### State Key, Conditional Writes, and Fencing
@@ -635,9 +637,9 @@ structured payload.
 ### Retention
 
 Retention never removes a state or Turn payload object while a retained Turn or
-descendant depends on it. A parent state remains frozen and reachable while any
-child or lineage policy requires it. Reference-aware deletion never relies on
-object age alone.
+successor depends on it. A parent state remains frozen and reachable while any
+successor or lineage policy requires it. Reference-aware deletion never relies
+on object age alone.
 
 ## Turn Acceptance, Checkpoint, and Outcome Commit
 
@@ -645,7 +647,7 @@ Turn acceptance creates the Turn row and its initial state as one externally
 indivisible acceptance operation:
 
 1. validate authorization, lineage, selections, and any parent state, then build
-   the complete child-owned initial state;
+   the complete Turn-owned initial state;
 2. publish object-backed input and `state.json` create-only;
 3. insert the `accepted` Turn and required lifecycle facts in one short
    transaction.
@@ -658,8 +660,8 @@ sequenceDiagram
 
     Control->>Control: Validate parent, lineage, policy, and selections
     Control->>Objects: Read frozen parent state when required
-    Control->>Control: Build child-owned initial state
-    Control->>Objects: Create child state.json and object-backed input
+    Control->>Control: Build new Turn initial state
+    Control->>Objects: Create new Turn state.json and object-backed input
     Control->>DB: Insert Turn and lifecycle facts
     alt transaction commits
         DB-->>Control: Turn accepted
@@ -753,17 +755,17 @@ constraints:
 
 The accepted access paths are:
 
-| Access path                       | Index or uniqueness contract                                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Scheduler claim                   | `(tenant_id, queue_name, status, available_at, priority, created_at, id)` for `accepted`                                              |
-| Idempotent acceptance             | Unique `(tenant_id, idempotency_key)` when the key exists                                                                             |
-| Session activity                  | `(tenant_id, session_id, created_at, id)`                                                                                             |
-| Thread activity and stable paging | `(tenant_id, thread_id, created_at, id)`                                                                                              |
-| DAG child traversal               | `(tenant_id, parent_turn_id, id)`                                                                                                     |
-| DAG ancestor traversal            | Unique `(tenant_id, id)` parent lookup at each recursive step                                                                         |
-| One active Turn per Thread        | Partial unique `(tenant_id, thread_id)` for `accepted` and `running`                                                                  |
-| One winning child per state edge  | Partial unique `(tenant_id, thread_id, parent_turn_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is non-null |
-| One root history per Thread       | Partial unique `(tenant_id, thread_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is null                     |
+| Access path                          | Index or uniqueness contract                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Scheduler claim                      | `(tenant_id, queue_name, status, available_at, priority, created_at, id)` for `accepted`                                              |
+| Idempotent acceptance                | Unique `(tenant_id, idempotency_key)` when the key exists                                                                             |
+| Session activity                     | `(tenant_id, session_id, created_at, id)`                                                                                             |
+| Thread activity and stable paging    | `(tenant_id, thread_id, created_at, id)`                                                                                              |
+| DAG successor traversal              | `(tenant_id, parent_turn_id, id)`                                                                                                     |
+| DAG ancestor traversal               | Unique `(tenant_id, id)` parent lookup at each recursive step                                                                         |
+| One active Turn per Thread           | Partial unique `(tenant_id, thread_id)` for `accepted` and `running`                                                                  |
+| One winning successor per state edge | Partial unique `(tenant_id, thread_id, parent_turn_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is non-null |
+| One root history per Thread          | Partial unique `(tenant_id, thread_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is null                     |
 
 ## Security and Protection
 
@@ -800,7 +802,7 @@ attached by generic fallback.
 | Recovery budget is exhausted                                                 | Turn seals as `failed`                                       | The sealed Turn receives no later attempt; see the [allocation boundary](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary) |
 | Required state or provider data is incompatible or unavailable               | No model or tool work starts                                 | Apply an explicit compatible reader or fail the Turn                                                                                              |
 | State object is missing or fails integrity validation                        | Turn remains authoritative but unreadable                    | Fail closed and restore that exact key from protected recovery data; never substitute listing results                                             |
-| Waiting feedback is invalid or mismatches frozen deferred requests           | Waiting Turn remains unchanged                               | Reject input; do not create a child Turn                                                                                                          |
+| Waiting feedback is invalid or mismatches frozen deferred requests           | Waiting Turn remains unchanged                               | Reject input; do not create a new Turn                                                                                                            |
 | Parent is absent, unauthorized, unsealed, ineligible, or advanced            | Turn acceptance fails                                        | Caller re-reads authorized history or requests an explicit fork                                                                                   |
 | Write is attempted after Turn sealing                                        | Frozen state and outcome remain unchanged                    | Reject even if the caller has process-local bytes or a stale object version                                                                       |
 
@@ -827,9 +829,9 @@ The compatibility axes remain independent:
 
 An unknown required state, payload, Harness, Capability, Environment, or
 provider version fails explicitly unless its owner supplies a compatible
-reader or migration. A sealed parent state is never rewritten for child
-compatibility; child initialization reads and transforms it into the new
-child-owned state. An active Turn migration, when supported, is another fenced
+reader or migration. A sealed parent state is never rewritten for compatibility
+with a new Turn; initialization reads and transforms it into the new Turn-owned
+state. An active Turn migration, when supported, is another fenced
 conditional replacement of the same key.
 
 Relational migrations never reinterpret state bytes through current defaults.
@@ -842,7 +844,7 @@ One stable state key removes the duplicated base/result state model and makes a
 Turn's current recovery value direct. It also introduces durable writes during
 execution and makes conditional-write fencing part of recovery correctness.
 
-Each child owns a complete state copy, so initialization cost grows with the
+Each new Turn owns a complete state copy, so initialization cost grows with the
 retained Thread state. Checkpointing reduces repeated model and tool work but
 cannot make external effects exactly once; unresolved calls follow the
 [Turn Attempt recovery contract](15-turn-attempt-persistence.md#recovery-and-budget-enforcement).
@@ -852,7 +854,7 @@ cannot make external effects exactly once; unresolved calls follow the
 1. The Turn is Foundation's durable Agent-work and recovery boundary; each Turn
    owns one deterministic state key and no base, result, or selectable
    checkpoint-history object.
-2. Root, continue, and fork initialize a complete child-owned state without
+2. Root, continue, and fork initialize a complete Turn-owned state without
    mutating or aliasing the parent key.
 3. Only the current leased and fenced `TurnAttempt` can conditionally replace
    active state; `checkpoint_seq` and expected object versions prevent stale

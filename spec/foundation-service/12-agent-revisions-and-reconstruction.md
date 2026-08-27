@@ -4,7 +4,7 @@
 
 Foundation stores serializable Agent authoring resources and immutable executable revisions. It does not persist a Harness `AgentDefinition`, Python import target, plugin instance, native Model, Toolset, Capability, callable, client, credential, or provider binding. A worker reconstructs those process-local values through trusted installed adapters after verifying every selected revision and lock.
 
-An Execution selects exact immutable inputs. It never resolves `latest` after durable acceptance or silently adopts edits made while queued, suspended, or resuming after worker loss. An interactive Turn references that Execution; a standalone Execution needs no synthetic Turn.
+A Turn selects exact immutable inputs at durable acceptance. It never resolves `latest` after acceptance or silently adopts edits made while accepted, running, waiting, or resuming after worker loss. Every Foundation-managed Agent invocation has this Turn boundary; Foundation defines no separate durable Agent-work identity.
 
 ## Authoring Model
 
@@ -24,9 +24,9 @@ A `ModelIntegration` is a stable Workspace or Organization resource describing a
 
 Secret requirements never contain a Secret value. A Workspace-owned requirement stores the exact Secret resource reference. A User-owned requirement stores only the validated key resolved for the active invoking User; a Service Account cannot satisfy it. Current Secret eligibility, values, credentials, RoleBindings, and run grants are resolved freshly rather than captured in the immutable revision.
 
-Changing materialized Agent content, a selected integration revision, or a dependency lock creates another Agent revision. Prior revisions selected by retained Executions remain addressable for their documented retention period.
+Changing materialized Agent content, a selected integration revision, or a dependency lock creates another Agent revision. Prior revisions selected by retained Turns remain addressable for their documented retention period.
 
-The revision boundary exists to prevent queued or suspended work from changing underneath the worker. For example, a Builder can materialize revision `agent-revision-7` from exact Preset, Model Integration, Tool, Skill, Connector, and Environment revisions, submit a Turn, and then change the Agent's authoring head before a worker claims the Execution. The worker still reconstructs `agent-revision-7`; it never reads the newer mutable head or resolves a current default.
+The revision boundary exists to prevent accepted or waiting work from changing underneath the worker. For example, a Builder can materialize revision `agent-revision-7` from exact Preset, Model Integration, Tool, Skill, Connector, and Environment revisions, submit a Turn, and then change the Agent's authoring head before a worker claims its first TurnAttempt. The worker still reconstructs `agent-revision-7`; it never reads the newer mutable head or resolves a current default.
 
 ## Revision Relationships
 
@@ -39,13 +39,13 @@ flowchart LR
     Secrets[Non-secret Secret requirements] --> Materialize
     Locks[Dependency and content locks] --> Materialize
     Materialize --> Revision[Immutable AgentRevision]
-    Revision --> Execution[Execution exact selection]
-    Execution --> Verify[Worker verification]
+    Revision --> Turn[Turn exact selection]
+    Turn --> Verify[Worker verification]
     Verify --> Adapter[Trusted reconstruction adapters]
     Adapter --> Definition[Process-local AgentDefinition]
 ```
 
-Materialization validates resource scope, references, schemas, permission to bind each resource, Secret requirement form, dependency compatibility, and all required locks before committing the immutable revision. The revision records identity and compatibility, not live authority. Current credentials, RoleBindings, run grants, provider availability, Secret eligibility, and Environment bindings are resolved freshly for every `ExecutionAttempt` and Harness Run.
+Materialization validates resource scope, references, schemas, permission to bind each resource, Secret requirement form, dependency compatibility, and all required locks before committing the immutable revision. The revision records identity and compatibility, not live authority. Current credentials, RoleBindings, run grants, provider availability, Secret eligibility, and Environment bindings are resolved freshly for every `TurnAttempt` and Harness Run.
 
 ## Dependency Locks
 
@@ -64,8 +64,8 @@ sequenceDiagram
     participant Adapter as Trusted adapter
     participant Harness
 
-    Worker->>Store: read Execution, exact AgentRevision, and dependency locks
-    Worker->>Worker: verify scope, locks, compatibility, and Attempt generation
+    Worker->>Store: read Turn, exact AgentRevision, and dependency locks
+    Worker->>Worker: verify scope, locks, compatibility, and TurnAttempt generation
     Worker->>Adapter: reconstruct native Agent inputs
     Adapter-->>Worker: AgentSpec, Model selection, Capabilities, plugins, and policies
     Worker->>Worker: create fresh Identity, policy, credential, model, and provider attachments
@@ -73,34 +73,34 @@ sequenceDiagram
     Harness-->>Worker: ExecutableAgent
 ```
 
-Reconstruction is deterministic with respect to the revision and declared locks, while live authority and provider reachability are intentionally fresh. The worker assigns a stable `AgentInstanceRef` to each independently advancing root, child, or fork history. A replacement worker preserves that reference for the same Thread, when one exists, but uses a new `ExecutionAttempt`, transient Harness Run correlation, and fresh bindings.
+Reconstruction is deterministic with respect to the revision and declared locks, while live authority and provider reachability are intentionally fresh. The worker assigns a stable `AgentInstanceRef` to each independently advancing root, delegated child Agent, or fork history. A replacement worker preserves that reference for the same Thread, but uses a new `TurnAttempt`, transient Harness Run correlation, and fresh bindings.
 
 The worker validates the complete definition before starting model or tool work. It does not partially execute a revision whose output schema, Capability state codec, plugin contract, model integration, Environment provider, or dependency lock is incompatible.
 
 ## Continuation Compatibility
 
-A Thread preserves one independently advancing Agent lineage and selected Harness checkpoint. An Execution that continues the Thread selects an authoritative checkpoint. Continuing it with another Agent revision is allowed only when the new revision explicitly accepts the checkpoint's Agent, Capability, output, Environment-state, and plugin compatibility facts. Otherwise the caller creates an explicit fork with a new lineage and no implied state migration.
+A Thread preserves one independently advancing Agent lineage. A new Turn that continues the Thread sets `parent_turn_id` to the exact sealed previous Turn and initializes from that parent's state. Selecting another Agent revision for the new Turn is allowed only when the new revision explicitly accepts the parent's Agent, Capability, output, Environment-state, and plugin compatibility facts. Otherwise the caller creates an explicit fork with a new lineage and no implied state migration.
 
-Editing an Agent or publishing another revision never mutates an existing Turn, Execution, Item, checkpoint, pending action, or child. A later Attempt for the same Execution reconstructs the revision selected when the Execution was accepted. A successor Execution can select another revision only through an explicit authorized request and compatibility check.
+Editing an Agent or publishing another revision never mutates an existing Turn, Item, state checkpoint, pending fact, or asynchronous child relationship. A later TurnAttempt for the same Turn reconstructs the revision selected when the Turn was accepted. A new continuation, fork, or retry Turn can select another revision only through an explicit authorized request and compatibility check.
 
 ## Failure Semantics
 
 | Failure                                 | Outcome                                                                     |
 | --------------------------------------- | --------------------------------------------------------------------------- |
-| Missing revision or lock                | Execution fails before Harness construction                                 |
-| Content digest or package lock mismatch | Execution fails closed and records bounded incompatibility evidence         |
+| Missing revision or lock                | Turn fails before Harness construction                                      |
+| Content digest or package lock mismatch | Turn fails closed and records bounded incompatibility evidence              |
 | Unknown adapter or plugin key           | Revision is not reconstructed; no ambient import fallback occurs            |
-| Model binding required but unavailable  | Execution fails before native model inference                               |
+| Model binding required but unavailable  | Turn fails before native model inference                                    |
 | Credential or policy unavailable        | Fresh binding fails; the immutable revision is not rewritten                |
 | Checkpoint incompatible with revision   | Continuation fails before Harness entry; display history is not substituted |
 | Worker lost during reconstruction       | Lease recovery uses a new generation; no process-local object is restored   |
 
 ## Invariants
 
-1. An Execution selects one exact immutable Agent revision and exact integration revisions; it never resolves a mutable Agent head at worker claim time.
+1. A Turn selects one exact immutable Agent revision and exact integration revisions; it never resolves a mutable Agent head at worker claim time.
 2. A revision contains serializable Foundation data and references only, never live Python objects or credentials.
 3. Dependency locks and content digests are verified before Harness construction.
 4. Package presence does not authorize an adapter, plugin, Capability, provider, or import target.
-5. Every ExecutionAttempt reconstructs fresh authority and bindings without mutating the selected revision.
-6. Replacement workers preserve stable Thread identity when one exists and change Attempt generation and transient Harness Run correlation.
+5. Every TurnAttempt reconstructs fresh authority and bindings without mutating the selected revision.
+6. Replacement workers preserve stable Thread identity and change TurnAttempt generation and transient Harness Run correlation.
 7. A retained checkpoint is used only under explicitly compatible Agent and state contracts.
