@@ -29,7 +29,7 @@ The current mandatory build contribution is deliberately narrow:
 | Model context coordinator | Mandatory `ModelContextCoordinatorCapability` | Remove prior owned overlays, resolve the typed Host/Capability/terminal projection chain, and commit one validated request overlay | [Context and Memory](09-context-and-memory.md)                           |
 | Continuation coordinator  | `AgentContextState` typed methods             | Provide detached versioned JSON namespaces without a second Capability registry                                                    | [Harness State and Resume](10-snapshot-and-resume.md)                    |
 
-Model self-healing is a Model wrapper, not a Capability. Interrupted-stream semantic recovery is owned by `HarnessRunStream`, not a Capability. Plugin input/result middleware remains outside the Agent loop.
+Model self-healing remains optional. `SelfHealingModelCapability` installs the `SelfHealingModel` wrapper at the final effective request-Model boundary; the wrapper owns repair and replay behavior. Interrupted-stream semantic recovery is owned by `HarnessRunStream`, not a Capability. Plugin input/result middleware remains outside the Agent loop.
 
 ## Optional Capability Roles
 
@@ -54,6 +54,7 @@ Model self-healing is a Model wrapper, not a Capability. Interrupted-stream sema
 | Checkpoint observation            | Capability using public complete message boundaries                                                  | [Harness State and Resume](10-snapshot-and-resume.md)                    |
 | Request content compatibility     | Copy-on-write request Filter over native multimodal content                                          | [Input, Model, and Output](16-input-model-and-output.md)                 |
 | Cold-start history reduction      | Copy-on-write Filter over already-consumed ordinary tool returns                                     | [Input, Model, and Output](16-input-model-and-output.md)                 |
+| Model self-healing                | Innermost request wrapper installing one exact `SelfHealingModel` around the effective Model         | [Input, Model, and Output](16-input-model-and-output.md)                 |
 | Provider-specific Agent behavior  | Capability public hooks only when profile/adapter is insufficient                                    | [Input, Model, and Output](16-input-model-and-output.md)                 |
 
 Native function tools and Toolsets remain valid code-first Pydantic inputs only inside a Capability. A small native `Capability(tools=[...])` or Toolset Capability is the ordinary one-to-one adapter; it does not require a Harness-specific subclass. The owning Capability also owns any tool timeout and stable Capability/Toolset identity because top-level `AgentSpec.tool_timeout` does not implicitly configure Capability-owned Toolsets. `DynamicEnvironmentCapability` is richer because it combines stable Toolsets with native topology notices and participates in the model-context chain, while current-topology projection remains owned by the Environment resource itself. That resource still enters through the fixed `RunBindings.environment` field.
@@ -72,6 +73,7 @@ flowchart LR
     Surface[Mandatory tool-surface resolution] --> PAI
     Boundary[Mandatory tool execution boundary] --> PAI
     Integrity[Mandatory message integrity Filter] --> PAI
+    SelfHealing[Optional model self-healing] --> PAI
     PAI --> Agent[Pydantic AI Agent loop]
 ```
 
@@ -93,9 +95,9 @@ A Host that requires a particular run Capability constructs and retains the type
 
 ## Provider Compatibility and Recovery
 
-Stable model/provider/adapter compatibility belongs to the native Model profile and adapter. Transport retries belong to the provider/client configuration. `SelfHealingModel` owns exact one-shot history repairs. `HarnessRunStream` owns bounded `ModelAttempt` recovery after model interruption.
+Stable model/provider/adapter compatibility belongs to the native Model profile and adapter. Transport retries belong to the provider/client configuration. The optional `SelfHealingModelCapability` installs `SelfHealingModel` around the final effective request Model; `SelfHealingModel` owns exact one-shot history repairs. `HarnessRunStream` owns bounded `ModelAttempt` recovery after model interruption.
 
-A Capability is appropriate only for actual Agent/run behavior exposed through public Pydantic hooks. It is not the default place for provider profile facts, stream reconstruction, or retry orchestration.
+A Capability is appropriate only for actual Agent/run behavior exposed through public Pydantic hooks. It may install focused request behavior such as self-healing, but it is not the default place for provider profile facts, stream reconstruction, or retry orchestration.
 
 ## Boundaries
 

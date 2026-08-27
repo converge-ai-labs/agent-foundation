@@ -840,7 +840,6 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
         AgentSpec(model="logical:test"),
         output_type=str,
         model=SuspendingModel(FunctionModel(stream_function=stream)),
-        self_healing=False,
         model_recovery=_recovery_policy(max_attempts=5),
     )
 

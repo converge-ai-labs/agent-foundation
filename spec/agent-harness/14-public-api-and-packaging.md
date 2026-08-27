@@ -16,7 +16,7 @@ The package root exports these contract groups:
 | Context and identity  | `RunBindings`, `AgentContext`, `RunSkillPaths`, `SkillPath`, `ToolMetadataKey`, `ToolRuntimeMetadata`, `AbstractModelContextCapability`, `ModelContextRunBinding`, `ModelContextRequestKind`, `ModelContextInputOrigin`, `ModelContextPlacement`, `ModelContextProjectionRequest`, `ModelContextBlock`, `ModelContextProjection`, `ModelContextNext`, `AgentIdentityRef`, `AgentInstanceRef`, `AgentInstanceContext`                                                                                                                                                                                  |
 | Input                 | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Plugins               | `AbstractHarnessPlugin`, `PluginOrdering`, `BoundPluginContext`, `PluginRunExchange`, `PluginRunNext`, `PluginRunResponse`, plugin configuration environment/default-path constants, `HarnessPluginConfiguration`, `HarnessPluginConfigurationEntry`, `HarnessPluginFactoryContext`, `HARNESS_PLUGIN_ENTRY_POINT_GROUP`, `HarnessPluginFactory`, `HarnessPluginFactoryCatalog`, factory registration/provenance values, `discover_harness_plugin_factory_references`, `build_harness_plugin_factory_catalog`                                                                                          |
-| Models and recovery   | `ModelRunBinding`, `SelfHealingModel`, `ModelRecoveryRule`, `ModelRecoveryPolicy`, `RecoveryPromptFactory`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Models and recovery   | `ModelRunBinding`, `SelfHealingModelCapability`, `SelfHealingModel`, `ModelRecoveryRule`, `ModelRecoveryPolicy`, `RecoveryPromptFactory`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Filters               | `MessageIntegrityFilterCapability`, `ContentFilterCapability`, `ContentFilterConfiguration`, `MediaFamily`, `ColdStartFilterCapability`, `ColdStartFilterConfiguration`                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Context capabilities  | `RuntimeContextCapability`, `RuntimeContextConfiguration`, `WorkspaceOutlineCapability`, `WorkspaceOutlineConfiguration`, `FileContextCapability`, `FileContextConfiguration`, `HandoffCapability`, `HandoffConfiguration`, `CompactionCapability`, `CompactionPolicy`                                                                                                                                                                                                                                                                                                                                |
 | Environment           | `EnvironmentRunBinding`, `CompositeEnvironmentRunBinding`, `NoopEnvironmentRunBinding`, `BoundEnvironment`, `NoopBoundEnvironment`, `EnvironmentRunExtension`, `EnvironmentRunExtensionContext`, `EnvironmentProviderBinding`, `EnvironmentTopologyController`, run-extension factory/catalog/registration/provenance values, run-extension discovery/catalog builders, `create_environment_provider_binding`, `create_environment_run_binding`, `create_noop_environment_run_binding`, topology/binding/readiness/file-scope/operation values, opaque process/output scalars, and `EnvironmentError` |
@@ -45,7 +45,6 @@ class AgentDefinition[OutputT]:
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
     subagents: tuple[SubagentDefinition, ...] = ()
-    self_healing: bool = True
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
 
 
@@ -74,7 +73,6 @@ class HarnessBuilder:
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
-        self_healing: bool = True,
         model_recovery: ModelRecoveryPolicy | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
@@ -89,7 +87,6 @@ class HarnessBuilder:
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
-        self_healing: bool = True,
         model_recovery: ModelRecoveryPolicy | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 ```

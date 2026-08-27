@@ -1,14 +1,13 @@
-"""Run-scoped model resolution and narrowly matched provider self-healing."""
+"""Narrowly matched provider-history self-healing."""
 
 from __future__ import annotations
 
 import re
-from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
 from pydantic_ai.messages import (
@@ -25,31 +24,13 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.models import Model, ModelRequestParameters, ModelResolutionContext, StreamedResponse
+from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
 
-from converge_agent_harness.errors import ModelResolutionError
-
-if TYPE_CHECKING:
-    from converge_agent_harness.context import AgentContext
-
 HistoryRepair = Callable[[list[ModelMessage]], int]
 ErrorMatcher = Callable[[Exception], bool]
-
-
-class ModelRunBinding(ABC):
-    """Fresh run authority for resolving a logical model ID."""
-
-    @abstractmethod
-    async def resolve_model(
-        self,
-        context: ModelResolutionContext[AgentContext],
-        model_id: str,
-    ) -> Model:
-        """Resolve one logical ID to a native Pydantic AI Model."""
-        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,10 +49,10 @@ class SelfHealingModel(WrapperModel):
         self,
         wrapped: Model,
         *,
-        rules: Sequence[ModelRecoveryRule] = (),
+        rules: Sequence[ModelRecoveryRule] | None = None,
     ) -> None:
         super().__init__(wrapped)
-        self._rules = tuple(rules) or DEFAULT_MODEL_RECOVERY_RULES
+        self._rules = DEFAULT_MODEL_RECOVERY_RULES if rules is None else tuple(rules)
 
     def __copy__(self) -> SelfHealingModel:
         return SelfHealingModel(self.wrapped, rules=self._rules)
@@ -120,42 +101,6 @@ class SelfHealingModel(WrapperModel):
                     super().request_stream(messages, model_settings, model_request_parameters, run_context)
                 )
             yield stream
-
-
-def wrap_self_healing_model(model: Model, *, enabled: bool) -> Model:
-    """Apply the built-in one-shot repair wrapper exactly once."""
-    if not enabled or isinstance(model, SelfHealingModel):
-        return model
-    return SelfHealingModel(model)
-
-
-async def resolve_run_model(
-    context: ModelResolutionContext[AgentContext],
-    model_id: str,
-    *,
-    self_healing: bool,
-) -> Model | None:
-    """Resolve through the fresh binding, or delegate to native inference."""
-    binding = context.deps.model_binding
-    if binding is None:
-        return None
-    try:
-        model = await binding.resolve_model(context, model_id)
-    except ModelResolutionError:
-        raise
-    except Exception as error:
-        raise ModelResolutionError(
-            "Run model resolution failed.",
-            code="model_resolution_failed",
-            details={"model_id": model_id},
-        ) from error
-    if not isinstance(model, Model):
-        raise ModelResolutionError(
-            "Run model resolution returned an invalid value.",
-            code="model_resolution_invalid",
-            details={"model_id": model_id},
-        )
-    return wrap_self_healing_model(model, enabled=self_healing)
 
 
 def strip_thinking_parts(history: list[ModelMessage]) -> int:
@@ -354,3 +299,5 @@ DEFAULT_MODEL_RECOVERY_RULES: tuple[ModelRecoveryRule, ...] = (
     ModelRecoveryRule("anthropic_modified_thinking", _is_anthropic_modified_thinking, strip_thinking_parts),
     ModelRecoveryRule("stale_reasoning", _is_stale_reasoning, strip_thinking_parts),
 )
+
+__all__ = ["ModelRecoveryRule", "SelfHealingModel"]

@@ -31,7 +31,6 @@ class AgentDefinition[OutputT]:
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
     subagents: tuple[SubagentDefinition, ...] = ()
-    self_healing: bool = True
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
 ```
 
@@ -44,7 +43,6 @@ class AgentDefinition[OutputT]:
 | `capabilities`   | The only top-level feature plane; each native Capability owns its tools, Toolsets, guidance, settings, and hooks |
 | `plugins`        | Trusted concrete Harness middleware instances supplied directly with this definition                             |
 | `subagents`      | Named complete process-local child definitions and authored edge ceilings                                        |
-| `self_healing`   | Enables narrow one-shot provider-history repairs on each resolved native Model                                   |
 | `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run         |
 
 Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. Child names are unique within one parent. The finite acyclic child graph and its exact `SubagentDefinition` contract are owned by [Delegation and Subagents](11-delegation-and-subagents.md#child-definitions-and-built-collection). The Harness does not require every trusted Python object to be serializable, hashable, deeply immutable, or reconstructible from metadata. Reentrancy remains the responsibility of native objects and Agent-bound extensions whose instances are shared by concurrent runs.
@@ -98,7 +96,6 @@ class HarnessBuilder:
         ] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
-        self_healing: bool = True,
         model_recovery: ModelRecoveryPolicy | None = None,
     ) -> ExecutableAgent[OutputT]: ...
 
@@ -115,7 +112,6 @@ class HarnessBuilder:
         ] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
-        self_healing: bool = True,
         model_recovery: ModelRecoveryPolicy | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 ```
@@ -130,11 +126,10 @@ The build flow is:
 04. Collect the Agent-bound plugins' ordinary Pydantic `AbstractCapability[AgentContext]` contributions.
 05. Resolve automatic Handoff and Compaction thresholds once from the copied Harness `AgentSpec.model_configuration`; explicit Capability token settings remain unchanged.
 06. Install one thin `ResolveModelId` Capability, exactly one mandatory `ToolSurfaceCapability`, exactly one outer `ToolExecutionBoundaryCapability`, and exactly one innermost `MessageIntegrityFilterCapability` for every Agent. Tool ordering places ordinary candidates inside tool-surface resolution, optional CodeAct outside the effective surface, and the execution boundary outermost.
-07. Wrap a concrete build-time Model in `SelfHealingModel` when self-healing is enabled.
-08. Resolve exactly one build-time business output. Prepare an explicit `OutputSpec`, or construct native `StructuredDict` from a detached `AgentSpec.output_schema` and clear that field only on the temporary construction copy.
-09. Form the complete native output contract as `[business_output, DeferredToolRequests]`; the reserved control type is outside every business output marker.
-10. Call `Agent.from_spec()` once with `deps_type=AgentContext`, the copied `AgentSpec`, the complete output contract, the selected model, the exact authorized custom Capability types, explicit Capabilities, and plugin contributions. No top-level `tools` or `toolsets` argument is supplied, and runs do not override output type.
-11. Build the matching business-output validator and return an `ExecutableAgent` owning the immutable child collection.
+07. Resolve exactly one build-time business output. Prepare an explicit `OutputSpec`, or construct native `StructuredDict` from a detached `AgentSpec.output_schema` and clear that field only on the temporary construction copy.
+08. Form the complete native output contract as `[business_output, DeferredToolRequests]`; the reserved control type is outside every business output marker.
+09. Call `Agent.from_spec()` once with `deps_type=AgentContext`, the copied `AgentSpec`, the complete output contract, the selected model, the exact authorized custom Capability types, explicit Capabilities, and plugin contributions. No top-level `tools` or `toolsets` argument is supplied, and runs do not override output type.
+10. Build the matching business-output validator and return an `ExecutableAgent` owning the immutable child collection.
 
 `defer_model_check=True` is always used so a logical string can reach the run-scoped resolver after fresh `RunBindings` exist. The resolver delegates to native Pydantic inference when the run has no `ModelRunBinding`; this is ordinary embedded behavior, not a second settings or registry system. The exact resolution and recovery contract is owned by [Input, Model, and Output Boundaries](16-input-model-and-output.md).
 

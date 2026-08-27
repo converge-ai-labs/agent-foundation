@@ -35,6 +35,7 @@ def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:
         "MediaToolset",
         "ModelConfiguration",
         "ModelCostRunCapability",
+        "SelfHealingModelCapability",
         "MonitoredProcessCapability",
         "MonitoredProcessRunCapability",
         "MonitoredProcessToolset",

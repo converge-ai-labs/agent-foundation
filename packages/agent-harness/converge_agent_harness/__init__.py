@@ -246,7 +246,12 @@ from converge_agent_harness.model_context import (
     ModelContextRequestKind,
     ModelContextRunBinding,
 )
-from converge_agent_harness.models import ModelRecoveryRule, ModelRunBinding, SelfHealingModel
+from converge_agent_harness.models import (
+    ModelRecoveryRule,
+    ModelRunBinding,
+    SelfHealingModel,
+    SelfHealingModelCapability,
+)
 from converge_agent_harness.plugin_configuration import (
     DEFAULT_HARNESS_PLUGIN_CONFIG_FILE,
     HARNESS_PLUGIN_CONFIG_ENABLED_ENV,
@@ -550,6 +555,7 @@ __all__ = [
     "RuntimeContextConfiguration",
     "SafeFailure",
     "SelfHealingModel",
+    "SelfHealingModelCapability",
     "SemanticRunInput",
     "ShellCommand",
     "ShellExecResult",

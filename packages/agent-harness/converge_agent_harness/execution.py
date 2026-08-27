@@ -144,7 +144,7 @@ from converge_agent_harness.model_context import (
     MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
     ModelContextCoordinatorCapability,
 )
-from converge_agent_harness.models import resolve_run_model, wrap_self_healing_model
+from converge_agent_harness.models.binding import resolve_run_model
 from converge_agent_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
 from converge_agent_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
@@ -373,7 +373,6 @@ class AgentDefinition[OutputT]:
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
     subagents: tuple[SubagentDefinition, ...] = ()
-    self_healing: bool = True
     model_recovery: ModelRecoveryPolicy = field(default_factory=ModelRecoveryPolicy)
 
     def __post_init__(self) -> None:
@@ -551,11 +550,7 @@ class HarnessBuilder:
             context: ModelResolutionContext[AgentContext],
             model_id: str,
         ) -> Model | None:
-            return await resolve_run_model(
-                context,
-                model_id,
-                self_healing=definition.self_healing,
-            )
+            return await resolve_run_model(context, model_id)
 
         capabilities = (
             ToolExecutionBoundaryCapability(),
@@ -568,9 +563,6 @@ class HarnessBuilder:
             *authored_capabilities,
             UsageCapability(),
         )
-        model = definition.model
-        if isinstance(model, Model):
-            model = wrap_self_healing_model(model, enabled=definition.self_healing)
         try:
             construction_spec, business_output, output_adapter = _resolve_business_output(definition)
             complete_output = [business_output, DeferredToolRequests]
@@ -578,7 +570,7 @@ class HarnessBuilder:
                 construction_spec,
                 deps_type=AgentContext,
                 custom_capability_types=self._capability_type_catalog.custom_capability_types,
-                model=model,
+                model=definition.model,
                 output_type=complete_output,
                 capabilities=capabilities,
                 defer_model_check=True,
@@ -637,7 +629,6 @@ class HarnessBuilder:
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
-        self_healing: bool = True,
         model_recovery: ModelRecoveryPolicy | None = None,
     ) -> ExecutableAgent[BuildOutputT]: ...
 
@@ -652,7 +643,6 @@ class HarnessBuilder:
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
-        self_healing: bool = True,
         model_recovery: ModelRecoveryPolicy | None = None,
     ) -> ExecutableAgent[dict[str, JsonValue]]: ...
 
@@ -666,7 +656,6 @@ class HarnessBuilder:
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
         subagents: Sequence[SubagentDefinition] = (),
-        self_healing: bool = True,
         model_recovery: ModelRecoveryPolicy | None = None,
     ) -> ExecutableAgent[Any]:
         """Convenience constructor retaining the same AgentDefinition build path."""
@@ -679,7 +668,6 @@ class HarnessBuilder:
                 capabilities=tuple(capabilities),
                 plugins=tuple(plugins),
                 subagents=tuple(subagents),
-                self_healing=self_healing,
                 model_recovery=model_recovery or ModelRecoveryPolicy(),
             )
         )

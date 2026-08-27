@@ -7,7 +7,12 @@ Agent Harness keeps Agent construction code-first and process-local. It adds one
 Use `HarnessBuilder.build_code()` for direct application composition:
 
 ```python
-from converge_agent_harness import AgentSpec, HarnessBuilder, ModelConfiguration
+from converge_agent_harness import (
+    AgentSpec,
+    HarnessBuilder,
+    ModelConfiguration,
+    SelfHealingModelCapability,
+)
 
 executable = HarnessBuilder().build_code(
     AgentSpec(
@@ -17,7 +22,7 @@ executable = HarnessBuilder().build_code(
     ),
     output_type=str,
     model=model,
-    capabilities=capabilities,
+    capabilities=(SelfHealingModelCapability(), *capabilities),
     plugins=plugins,
     subagents=subagents,
 )
@@ -37,7 +42,7 @@ agent_definition = AgentDefinition(
 executable = HarnessBuilder().build(agent_definition)
 ```
 
-Both methods follow the same validation and construction path. Build is synchronous and inert with respect to model, Environment, and external provider I/O.
+Both methods follow the same validation and construction path. Build is synchronous and inert with respect to model, Environment, and external provider I/O. Self-healing is optional rather than implicitly enabled; selecting `SelfHealingModelCapability()` is recommended for production Agents that need its known one-shot provider-history repairs.
 
 ### Build-time values
 
@@ -208,11 +213,11 @@ Recovery has narrow owners:
 | Failure class                                         | Owner                                                            |
 | ----------------------------------------------------- | ---------------------------------------------------------------- |
 | Provider transport retry                              | Model provider/client and native Pydantic AI retry configuration |
-| Exact provider-history incompatibility                | Harness `SelfHealingModel` wrapper                               |
+| Exact provider-history incompatibility                | Selected `SelfHealingModelCapability` and `SelfHealingModel`     |
 | Interrupted model attempt inside one live logical run | `ModelRecoveryPolicy` and `HarnessRunStream`                     |
 | Worker/process loss, durable replay, or delivery      | Embedding Host                                                   |
 
-Self-healing is enabled by default and performs only supported one-shot history repairs. It is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
+Self-healing is opt-in through `SelfHealingModelCapability` and performs only supported one-shot history repairs around the final effective Model, including a concrete, run-resolved, or natively inferred Model. It is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
 
 Recovery never makes uncertain external side effects exactly once. When a tool or provider mutation may have been dispatched without an authoritative result, reconcile current provider state before retrying.
 

@@ -6,7 +6,7 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 
 1. normalized code-first semantic input visible to Harness middleware;
 2. optional fresh run-scoped resolution of a logical model ID;
-3. exact one-shot provider-history self-healing;
+3. optional exact one-shot provider-history self-healing;
 4. bounded logical-run recovery after a recoverable model interruption.
 
 It does not add a hosted input wire format, model registry, settings/profile system, provider route-pin schema, output mode, or Capability-only retry framework.
@@ -141,24 +141,28 @@ The tool execution boundary does not duplicate Filter behavior. It preserves nat
 
 Former global history processors resolve to one current owner:
 
-| Behavior                                                                | Owner                                                   |
-| ----------------------------------------------------------------------- | ------------------------------------------------------- |
-| Orphan and duplicate ordinary tool results                              | Mandatory `MessageIntegrityFilterCapability`            |
-| Unsupported, unsafe, or over-limit request media                        | Optional `ContentFilterCapability`                      |
-| Cold-cache reduction of already-consumed tool-result strings            | Optional `ColdStartFilterCapability`                    |
-| Current tool-return redaction, bounds, and spill                        | `ToolExecutionBoundaryCapability`                       |
-| Runtime, file, Environment, handoff, working-state, and process notices | Their focused context or Environment Capabilities       |
-| Accepted live user or Agent messages                                    | Native enqueue plus Host delivery acceptance            |
-| Media acquisition, transformation, or upload                            | Optional Media Capability/provider integration          |
-| System instructions and provider request rendering                      | `AgentSpec`, native Model profile, and provider adapter |
-| Exact provider-history rejection repair                                 | `SelfHealingModel`                                      |
-| Interrupted-history normalization and `ModelAttempt` recovery           | Harness state recovery and `HarnessRunStream`           |
+| Behavior                                                                | Owner                                                        |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Orphan and duplicate ordinary tool results                              | Mandatory `MessageIntegrityFilterCapability`                 |
+| Unsupported, unsafe, or over-limit request media                        | Optional `ContentFilterCapability`                           |
+| Cold-cache reduction of already-consumed tool-result strings            | Optional `ColdStartFilterCapability`                         |
+| Current tool-return redaction, bounds, and spill                        | `ToolExecutionBoundaryCapability`                            |
+| Runtime, file, Environment, handoff, working-state, and process notices | Their focused context or Environment Capabilities            |
+| Accepted live user or Agent messages                                    | Native enqueue plus Host delivery acceptance                 |
+| Media acquisition, transformation, or upload                            | Optional Media Capability/provider integration               |
+| System instructions and provider request rendering                      | `AgentSpec`, native Model profile, and provider adapter      |
+| Exact provider-history rejection repair                                 | Selected `SelfHealingModelCapability` and `SelfHealingModel` |
+| Interrupted-history normalization and `ModelAttempt` recovery           | Harness state recovery and `HarnessRunStream`                |
 
-Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses `SelfHealingModel` or a narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
+Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses an explicitly selected `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
 
 ## Narrow Self-Healing
 
-When `AgentDefinition.self_healing` is true, every concrete build-time or run-resolved Model is wrapped exactly once in `SelfHealingModel`. The wrapper preserves the native Model interface and profile.
+`SelfHealingModelCapability` is an optional code-first Capability with stable ID `converge.model.self-healing`. It is not installed by default. Applications that need the supported repairs should select it explicitly through an Agent definition, native Agent spec, run binding, or trusted plugin contribution.
+
+The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An already wrapped Model is reused.
+
+`SelfHealingModelCapability` accepts an optional sequence of `ModelRecoveryRule` values. `None` selects the built-in rules; an explicit empty sequence selects no rules. `SelfHealingModel` has the same rule semantics and preserves the native Model interface and profile.
 
 For one non-streaming request, the wrapper:
 
@@ -182,7 +186,7 @@ Default rules are narrow tested provider repairs:
 
 The wrapper does not retry generic transport, rate-limit, tool, output-validation, or cancellation failures. Provider/client `RetryConfig` owns transport retry.
 
-Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request.
+Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request. Selecting the Capability is recommended for production Agents that need these known provider-history repairs; direct `SelfHealingModel` construction remains available for callers that already own one concrete Model.
 
 ## ModelAttempt Recovery
 
@@ -254,16 +258,16 @@ Trusted plugins may replace the complete result candidate, including output, usa
 
 ## Boundaries
 
-| Concern                               | Owner                                                 |
-| ------------------------------------- | ----------------------------------------------------- |
-| Native input, Model, profile, output  | Pydantic AI                                           |
-| Semantic input and thin resolution    | Harness                                               |
-| Thread identity and provider affinity | `HarnessState`, `AgentContext`, and model integration |
-| Exact one-shot history repair         | `SelfHealingModel`                                    |
-| Interrupted `ModelAttempt` recovery   | Harness run coordinator                               |
-| Provider transport retry              | Provider/client and Pydantic AI                       |
-| Hosted model catalog and policy       | Host adapter                                          |
-| Durable deferred execution            | Host                                                  |
+| Concern                               | Owner                                                        |
+| ------------------------------------- | ------------------------------------------------------------ |
+| Native input, Model, profile, output  | Pydantic AI                                                  |
+| Semantic input and thin resolution    | Harness                                                      |
+| Thread identity and provider affinity | `HarnessState`, `AgentContext`, and model integration        |
+| Exact one-shot history repair         | Selected `SelfHealingModelCapability` and `SelfHealingModel` |
+| Interrupted `ModelAttempt` recovery   | Harness run coordinator                                      |
+| Provider transport retry              | Provider/client and Pydantic AI                              |
+| Hosted model catalog and policy       | Host adapter                                                 |
+| Durable deferred execution            | Host                                                         |
 
 ## Trade-offs
 

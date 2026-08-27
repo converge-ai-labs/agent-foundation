@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import pydantic_ai.models as pydantic_models
 import pytest
 from converge_agent_harness import (
     HarnessBuilder,
@@ -12,6 +13,7 @@ from converge_agent_harness import (
     ModelRunBinding,
     RunBindings,
     SelfHealingModel,
+    SelfHealingModelCapability,
 )
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import ModelHTTPError
@@ -240,6 +242,107 @@ def _stale_reasoning_history() -> list[ModelMessage]:
     ]
 
 
+def _recovering_function_model() -> tuple[FunctionModel, list[int]]:
+    calls: list[int] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        calls.append(len(calls) + 1)
+        if len(calls) == 1:
+            raise ModelHTTPError(
+                status_code=404,
+                model_name="failing",
+                body={"code": 5008, "message": "Item with id 'rs_old' not found."},
+            )
+        yield "recovered"
+
+    return FunctionModel(stream_function=stream), calls
+
+
+async def test_self_healing_is_not_installed_implicitly() -> None:
+    model, calls = _recovering_function_model()
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:ignored"),
+        output_type=str,
+        model=model,
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.local(),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.status == "failed"
+    assert calls == [1]
+
+
+async def test_self_healing_capability_wraps_a_concrete_model() -> None:
+    model, calls = _recovering_function_model()
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:ignored"),
+        output_type=str,
+        model=model,
+        capabilities=(SelfHealingModelCapability(),),
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.local(),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.output_or_raise() == "recovered"
+    assert calls == [1, 2]
+
+
+async def test_self_healing_capability_wraps_a_run_resolved_model() -> None:
+    model, calls = _recovering_function_model()
+    binding = RecordingModelBinding(model)
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="logical:primary"),
+        output_type=str,
+        capabilities=(SelfHealingModelCapability(),),
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.local(model_binding=binding),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.output_or_raise() == "recovered"
+    assert calls == [1, 2]
+    assert len(binding.calls) == 1
+
+
+async def test_self_healing_capability_wraps_a_natively_inferred_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model, calls = _recovering_function_model()
+
+    def infer_model(selection: object, provider_factory: object = None) -> Model:
+        del provider_factory
+        assert selection == "native:test"
+        return model
+
+    monkeypatch.setattr(pydantic_models, "infer_model", infer_model)
+    executable = HarnessBuilder().build_code(
+        AgentSpec(model="native:test"),
+        output_type=str,
+        capabilities=(SelfHealingModelCapability(),),
+    )
+
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.local(),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+
+    assert result.output_or_raise() == "recovered"
+    assert calls == [1, 2]
+
+
 async def test_self_healing_retries_once_after_an_exact_history_repair() -> None:
     wrapped = FailingModel(
         ModelHTTPError(
@@ -323,6 +426,22 @@ async def test_self_healing_replaces_inline_images_after_oversized_payload_rejec
     assert isinstance(tool_result, ToolReturnPart)
     assert isinstance(tool_result.content[0], str)
     assert "image was removed" in tool_result.content[0]
+
+
+async def test_self_healing_preserves_an_explicit_empty_rule_set() -> None:
+    error = ModelHTTPError(
+        status_code=404,
+        model_name="failing",
+        body={"code": 5008, "message": "Item with id 'rs_old' not found."},
+    )
+    wrapped = FailingModel(error)
+    model = SelfHealingModel(wrapped, rules=())
+
+    with pytest.raises(ModelHTTPError) as exc_info:
+        await model.request(_stale_reasoning_history(), None, ModelRequestParameters())
+
+    assert exc_info.value is error
+    assert wrapped.calls == 1
 
 
 async def test_self_healing_propagates_unmatched_errors_without_retrying() -> None:
