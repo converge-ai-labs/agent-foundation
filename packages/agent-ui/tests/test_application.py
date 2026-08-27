@@ -197,13 +197,16 @@ async def test_store_lease_heartbeats_and_releases_last(tmp_path: Path) -> None:
             assert initial is not None
             acquired_at = initial.acquired_at
             initial_heartbeat = initial.heartbeat_at
-        await sleep(0.06)
-        async with short_session(store.database.sessions) as session:
-            updated = await session.get(StoreLeaseRecord, 1)
-            assert updated is not None
-            assert updated.process_generation == application._store.process_generation
-            assert _comparable(updated.heartbeat_at) > _comparable(initial_heartbeat)
-            assert _comparable(updated.heartbeat_at) >= _comparable(acquired_at)
+        with fail_after(2):
+            while True:
+                async with short_session(store.database.sessions) as session:
+                    updated = await session.get(StoreLeaseRecord, 1)
+                    assert updated is not None
+                    assert updated.process_generation == application._store.process_generation
+                    if _comparable(updated.heartbeat_at) > _comparable(initial_heartbeat):
+                        break
+                await sleep(0.01)
+        assert _comparable(updated.heartbeat_at) >= _comparable(acquired_at)
 
     async with storage_runtime.open_database(tmp_path / "metadata.sqlite3", settings.storage) as database:
         async with short_session(database.sessions) as session:

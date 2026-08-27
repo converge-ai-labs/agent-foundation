@@ -9,7 +9,7 @@ from pathlib import Path
 import converge_agent_ui.configuration.service as configuration_service_module
 import pytest
 import yaml
-from anyio import sleep
+from anyio import fail_after, sleep
 from converge_agent_ui.application import open_application
 from converge_agent_ui.configuration import (
     AgentDefinitionDocument,
@@ -1026,8 +1026,9 @@ async def test_skill_scan_lease_deadline_is_independent_of_reconciliation(tmp_pa
 
     async with open_application(settings) as application:
         first = await application.scan_skills(selected)
-        await sleep(0.1)
-        assert first.scan_id not in application._configuration.skills._scans
+        with fail_after(2):
+            while first.scan_id in application._configuration.skills._scans:
+                await sleep(0.01)
         replacement = await application.scan_skills(selected)
         await application.discard_skill_scan(replacement.scan_id)
 

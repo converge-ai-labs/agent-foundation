@@ -13,6 +13,10 @@ use crate::eip::{
     EIPCallContext, EIPError, OperationCancelStatus, OperationReceipt, ReceiptOutcome, ReceiptStage,
 };
 
+// Ordinary operation evidence cannot consume this slot. Reconciliation operations
+// may use both unused ordinary capacity and this reserve.
+const RECONCILIATION_RECORD_RESERVE: usize = 1;
+
 tokio::task_local! {
     static CARRIER_ATTEMPT: u64;
 }
@@ -40,7 +44,7 @@ struct LedgerInner {
     pending_wait_entered: Notify,
     environment_id: String,
     generation: u64,
-    max_records: usize,
+    ordinary_record_capacity: usize,
     terminal_ttl: Duration,
     max_duration: Duration,
 }
@@ -151,7 +155,7 @@ impl OperationLedger {
     pub(crate) fn new(
         environment_id: String,
         generation: u64,
-        max_records: usize,
+        ordinary_record_capacity: usize,
         terminal_ttl: Duration,
         max_duration: Duration,
     ) -> Self {
@@ -164,7 +168,7 @@ impl OperationLedger {
                 pending_wait_entered: Notify::new(),
                 environment_id,
                 generation,
-                max_records,
+                ordinary_record_capacity,
                 terminal_ttl,
                 max_duration,
             }),
@@ -371,19 +375,35 @@ impl OperationLedger {
             }
             return outcome;
         }
-        let capacity = if reconciliation {
-            1
-        } else {
-            self.inner.max_records
-        };
-        while state
-            .records
-            .values()
-            .filter(|record| record.reconciliation == reconciliation)
-            .count()
-            >= capacity
-        {
-            if !state.reclaim_oldest_terminal(reconciliation) {
+        let total_capacity = self
+            .inner
+            .ordinary_record_capacity
+            .checked_add(RECONCILIATION_RECORD_RESERVE)
+            .ok_or(LedgerError::Capacity)?;
+        if !reconciliation {
+            while state
+                .records
+                .values()
+                .filter(|record| !record.reconciliation)
+                .count()
+                >= self.inner.ordinary_record_capacity
+            {
+                if !state.reclaim_oldest_terminal(false) {
+                    return Err(LedgerError::Capacity);
+                }
+            }
+        }
+        while state.records.len() >= total_capacity {
+            let borrowed_reconciliation = !reconciliation
+                && state
+                    .records
+                    .values()
+                    .filter(|record| record.reconciliation)
+                    .count()
+                    > RECONCILIATION_RECORD_RESERVE;
+            let reclaimed = borrowed_reconciliation && state.reclaim_oldest_terminal(true)
+                || state.reclaim_oldest_terminal(reconciliation);
+            if !reclaimed {
                 return Err(LedgerError::Capacity);
             }
         }
@@ -1279,6 +1299,171 @@ mod tests {
         ledger
             .active_response_handoff("output.read", &params)
             .expect("second handoff token exists")
+            .complete();
+        assert_eq!(ledger.record_stats().1, 0);
+    }
+
+    #[test]
+    fn reconciliation_requests_share_unused_ordinary_capacity_and_one_reserve() {
+        let ledger = OperationLedger::new(
+            "env".to_owned(),
+            7,
+            3,
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+        );
+        let mut leases = Vec::new();
+        for index in 0..4 {
+            let operation_id = format!("inspect-{index}");
+            let params = serde_json::json!({
+                "context": {"operation_id": operation_id},
+                "handle": format!("process-{index}")
+            });
+            let context = EIPCallContext {
+                operation_id,
+                timeout_ms: None,
+            };
+            let BeginOutcome::New(lease) = ledger
+                .begin("process.inspect", &context, &params)
+                .expect("unused ordinary capacity and the reserve admit reconciliation")
+            else {
+                panic!("new operation expected")
+            };
+            leases.push(lease);
+        }
+
+        let overflow_params = serde_json::json!({
+            "context": {"operation_id": "inspect-overflow"},
+            "handle": "process-overflow"
+        });
+        let overflow_context = EIPCallContext {
+            operation_id: "inspect-overflow".to_owned(),
+            timeout_ms: None,
+        };
+        assert!(matches!(
+            ledger.begin("process.inspect", &overflow_context, &overflow_params),
+            Err(LedgerError::Capacity)
+        ));
+        assert_eq!(ledger.record_stats().1, 4);
+        drop(leases);
+    }
+
+    #[test]
+    fn ordinary_admission_reclaims_completed_reconciliation_borrowers() {
+        let ledger = OperationLedger::new(
+            "env".to_owned(),
+            7,
+            2,
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+        );
+        for index in 0..3 {
+            let operation_id = format!("release-{index}");
+            let params = serde_json::json!({
+                "context": {"operation_id": operation_id},
+                "reference": format!("output-{index}")
+            });
+            let context = EIPCallContext {
+                operation_id,
+                timeout_ms: None,
+            };
+            let BeginOutcome::New(release) = ledger
+                .begin("output.release", &context, &params)
+                .expect("reconciliation operation uses shared capacity")
+            else {
+                panic!("new operation expected")
+            };
+            release
+                .finish(&serde_json::json!({"released": true}), None)
+                .expect("reconciliation operation completes");
+        }
+
+        let ordinary_params = serde_json::json!({
+            "context": {"operation_id": "write"},
+            "path": {"mount_id": "workspace", "path": "/file"},
+            "text": "value"
+        });
+        let ordinary_context = EIPCallContext {
+            operation_id: "write".to_owned(),
+            timeout_ms: None,
+        };
+        assert!(matches!(
+            ledger
+                .begin("file.write_text", &ordinary_context, &ordinary_params)
+                .expect("ordinary admission reclaims a completed reconciliation borrower"),
+            BeginOutcome::New(_)
+        ));
+        assert_eq!(ledger.record_stats().1, 3);
+    }
+
+    #[test]
+    fn next_reconciliation_request_overlaps_response_handoff_without_capacity_failure() {
+        let ledger = OperationLedger::new(
+            "env".to_owned(),
+            7,
+            1,
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+        );
+        let first_params = serde_json::json!({
+            "context": {"operation_id": "first-page"},
+            "reference": "output-1",
+            "start_offset": 0
+        });
+        let first_context = EIPCallContext {
+            operation_id: "first-page".to_owned(),
+            timeout_ms: None,
+        };
+        let BeginOutcome::New(first) = ledger
+            .begin("output.read", &first_context, &first_params)
+            .expect("first reconciliation operation begins")
+        else {
+            panic!("new operation expected")
+        };
+        first
+            .finish(&serde_json::json!({"next_offset": 1}), None)
+            .expect("first reconciliation operation completes handler work");
+        let first_handoff = ledger
+            .active_response_handoff("output.read", &first_params)
+            .expect("first response has a handoff");
+
+        let second_params = serde_json::json!({
+            "context": {"operation_id": "second-page"},
+            "reference": "output-1",
+            "start_offset": 1
+        });
+        let second_context = EIPCallContext {
+            operation_id: "second-page".to_owned(),
+            timeout_ms: None,
+        };
+        let BeginOutcome::New(second) = ledger
+            .begin("output.read", &second_context, &second_params)
+            .expect("next sequential reconciliation request uses the handoff overlap")
+        else {
+            panic!("new operation expected")
+        };
+
+        let third_params = serde_json::json!({
+            "context": {"operation_id": "third-page"},
+            "reference": "output-1",
+            "start_offset": 2
+        });
+        let third_context = EIPCallContext {
+            operation_id: "third-page".to_owned(),
+            timeout_ms: None,
+        };
+        assert!(matches!(
+            ledger.begin("output.read", &third_context, &third_params),
+            Err(LedgerError::Capacity)
+        ));
+
+        first_handoff.complete();
+        second
+            .finish(&serde_json::json!({"next_offset": 2}), None)
+            .expect("second reconciliation operation completes handler work");
+        ledger
+            .active_response_handoff("output.read", &second_params)
+            .expect("second response has a handoff")
             .complete();
         assert_eq!(ledger.record_stats().1, 0);
     }

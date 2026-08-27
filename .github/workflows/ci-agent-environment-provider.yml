@@ -44,8 +44,9 @@ concurrency:
 jobs:
   provider:
     name: Agent Environment Provider (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - name: Linux
@@ -81,4 +82,5 @@ jobs:
         run: uv run --locked python -m pytest packages/agent-environment-provider/tests
 
       - name: Build Agent Environment Provider distribution
+        if: matrix.name == 'Linux'
         run: uv build --package converge-agent-environment-provider --out-dir dist/provider

@@ -41,6 +41,7 @@ concurrency:
 jobs:
   changes:
     name: Detect Foundation changes
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.filter.outputs.python }}

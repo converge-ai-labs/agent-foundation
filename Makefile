@@ -163,11 +163,14 @@ eip-generate: sync ## Generate checked EIP descriptor, Python surface, and inspe
 eip-verify: sync ## Verify checked EIP artifacts without modifying the repository
 	@uv run --locked python -m scripts.eip_codegen verify
 
-.PHONY: eip-test
-eip-test: sync ## Run EIP generation, runtime, cross-language, and wire-model tests
+.PHONY: eip-integration-test
+eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
 	@cargo build --locked --package converge-agent-envd
 	@AGENT_ENVD_TEST_BINARY="$(CURDIR)/target/debug/agent-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/agent-envd-client/tests/eip packages/agent-harness/tests/test_environment_eip_e2e.py
 	@uv run --locked pyright packages/agent-envd-client/converge_agent_envd_client packages/agent-environment-provider/converge_agent_environment_provider
+
+.PHONY: eip-test
+eip-test: eip-integration-test ## Run complete EIP integration and daemon tests
 	@cargo test --locked --package converge-agent-envd
 
 .PHONY: eip-check

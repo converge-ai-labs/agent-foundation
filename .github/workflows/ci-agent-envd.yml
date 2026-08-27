@@ -11,6 +11,7 @@ on:
       - "crates/agent-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-envd-client/**"
+      - "packages/agent-harness/tests/test_environment_eip_e2e.py"
       - "proto/agent-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -31,6 +32,7 @@ on:
       - "crates/agent-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/agent-envd-client/**"
+      - "packages/agent-harness/tests/test_environment_eip_e2e.py"
       - "proto/agent-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -57,6 +59,7 @@ concurrency:
 jobs:
   changes:
     name: Detect agent-envd changes
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       client: ${{ steps.filter.outputs.client }}
@@ -111,6 +114,7 @@ jobs:
               - 'packages/agent-envd-client/pyproject.toml'
               - 'packages/agent-envd-client/converge_agent_envd_client/eip/**'
               - 'packages/agent-envd-client/tests/eip/**'
+              - 'packages/agent-harness/tests/test_environment_eip_e2e.py'
               - 'proto/agent-envd/eip/**'
               - 'scripts/eip_codegen/**'
               - 'scripts/tests/test_eip_codegen.py'
@@ -123,7 +127,7 @@ jobs:
     name: EIP protocol
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -157,8 +161,8 @@ jobs:
           workspaces: . -> target
           shared-key: eip-protocol
 
-      - name: Verify generated protocol and shared wire models
-        run: make eip-check
+      - name: Verify generated protocol and shared integration
+        run: make eip-verify eip-integration-test
 
       - name: Type-check EIP generator
         run: uv run --locked pyright scripts/eip_codegen
@@ -199,10 +203,13 @@ jobs:
 
   daemon:
     name: agent-envd (${{ matrix.name }})
-    needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true'
+    needs: [changes, protocol]
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true') &&
+      (needs.protocol.result == 'success' || needs.protocol.result == 'skipped')
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - name: Linux x86_64

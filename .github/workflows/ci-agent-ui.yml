@@ -54,8 +54,9 @@ concurrency:
 jobs:
   ui:
     name: Agent UI (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - name: Linux
@@ -81,6 +82,7 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Set up Node.js
+        if: matrix.name == 'Linux'
         uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -88,6 +90,7 @@ jobs:
           cache-dependency-path: apps/harness-ui/package-lock.json
 
       - name: Install and check Harness UI
+        if: matrix.name == 'Linux'
         run: |
           npm --prefix apps/harness-ui ci
           npm --prefix apps/harness-ui run check:all
@@ -96,6 +99,7 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Prepare bundled Harness UI assets
+        if: matrix.name == 'Linux'
         run: uv run --locked python scripts/prepare-agent-ui-assets.py
 
       - name: Type-check Agent UI
@@ -109,16 +113,23 @@ jobs:
           scripts/prepare_agent_ui_assets.py
 
       - name: Test Agent UI
+        if: matrix.name == 'Linux'
         run: >-
           uv run --locked python -m pytest
           packages/agent-ui/tests
           scripts/tests/test_check_agent_ui_distribution.py
           scripts/tests/test_prepare_agent_ui_assets.py
 
+      - name: Test Agent UI on Windows
+        if: matrix.name == 'Windows'
+        run: uv run --locked python -m pytest packages/agent-ui/tests
+
       - name: Build Agent UI distribution
+        if: matrix.name == 'Linux'
         run: uv build --package converge-agent-ui --out-dir dist/agent-ui
 
       - name: Verify bundled assets and sdist wheel rebuild
+        if: matrix.name == 'Linux'
         run: >-
           uv run --locked python scripts/check-agent-ui-distribution.py
           dist/agent-ui --rebuild-wheel

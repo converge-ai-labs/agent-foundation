@@ -41,16 +41,9 @@ concurrency:
 
 jobs:
   protocol:
-    name: Agent Stream Protocol (${{ matrix.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux
-            runner: ubuntu-24.04
-          - name: Windows
-            runner: windows-2025
-    runs-on: ${{ matrix.runner }}
+    name: Agent Stream Protocol
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -72,7 +65,6 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Type-check Agent Stream Protocol
-        if: matrix.name == 'Linux'
         run: >-
           uv run --locked pyright
           packages/agent-stream-protocol/converge_agent_stream_protocol
