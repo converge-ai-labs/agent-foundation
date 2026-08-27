@@ -77,7 +77,6 @@ from a13n_harness import HarnessBuilder, infer_model
 model = infer_model(
     "openai-responses:gpt-5",
     provider_factory=provider_factory,
-    common_headers={"x-session-id": session_id},
     patches=(apply_provider_profile,),
 )
 executable = HarnessBuilder().build(
@@ -87,18 +86,29 @@ executable = HarnessBuilder().build(
 )
 ```
 
-`infer_model()` always returns a native Pydantic AI Model. It preserves legacy `openai:` Chat Completions semantics, accepts legacy Google Cloud prefixes, applies synchronous Model patches in order, and adds common request headers without overriding request-specific `ModelSettings.extra_headers`. You can bypass it and pass any native Model directly.
+`infer_model()` always returns a native Pydantic AI Model. It maps bare `openai:` to the modern `openai-responses:` provider, accepts legacy Google Cloud prefixes, applies synchronous Model patches in order, and can add caller-selected static common headers without overriding request-specific `ModelSettings.extra_headers`. You can bypass it and pass any native Model directly.
 
-Gateway routes use `gateway@provider:model` and require an explicit factory:
+Without a run model resolver, `HarnessBuilder` uses this same helper for every string in `AgentSpec.model`. The literal `gateway@provider:model` form selects Pydantic AI's public Gateway Provider and its standard `PYDANTIC_AI_GATEWAY_API_KEY` and optional `PYDANTIC_AI_GATEWAY_BASE_URL` configuration:
 
 ```python
-model = infer_model(
-    "company@openai:gpt-5",
-    gateway_provider_factory=gateway_provider_factory,
+executable = HarnessBuilder().build(
+    AgentSpec(model="gateway@openai:gpt-5"),
+    output_type=str,
 )
 ```
 
-The factory receives `(gateway_name, provider_name)` and returns a Pydantic AI `Provider`. It owns credentials, provider SDK configuration, retries, any HTTP client, and that client's lifecycle. Harness deliberately does not read gateway environment variables or create a hidden long-lived client.
+A named custom gateway uses one builder-level factory:
+
+```python
+executable = HarnessBuilder(
+    gateway_provider_factory=gateway_provider_factory,
+).build(
+    AgentSpec(model="company@openai:gpt-5"),
+    output_type=str,
+)
+```
+
+The factory receives `(gateway_name, provider_name)` and returns a Pydantic AI `Provider`. It owns credentials, provider SDK configuration, retries, any HTTP client, and that client's lifecycle. The same builder factory applies to recursively built subagents. Use a fresh `RunBindings.model_resolver` instead when route authorization, credentials, or policy vary by run.
 
 For direct-provider model facts, the package includes a small immutable official catalog:
 
@@ -112,6 +122,59 @@ configuration = models["anthropic:claude-sonnet-5"].configuration
 Entries contain only a provider-qualified official model ID, objective `ModelConfiguration`, and an official source URL. They do not contain gateway routes, credentials, request presets, reasoning settings, aliases, labels, or application defaults. Lookup is explicit; `HarnessBuilder` does not silently apply catalog configuration.
 
 For run-specific routing, credentials, or tenant policy, pass an async function or async callable object through `RunBindings.model_resolver`. It receives the Pydantic `ModelResolutionContext` and string selection and returns a native Model. No Harness base class is required. A resolver can call Harness `infer_model()` with current Host-owned factories and patches, or return a self-constructed Model.
+
+### Model authoring aliases
+
+Use the two parallel resolvers when an authoring surface wants short, explicit names while keeping concrete values everywhere else. Context budgets resolve to Harness `ModelConfiguration`; provider request choices resolve independently to native `ModelSettings`:
+
+```python
+from a13n_harness import (
+    AgentSpec,
+    ModelConfiguration,
+    resolve_model_configuration,
+    resolve_model_settings,
+)
+from pydantic_ai.settings import ModelSettings
+
+model = "anthropic:claude-sonnet-5"
+configuration = resolve_model_configuration(
+    model,
+    aliases=("anthropic:context-1m",),
+    overrides=ModelConfiguration(compact_threshold=0.85),
+)
+settings = resolve_model_settings(
+    model,
+    aliases=(
+        "anthropic:interleaved-thinking",
+        "anthropic:max-output-128k",
+    ),
+    overrides=ModelSettings(temperature=0.2),
+)
+
+spec = AgentSpec(
+    model=model,
+    model_config=configuration,
+    model_settings=settings,
+)
+```
+
+The built-in configuration aliases are:
+
+- `anthropic:context-200k` for a `200_000`-token Harness context budget;
+- `anthropic:context-400k` for a `400_000`-token Harness context budget;
+- `anthropic:context-1m` for a `1_000_000`-token Harness context budget.
+
+These values control Harness lifecycle thresholds only. They do not select a provider context variant, add beta headers, change request settings, or widen the model's actual context capability.
+
+The built-in settings aliases are:
+
+- `anthropic:interleaved-thinking`, which selects Anthropic adaptive thinking without forcing effort, token limits, cache behavior, beta headers, or context management;
+- `anthropic:thinking-disabled`, which disables thinking and removes an effort inherited from an earlier alias;
+- `anthropic:max-output-32k`, `anthropic:max-output-64k`, and `anthropic:max-output-128k`, which set `max_tokens` to `32_768`, `65_536`, and `131_072`, respectively.
+
+A max-output alias is an explicit request limit, not a compatibility claim. The selected model and provider still validate whether the request is supported.
+
+Within each resolver, aliases apply in declaration order and concrete overrides apply last. Alias resolution requires a provider-qualified direct or gateway model string and fails immediately for an unknown or incompatible alias. `resolve_model_configuration()` returns `None` when neither aliases nor overrides provide configuration; `resolve_model_settings()` returns an ordinary detached native settings dictionary. A Host can add private choices through immutable custom catalogs, but resolves every alias before persisting an Agent revision. `AgentSpec`, `HarnessBuilder`, workers, and Harness state never contain alias names.
 
 ### Model configuration
 
@@ -128,7 +191,29 @@ spec = AgentSpec(
 )
 ```
 
-When selected, `HandoffCapability()` derives its summarize reminder at 65% and `CompactionCapability()` derives its trigger at 90%. Explicit Capability token thresholds take precedence, and model configuration never enables either Capability by itself. A Host may resolve these values from its own preset catalog; the Harness does not infer a preset from the model name and does not yet ship concrete model declarations. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
+When selected, `HandoffCapability()` derives its summarize reminder at 65% and `CompactionCapability()` derives its trigger at 90%. Explicit Capability token thresholds take precedence, and model configuration never enables either Capability by itself. A Host may resolve these values from its own preset catalog, the Harness official model catalog, or configuration aliases; `HarnessBuilder` never infers one from the model name. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
+
+### Automatic model request affinity
+
+Every upstream model request receives two defaults from the current `AgentContext.thread_id`:
+
+```python
+ModelSettings(
+    openai_prompt_cache_key=thread_id,
+    extra_headers={"x-session-id": thread_id},
+)
+```
+
+The value remains stable across continuation from the same `HarnessState` and differs for independent roots, children, siblings, and forks. An explicit `openai_prompt_cache_key` wins, and an explicit `ModelSettings.extra_headers` entry overrides `x-session-id` case-insensitively. The Harness does not use the transient `run_id` or mutate caller settings.
+
+Pydantic provider adapters consume only settings they recognize. Non-OpenAI adapters ignore `openai_prompt_cache_key`; OpenAI and OpenAI-compatible adapters may transmit it as `prompt_cache_key`. If an upstream endpoint rejects either automatic field, disable that patch before constructing `HarnessBuilder`:
+
+```bash
+export A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED=false
+export A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED=false
+```
+
+The switches are independent and default to enabled. They accept `1/true/yes/on` or `0/false/no/off`, case-insensitively. Invalid values fail builder construction. Each builder snapshots both switches once, so changing the environment does not alter existing builders or executables. A disabled patch leaves any explicit setting untouched.
 
 ## Mandatory Composition
 
@@ -138,6 +223,7 @@ Every executable receives one Harness-owned instance of each mandatory boundary:
 - message-integrity filtering;
 - model-context coordination;
 - model-ID resolution;
+- Thread-derived model-request affinity;
 - model-request lifecycle events;
 - usage attribution and reporting.
 
@@ -150,7 +236,7 @@ Application code must not add a second mandatory boundary. Optional request/hist
 ```python
 from a13n_harness import RunBindings
 
-bindings = RunBindings.local(
+bindings = RunBindings.embedded(
     environment=environment_binding,
     model_resolver=model_resolver,
     model_context=model_context_binding,
@@ -159,7 +245,7 @@ bindings = RunBindings.local(
 )
 ```
 
-`RunBindings.local()` supplies a local identity and a no-op Environment when omitted. Use it for embedded applications and tests. A Host can construct `RunBindings` directly with an exact `AgentInstanceContext`.
+`RunBindings.embedded()` supplies an embedded identity and optional advanced integrations. Use it when an embedded application needs run Capabilities, a model resolver, model-context middleware, metadata, or an advanced Environment binding. Ordinary `run()` and `stream()` calls can omit `bindings`; run normalization creates fresh embedded bindings and a zero-binding Environment when no Environment input is supplied. A Host can construct `RunBindings` directly with an exact `AgentInstanceContext`.
 
 Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state.
 

@@ -13,7 +13,7 @@ An `Agent` is a stable Workspace-owned resource for authoring, policy, and invoc
 An `AgentRevision` is an immutable executable snapshot associated with one Agent. It contains only Foundation-owned serializable data and exact references, including:
 
 - logical Agent instructions and typed input/output declarations;
-- selected model-integration revision and model settings;
+- selected model-integration revision, concrete Harness model configuration, and concrete native model settings;
 - Capability, Tool, Skill, Connector, and Environment declarations under their owning Foundation schemas;
 - non-secret Secret requirements that bind an exact Workspace-owned Secret reference or declare an invoking-User Secret key under [Secret Management](11-secret-management.md);
 - direct trusted adapter keys and bounded adapter configuration;
@@ -23,6 +23,8 @@ An `AgentRevision` is an immutable executable snapshot associated with one Agent
 A `ModelIntegration` is a stable Workspace or Organization resource describing a trusted model-provider integration. A `ModelIntegrationRevision` is immutable and selects exact provider type, routing configuration, supported model surface, compatibility facts, and non-secret credential references. Hosted profiles that use logical model aliases require an explicit `RunModelResolver` and fail closed rather than delegating to ambient native inference.
 
 Secret requirements never contain a Secret value. A Workspace-owned requirement stores the exact Secret resource reference. A User-owned requirement stores only the validated key resolved for the active invoking User; a Service Account cannot satisfy it. Current Secret eligibility, values, credentials, RoleBindings, and run grants are resolved freshly rather than captured in the immutable revision.
+
+A Foundation authoring API may accept Harness model-configuration or model-settings aliases, including deployment-specific private aliases, as convenience input. Materialization selects the model integration first, resolves each alias plane immediately in declaration order, applies explicit concrete overrides last, validates the resulting lifecycle configuration and provider settings under Foundation schemas, and stores only those concrete values. Alias keys are not revision fields, dependency locks, worker inputs, or reconstruction fallback instructions. Unknown aliases and aliases incompatible with the selected provider fail before revision creation. A context budget does not alter the provider model capability, and a native max-output value remains subject to the selected integration's compatibility validation.
 
 Changing materialized Agent content, a selected integration revision, or a dependency lock creates another Agent revision. Prior revisions selected by retained Turns remain addressable for their documented retention period.
 
@@ -67,7 +69,7 @@ sequenceDiagram
     Worker->>Store: read Turn, exact AgentRevision, and dependency locks
     Worker->>Worker: verify scope, locks, compatibility, and TurnAttempt generation
     Worker->>Adapter: reconstruct native Agent inputs
-    Adapter-->>Worker: AgentSpec, Model selection, Capabilities, plugins, and policies
+    Adapter-->>Worker: AgentSpec with concrete settings, Model selection, Capabilities, plugins, and policies
     Worker->>Worker: create fresh Identity, policy, credential, model, and provider attachments
     Worker->>Harness: HarnessBuilder with process-local values
     Harness-->>Worker: ExecutableAgent
@@ -75,7 +77,7 @@ sequenceDiagram
 
 Reconstruction is deterministic with respect to the revision and declared locks, while live authority and provider reachability are intentionally fresh. The worker assigns a stable `AgentInstanceRef` to each independently advancing root, delegated child Agent, or fork history. A replacement worker preserves that reference for the same Thread, but uses a new `TurnAttempt`, transient Harness Run correlation, and fresh bindings.
 
-The worker validates the complete definition before starting model or tool work. It does not partially execute a revision whose output schema, Capability state codec, plugin contract, model integration, Environment provider, or dependency lock is incompatible.
+The worker validates the complete definition before starting model or tool work. It reconstructs Harness `ModelConfiguration` and native `ModelSettings` directly from the revision's concrete values and performs no alias lookup. It does not partially execute a revision whose output schema, Capability state codec, plugin contract, model integration, Environment provider, or dependency lock is incompatible.
 
 ## Continuation Compatibility
 

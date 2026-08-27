@@ -633,7 +633,7 @@ async def test_real_harness_stream_observes_lifecycle_text_and_terminal_events()
     observer = HarnessAguiObserver()
     terminal: HarnessRunResultEvent[str] | None = None
 
-    async with executable.stream("start", bindings=RunBindings.local()) as run_stream:
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run_stream:
         async for item in run_stream:
             observer.observe(item)
             if isinstance(item, HarnessRunResultEvent):
@@ -667,7 +667,7 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         model=FunctionModel(stream_function=stream),
     )
     completed: HarnessRunResult[str] | None = None
-    async with executable.stream("start", bindings=RunBindings.local()) as run_stream:
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run_stream:
         async for item in run_stream:
             if isinstance(item, HarnessRunResultEvent):
                 completed = item.result

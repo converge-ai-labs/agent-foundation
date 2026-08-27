@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -102,7 +102,7 @@ async def s3_object_store(s3_service: S3Service) -> AsyncIterator[S3ObjectStore]
 
 
 @asynccontextmanager
-async def _open_s3_store(service: S3Service) -> AsyncIterator[S3ObjectStore]:
+async def _open_s3_store(service: S3Service) -> AsyncGenerator[S3ObjectStore]:
     bucket = f"a13n-storage-{uuid4().hex}"
     config = AioConfig(
         connect_timeout=5,

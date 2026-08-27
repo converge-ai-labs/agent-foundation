@@ -8,21 +8,22 @@ The Harness does not fork or reproduce the Agent graph, Model interface, Model p
 
 ## Upstream Primitive Mapping
 
-| Pydantic AI primitive              | Harness use                                                           |
-| ---------------------------------- | --------------------------------------------------------------------- |
-| `Agent` and `AgentSpec`            | One authoritative Agent construction and execution path               |
-| `Model` and `ModelProfile`         | Provider request/response behavior and compatibility                  |
-| `ResolveModelId`                   | Thin optional bridge to fresh `RunModelResolver`                      |
-| `AbstractCapability[AgentContext]` | Reusable behavior inside the Agent loop                               |
-| `CapabilityOrdering`               | Native Capability dependencies and wrapper order                      |
-| Tools and Toolsets                 | Native tool schema, preparation, and dispatch                         |
-| `ExternalToolset`                  | Native external/client-side deferral                                  |
-| `DeferredToolRequests` and results | Native external-call and approval stop/resume values                  |
-| `RunContext[AgentContext]`         | Live messages, usage, limits, capabilities, and typed dependencies    |
-| `AgentRunEvents`                   | Lazy event stream, messages, usage, result, cancellation, and cleanup |
-| `ModelMessage` codec               | Portable public conversation history                                  |
-| `RunUsage` and `UsageLimits`       | Shared monotonic usage accumulator and native limits                  |
-| `OutputSpec`                       | Validated output and output retry semantics                           |
+| Pydantic AI primitive              | Harness use                                                                                              |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `Agent` and `AgentSpec`            | One authoritative Agent construction and execution path                                                  |
+| `Model` and `ModelProfile`         | Provider request/response behavior and compatibility                                                     |
+| `ResolveModelId`                   | Thin optional bridge to fresh `RunModelResolver`                                                         |
+| `AbstractCapability[AgentContext]` | Reusable behavior inside the Agent loop                                                                  |
+| `CapabilityOrdering`               | Native Capability dependencies and wrapper order                                                         |
+| Tools and Toolsets                 | Native tool schema, preparation, and dispatch                                                            |
+| `ExternalToolset`                  | Native external/client-side deferral                                                                     |
+| `DeferredToolRequests` and results | Native external-call and approval stop/resume values                                                     |
+| `RunContext[AgentContext]`         | Live messages, usage, limits, capabilities, and typed dependencies                                       |
+| `AgentRunEvents`                   | Lazy event stream, messages, usage, result, cancellation, and cleanup                                    |
+| `ModelMessage` codec               | Portable public conversation history                                                                     |
+| `RunUsage` and `UsageLimits`       | Shared monotonic usage accumulator and native limits                                                     |
+| `Instrumentation`                  | Sole Agent-attempt, model-request, tool, usage, streaming, and cancellation span owner when Host-enabled |
+| `OutputSpec`                       | Validated output and output retry semantics                                                              |
 
 Capability authors import these values directly from Pydantic AI. The Harness does not publish parallel aliases.
 
@@ -31,12 +32,13 @@ Capability authors import these values directly from Pydantic AI. The Harness do
 The Harness adds:
 
 - process-local `AgentDefinition` containing native objects;
-- one synchronous `HarnessBuilder` that calls `Agent.from_spec()`;
+- one synchronous `HarnessBuilder` that calls `Agent.from_spec()` and captures optional gateway Provider construction;
 - trusted code-first plugins around the outer semantic-input-to-result boundary;
 - fresh `RunBindings` and one `AgentContext` per logical run;
 - an Environment lifecycle aggregate entered before input and Pydantic work, with a Host-retained controller active across the logical run;
 - portable messages, Capability state, and optional portable Environment state in `HarnessState`;
 - normalized process-local events and result combinations;
+- optional Host-supplied [Harness Observation](19-observation-model.md) around native Pydantic instrumentation;
 - exact Model-history repair and bounded interrupted-execution recovery.
 
 These additions use public Pydantic APIs. There is no definition compiler, serialized plugin spec, Host role registry, or alternate model-resolution framework. The exact Host-supplied custom Capability type catalog exists only to authorize native `AgentSpec` reconstruction and performs no package discovery.
@@ -64,9 +66,9 @@ A hosted service owns any durable schema, Preset materialization, adapter config
 A concrete native Model is used directly. A string model selection reaches the thin resolver:
 
 - with `RunBindings.model_resolver`, the fresh async callable returns a native Model or raises;
-- without a resolver, the thin Capability returns `None` and Pydantic continues its native inference chain.
+- without a resolver, the thin Capability calls Harness `infer_model()` with the builder's optional gateway Provider factory.
 
-The resolved native Model carries its own effective profile and provider adapter behavior. The Harness does not duplicate settings/profile merge logic. When explicitly selected, `SelfHealingModelCapability` uses the public request wrapper hook to install `SelfHealingModel` around the final effective Model after concrete selection, logical resolution, or native inference.
+Every request then receives independently switchable Thread-derived defaults for `x-session-id` in native `ModelSettings.extra_headers` and `openai_prompt_cache_key`, unless effective settings explicitly override them. The resolved native Model carries its own effective profile and provider adapter behavior; the selected adapter consumes only settings it recognizes. The Harness does not duplicate settings/profile merge logic. When explicitly selected, `SelfHealingModelCapability` uses the public request wrapper hook to install `SelfHealingModel` around the final effective Model after concrete selection, logical resolution, or native inference.
 
 Recovery ownership is intentionally split:
 
@@ -126,15 +128,16 @@ Provider-suspended continuation and deferred/HITL values are native Pydantic bou
 
 ## Boundary with the Host
 
-| Concern                               | Host                                            | Harness/Pydantic                               |
-| ------------------------------------- | ----------------------------------------------- | ---------------------------------------------- |
-| Durable authoring schema and Presets  | Owns                                            | Receives reconstructed Python values           |
-| Artifact installation and lock        | Owns                                            | Trusts supplied objects                        |
-| Identity and provider policy          | Issues and evaluates                            | Propagates through typed bindings              |
-| Process-local Agent loop              | Delegates                                       | Owns                                           |
-| Durable execution and worker recovery | Owns                                            | Produces process-local state and result        |
-| Client-side deferred execution        | Authenticates, persists, or executes externally | Produces/consumes native deferred values       |
-| Usage persistence and billing         | Owns                                            | Produces Pydantic usage observations/snapshots |
+| Concern                               | Host                                            | Harness/Pydantic                                                |
+| ------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------- |
+| Durable authoring schema and Presets  | Owns                                            | Receives reconstructed Python values                            |
+| Artifact installation and lock        | Owns                                            | Trusts supplied objects                                         |
+| Identity and provider policy          | Issues and evaluates                            | Propagates through typed bindings                               |
+| Process-local Agent loop              | Delegates                                       | Owns                                                            |
+| Durable execution and worker recovery | Owns                                            | Produces process-local state and result                         |
+| Client-side deferred execution        | Authenticates, persists, or executes externally | Produces/consumes native deferred values                        |
+| Usage persistence and billing         | Owns                                            | Produces Pydantic usage observations/snapshots                  |
+| OTel SDK, export, and vendor profiles | Owns                                            | Uses explicit providers and native instrumentation when enabled |
 
 ## Compatibility
 
@@ -146,6 +149,7 @@ The repository selects a compatible Pydantic AI release and validates only docum
 - Capability and Toolset composition;
 - lazy `AgentRunEvents` streaming and cancellation;
 - public messages, deferred values, output contracts, and usage;
+- instrumentation hierarchy, convention fields, content switches, and ambient suppression;
 - interrupted-message states used by bounded recovery.
 
 Each Capability state version and Environment provider-state codec version is independent from the Pydantic package version and Harness envelope version.

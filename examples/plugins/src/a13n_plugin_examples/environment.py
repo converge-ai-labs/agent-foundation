@@ -17,9 +17,9 @@ from a13n_environment_provider import (
     EnvironmentAttachmentConcurrency,
     EnvironmentLifecycleCapabilities,
     EnvironmentManagementAction,
-    EnvironmentManager,
     EnvironmentOperationContext,
     EnvironmentPauseMode,
+    EnvironmentProvider,
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderErrorContext,
@@ -30,9 +30,9 @@ from a13n_environment_provider import (
     EnvironmentProviderRuntime,
     EnvironmentReconciliationPhase,
     EnvironmentReconciliationResult,
+    EnvironmentResource,
     EnvironmentResourceAllocation,
     EnvironmentRuntimeAttachment,
-    ManagedEnvironment,
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -72,7 +72,7 @@ class WorkspaceEnvironmentRuntime(EnvironmentProviderRuntime):
 
 
 class WorkspaceEnvironmentProviderFactory(EnvironmentProviderFactory):
-    """Construct an inert Manager for the selected exact provider specification."""
+    """Construct an inert Provider for the selected exact provider specification."""
 
     @classmethod
     def provider_key(cls) -> str:
@@ -92,20 +92,20 @@ class WorkspaceEnvironmentProviderFactory(EnvironmentProviderFactory):
             )
         return WorkspaceEnvironmentConfiguration
 
-    def create_manager(
+    def create_provider(
         self,
         configuration: BaseModel,
         *,
         runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentManager:
+    ) -> EnvironmentProvider:
         if not isinstance(configuration, WorkspaceEnvironmentConfiguration):
             raise _error("Invalid example.workspace configuration.", code="provider_spec_invalid")
         if not isinstance(runtime, WorkspaceEnvironmentRuntime):
             raise _error("Invalid example.workspace runtime.", code="provider_runtime_invalid")
-        return WorkspaceEnvironmentManager(configuration)
+        return WorkspaceEnvironmentProvider(configuration)
 
 
-class WorkspaceEnvironmentManager(EnvironmentManager):
+class WorkspaceEnvironmentProvider(EnvironmentProvider):
     """Manage one logical shared workspace without owning its directory lifecycle."""
 
     def __init__(self, configuration: WorkspaceEnvironmentConfiguration) -> None:
@@ -120,27 +120,27 @@ class WorkspaceEnvironmentManager(EnvironmentManager):
             attachment_concurrency=EnvironmentAttachmentConcurrency.SHARED,
         )
 
-    async def create(self, *, operation: EnvironmentOperationContext) -> ManagedEnvironment:
+    async def create(self, *, operation: EnvironmentOperationContext) -> EnvironmentResource:
         self._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key=PROVIDER_KEY)
         configuration = await _validated_attachment_configuration(self._configuration)
         state = _state_for(self._canonical_configuration(configuration))
-        return WorkspaceManagedEnvironment(configuration, state)
+        return WorkspaceEnvironmentResource(configuration, state)
 
     async def resume(
         self,
         state: EnvironmentProviderResourceState,
         *,
         operation: EnvironmentOperationContext,
-    ) -> ManagedEnvironment:
+    ) -> EnvironmentResource:
         self._require_operation(operation, EnvironmentManagementAction.RESUME, provider_key=PROVIDER_KEY)
         configuration = await _validated_attachment_configuration(self._configuration)
         expected = _state_for(self._canonical_configuration(configuration))
         _validate_state(state, expected)
-        return WorkspaceManagedEnvironment(configuration, expected)
+        return WorkspaceEnvironmentResource(configuration, expected)
 
     async def pause(
         self,
-        environment: ManagedEnvironment,
+        environment: EnvironmentResource,
         *,
         operation: EnvironmentOperationContext,
         mode: EnvironmentPauseMode = EnvironmentPauseMode.FULL,
@@ -227,7 +227,7 @@ class WorkspaceEnvironmentManager(EnvironmentManager):
         )
 
 
-class WorkspaceManagedEnvironment(ManagedEnvironment):
+class WorkspaceEnvironmentResource(EnvironmentResource):
     def __init__(
         self,
         configuration: DirectLocalProviderConfiguration,

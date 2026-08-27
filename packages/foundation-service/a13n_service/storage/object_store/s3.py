@@ -6,7 +6,7 @@ import base64
 import inspect
 import json
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
@@ -96,7 +96,7 @@ class S3ObjectStore:
         return await self.stat(key)
 
     @asynccontextmanager
-    async def open(self, key: str, *, byte_range: ByteRange | None = None) -> AsyncIterator[ObjectReader]:
+    async def open(self, key: str, *, byte_range: ByteRange | None = None) -> AsyncGenerator[ObjectReader]:
         validate_key(key)
         request: GetObjectRequestTypeDef = {"Bucket": self._bucket, "Key": key}
         if byte_range is not None:

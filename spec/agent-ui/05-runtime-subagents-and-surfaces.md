@@ -16,7 +16,7 @@ The foreground coordinator consumes every root Harness stream exactly once. Agen
 | Foreground Agent loop and continuation   | Harness                                                       | One entered `HarnessRunStream` with fresh bindings                                                       |
 | Async child presentation                 | Agent UI async-subagent Capability                            | Fixed-background delegate/resume/info/wait/steer/cancel tools over exact built children                  |
 | Async child scheduling and delivery      | Agent UI async-subagent service                               | Supervised tasks, durable metadata/checkpoints, input, cancellation, result retention, and process fence |
-| Environment resource lifecycle           | Agent UI plus Environment Provider Manager                    | Fenced create/resume/pause/destroy and fresh attachments                                                 |
+| Environment resource lifecycle           | Agent UI plus `EnvironmentProvider`                           | Fenced create/resume/pause/destroy and fresh attachments                                                 |
 | Active Environment topology              | Harness                                                       | Adapts complete fresh attachment set into provider-neutral bindings                                      |
 | AG-UI conversion                         | Agent Stream Protocol                                         | One complete observer per root or async-child Run                                                        |
 | Session/state/event persistence          | Agent UI local store                                          | SQLite control facts and compressed immutable payload files                                              |
@@ -56,7 +56,7 @@ class AgentUiApplication(Protocol):
     events: EventApplicationService
 ```
 
-Commands carry stable resource selectors, expected revisions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, provider Manager, Environment attachment, credential, task, lock, or raw `HarnessState`.
+Commands carry stable resource selectors, expected revisions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, `EnvironmentProvider`, Environment attachment, credential, task, lock, or raw `HarnessState`.
 
 All mutation and execution paths are available to both TUI and WebUI according to the same local-user policy. A surface cannot acquire extra authority by reading storage or calling runtime packages directly.
 
@@ -138,7 +138,7 @@ sequenceDiagram
     App->>Resolver: load pinned Agent and Environment snapshots
     Resolver-->>App: executable and binding factories
     App->>Provider: create/resume fenced Session resources
-    Provider-->>App: managed resources and fresh attachments
+    Provider-->>App: Resources and fresh attachments
     App->>Harness: stream(input, selected HarnessState, fresh RunBindings)
     loop public non-terminal items
         Harness-->>App: Harness stream item
@@ -190,7 +190,7 @@ Environment application commands provide full local product control:
 - reconcile `unknown` operations with provider-specific evidence;
 - subscribe to safe topology/lifecycle changes.
 
-Every effectful operation commits a fence before calling the Provider Manager and commits returned state only under the same fence. The application service never exposes arbitrary vendor API passthrough. Provider credentials enter through fresh runtime collaborators and are absent from commands, SQLite payload columns, AG-UI, model context, and default logs/telemetry.
+Every effectful operation commits a fence before calling the `EnvironmentProvider` and commits returned state only under the same fence. The application service never exposes arbitrary vendor API passthrough. Provider credentials enter through fresh runtime collaborators and are absent from commands, SQLite payload columns, AG-UI, model context, and default logs/telemetry.
 
 When a Run is active, its Harness topology is fixed by the complete fresh attachment set entered for that invocation except where the public Harness topology controller explicitly supports a higher complete revision. Host topology change cannot add a Dynamic Environment Capability or Toolset absent from the Agent snapshot. Environment attachment and provider resource lifecycle remain independent from Agent configuration reload.
 

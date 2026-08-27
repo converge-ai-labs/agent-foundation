@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
+from contextlib import AbstractAsyncContextManager, aclosing
 from pathlib import Path
 
 from a13n_harness import (
     AgentSpec,
+    EnvironmentSource,
     HarnessBuilder,
     HarnessEvent,
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessState,
-    RunBindings,
 )
 from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 from pydantic_ai.models import Model
@@ -30,16 +31,32 @@ class ConversationApplication:
         *,
         model: Model,
         state_path: Path,
+        environment: EnvironmentSource,
         instructions: str = _DEFAULT_INSTRUCTIONS,
     ) -> None:
-        self._model = model
         self._state_path = state_path
-        self._instructions = instructions
+        self._environment = environment
         self._turn_lock = asyncio.Lock()
+        self._executable = HarnessBuilder(configured_plugins_enabled=False).build(
+            AgentSpec(instructions=instructions),
+            output_type=str,
+            model=model,
+        )
+
+    async def __aenter__(self) -> ConversationApplication:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.close()
 
     @property
     def state_path(self) -> Path:
         return self._state_path
+
+    async def close(self) -> None:
+        """Close the reusable executable owned by this application instance."""
+
+        await self._executable.close()
 
     async def load_state(self) -> HarnessState | None:
         """Load the last completed turn, if this conversation has one."""
@@ -50,31 +67,29 @@ class ConversationApplication:
             return None
         return HarnessState.model_validate_json(payload)
 
-    async def stream_turn(self, prompt: str) -> AsyncIterator[str]:
-        """Yield visible text deltas and commit state after successful completion."""
+    def stream_turn(self, prompt: str) -> AbstractAsyncContextManager[AsyncGenerator[str]]:
+        """Return an explicitly scoped stream for one serialized turn."""
 
+        return aclosing(self._stream_turn(prompt))
+
+    async def _stream_turn(self, prompt: str) -> AsyncGenerator[str]:
         async with self._turn_lock:
             previous_state = await self.load_state()
-            executable = HarnessBuilder(configured_plugins_enabled=False).build(
-                AgentSpec(instructions=self._instructions),
-                output_type=str,
-                model=self._model,
-            )
             terminal_result: HarnessRunResult[str] | None = None
-            async with executable:
-                async with executable.stream(
-                    prompt,
-                    bindings=RunBindings.local(),
-                    previous_state=previous_state,
-                ) as stream:
-                    async for item in stream:
-                        if isinstance(item, HarnessRunResultEvent):
-                            terminal_result = item.result
-                            continue
-                        if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
-                            text = _event_text(item)
-                            if text:
-                                yield text
+
+            async with self._executable.stream(
+                prompt,
+                environment=self._environment,
+                previous_state=previous_state,
+            ) as stream:
+                async for item in stream:
+                    if isinstance(item, HarnessRunResultEvent):
+                        terminal_result = item.result
+                        continue
+                    if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
+                        text = _event_text(item)
+                        if text:
+                            yield text
 
             if terminal_result is None:
                 raise RuntimeError("Harness stream ended without a terminal result")

@@ -174,7 +174,7 @@ async def test_no_model_cost_capability_explicitly_disables_harness_valuation() 
         capabilities=(NoModelCostCapability(),),
     )
 
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     record = result.usage_records[0]
     assert isinstance(record, ModelUsageRecord)

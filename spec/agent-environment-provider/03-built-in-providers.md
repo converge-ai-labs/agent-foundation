@@ -4,20 +4,20 @@
 
 `a13n-environment-provider` ships four providers in its main distribution:
 
-| Provider key        | Managed resource                             | Runtime attachment | Harness backend |
+| Provider key        | Resource                                     | Runtime attachment | Harness backend |
 | ------------------- | -------------------------------------------- | ------------------ | --------------- |
 | `a13n.direct-local` | One configured local root and process policy | Direct Local       | Direct Local    |
 | `a13n.local-envd`   | One local `agent-envd` process and runtime   | EIP                | EIP             |
 | `a13n.docker`       | One Docker container running `agent-envd`    | EIP                | EIP             |
 | `a13n.e2b`          | One E2B sandbox running `agent-envd`         | EIP                | EIP             |
 
-The built-ins share the specification, Manager, resource-state, and attachment contracts. They do not share lifecycle implementation. Local Envd owns a Host-launched local daemon process, while Docker and E2B use their SDKs for outer resource lifecycle and bootstrap. After attachment, every Local Envd, Docker, and E2B Harness file, shell, process, output, and port operation uses EIP.
+The built-ins share the specification, Provider, resource-state, and attachment contracts. They do not share lifecycle implementation. Local Envd owns a Host-launched local daemon process, while Docker and E2B use their SDKs for outer resource lifecycle and bootstrap. After attachment, every Local Envd, Docker, and E2B Harness file, shell, process, output, and port operation uses EIP.
 
 ## Shared Configuration Rules
 
 Each built-in owns an exact versioned Pydantic configuration model. Configuration is desired behavior, not runtime state. It contains no API key, Docker socket, sandbox/container ID, resolved endpoint, EIP credential, or session.
 
-The provider factory constructs an inert Manager. Current credentials and provider clients enter through a fresh Host runtime context. No built-in touches the filesystem, Docker daemon, E2B API, network, or `agent-envd` during import, catalog construction, configuration validation, factory construction, or Manager construction.
+The provider factory constructs an inert Provider. Current credentials and provider clients enter through a fresh Host runtime context. No built-in touches the filesystem, Docker daemon, E2B API, network, or `agent-envd` during import, catalog construction, configuration validation, factory construction, or Provider construction.
 
 Each provider validates its own configuration, resource lifecycle, daemon bootstrap, and EIP compatibility before issuing an attachment. The Harness remains the sole owner of operation-family/facet consistency and permission-ceiling intersection against the entered Direct Local or EIP descriptor. Unsupported operations fail explicitly; no built-in emulates them through another backend or vendor API.
 
@@ -25,7 +25,7 @@ Each provider validates its own configuration, resource lifecycle, daemon bootst
 
 ### Configuration
 
-The provider package owns the public Direct Local configuration values. `a13n.direct-local` accepts configuration schema version `1` in the first public contract. Its exact runtime collaborator is an empty frozen `DirectLocalProviderRuntime`; Direct Local needs no credential or client factory, but the explicit value preserves the same inert factory/Manager construction boundary as other providers.
+The provider package owns the public Direct Local configuration values. `a13n.direct-local` accepts configuration schema version `1` in the first public contract. Its exact runtime collaborator is an empty frozen `DirectLocalProviderRuntime`; Direct Local needs no credential or client factory, but the explicit value preserves the same inert factory/Provider construction boundary as other providers.
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -70,7 +70,7 @@ The provider schema owns these desired values; the Harness Direct Local adapter 
 
 The schema validates bounded non-blank Environment and shell-profile identities, unique profile IDs, valid ports, positive byte/process ceilings, and positive finite time limits. After user expansion, the configured root, shell executables, and allowed executables are absolute paths; relative process-local working directories cannot change the meaning of a persisted specification. The root must already exist as an accessible directory. A read-only root cannot enable shell profiles or allowed executables because Direct Local cannot prevent an allowed child process from mutating files through the embedding OS account.
 
-### Resource state and Manager behavior
+### Resource state and Provider behavior
 
 A Direct Local resource is a logical access scope over one Host-selected existing directory, not an allocated or owned filesystem resource. Directory creation, deletion, retention, backup, sharing, and concurrent non-Harness use remain entirely Host concerns. The Provider never writes lifecycle metadata beside or inside the directory and never claims exclusive use.
 
@@ -84,11 +84,11 @@ class DirectLocalProviderStateData(BaseModel):
     configuration_fingerprint: str
 ```
 
-The fingerprint covers the exact normalized schema-version-1 configuration, including the canonical root path, but is neither authority nor a filesystem identity. The desired configuration remains the source of the root path; state never retargets a Manager to another directory.
+The fingerprint covers the exact normalized schema-version-1 configuration, including the canonical root path, but is neither authority nor a filesystem identity. The desired configuration remains the source of the root path; state never retargets a Provider to another directory.
 
-`create()` validates the configured existing directory and returns a pre-entry logical managed resource plus current state. `resume()` validates the same configuration, state codec, fingerprint, and existing directory before returning another pre-entry managed resource. Neither operation creates, adopts, locks, tags, or mutates the directory. `pause()` is unsupported. `destroy()` validates any supplied state and ends only the Host's logical provider-resource lifecycle; it returns without changing the directory or its contents.
+`create()` validates the configured existing directory and returns a pre-entry logical Resource plus current state. `resume()` validates the same configuration, state codec, fingerprint, and existing directory before returning another pre-entry Resource. Neither operation creates, adopts, locks, tags, or mutates the directory. `pause()` is unsupported. `destroy()` validates any supplied state and ends only the Host's logical provider-resource lifecycle; it returns without changing the directory or its contents.
 
-Direct Local advertises `resource_allocation=SINGLE_FROM_SPEC`, `attachment_concurrency=SHARED`, and no pause mode. The same specification denotes the same logical access target, while any number of authorized Agent runs, managed-resource scopes, attachments, and ordinary Host processes can intentionally share that directory. Each acquisition still produces a fresh single-use Harness binding so run-local processes, retained output, permissions, and cleanup remain separate.
+Direct Local advertises `resource_allocation=SINGLE_FROM_SPEC`, `attachment_concurrency=SHARED`, and no pause mode. The same specification denotes the same logical access target, while any number of authorized Agent runs, Resource scopes, attachments, and ordinary Host processes can intentionally share that directory. Each acquisition still produces a fresh single-use Harness binding so run-local processes, retained output, permissions, and cleanup remain separate.
 
 Direct Local lifecycle methods perform no external provider dispatch and do not produce an unknown side-effect outcome. A cancelled validation can be retried with the same operation identity. Reconciliation observes the deterministic configured target: create or resume yields `RUNNING` with fresh validated state when the directory is accessible, `ABSENT` when it authoritatively does not exist, and `UNKNOWN` when access or canonical validation cannot establish either fact. Destroy reconciliation yields `ABSENT` because Direct Local retains no provider-owned resource after logical detach, regardless of whether the shared Host directory still exists. Reconciliation performs no filesystem mutation and needs no filesystem operation marker or resource tag.
 
@@ -100,21 +100,21 @@ Direct Local makes no sandbox or network-isolation claim. Its existing path, pro
 
 The `a13n.local-envd` provider is the built-in local sandbox. Its versioned credential-free configuration contains one Environment identity, one Host-selected existing workspace root and access policy, bounded command and resource limits, a required native-isolation policy, an explicit network posture, and the required EIP compatibility. It contains no daemon executable path, ambient `PATH` selector, download location, package URL, process ID, private runtime path, or live EIP value.
 
-A fresh typed `LocalEnvdProviderRuntime` supplies the absolute `agent-envd` executable and private-runtime allocator already resolved and validated by the Host. Manager construction records that collaborator but performs no path search, download, installation, subprocess launch, probe, or filesystem mutation. The provider never consults ambient `PATH` and never substitutes another executable. Agent UI's managed-runtime selection contract is defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); another Host must provide an equivalent resolved runtime explicitly.
+A fresh typed `LocalEnvdProviderRuntime` supplies the absolute `agent-envd` executable and private-runtime allocator already resolved and validated by the Host. Provider construction records that collaborator but performs no path search, download, installation, subprocess launch, probe, or filesystem mutation. The provider never consults ambient `PATH` and never substitutes another executable. Agent UI's managed-runtime selection contract is defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); another Host must provide an equivalent resolved runtime explicitly.
 
 The selected daemon must report a compatible release identity through `agent-envd --version` and pass the production-equivalent `agent-envd isolation probe --json` in required mode before provider creation. An explicit outer-Host `disabled` isolation posture is invalid for this built-in. These checks establish local runtime availability; successful EIP initialization against the launched process independently establishes the actual daemon generation, Environment identity, required methods, and protocol compatibility.
 
-### Resource state and Manager behavior
+### Resource state and Provider behavior
 
 A Local Envd resource owns one local daemon process and its private runtime tree over a Host-selected existing workspace. It does not own, create, delete, retain, back up, or exclusively lock that workspace. Provider state records only bounded Environment/configuration correlation and lifecycle evidence; the executable path, process object, PID, pipes, runtime tree, EIP session, and isolation-probe details remain process-local.
 
-`create()` and `resume()` validate the exact configuration and Host-resolved runtime, allocate a fresh private runtime, and start a fresh `agent-envd` process generation with trusted stdio. They issue no attachment until process launch reaches local readiness and required isolation succeeds. The entered managed resource remains the sole owner of that process, complete process tree, private runtime, and pipes. `acquire_attachment()` returns one fresh `EIPEnvironmentAttachment` whose `StdioEIPSessionSource` carries an exclusive one-shot lease over the resource-owned carrier; attachment entry performs ordinary EIP initialization and establishes carrier readiness before the Harness can publish a binding. After envd delivers a successful `session.close` response, cleans session-owned state, and rearms stdio admission, the source returns the healthy carrier lease so a later sequential attachment can initialize against the same daemon generation. Lost close response, failed reinitialization, fatal carrier failure, or unexpected process exit makes the resource unavailable and never starts a replacement implicitly.
+`create()` and `resume()` validate the exact configuration and Host-resolved runtime, allocate a fresh private runtime, and start a fresh `agent-envd` process generation with trusted stdio. They issue no attachment until process launch reaches local readiness and required isolation succeeds. The entered Resource remains the sole owner of that process, complete process tree, private runtime, and pipes. `acquire_attachment()` returns one fresh `EIPEnvironmentAttachment` whose `StdioEIPSessionSource` carries an exclusive one-shot lease over the resource-owned carrier; attachment entry performs ordinary EIP initialization and establishes carrier readiness before the Harness can publish a binding. After envd delivers a successful `session.close` response, cleans session-owned state, and rearms stdio admission, the source returns the healthy carrier lease so a later sequential attachment can initialize against the same daemon generation. Lost close response, failed reinitialization, fatal carrier failure, or unexpected process exit makes the resource unavailable and never starts a replacement implicitly.
 
 Local Envd advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. Each create owns an independent daemon process/private runtime even when several specifications intentionally select the same Host workspace. `pause(mode=FILESYSTEM)` closes the active attachment, stops the complete daemon process tree, and removes only the provider-owned private runtime while leaving workspace files untouched. `resume()` starts another private runtime and daemon generation. `FULL` is unsupported.
 
 `destroy()` stops the exact owned daemon process, closes its private pipes, and removes its private runtime. It never deletes or mutates the selected workspace merely because the provider resource is destroyed. Process termination and private-runtime cleanup must be proven before success; uncertain cleanup remains explicit rather than being reported as absence. Reconciliation uses only exact local process-owner and configuration evidence and never launches a replacement as an observation.
 
-A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, or inability to prove cleanup makes Local Envd unavailable. The Manager does not fall back to `a13n.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
+A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, or inability to prove cleanup makes Local Envd unavailable. The Provider does not fall back to `a13n.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
 
 ## Docker
 
@@ -132,9 +132,9 @@ The Docker provider accepts a bounded versioned configuration including:
 
 The provider does not accept arbitrary Docker API objects, callbacks, socket paths from model input, or a second command-execution configuration. A Host can expose a narrower authoring schema while still resolving to this typed configuration.
 
-### Manager behavior
+### Provider behavior
 
-The Docker Manager uses the Docker SDK for Python. Blocking SDK calls run through `anyio.to_thread.run_sync` or an equivalent bounded worker-thread boundary.
+The Docker Provider uses the Docker SDK for Python. Blocking SDK calls run through `anyio.to_thread.run_sync` or an equivalent bounded worker-thread boundary.
 
 `create()` creates and starts one container whose image includes compatible `agent-envd` bootstrap. Before possible visibility loss, it applies bounded labels for the Host operation ID, resource correlation, and provider/configuration fingerprint. `resume()` inspects the exact container ID from provider resource state and starts it when stopped or reconnects when already running. A missing container fails rather than creating another one.
 
@@ -144,7 +144,7 @@ Docker advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurre
 
 Docker reconciliation performs an exact label/ID inspection scoped to the operation and resource correlation. One matching running or stopped container yields validated `RUNNING` or `PAUSED` state as appropriate; authoritative zero matches yields `ABSENT`; ambiguous duplicates, inaccessible daemon state, or mismatched operation/resource/configuration correlation yields `UNKNOWN`. Reconciliation never starts, stops, or removes the container.
 
-For stdio, the Manager owns private daemon pipes. For HTTP, it publishes the dedicated EIP port only to loopback or an explicitly trusted private provider link and supplies mandatory EIP bootstrap authentication. Docker port routing does not itself grant Environment authority.
+For stdio, the Provider owns private daemon pipes. For HTTP, it publishes the dedicated EIP port only to loopback or an explicitly trusted private provider link and supplies mandatory EIP bootstrap authentication. Docker port routing does not itself grant Environment authority.
 
 The Docker SDK is used only for container lifecycle, inspection, and envd bootstrap plumbing. Harness operations never fall back to Docker exec, archive, copy, logs, or filesystem APIs.
 
@@ -165,15 +165,15 @@ The E2B provider accepts a bounded versioned configuration including:
 
 The E2B template starts `agent-envd` as part of its trusted boot contract. The E2B SDK is not used to execute model commands or implement Harness file operations. E2B's own in-sandbox service and `agent-envd` are distinct components; the provider validates the selected template's Agent Foundation daemon readiness rather than inferring it from generic sandbox availability.
 
-Automatic resume from inbound traffic is disabled for managed EIP resources. Resume remains an explicit Manager action, which keeps lifecycle observations and fresh binding construction in one path. Timeout can still pause the sandbox under the selected full or filesystem mode.
+Automatic resume from inbound traffic is disabled for managed EIP resources. Resume remains an explicit Provider action, which keeps lifecycle observations and fresh binding construction in one path. Timeout can still pause the sandbox under the selected full or filesystem mode.
 
 E2B advertises `resource_allocation=MULTIPLE_FROM_SPEC` and `attachment_concurrency=SINGLE`. Each successful create returns one independent sandbox state. Its pause modes follow the selected provider configuration and account capabilities.
 
-### Manager behavior
+### Provider behavior
 
-`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, and provider/configuration fingerprint. It waits for provider running state, resolves the provider-routed HTTPS host for the dedicated EIP port, and makes that fresh routing available through the managed resource's HTTP session source. The first acquired attachment initializes EIP and must match the expected Environment identity, protocol, required methods, and limits before the Harness publishes a binding.
+`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, and provider/configuration fingerprint. It waits for provider running state, resolves the provider-routed HTTPS host for the dedicated EIP port, and makes that fresh routing available through the Resource's HTTP session source. The first acquired attachment initializes EIP and must match the expected Environment identity, protocol, required methods, and limits before the Harness publishes a binding.
 
-`resume()` uses the sandbox ID from validated provider resource state. E2B's connect operation attaches to a running sandbox or resumes a paused sandbox; it never creates a replacement for a missing or killed sandbox. After connect, the Manager resolves fresh routing and issues only a fresh session source; initialization remains owned by attachment entry.
+`resume()` uses the sandbox ID from validated provider resource state. E2B's connect operation attaches to a running sandbox or resumes a paused sandbox; it never creates a replacement for a missing or killed sandbox. After connect, the Provider resolves fresh routing and issues only a fresh session source; initialization remains owned by attachment entry.
 
 `pause(mode=FULL)` preserves the sandbox filesystem, memory, and running processes. External network connections still close. On resume, the in-sandbox `agent-envd` process and daemon generation can remain, but the Host obtains a fresh endpoint/session and performs `initialize` again. No HTTP request, transfer, or EIP session survives pause.
 
@@ -183,7 +183,7 @@ E2B advertises `resource_allocation=MULTIPLE_FROM_SPEC` and `attachment_concurre
 
 E2B reconciliation uses exact sandbox ID when state exists and exact bounded operation/resource metadata when an uncertain create returned no state. One matching running or paused sandbox yields validated `RUNNING` or `PAUSED` state; authoritative killed/expired/absent evidence yields `ABSENT`; duplicate, inaccessible, or insufficient evidence yields `UNKNOWN`. Reconciliation does not connect, resume, pause, extend, or kill the sandbox.
 
-The E2B Manager uses the SDK's async lifecycle surface. A provider call lacking an async SDK operation is isolated through a bounded worker-thread boundary only when required and preserves cancellation and unknown-outcome semantics. E2B API credentials remain with the Manager. Provider-routed HTTPS, E2B access controls, and EIP bootstrap credentials are separate layers; EIP authentication remains mandatory.
+The E2B Provider uses the SDK's async lifecycle surface. A provider call lacking an async SDK operation is isolated through a bounded worker-thread boundary only when required and preserves cancellation and unknown-outcome semantics. E2B API credentials remain with the Provider. Provider-routed HTTPS, E2B access controls, and EIP bootstrap credentials are separate layers; EIP authentication remains mandatory.
 
 ## E2B and Harness Environment Semantics
 
@@ -202,7 +202,7 @@ Files written in the sandbox can survive both pause modes as provider-native res
 
 The main provider distribution depends on compatible Docker and E2B SDK versions. There are no provider extras. The package root exports:
 
-- provider specification, catalog, factory, Manager, operation identity, reconciliation, state, lifecycle capability, and attachment contracts;
+- provider specification, catalog, factory, Provider, operation identity, reconciliation, state, lifecycle capability, and attachment contracts;
 - the four built-in provider keys, typed configuration models, and exact runtime collaborator types;
 - `EIPSessionSource` plus stdio, HTTP, and accepted reverse-WebSocket source configuration;
 - stable provider error and outcome types.
@@ -246,7 +246,7 @@ Local Envd adds a subprocess, private-runtime, native-isolation, and EIP lifecyc
 
 ### Explicit resume
 
-Disabling E2B traffic-triggered auto-resume adds one explicit Manager call. It makes resumed routing, daemon readiness, generation validation, and fresh attachment issuance deterministic and easy to test.
+Disabling E2B traffic-triggered auto-resume adds one explicit Provider call. It makes resumed routing, daemon readiness, generation validation, and fresh attachment issuance deterministic and easy to test.
 
 ### EIP-only sandbox operations
 
@@ -262,7 +262,7 @@ Baking and starting `agent-envd` adds a template/image requirement. It avoids di
 06. Local Envd, Docker filesystem pause, and E2B filesystem pause discard process memory and create a fresh `agent-envd` generation on resume.
 07. Local Envd required isolation never degrades to disabled mode; E2B full pause can preserve the daemon process but never preserves external connections, transfers, or EIP sessions.
 08. A missing, expired, killed, or incompatible resource is never replaced implicitly by `resume()`.
-09. E2B automatic traffic-triggered resume is disabled; the Manager owns explicit resume and readiness validation.
+09. E2B automatic traffic-triggered resume is disabled; the Provider owns explicit resume and readiness validation.
 10. Every resumed EIP-backed resource yields a fresh attachment, Harness binding, and initialized EIP session.
 11. Docker SDK calls and any unavoidable synchronous E2B SDK call never block the async event loop; native E2B async lifecycle operations remain async.
 12. Provider-native filesystem persistence and Harness portable Environment state remain separate mechanisms.

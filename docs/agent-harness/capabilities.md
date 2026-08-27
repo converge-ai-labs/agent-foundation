@@ -112,7 +112,7 @@ executable = HarnessBuilder().build(
     capabilities=(DocumentsCapability(),),
 )
 
-bindings = RunBindings.local(
+bindings = RunBindings.embedded(
     capabilities=(DocumentsRunCapability(converter=document_converter),),
 )
 ```

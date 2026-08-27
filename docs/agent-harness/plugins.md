@@ -178,13 +178,13 @@ Plugins can contribute native Capabilities at Agent binding. They should not imp
 
 Trusted code can implement `EnvironmentProviderBinding` directly when it already owns one process-local resource revision and can expose provider-neutral file, shell, process, output, port, readiness, and portable-state operations.
 
-That is a low-level runtime binding contract. Provider specification catalogs, resource create/resume/pause/destroy Managers, credential handling, and durable provider state are not Harness middleware and are not documented as a Harness plugin system.
+That is a low-level runtime binding contract. Provider specification catalogs, `EnvironmentProvider` lifecycle operations, credential handling, and durable provider state are not Harness middleware and are not documented as a Harness plugin system.
 
 An `EnvironmentProviderBinding` is fresh and single-use. Effectful allocation, authentication, session entry, maintenance tasks, and cleanup-producing work belong inside its async `bind()` scope or in the owning provider layer, never in import-time discovery or an inert factory constructor.
 
 ## Environment Run Extensions
 
-Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `BoundEnvironment`, including zero, one, or several provider bindings.
+Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `Environment`, including zero, one, or several provider bindings.
 
 ```python
 from contextlib import asynccontextmanager
@@ -214,9 +214,12 @@ class WorkspaceMarkerExtension:
             await context.environment.files.remove(path)
 ```
 
-Register direct extension objects while constructing the aggregate:
+Register direct extension objects through the advanced aggregate route:
 
 ```python
+from a13n_harness.environment.advanced import create_environment_run_binding
+
+
 environment_binding = create_environment_run_binding(
     initial_topology=topology,
     topology_limits=topology_limits,

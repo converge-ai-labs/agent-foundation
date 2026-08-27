@@ -2,13 +2,15 @@
 
 ## Design Position
 
-The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds five narrow boundaries:
+The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds seven narrow boundaries:
 
 1. normalized code-first semantic input visible to Harness middleware;
-2. optional developer-facing native Model inference and deterministic patch composition;
-3. optional fresh run-scoped resolution of a logical model ID;
-4. optional exact one-shot provider-history self-healing;
-5. bounded logical-run recovery after a recoverable model interruption.
+2. developer-facing native Model inference and deterministic patch composition;
+3. input-only convenience layers that immediately materialize selected model-configuration and model-settings aliases;
+4. optional fresh run-scoped resolution of a logical model ID;
+5. one automatic request-correlation header derived from the active Thread;
+6. optional exact one-shot provider-history self-healing;
+7. bounded logical-run recovery after a recoverable model interruption.
 
 It does not add a hosted input wire format, durable model registry, serialized settings/profile system, provider route-pin schema, output mode, or Capability-only retry framework.
 
@@ -23,7 +25,7 @@ type RunInputValue = NativeRunInput
 class RunPreparationContext:
     run_id: str
     instance: AgentInstanceContext
-    environment: BoundEnvironment
+    environment: Environment
     metadata: Mapping[str, JsonValue]
 
 
@@ -82,8 +84,8 @@ def infer_model(
 
 `infer_model()` is convenience composition, not a second Model interface. It follows these rules:
 
-1. A native `Model` passes through without provider inference. A string is normalized at this single compatibility boundary: bare `openai:` preserves Chat Completions semantics as `openai-chat:`, while `gemini:`, `google-gla:`, and `google-vertex:` normalize to `google-cloud:`. Other strings retain upstream Pydantic semantics.
-2. An ordinary provider string uses the supplied `provider_factory`. A `gateway@provider:model` string requires `gateway_provider_factory`; the Harness parses and normalizes the route, while the factory owns provider construction, credentials, endpoint selection, optional SDK dependencies, retry transport, and any HTTP client. The Harness does not read gateway environment variables or create a provider client.
+1. A native `Model` passes through without provider inference. A string is normalized at this single compatibility boundary: bare `openai:` selects the modern Responses API as `openai-responses:`, while `gemini:`, `google-gla:`, and `google-vertex:` normalize to `google-cloud:`. Other strings retain upstream Pydantic semantics.
+2. An ordinary provider string uses the supplied `provider_factory`. The literal `gateway@provider:model` form always uses Pydantic AI's public Gateway Provider; Pydantic owns its standard environment configuration, provider client, authentication, and lifecycle. Any other `<name>@provider:model` form requires `gateway_provider_factory`; the Harness passes the normalized gateway and provider names while the factory owns provider construction, credentials, endpoint selection, optional SDK dependencies, retry transport, and any HTTP client.
 3. `patches` run synchronously in declaration order after base inference. Every patch accepts and must return a native `Model`. This is the maintained extension point for Harness or application-specific Model wrappers, profiles, transports, and compatibility fixes without replacing Pydantic's Model contract.
 4. Non-empty `common_headers` add an outer `RequestHeadersModel` after patches. It case-insensitively merges those defaults into native `ModelSettings.extra_headers` for both request and streaming request paths; request-specific headers win, including when their casing differs. The wrapper does not mutate caller mappings or the wrapped Model, inspect header meanings, or persist or emit values.
 5. The returned object is always a native `Model` and can be passed directly to `HarnessBuilder.build(model=...)`, an `AgentDefinition`, or a `RunModelResolver`. A caller can bypass this helper completely and provide any self-constructed native Model.
@@ -108,11 +110,33 @@ Resolution follows these rules:
 1. A concrete `Model` supplied through `AgentDefinition.model` or `HarnessBuilder.build(model=...)` is used directly and does not call `RunModelResolver`. Its `AgentSpec.model` must be `None`.
 2. A string selected only by `AgentSpec.model` reaches the thin resolver after the fresh run context exists.
 3. With a `RunModelResolver`, the resolver calls the async callable directly and requires a native `Model`; an invalid value or exception becomes `ModelResolutionError`.
-4. Without a resolver, the thin Capability returns `None`, deliberately delegating to Pydantic AI's native model inference chain.
+4. Without a resolver, the thin Capability calls Harness `infer_model()` with the builder's optional `gateway_provider_factory`. This makes Harness compatibility aliases and `gateway@` routing the default string path rather than delegating to a separate Pydantic inference call.
 
-The Harness has no second model profile, provider settings, registry, route envelope, or fallback policy. Embedded applications may use native inference. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises.
+Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Harness `infer_model()`. The Harness has no second model profile, provider settings, registry, route envelope, or fallback policy. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises. The builder-level gateway factory is construction policy shared by every recursively built child; current-run credentials or authorization remain in `RunModelResolver`.
 
 `RunBindings` supplies a fresh resolver for each logical Harness run. The same resolver and `AgentContext` are shared by all internal recovery attempts. Pydantic's `ModelResolutionContext` carries the effective Agent dependencies and native resolution semantics. Freshness applies to current-run authority, credentials, policy, and affinity; the callable may reference a Host-owned concurrency-safe provider client whose lifecycle is broader than the run.
+
+### Automatic Request Affinity
+
+Every built Agent includes one mandatory final model-request Capability. Immediately before each upstream request, after effective settings and every earlier request hook have been applied, it copy-on-write adds these independent defaults from the active Thread:
+
+```text
+ModelSettings.extra_headers["x-session-id"] = AgentContext.thread_id
+ModelSettings.openai_prompt_cache_key = AgentContext.thread_id
+```
+
+An explicit effective `extra_headers` entry wins case-insensitively, so `X-Session-ID` and `x-session-id` are the same override key. An explicit effective `openai_prompt_cache_key` also wins. The Capability does not mutate caller settings or header mappings, does not add transient run IDs, and applies to concrete, run-resolved, and inferred Models on both streaming and non-streaming paths. The selected Pydantic provider adapter remains responsible for consuming settings it recognizes: non-OpenAI adapters ignore the OpenAI-prefixed value, while an OpenAI or OpenAI-compatible adapter may render it as `prompt_cache_key`.
+
+Both automatic defaults are enabled when the corresponding environment variable is absent. `HarnessBuilder` snapshots the switches once during synchronous construction:
+
+| Environment variable                                         | Automatic default controlled                  |
+| ------------------------------------------------------------ | --------------------------------------------- |
+| `A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED`            | `ModelSettings.extra_headers["x-session-id"]` |
+| `A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED` | `ModelSettings.openai_prompt_cache_key`       |
+
+Each switch accepts `1`, `true`, `yes`, or `on` and `0`, `false`, `no`, or `off`, case-insensitively and without surrounding whitespace. Any other present value fails builder construction. Setting one switch to false suppresses only that Harness-derived default; it neither removes an explicit effective setting nor changes the other switch. Existing builders and executables do not observe later environment changes. This process-level compatibility escape hatch lets a deployment disable a field rejected by an upstream OpenAI-compatible endpoint without adding another model capability registry or per-run flag.
+
+The stable Thread ID gives continuations one correlation and cache-affinity value while keeping independent roots, children, siblings, and forks separate. `RequestHeadersModel` remains the lower-level helper for caller-selected static header defaults and does not own run metadata.
 
 ### Settings and Profile
 
@@ -123,27 +147,107 @@ Pydantic AI retains the complete layering:
 - `Model.profile` and provider adapters own compatibility and rendering facts;
 - Capabilities own reusable Agent-loop behavior.
 
+For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle configuration and native provider request settings:
+
+```python
+type ModelConfigurationTransform = Callable[[ModelConfiguration], ModelConfiguration]
+type ModelSettingsTransform = Callable[[ModelSettings], ModelSettings]
+
+
+@dataclass(frozen=True, slots=True)
+class ModelConfigurationAlias:
+    key: str
+    provider: str
+    transform: ModelConfigurationTransform
+
+
+@dataclass(frozen=True, slots=True)
+class ModelSettingsAlias:
+    key: str
+    provider: str
+    transform: ModelSettingsTransform
+
+
+class ModelConfigurationAliasCatalog(Mapping[str, ModelConfigurationAlias]): ...
+
+class ModelSettingsAliasCatalog(Mapping[str, ModelSettingsAlias]): ...
+
+
+def get_model_configuration_alias_catalog() -> ModelConfigurationAliasCatalog: ...
+
+def get_model_settings_alias_catalog() -> ModelSettingsAliasCatalog: ...
+
+
+def resolve_model_configuration(
+    model: str,
+    *,
+    aliases: Sequence[str] = (),
+    overrides: ModelConfiguration | None = None,
+    catalog: ModelConfigurationAliasCatalog | None = None,
+) -> ModelConfiguration | None: ...
+
+
+def resolve_model_settings(
+    model: str,
+    *,
+    aliases: Sequence[str] = (),
+    overrides: ModelSettings | None = None,
+    catalog: ModelSettingsAliasCatalog | None = None,
+) -> ModelSettings: ...
+```
+
+The release-pinned default configuration catalog is deliberately small:
+
+| Alias                    | Concrete `ModelConfiguration` effect |
+| ------------------------ | ------------------------------------ |
+| `anthropic:context-200k` | `context_window=200_000`             |
+| `anthropic:context-400k` | `context_window=400_000`             |
+| `anthropic:context-1m`   | `context_window=1_000_000`           |
+
+These context values are Harness lifecycle budgets used to derive proactive summarization and compaction thresholds. They do not select a provider context variant, add a beta header, change native `ModelSettings`, or widen the selected model's actual capability. The authoring integration remains responsible for choosing a compatible model and provider route.
+
+The release-pinned default settings catalog contains:
+
+| Alias                            | Concrete `ModelSettings` effect                                               |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `anthropic:interleaved-thinking` | `anthropic_thinking={"type": "adaptive"}`                                     |
+| `anthropic:thinking-disabled`    | `anthropic_thinking={"type": "disabled"}` and no inherited `anthropic_effort` |
+| `anthropic:max-output-32k`       | `max_tokens=32_768`                                                           |
+| `anthropic:max-output-64k`       | `max_tokens=65_536`                                                           |
+| `anthropic:max-output-128k`      | `max_tokens=131_072`                                                          |
+
+Adaptive thinking is the current Anthropic request form that enables interleaved thinking on supporting models. The alias does not force effort, token limits, prompt caching, beta headers, or an `anthropic_cm` value. The disabled transform removes an earlier `anthropic_effort`; an explicit concrete override supplied afterward remains authoritative. A max-output alias is only an explicit native request limit. It does not claim that every Anthropic model accepts that value, and the selected Model/provider remains responsible for compatibility validation.
+
+Resolution follows these rules:
+
+1. A non-empty alias sequence requires a provider-qualified model string. Direct `anthropic:model` and explicit gateway `gateway@anthropic:model` forms are compatible with the initial aliases; a Host-logical model ID is not, because its provider integration must be selected first.
+2. Alias transforms apply synchronously in declaration order to a detached value in their own plane. Unknown aliases, provider mismatch, malformed model references, or transforms returning the wrong concrete type fail immediately.
+3. Concrete `overrides` are copied and applied last. Settings overrides shallowly update the native settings dictionary. Configuration overrides replace only fields explicitly set by the caller. Neither resolver mutates caller values, infers provider defaults, or validates whether a particular model version supports the selected budget or request setting.
+4. `resolve_model_configuration()` returns `None` when neither aliases nor overrides supply configuration; otherwise it returns concrete `ModelConfiguration`. `resolve_model_settings()` always returns concrete native `ModelSettings`, including an empty dictionary when no input is supplied.
+5. Callers place the concrete results in `AgentSpec.model_configuration` and native `AgentSpec.model_settings`, pass them through ordinary Pydantic construction, or persist them under Host-owned concrete schemas. Alias names never enter `AgentSpec`, `AgentDefinition`, `HarnessBuilder`, `RunBindings`, `HarnessState`, a Host revision, or a worker reconstruction record.
+6. A Host may construct immutable catalogs containing additional deployment-specific aliases, but resolves them only at its authoring or integration input boundary. Durable and process-local core contracts still contain concrete values. The Harness catalogs have no inheritance, dynamic discovery, environment loading, pricing coupling, or provider registry role.
+
 The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. A hosted model integration may retain durable gateway and provider configuration and use Harness `infer_model()` as its shared construction boundary. It supplies a Host-owned gateway provider factory or ordinary provider factory, composes required patches, and returns the native Model directly or through `RunModelResolver`.
 
 An enterprise gateway integration remains explicit model construction, not another Capability or an ambient inference registry. It may select OAuth or WebSocket transport, attach provider profiles and bounded retry configuration, and reuse a Host-owned async client through its provider factory or patches. Harness-owned compatibility normalization and `RequestHeadersModel` provide the shared behavior that embedded applications, Agent UI, and Foundation Service would otherwise duplicate. The integration still owns credential handling, client lifecycle, provider compatibility, and route authorization; the Harness does not infer those facts from process environment.
 
 ## Thread Affinity
 
-One independently advancing Pydantic message history is one Thread. `HarnessState.thread_id` is its provider-neutral stable identity, and every fresh `AgentContext` restores that ID from the selected State. The root, every inline child's nested State, every Host-managed child's State, and every explicit `HarnessState.fork()` therefore have separate Threads even when a Host groups them under one workload instance, Session, or trace.
+One independently advancing Pydantic message history is one Thread. `HarnessState.thread_id` is its provider-neutral stable identity, and every fresh `AgentContext` restores that ID from the selected State. The root, every inline child's nested State, every Host-managed child's State, and every explicit `HarnessState.fork()` therefore have separate Threads even when a Host groups them under one workload instance, Session, or trace. [Harness Observation](19-observation-model.md#pydantic-ai-fields) also uses this value as Pydantic `conversation_id`, but telemetry correlation never changes the affinity rules in this section.
 
-A selected model integration reads `AgentContext.thread_id` and can map it to provider-specific routing, session, thread, or prompt-cache settings. For example, an OpenAI-compatible integration can set `openai_prompt_cache_key`, which the provider renders as `prompt_cache_key`. Those rendered values remain provider integration details rather than additional Harness fields or a portable wire schema.
+The mandatory final request Capability maps `AgentContext.thread_id` to the default request-correlation header and OpenAI prompt-cache setting described above. A selected model integration may explicitly override either value with a provider-required derivation or add other provider-specific routing, session, or thread settings. Rendered provider values remain integration details rather than additional Harness fields or a portable wire schema.
 
 The mapping follows these rules:
 
 1. Distinct independently advancing message histories have distinct `thread_id` values and receive distinct provider model-session and prompt-cache affinity. A child never inherits its parent's value, and sibling children never share one merely because they have the same definition, `AgentInstanceRef`, Session, Host Execution, or Environment.
 2. A continuation selected from the same `HarnessState` preserves the exact ID across fresh Harness runs, worker replacement, and reconstructed model resolvers. Every internal `ModelAttempt` in one logical run uses the same ID.
 3. A transient Harness `run_id`, model-attempt ID, tool-call ID, `AgentInstanceRef`, or Host `session_id` is not the affinity source. Those values rotate independently or group histories under other policy domains.
-4. The fresh `RunModelResolver` callable reads the stable ID from `ModelResolutionContext.deps`, combines it only with its selected model/provider namespace and current policy as needed, and returns a native Model configured with matching affinity. No fresh binding can replace the context's ID. A provider that needs an additional opaque non-derivable continuation selector keeps it in the Host's provider-specific envelope associated with the matching State.
+4. The final request Capability derives its enabled defaults from the stable ID for every concrete, resolved, or inferred Model. A fresh `RunModelResolver` may read the same ID from `ModelResolutionContext.deps` when its provider requires an explicit namespaced override or additional affinity state, but no fresh binding can replace the context's ID. A provider that needs an additional opaque non-derivable continuation selector keeps it in the Host's provider-specific envelope associated with the matching State.
 5. `HarnessState` stores the provider-neutral ID, messages, and portable continuation data, but no provider session, route, credential, or rendered prompt-cache key. `AgentContextState` and Delegation State do not duplicate the ID; a nested child `HarnessState` carries its own.
 6. `HarnessState.fork()` copies portable continuation data while generating a new ID. Ordinary state copies, serialization, checkpoint selection, and export preserve the ID. A Host or trusted plugin remains able to perform an intentional complete-state transformation inside the existing trust boundary.
 7. The ID and derived affinity improve provider cache locality and best-effort continuation or retry behavior. They grant no authority, do not select a checkpoint, and cannot make an interrupted request or side effect exactly once.
 
-A concrete build-time Model remains valid for embedded use. When one reusable executable can serve several Agent instances and the provider supports provider-native affinity, trusted composition supplies request-dynamic native settings or uses a logical model with `RunModelResolver`; one static cache or session value cannot be shared across those independent histories. Native explicit setting precedence remains owned by Pydantic and the provider integration, but the resulting value must preserve the Thread isolation above.
+A concrete build-time Model remains valid for embedded use because the automatic defaults are request-dynamic rather than Model defaults. One reusable executable therefore receives each active State's Thread affinity without sharing one static cache or session value across independent histories. Trusted composition may explicitly override a default with a provider-required derivation, but the resulting value must preserve the Thread isolation above.
 
 ## Request and History Filters
 
@@ -278,7 +382,7 @@ Trusted plugins may replace the complete result candidate, including output, usa
 | Invalid immediate or factory input              | Typed input/run error before model work                       |
 | Invalid or uncorrelated deferred continuation   | Typed run/deferred error before new model or tool work        |
 | Binding raises or returns a non-Model           | `ModelResolutionError`                                        |
-| No binding for a logical string                 | Delegate to native Pydantic inference                         |
+| No binding for a string model                   | Resolve through Harness `infer_model()`                       |
 | Exact self-healing repair succeeds              | Replay the same request once                                  |
 | Exact repair does not match or changes nothing  | Propagate the original Model error                            |
 | Recoverable model interruption with budget      | Start another `ModelAttempt` after cancellation-aware backoff |

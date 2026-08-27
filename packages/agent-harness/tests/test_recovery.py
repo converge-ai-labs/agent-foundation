@@ -62,7 +62,7 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage() ->
         model_recovery=_recovery_policy(),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "resumed answer"
     assert result.usage.requests == 2
@@ -104,7 +104,7 @@ async def test_interrupted_partial_thinking_is_not_replayed() -> None:
         model_recovery=_recovery_policy(),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "resumed answer"
     assert len(calls) == 2
@@ -137,7 +137,7 @@ async def test_disabled_recovery_exports_no_unfinished_thinking() -> None:
         model=FunctionModel(stream_function=stream),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.status == "failed"
     assert result.state is not None
@@ -173,7 +173,7 @@ async def test_finalized_thinking_and_partial_text_are_replayed_in_order() -> No
         model_recovery=_recovery_policy(),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "resumed answer"
     interrupted = next(
@@ -228,7 +228,7 @@ async def test_response_tracker_does_not_mix_multiple_model_requests() -> None:
         model_recovery=_recovery_policy(max_attempts=2),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "recovered answer"
     assert len(calls) == 3
@@ -281,7 +281,7 @@ async def test_unobserved_usage_limited_thinking_is_not_exported() -> None:
 
     result = await executable.run(
         "start",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         usage_limits=UsageLimits(output_tokens_limit=0),
     )
 
@@ -326,7 +326,7 @@ async def test_complete_native_tool_parts_survive_a_later_text_interruption() ->
         model=FunctionModel(stream_function=stream),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.status == "failed"
     interrupted = next(
@@ -393,7 +393,7 @@ async def test_malformed_native_tool_pairs_discard_the_interrupted_response(
         model=FunctionModel(stream_function=stream),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.status == "failed"
     assert not any(
@@ -433,7 +433,7 @@ async def test_unmatched_native_tool_call_discards_the_interrupted_response() ->
         model=FunctionModel(stream_function=stream),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.status == "failed"
     assert not any(
@@ -478,7 +478,7 @@ async def test_recovery_does_not_replay_an_unmatched_native_tool_call() -> None:
         model_recovery=_recovery_policy(),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "resumed answer"
     assert len(calls) == 2
@@ -517,7 +517,7 @@ async def test_unfinalized_tool_call_invalidates_the_partial_response() -> None:
         model_recovery=_recovery_policy(),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "resumed answer"
     assert len(calls) == 2
@@ -541,7 +541,7 @@ async def test_disabled_recovery_exports_interrupted_model_history_as_a_failed_r
         model=FunctionModel(stream_function=stream),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.status == "failed"
     assert result.failure is not None
@@ -572,7 +572,7 @@ async def test_stream_establishment_failure_can_resume_before_any_content() -> N
         model_recovery=_recovery_policy(),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "recovered"
     assert calls == 2
@@ -612,7 +612,7 @@ async def test_recovery_prompt_factory_receives_the_failure_and_repaired_history
         ),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert len(factory_calls) == 1
@@ -662,7 +662,7 @@ async def test_recovery_attempt_budget_is_total_and_monotonic() -> None:
         model_recovery=_recovery_policy(max_attempts=3),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert calls == 3
     assert result.status == "failed"
@@ -689,7 +689,7 @@ async def test_usage_limit_never_enters_model_recovery() -> None:
 
     result = await executable.run(
         "start",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         usage_limits=UsageLimits(request_limit=0),
     )
 
@@ -723,7 +723,7 @@ async def test_cancel_interrupts_recovery_backoff_without_starting_another_attem
         ),
     )
 
-    async with executable.stream("start", bindings=RunBindings.local()) as run_stream:
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run_stream:
         pending = asyncio.create_task(run_stream.__anext__())
         await started.wait()
         run_stream.cancel()
@@ -753,7 +753,7 @@ async def test_cancelled_stream_does_not_export_unfinished_thinking() -> None:
         model=FunctionModel(stream_function=stream),
     )
 
-    async with executable.stream("start", bindings=RunBindings.local()) as run_stream:
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run_stream:
         await run_stream.__anext__()
         pending = asyncio.create_task(run_stream.__anext__())
         await started.wait()
@@ -794,7 +794,7 @@ async def test_cancel_fence_wins_when_provider_translates_cancellation() -> None
         model_recovery=_recovery_policy(max_attempts=5),
     )
 
-    async with executable.stream("start", bindings=RunBindings.local()) as run_stream:
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run_stream:
         pending = asyncio.create_task(run_stream.__anext__())
         await started.wait()
         run_stream.cancel()
@@ -843,7 +843,7 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
         model_recovery=_recovery_policy(max_attempts=5),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "first second"
     assert calls == 2
@@ -878,7 +878,7 @@ async def test_output_retry_exhaustion_does_not_start_a_new_attempt() -> None:
         model_recovery=_recovery_policy(max_attempts=5),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert calls == 2
     assert result.status == "failed"
@@ -916,7 +916,7 @@ async def test_tool_execution_failure_does_not_start_model_recovery() -> None:
     )
 
     with pytest.raises(RuntimeError, match="tool failed"):
-        await executable.run("start", bindings=RunBindings.local())
+        await executable.run("start", bindings=RunBindings.embedded())
 
     assert model_calls == 1
     assert tool_calls == 1
@@ -948,7 +948,7 @@ async def test_deferred_tool_request_stays_suspended_and_is_not_closed_or_retrie
         model_recovery=_recovery_policy(max_attempts=5),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.status == "suspended"
     assert result.suspend_reason == "deferred"
@@ -994,7 +994,7 @@ async def test_upstream_history_cleanup_removes_stale_tool_results_before_retry(
 
     result = await executable.run(
         "continue",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=HarnessState.new(message_history=history),
     )
 
@@ -1045,7 +1045,7 @@ async def test_saved_interrupted_tool_history_is_repaired_before_rerun() -> None
 
     result = await executable.run(
         "continue",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=HarnessState.new(message_history=history),
     )
 

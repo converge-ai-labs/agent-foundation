@@ -24,19 +24,19 @@ flowchart LR
     Harness -->|deferred request| Host --> Client
     Client -->|authenticated result| Host
     Harness -->|HarnessState| Host --> Store
-    Harness -. sanitized observations .-> Telemetry
+    Harness -. bounded Harness fields and upstream Pydantic spans .-> Telemetry
 ```
 
-| Boundary                              | Contract                                                                                    |
-| ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Host to Harness                       | Host reconstructs trusted code-first objects and supplies fresh typed bindings              |
-| Model to native tool                  | Pydantic dispatch under trusted process composition                                         |
-| Model to managed tool                 | Metadata-aware authorization, credentials, result safety, and provider enforcement          |
-| Harness to Environment                | Identity-bound `BoundEnvironment`; provider repeats native checks                           |
-| Restricted CodeAct to Host            | No ambient authority; only typed eligible callbacks through the current final `ToolManager` |
-| Host to external client-tool executor | Durable pending fact, authenticated action/result, exact continuation correlation           |
-| Harness to state store                | Harness exports detached state; Host owns persistence, encryption, retention, and selection |
-| Harness to telemetry                  | Sanitized observation only; never lifecycle or billing authority                            |
+| Boundary                              | Contract                                                                                                                                                                                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Host to Harness                       | Host reconstructs trusted code-first objects and supplies fresh typed bindings                                                                                                                                                             |
+| Model to native tool                  | Pydantic dispatch under trusted process composition                                                                                                                                                                                        |
+| Model to managed tool                 | Metadata-aware authorization, credentials, result safety, and provider enforcement                                                                                                                                                         |
+| Harness to Environment                | Identity-bound `BoundEnvironment`; provider repeats native checks                                                                                                                                                                          |
+| Restricted CodeAct to Host            | No ambient authority; only typed eligible callbacks through the current final `ToolManager`                                                                                                                                                |
+| Host to external client-tool executor | Durable pending fact, authenticated action/result, exact continuation correlation                                                                                                                                                          |
+| Harness to state store                | Harness exports detached state; Host owns persistence, encryption, retention, and selection                                                                                                                                                |
+| Harness to telemetry                  | Harness-authored fields are bounded; upstream Pydantic structural and exception fields follow the explicit [Observation boundary](19-observation-model.md#content-and-information-boundary); neither grants lifecycle or billing authority |
 
 ## Identity and Authority
 
@@ -93,13 +93,13 @@ CodeAct does not sandbox trusted tool implementations after dispatch. An eligibl
 
 ## Environment Enforcement
 
-Routing selects a binding; it does not grant access. The Host alone retains the process-local topology controller, and model content cannot invoke it. Every added or refreshed entry is a fresh trusted provider binding adapted from a fresh attachment or constructed directly before atomic publication. Environment Managers own provider create/resume/pause/destroy authority and resource state; bindings own logical Environment authentication, path normalization, mount policy, symlink behavior, resource ceilings, handle visibility, process ownership, port policy, generation fencing, output retention, and native command isolation.
+Routing selects a binding; it does not grant access. The Host alone retains the process-local topology controller, and model content cannot invoke it. Every added or refreshed entry is a fresh trusted provider binding adapted from a fresh attachment or constructed directly before atomic publication. Environment Providers own provider create/resume/pause/destroy authority and resource state; bindings own logical Environment authentication, path normalization, mount policy, symlink behavior, resource ceilings, handle visibility, process ownership, port policy, generation fencing, output retention, and native command isolation.
 
 Client-side validation improves errors but never replaces provider enforcement. Environment authorization intersects exact values from the selected action catalog; an operation family, prefix, wildcard, managed tool ID, EIP available-method name, or unknown provider string never grants a core action. Operations and handles are revalidated against current binding revision, Identity, policy, and provider generation. Removal or refresh never retargets an old handle; in-flight leases drain against the captured provider and unsafe active handles fence publication.
 
-Direct Local is an explicit embedding trust choice, not native command isolation or a race-hardened filesystem broker. Its file facet rejects observed traversal and symlink escape under a Host-controlled namespace, but a hostile same-account process can race native directory replacement, and an allowed child executable already has the embedding OS account's ambient filesystem or network reach beyond its working directory. Direct Local therefore rejects `network="deny"` and rejects read-only roots combined with any shell profile or allowed executable rather than claiming enforcement it does not provide. A Host that needs command confinement or adversarial concurrent filesystem isolation uses an EIP-backed managed resource whose `agent-envd` boundary enforces it beside the governed resources.
+Direct Local is an explicit embedding trust choice, not native command isolation or a race-hardened filesystem broker. Its file facet rejects observed traversal and symlink escape under a Host-controlled namespace, but a hostile same-account process can race native directory replacement, and an allowed child executable already has the embedding OS account's ambient filesystem or network reach beyond its working directory. Direct Local therefore rejects `network="deny"` and rejects read-only roots combined with any shell profile or allowed executable rather than claiming enforcement it does not provide. A Host that needs command confinement or adversarial concurrent filesystem isolation uses an EIP-backed Resource whose `agent-envd` boundary enforces it beside the governed resources.
 
-Provider resource state, Docker daemon access, E2B API credentials, and EIP credentials are separate authorities. The Manager obtains current provider credentials through a live Host collaborator; no provider specification, attachment, binding, descriptor, event, or `HarnessState` carries them. A provider-routed EIP HTTP endpoint uses TLS, while plaintext is limited to an explicitly trusted loopback or private provider link. EIP bootstrap authentication remains mandatory in either case, and redirects are rejected.
+Provider resource state, Docker daemon access, E2B API credentials, and EIP credentials are separate authorities. The Provider obtains current provider credentials through a live Host collaborator; no provider specification, attachment, binding, descriptor, event, or `HarnessState` carries them. A provider-routed EIP HTTP endpoint uses TLS, while plaintext is limited to an explicitly trusted loopback or private provider link. EIP bootstrap authentication remains mandatory in either case, and redirects are rejected.
 
 ## Remote Content and Network Authority
 
@@ -129,11 +129,13 @@ State restores no Identity, credential, policy decision, desired topology, Envir
 
 ## Model and Recovery Safety
 
-A concrete Model bypasses string-ID resolution and is mutually exclusive with `AgentSpec.model`. A string model reaches the thin `ResolveModelId`; a fresh async `RunModelResolver` returns a native Model or raises. When no resolver exists, the Harness deliberately returns `None` and Pydantic native inference continues. A hosted profile that requires fail-closed aliases must enforce presence of its binding during worker setup.
+A concrete Model bypasses string-ID resolution and is mutually exclusive with `AgentSpec.model`. A string model reaches the thin `ResolveModelId`; a fresh async `RunModelResolver` returns a native Model or raises. When no resolver exists, the Harness uses its own `infer_model()` compatibility boundary and the builder's optional gateway Provider factory. Literal `gateway@` routes use Pydantic AI's public Gateway Provider and its standard credential configuration; named custom gateways require the explicit builder factory. A hosted profile that requires fail-closed aliases must enforce presence of its binding during worker setup.
 
-The packaged official model catalog contains only public direct-provider facts and grants no provider availability or authority. The packaged pricing snapshot and Host replacements are immutable public configuration, not credentials or settlement truth. Cost input excludes content and credentials; lookup miss, invalid quote, or calculation failure preserves upstream usage and cannot fail the Agent run. Inline delegation reuses the parent's effective build-time model-cost Capability without exposing another Host-selectable run override.
+Every effective model request receives non-authoritative Thread-derived defaults for `x-session-id` and `openai_prompt_cache_key`. Explicit effective settings override them, and the selected provider adapter remains responsible for consuming and rendering recognized native settings. Each automatic default has an independent default-on environment switch snapshotted at `HarnessBuilder` construction so a deployment can suppress a field rejected by an upstream endpoint. Disabling a default does not remove an explicit setting. Request-affinity injection grants no authority and exposes neither credentials nor transient run metadata.
 
-Provider model-session and prompt-cache affinity are correlation and performance inputs, not authority. The Harness isolates every independently advancing root, child, or fork history with `HarnessState.thread_id`, restores it as a read-only `AgentContext` value, and accepts no run-binding or metadata override. The model integration derives affinity from that value rather than transient run IDs, `AgentInstanceRef`, or a broader product-conversation key shared across parent and child histories. Rendered provider affinity remains absent from `HarnessState`; an additional non-derivable opaque selector is protected and retained by the Host like other provider-specific continuation data. The State-owned ID itself is not a credential, checkpoint authority, or cryptographic integrity mechanism; trusted plugins and Host State transformations remain inside the existing trust boundary.
+The packaged official model catalog contains only public direct-provider facts and grants no provider availability or authority. Model-configuration and model-settings aliases are non-authoritative authoring convenience: resolution requires an already selected provider, produces detached concrete values in the respective Harness lifecycle and native request planes, and fails before Agent construction or durable revision creation. A context alias cannot widen provider capability or enable a provider context variant, and a max-output alias cannot prove model compatibility. Alias keys cannot defer a provider choice, enter run bindings or state, or cause a worker to consult a mutable catalog. The packaged pricing snapshot and Host replacements are immutable public configuration, not credentials or settlement truth. Cost input excludes content and credentials; lookup miss, invalid quote, or calculation failure preserves upstream usage and cannot fail the Agent run. Inline delegation reuses the parent's effective build-time model-cost Capability without exposing another Host-selectable run override.
+
+Provider model-session and prompt-cache affinity are correlation and performance inputs, not authority. The Harness isolates every independently advancing root, child, or fork history with `HarnessState.thread_id`, restores it as a read-only `AgentContext` value, and accepts no run-binding or metadata override. The mandatory final request Capability derives its enabled defaults from that value; a model integration may explicitly override them with a provider-required derivation but never substitutes transient run IDs, `AgentInstanceRef`, or a broader product-conversation key shared across parent and child histories. Rendered provider affinity remains absent from `HarnessState`; an additional non-derivable opaque selector is protected and retained by the Host like other provider-specific continuation data. The State-owned ID itself is not a credential, checkpoint authority, or cryptographic integrity mechanism; trusted plugins and Host State transformations remain inside the existing trust boundary.
 
 Recovery layers remain bounded and separate:
 
@@ -146,24 +148,28 @@ Cancellation, usage limits, output retry exhaustion, tool failure, native deferr
 
 ## Data and Telemetry
 
-The design distinguishes public configuration, correlation metadata, user/business content, sensitive model/tool content, credential metadata, and secret material. Secrets are absent from general Harness schemas. Content enters events, state, logs, or telemetry only under its owning policy.
+The design distinguishes public configuration, correlation metadata, user/business content, sensitive model/tool content, credential metadata, and secret material. Secrets are absent from general Harness schemas. Event, state, log, and Observation owners define separate content policies rather than relying on one generic sanitization claim.
 
-Telemetry export is an observation. Exporter availability does not determine run success unless a Host explicitly adds a separate fail-closed audit requirement.
+[Harness Observation](19-observation-model.md#content-and-information-boundary) guarantees bounded content-safe names, attributes, statuses, and events for Harness-authored spans. Pydantic AI owns its structural Agent/tool fields and exception projection; those fields can remain telemetry-visible even when normal prompt, output, argument, binary, and request-parameter capture is disabled. Before enabling Observation, the Host ensures those upstream surfaces are safe, sanitizes its trusted processor or collector path before export, or leaves instrumentation disabled. Backend masking is defense in depth, not a portable OpenTelemetry guarantee.
+
+Telemetry export is non-authoritative and exporter availability never determines run success. A Host with a fail-closed audit requirement implements a separate durable audit facility rather than turning an exporter into Harness lifecycle authority.
 
 ## Compatibility Model
 
-| Axis                                     | Owner                                             |
-| ---------------------------------------- | ------------------------------------------------- |
-| Harness public Python API                | Harness                                           |
-| Native Agent/Model/Capability behavior   | Pydantic AI                                       |
-| Host definition/revision schema          | Host                                              |
-| Reconstruction adapter and artifact lock | Host integration/operator                         |
-| Harness state envelope                   | Harness                                           |
-| Capability state entry                   | Owning Capability                                 |
-| Portable Environment binding-state codec | Owning Environment provider                       |
-| Provider resource-state codec            | `a13n-environment-provider` built-in or extension |
-| Provider resource-state storage          | Host                                              |
-| Durable lifecycle/events                 | Host                                              |
+| Axis                                          | Owner                                             |
+| --------------------------------------------- | ------------------------------------------------- |
+| Harness public Python API                     | Harness                                           |
+| Native Agent/Model/Capability behavior        | Pydantic AI                                       |
+| Harness Observation API and `a13n.*` registry | Harness                                           |
+| Upstream Pydantic instrumentation fields      | Pydantic AI                                       |
+| Host definition/revision schema               | Host                                              |
+| Reconstruction adapter and artifact lock      | Host integration/operator                         |
+| Harness state envelope                        | Harness                                           |
+| Capability state entry                        | Owning Capability                                 |
+| Portable Environment binding-state codec      | Owning Environment provider                       |
+| Provider resource-state codec                 | `a13n-environment-provider` built-in or extension |
+| Provider resource-state storage               | Host                                              |
+| Durable lifecycle/events                      | Host                                              |
 
 Matching logical IDs or definition digests do not prove artifact or state compatibility. A Host selects a mutually compatible revision and adapter set before construction and performs any explicit state migration before run creation.
 

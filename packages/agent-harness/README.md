@@ -35,7 +35,7 @@ capabilities = (
 )
 ```
 
-Embedding code supplies current Environment and provider collaborators through `RunBindings`. Media, document, and Web implementations stay behind their typed run collaborators rather than becoming dependencies of the Harness core. Static callers may import reusable Toolsets from `a13n_harness.toolsets`; their model-facing JSON results use named `TypedDict` contracts in the corresponding Toolset modules. Managed invocation policy and client-tool contracts are available from `a13n_harness.tools`.
+Embedding code passes an `EnvironmentProvider` or entered `EnvironmentResource` directly through `run(..., environment=...)`, or supplies a named mixed mapping through `environments=...`. Source type defines ownership: the Harness owns a Provider through one complete ephemeral lifecycle, while it borrows one fresh attachment from an entered Host-owned Resource. Ordinary calls can omit `RunBindings`; advanced topology bindings and current provider collaborators use fresh `RunBindings.embedded()` values. Media, document, and Web implementations stay behind their typed run collaborators rather than becoming dependencies of the Harness core. Static callers may import reusable Toolsets from `a13n_harness.toolsets`; their model-facing JSON results use named `TypedDict` contracts in the corresponding Toolset modules. Managed invocation policy and client-tool contracts are available from `a13n_harness.tools`.
 
 ## Model construction
 
@@ -51,7 +51,7 @@ Every `HarnessState` carries the stable `thread_id` of one independently advanci
 
 ## Runnable examples and guides
 
-The [Agent Application example](../../examples/agent-app/README.md) is one repeated conversation with Harness stream output, successful-turn state persistence, and recovery after application restart. The [plugin integration example](../../examples/plugins/README.md) publishes and selects a real Harness plugin distribution.
+The [Agent Application example](../../examples/agent-app/README.md) is one repeated conversation with Harness stream output, successful-turn state persistence, recovery after application restart, Harness-owned temporary Providers, Host-owned reusable Resources, and mixed multi-Environment input. The [plugin integration example](../../examples/plugins/README.md) publishes and selects a real Harness plugin distribution.
 
 The [Agent Harness user guide](../../docs/agent-harness/index.md) covers installation, first-party feature families, filters, Environments, results, resume, and usage. The [plugin guide](../../docs/agent-harness/plugins.md) covers packaging, configuration, lifecycle, and discovery from a Host-managed plugin directory without a process restart.
 

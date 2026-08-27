@@ -19,18 +19,20 @@ from a13n_harness import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentOutputPolicy,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     HarnessBuilder,
     InProcessMonitoredProcessMonitor,
     MonitoredProcessCapability,
     MonitoredProcessNotification,
     MonitoredProcessRunCapability,
     RunBindings,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_run_binding,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
@@ -218,7 +220,7 @@ async def test_monitored_process_shares_process_reference_status_and_accepted_de
     )
     result = await executable.run(
         "start",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=_local_binding(tmp_path),
             capabilities=(
                 InvocationPolicyCapability(evaluator=_Allow(), max_dispatch_retries=0),
@@ -251,7 +253,7 @@ async def test_monitored_process_requires_fresh_host_attachment_before_model_req
         capabilities=(DynamicEnvironmentCapability(_configuration()), MonitoredProcessCapability()),
     )
     with pytest.raises(Exception) as exc_info:
-        await executable.run("start", bindings=RunBindings.local())
+        await executable.run("start", bindings=RunBindings.embedded())
 
     assert getattr(exc_info.value, "code", None) == "monitored_process_binding_missing"
     assert model_called is False
@@ -260,7 +262,7 @@ async def test_monitored_process_requires_fresh_host_attachment_before_model_req
 @requires_posix_process_groups
 async def test_in_process_monitor_detects_fast_completion_without_losing_record(tmp_path: Path) -> None:
     binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.local(environment=binding)
+    run_bindings = RunBindings.embedded(environment=binding)
     ready = asyncio.Event()
     observed: list[MonitoredProcessNotification] = []
 
@@ -313,7 +315,7 @@ async def test_in_process_monitor_detects_fast_completion_without_losing_record(
 @requires_posix_process_groups
 async def test_in_process_monitor_retires_acknowledged_terminal_records(tmp_path: Path) -> None:
     binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.local(environment=binding)
+    run_bindings = RunBindings.embedded(environment=binding)
     monitor = InProcessMonitoredProcessMonitor(
         poll_interval_seconds=0.01,
         max_pending=1,
@@ -360,7 +362,7 @@ async def test_in_process_monitor_retires_acknowledged_terminal_records(tmp_path
 @requires_posix_process_groups
 async def test_in_process_monitor_backpressures_before_pending_completion_can_be_lost(tmp_path: Path) -> None:
     binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.local(environment=binding)
+    run_bindings = RunBindings.embedded(environment=binding)
     monitor = InProcessMonitoredProcessMonitor(
         poll_interval_seconds=0.01,
         max_pending=1,
@@ -440,7 +442,7 @@ async def test_monitored_process_rejects_orphan_run_attachment_before_model_requ
     with pytest.raises(Exception) as exc_info:
         await executable.run(
             "start",
-            bindings=RunBindings.local(capabilities=(MonitoredProcessRunCapability(monitor=monitor),)),
+            bindings=RunBindings.embedded(capabilities=(MonitoredProcessRunCapability(monitor=monitor),)),
         )
 
     assert getattr(exc_info.value, "code", None) == "monitored_process_owner_missing"
@@ -450,7 +452,7 @@ async def test_monitored_process_rejects_orphan_run_attachment_before_model_requ
 @requires_posix_process_groups
 async def test_in_process_monitor_close_publishes_gap_for_running_process(tmp_path: Path) -> None:
     binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.local(environment=binding)
+    run_bindings = RunBindings.embedded(environment=binding)
     monitor = InProcessMonitoredProcessMonitor(poll_interval_seconds=1)
 
     async with binding.bind(run_id="run-monitor-gap", instance=run_bindings.instance) as environment:
@@ -501,7 +503,7 @@ async def test_in_process_monitor_surfaces_observer_failure_as_pending_gap() -> 
         processes = _Processes()
 
     binding = _local_binding(Path.cwd())
-    run_bindings = RunBindings.local(environment=binding)
+    run_bindings = RunBindings.embedded(environment=binding)
     async with binding.bind(run_id="run-monitor-failure", instance=run_bindings.instance) as environment:
         await environment.activate()
         started = await environment.processes.start(
@@ -568,7 +570,7 @@ async def test_process_monitor_cancellation_finishes_kill_before_reraising(tmp_p
     run_task = asyncio.create_task(
         executable.run(
             "start",
-            bindings=RunBindings.local(
+            bindings=RunBindings.embedded(
                 environment=_local_binding(tmp_path),
                 capabilities=(
                     InvocationPolicyCapability(evaluator=_Allow(), max_dispatch_retries=0),

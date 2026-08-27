@@ -48,7 +48,7 @@ flowchart TB
         Builder[HarnessBuilder]
         Executable[ExecutableAgent]
         Context[AgentContext]
-        Environment[BoundEnvironment]
+        Environment[Environment facade]
         Stream[HarnessRunStream]
         State[HarnessState]
     end
@@ -96,7 +96,7 @@ These guides cover the process-local Harness surface and its tested integration 
 - Inline delegation waits for a child result; durable or background child scheduling remains a Host concern.
 - `HarnessState` is continuation data; it is not a durable Execution record or restored authority.
 - Observability at this boundary consists of the canonical event stream and usage records; exporter and telemetry-backend configuration belongs to the embedding application.
-- Provider resource lifecycle begins outside the Harness with an already selected fresh binding or runtime attachment.
+- Passing an `EnvironmentProvider` delegates one ephemeral Resource lifecycle to the Harness; passing an entered `EnvironmentResource` keeps the outer lifecycle with the Host while the Harness acquires one fresh attachment per run.
 
 ## Trust and Ownership
 

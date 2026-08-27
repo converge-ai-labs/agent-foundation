@@ -124,14 +124,14 @@ class AgentContext:
     run_id: str
     instance: AgentInstanceContext
     state: AgentContextState
-    environment: BoundEnvironment
+    environment: Environment
     model_resolver: RunModelResolver | None
     events: HarnessEventEmitter
     usage_attribution: RunUsageLedger
     plugins: BoundPluginContext
     subagents: SubagentCollection
     metadata: Mapping[str, JsonValue]
-    model_context: ModelContextRunBinding | None
+    model_context: ModelContextMiddleware | None
     skill_paths: RunSkillPaths
     tool_metadata: ToolRuntimeMetadata
 
@@ -179,21 +179,21 @@ One fresh context is created for every logical Harness run and reused by that ru
 
 ## Lifecycle Integration
 
-| Need                                  | Integration                                              |
-| ------------------------------------- | -------------------------------------------------------- |
-| Produce input after Environment entry | `RunInputFactory`                                        |
-| Transform semantic input/result       | Harness plugin `wrap_run()`                              |
-| Bind a fresh Agent-loop feature       | Capability `for_run()`                                   |
-| Contribute instructions or tools      | Native Capability/Toolset                                |
-| Augment dynamic model context         | `AbstractModelContextCapability`                         |
-| Override one run's context projection | Fresh `ModelContextRunBinding`                           |
-| Publish passive run facts for tools   | `skill_paths` or an owner-defined `ToolMetadataKey[T]`   |
-| Observe model, node, or tool behavior | Native hooks plus `AgentContext.events`                  |
-| Attribute provider usage              | `AgentContext.record_provider_usage()`                   |
-| Resolve a logical Model               | Thin `ResolveModelId` over `AgentContext.model_resolver` |
-| Store Capability continuation data    | `AgentContextState` namespace                            |
-| Operate on or observe Environment     | Fixed `AgentContext.environment` resource                |
-| Persist a checkpoint candidate        | Host adapter using exported `HarnessState`               |
+| Need                                  | Integration                                            |
+| ------------------------------------- | ------------------------------------------------------ |
+| Produce input after Environment entry | `RunInputFactory`                                      |
+| Transform semantic input/result       | Harness plugin `wrap_run()`                            |
+| Bind a fresh Agent-loop feature       | Capability `for_run()`                                 |
+| Contribute instructions or tools      | Native Capability/Toolset                              |
+| Augment dynamic model context         | `AbstractModelContextCapability`                       |
+| Override one run's context projection | Fresh `ModelContextMiddleware`                         |
+| Publish passive run facts for tools   | `skill_paths` or an owner-defined `ToolMetadataKey[T]` |
+| Observe model, node, or tool behavior | Native hooks plus `AgentContext.events`                |
+| Attribute provider usage              | `AgentContext.record_provider_usage()`                 |
+| Resolve a string Model                | Fresh resolver, then Harness inference                 |
+| Store Capability continuation data    | `AgentContextState` namespace                          |
+| Operate on or observe Environment     | Fixed `AgentContext.environment` resource              |
+| Persist a checkpoint candidate        | Host adapter using exported `HarnessState`             |
 
 A Capability that needs another run-bound Capability uses Pydantic's public run-bound mapping after binding. A Capability contributed by a Harness plugin resolves the matching fresh plugin through `ctx.deps.plugins.require(id, ExpectedType)`. A Capability that only needs to publish passive information for a Toolset uses the Toolset owner's public typed key instead of requiring or impersonating that Toolset's owning Capability.
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,7 +41,7 @@ class StorageStartupError(RuntimeError):
 
 
 @asynccontextmanager
-async def open_storage(settings: StorageSettings) -> AsyncIterator[StorageResources]:
+async def open_storage(settings: StorageSettings) -> AsyncGenerator[StorageResources]:
     """Construct all selected backends and close them in reverse order."""
 
     async with AsyncExitStack() as stack:

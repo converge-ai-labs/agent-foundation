@@ -11,6 +11,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from .application import ConversationApplication
+from .environment import create_demo_environment
 
 _DEFAULT_STATE_PATH = Path(".agent-app/conversation-state.json")
 
@@ -29,33 +30,42 @@ def create_demo_model() -> FunctionModel:
 
 async def _print_turn(application: ConversationApplication, prompt: str) -> None:
     print("assistant> ", end="", flush=True)
-    async for text in application.stream_turn(prompt):
-        print(text, end="", flush=True)
+    async with application.stream_turn(prompt) as stream:
+        async for text in stream:
+            print(text, end="", flush=True)
     print()
 
 
-async def _run(arguments: argparse.Namespace) -> None:
+async def _run_conversation(arguments: argparse.Namespace) -> None:
+    state_path = arguments.state.resolve()
+    workspace = arguments.workspace.resolve() if arguments.workspace is not None else state_path.parent / "workspace"
     application = ConversationApplication(
         model=create_demo_model(),
-        state_path=arguments.state.resolve(),
+        state_path=state_path,
+        environment=create_demo_environment(workspace),
     )
-    if arguments.prompts:
-        for prompt in arguments.prompts:
-            print(f"you> {prompt}")
-            await _print_turn(application, prompt)
-        return
+    async with application:
+        if arguments.prompts:
+            for prompt in arguments.prompts:
+                print(f"you> {prompt}")
+                await _print_turn(application, prompt)
+            return
 
-    print("Enter a message, or type /quit to stop.")
-    while True:
-        try:
-            prompt = await asyncio.to_thread(input, "you> ")
-        except EOFError:
-            break
-        if prompt.strip() == "/quit":
-            break
-        if not prompt.strip():
-            continue
-        await _print_turn(application, prompt)
+        print("Enter a message, or type /quit to stop.")
+        while True:
+            try:
+                prompt = await asyncio.to_thread(input, "you> ")
+            except EOFError:
+                break
+            if prompt.strip() == "/quit":
+                break
+            if not prompt.strip():
+                continue
+            await _print_turn(application, prompt)
+
+
+async def _run(arguments: argparse.Namespace) -> None:
+    await _run_conversation(arguments)
 
 
 def _create_argument_parser() -> argparse.ArgumentParser:
@@ -70,6 +80,11 @@ def _create_argument_parser() -> argparse.ArgumentParser:
         type=Path,
         default=_DEFAULT_STATE_PATH,
         help=f"Harness state file (default: {_DEFAULT_STATE_PATH})",
+    )
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        help="Demo Environment workspace (default: a workspace directory next to the state file)",
     )
     return parser
 

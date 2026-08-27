@@ -16,7 +16,7 @@ from .errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from .management import EnvironmentManager, EnvironmentProviderRuntime
+from .management import EnvironmentProvider, EnvironmentProviderRuntime
 from .models import EnvironmentProviderSpec
 
 ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP = "a13n_environment_provider.providers"
@@ -71,12 +71,12 @@ class EnvironmentProviderFactory(ABC):
     def configuration_model(cls, schema_version: str) -> type[BaseModel]: ...
 
     @abstractmethod
-    def create_manager(
+    def create_provider(
         self,
         configuration: BaseModel,
         *,
         runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentManager: ...
+    ) -> EnvironmentProvider: ...
 
 
 class EnvironmentProviderFactoryCatalog(Mapping[str, EnvironmentProviderFactory]):
@@ -175,20 +175,20 @@ class EnvironmentProviderFactoryCatalog(Mapping[str, EnvironmentProviderFactory]
             ) from exc
         return ResolvedEnvironmentProviderSpec(spec=spec, configuration=configuration, factory=factory)
 
-    def create_manager(
+    def create_provider(
         self,
         spec: EnvironmentProviderSpec,
         *,
         runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentManager:
+    ) -> EnvironmentProvider:
         resolved = self.resolve_spec(spec)
         try:
-            manager = resolved.factory.create_manager(resolved.configuration, runtime=runtime)
+            provider = resolved.factory.create_provider(resolved.configuration, runtime=runtime)
         except EnvironmentProviderError:
             raise
         except Exception as exc:
             raise EnvironmentProviderError(
-                f"Provider factory {spec.provider_key!r} failed to construct a Manager.",
+                f"Provider factory {spec.provider_key!r} failed to construct an EnvironmentProvider.",
                 code="provider_factory_failed",
                 category=EnvironmentProviderErrorCategory.PROVIDER_FAILURE,
                 certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
@@ -197,12 +197,12 @@ class EnvironmentProviderFactoryCatalog(Mapping[str, EnvironmentProviderFactory]
                     schema_version=spec.schema_version,
                 ),
             ) from exc
-        if not isinstance(manager, EnvironmentManager):
+        if not isinstance(provider, EnvironmentProvider):
             raise _factory_target_error(
                 spec.provider_key,
-                "Provider factory returned a value that is not an EnvironmentManager.",
+                "Provider factory returned a value that is not an EnvironmentProvider.",
             )
-        return manager
+        return provider
 
 
 def discover_environment_provider_factory_references() -> tuple[EnvironmentProviderFactoryReference, ...]:
@@ -294,7 +294,7 @@ def build_environment_provider_factory_catalog(
 
 
 def _builtin_factory_types() -> dict[str, type[EnvironmentProviderFactory]]:
-    from .direct_local.manager import DirectLocalEnvironmentProviderFactory
+    from .direct_local.provider import DirectLocalEnvironmentProviderFactory
 
     return {DirectLocalEnvironmentProviderFactory.provider_key(): DirectLocalEnvironmentProviderFactory}
 

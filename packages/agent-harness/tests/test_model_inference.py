@@ -45,7 +45,7 @@ def test_infer_model_normalizes_legacy_provider_names(
     assert infer_model("google-gla:gemini-2.5-pro") is base
     assert infer_model("google-vertex:gemini-2.5-pro") is base
     assert observed == [
-        "openai-chat:gpt-5",
+        "openai-responses:gpt-5",
         "google-cloud:gemini-2.5-pro",
         "google-cloud:gemini-2.5-pro",
         "google-cloud:gemini-2.5-pro",
@@ -70,7 +70,7 @@ def test_infer_model_routes_gateway_provider_construction_to_the_caller(
     ) -> Model:
         assert isinstance(model, str)
         observed_models.append(model)
-        assert provider_factory("openai-chat") is sentinel_provider
+        assert provider_factory("openai-responses") is sentinel_provider
         return base
 
     monkeypatch.setattr(inference_module, "_pydantic_infer_model", fake_infer)
@@ -81,11 +81,49 @@ def test_infer_model_routes_gateway_provider_construction_to_the_caller(
     )
 
     assert inferred is base
-    assert observed_models == ["openai-chat:gpt-5"]
-    assert observed_routes == [("company", "openai-chat")]
+    assert observed_models == ["openai-responses:gpt-5"]
+    assert observed_routes == [("company", "openai-responses")]
 
 
-def test_infer_model_rejects_implicit_gateway_configuration() -> None:
+def test_infer_model_uses_pydantic_gateway_for_the_literal_gateway_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_models: list[str] = []
+    observed_providers: list[str] = []
+    sentinel_provider = cast(Provider[Any], object())
+    base = _text_model()
+
+    def fake_gateway_provider(provider_name: str) -> Provider[Any]:
+        observed_providers.append(provider_name)
+        return sentinel_provider
+
+    def fake_infer(
+        model: Model | str,
+        provider_factory: Callable[[str], Provider[Any]],
+    ) -> Model:
+        assert isinstance(model, str)
+        observed_models.append(model)
+        assert provider_factory("openai-responses") is sentinel_provider
+        return base
+
+    monkeypatch.setattr(inference_module, "gateway_provider", fake_gateway_provider)
+    monkeypatch.setattr(inference_module, "_pydantic_infer_model", fake_infer)
+
+    def custom_gateway_provider_factory(gateway_name: str, provider_name: str) -> Provider[Any]:
+        pytest.fail(f"literal gateway@ must not use custom factory: {gateway_name}, {provider_name}")
+
+    assert (
+        infer_model(
+            "gateway@openai:gpt-5",
+            gateway_provider_factory=custom_gateway_provider_factory,
+        )
+        is base
+    )
+    assert observed_models == ["openai-responses:gpt-5"]
+    assert observed_providers == ["openai-responses"]
+
+
+def test_infer_model_rejects_implicit_named_gateway_configuration() -> None:
     with pytest.raises(ValueError, match="gateway_provider_factory"):
         infer_model("company@openai:gpt-5")
 

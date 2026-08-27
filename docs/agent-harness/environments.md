@@ -1,152 +1,206 @@
 # Environments
 
-An Environment is the Harness run-scoped resource boundary for files, shell commands, processes, retained output, and ports. It is provider-neutral and separate from the optional Capability that exposes those operations to a model.
+An Environment is the Harness run-scoped boundary for files, commands, processes, retained output, and ports. Most applications supply an Environment provider or an already entered resource directly to `run()` or `stream()`; they do not assemble attachments, bindings, or topologies.
 
-## Mental Model
+Environment lifecycle is separate from model-facing tools:
 
-```mermaid
-flowchart LR
-    Host[Embedding application or Host] --> Binding[EnvironmentRunBinding]
-    Binding --> Bound[BoundEnvironment]
-    Bound --> Context[AgentContext]
-    Capability[DynamicEnvironmentCapability] --> Tools[File and shell Toolsets]
-    Tools --> Bound
-    Controller[Host-retained topology controller] --> Bound
-```
+- an Environment makes operations available to trusted application code through `AgentContext.environment`;
+- `DynamicEnvironmentCapability` optionally exposes selected Environment operations to the model;
+- source type determines who owns the provider resource lifecycle.
 
-- The caller supplies one fresh, single-use `EnvironmentRunBinding` through `RunBindings`.
-- The Harness enters it before input production and closes it after the logical run.
-- `AgentContext.environment` exposes one stable `BoundEnvironment` facade.
-- `DynamicEnvironmentCapability` optionally projects selected operations to the model.
-- A Host can retain the paired topology controller to change bindings during one active logical run.
+## Start without an Environment
 
-Environment lifecycle is not a Pydantic Capability. A Capability cannot create, mount, refresh, or destroy provider resources merely by being present.
-
-## No-op Environment
-
-`RunBindings.local()` uses `NoopEnvironmentRunBinding` when no Environment is supplied:
+Environment input is optional. Ordinary embedded runs need no `RunBindings` value and receive an empty Environment topology:
 
 ```python
-bindings = RunBindings.local()
+result = await executable.run("Answer without using a workspace")
 ```
 
-This is the right default for an Agent that needs only a model and non-Environment tools.
+This is the simplest path for Agents that only need a model and non-Environment tools.
 
-## Direct Local
+## Let the Harness own a temporary resource
 
-Direct Local exposes an explicitly selected existing Host directory to a trusted embedded application. It is an operation backend, not a sandbox claim. Its public configuration and lifecycle Manager belong to `a13n-environment-provider`; the Harness receives only a fresh runtime attachment.
+Pass an `EnvironmentProvider` when one temporary resource should exist only for the logical run:
 
 ```python
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 from a13n_environment_provider import (
-    DirectLocalProviderRuntime,
-    EnvironmentManagementAction,
-    EnvironmentManager,
-    EnvironmentOperationContext,
-    EnvironmentProviderSpec,
-    build_environment_provider_factory_catalog,
-)
-from a13n_harness import (
-    EnvironmentAction,
-    EnvironmentBindingRequest,
-    EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    RunBindings,
-    create_environment_provider_binding,
-    create_environment_run_binding,
+    DirectLocalEnvironmentProvider,
+    DirectLocalProviderConfiguration,
+    DirectLocalRootConfiguration,
 )
 
-
-def direct_local_manager(workspace: Path) -> EnvironmentManager:
-    catalog = build_environment_provider_factory_catalog(
-        builtin_keys=("a13n.direct-local",),
+provider = DirectLocalEnvironmentProvider(
+    DirectLocalProviderConfiguration(
+        environment_id="local-workspace",
+        root=DirectLocalRootConfiguration(path=Path("./workspace").resolve()),
     )
-    return catalog.create_manager(
-        EnvironmentProviderSpec(
-            provider_key="a13n.direct-local",
-            schema_version="1",
-            parameters={
-                "environment_id": "local-app",
-                "root": {"path": str(workspace)},
-            },
-        ),
-        runtime=DirectLocalProviderRuntime(),
-    )
+)
 
-
-@asynccontextmanager
-async def local_bindings(
-    manager: EnvironmentManager,
-    *,
-    attempt: int,
-) -> AsyncGenerator[RunBindings]:
-    correlation = "resource-local-app"
-    managed = await manager.create(
-        operation=EnvironmentOperationContext(
-            operation_id=f"operation-create-{attempt}",
-            action=EnvironmentManagementAction.CREATE,
-            resource_correlation=correlation,
-            attempt=1,
-        )
-    )
-    state = managed.state
-    try:
-        async with managed:
-            async with managed.acquire_attachment() as attachment:
-                provider_binding = create_environment_provider_binding(attachment)
-                topology = EnvironmentTopologyRequest(
-                    topology_version=1,
-                    bindings=(
-                        EnvironmentBindingRequest(
-                            binding_id="workspace",
-                            binding_revision=1,
-                            alias="local",
-                            permission_ceiling=EnvironmentPermissionSet(
-                                operations=frozenset(
-                                    {
-                                        EnvironmentAction.FILE_READ_TEXT,
-                                        EnvironmentAction.FILE_WRITE_TEXT,
-                                    }
-                                )
-                            ),
-                            default_working_directory="/workspace",
-                            provider_binding=provider_binding,
-                        ),
-                    ),
-                    default_binding_id="workspace",
-                )
-                environment = create_environment_run_binding(
-                    initial_topology=topology,
-                    topology_limits=EnvironmentTopologyLimits(),
-                    state_limits=EnvironmentStateLimits(),
-                )
-                yield RunBindings.local(environment=environment)
-    finally:
-        await manager.destroy(
-            state,
-            operation=EnvironmentOperationContext(
-                operation_id=f"operation-destroy-{attempt}",
-                action=EnvironmentManagementAction.DESTROY,
-                resource_correlation=correlation,
-                attempt=1,
-            ),
-        )
+result = await executable.run(
+    "Update the workspace",
+    environment=provider,
+)
 ```
 
-Keep `local_bindings()` open for the complete Harness run. A later Harness continuation gets another fresh managed-resource scope and attachment. The Harness restores `HarnessState`; it never calls the provider Manager's `resume()` method. A Host calls Manager `resume()` only when its own persisted provider resource state and lifecycle policy require provider-resource resume.
+The Harness performs the complete ephemeral lifecycle:
 
-The Direct Local root has no Provider, Agent, Session, or binding owner. The Host creates, shares, retains, and removes it. Direct Local validates it and never creates, deletes, tags, or locks it. The virtual `/workspace` path routes to the selected default binding; `/environment/{alias}` addresses an explicit alias in a multi-binding topology.
+```mermaid
+sequenceDiagram
+    participant App
+    participant Harness
+    participant Provider as EnvironmentProvider
+    participant Resource as EnvironmentResource
 
-Direct Local should be used only when the embedding process intentionally grants its own OS access. Use an isolated provider when untrusted code requires a real sandbox boundary.
+    App->>Harness: run(..., environment=provider)
+    Harness->>Provider: create()
+    Harness->>Resource: enter
+    Harness->>Resource: acquire fresh attachment
+    Harness->>Harness: execute logical run
+    Harness->>Resource: release attachment
+    Harness->>Resource: exit
+    Harness->>Provider: destroy(latest state)
+    Harness-->>App: terminal result
+```
 
-## Expose Environment Tools
+Provider destruction completes before `run()` returns or a terminal stream result is delivered. The same cleanup runs when input preparation, model execution, stream consumption, or run cleanup fails. If a lifecycle call has an unknown outcome, `EnvironmentProvider.ephemeral()` reconciles the exact operation before performing its one bounded retry or recovery step.
 
-The Environment can exist without model-facing tools. Add `DynamicEnvironmentCapability` to the Agent definition to select a stable tool surface:
+A Provider input is always ephemeral, including when a run returns `suspended`. Use a Host-owned Resource when continuation must retain the same external resource.
+
+## Keep and reuse a Host-owned resource
+
+An entered `EnvironmentResource` is borrowed. The Host creates, enters, retains, exits, pauses, resumes, and destroys it; the Harness only acquires and releases one fresh attachment per run.
+
+```python
+from a13n_environment_provider import (
+    EnvironmentManagementAction,
+    EnvironmentOperationContext,
+)
+
+correlation = "resource-conversation-workspace"
+create_operation = EnvironmentOperationContext(
+    operation_id="operation-create-conversation-workspace",
+    action=EnvironmentManagementAction.CREATE,
+    resource_correlation=correlation,
+    attempt=1,
+)
+resource = await provider.create(operation=create_operation)
+
+try:
+    async with resource:
+        first = await executable.run(
+            "Create /workspace/plan.md",
+            environment=resource,
+        )
+        second = await executable.run(
+            "Read and revise /workspace/plan.md",
+            environment=resource,
+            previous_state=first.state,
+        )
+finally:
+    await provider.destroy(
+        resource.state,
+        operation=EnvironmentOperationContext(
+            operation_id="operation-destroy-conversation-workspace",
+            action=EnvironmentManagementAction.DESTROY,
+            resource_correlation=correlation,
+            attempt=1,
+        ),
+    )
+```
+
+The Resource must already be inside its single-entry async scope when passed to the Harness. An unentered or closed Resource fails when the stream enters. Each Harness run receives a fresh attachment, so live attachments and bindings are never reused as continuation state.
+
+`HarnessState` and `EnvironmentProviderResourceState` solve different problems:
+
+- `HarnessState` continues Agent messages and bounded portable Environment values;
+- `EnvironmentProviderResourceState` identifies and validates the provider-owned resource;
+- neither value contains a live Resource, attachment, client, credential, or authority grant.
+
+## Use several Environments
+
+Pass `environments=` to name several sources. One mapping can mix Harness-owned Providers and Host-owned entered Resources:
+
+```python
+from a13n_harness import EnvironmentAccess, EnvironmentMount
+
+result = await executable.run(
+    "Read the source data and write the build output",
+    environments={
+        "build": build_provider,
+        "data": EnvironmentMount(
+            data_resource,
+            access=EnvironmentAccess.READ_ONLY,
+        ),
+    },
+    default_environment="build",
+)
+```
+
+The routing rules are deterministic:
+
+| Input                                             | Alias and binding ID                  | Default route |
+| ------------------------------------------------- | ------------------------------------- | ------------- |
+| `environment=source`                              | `workspace`, `environment-workspace`  | `workspace`   |
+| one `environments` entry                          | supplied alias, `environment-{alias}` | that entry    |
+| several entries with `default_environment="name"` | supplied aliases                      | named entry   |
+| several entries without `default_environment`     | supplied aliases                      | none          |
+
+A default binding serves `/workspace`. Every named binding is always addressable at `/environment/{alias}`:
+
+```python
+async def prepare(context):
+    source = await context.environment.files.read_text(
+        "/environment/data/input.json"
+    )
+    await context.environment.files.write_text(
+        "/workspace/result.json",
+        transform(source.text),
+        mode="upsert",
+    )
+    return "Review the prepared result"
+
+result = await executable.run(
+    input_factory=prepare,
+    environments={"build": build_provider, "data": data_resource},
+    default_environment="build",
+)
+```
+
+With several entries and no explicit default, `/workspace/...` fails instead of selecting the first mapping entry. Mapping order never grants authority. Use alias-qualified paths in that form:
+
+```python
+result = await executable.run(
+    "Compare both workspaces",
+    environments={"left": left_provider, "right": right_provider},
+)
+# Use /environment/left/... and /environment/right/...
+```
+
+Setup is atomic. The Harness does not publish a partial topology. If a later source fails to enter, already entered Provider-owned sources are released and destroyed in reverse order, while borrowed Resources remain under Host ownership.
+
+## Restrict a mount
+
+`EnvironmentMount` adds a permission ceiling and default working directory to one source:
+
+```python
+from a13n_harness import EnvironmentAccess, EnvironmentMount
+
+read_only_docs = EnvironmentMount(
+    docs_resource,
+    access=EnvironmentAccess.READ_ONLY,
+    working_directory="/reference",
+)
+```
+
+`EnvironmentAccess.FULL` selects the complete current operation catalog. `READ_ONLY` permits file and resource observation plus the release operations needed to retire observation handles. It does not permit file mutation or process creation. A provider can always narrow the requested ceiling further.
+
+Advanced callers can pass an exact `EnvironmentPermissionSet` instead of a preset. `working_directory` must be `None` or a canonical absolute provider path without `.` or `..` segments.
+
+## Expose tools to the model
+
+The Environment can exist without model-facing tools. Add `DynamicEnvironmentCapability` when the model should receive a selected stable tool surface:
 
 ```python
 from a13n_harness import (
@@ -167,70 +221,116 @@ capabilities = (
 )
 ```
 
-The configuration controls which Toolsets are composed. The current binding's descriptor and permission ceiling control which operations can actually execute.
+Three decisions remain separate:
 
-## Authorization and Provider Enforcement
+1. the Agent definition exposes a file, shell, process, or port tool;
+2. current run policy authorizes the invocation for the current identity and arguments;
+3. the selected Environment binding and provider permit the operation.
 
-Three decisions remain distinct:
+Provider denial always narrows a Harness allow decision. Provider availability never grants authorization.
 
-1. **Tool surface:** the definition exposes a file, shell, process, or port operation.
-2. **Fresh invocation policy:** a run Capability authorizes the managed invocation for the current identity and arguments.
-3. **Environment enforcement:** the selected binding's exact `EnvironmentPermissionSet` and provider implementation permit the operation.
+## Manage a durable provider lifecycle explicitly
 
-A provider denial always narrows a Harness allow decision. Provider availability never grants authorization.
+Use explicit provider operations when a resource must outlive one Harness run. The Host generates stable operation identities, persists the latest `EnvironmentProviderResourceState`, and reconciles an exact operation after an unknown outcome.
 
-## Multiple Bindings and Routing
-
-`create_environment_run_binding()` accepts a finite topology of binding requests. Each request has:
-
-- a stable `binding_id` for one logical slot;
-- a monotonic `binding_revision`;
-- a unique model-facing `alias`;
-- an exact permission ceiling;
-- a default working directory;
-- one fresh provider binding candidate.
-
-The aggregate publishes routing atomically. Operations select one revision and remain fenced to it; a refresh does not silently retarget an in-flight handle, cursor, or path.
-
-## Dynamic Topology
-
-Every `EnvironmentRunBinding` exposes its paired `controller`. Application code that needs live mutation retains the controller before transferring the single-use binding into `RunBindings`:
+The full lifecycle for a provider that supports full pause is:
 
 ```python
-environment_binding = create_environment_run_binding(
-    initial_topology=topology,
-    topology_limits=topology_limits,
-    state_limits=state_limits,
+from a13n_environment_provider import (
+    EnvironmentManagementAction,
+    EnvironmentOperationContext,
+    EnvironmentPauseMode,
+    EnvironmentReconciliationPhase,
 )
-controller = environment_binding.controller
-bindings = RunBindings.local(environment=environment_binding)
+
+correlation = "resource-durable-workspace"
+
+create = EnvironmentOperationContext(
+    operation_id="operation-create-durable-workspace",
+    action=EnvironmentManagementAction.CREATE,
+    resource_correlation=correlation,
+    attempt=1,
+)
+resource = await provider.create(operation=create)
+persist(resource.state)
+
+async with resource:
+    first = await executable.run("Start the task", environment=resource)
+    pause = EnvironmentOperationContext(
+        operation_id="operation-pause-durable-workspace",
+        action=EnvironmentManagementAction.PAUSE,
+        resource_correlation=correlation,
+        attempt=1,
+    )
+    paused_state = await provider.pause(
+        resource,
+        operation=pause,
+        mode=EnvironmentPauseMode.FULL,
+    )
+persist(paused_state)
+
+pause_observation = await provider.reconcile(
+    pause,
+    last_known_state=paused_state,
+)
+assert pause_observation.phase is EnvironmentReconciliationPhase.PAUSED
+
+resume = EnvironmentOperationContext(
+    operation_id="operation-resume-durable-workspace",
+    action=EnvironmentManagementAction.RESUME,
+    resource_correlation=correlation,
+    attempt=1,
+)
+resumed = await provider.resume(paused_state, operation=resume)
+persist(resumed.state)
+
+async with resumed:
+    second = await executable.run(
+        "Continue the task",
+        environment=resumed,
+        previous_state=first.state,
+    )
+    final_state = resumed.state
+
+destroy = EnvironmentOperationContext(
+    operation_id="operation-destroy-durable-workspace",
+    action=EnvironmentManagementAction.DESTROY,
+    resource_correlation=correlation,
+    attempt=1,
+)
+await provider.destroy(final_state, operation=destroy)
+remove_persisted_state()
 ```
 
-The controller is process-local authority and exists only for that logical run. A trusted Host can prepare and publish add, refresh, or remove changes while the stream is active. The stable `BoundEnvironment` facade and model tool schemas do not change. Topology observations enter the canonical Harness event stream.
+Check `provider.lifecycle_capabilities.pause_modes` before selecting a pause mode. A provider with no pause support must fail explicitly; it must not silently convert pause into destroy. `resume()` targets the resource described by validated state and never silently creates a replacement.
 
-Do not place the controller in `RunBindings.metadata`, model context, a Capability state namespace, or durable storage.
+When `create()`, `resume()`, `pause()`, or `destroy()` reports `EnvironmentProviderOutcomeCertainty.UNKNOWN`, do not issue a new unrelated operation. Call `reconcile()` with the same `EnvironmentOperationContext` and latest known state, then follow provider recovery guidance. `EnvironmentProvider.ephemeral()` implements this bounded protocol for Harness-owned temporary resources.
 
-## Portable Environment State
+## Advanced Host route
 
-At safe state-export boundaries, the aggregate can collect bounded provider-defined portable values into `HarnessState.environment_state`. On resume:
+Most applications should use `environment=` or `environments=`. Hosts that need exact permission sets, custom binding IDs, live topology mutation, provider-binding adapters, or aggregate extensions can use the explicit advanced module:
 
-1. the caller reconstructs the desired topology and fresh provider bindings;
-2. the Harness enters those bindings;
-3. compatible portable Environment state is restored;
-4. the Environment activates for the new logical run.
+```python
+from a13n_harness import RunBindings
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentTopologyRequest,
+    create_environment_provider_binding,
+    create_environment_run_binding,
+)
+```
 
-Portable state cannot create a binding, choose a provider, reconnect a sandbox, restore credentials, or grant access.
+The advanced route constructs one single-use `EnvironmentRunBinding` and places it in `RunBindings.embedded(environment=...)` or in a directly constructed `RunBindings` with a Host-issued `AgentInstanceContext`. Retain `environment_binding.controller` before transferring the binding when live topology changes are required.
 
-## EIP-backed Operations
+High-level Environment arguments and `RunBindings.environment` are mutually exclusive. They normalize into the same aggregate coordinator and operation engine; there is no second lifecycle implementation.
 
-The Harness includes an `EIPEnvironmentProviderBinding` adapter for fresh single-use runtime attachments from `a13n-environment-provider`. It maps the generated Environment Interaction Protocol file, process, output, and port operations onto the same provider-neutral interfaces used by Direct Local.
+## Direct Local boundary
 
-Carrier acquisition and provider resource lifecycle remain outside the Agent definition. A Host must keep the attachment-acquisition scope alive for the complete lifetime of the adapted binding and transfer each attachment at most once.
+`a13n.direct-local` exposes an explicitly selected existing Host directory. It is an operation backend, not a sandbox claim:
 
-The documented Harness boundary begins with an already selected fresh run binding or runtime attachment. Provider resource specification, allocation, resume, pause, destruction, reconciliation, credentials, and durable resource state remain outside the Agent definition and Harness run.
+- the Host creates, selects, retains, backs up, shares, and removes the directory;
+- Direct Local validates it and issues fresh attachments;
+- `destroy()` detaches the logical provider resource but never deletes the directory;
+- `read_only` constrains binding operations but is not an OS sandbox against an allowed child process.
 
-## Extensions
-
-Use an `EnvironmentRunExtension` only when a resource needs the complete entered aggregate rather than one provider revision. Extensions enter after portable state restoration and exit in reverse order before provider teardown. They are trusted process-local lifecycle code and are not model-visible by themselves.
-
-See [Plugins and Extensions](plugins.md) for direct composition and explicit factory discovery.
+Use Docker, E2B, or another isolated EIP provider when untrusted code needs a real sandbox boundary.

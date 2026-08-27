@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -12,21 +13,23 @@ from a13n_harness import (
     AgentInstanceContext,
     EnvironmentAction,
     EnvironmentAvailability,
-    EnvironmentBindingRequest,
     EnvironmentBindingState,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentPermissionSet,
-    EnvironmentProviderBinding,
-    EnvironmentProviderOperations,
     EnvironmentReadinessRequirement,
     EnvironmentRunExtensionContext,
     EnvironmentState,
+    FileMetadata,
+    FileWriteResult,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentProviderBinding,
+    EnvironmentProviderOperations,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
-    FileMetadata,
-    FileWriteResult,
     NoopBoundEnvironment,
     create_environment_run_binding,
     create_noop_environment_run_binding,
@@ -126,7 +129,7 @@ class _Binding(EnvironmentProviderBinding):
         return f"environment:{self.name}"
 
     @asynccontextmanager
-    async def bind(self, **kwargs: Any):
+    async def bind(self, **kwargs: Any) -> AsyncGenerator[Any]:
         del kwargs
         self.entered += 1
         if self._fail_entry:
@@ -162,7 +165,7 @@ class _RunExtension:
         return self._extension_id
 
     @asynccontextmanager
-    async def bind(self, *, context: EnvironmentRunExtensionContext):
+    async def bind(self, *, context: EnvironmentRunExtensionContext) -> AsyncGenerator[None]:
         self._events.append(f"enter:{self.extension_id}:{context.environment.restored_state_topology_version}")
         if self._fail_entry:
             raise RuntimeError("secret extension entry failure")
@@ -594,7 +597,7 @@ async def test_each_provider_exit_has_an_independent_cleanup_deadline(
 
     class HangingBinding(_Binding):
         @asynccontextmanager
-        async def bind(self, **kwargs: Any):
+        async def bind(self, **kwargs: Any) -> AsyncGenerator[Any]:
             del kwargs
             self.entered += 1
             try:
@@ -957,7 +960,7 @@ async def test_cancelled_queued_apply_discards_its_transferred_candidates() -> N
 
     class SlowBinding(_Binding):
         @asynccontextmanager
-        async def bind(self, **kwargs: Any):
+        async def bind(self, **kwargs: Any) -> AsyncGenerator[Any]:
             del kwargs
             self.entered += 1
             entry_started.set()
@@ -1280,7 +1283,7 @@ async def test_provider_bound_artifacts_must_match_selected_revision() -> None:
 async def test_dynamic_validation_and_scope_cleanup_errors_are_both_preserved() -> None:
     class CleanupFailureBinding(_Binding):
         @asynccontextmanager
-        async def bind(self, **kwargs: Any):
+        async def bind(self, **kwargs: Any) -> AsyncGenerator[Any]:
             del kwargs
             self.entered += 1
             try:

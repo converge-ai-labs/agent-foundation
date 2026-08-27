@@ -92,7 +92,7 @@ async def test_default_client_tool_suspends_without_executing_in_process() -> No
     spec = ClientToolsSpec(default_toolsets=(_toolset("client_action"),))
     executable = _build(spec, tool_name="client_action")
 
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert result.status == "suspended"
     assert result.suspend_reason == "deferred"
@@ -129,7 +129,7 @@ async def test_client_tool_instructions_are_deterministic_and_run_frozen() -> No
         model=FunctionModel(stream_function=stream),
         capabilities=(ClientToolsCapability(spec=spec),),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert result.status == "suspended"
     assert seen == ["Client tool `client_action`: Ask the user before sending."]
@@ -151,7 +151,7 @@ async def test_run_override_replaces_defaults_and_empty_override_clears_them() -
     replacement = _build(spec, tool_name="replacement_action", extra_capabilities=(CaptureTools(),))
     replaced = await replacement.run(
         "go",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(ClientToolsRunCapability(toolsets=(_toolset("replacement_action"),)),)
         ),
     )
@@ -172,7 +172,7 @@ async def test_run_override_replaces_defaults_and_empty_override_clears_them() -
     )
     clear_result = await cleared.run(
         "go",
-        bindings=RunBindings.local(capabilities=(ClientToolsRunCapability(toolsets=()),)),
+        bindings=RunBindings.embedded(capabilities=(ClientToolsRunCapability(toolsets=()),)),
     )
     assert clear_result.status == "completed"
     assert "default_action" not in seen_names[-1]
@@ -184,7 +184,7 @@ async def test_override_policy_and_owner_are_fail_closed() -> None:
     with pytest.raises(DefinitionError) as forbidden:
         await executable.run(
             "go",
-            bindings=RunBindings.local(
+            bindings=RunBindings.embedded(
                 capabilities=(ClientToolsRunCapability(toolsets=(_toolset("replacement_action"),)),)
             ),
         )
@@ -198,7 +198,7 @@ async def test_override_policy_and_owner_are_fail_closed() -> None:
     with pytest.raises(DefinitionError) as missing:
         await without_owner.run(
             "go",
-            bindings=RunBindings.local(
+            bindings=RunBindings.embedded(
                 capabilities=(ClientToolsRunCapability(toolsets=(_toolset("replacement_action"),)),)
             ),
         )
@@ -208,13 +208,13 @@ async def test_override_policy_and_owner_are_fail_closed() -> None:
 async def test_external_suspend_detach_rebuild_and_resume() -> None:
     spec = ClientToolsSpec(default_toolsets=(_toolset("client_action"),))
     first_executable = _build(spec, tool_name="client_action")
-    first = await first_executable.run("go", bindings=RunBindings.local())
+    first = await first_executable.run("go", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
 
     requests = first.deferred
     rebuilt = _build(spec, tool_name="client_action")
     second = await rebuilt.run(
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
             requests,
@@ -232,7 +232,7 @@ async def test_deferred_result_boundary_preserves_prior_wire_history_until_provi
         spec,
         tool_name="client_action",
         extra_capabilities=(RuntimeContextCapability(),),
-    ).run("go", bindings=RunBindings.local())
+    ).run("go", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
     original = list(first.state.message_history)
     seen: list[list[ModelMessage]] = []
@@ -253,7 +253,7 @@ async def test_deferred_result_boundary_preserves_prior_wire_history_until_provi
     )
     requests = first.deferred
     result = await rebuilt.run(
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
             requests,
@@ -271,7 +271,7 @@ async def test_deferred_external_results_reject_wrapped_non_finite_values_and_cy
     first = await _build(
         ClientToolsSpec(default_toolsets=(_toolset("client_action"),)),
         tool_name="client_action",
-    ).run("go", bindings=RunBindings.local())
+    ).run("go", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
     call_id = requests.calls[0].tool_call_id
@@ -281,7 +281,7 @@ async def test_deferred_external_results_reject_wrapped_non_finite_values_and_cy
             ClientToolsSpec(default_toolsets=(_toolset("client_action"),)),
             tool_name="client_action",
         ).stream(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 requests,
@@ -297,7 +297,7 @@ async def test_deferred_external_results_reject_wrapped_non_finite_values_and_cy
             ClientToolsSpec(default_toolsets=(_toolset("client_action"),)),
             tool_name="client_action",
         ).stream(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 requests,
@@ -369,14 +369,14 @@ async def test_mixed_external_and_approval_batch_resumes_through_native_categori
             ),
         ),
     )
-    first = await executable.run("go", bindings=RunBindings.local())
+    first = await executable.run("go", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
     assert len(first.deferred.calls) == 1
     assert len(first.deferred.approvals) == 1
 
     requests = first.deferred
     second = await executable.run(
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=Allow()),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=Allow()),)),
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
             requests,
@@ -395,7 +395,7 @@ async def test_changed_external_surface_is_rejected_before_new_model_work() -> N
     first = await _build(
         ClientToolsSpec(default_toolsets=(_toolset("old_action"),)),
         tool_name="old_action",
-    ).run("go", bindings=RunBindings.local())
+    ).run("go", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
 
@@ -405,7 +405,7 @@ async def test_changed_external_surface_is_rejected_before_new_model_work() -> N
     )
     with pytest.raises(DefinitionError) as exc_info:
         await changed.run(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 requests,
@@ -428,7 +428,7 @@ async def test_client_tool_final_name_cannot_be_changed_by_an_inner_wrapper() ->
         extra_capabilities=(_PrefixTools(),),
     )
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run("go", bindings=RunBindings.local())
+        await executable.run("go", bindings=RunBindings.embedded())
     assert exc_info.value.code == "client_tool_name_changed"
 
 

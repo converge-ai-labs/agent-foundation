@@ -110,7 +110,7 @@ async def test_managed_tool_is_authorized_after_native_argument_validation() -> 
 
     async with executable.stream(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
     ) as stream:
         items = [item async for item in stream]
 
@@ -144,7 +144,7 @@ async def test_managed_tool_without_fresh_policy_is_denied_without_dispatch() ->
             ),
         ),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert executed is False
     assert result.status == "completed"
@@ -161,7 +161,7 @@ async def test_unmanaged_native_tool_keeps_pydantic_semantics() -> None:
         model=_tool_model("native", {"value": 3}),
         capabilities=(Capability(tools=[native], id="test-tools"),),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
     assert result.status == "completed"
     assert "6" in result.output_or_raise()
 
@@ -194,7 +194,7 @@ async def test_programmatic_tool_manager_dispatch_crosses_the_same_boundary() ->
     )
     result = await executable.run(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
     )
 
     assert result.status == "completed"
@@ -231,7 +231,7 @@ async def test_managed_invocation_rejects_non_finite_programmatic_arguments() ->
     )
     result = await executable.run(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
     )
 
     assert result.status == "completed"
@@ -253,7 +253,7 @@ async def test_strict_policy_rejects_unmanaged_final_function_surface() -> None:
     with pytest.raises(DefinitionError) as exc_info:
         await executable.run(
             "go",
-            bindings=RunBindings.local(
+            bindings=RunBindings.embedded(
                 capabilities=(InvocationPolicyCapability(evaluator=policy, strict_managed_tools=True),)
             ),
         )
@@ -270,7 +270,7 @@ async def test_run_bindings_reject_feature_capabilities_and_reserved_subclasses(
     with pytest.raises(DefinitionError) as feature_error:
         executable.stream(
             "go",
-            bindings=RunBindings.local(capabilities=(Capability(tools=[lambda: "injected"], id="injected"),)),
+            bindings=RunBindings.embedded(capabilities=(Capability(tools=[lambda: "injected"], id="injected"),)),
         )
     assert feature_error.value.code == "capability_scope_invalid"
 
@@ -280,7 +280,7 @@ async def test_run_bindings_reject_feature_capabilities_and_reserved_subclasses(
     with pytest.raises(DefinitionError) as subclass_error:
         executable.stream(
             "go",
-            bindings=RunBindings.local(capabilities=(subclass,)),
+            bindings=RunBindings.embedded(capabilities=(subclass,)),
         )
     assert subclass_error.value.code == "capability_scope_invalid"
 
@@ -327,7 +327,7 @@ async def test_reserved_capabilities_are_rejected_inside_nested_combined_sources
     with pytest.raises(DefinitionError) as run_error:
         executable.stream(
             "go",
-            bindings=RunBindings.local(capabilities=(CombinedCapability([ClientToolsCapability()]),)),
+            bindings=RunBindings.embedded(capabilities=(CombinedCapability([ClientToolsCapability()]),)),
         )
     assert run_error.value.code == "capability_scope_invalid"
 
@@ -369,7 +369,7 @@ async def test_for_run_replacements_cannot_change_reserved_capability_provenance
         ),
     )
     with pytest.raises(DefinitionError) as stale_policy:
-        await stale_definition.run("go", bindings=RunBindings.local())
+        await stale_definition.run("go", bindings=RunBindings.embedded())
     assert stale_policy.value.code == "capability_scope_invalid"
 
     subclass_definition = HarnessBuilder().build(
@@ -379,7 +379,7 @@ async def test_for_run_replacements_cannot_change_reserved_capability_provenance
         capabilities=(_DefinitionBecomesRunPolicySubclass(),),
     )
     with pytest.raises(DefinitionError) as subclass_policy:
-        await subclass_definition.run("go", bindings=RunBindings.local())
+        await subclass_definition.run("go", bindings=RunBindings.embedded())
     assert subclass_policy.value.code == "capability_scope_invalid"
 
     runtime_owner = HarnessBuilder().build(
@@ -390,7 +390,7 @@ async def test_for_run_replacements_cannot_change_reserved_capability_provenance
     with pytest.raises(DefinitionError) as owner_error:
         await runtime_owner.run(
             "go",
-            bindings=RunBindings.local(capabilities=(_RunBecomesClientOwner(),)),
+            bindings=RunBindings.embedded(capabilities=(_RunBecomesClientOwner(),)),
         )
     assert owner_error.value.code == "capability_scope_invalid"
 
@@ -615,7 +615,7 @@ async def test_duplicate_managed_identity_fails_before_model_request() -> None:
         ),
     )
     with pytest.raises(DefinitionError) as exc_info:
-        await executable.run("go", bindings=RunBindings.local())
+        await executable.run("go", bindings=RunBindings.embedded())
     assert exc_info.value.code == "managed_tool_id_duplicate"
     assert model_called is False
 

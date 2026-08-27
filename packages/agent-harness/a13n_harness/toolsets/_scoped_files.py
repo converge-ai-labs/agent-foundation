@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
@@ -149,7 +149,7 @@ class ScopedFileAccess:
         path: str,
         *,
         prefer_authorized_selection: bool = True,
-    ) -> AsyncIterator[FileOperator]:
+    ) -> AsyncGenerator[FileOperator]:
         if self._scopes is None:
             yield self._files
             return

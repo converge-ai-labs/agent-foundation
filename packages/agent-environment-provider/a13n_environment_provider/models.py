@@ -31,7 +31,7 @@ class EnvironmentProviderSpec(BaseModel):
 
 
 class EnvironmentProviderResourceState(BaseModel):
-    """Provider-owned serializable state for one managed resource."""
+    """Provider-owned serializable state for one EnvironmentResource."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

@@ -46,7 +46,7 @@ async def _collect_extensions(
     terminal: HarnessRunResultEvent[Any] | None = None
     async with executable.stream(
         prompt,
-        bindings=bindings or RunBindings.local(),
+        bindings=bindings or RunBindings.embedded(),
         previous_state=previous_state,
     ) as stream:
         async for item in stream:
@@ -298,7 +298,7 @@ async def test_provider_task_observation_emits_once_at_harness_read_boundaries()
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
     )
-    bindings = RunBindings.local(
+    bindings = RunBindings.embedded(
         capabilities=(TaskStateRunCapability(source="provider", cell=cell),),
     )
     events, terminal = await _collect_extensions(executable, "Observe", bindings=bindings)
@@ -353,7 +353,7 @@ async def test_provider_changes_before_harness_mutation_keep_provider_observed_r
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
     )
-    bindings = RunBindings.local(
+    bindings = RunBindings.embedded(
         capabilities=(TaskStateRunCapability(source="provider", cell=cell),),
     )
     events, terminal = await _collect_extensions(executable, "Mutate", bindings=bindings)

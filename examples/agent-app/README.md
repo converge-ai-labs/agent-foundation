@@ -1,8 +1,15 @@
 # Agent Application Example
 
-This standalone project contains one complete application: a repeated, streaming conversation that persists `HarnessState` after every successful turn and resumes that conversation after the application is reconstructed.
+This project is one small, complete application: an offline streaming chat that keeps one conversation across multiple turns, persists `HarnessState`, and resumes the same Thread after the process is restarted.
 
-The demo uses an offline Pydantic AI `FunctionModel`, so all checks run without provider credentials. The Harness build, event stream, message history, state serialization, continuation, and lifecycle are real.
+It intentionally uses only:
+
+- one offline Pydantic AI `FunctionModel`;
+- one local demo Environment;
+- one state file;
+- one `ConversationApplication` execution path.
+
+Environment permutations and advanced ownership combinations belong in the Harness Environment tests and documentation, not in this application example.
 
 ## Run It
 
@@ -12,20 +19,19 @@ From the repository root:
 make examples-check-all
 ```
 
-Or run this project directly:
+Or run the application directly:
 
 ```bash
 cd examples/agent-app
 uv sync --locked
-
 uv run agent-app-example
-uv run pytest
-uv run pyright
 ```
 
-The CLI is interactive. Enter multiple messages, then use `/quit` to stop. By default it stores state in `.agent-app/conversation-state.json`. Start the command again to continue the same Harness Thread.
+Enter several messages and use `/quit` to stop. The default state file is `.agent-app/conversation-state.json`; the demo Environment workspace is `.agent-app/workspace`.
 
-You can also run several turns non-interactively and choose the state file:
+Start the command again and the next turn resumes the same Harness Thread and message history.
+
+The same lifecycle can be demonstrated non-interactively:
 
 ```bash
 uv run agent-app-example \
@@ -38,68 +44,89 @@ uv run agent-app-example \
   "Continue after the application restart."
 ```
 
-Each response is printed as text events arrive rather than waiting for the terminal result.
+Use `--workspace PATH` only when you want the single demo Environment rooted somewhere else.
 
-## Application Structure
-
-```text
-src/a13n_agent_app_example/
-  application.py  # Harness build, stream consumption, and state persistence
-  cli.py          # Interactive and non-interactive application entry point
-
-tests/
-  test_application.py  # Real multi-turn streaming and restart recovery
-```
+## Application Flow
 
 ```mermaid
 sequenceDiagram
     participant User
     participant App as ConversationApplication
-    participant Harness
     participant State as HarnessState file
+    participant Environment as Demo Environment Provider
+    participant Harness
 
-    User->>App: prompt
-    App->>State: load previous state if present
-    App->>Harness: stream(prompt, previous_state, fresh bindings)
-    Harness-->>App: text start and delta events
-    App-->>User: print each text chunk immediately
-    Harness-->>App: terminal result with next state
-    App->>State: atomically replace completed state
-    Note over App,State: A reconstructed application loads the same state for the next turn
+    User->>App: first prompt
+    App->>State: load state or start a new Thread
+    App->>Harness: stream prompt with previous_state and Environment
+    Harness->>Environment: create, enter, acquire fresh attachment
+    Harness-->>App: text events and terminal result
+    Harness->>Environment: release, exit, destroy
+    App->>State: atomically commit completed state
+
+    User->>App: next prompt
+    App->>State: load previous completed state
+    App->>Harness: stream next turn
+    Harness-->>App: continued response and next state
+    App->>State: atomically commit completed state
+
+    Note over App,State: A new process constructs a new application and loads the same state file
 ```
 
-## Main API Path
+The Provider, Resource, attachment, credentials, and grants are fresh authority and are not serialized into `HarnessState`. The checkpoint can contain portable provider-defined Environment continuation state, which the Harness restores only into a compatible freshly bound Environment. Conversation history resumes because the application reloads the last completed state and passes it as `previous_state`.
 
-`ConversationApplication.stream_turn()` is an async iterator:
+## Main API
 
 ```python
 from pathlib import Path
 
-from a13n_agent_app_example import ConversationApplication
-
-application = ConversationApplication(
-    model=model,
-    state_path=Path("conversation-state.json"),
+from a13n_agent_app_example import (
+    ConversationApplication,
+    create_demo_environment,
 )
 
-async for text in application.stream_turn("Hello"):
-    print(text, end="", flush=True)
+state_path = Path("conversation-state.json")
+environment = create_demo_environment(Path("workspace"))
+
+async with ConversationApplication(
+    model=model,
+    state_path=state_path,
+    environment=environment,
+) as application:
+    async with application.stream_turn("Hello") as stream:
+        async for text in stream:
+            print(text, end="", flush=True)
 ```
 
-For every turn the application:
+`ConversationApplication` owns one reusable `ExecutableAgent` for its process lifetime. For each turn it:
 
-1. loads the last successfully committed `HarnessState`, or starts a new Thread;
-2. builds an `ExecutableAgent` with the caller-provided native Pydantic AI `Model`;
-3. creates fresh `RunBindings.local()`;
-4. consumes `ExecutableAgent.stream()` and yields `TextPart` / `TextPartDelta` content immediately;
-5. requires the terminal Harness result to succeed;
-6. atomically writes the returned state only after successful completion.
+1. serializes turn execution with an async lock;
+2. loads the last successfully committed `HarnessState` if present;
+3. opens one explicitly scoped turn stream with the Environment and `previous_state`;
+4. yields text start and delta events immediately;
+5. closes the Harness stream and Environment lifecycle if the consumer stops early;
+6. requires a successful terminal result;
+7. atomically replaces the state file with the returned continuation state.
 
-A new `ConversationApplication` instance with the same state path and a newly constructed Model resumes the same Thread and full message history. The state is portable continuation data, not live authority or a provider client.
+Closing the application closes its executable. The Harness owns the demo Provider's temporary Resource lifecycle for each turn: create, Resource entry, attachment acquisition, attachment release, Resource exit, and destroy.
+
+A failed or abandoned turn does not replace the last completed state. Callers must enter `stream_turn()` with `async with`; leaving that scope deterministically closes the Harness stream and temporary Environment lifecycle. The next application instance can therefore recover only from a committed checkpoint.
+
+## Source Layout
+
+```text
+src/a13n_agent_app_example/
+  application.py  # Multi-turn streaming and HarnessState persistence
+  environment.py  # The single offline demo Environment
+  cli.py          # Interactive and non-interactive entry point
+
+tests/
+  test_application.py  # Multi-turn chat, restart recovery, failure, and cleanup
+```
 
 ## Using a Real Model
 
-The application accepts any native Pydantic AI `Model`. Construct one yourself or use the optional Harness inference layer:
+The runnable CLI uses an offline `FunctionModel`, but `ConversationApplication` accepts any native Pydantic AI `Model`:
 
 ```python
 from a13n_harness import infer_model
@@ -107,20 +134,16 @@ from a13n_harness import infer_model
 model = infer_model(
     "openai-responses:gpt-5",
     provider_factory=provider_factory,
-    common_headers={"x-session-id": session_id},
     patches=(apply_provider_patch,),
 )
 ```
 
-For `gateway@provider:model` routes, pass `gateway_provider_factory`. The factory owns credentials, provider SDK setup, retries, any HTTP client, and client cleanup. You can skip Harness `infer_model()` entirely and pass a self-constructed native Model.
+The caller owns model credentials, SDK clients, retry policy, and client cleanup.
 
 ## Boundaries
 
-- `HarnessState` stores portable continuation data and the stable Thread ID.
-- The application owns checkpoint selection by deciding which state file to load.
-- Fresh bindings and current authority are reconstructed for every Harness run; they are not restored from state.
-- The state file is a small single-application example, not a distributed lease or concurrent writer protocol.
-- Abandoned or failed streams are not committed as completed turns.
-- The caller owns the Model and any provider resources behind it.
-
-For production Host lifecycle and checkpoint authority, read [Embedding in a Host](../../docs/agent-harness/hosting.md). For the state contract, read [State and Resume](../../docs/agent-harness/state-and-resume.md).
+- `HarnessState` is portable conversation continuation data, not live Environment authority.
+- The state file is a small single-process example, not a distributed checkpoint store or lease protocol.
+- The local demo Environment is intentionally the only Environment in this application.
+- Advanced multi-Environment routing and mixed ownership remain documented in the [Environment guide](../../docs/agent-harness/environments.md).
+- Production Host lifecycle and checkpoint authority are documented in [Embedding in a Host](../../docs/agent-harness/hosting.md).

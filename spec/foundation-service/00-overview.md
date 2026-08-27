@@ -36,7 +36,7 @@ flowchart LR
     subgraph WorkerRole[Worker role]
         Worker[Fenced worker]
         Reconstruct[Trusted reconstruction]
-        Provider[Environment Provider Manager]
+        Provider[Environment Provider]
         Observer[HarnessAguiObserver]
         Harness[agent-harness]
     end
@@ -73,7 +73,7 @@ PostgreSQL is the distributed authority for accepted resources, Turns, current T
 | Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks              |
 | Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome       |
 | Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                |
-| Provider specification and resource operations                | `a13n-environment-provider`                                   | Foundation invokes Managers and persists selected provider state    |
+| Provider specification and Resource operations                | `a13n-environment-provider`                                   | Foundation invokes Providers and persists selected provider state   |
 | Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it  |
 | Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery  |
 | Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations |

@@ -10,11 +10,7 @@ import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
-    BoundEnvironment,
     EnvironmentError,
-    EnvironmentRunBinding,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -28,6 +24,12 @@ from a13n_harness import (
     RunCleanupError,
     RunError,
     SemanticRunInput,
+)
+from a13n_harness.environment.advanced import (
+    BoundEnvironment,
+    EnvironmentRunBinding,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_noop_environment_run_binding,
 )
 from pydantic import ValidationError
@@ -133,7 +135,7 @@ async def test_plugins_bind_order_wrap_and_contribute_capabilities() -> None:
         plugins=(inner, outer),
     )
 
-    result = await executable.run("hello", bindings=RunBindings.local())
+    result = await executable.run("hello", bindings=RunBindings.embedded())
 
     assert result.output == "output|inner|outer"
     assert log == [
@@ -188,7 +190,7 @@ async def test_plugin_can_short_circuit_without_starting_pydantic() -> None:
         plugins=(ShortCircuitPlugin(calls),),
     )
 
-    result = await executable.run("hello", bindings=RunBindings.local())
+    result = await executable.run("hello", bindings=RunBindings.embedded())
 
     assert result.output == "cached"
     assert calls == ["short-circuit"]
@@ -224,7 +226,7 @@ async def test_cleanup_failure_withholds_terminal_delivery_and_retains_outcome()
     )
 
     with pytest.raises(RunCleanupError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.local())
+        await executable.run("hello", bindings=RunBindings.embedded())
 
     assert exc_info.value.outcome is not None
     assert exc_info.value.outcome.status == "completed"
@@ -284,7 +286,7 @@ async def test_invalid_or_failed_outer_result_retains_the_last_valid_inner_outco
     )
 
     with pytest.raises(RunCleanupError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.local())
+        await executable.run("hello", bindings=RunBindings.embedded())
 
     assert exc_info.value.outcome is not None
     assert exc_info.value.outcome.status == "completed"
@@ -320,7 +322,7 @@ async def test_outer_failure_retains_the_valid_replacement_from_the_inner_plugin
     )
 
     with pytest.raises(RunCleanupError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.local())
+        await executable.run("hello", bindings=RunBindings.embedded())
 
     assert exc_info.value.outcome is not None
     assert exc_info.value.outcome.output == "output|inner"
@@ -363,7 +365,7 @@ async def test_plugin_event_sequences_are_reallocated_at_the_public_boundary() -
         plugins=(EventTransformPlugin(),),
     )
 
-    async with executable.stream("hello", bindings=RunBindings.local()) as stream:
+    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
         items = [item async for item in stream]
 
     assert len(items) > 1
@@ -379,7 +381,7 @@ async def test_plugin_cannot_emit_a_malformed_pydantic_event() -> None:
     )
 
     with pytest.raises(PluginError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.local())
+        await executable.run("hello", bindings=RunBindings.embedded())
 
     assert exc_info.value.code == "plugin_event_invalid"
 
@@ -393,7 +395,7 @@ async def test_plugin_cannot_forge_an_unregistered_child_event() -> None:
     )
 
     with pytest.raises(PluginError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.local())
+        await executable.run("hello", bindings=RunBindings.embedded())
 
     assert exc_info.value.code == "plugin_event_run_mismatch"
 
@@ -419,7 +421,7 @@ async def test_pre_start_event_overflow_fails_without_waiting_for_a_consumer() -
 
     with pytest.raises(RunError) as exc_info:
         await asyncio.wait_for(
-            executable.run("hello", bindings=RunBindings.local()),
+            executable.run("hello", bindings=RunBindings.embedded()),
             timeout=1,
         )
 
@@ -481,7 +483,7 @@ async def test_plugin_cannot_replace_trusted_context_or_bypass_input_normalizati
     )
 
     with pytest.raises(PluginError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.local())
+        await executable.run("hello", bindings=RunBindings.embedded())
 
     assert exc_info.value.code == f"plugin_{replacement}_{'replaced' if replacement == 'context' else 'invalid'}"
     assert model_calls == []
@@ -558,7 +560,7 @@ async def test_normal_cleanup_stays_in_the_task_that_entered_the_plugin_iterator
         plugins=(TaskAffineCleanupPlugin(),),
     )
 
-    async with executable.stream("hello", bindings=RunBindings.local()) as stream:
+    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
         response = cast(Any, stream)._response
         first = await stream.__anext__()
         assert isinstance(first, HarnessEvent)
@@ -602,7 +604,7 @@ async def test_terminal_cleanup_exits_environment_scope_in_its_entering_task() -
         model=_model([]),
     )
 
-    result = await executable.run("hello", bindings=RunBindings.local(environment=environment))
+    result = await executable.run("hello", bindings=RunBindings.embedded(environment=environment))
 
     assert result.output_or_raise() == "output"
     assert environment.closed.is_set()
@@ -641,7 +643,7 @@ async def test_environment_owner_failure_interrupts_the_logical_run() -> None:
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
-    run_task = asyncio.create_task(executable.run("hello", bindings=RunBindings.local(environment=environment)))
+    run_task = asyncio.create_task(executable.run("hello", bindings=RunBindings.embedded(environment=environment)))
     await model_started.wait()
     environment.fail.set()
 
@@ -667,7 +669,7 @@ async def test_model_stream_stays_in_one_owner_task() -> None:
         model=FunctionModel(stream_function=stream),
     )
 
-    result = await executable.run("hello", bindings=RunBindings.local())
+    result = await executable.run("hello", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "output"
 
@@ -712,7 +714,7 @@ async def test_harness_closes_each_registered_plugin_response_once() -> None:
         plugins=(plugin,),
     )
 
-    await executable.run("hello", bindings=RunBindings.local())
+    await executable.run("hello", bindings=RunBindings.embedded())
 
     assert plugin.response is not None
     assert plugin.response.close_calls == 1
@@ -753,7 +755,7 @@ async def test_cleanup_cannot_suppress_external_cancellation() -> None:
         model=_model([]),
         plugins=(SuppressingCancellationPlugin(cleanup_started),),
     )
-    stream = executable.stream("hello", bindings=RunBindings.local())
+    stream = executable.stream("hello", bindings=RunBindings.embedded())
     await stream.__aenter__()
     first = await stream.__anext__()
     assert isinstance(first, HarnessEvent)
@@ -782,7 +784,7 @@ async def test_cancellation_during_terminal_pump_cleanup_stays_primary() -> None
         plugins=(plugin,),
     )
 
-    run_task = asyncio.create_task(executable.run("hello", bindings=RunBindings.local()))
+    run_task = asyncio.create_task(executable.run("hello", bindings=RunBindings.embedded()))
     await cleanup_started.wait()
     run_task.cancel()
     release_cleanup.set()
@@ -809,7 +811,7 @@ async def test_early_close_installs_topology_fence_before_plugin_cleanup() -> No
         model=_model([]),
         plugins=(plugin,),
     )
-    stream = executable.stream("hello", bindings=RunBindings.local(environment=environment))
+    stream = executable.stream("hello", bindings=RunBindings.embedded(environment=environment))
     await stream.__aenter__()
     first = await stream.__anext__()
     assert isinstance(first, HarnessEvent)
@@ -871,7 +873,7 @@ async def test_internal_pump_cancellation_cannot_publish_into_an_unconsumed_full
         model=_model([]),
         plugins=(EndAfterTwoEventsPlugin(close_started),),
     )
-    stream = executable.stream("hello", bindings=RunBindings.local())
+    stream = executable.stream("hello", bindings=RunBindings.embedded())
     await stream.__aenter__()
     first = await stream.__anext__()
     assert isinstance(first, HarnessEvent)
@@ -930,7 +932,7 @@ async def test_repeated_external_cancellation_attempts_remaining_cleanup_and_sta
     )
     stream = executable.stream(
         "hello",
-        bindings=RunBindings.local(environment=FailingTrackingEnvironment(log)),
+        bindings=RunBindings.embedded(environment=FailingTrackingEnvironment(log)),
     )
     await stream.__aenter__()
     first = await stream.__anext__()

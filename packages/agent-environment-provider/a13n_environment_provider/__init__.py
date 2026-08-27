@@ -17,10 +17,10 @@ from .direct_local.configuration import (
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
 )
-from .direct_local.manager import (
-    DirectLocalEnvironmentManager,
+from .direct_local.provider import (
+    DirectLocalEnvironmentProvider,
     DirectLocalEnvironmentProviderFactory,
-    DirectLocalManagedEnvironment,
+    DirectLocalEnvironmentResource,
     DirectLocalProviderRuntime,
 )
 from .errors import (
@@ -41,7 +41,7 @@ from .factories import (
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
-from .management import EnvironmentManager, EnvironmentProviderRuntime, ManagedEnvironment
+from .management import EnvironmentProvider, EnvironmentProviderRuntime, EnvironmentResource
 from .models import (
     EnvironmentAttachmentConcurrency,
     EnvironmentLifecycleCapabilities,
@@ -64,9 +64,9 @@ __all__ = [
     "ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP",
     "AcceptedWebSocketEIPSessionSource",
     "DirectLocalEnvironmentAttachment",
-    "DirectLocalEnvironmentManager",
+    "DirectLocalEnvironmentProvider",
     "DirectLocalEnvironmentProviderFactory",
-    "DirectLocalManagedEnvironment",
+    "DirectLocalEnvironmentResource",
     "DirectLocalProviderConfiguration",
     "DirectLocalProviderRuntime",
     "DirectLocalProviderStateData",
@@ -77,9 +77,9 @@ __all__ = [
     "EnvironmentAttachmentConcurrency",
     "EnvironmentLifecycleCapabilities",
     "EnvironmentManagementAction",
-    "EnvironmentManager",
     "EnvironmentOperationContext",
     "EnvironmentPauseMode",
+    "EnvironmentProvider",
     "EnvironmentProviderError",
     "EnvironmentProviderErrorCategory",
     "EnvironmentProviderErrorContext",
@@ -95,10 +95,10 @@ __all__ = [
     "EnvironmentProviderSpec",
     "EnvironmentReconciliationPhase",
     "EnvironmentReconciliationResult",
+    "EnvironmentResource",
     "EnvironmentResourceAllocation",
     "EnvironmentRuntimeAttachment",
     "HttpEIPSessionSource",
-    "ManagedEnvironment",
     "ResolvedEnvironmentProviderSpec",
     "StdioEIPSessionSource",
     "__version__",

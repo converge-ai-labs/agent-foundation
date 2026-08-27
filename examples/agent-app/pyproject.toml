@@ -6,6 +6,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.13"
 dependencies = [
+    "a13n-environment-provider",
     "a13n-harness",
     "pydantic-ai-slim>=2.31.1,<2.32",
 ]
@@ -28,6 +29,7 @@ build-backend = "hatchling.build"
 packages = ["src/a13n_agent_app_example"]
 
 [tool.uv.sources]
+a13n-environment-provider = { path = "../../packages/agent-environment-provider", editable = true }
 a13n-harness = { path = "../../packages/agent-harness", editable = true }
 
 [tool.uv.workspace]

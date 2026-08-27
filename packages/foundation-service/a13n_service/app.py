@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from anyio import fail_after
@@ -21,7 +21,7 @@ _CONTROL_PLANE_ROLES = {ServiceRole.all, ServiceRole.control}
 
 
 @asynccontextmanager
-async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings: ServiceSettings = app.state.settings
     async with open_storage(settings.storage_settings()) as storage:
         app.state.storage = storage

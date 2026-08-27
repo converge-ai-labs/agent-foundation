@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import typing
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection, Coroutine, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, is_dataclass
 from dataclasses import fields as dataclass_fields
@@ -111,7 +111,12 @@ from a13n_harness.environment.dynamic import (
     DynamicEnvironmentCapability,
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentTopologyChange
-from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.environment.providers import (
+    BoundEnvironment,
+    EnvironmentRunBinding,
+    EnvironmentTopologyController,
+)
+from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
 from a13n_harness.errors import (
     DefinitionError,
     HarnessError,
@@ -145,6 +150,12 @@ from a13n_harness.model_context import (
     ModelContextCoordinatorCapability,
 )
 from a13n_harness.models.binding import resolve_run_model
+from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
+from a13n_harness.models.request_headers import (
+    MODEL_REQUEST_HEADERS_CAPABILITY_ID,
+    ModelRequestHeadersCapability,
+    ModelRequestPatchConfiguration,
+)
 from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
@@ -483,6 +494,7 @@ class HarnessBuilder:
         capability_type_catalog: CapabilityTypeCatalog | None = None,
         build_context: HarnessBuildContext | None = None,
         configured_plugins_enabled: bool | None = None,
+        gateway_provider_factory: GatewayModelProviderFactory | None = None,
     ) -> None:
         if capability_type_catalog is not None and not isinstance(capability_type_catalog, CapabilityTypeCatalog):
             raise DefinitionError(
@@ -499,7 +511,14 @@ class HarnessBuilder:
                 "configured_plugins_enabled must be a boolean or None.",
                 code="plugin_configuration_enablement_invalid",
             )
+        if gateway_provider_factory is not None and not callable(gateway_provider_factory):
+            raise DefinitionError(
+                "gateway_provider_factory must be callable or None.",
+                code="gateway_provider_factory_invalid",
+            )
         self._capability_type_catalog = capability_type_catalog or _EMPTY_CAPABILITY_TYPE_CATALOG
+        self._gateway_provider_factory = gateway_provider_factory
+        self._model_request_patch_configuration = ModelRequestPatchConfiguration.from_environment()
         if build_context is None:
             resolved_build_context = HarnessBuildContext.from_environment(enabled=configured_plugins_enabled)
         else:
@@ -657,8 +676,14 @@ class HarnessBuilder:
         async def resolve_model(
             context: ModelResolutionContext[AgentContext],
             model_id: str,
-        ) -> Model | None:
-            return await resolve_run_model(context, model_id)
+        ) -> Model:
+            resolved = await resolve_run_model(context, model_id)
+            if resolved is not None:
+                return resolved
+            return infer_model(
+                model_id,
+                gateway_provider_factory=self._gateway_provider_factory,
+            )
 
         capabilities = (
             ToolExecutionBoundaryCapability(),
@@ -670,6 +695,7 @@ class HarnessBuilder:
             ResolveModelId(resolve_model),
             *authored_capabilities,
             *default_model_costs,
+            ModelRequestHeadersCapability(self._model_request_patch_configuration),
             UsageCapability(),
         )
         try:
@@ -749,21 +775,75 @@ class ExecutableAgent[OutputT]:
         self._definition_reserved_capability_ids = definition_reserved_capability_ids
         self._closed = False
 
+    @overload
     async def run(
         self,
         input: RunInputValue | None = None,
         *,
         input_factory: RunInputFactory | None = None,
-        bindings: RunBindings,
+        environment: EnvironmentEntry,
+        environments: None = None,
+        default_environment: None = None,
+        bindings: RunBindings | None = None,
+        previous_state: HarnessState | None = None,
+        deferred_resume: DeferredToolResume | None = None,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunResult[OutputT]: ...
+
+    @overload
+    async def run(
+        self,
+        input: RunInputValue | None = None,
+        *,
+        input_factory: RunInputFactory | None = None,
+        environment: None = None,
+        environments: Mapping[str, EnvironmentEntry],
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
+        previous_state: HarnessState | None = None,
+        deferred_resume: DeferredToolResume | None = None,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunResult[OutputT]: ...
+
+    @overload
+    async def run(
+        self,
+        input: RunInputValue | None = None,
+        *,
+        input_factory: RunInputFactory | None = None,
+        environment: None = None,
+        environments: None = None,
+        default_environment: None = None,
+        bindings: RunBindings | None = None,
+        previous_state: HarnessState | None = None,
+        deferred_resume: DeferredToolResume | None = None,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunResult[OutputT]: ...
+
+    async def run(
+        self,
+        input: RunInputValue | None = None,
+        *,
+        input_factory: RunInputFactory | None = None,
+        environment: EnvironmentEntry | None = None,
+        environments: Mapping[str, EnvironmentEntry] | None = None,
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> HarnessRunResult[OutputT]:
         """Consume the canonical stream and return its sole terminal result."""
-        async with self.stream(
+        async with self._stream(
             input,
             input_factory=input_factory,
+            environment=environment,
+            environments=environments,
+            default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
             deferred_resume=deferred_resume,
@@ -775,18 +855,96 @@ class ExecutableAgent[OutputT]:
                     return item.result
         raise RunError("The run ended without a terminal result.", code="run_result_missing")
 
+    @overload
     def stream(
         self,
         input: RunInputValue | None = None,
         *,
         input_factory: RunInputFactory | None = None,
-        bindings: RunBindings,
+        environment: EnvironmentEntry,
+        environments: None = None,
+        default_environment: None = None,
+        bindings: RunBindings | None = None,
+        previous_state: HarnessState | None = None,
+        deferred_resume: DeferredToolResume | None = None,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunStream[OutputT]: ...
+
+    @overload
+    def stream(
+        self,
+        input: RunInputValue | None = None,
+        *,
+        input_factory: RunInputFactory | None = None,
+        environment: None = None,
+        environments: Mapping[str, EnvironmentEntry],
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
+        previous_state: HarnessState | None = None,
+        deferred_resume: DeferredToolResume | None = None,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunStream[OutputT]: ...
+
+    @overload
+    def stream(
+        self,
+        input: RunInputValue | None = None,
+        *,
+        input_factory: RunInputFactory | None = None,
+        environment: None = None,
+        environments: None = None,
+        default_environment: None = None,
+        bindings: RunBindings | None = None,
+        previous_state: HarnessState | None = None,
+        deferred_resume: DeferredToolResume | None = None,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunStream[OutputT]: ...
+
+    def stream(
+        self,
+        input: RunInputValue | None = None,
+        *,
+        input_factory: RunInputFactory | None = None,
+        environment: EnvironmentEntry | None = None,
+        environments: Mapping[str, EnvironmentEntry] | None = None,
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> HarnessRunStream[OutputT]:
         """Create a lazy, single-entry canonical Harness stream."""
+        return self._stream(
+            input,
+            input_factory=input_factory,
+            environment=environment,
+            environments=environments,
+            default_environment=default_environment,
+            bindings=bindings,
+            previous_state=previous_state,
+            deferred_resume=deferred_resume,
+            usage=usage,
+            usage_limits=usage_limits,
+        )
+
+    def _stream(
+        self,
+        input: RunInputValue | None = None,
+        *,
+        input_factory: RunInputFactory | None = None,
+        environment: EnvironmentEntry | None = None,
+        environments: Mapping[str, EnvironmentEntry] | None = None,
+        default_environment: str | None = None,
+        bindings: RunBindings | None = None,
+        previous_state: HarnessState | None = None,
+        deferred_resume: DeferredToolResume | None = None,
+        usage: RunUsage | None = None,
+        usage_limits: UsageLimits | None = None,
+    ) -> HarnessRunStream[OutputT]:
         if self._closed:
             raise RunError("The executable is closed.", code="executable_closed")
         if input is not None and input_factory is not None:
@@ -794,8 +952,17 @@ class ExecutableAgent[OutputT]:
                 "input and input_factory are mutually exclusive.",
                 code="input_source_conflict",
             )
-        run_reserved_ids = _validate_capability_source(bindings.capabilities, source="run")
-        skill_selection_names = _capture_skill_selection_names(bindings.capabilities)
+        if bindings is not None and not isinstance(bindings, RunBindings):
+            raise RunError("bindings must be a RunBindings value.", code="run_bindings_invalid")
+        resolved_bindings = bindings if bindings is not None else RunBindings.embedded()
+        environment_binding = normalize_environment_inputs(
+            environment=environment,
+            environments=environments,
+            default_environment=default_environment,
+            advanced_binding=resolved_bindings.environment,
+        )
+        run_reserved_ids = _validate_capability_source(resolved_bindings.capabilities, source="run")
+        skill_selection_names = _capture_skill_selection_names(resolved_bindings.capabilities)
         normalized_resume = (
             preflight_deferred_resume(deferred_resume, previous_state=previous_state)
             if deferred_resume is not None
@@ -805,7 +972,8 @@ class ExecutableAgent[OutputT]:
             executable=self,
             input=input,
             input_factory=input_factory,
-            bindings=bindings,
+            bindings=resolved_bindings,
+            environment_binding=environment_binding,
             previous_state=previous_state,
             deferred_resume=normalized_resume,
             run_reserved_capability_ids=run_reserved_ids,
@@ -841,6 +1009,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         input: RunInputValue | None,
         input_factory: RunInputFactory | None,
         bindings: RunBindings,
+        environment_binding: EnvironmentRunBinding,
         previous_state: HarnessState | None,
         deferred_resume: DeferredToolResume | None,
         run_reserved_capability_ids: frozenset[str],
@@ -852,6 +1021,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._input = input
         self._input_factory = input_factory
         self._bindings = bindings
+        self._environment_binding = environment_binding
         self._previous_state = (
             previous_state.model_copy(deep=True) if previous_state is not None else HarnessState.new()
         )
@@ -914,6 +1084,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     def usage(self) -> RunUsage:
         """Return the live Pydantic AI usage accumulator."""
         return self._usage
+
+    @property
+    def environment_controller(self) -> EnvironmentTopologyController:
+        """Return the advanced topology controller for this run."""
+        return self._environment_binding.controller
 
     def _bind_parent_event_forwarder(self, parent: HarnessEventEmitter) -> _ChildEventForwarder:
         """Bind this exact stream as a validated child of one active parent emitter."""
@@ -996,7 +1171,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         ready = self._environment_ready
         assert ready is not None
         try:
-            async with self._bindings.environment.bind(
+            async with self._environment_binding.bind(
                 run_id=self.run_id,
                 instance=self._bindings.instance,
             ) as environment:
@@ -1189,7 +1364,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         drain = self._topology_event_drain
         if drain.terminal_version is not None:
             return
-        self._bindings.environment.controller.begin_close()
+        self._environment_binding.controller.begin_close()
         drain.terminal_version = self.context.environment.topology.topology_version
         drain.requested.set()
 
@@ -2017,7 +2192,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
         fence_failure: BaseException | None = None
         try:
-            self._bindings.environment.controller.begin_close()
+            self._environment_binding.controller.begin_close()
         except BaseException as exc:
             fence_failure = exc
 
@@ -2122,6 +2297,7 @@ def _validate_built_capability_tree(
     lifecycle_event_count = 0
     steering_count = 0
     model_context_coordinator_count = 0
+    model_request_headers_capability_count = 0
     usage_count = 0
     model_cost_count = 0
     reserved_ids = {
@@ -2131,6 +2307,7 @@ def _validate_built_capability_tree(
         LIFECYCLE_EVENT_CAPABILITY_ID,
         STEERING_CAPABILITY_ID,
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
+        MODEL_REQUEST_HEADERS_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
         MODEL_COST_CAPABILITY_ID,
@@ -2235,6 +2412,14 @@ def _validate_built_capability_tree(
                     code="capability_scope_invalid",
                 )
             continue
+        if type(capability) is ModelRequestHeadersCapability:
+            model_request_headers_capability_count += 1
+            if capability_id != MODEL_REQUEST_HEADERS_CAPABILITY_ID:
+                raise DefinitionError(
+                    "The mandatory model request headers Capability has an invalid ID.",
+                    code="capability_scope_invalid",
+                )
+            continue
         if type(capability) is UsageCapability:
             usage_count += 1
             if capability_id != USAGE_CAPABILITY_ID:
@@ -2333,6 +2518,11 @@ def _validate_built_capability_tree(
             "The built Agent must contain exactly one mandatory model context coordinator Capability.",
             code="capability_scope_invalid",
         )
+    if model_request_headers_capability_count != 1:
+        raise DefinitionError(
+            "The built Agent must contain exactly one mandatory model request headers Capability.",
+            code="capability_scope_invalid",
+        )
     if usage_count != 1:
         raise DefinitionError(
             "The built Agent must contain exactly one mandatory Usage Capability.",
@@ -2401,6 +2591,7 @@ def _validate_capability_source(
         MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
         STEERING_CAPABILITY_ID,
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
+        MODEL_REQUEST_HEADERS_CAPABILITY_ID,
         INVOCATION_POLICY_CAPABILITY_ID,
         USAGE_CAPABILITY_ID,
         MODEL_COST_CAPABILITY_ID,

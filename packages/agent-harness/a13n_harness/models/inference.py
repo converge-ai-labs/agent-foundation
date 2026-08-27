@@ -12,6 +12,7 @@ from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models import infer_model as _pydantic_infer_model
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.providers import Provider, infer_provider
+from pydantic_ai.providers.gateway import gateway_provider
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
 
@@ -23,7 +24,7 @@ _PROVIDER_PREFIX_ALIASES: dict[str, str] = {
     "gemini": "google-cloud",
     "google-gla": "google-cloud",
     "google-vertex": "google-cloud",
-    "openai": "openai-chat",
+    "openai": "openai-responses",
 }
 
 
@@ -153,16 +154,19 @@ def infer_model(
         gateway_name, separator, routed_model = normalized.partition("@")
         selected_provider_factory: ModelProviderFactory = provider_factory
         if separator:
-            if gateway_provider_factory is None:
-                raise ValueError(
-                    "Gateway model strings require gateway_provider_factory; "
-                    "the Harness does not create gateway providers or clients"
-                )
             provider_name, provider_separator, _ = routed_model.partition(":")
             if not provider_separator or not provider_name:
                 raise ValueError("Gateway model strings must use format gateway@provider:model")
+            if gateway_provider_factory is None and gateway_name != "gateway":
+                raise ValueError(
+                    "Named gateway model strings require gateway_provider_factory; "
+                    "use gateway@provider:model for the Pydantic AI Gateway"
+                )
 
             def routed_provider_factory(requested_provider_name: str, /) -> Provider[Any]:
+                if gateway_name == "gateway":
+                    return gateway_provider(requested_provider_name)
+                assert gateway_provider_factory is not None
                 return gateway_provider_factory(gateway_name, requested_provider_name)
 
             selected_provider_factory = routed_provider_factory

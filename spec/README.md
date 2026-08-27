@@ -7,7 +7,7 @@ Agent Foundation is an open-source foundation for embedding Agents or hosting th
 The platform consists of:
 
 - `agent-harness`, distributed as `a13n-harness`, for code-first Pydantic AI execution;
-- `agent-environment-provider`, distributed as `a13n-environment-provider`, for shared Environment provider specifications, Managers, built-ins, and runtime attachments;
+- `agent-environment-provider`, distributed as `a13n-environment-provider`, for shared Environment provider specifications, Providers, Resources, built-ins, and runtime attachments;
 - `agent-stream-protocol`, distributed as `a13n-stream-protocol`, for shared Harness-to-AG-UI observation;
 - `agent-ui`, distributed as `a13n-ui`, for reloadable local Agent/Environment composition, Sessions, and complete WebUI/TUI interaction;
 - `agent-envd`, distributed as `agent-envd`, for Environment Interaction Protocol operations;
@@ -58,7 +58,7 @@ flowchart TB
     end
 
     StreamProtocol[agent-stream-protocol]
-    ProviderPackage[agent-environment-provider<br/>specs, Managers, attachments]
+    ProviderPackage[agent-environment-provider<br/>specs, Providers, attachments]
 
     subgraph Environment[Environment layer]
         Bound[BoundEnvironment]
@@ -109,7 +109,7 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 | Component                    | Owns                                                                                                                                                                                                        | Does not own                                                                                                             |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                   | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                  |
-| `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Managers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                    | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                       |
+| `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                   | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                       |
 | `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                 | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                 |
 | `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, hybrid Sessions, provider orchestration, root execution, async-only subagent jobs, application service, WebUI, and TUI | Distributed execution, multi-tenant authorization, or another Agent loop                                                 |
 | `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle |
@@ -126,13 +126,13 @@ The Harness is built directly on Pydantic AI 2:
 - `AgentDefinition` is an immutable process-local Python value containing native `AgentSpec`, one build-time explicit or schema-derived output contract, an optional concrete Model, top-level Capabilities, plugins, and recovery configuration;
 - Capability is the only top-level feature-behavior plane; each feature Capability owns its tools, Toolsets, instructions, settings, and hooks;
 - `HarnessBuilder` resolves an explicit or disabled-by-default ambient plugin Build Context, creates fresh configured instances, binds all trusted plugins, authorizes custom Capability types, and calls `Agent.from_spec()` once;
-- `RunBindings` supplies fresh Agent instance, Environment, optional async `RunModelResolver`, run Capabilities, and metadata;
+- high-level run arguments supply optional Provider or Resource sources, while `RunBindings` supplies a fresh Agent instance, optional advanced Environment aggregate, optional async `RunModelResolver`, run Capabilities, and metadata;
 - one logical Harness Run owns one context, Environment, plugin graph, state coordinator, usage accumulator, public `run_id`, and stable Thread correlation;
 - bounded model recovery can start several `ModelAttempt` values with unique upstream model-attempt IDs inside that Run;
 - `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired topology, provider incarnation envelope, and launch payload remain Host-owned;
 - Pydantic AI owns native Model profiles, transport/output retries, provider-suspended continuation, deferred external calls/approvals, Toolsets, messages, events, and usage.
 
-Harness middleware plugins are trusted concrete objects, and the Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment provider specifications, factories, Managers, and built-ins belong to `a13n-environment-provider`; the Harness receives only fresh single-use attachments. A Host owns serializable Agent schemas, artifact locks, package trust, optional provider resource-state storage, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
+Harness middleware plugins are trusted concrete objects, and the Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment provider specifications, factories, Providers, Resources, and built-ins belong to `a13n-environment-provider`; the Harness can own an already constructed Provider through `ephemeral()` or borrow a fresh attachment from an entered Resource. A Host owns serializable Agent schemas, artifact locks, package trust, optional provider resource-state storage, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
 
 The complete design is indexed in [agent-harness/README.md](agent-harness/README.md).
 
@@ -159,9 +159,9 @@ Recovery never converts missing evidence into rollback or exactly-once success. 
 
 ## Environment Foundation
 
-Environment is a Harness-owned run lifecycle resource, not a Capability. `BoundEnvironment` gives trusted code and optional model-facing Capabilities a stable run- and Identity-bound facade over provider-neutral file, shell, process, and port operations. Its paired Host-retained controller activates after initial portable-state restore and supports atomic add, refresh, and removal throughout the active logical run. Direct Local and EIP are the only operation backends.
+Environment is a Harness-owned run lifecycle resource, not a Capability. The public `Environment` facade gives trusted code and optional model-facing Capabilities a stable run- and Identity-bound view over provider-neutral file, shell, process, and port operations. Its paired Host-retained controller activates after initial portable-state restore and supports atomic add, refresh, and removal throughout the active logical run. Direct Local and EIP are the only operation backends.
 
-`a13n-environment-provider` owns shared provider specifications, the create/resume/pause/destroy Manager API, provider resource state, fresh runtime attachments, and the built-in `a13n.direct-local`, `a13n.local-envd`, `a13n.docker`, and `a13n.e2b` providers. A Host chooses lifecycle actions and optional storage. Local Envd owns a required-isolation local daemon process over a Host-selected workspace and never falls back to Direct Local. The Harness adapts fresh Direct Local or EIP attachments into single-use bindings and never manages the outer resource.
+`a13n-environment-provider` owns shared provider specifications, the create/resume/pause/destroy Provider API, provider resource state, fresh runtime attachments, and the built-in `a13n.direct-local`, `a13n.local-envd`, `a13n.docker`, and `a13n.e2b` providers. A Host chooses lifecycle actions and optional storage. Local Envd owns a required-isolation local daemon process over a Host-selected workspace and never falls back to Direct Local. The Harness either owns a Provider through its bounded ephemeral lifecycle or borrows an entered Host-owned Resource, then adapts a fresh Direct Local or EIP attachment into a single-use binding.
 
 The Harness adapts EIP through `a13n-envd-client`; other trusted consumers can use that client independently. The client communicates only over a supplied session source and never discovers, downloads, installs, or launches an executable. `agent-envd` carries JSON-RPC control and raw file transfer over trusted stdio, Host-dialed HTTP, or an envd-initiated reverse WebSocket. It owns daemon-generation operation/receipt evidence, process handles, disk-backed command output with explicit-offset reads, session-scoped transfers, and Linux/macOS/Windows command containment. Carrier direction never changes the low-level client's requester role or envd's responder role.
 

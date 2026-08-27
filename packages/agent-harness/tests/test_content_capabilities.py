@@ -21,11 +21,7 @@ from a13n_harness import (
     DocumentsConfiguration,
     DocumentsRunCapability,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     HarnessBuilder,
     MediaCapability,
     MediaConfiguration,
@@ -47,6 +43,12 @@ from a13n_harness import (
     WebSearchRequest,
     WebSearchResponse,
     WebSearchResult,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_run_binding,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
@@ -275,7 +277,7 @@ async def test_content_toolsets_compose_directly_over_natural_provider_ports(tmp
         MediaConfiguration(),
     )
     binding = _binding(tmp_path)
-    run_bindings = RunBindings.local(environment=binding)
+    run_bindings = RunBindings.embedded(environment=binding)
     async with binding.bind(run_id="direct-content-toolsets", instance=run_bindings.instance) as environment:
         documents = DocumentsToolset(
             _DocumentConverter(DocumentConversionResult(markdown="# Document")),
@@ -333,7 +335,7 @@ async def test_media_capability_returns_native_binary_with_run_scoped_reader() -
 
     result = await executable.run(
         "Inspect media",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(
                 _policy(),
                 MediaRunCapability(reader=reader),
@@ -376,7 +378,7 @@ async def test_media_capability_enforces_kind_specific_actual_byte_limit() -> No
 
     result = await executable.run(
         "Inspect media",
-        bindings=RunBindings.local(capabilities=(_policy(), MediaRunCapability(reader=reader))),
+        bindings=RunBindings.embedded(capabilities=(_policy(), MediaRunCapability(reader=reader))),
     )
 
     assert result.output_or_raise() == "done"
@@ -411,7 +413,7 @@ async def test_media_capability_rejects_credential_provider_url_before_model_his
 
     result = await executable.run(
         "Inspect media",
-        bindings=RunBindings.local(capabilities=(_policy(), MediaRunCapability(reader=reader))),
+        bindings=RunBindings.embedded(capabilities=(_policy(), MediaRunCapability(reader=reader))),
     )
 
     assert result.output_or_raise() == "done"
@@ -464,7 +466,7 @@ async def test_documents_capability_publishes_one_complete_environment_tree(tmp_
 
     result = await executable.run(
         "Convert",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
             capabilities=(_policy(), DocumentsRunCapability(converter=converter)),
         ),
@@ -542,7 +544,7 @@ async def test_pdf_page_ranges_publish_to_distinct_agent_usable_exports(tmp_path
     )
     result = await executable.run(
         "Convert ranges",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
             capabilities=(_policy(), DocumentsRunCapability(converter=converter)),
         ),
@@ -582,7 +584,7 @@ async def test_documents_capability_removes_partial_staging_tree(tmp_path: Path)
 
     result = await executable.run(
         "Convert",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
             capabilities=(_policy(), DocumentsRunCapability(converter=converter)),
         ),
@@ -632,7 +634,7 @@ async def test_documents_rejects_stale_revision_before_publication(tmp_path: Pat
     )
     result = await executable.run(
         "Convert",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=binding,
             capabilities=(
                 InvocationPolicyCapability(evaluator=CapturePolicy(), max_dispatch_retries=0),
@@ -691,7 +693,7 @@ async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path
     )
     result = await executable.run(
         "Download",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=binding,
             capabilities=(
                 InvocationPolicyCapability(evaluator=CapturePolicy(), max_dispatch_retries=0),
@@ -740,7 +742,7 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
 
     result = await executable.run(
         "Search",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(
                 _policy(),
                 WebRunCapability(
@@ -780,7 +782,7 @@ async def test_web_search_strips_credential_aliases_from_model_history(credentia
 
     result = await executable.run(
         "Search",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(
                 _policy(),
                 WebRunCapability(
@@ -844,7 +846,7 @@ async def test_web_fetch_rechecks_final_url_and_returns_native_binary() -> None:
 
     result = await executable.run(
         "Fetch",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(_policy(), WebRunCapability(client=client, policy=policy)),
         ),
     )
@@ -890,7 +892,7 @@ async def test_web_download_enforces_stream_limit_and_removes_partial_file(tmp_p
 
     result = await executable.run(
         "Download",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
             capabilities=(_policy(), WebRunCapability(client=client, policy=policy)),
         ),
@@ -941,7 +943,7 @@ async def test_web_download_isolates_batch_failures_and_uses_response_media_type
 
     result = await executable.run(
         "Download",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
             capabilities=(_policy(), WebRunCapability(client=client, policy=_WebPolicy())),
         ),
@@ -984,7 +986,7 @@ async def test_web_fetch_body_deadline_is_finite() -> None:
 
     result = await executable.run(
         "Fetch",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(_policy(), WebRunCapability(client=client, policy=_WebPolicy())),
         ),
     )

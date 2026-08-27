@@ -25,7 +25,6 @@ from a13n_harness import (
     HarnessRunResultEvent,
     ModelCostInput,
     ModelCostQuote,
-    NoopEnvironmentRunBinding,
     PluginError,
     PluginRunExchange,
     PluginRunNext,
@@ -37,6 +36,9 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities.delegation import DELEGATION_CAPABILITY_ID
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
+from a13n_harness.environment.advanced import (
+    NoopEnvironmentRunBinding,
+)
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     InvocationPolicyCapability,
@@ -895,7 +897,7 @@ async def test_inline_delegation_rejects_invalid_child_lineage_before_model_work
 
     async def bad_binder(child, input, child_instance_id, continuation, usage_limits):
         del child, input, child_instance_id, continuation, usage_limits
-        return RunBindings.local()
+        return RunBindings.embedded()
 
     executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
     bindings = RunBindings(

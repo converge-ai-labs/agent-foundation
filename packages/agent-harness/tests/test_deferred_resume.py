@@ -95,7 +95,7 @@ def _build(executed: list[int], *, resolver=None, requires_approval: bool = True
 async def _suspend(executable, policy: _Policy):
     result = await executable.run(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),)),
     )
     assert result.status == "suspended"
     assert result.state is not None
@@ -113,7 +113,7 @@ async def test_native_approval_suspends_and_resumes_with_fresh_authority() -> No
 
     fresh_policy = _Policy(InvocationPolicyDecision.allow(), [])
     second = await executable.run(
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=fresh_policy),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=fresh_policy),)),
         previous_state=first.state,
         deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
     )
@@ -144,7 +144,7 @@ async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None
     call_id = requests.approvals[0].tool_call_id
 
     second = await executable.run(
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(
                 InvocationPolicyCapability(
                     evaluator=_Policy(InvocationPolicyDecision.require_approval("confirm write"), []),
@@ -183,7 +183,7 @@ async def test_approved_override_is_schema_validated_and_resources_are_resolved_
     call_id = requests.approvals[0].tool_call_id
 
     second = await executable.run(
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(InvocationPolicyCapability(evaluator=_Policy(InvocationPolicyDecision.allow(), [])),)
         ),
         previous_state=first.state,
@@ -211,7 +211,7 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
         model=_model(),
         capabilities=(Capability(tools=[Tool(change, requires_approval=True)], id="test-tools"),),
     )
-    first = await executable.run("go", bindings=RunBindings.local())
+    first = await executable.run("go", bindings=RunBindings.embedded())
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
@@ -219,7 +219,7 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
     assert "a13n.harness.managed-tool-id" not in requests.metadata.get(call_id, {})
 
     second = await executable.run(
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
             requests,
@@ -258,7 +258,7 @@ async def test_managed_approval_cannot_remount_to_a_same_named_unmanaged_tool() 
     denied = _Policy(InvocationPolicyDecision.deny("revoked"), [])
     with pytest.raises(DefinitionError) as exc_info:
         await replacement.run(
-            bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=denied),)),
+            bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=denied),)),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 requests,
@@ -280,7 +280,7 @@ async def test_live_deny_after_approval_never_dispatches() -> None:
     assert requests is not None
 
     second = await executable.run(
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(InvocationPolicyCapability(evaluator=_Policy(InvocationPolicyDecision.deny("revoked"), [])),)
         ),
         previous_state=first.state,
@@ -300,14 +300,14 @@ async def test_resume_requires_prior_state_and_exact_category_coverage() -> None
 
     with pytest.raises(RunError) as no_state:
         executable.stream(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
         )
     assert no_state.value.code == "deferred_state_required"
 
     with pytest.raises(RunError) as incomplete:
         executable.stream(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(requests, DeferredToolResults()),
         )
@@ -316,7 +316,7 @@ async def test_resume_requires_prior_state_and_exact_category_coverage() -> None
     call_id = requests.approvals[0].tool_call_id
     with pytest.raises(RunError) as wrong_category:
         executable.stream(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(requests, DeferredToolResults(calls={call_id: "wrong"})),
         )
@@ -332,7 +332,7 @@ async def test_resume_rejects_non_native_approval_values_and_non_finite_override
 
     with pytest.raises(RunError) as invalid_type:
         executable.stream(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 requests,
@@ -343,7 +343,7 @@ async def test_resume_rejects_non_native_approval_values_and_non_finite_override
 
     with pytest.raises(RunError) as non_finite:
         executable.stream(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 requests,

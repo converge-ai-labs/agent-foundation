@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from a13n_harness import (
@@ -45,7 +46,7 @@ class WorkspaceMarkerExtension(EnvironmentRunExtension):
         return self._extension_id
 
     @asynccontextmanager
-    async def bind(self, *, context: EnvironmentRunExtensionContext):
+    async def bind(self, *, context: EnvironmentRunExtensionContext) -> AsyncGenerator[None]:
         content = f"{self.configuration.label}:{context.run_id}\n"
         await context.environment.files.write_text(
             self.configuration.marker_path,

@@ -16,11 +16,7 @@ from a13n_harness import (
     CompactionCapability,
     CompactionPolicy,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     FileContextCapability,
     FileContextConfiguration,
     HandoffCapability,
@@ -35,9 +31,15 @@ from a13n_harness import (
     RuntimeContextConfiguration,
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
-    create_environment_run_binding,
 )
 from a13n_harness.capabilities.context import _requires_exact_history
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
+    create_environment_run_binding,
+)
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry
@@ -192,7 +194,7 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
         model=FunctionModel(stream_function=stream),
         capabilities=(RuntimeContextCapability(), HandoffCapability()),
     )
-    result = await executable.run("Build the feature", bindings=RunBindings.local())
+    result = await executable.run("Build the feature", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert len(calls) == 2
@@ -243,7 +245,7 @@ async def test_handoff_preserves_structured_multimodal_original_request() -> Non
     )
     result = await executable.run(
         ("Describe the image", image),
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
     )
 
     assert result.output_or_raise() == "done"
@@ -295,7 +297,7 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
     )
     result = await executable.run(
         "Continue",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=previous,
     )
 
@@ -336,7 +338,7 @@ async def test_compaction_replays_retained_initial_input_and_public_steering() -
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1_000)),),
     )
-    async with executable.stream("Initial task", bindings=RunBindings.local()) as run:
+    async with executable.stream("Initial task", bindings=RunBindings.embedded()) as run:
         consumer = asyncio.create_task(_consume_run(run))
         await started.wait()
         enqueue_id = await run.steer(("Steer toward the new requirement",))
@@ -364,7 +366,7 @@ async def test_compaction_replays_retained_initial_input_and_public_steering() -
     )
     phase = "compact"
     calls.clear()
-    result = await executable.run("Next request", bindings=RunBindings.local(), previous_state=previous)
+    result = await executable.run("Next request", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert len(calls) == 2
@@ -415,7 +417,7 @@ async def test_compaction_preserves_new_message_boundary_across_same_run_steerin
 
     async with executable.stream(
         "initial-current-input",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=previous,
     ) as run:
         consumer = asyncio.create_task(_consume_run(run))
@@ -476,7 +478,7 @@ async def test_compaction_clears_output_validators_only_on_the_agent_copy() -> N
             raise ModelRetry("not the business output")
         return output
 
-    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert validated == ["done"]
@@ -522,7 +524,7 @@ async def test_compaction_blocks_function_tool_dispatch() -> None:
         ),
     )
 
-    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert side_effects == []
@@ -556,7 +558,7 @@ async def test_compaction_preserves_outer_request_limit() -> None:
 
     result = await executable.run(
         "Continue",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=previous,
         usage_limits=UsageLimits(request_limit=0),
     )
@@ -596,7 +598,7 @@ async def test_compaction_fails_open_on_blank_summary() -> None:
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert calls == 2
@@ -638,7 +640,7 @@ async def test_handoff_migrates_legacy_v1_state(kind: str) -> None:
         model=FunctionModel(stream_function=stream),
         capabilities=(HandoffCapability(),),
     )
-    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert result.state is not None
@@ -699,7 +701,7 @@ async def test_compaction_does_not_estimate_history_without_provider_usage() -> 
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1)),),
     )
 
-    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert len(calls) == 1
@@ -721,7 +723,7 @@ async def test_dynamic_context_preserves_user_text_that_matches_harness_tags() -
         model=FunctionModel(stream_function=stream),
         capabilities=(RuntimeContextCapability(),),
     )
-    result = await executable.run(supplied, bindings=RunBindings.local())
+    result = await executable.run(supplied, bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert supplied in _user_text(seen[0])
@@ -755,7 +757,7 @@ async def test_compaction_failure_is_fail_open() -> None:
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
     )
 
-    result = await executable.run("Continue", bindings=RunBindings.local(), previous_state=previous)
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert calls == 2
@@ -779,7 +781,7 @@ async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) ->
     )
     await executable.run(
         "Inspect",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path)),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path)),
     )
 
     text = _user_text(seen[0])
@@ -830,7 +832,7 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     )
     result = await executable.run(
         "Inspect",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path, default_working_directory="/project")),
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path, default_working_directory="/project")),
     )
 
     assert result.output_or_raise() == "done"
@@ -871,12 +873,16 @@ async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_p
     )
     first = await executable.run(
         "Inspect",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), metadata={"tenant": "alpha", "secret": "no"}),
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path), metadata={"tenant": "alpha", "secret": "no"}
+        ),
     )
     (tmp_path / "AGENTS.md").write_text("Repository guidance v2")
     second = await executable.run(
         "Continue",
-        bindings=RunBindings.local(environment=_local_binding(tmp_path), metadata={"tenant": "beta", "secret": "no"}),
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path), metadata={"tenant": "beta", "secret": "no"}
+        ),
         previous_state=first.state,
     )
 
@@ -936,7 +942,7 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
         capabilities=(HandoffCapability(),),
     )
     events: list[HarnessEvent] = []
-    async with executable.stream("start", bindings=RunBindings.local()) as run:
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run:
         async for item in run:
             if isinstance(item, HarnessEvent):
                 events.append(item)
