@@ -9,6 +9,7 @@ requires-python = ">=3.13"
 dependencies = [
     "a13n-envd-client",
     "a13n-environment-provider",
+    "genai-prices>=0.1.4,<0.2",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.31.1,<2.32",
     "pydantic-core>=2.41,<3",

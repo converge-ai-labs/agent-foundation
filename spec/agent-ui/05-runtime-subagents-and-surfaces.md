@@ -253,7 +253,7 @@ The async-subagent service then prepares fresh child authority:
 7. acquire fresh single-use Environment attachments and construct complete child `RunBindings`;
 8. enter `selected_built_subagent.executable.stream()` in a supervised Host task and consume it once.
 
-`dedicated` Environment policy allocates independent `MULTIPLE_FROM_SPEC` Host resources. `shared_root` acquires distinct attachments only from `SHARED` resources. `serialized_root` keeps the accepted job in `queued` until every selected root attachment is released, then acquires fresh sequential attachments. `none` supplies an empty topology. A child never receives the parent's attachment, Model binding, credential, run Capability, plugin run graph, or live scheduler object by inheritance.
+`dedicated` Environment policy allocates independent `MULTIPLE_FROM_SPEC` Host resources. `shared_root` acquires distinct attachments only from `SHARED` resources. `serialized_root` keeps the accepted job in `queued` until every selected root attachment is released, then acquires fresh sequential attachments. `none` supplies an empty topology. A child never receives the parent's attachment, Model resolver, credential, run Capability, plugin run graph, or live scheduler object by inheritance.
 
 A child can expose its own async-subagent Capability over its recursively built collection. The fresh child owner scope records `parent_job_id` and incremented depth, and all parent/edge/Host ceilings can only narrow. There is no separate nesting registry or runtime child builder.
 

@@ -14,8 +14,8 @@ from a13n_harness import (
 
 from a13n_plugin_examples.demo_harness import (
     PLUGIN_KEY,
-    build_code_demo_agent,
     build_configured_demo_agent,
+    build_direct_demo_agent,
     run_harness_code_demo,
     run_harness_entrypoint_demo,
 )
@@ -61,7 +61,7 @@ def test_harness_explicit_concrete_plugin_needs_no_metadata_scan(
     )
     observations: list[RunObservation] = []
 
-    executable = build_code_demo_agent(observations)
+    executable = build_direct_demo_agent(observations)
 
     assert executable.definition.plugins[0].plugin_id == "recorder-code"
     asyncio.run(executable.close())
@@ -117,7 +117,7 @@ def test_harness_code_demo_runs_concrete_plugin() -> None:
 
 def test_harness_plugin_creates_isolated_state_for_concurrent_runs() -> None:
     observations: list[RunObservation] = []
-    executable = build_code_demo_agent(observations)
+    executable = build_direct_demo_agent(observations)
 
     async def run_both() -> tuple[str, str]:
         async with executable:

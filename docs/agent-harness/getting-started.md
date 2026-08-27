@@ -36,8 +36,8 @@ async def respond(
 
 
 async def main() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:example"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=respond),
     )
@@ -81,12 +81,12 @@ flowchart LR
 
 - `AgentSpec` is native Pydantic AI configuration.
 - `HarnessBuilder` validates Harness composition and creates one reusable `ExecutableAgent`.
-- `FunctionModel` mocks the model provider. A production application can supply any supported Pydantic AI model or resolve a logical model through a fresh model binding.
+- `FunctionModel` mocks the model provider. A production application can supply any supported Pydantic AI model or resolve a string selection through a fresh model resolver.
 - `RunBindings` supplies current identity, Environment, model integration, and run-scoped Capabilities. Create fresh bindings for every logical run.
 - `HarnessRunResult` normalizes completion, suspension, failure, cancellation, state, usage, and correlation IDs.
 - `async with executable` closes recursively owned child executables deterministically.
 
-The logical model string and the concrete `FunctionModel` are intentionally separate. `"logical:example"` is the definition-facing model identity; the concrete model is trusted process-local build input in this example.
+This example uses one model source: the concrete `FunctionModel` is trusted process-local build input, so `AgentSpec.model` remains unset. A string selection instead belongs in `AgentSpec.model` and must not be combined with `model=`.
 
 ## Build Once, Run More Than Once
 
@@ -111,8 +111,8 @@ The minimal Agent has the mandatory Harness boundaries but no optional tools. Ad
 ```python
 from a13n_harness import RuntimeContextCapability, WorkingStateCapability
 
-executable = HarnessBuilder().build_code(
-    AgentSpec(model="logical:example"),
+executable = HarnessBuilder().build(
+    AgentSpec(),
     output_type=str,
     model=FunctionModel(stream_function=respond),
     capabilities=(
@@ -126,8 +126,7 @@ Definition Capabilities describe stable Agent behavior. Provider clients, author
 
 ## Next Steps
 
-- Run the `basic` layer of the repository's [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) for this minimal path with an injectable model.
+- Run the repository's [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) for a complete repeated conversation with streaming output, persisted Harness state, and restart recovery.
 - Read [Agents and Runs](agents-and-runs.md) for the complete build, stream, result, and cleanup path.
 - Read [Capabilities](capabilities.md) to choose optional first-party behavior.
 - Read [Environments](environments.md) before exposing files, shell commands, processes, or ports.
-- Continue with the example's `local` layer for a complete offline tool, working-state, suspension, and resume flow.

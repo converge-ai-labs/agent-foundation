@@ -267,8 +267,8 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2),
         state_limits=EnvironmentStateLimits(),
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -318,8 +318,8 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_s
         calls.append((messages, info))
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -406,8 +406,8 @@ async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", retries={"tools": 2}),
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 2}),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -465,8 +465,8 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -517,8 +517,8 @@ async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", retries={"tools": 1}),
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 1}),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -580,8 +580,8 @@ async def test_copy_streams_across_bindings_while_shell_supersedes_other_mutatio
             assert returns[0].content["ok"] is True
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -633,8 +633,8 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -710,8 +710,8 @@ async def test_exact_edits_are_agent_friendly_and_failed_batch_is_not_published(
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -761,8 +761,8 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -832,8 +832,8 @@ async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_p
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -979,8 +979,8 @@ async def test_invalid_compact_reference_returns_stable_managed_tool_result(tmp_
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -1133,8 +1133,8 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -1243,8 +1243,8 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
         assert json.loads(spilled.read_text(encoding="utf-8")) == produce()
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -1293,8 +1293,8 @@ async def test_unmanaged_large_json_result_crosses_the_same_spill_boundary(tmp_p
         assert json.loads(spilled.read_text(encoding="utf-8")) == produce()
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(Capability(tools=[produce], id="native-large-result-tools"),),
@@ -1357,8 +1357,8 @@ async def test_empty_topology_tool_returns_typed_unavailable_result_after_policy
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -1396,8 +1396,8 @@ async def test_large_environment_result_is_bounded_without_retry_shaped_failure(
             observed.update(returns[-1])
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -1430,8 +1430,8 @@ async def test_agent_spec_tool_retries_exhaust_once_without_environment_retry_lo
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", retries={"tools": 2}),
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 2}),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -1609,8 +1609,8 @@ async def test_topology_event_adapter_survives_model_recovery_boundary(tmp_path:
     aggregate = create_noop_environment_run_binding(
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2)
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=ModelRecoveryPolicy(
@@ -1650,8 +1650,8 @@ async def test_topology_event_from_result_middleware_precedes_terminal_result(tm
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(plugin,),
@@ -1720,8 +1720,8 @@ async def test_emitter_topology_events_pass_through_plugin_middleware(tmp_path: 
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(apply_plugin, transform_plugin),
@@ -1778,8 +1778,8 @@ async def test_terminal_drains_topology_burst_larger_than_emitter_capacity() -> 
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(plugin,),
@@ -1819,8 +1819,8 @@ async def test_terminal_waits_for_delayed_topology_adapter_drain(
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         plugins=(plugin,),

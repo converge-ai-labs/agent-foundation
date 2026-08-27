@@ -479,7 +479,7 @@ def test_configured_plugins_append_after_direct_plugins(monkeypatch: pytest.Monk
     context = HarnessBuildContext.from_configuration(_document(_entry("configured-1")))
     direct = _ConfiguredPlugin("direct-1", "direct")
 
-    executable = HarnessBuilder(build_context=context).build_code(
+    executable = HarnessBuilder(build_context=context).build(
         AgentSpec(model="test", name="root"),
         output_type=str,
         plugins=(direct,),
@@ -494,7 +494,7 @@ def test_direct_and_configured_plugin_id_collision_fails(monkeypatch: pytest.Mon
     context = HarnessBuildContext.from_configuration(_document(_entry("same-1")))
 
     with pytest.raises(PluginError) as exc_info:
-        HarnessBuilder(build_context=context).build_code(
+        HarnessBuilder(build_context=context).build(
             AgentSpec(model="test", name="root"),
             output_type=str,
             plugins=(_ConfiguredPlugin("same-1", "direct"),),

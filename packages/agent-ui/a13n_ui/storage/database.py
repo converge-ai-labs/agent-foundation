@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from alembic.util.exc import CommandError
 from anyio import fail_after, move_on_after, to_thread
@@ -15,9 +15,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from a13n_ui.errors import StoreIntegrityError
-from a13n_ui.settings import StorageSettings
 
 from .migration import DatabaseMigrator, DatabaseSchemaError, MigrationGraphError
+
+if TYPE_CHECKING:
+    from a13n_ui.settings import StorageSettings
 
 
 class _Cursor(Protocol):

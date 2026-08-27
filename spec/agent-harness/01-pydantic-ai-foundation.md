@@ -12,7 +12,7 @@ The Harness does not fork or reproduce the Agent graph, Model interface, Model p
 | ---------------------------------- | --------------------------------------------------------------------- |
 | `Agent` and `AgentSpec`            | One authoritative Agent construction and execution path               |
 | `Model` and `ModelProfile`         | Provider request/response behavior and compatibility                  |
-| `ResolveModelId`                   | Thin optional bridge to fresh `ModelRunBinding`                       |
+| `ResolveModelId`                   | Thin optional bridge to fresh `RunModelResolver`                      |
 | `AbstractCapability[AgentContext]` | Reusable behavior inside the Agent loop                               |
 | `CapabilityOrdering`               | Native Capability dependencies and wrapper order                      |
 | Tools and Toolsets                 | Native tool schema, preparation, and dispatch                         |
@@ -55,7 +55,7 @@ flowchart LR
 
 `AgentDefinition.agent` is copied and passed to `Agent.from_spec()` with `deps_type=AgentContext`, the selected Model or model name, the exact authorized custom Capability types, and the combined explicit Capabilities. Feature tools and Toolsets exist only inside their owning Capabilities. The build selects either an explicit native `OutputSpec` or native `AgentSpec.output_schema`; the latter yields `dict[str, JsonValue]`. The Harness always includes one thin `ResolveModelId` Capability and always defers eager string-model checking until run dependencies exist.
 
-`build_code()` constructs the same `AgentDefinition` as `build()` and adds no second path.
+The `AgentSpec` overload of `build()` constructs the same `AgentDefinition` accepted by its definition overload and adds no second path.
 
 A hosted service owns any durable schema, Preset materialization, adapter configuration, and artifact locks needed to reconstruct these Python values. Pydantic and Harness objects do not become durable documents.
 
@@ -63,8 +63,8 @@ A hosted service owns any durable schema, Preset materialization, adapter config
 
 A concrete native Model is used directly. A string model selection reaches the thin resolver:
 
-- with `RunBindings.model_binding`, the fresh binding returns a native Model or raises;
-- without a binding, the resolver returns `None` and Pydantic continues its native inference chain.
+- with `RunBindings.model_resolver`, the fresh async callable returns a native Model or raises;
+- without a resolver, the thin Capability returns `None` and Pydantic continues its native inference chain.
 
 The resolved native Model carries its own effective profile and provider adapter behavior. The Harness does not duplicate settings/profile merge logic. When explicitly selected, `SelfHealingModelCapability` uses the public request wrapper hook to install `SelfHealingModel` around the final effective Model after concrete selection, logical resolution, or native inference.
 
@@ -103,7 +103,7 @@ flowchart LR
     RunContext --> Capabilities[Run-bound Capabilities]
 ```
 
-`AgentContext` carries the current Harness run ID, trusted Agent instance, mutable `AgentContextState`, entered `BoundEnvironment`, optional `ModelRunBinding`, immutable run-bound plugin index, immutable child collection, and non-authoritative metadata.
+`AgentContext` carries the current Harness run ID, trusted Agent instance, mutable `AgentContextState`, entered `BoundEnvironment`, optional async `RunModelResolver`, immutable run-bound plugin index, immutable child collection, and non-authoritative metadata.
 
 The same context is supplied to every `ModelAttempt` inside one logical Harness run. `RunBindings.capabilities`, one `RunUsage`, and optional `UsageLimits` are passed to every attempt under native Pydantic rules.
 

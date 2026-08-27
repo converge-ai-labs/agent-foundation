@@ -625,8 +625,8 @@ async def test_real_harness_stream_observes_lifecycle_text_and_terminal_events()
         del messages, info
         yield "hello"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -661,8 +661,8 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
         del messages, info
         yield "state"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )

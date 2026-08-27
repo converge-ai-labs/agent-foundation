@@ -7,7 +7,7 @@ Pydantic AI Capabilities are the primary feature-composition mechanism inside th
 Capabilities can enter from four trusted sources:
 
 1. native `AgentSpec.capabilities`;
-2. `AgentDefinition.capabilities` or `HarnessBuilder.build_code(..., capabilities=...)`;
+2. `AgentDefinition.capabilities` or `HarnessBuilder.build(..., capabilities=...)`;
 3. a Harness plugin's Agent-bound contribution;
 4. fresh `RunBindings.capabilities`.
 
@@ -105,7 +105,7 @@ from a13n_harness import (
     RunBindings,
 )
 
-executable = HarnessBuilder().build_code(
+executable = HarnessBuilder().build(
     agent_spec,
     output_type=str,
     model=model,

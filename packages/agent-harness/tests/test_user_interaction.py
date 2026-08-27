@@ -53,8 +53,8 @@ def _build() -> object:
         else:
             yield f"answer:{returns[-1].content}"
 
-    return HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    return HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(UserInteractionCapability(),),

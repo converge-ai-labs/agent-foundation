@@ -77,8 +77,8 @@ async def test_content_filter_handles_user_and_tool_return_media_without_text_sp
         assert "exceeds request limits" in filtered_content[1]
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(

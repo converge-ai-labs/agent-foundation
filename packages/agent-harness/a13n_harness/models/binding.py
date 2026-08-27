@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable
+from typing import TYPE_CHECKING, Protocol
 
 from pydantic_ai.models import Model, ModelResolutionContext
 
@@ -13,29 +13,28 @@ if TYPE_CHECKING:
     from a13n_harness.context import AgentContext
 
 
-class ModelRunBinding(ABC):
-    """Fresh run authority for resolving a logical model ID."""
+class RunModelResolver(Protocol):
+    """Async callable that resolves a logical model ID for one run."""
 
-    @abstractmethod
-    async def resolve_model(
+    def __call__(
         self,
         context: ModelResolutionContext[AgentContext],
         model_id: str,
-    ) -> Model:
+    ) -> Awaitable[Model]:
         """Resolve one logical ID to a native Pydantic AI Model."""
-        raise NotImplementedError
+        ...
 
 
 async def resolve_run_model(
     context: ModelResolutionContext[AgentContext],
     model_id: str,
 ) -> Model | None:
-    """Resolve through the fresh binding, or delegate to native inference."""
-    binding = context.deps.model_binding
-    if binding is None:
+    """Resolve through the fresh callable, or delegate to native inference."""
+    resolver = context.deps.model_resolver
+    if resolver is None:
         return None
     try:
-        model = await binding.resolve_model(context, model_id)
+        model = await resolver(context, model_id)
     except ModelResolutionError:
         raise
     except Exception as error:
@@ -53,4 +52,4 @@ async def resolve_run_model(
     return model
 
 
-__all__ = ["ModelRunBinding"]
+__all__ = ["RunModelResolver"]

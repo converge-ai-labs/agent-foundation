@@ -125,8 +125,8 @@ async def test_tool_runtime_metadata_is_reused_across_inner_recovery_attempts() 
             raise RuntimeError("stream interrupted")
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(capability,),

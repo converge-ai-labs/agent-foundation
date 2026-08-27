@@ -216,7 +216,7 @@ class RuntimeAddedFactory(HarnessPluginFactory):
             ],
         }
     )
-    executable = HarnessBuilder(build_context=context).build_code(
+    executable = HarnessBuilder(build_context=context).build(
         AgentSpec(model="test"),
         output_type=str,
     )

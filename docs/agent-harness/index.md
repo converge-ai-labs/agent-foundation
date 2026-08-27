@@ -91,7 +91,8 @@ The Host reconstructs current authority and optionally persists selected state. 
 These guides cover the process-local Harness surface and its tested integration boundaries:
 
 - Direct Local and EIP-backed Environment **operations** enter through fresh run bindings and attachments.
-- Media, document, Web, monitoring, model, policy, and pricing integrations are typed seams; applications supply their live implementations per run.
+- Media, document, Web, monitoring, model, and policy integrations are typed seams; applications supply their live implementations at the owning build or run boundary.
+- Model-cost valuation is default-on at build time through the packaged pricing catalog and can be replaced once or explicitly disabled by the application.
 - Inline delegation waits for a child result; durable or background child scheduling remains a Host concern.
 - `HarnessState` is continuation data; it is not a durable Execution record or restored authority.
 - Observability at this boundary consists of the canonical event stream and usage records; exporter and telemetry-backend configuration belongs to the embedding application.
@@ -111,7 +112,7 @@ Installed extension metadata means code is available, not authorized. Saved stat
 
 ## Runnable Examples
 
-- [Agent Application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app): one progressive project covering the minimal embedded run, Direct Local tools and structured resume, then Host-owned attempts, fencing, checkpoint selection, and terminal commit.
+- [Agent Application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app): one recoverable repeated conversation that consumes the Harness stream, prints text deltas, persists completed state, and continues after application restart.
 - [Plugin Integration](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins): packaged middleware and Environment extension discovery.
 
 The examples use deterministic `FunctionModel` implementations so their Agent loops and tool boundaries are reproducible without external model credentials.

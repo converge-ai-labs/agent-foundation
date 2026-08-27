@@ -475,18 +475,17 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
         MessageIntegrityFilterCapability,
     )
+    from a13n_harness.pricing import (
+        MODEL_COST_CAPABILITY_ID,
+        AbstractModelCostCapability,
+    )
     from a13n_harness.tools.client import (
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         ClientToolsCapability,
         ClientToolsRunCapability,
     )
-    from a13n_harness.usage import (
-        MODEL_COST_RUN_CAPABILITY_ID,
-        USAGE_CAPABILITY_ID,
-        ModelCostRunCapability,
-        _UsageActiveCapability,
-    )
+    from a13n_harness.usage import USAGE_CAPABILITY_ID, _UsageActiveCapability
 
     provenance = ctx.deps._capability_provenance
     expected = {
@@ -510,9 +509,9 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (_UsageActiveCapability,),
             None,
         ),
-        MODEL_COST_RUN_CAPABILITY_ID: (
-            (ModelCostRunCapability,),
-            provenance.run_ids,
+        MODEL_COST_CAPABILITY_ID: (
+            (AbstractModelCostCapability,),
+            None,
         ),
         CLIENT_TOOLS_CAPABILITY_ID: (
             (ClientToolsCapability,),
@@ -618,6 +617,14 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
 
     for capability_id, (expected_types, allowed_ids) in expected.items():
         capability = ctx.capabilities.get(capability_id)
+        if capability_id == MODEL_COST_CAPABILITY_ID:
+            if not isinstance(capability, AbstractModelCostCapability) or capability_id in provenance.run_ids:
+                raise DefinitionError(
+                    "The finalized run is missing one build-time model-cost Capability.",
+                    code="capability_scope_invalid",
+                    details={"capability_id": capability_id, "source": "run_finalized"},
+                )
+            continue
         if capability_id in {
             TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
             MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,

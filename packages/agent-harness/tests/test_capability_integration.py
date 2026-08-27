@@ -263,8 +263,8 @@ async def test_core_capabilities_compose_through_run_and_stream(tmp_path: Path) 
         observed_instructions.append(str(info.instructions))
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", name="capability-integration"),
+    executable = HarnessBuilder().build(
+        AgentSpec(name="capability-integration"),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=_definition_capabilities(),

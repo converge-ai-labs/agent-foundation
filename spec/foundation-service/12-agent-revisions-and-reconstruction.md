@@ -20,7 +20,7 @@ An `AgentRevision` is an immutable executable snapshot associated with one Agent
 - optional Harness plugin configuration under the Harness-owned document contract;
 - exact dependency, package, content-digest, and schema compatibility locks.
 
-A `ModelIntegration` is a stable Workspace or Organization resource describing a trusted model-provider integration. A `ModelIntegrationRevision` is immutable and selects exact provider type, routing configuration, supported model surface, compatibility facts, and non-secret credential references. Hosted profiles that use logical model aliases require an explicit `ModelRunBinding` and fail closed rather than delegating to ambient native inference.
+A `ModelIntegration` is a stable Workspace or Organization resource describing a trusted model-provider integration. A `ModelIntegrationRevision` is immutable and selects exact provider type, routing configuration, supported model surface, compatibility facts, and non-secret credential references. Hosted profiles that use logical model aliases require an explicit `RunModelResolver` and fail closed rather than delegating to ambient native inference.
 
 Secret requirements never contain a Secret value. A Workspace-owned requirement stores the exact Secret resource reference. A User-owned requirement stores only the validated key resolved for the active invoking User; a Service Account cannot satisfy it. Current Secret eligibility, values, credentials, RoleBindings, and run grants are resolved freshly rather than captured in the immutable revision.
 
@@ -90,7 +90,7 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 | Missing revision or lock                | Execution fails before Harness construction                                 |
 | Content digest or package lock mismatch | Execution fails closed and records bounded incompatibility evidence         |
 | Unknown adapter or plugin key           | Revision is not reconstructed; no ambient import fallback occurs            |
-| Model binding required but unavailable  | Execution fails before native model inference                               |
+| Model resolver required but unavailable | Execution fails before native model inference                               |
 | Credential or policy unavailable        | Fresh binding fails; the immutable revision is not rewritten                |
 | Checkpoint incompatible with revision   | Continuation fails before Harness entry; display history is not substituted |
 | Worker lost during reconstruction       | Lease recovery uses a new generation; no process-local object is restored   |

@@ -39,6 +39,10 @@ def _reserved_harness_capability_contract() -> tuple[
         MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
         ModelContextCoordinatorCapability,
     )
+    from a13n_harness.pricing import (
+        MODEL_COST_CAPABILITY_ID,
+        AbstractModelCostCapability,
+    )
     from a13n_harness.tools.client import (
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
@@ -60,6 +64,7 @@ def _reserved_harness_capability_contract() -> tuple[
         LifecycleEventCapability,
         ModelContextCoordinatorCapability,
         InvocationPolicyCapability,
+        AbstractModelCostCapability,
         ClientToolsCapability,
         ClientToolsRunCapability,
         CodeActCapability,
@@ -75,6 +80,7 @@ def _reserved_harness_capability_contract() -> tuple[
             LIFECYCLE_EVENT_CAPABILITY_ID,
             MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
             INVOCATION_POLICY_CAPABILITY_ID,
+            MODEL_COST_CAPABILITY_ID,
             CLIENT_TOOLS_CAPABILITY_ID,
             CLIENT_TOOLS_RUN_CAPABILITY_ID,
             CODEACT_CAPABILITY_ID,

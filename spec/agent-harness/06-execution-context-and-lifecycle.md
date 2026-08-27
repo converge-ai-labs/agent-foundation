@@ -28,7 +28,7 @@ A Host may map one logical Harness run to one durable worker `ExecutionAttempt`.
 class RunBindings:
     instance: AgentInstanceContext
     environment: EnvironmentRunBinding
-    model_binding: ModelRunBinding | None = None
+    model_resolver: RunModelResolver | None = None
     capabilities: tuple[
         AbstractCapability[AgentContext], ...
     ] = ()
@@ -50,11 +50,11 @@ The trusted caller supplies fresh bindings for every logical run. The Harness:
 10. binds fresh run plugin replacements and freezes `BoundPluginContext`;
 11. creates the outer plugin response.
 
-The same context and entered Environment aggregate are reused by every internal `ModelAttempt`. Current Identity, Environment facade, controller lifetime, plugins, Capability-state coordinator, model binding, model-context binding, and metadata therefore remain stable across recovery. The Host can apply topology changes during input preparation, an active attempt, tool work, or recovery backoff; publication changes immutable routing snapshots without replacing the facade or context. `RunBindings.capabilities` are passed to every `ModelAttempt` and follow upstream per-run Capability binding semantics.
+The same context and entered Environment aggregate are reused by every internal `ModelAttempt`. Current Identity, Environment facade, controller lifetime, plugins, Capability-state coordinator, model resolver, model-context binding, and metadata therefore remain stable across recovery. The Host can apply topology changes during input preparation, an active attempt, tool work, or recovery backoff; publication changes immutable routing snapshots without replacing the facade or context. `RunBindings.capabilities` are passed to every `ModelAttempt` and follow upstream per-run Capability binding semantics.
 
 The logical Run receives one `run_id`, and each internal `ModelAttempt` receives a transient model-attempt ID, but they do not define the provider model session or prompt-cache scope. All attempts read the same State-owned `AgentContext.thread_id`. A later continuation creates a new Harness run and fresh bindings while restoring that ID from the selected State; a new root or child State and an explicit `HarnessState.fork()` use distinct IDs. No `RunBindings`, metadata, or invocation argument can override it. [Input, Model, and Output Boundaries](16-input-model-and-output.md#thread-affinity) owns the provider mapping contract.
 
-`RunBindings.local()` creates a process-local Agent instance, uses a zero-binding no-operation Environment aggregate when none is supplied, and accepts the same optional model binding, model-context binding, Capabilities, and metadata. It does not create a model registry or hidden provider configuration.
+`RunBindings.local()` creates a process-local Agent instance, uses a zero-binding no-operation Environment aggregate when none is supplied, and accepts the same optional model resolver, model-context binding, Capabilities, and metadata. It does not create a model registry or hidden provider configuration.
 
 ## Logical Lifecycle
 

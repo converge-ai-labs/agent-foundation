@@ -153,8 +153,8 @@ def _leaking_extra_output(value: str) -> _RuntimeExtraOutput:
 
 
 def _build(model: FunctionModel):
-    return HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", name="test-agent"),
+    return HarnessBuilder().build(
+        AgentSpec(name="test-agent"),
         output_type=str,
         model=model,
     )
@@ -284,8 +284,8 @@ async def test_output_functions_may_annotate_their_awaitable_result(annotation: 
     output_function = output_functions[annotation]
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message="Could not generate return schema.*")
-        executable = HarnessBuilder().build_code(
-            AgentSpec(model="logical:test", name="test-agent"),
+        executable = HarnessBuilder().build(
+            AgentSpec(name="test-agent"),
             output_type=TextOutput(output_function),
             model=_turn_model([]),
         )
@@ -302,8 +302,8 @@ async def test_sync_annotated_output_constraints_are_preserved() -> None:
         del value
         return "x"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", name="test-agent"),
+    executable = HarnessBuilder().build(
+        AgentSpec(name="test-agent"),
         output_type=TextOutput(constrained_output),
         model=_turn_model([]),
     )
@@ -325,8 +325,8 @@ async def test_sync_annotated_output_constraints_are_preserved() -> None:
     ],
 )
 async def test_nested_deferred_runtime_value_cannot_complete_as_business_output(output_function: Any) -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", name="test-agent"),
+    executable = HarnessBuilder().build(
+        AgentSpec(name="test-agent"),
         output_type=TextOutput(output_function),
         model=_turn_model([]),
     )
@@ -340,8 +340,8 @@ async def test_nested_deferred_runtime_value_cannot_complete_as_business_output(
 @pytest.mark.parametrize("output_type", [[], ()])
 async def test_empty_output_sequence_uses_the_definition_error_boundary(output_type: Any) -> None:
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test"),
+        HarnessBuilder().build(
+            AgentSpec(),
             output_type=output_type,
             model=_turn_model([]),
         )
@@ -410,7 +410,7 @@ def _annotated_awaitable_deferred_from_text(
 async def test_deferred_requests_cannot_be_declared_as_business_output(output_spec: Any) -> None:
     with pytest.raises(DefinitionError) as exc_info:
         AgentDefinition(
-            agent=AgentSpec(model="logical:test"),
+            agent=AgentSpec(),
             output_type=output_spec,
             model=_turn_model([]),
         )
@@ -421,7 +421,6 @@ async def test_agent_spec_output_schema_cannot_override_business_output() -> Non
     with pytest.raises(DefinitionError) as exc_info:
         AgentDefinition(
             agent=AgentSpec(
-                model="logical:test",
                 output_schema={
                     "type": "object",
                     "properties": {"value": {"type": "string"}},
@@ -437,7 +436,7 @@ async def test_agent_spec_output_schema_cannot_override_business_output() -> Non
 async def test_missing_build_time_output_contract_is_rejected() -> None:
     with pytest.raises(DefinitionError) as exc_info:
         AgentDefinition(
-            agent=AgentSpec(model="logical:test"),
+            agent=AgentSpec(),
             output_type=None,
             model=_turn_model([]),
         )
@@ -456,8 +455,8 @@ async def test_code_first_structured_output_types_are_fixed_at_build(
     output_type: Any,
     expected: Any,
 ) -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=output_type,
         model=_structured_output_model({"value": 7}),
     )
@@ -476,8 +475,8 @@ async def test_agent_spec_object_schema_becomes_native_structured_dict_output() 
         "additionalProperties": False,
     }
     observed_schemas: list[dict[str, Any]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", output_schema=schema),
+    executable = HarnessBuilder().build(
+        AgentSpec(output_schema=schema),
         output_type=None,
         model=_structured_output_model({"value": 11}, schemas=observed_schemas),
     )
@@ -491,8 +490,8 @@ async def test_agent_spec_object_schema_becomes_native_structured_dict_output() 
 
 async def test_invalid_agent_spec_output_schema_fails_during_build() -> None:
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:test", output_schema={"type": "array", "items": {"type": "string"}}),
+        HarnessBuilder().build(
+            AgentSpec(output_schema={"type": "array", "items": {"type": "string"}}),
             output_type=None,
             model=_structured_output_model({"value": 1}),
         )
@@ -515,9 +514,8 @@ async def test_declarative_schema_build_still_supports_native_deferred_suspensio
             )
         }
 
-    executable = HarnessBuilder().build_code(
+    executable = HarnessBuilder().build(
         AgentSpec(
-            model="logical:test",
             output_schema={
                 "type": "object",
                 "properties": {"value": {"type": "integer"}},
@@ -544,7 +542,7 @@ async def test_declarative_schema_build_still_supports_native_deferred_suspensio
 
 async def test_builder_recursively_builds_and_owns_authored_subagents() -> None:
     child_definition = AgentDefinition(
-        agent=AgentSpec(model="logical:child", name="child-agent"),
+        agent=AgentSpec(name="child-agent"),
         output_type=str,
         model=_turn_model([]),
     )
@@ -554,8 +552,8 @@ async def test_builder_recursively_builds_and_owns_authored_subagents() -> None:
         agent=child_definition,
         usage_limits=UsageLimits(request_limit=3),
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:parent", name="parent-agent"),
+    executable = HarnessBuilder().build(
+        AgentSpec(name="parent-agent"),
         output_type=str,
         model=_turn_model([]),
         subagents=(edge,),
@@ -594,7 +592,7 @@ async def test_builder_recursively_builds_and_owns_authored_subagents() -> None:
 
 async def test_duplicate_subagent_names_fail_before_build() -> None:
     child_definition = AgentDefinition(
-        agent=AgentSpec(model="logical:child", name="child-agent"),
+        agent=AgentSpec(name="child-agent"),
         output_type=str,
         model=_turn_model([]),
     )
@@ -605,8 +603,8 @@ async def test_duplicate_subagent_names_fail_before_build() -> None:
     )
 
     with pytest.raises(DefinitionError) as exc_info:
-        HarnessBuilder().build_code(
-            AgentSpec(model="logical:parent", name="parent-agent"),
+        HarnessBuilder().build(
+            AgentSpec(name="parent-agent"),
             output_type=str,
             model=_turn_model([]),
             subagents=(duplicate, duplicate),

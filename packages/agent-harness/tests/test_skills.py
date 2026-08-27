@@ -272,8 +272,8 @@ async def _run_single_view(
             observed.update(returns[-1].content)
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -305,8 +305,8 @@ async def test_skill_manager_materializes_into_authorized_root_and_freezes_front
         seen.append(info)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(_manager(materialize=True)),),
@@ -345,8 +345,8 @@ async def test_default_skills_capability_scans_only_workspace_agents_skills(tmp_
 
     capability = SkillsCapability()
     assert capability.manager.roots == ("/workspace/.agents/skills",)
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(capability,),
@@ -552,8 +552,8 @@ async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: P
         binding.controller,
         replacement,
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(SkillManager((source,))),),
@@ -600,8 +600,8 @@ async def test_environment_scan_rejects_empty_root_refresh_during_scan(tmp_path:
         binding.controller,
         replacement,
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(SkillManager((source,))),),
@@ -625,8 +625,8 @@ async def test_default_skills_capability_allows_missing_workspace_root(tmp_path:
         captured.append(info)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(),),
@@ -645,8 +645,8 @@ async def test_default_skills_capability_allows_no_environment_binding() -> None
         captured.append(info)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(),),
@@ -678,8 +678,8 @@ async def test_default_skill_manager_appends_host_sources_with_later_precedence(
 
     manager = SkillManager.default(additional_sources=(FileSkillSource("host", ("/workspace/host-skills",)),))
     assert manager.roots == ("/workspace/.agents/skills", "/workspace/host-skills")
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(manager),),
@@ -715,8 +715,8 @@ async def test_optional_file_skill_source_skips_each_unavailable_root(tmp_path: 
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(manager),),
@@ -743,8 +743,8 @@ async def test_required_file_skill_source_rejects_each_unavailable_root(tmp_path
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(manager),),
@@ -794,8 +794,8 @@ async def test_skill_catalog_uses_ordered_later_source_precedence(tmp_path: Path
             FileSkillSource("project", ("/workspace/project",)),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(manager),),
@@ -822,8 +822,8 @@ async def test_host_skill_selection_injects_only_exact_selected_names(tmp_path: 
         captured.append(info)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
@@ -858,8 +858,8 @@ async def test_empty_host_skill_selection_injects_no_skill_catalog(tmp_path: Pat
         captured.append(info)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
@@ -891,8 +891,8 @@ async def test_resumed_run_reselects_skills_from_fresh_host_bindings(tmp_path: P
         captured.append(str(info.instructions))
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
@@ -958,14 +958,14 @@ async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
         yield "parent-done"
 
     child = AgentDefinition(
-        agent=AgentSpec(model="logical:child"),
+        agent=AgentSpec(),
         output_type=str,
         definition_id="skill-child",
         model=FunctionModel(stream_function=child_stream),
         capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:parent"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=parent_stream),
         capabilities=(
@@ -1025,8 +1025,8 @@ async def test_host_skill_selection_rejects_unknown_names(tmp_path: Path) -> Non
         "---\nname: alpha\ndescription: Use alpha.\n---\n",
         encoding="utf-8",
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
@@ -1081,8 +1081,8 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -1194,8 +1194,8 @@ async def test_selected_skill_markdown_uses_relaxed_full_read_budget(tmp_path: P
             observed.update({part.tool_call_id: part.content for part in returns})
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -1267,8 +1267,8 @@ async def test_large_selected_skill_markdown_continues_without_skipping_lines(tm
             )
         }
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -1315,8 +1315,8 @@ async def test_skill_source_cannot_escape_its_declared_roots(tmp_path: Path) -> 
             ),
         ),
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(SkillManager((source,))),),
@@ -1346,8 +1346,8 @@ async def test_skill_catalog_rejects_truncated_frontmatter_lines(tmp_path: Path)
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(manager),),
@@ -1377,8 +1377,8 @@ async def test_skill_catalog_stops_reading_after_frontmatter(tmp_path: Path) -> 
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(manager),),
@@ -1404,8 +1404,8 @@ async def test_custom_skill_source_requires_existing_regular_document(tmp_path: 
             ),
         ),
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(SkillsCapability(SkillManager((source,))),),

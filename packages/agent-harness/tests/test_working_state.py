@@ -224,8 +224,8 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
@@ -249,8 +249,8 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
         resumed_messages.extend(messages)
         yield "resumed"
 
-    resumed = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    resumed = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=resume_stream),
         capabilities=(WorkingStateCapability(),),
@@ -307,8 +307,8 @@ async def test_pending_task_non_status_mutation_atomically_claims_owner() -> Non
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
@@ -337,8 +337,8 @@ async def test_working_state_context_has_hard_utf8_budget() -> None:
         seen.extend(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider", max_context_bytes=1024)),),
@@ -395,8 +395,8 @@ async def test_task_list_and_task_results_hide_internal_revisions() -> None:
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
@@ -456,8 +456,8 @@ async def test_working_state_tools_normalize_internal_validation_errors() -> Non
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
@@ -471,8 +471,8 @@ async def test_working_state_tools_normalize_internal_validation_errors() -> Non
 
 async def test_provider_mode_requires_fresh_binding_and_discards_mismatched_cursor() -> None:
     capability = WorkingStateCapability(WorkingStateConfiguration(task_mode="provider"))
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(capability,),
@@ -527,8 +527,8 @@ async def test_provider_mode_requires_fresh_binding_and_discards_mismatched_curs
 
 
 async def test_provider_mode_without_task_surface_does_not_require_task_binding() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider", tasks_enabled=False)),),
@@ -539,8 +539,8 @@ async def test_provider_mode_without_task_surface_does_not_require_task_binding(
 
 
 async def test_task_attachment_without_working_state_owner_fails_closed() -> None:
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=lambda messages, info: _text("done")),
     )

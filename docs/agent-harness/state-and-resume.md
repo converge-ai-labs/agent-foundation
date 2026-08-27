@@ -172,4 +172,4 @@ A durable Host should keep these facts separate:
 | Execution attempt, generation, fence, and lease | Host                      |
 | Durable completion and output delivery          | Host/product              |
 
-See [Embedding in a Host](hosting.md) and the `host` layer of the runnable [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app).
+See [Embedding in a Host](hosting.md) for the full authority boundary. The runnable [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) demonstrates the smaller single-application case: stream a turn, commit its returned state, reconstruct the application, and continue the same Thread.

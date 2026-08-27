@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from a13n_harness import (
+    AbstractModelCostCapability,
     AgentContext,
     BoundedRequestUsage,
     HarnessBuilder,
@@ -16,7 +17,7 @@ from a13n_harness import (
     HarnessExtensionEvent,
     HarnessState,
     ModelCostInput,
-    ModelCostRunCapability,
+    ModelCostQuote,
     ModelRecoveryPolicy,
     ModelUsageRecord,
     ProviderUsage,
@@ -109,8 +110,8 @@ async def test_each_model_request_reports_mixed_usage_once() -> None:
         )
         return {"ok": True}
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_mixed_usage_model(),
         capabilities=(
@@ -171,8 +172,8 @@ async def test_recovery_reports_interrupted_and_completed_model_requests() -> No
             raise RuntimeError("disconnected")
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         model_recovery=ModelRecoveryPolicy(
@@ -237,8 +238,8 @@ async def test_provider_usage_after_final_model_request_is_reported_at_terminal(
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(_LateProviderUsageCapability(receipt=receipt),),
@@ -262,34 +263,39 @@ async def test_provider_usage_after_final_model_request_is_reported_at_terminal(
     assert result.usage_records[-1].record_id == reports[-1]["records"][0]["record_id"]
 
 
-@dataclass
-class _Calculator:
-    revision: str = "catalog-7"
-    inputs: list[ModelCostInput] | None = None
+class _FixedCostCapability(AbstractModelCostCapability):
+    def __init__(self, *, inputs: list[ModelCostInput]) -> None:
+        self.inputs = inputs
 
-    def calculate(self, value: ModelCostInput) -> Decimal | None:
-        assert self.inputs is not None
+    @property
+    def revision(self) -> str:
+        return "catalog-7"
+
+    def quote(self, value: ModelCostInput) -> ModelCostQuote:
         self.inputs.append(value)
-        return Decimal("0.125")
+        return ModelCostQuote(
+            cost_usd=Decimal("0.125"),
+            source="custom",
+            pricing_revision=self.revision,
+            rule_id="fixed",
+        )
 
 
 async def test_custom_model_cost_is_applied_before_native_accumulation() -> None:
     inputs: list[ModelCostInput] = []
-    calculator = _Calculator(inputs=inputs)
+    cost_capability = _FixedCostCapability(inputs=inputs)
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
+        capabilities=(cost_capability,),
     )
-    result = await executable.run(
-        "go",
-        bindings=RunBindings.local(capabilities=(ModelCostRunCapability(calculator=calculator),)),
-    )
+    result = await executable.run("go", bindings=RunBindings.local())
 
     assert result.usage.cost == Decimal("0.125")
     assert len(inputs) == 1
@@ -298,7 +304,8 @@ async def test_custom_model_cost_is_applied_before_native_accumulation() -> None
     assert isinstance(model_record, ModelUsageRecord)
     assert model_record.request_usage.cost == Decimal("0.125")
     assert model_record.pricing_revision == "catalog-7"
-    assert model_record.custom_pricing_status == "applied"
+    assert model_record.pricing_status == "applied"
+    assert model_record.pricing_rule_id == "fixed"
     assert model_record.cost_source == "custom"
 
 
@@ -336,23 +343,20 @@ async def test_custom_pricing_survives_retry_of_a_committed_response() -> None:
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(retry,),
+        capabilities=(retry, _FixedCostCapability(inputs=inputs)),
     )
-    result = await executable.run(
-        "go",
-        bindings=RunBindings.local(capabilities=(ModelCostRunCapability(calculator=_Calculator(inputs=inputs)),)),
-    )
+    result = await executable.run("go", bindings=RunBindings.local())
 
     model_records = [record for record in result.usage_records if isinstance(record, ModelUsageRecord)]
     assert retry.calls == 2
     assert result.usage.requests == 2
     assert result.usage.cost == Decimal("0.250")
     assert [record.request_usage.cost for record in model_records] == [Decimal("0.125"), Decimal("0.125")]
-    assert [record.custom_pricing_status for record in model_records] == ["applied", "applied"]
+    assert [record.pricing_status for record in model_records] == ["applied", "applied"]
 
 
 async def test_later_response_replacement_cannot_mislabel_custom_cost() -> None:
@@ -362,22 +366,19 @@ async def test_later_response_replacement_cannot_mislabel_custom_cost() -> None:
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(_ReplaceResponseCost(),),
+        capabilities=(_ReplaceResponseCost(), _FixedCostCapability(inputs=inputs)),
     )
-    result = await executable.run(
-        "go",
-        bindings=RunBindings.local(capabilities=(ModelCostRunCapability(calculator=_Calculator(inputs=inputs)),)),
-    )
+    result = await executable.run("go", bindings=RunBindings.local())
 
     record = result.usage_records[0]
     assert isinstance(record, ModelUsageRecord)
     assert result.usage.cost == Decimal("0.5")
     assert record.request_usage.cost == Decimal("0.5")
-    assert record.custom_pricing_status == "not_reached"
+    assert record.pricing_status == "not_reached"
     assert record.cost_source == "provider_or_genai_prices"
 
 
@@ -386,8 +387,8 @@ async def test_post_response_failure_does_not_mint_uncommitted_usage_record() ->
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(_FailAfterResponse(),),
@@ -413,8 +414,8 @@ async def test_imported_history_is_not_reattributed_on_resume() -> None:
         turn = sum(isinstance(message, ModelResponse) for message in messages) + 1
         yield f"turn-{turn}"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )

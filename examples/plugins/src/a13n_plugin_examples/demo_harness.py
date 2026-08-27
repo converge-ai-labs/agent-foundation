@@ -52,8 +52,8 @@ def _build_demo_agent(
     build_context: HarnessBuildContext,
     plugins: Sequence[AbstractHarnessPlugin] = (),
 ) -> ExecutableAgent[str]:
-    return HarnessBuilder(build_context=build_context).build_code(
-        AgentSpec(model="logical:offline-example"),
+    return HarnessBuilder(build_context=build_context).build(
+        AgentSpec(),
         output_type=str,
         model=_offline_model(),
         plugins=plugins,
@@ -70,7 +70,7 @@ def build_configured_demo_agent() -> ExecutableAgent[str]:
     return _build_demo_agent(build_context=context)
 
 
-def build_code_demo_agent(
+def build_direct_demo_agent(
     observations: MutableSequence[RunObservation],
 ) -> ExecutableAgent[str]:
     """Construct a concrete plugin directly with a Python collaborator."""
@@ -137,7 +137,7 @@ async def run_harness_code_demo() -> HarnessDemoResult:
     """Compose the concrete plugin directly without scanning package metadata."""
 
     observations: list[RunObservation] = []
-    executable = build_code_demo_agent(observations)
+    executable = build_direct_demo_agent(observations)
     return await _run_demo(
         selection_mode="code",
         plugin_id="recorder-code",

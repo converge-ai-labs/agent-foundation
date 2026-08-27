@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from functools import partial
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import uuid4
 
 import zstandard
@@ -18,9 +18,11 @@ from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
 from a13n_ui.errors import ObjectIntegrityError, StoreIntegrityError
-from a13n_ui.settings import StorageSettings
 
 from .layout import StorageLayout
+
+if TYPE_CHECKING:
+    from a13n_ui.settings import StorageSettings
 
 _SCHEMA_VERSION = Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
 _DIGEST = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]

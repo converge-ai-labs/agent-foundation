@@ -90,14 +90,13 @@ def _local_binding(root: Path, *, default_working_directory: str = "/"):
 
 def test_agent_spec_model_config_derives_context_capability_thresholds() -> None:
     spec = HarnessAgentSpec(
-        model="logical:test",
         model_config=ModelConfiguration(
             context_window=200_000,
             proactive_context_management_threshold=0.65,
             compact_threshold=0.90,
         ),
     )
-    executable = HarnessBuilder().build_code(
+    executable = HarnessBuilder().build(
         spec,
         output_type=str,
         model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
@@ -129,8 +128,8 @@ def test_handoff_model_config_distinguishes_unknown_context_from_disabled_remind
         ),
     )
     for model_configuration, expected_enabled, expected_tokens in cases:
-        executable = HarnessBuilder().build_code(
-            HarnessAgentSpec(model="logical:test", model_config=model_configuration),
+        executable = HarnessBuilder().build(
+            HarnessAgentSpec(model_config=model_configuration),
             output_type=str,
             model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
             capabilities=(HandoffCapability(),),
@@ -145,10 +144,9 @@ def test_handoff_model_config_distinguishes_unknown_context_from_disabled_remind
 
 def test_explicit_context_capability_thresholds_override_agent_model_config() -> None:
     spec = HarnessAgentSpec(
-        model="logical:test",
         model_config=ModelConfiguration(context_window=200_000),
     )
-    executable = HarnessBuilder().build_code(
+    executable = HarnessBuilder().build(
         spec,
         output_type=str,
         model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
@@ -188,8 +186,8 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test", instructions="Keep the native instruction field."),
+    executable = HarnessBuilder().build(
+        AgentSpec(instructions="Keep the native instruction field."),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(RuntimeContextCapability(), HandoffCapability()),
@@ -237,8 +235,8 @@ async def test_handoff_preserves_structured_multimodal_original_request() -> Non
             del info
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(HandoffCapability(),),
@@ -289,8 +287,8 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -332,8 +330,8 @@ async def test_compaction_replays_retained_initial_input_and_public_steering() -
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1_000)),),
@@ -408,8 +406,8 @@ async def test_compaction_preserves_new_message_boundary_across_same_run_steerin
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1)),),
@@ -464,8 +462,8 @@ async def test_compaction_clears_output_validators_only_on_the_agent_copy() -> N
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -514,8 +512,8 @@ async def test_compaction_blocks_function_tool_dispatch() -> None:
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -549,8 +547,8 @@ async def test_compaction_preserves_outer_request_limit() -> None:
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -591,8 +589,8 @@ async def test_compaction_fails_open_on_blank_summary() -> None:
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -634,8 +632,8 @@ async def test_handoff_migrates_legacy_v1_state(kind: str) -> None:
         del messages, info
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(HandoffCapability(),),
@@ -694,8 +692,8 @@ async def test_compaction_does_not_estimate_history_without_provider_usage() -> 
             ModelResponse(parts=[TextPart(content="response without usage")]),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=1)),),
@@ -717,8 +715,8 @@ async def test_dynamic_context_preserves_user_text_that_matches_harness_tags() -
         seen.append(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(RuntimeContextCapability(),),
@@ -750,8 +748,8 @@ async def test_compaction_failure_is_fail_open() -> None:
             ),
         )
     )
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2_000)),),
@@ -773,8 +771,8 @@ async def test_file_context_pre_read_budget_is_utf8_byte_safe(tmp_path: Path) ->
         seen.append(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(FileContextCapability(FileContextConfiguration(paths=("/workspace/AGENTS.md",), max_bytes=512)),),
@@ -818,8 +816,8 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -862,8 +860,8 @@ async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_p
         seen.append(messages)
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
@@ -931,8 +929,8 @@ async def test_concurrent_handoff_summaries_accept_one_state_transition() -> Non
             return
         yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(HandoffCapability(),),

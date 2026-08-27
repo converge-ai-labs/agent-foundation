@@ -320,8 +320,8 @@ async def test_media_capability_returns_native_binary_with_run_scoped_reader() -
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model(
             "read_media",
@@ -367,8 +367,8 @@ async def test_media_capability_enforces_kind_specific_actual_byte_limit() -> No
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("read_media", {"url": "https://example.com/image.png"}, seen=seen),
         capabilities=(MediaCapability(MediaConfiguration(max_image_bytes=4)),),
@@ -402,8 +402,8 @@ async def test_media_capability_rejects_credential_provider_url_before_model_his
     )
     reader = _MediaReader(resource)
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("read_media", {"url": "https://example.com/video.mp4"}, seen=seen),
         capabilities=(MediaCapability(),),
@@ -455,8 +455,8 @@ async def test_documents_capability_publishes_one_complete_environment_tree(tmp_
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("pdf_convert", {"file_path": "/workspace/report.pdf"}, seen=seen),
         capabilities=(DocumentsCapability(),),
@@ -534,8 +534,8 @@ async def test_pdf_page_ranges_publish_to_distinct_agent_usable_exports(tmp_path
         else:
             yield "done"
 
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DocumentsCapability(),),
@@ -569,8 +569,8 @@ async def test_documents_capability_removes_partial_staging_tree(tmp_path: Path)
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model(
             "office_to_markdown",
@@ -624,8 +624,8 @@ async def test_documents_rejects_stale_revision_before_publication(tmp_path: Pat
             return InvocationPolicyDecision.allow()
 
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("pdf_convert", {"file_path": "/workspace/report.pdf"}, seen=seen),
         capabilities=(DocumentsCapability(),),
@@ -679,8 +679,8 @@ async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path
             return InvocationPolicyDecision.allow()
 
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model(
             "download",
@@ -731,8 +731,8 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
     client = _WebClient(())
     seen: list[list[ModelMessage]] = []
     infos: list[AgentInfo] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("search", {"query": "agent", "num": 5}, seen=seen, infos=infos),
         capabilities=(WebCapability(),),
@@ -771,8 +771,8 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
 async def test_web_search_strips_credential_aliases_from_model_history(credential_key: str) -> None:
     search = _SearchProvider(credential_key=credential_key)
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("search", {"query": "agent"}, seen=seen),
         capabilities=(WebCapability(),),
@@ -835,8 +835,8 @@ async def test_web_fetch_rechecks_final_url_and_returns_native_binary() -> None:
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("fetch", {"url": "https://example.com/image"}, seen=seen),
         capabilities=(WebCapability(WebConfiguration(max_inline_binary_bytes=1024)),),
@@ -877,8 +877,8 @@ async def test_web_download_enforces_stream_limit_and_removes_partial_file(tmp_p
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model(
             "download",
@@ -925,8 +925,8 @@ async def test_web_download_isolates_batch_failures_and_uses_response_media_type
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model(
             "download",
@@ -975,8 +975,8 @@ async def test_web_fetch_body_deadline_is_finite() -> None:
         )
     )
     seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build_code(
-        AgentSpec(model="logical:test"),
+    executable = HarnessBuilder().build(
+        AgentSpec(),
         output_type=str,
         model=_one_tool_model("fetch", {"url": "https://example.com/slow.txt"}, seen=seen),
         capabilities=(WebCapability(WebConfiguration(deadline_seconds=0.01)),),

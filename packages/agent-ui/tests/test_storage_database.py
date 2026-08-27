@@ -33,6 +33,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
     try:
         assert set(inspect(engine).get_table_names()) == {
             "alembic_version",
+            "composition_snapshot",
             "configuration_diagnostic",
             "configuration_generation",
             "current_configuration",
