@@ -23,11 +23,11 @@ recovering a worker does not create new logical work. When replacement
 execution is required, a later authorized claim creates another `TurnAttempt`
 under the same Turn.
 
-| Resource      | Responsibilities                                                                                                                                                                                                                                                                                                                                                       |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Thread`      | Owns Session membership, origin, version, the active Turn, selected continuation head, and latest accepted Turn. It serializes whether another Turn can be accepted but does not schedule or execute that Turn.                                                                                                                                                        |
-| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact AgentRevision selection, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                                 |
-| `TurnAttempt` | Owns one worker generation's lease, fence, worker and Harness Run correlation, bounded dispatch, usage and failure audit, and generation outcome. It does not own accepted input, lineage, state, durable outcome, credentials, live bindings, or presentation data, and it cannot independently authorize a successor. Terminal attempts are immutable audit records. |
+| Resource      | Responsibilities                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Thread`      | Owns Session membership, origin, version, the active Turn, selected continuation head, and latest accepted Turn. It serializes whether another Turn can be accepted but does not schedule or execute that Turn.                                                                                                                                                                                                     |
+| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact AgentRevision selection, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                                                                              |
+| `TurnAttempt` | Owns one worker generation's lease, fence, worker and Harness Run correlation, safe model observation, bounded dispatch, usage and failure audit, and generation outcome. It does not own accepted input, lineage, model configuration, state, durable outcome, credentials, live bindings, or presentation data, and it cannot independently authorize a successor. Terminal attempts are immutable audit records. |
 
 ## Boundaries
 
@@ -48,9 +48,10 @@ an attempt in the same transaction: the Turn first becomes `accepted`, and a
 later scheduler claim creates attempt number one.
 
 A later attempt preserves the Turn ID, Session, Thread, parent edge, accepted
-input, exact AgentRevision selection, recovery policy, and deterministic state
-key. It receives a new attempt ID, attempt number, fence, lease, worker
-generation, fresh bindings, and, after entry, a fresh Harness Run. By contrast,
+input, exact AgentRevision selection, model execution snapshot, recovery policy,
+and deterministic state key. It receives a new attempt ID, attempt number,
+fence, lease, worker generation, fresh credentials and bindings, and, after
+entry, a fresh Harness Run. By contrast,
 root acceptance, continuation, authenticated waiting feedback, fork, and an
 authorized retry of sealed intent allocate another Turn and another state key.
 
@@ -124,6 +125,7 @@ class TurnAttempt:
     worker_id: str
     worker_generation: str
     run_id: str | None
+    model_execution_observation: ModelExecutionObservation
 
     lease_token_digest: str
     lease_expires_at: datetime
@@ -208,6 +210,7 @@ Each worker generation is one `turn_attempts` row:
 | Identity          | `id`, `version`, `tenant_id`, `turn_id`, `attempt_number`, `fence`, `status` | Unique attempt identity, positive CAS version, and monotonically increasing generation within the Turn |
 | Recovery lineage  | `replaces_turn_attempt_id`, `recovery_reason`                                | Names the immediately superseded attempt and bounded recovery reason                                   |
 | Worker and run    | `worker_id`, `worker_generation`, `run_id`                                   | Worker process correlation and at most one Harness Run ID after entry                                  |
+| Model observation | `model_execution_observation_json`                                           | Immutable safe model ID, provider type, and model name copied from the Turn at claim                   |
 | Lease             | `lease_token_digest`, `lease_expires_at`, `heartbeat_at`                     | Opaque lease proof, expiry, and last durable renewal                                                   |
 | Tool dispatch     | `tool_invocations_json`                                                      | Bounded dispatch, result-correlation, and `unknown_outcome` records; not a provider receipt ledger     |
 | Usage and failure | `usage_json`, `failure_json`                                                 | Attempt-local accounting and safe failure provenance                                                   |

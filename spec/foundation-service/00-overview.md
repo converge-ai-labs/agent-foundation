@@ -17,7 +17,7 @@ flowchart LR
     subgraph Control[Control role]
         API[Management and interaction API]
         Auth[Resource authorization]
-        Authoring[Agent and integration authoring]
+        Authoring[Agent and model authoring]
         Interaction[Session, Thread, Turn, and Item]
         Lifecycle[Turn lifecycle]
         Scheduler[Scheduler and reconcilers]
@@ -70,7 +70,7 @@ PostgreSQL is the distributed authority for accepted resources, Thread version a
 | Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                        |
 | OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                  |
 | Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                       |
-| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks                       |
+| Durable Agent revisions and mutable ModelConfigs              | Foundation control plane                                      | Selects exact Agent inputs and freezes current model configuration per Turn  |
 | Durable Thread resource                                       | Foundation                                                    | Owns Session membership, origin, active Turn, continuation head, and version |
 | Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                |
 | Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                         |
@@ -105,7 +105,7 @@ sequenceDiagram
     participant Harness
 
     Caller->>Control: submit Turn with idempotency key
-    Control->>Control: authenticate, authorize, resolve exact revisions
+    Control->>Control: authorize, resolve revisions, snapshot current ModelConfig
     Control->>DB: publish initial state and commit Thread advancement and Turn
     Control-->>Caller: durable acceptance
     Scheduler->>DB: find eligible Turn

@@ -4,7 +4,11 @@
 
 This directory defines `foundation-service`, the optional durable Host that embeds `agent-harness`. It is a modular service with independently selectable control and worker process roles, not another Agent loop and not a collection of independently versioned microservices.
 
-Foundation owns managed Secrets, resource authorization, serializable Agent authoring resources, immutable revisions and dependency locks, durable Threads, Turns, and TurnAttempts, scheduling, pending actions, Environment management, lifecycle events, raw usage records, and the public management API.
+Foundation owns managed Secrets, ModelConfigs, resource authorization,
+serializable Agent authoring resources, immutable Agent revisions and
+dependency locks, durable Threads, Turns, and TurnAttempts, scheduling, pending
+actions, Environment management, lifecycle events, raw usage records, and the
+public management API.
 
 It does not redefine the code-first Harness `AgentDefinition`, Pydantic Agent loop, Harness result and state semantics, Agent Stream Protocol conversion, Environment provider lifecycle types, EIP, or provider-native state. Platform-owned data and APIs follow [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md).
 
@@ -35,10 +39,10 @@ A non-terminal Turn can span several process-local Harness Runs when worker reco
 | [03 Storage](03-storage.md)                                                                 | Relational, Redis-compatible, object, and mounted-filesystem capabilities and local/network semantics                             |
 | [04 Relational Schema](04-relational-schema.md)                                             | Final distribution metadata, migration authority, compatibility, application, and failure semantics                               |
 | [05 HTTP Ingress and Request Contract](05-http-ingress-and-request-contract.md)             | Role surfaces, request context, proxy and browser trust, authentication boundaries, errors, streaming, and drain                  |
-| [06 Durable Operations and Outbox](06-durable-operations-and-outbox.md)                     | Versioned mutation, idempotency evidence, atomic durable commits, outbox publication, retries, and unknown outcomes               |
+| [06 Durable Operations and Outbox](06-durable-operations-and-outbox.md)                     | Conditional mutation, idempotency evidence, atomic durable commits, outbox publication, retries, and unknown outcomes             |
 | [10 Identity and Access Management](10-identity-and-access-management.md)                   | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit        |
 | [11 Secret Management](11-secret-management.md)                                             | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls         |
-| [12 Agent Revisions and Reconstruction](12-agent-revisions-and-reconstruction.md)           | Agent Presets, immutable revisions, model integrations, dependency locks, and trusted process-local reconstruction                |
+| [12 Agent Revisions and Reconstruction](12-agent-revisions-and-reconstruction.md)           | Agent Presets, immutable Agent revisions, model selection, dependency locks, and trusted process-local reconstruction             |
 | [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)               | Interaction-to-runtime mapping, dispatch boundary, Harness Run binding, cancellation, and unknown outcomes                        |
 | [14 Durable Turn State](14-turn-persistence.md)                                             | Turn identity, lifecycle, lineage, deterministic state object, conditional checkpoints, sealing, recovery budget, and retention   |
 | [15 Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                       | TurnAttempt allocation, relational shape, leases, fences, dispatch evidence, loss, recovery, and attempt outcomes                 |
@@ -51,8 +55,19 @@ A non-terminal Turn can span several process-local Harness Runs when worker reco
 | [22 Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                         | Agent-facing authorized retrieval of retained Turn lineage and interaction projections                                            |
 | [23 Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)       | Trusted Provider discovery, Connector revisions, account Connections, managed tools, and Trigger occurrence acceptance            |
 | [24 Durable Thread Persistence](24-thread-persistence.md)                                   | Thread relational identity, Session membership, origin, version, active Turn, continuation head, creation, advancement, and reads |
+| [25 Model Management](25-model-management.md)                                               | Workspace ModelConfigs, trusted provider registry, credentials, testing, lifecycle, and Turn-time execution snapshots             |
 
-Read `00`, `01`, and `02` before changing process startup, roles, or distribution contents. Read `03`, `04`, and `06` before introducing a durable capability. Read `05`, `10`, and `21` before changing public ingress. Read `24` before `13` through `17` when changing Thread or Turn acceptance, persistence, recovery, or reads. Read `18` before changing waiting feedback or asynchronous children. Read `23` before changing Connector Providers, Connections, managed Connector tools, or Trigger ingress. Read the shared interaction model before changing Session, Thread, Turn, or Item semantics. Read the Environment Provider and Agent Stream Protocol catalogs before adding provider or event adapters.
+Read `00`, `01`, and `02` before changing process startup, roles, or distribution
+contents. Read `03`, `04`, and `06` before introducing a durable capability.
+Read `05`, `10`, and `21` before changing public ingress. Read `24` before `13`
+through `17` when changing Thread or Turn acceptance, persistence, recovery, or
+reads. Read `18` before changing waiting feedback or asynchronous children.
+Read `23` before changing Connector Providers, Connections, managed Connector
+tools, or Trigger ingress. Read `25` before changing ModelConfigs, Model
+Providers, model credentials, or Turn-time model selection. Read the shared
+interaction model before changing Session, Thread, Turn, or Item semantics.
+Read the Environment Provider and Agent Stream Protocol catalogs before adding
+provider or event adapters.
 
 ## Implementation Orientation
 
@@ -72,7 +87,8 @@ These roots are boundaries, not a requirement that every capability become a sub
 
 ## Authority Rules
 
-- The control role accepts resources and commands, commits immutable selections, and owns durable lifecycle authority.
+- The control role accepts resources and commands, commits exact revisions and
+  execution snapshots, and owns durable lifecycle authority.
 - The worker role claims fenced `TurnAttempt` leases and invokes Harness in-process. It does not expose another product API or run migrations.
 - PostgreSQL is authoritative for accepted lifecycle state and fencing. Real Redis is required for distributed data flow and coordination; each owning domain defines its Redis retention and replay semantics, and Redis delivery alone never proves a relational transition.
 - The artifact's distribution descriptor explicitly composes the complete configuration, routers, role components, authorization contributions, metadata, and migration graph; installed packages never change the service implicitly.
@@ -88,7 +104,9 @@ These roots are boundaries, not a requirement that every capability become a sub
 ## Specification Conventions
 
 - Python-like schemas are conceptual unless explicitly declared as API or storage formats.
-- An `AgentRevision` is immutable; changing materialized Agent content, its exact integration revision, or a dependency lock creates another revision.
+- An `AgentRevision` is immutable; changing materialized Agent content,
+  `model_id`, native model settings, or a dependency lock creates another
+  revision. Editing a ModelConfig affects only newly accepted Turns.
 - `Ref` values identify entities or revisions and grant no authority.
 - Process-local objects are reconstructed and never become durable payloads.
 - Domain schemas, repositories, queue messages, and events live in their owning domain rather than the generic storage substrate.

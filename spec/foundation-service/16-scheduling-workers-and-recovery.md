@@ -8,7 +8,12 @@ Workers are process-role loops, not durable product owners. A deployment scales 
 
 ## Scheduling Contract
 
-A Turn is eligible when it is `accepted`, `next_eligible_at` has passed, its recovery budget permits another claim, no live TurnAttempt owns it, exact dependencies remain resolvable, and current policy permits the transition. The scheduler uses bounded deterministic scans and idempotently records Redis dispatch intent under the shared [durable operation contract](06-durable-operations-and-outbox.md).
+A Turn is eligible when it is `accepted`, `next_eligible_at` has passed, its
+recovery budget permits another claim, no live TurnAttempt owns it, its exact
+Agent dependencies and frozen model execution snapshot remain resolvable, and
+current policy permits the transition. The scheduler uses bounded deterministic
+scans and idempotently records Redis dispatch intent under the shared
+[durable operation contract](06-durable-operations-and-outbox.md).
 
 A Redis dispatch message contains only enough identity to prompt a fresh durable claim. Receiving, duplicating, delaying, reordering, acknowledging, or losing that message cannot create, complete, cancel, or transfer a TurnAttempt. Missing or failed publication remains recoverable from durable eligible state and its outbox intent. Operational admission control and fairness can delay eligibility but do not create another queue authority.
 
@@ -60,7 +65,12 @@ A stale worker may publish bounded non-authoritative telemetry identifying its s
 
 ## Worker Run Boundary
 
-After claim, a worker reads exact immutable inputs in bounded sessions, verifies dependency locks, and reconstructs safe process-local Agent values. Before invoking any potentially effectful Environment, provider, Harness, model, tool, or client boundary, it commits the TurnAttempt's `effects_possible` phase.
+After claim, a worker reads exact immutable inputs and the Turn's accepted
+model execution snapshot in bounded sessions, verifies dependency locks,
+resolves fresh eligible credential values, and reconstructs safe process-local
+Agent values. It never re-resolves current ModelConfig. Before invoking any
+potentially effectful Environment, provider, Harness, model, tool, or client
+boundary, it commits the TurnAttempt's `effects_possible` phase.
 
 The worker uses the shared Environment Provider contract to create or resume resources and acquire fresh attachments, then imports the Harness Python package and calls its public process-local API. It is the sole consumer of the `HarnessRunStream` and the owning `HarnessAguiObserver`. Database sessions and locks never span reconstruction I/O, provider calls, Harness work, queue waits, sleeps, event streaming, or cleanup.
 
@@ -76,7 +86,7 @@ A reconciler detects an expired lease under a lock that verifies the current Tur
 | Complete conditionally committed Turn state exists                           | A later TurnAttempt resumes from that state                                                                   |
 | Agent tool dispatch has no matching result in the committed state            | Record `unknown_outcome`; a later TurnAttempt shows it to the Agent and never replays the call automatically  |
 | Environment-management or other non-Agent provider operation remains unknown | The owning domain applies its exact idempotency or reconciliation contract before depending on that operation |
-| Selected revision or state is permanently incompatible                       | Turn seals as `failed` with a bounded durable reason                                                          |
+| Selected revision, model snapshot, or state is permanently incompatible      | Turn seals as `failed` with a bounded durable reason                                                          |
 | Recovery budget is exhausted                                                 | Turn seals as `failed`; no later TurnAttempt is admitted                                                      |
 
 Every recovery path that seals a Turn as failed atomically clears that Turn from

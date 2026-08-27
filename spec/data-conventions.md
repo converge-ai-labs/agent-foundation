@@ -60,12 +60,28 @@ A versioned Foundation-owned domain object has one stable object ID and a positi
 
 - A committed version never changes in place.
 - A material change creates a later monotonically increasing version under the same object ID.
-- A durable selection records the exact object ID and version or the exact ID of an independently addressable immutable revision. It never relies on an unresolved `latest` selector during execution or recovery.
+- A durable selection records the exact object ID and version, the exact ID of
+  an independently addressable immutable revision, or a complete owner-defined
+  snapshot frozen at the acceptance boundary. It never relies on an unresolved
+  `latest` selector during execution or recovery.
 - Absence is represented explicitly rather than by version `0`.
 
-An owning contract states whether prior versions remain addressable or only the current version is retained. A mutation that protects against a stale write uses `expected_version` against the current version. An idempotent replay is resolved before that precondition is evaluated, and a semantic no-op does not create a new version.
+An owning contract states whether prior versions remain addressable or only the
+current version is retained. A versioned mutation that protects against a stale
+write uses `expected_version` against the current version. An intentionally
+non-versioned mutable resource can instead use a strong representation `ETag`
+and `If-Match` when its owning contract explicitly defines that boundary. The
+tag is concurrency evidence rather than an addressable version or revision. An
+idempotent replay is resolved before either precondition is evaluated, and a
+semantic no-op does not create a new version or representation tag.
 
-Foundation domain models do not introduce a second generic scalar `revision` counter for mutable objects. An owning contract can expose an immutable content record such as `AgentRevision` together with its explicit revision reference or digest, but stale-write protection still uses the mutable object's `version`. Database migrations, protocols, artifacts, and external systems retain their owner-defined revision semantics.
+Foundation domain models do not introduce a second generic scalar `revision`
+counter for mutable objects. An owning contract can expose an immutable content
+record such as `AgentRevision` together with its explicit revision reference or
+digest. Versioned objects use their `version` for stale-write protection;
+explicitly non-versioned mutable resources can use their owning representation
+ETag without exposing another scalar counter. Database migrations, protocols,
+artifacts, and external systems retain their owner-defined revision semantics.
 
 Sequences, ordinals, offsets, generations, and fences retain their distinct meanings and are not renamed to versions merely because they are numeric. A generation change or fence advance does not create a new domain-object version unless the owning contract commits a corresponding material change.
 
@@ -99,8 +115,12 @@ Data that affects authority, execution behavior, compatibility, or recovery is r
 02. Foundation-owned object IDs encode no authority, ordering, ownership, or deployment information.
 03. External identities and compact scoped references preserve their owning formats and are never relabeled as Foundation-owned object IDs.
 04. A versioned Foundation-owned domain object uses a stable ID and positive integer versions beginning at `1`.
-05. Stale-write protection uses `expected_version`, not a parallel generic revision counter.
-06. Durable work selects exact object versions or immutable revision identities rather than resolving `latest` during execution or recovery.
+05. Stale-write protection uses `expected_version` for versioned resources or
+    an owning strong `ETag` for an explicitly non-versioned mutable resource;
+    neither introduces a parallel generic revision counter.
+06. Durable work selects exact object versions, immutable revision identities,
+    or an owner-defined execution snapshot rather than resolving `latest`
+    during execution or recovery.
 07. Public interfaces favor concise domain language, while internal models make ambiguous meanings explicit through names and types.
 08. Identifier possession never replaces authentication, authorization, scope, or lifecycle validation.
 09. Durable data is interpreted only through its recorded compatibility facts; unknown required versions fail unless explicitly migrated.

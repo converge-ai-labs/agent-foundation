@@ -170,6 +170,8 @@ class Turn:
     parent_tool_call_id: str | None
 
     agent_revision_id: AgentRevisionId
+    model_execution_snapshot: ModelExecutionSnapshot | None
+    model_execution_observation: ModelExecutionObservation
     connector_selections: tuple[ConnectorTurnSelection, ...]
     accepted_trigger: AcceptedTriggerSource | None
 
@@ -213,11 +215,19 @@ object key is derived from `tenant_id` and `id`; it is not duplicated in the
 row and is never accepted from a caller.
 
 `session_id`, `thread_id`, `parent_turn_id`, lineage, accepted input,
-`agent_revision_id`, Connector selections, accepted Trigger source, accepted recovery policy,
-idempotency identity, and request fingerprint are immutable after acceptance.
+`agent_revision_id`, `model_execution_observation`, Connector selections,
+accepted Trigger source, accepted recovery policy, idempotency identity, and
+request fingerprint are immutable after acceptance.
 Every version of the Turn state must carry `turn_id` and `thread_id` equal to
 the owning Turn. Foundation rejects another identity rather than rewriting it
 during read.
+
+The [Model Management contract](25-model-management.md) owns
+`ModelExecutionSnapshot` and `ModelExecutionObservation`. The snapshot is
+present while a Turn is `accepted` or `running`, is reused by every replacement
+TurnAttempt, and can transition only to null in the sealing transaction. The
+safe observation remains after sealing. Neither value is part of the Harness
+continuation state.
 
 The [Connector contract](23-connectors-connections-and-triggers.md#connection-selection-and-turnattempt-preparation)
 defines `ConnectorTurnSelection` and `AcceptedTriggerSource`. A Turn with no
@@ -247,10 +257,12 @@ reconcile it. The Turn row is the sole authority for whether another attempt
 may be created.
 
 The exact `AgentRevisionId` is fixed at Turn acceptance. The selected immutable
-Agent revision owns its dependency locks and exact model-integration revision;
-the Turn does not duplicate or override either selection. Resume never resolves
-an unqualified `latest` Agent or integration. A compatible continuation under
-another Agent revision is another Turn and records that revision ID directly.
+Agent revision owns its dependency locks and exact `model_id`; acceptance
+resolves that model's current configuration into the Turn-owned snapshot.
+Resume never resolves an unqualified `latest` Agent or current ModelConfig. A
+compatible continuation under another Agent revision is another Turn and
+records that revision ID directly; even when it preserves the same revision,
+it resolves the current ModelConfig again.
 
 Exactly one of `input` and `input_object` is present. At most one of `output`
 and `output_object` is present, and neither is present before a completed
@@ -336,7 +348,8 @@ backends preserve the same validation and query semantics.
 | Recovery budget      | `recovery_policy_version`, `max_attempts`, `recovery_deadline_at`, `max_usage_json`, `attempts_started`, `usage_charged_json`                                                                                                                   | Accepted finite limits and atomically charged consumption                                        |
 | Idempotency          | `idempotency_key`, `request_fingerprint`                                                                                                                                                                                                        | Optional retry-safe acceptance identity and exact bounded request fingerprint                    |
 | Trigger correlation  | `trigger_type`, `trigger_entity_type`, `trigger_entity_id`, `parent_agent_instance_id`, `delegation_id`, `parent_tool_call_id`                                                                                                                  | Bounded typed correlation; never state-lineage authority                                         |
-| Agent selection      | `agent_revision_id`                                                                                                                                                                                                                             | Exact immutable Agent revision selected at acceptance; it owns integration and dependency locks  |
+| Agent selection      | `agent_revision_id`                                                                                                                                                                                                                             | Exact immutable Agent revision selected at acceptance; it owns Agent dependency locks            |
+| Model selection      | `model_execution_snapshot_json`, `model_execution_observation_json`                                                                                                                                                                             | Active non-secret execution snapshot plus retained safe observation                              |
 | Connector acceptance | `connector_selections_json`, `accepted_trigger_json`                                                                                                                                                                                            | Bounded immutable Connector selections and optional exact Trigger occurrence                     |
 | Lifecycle            | `status`, `wait_reason`, `pending_json`                                                                                                                                                                                                         | Enum-constrained state; bounded pending summary exists exactly for `waiting`                     |
 | Input                | `input_json`, `input_object_key`, `input_object_digest_sha256`, `input_object_size_bytes`, `input_object_content_type`, `input_object_schema_version`, `input_text`                                                                             | Exactly one inline JSON value or immutable object reference; optional text projection            |
@@ -661,8 +674,8 @@ Turn acceptance creates or advances the Thread row together with the Turn row
 and its initial state as one externally indivisible acceptance operation:
 
 1. validate authorization, Thread version, active/head selection, lineage,
-   selections, and any parent state, then build the complete Turn-owned initial
-   state;
+   selections, current enabled ModelConfig, and any parent state, then build
+   the complete Turn-owned initial state and model execution snapshot;
 2. publish object-backed input and `state.json` create-only;
 3. in one short transaction, insert or advance the Thread, insert the `accepted`
    Turn, and commit required lifecycle facts, idempotency evidence, and outbox
@@ -674,7 +687,7 @@ sequenceDiagram
     participant Objects as Object storage
     participant DB as Relational database
 
-    Control->>Control: Validate Thread version, parent, policy, and selections
+    Control->>Control: Validate Thread, parent, policy, and current ModelConfig
     Control->>Objects: Read frozen parent state when required
     Control->>Control: Build new Turn initial state
     Control->>Objects: Create new Turn state.json and object-backed input
@@ -724,10 +737,13 @@ A waiting or completed outcome commits in this order:
 3. in one short transaction, revalidate current Turn and `TurnAttempt`, select
    the candidate's exact digest and checkpoint sequence as `sealed_state`, copy
    its bounded output or pending summary into the Turn row, terminalize the
-   attempt, charge known usage, append lifecycle facts, seal the Turn, clear
-   the Thread's active Turn, select this Turn as its continuation head, and
-   increment the Thread version;
+   attempt, charge known usage, append lifecycle facts, clear the model
+   execution snapshot, seal the Turn, clear the Thread's active Turn, select
+   this Turn as its continuation head, and increment the Thread version;
 4. after commit, reject every later write to the state key.
+
+Every other transaction that seals a Turn as failed or cancelled also clears
+the model execution snapshot while retaining the safe model observation.
 
 If the object write succeeds but the relational transaction does not commit,
 the Turn remains active and the outcome candidate remains a valid resumable
@@ -837,17 +853,18 @@ acceptance is reconciled through the API idempotency contract.
 
 The compatibility axes remain independent:
 
-| Version                                  | Owner                                    |
-| ---------------------------------------- | ---------------------------------------- |
-| Turn domain object version               | Foundation Turn mutation contract        |
-| Relational schema revision               | Foundation Service migration history     |
-| `TurnStateEnvelope.schema_version`       | Foundation Turn state contract           |
-| Turn payload object schema version       | Foundation Turn payload contract         |
-| `HarnessState.schema_version`            | Agent Harness                            |
-| Capability state version                 | Owning Capability                        |
-| Environment state version                | Owning Environment provider              |
-| Host provider continuation version       | Selected Foundation provider integration |
-| Definition and model-integration version | Foundation immutable revision domains    |
+| Version                            | Owner                                    |
+| ---------------------------------- | ---------------------------------------- |
+| Turn domain object version         | Foundation Turn mutation contract        |
+| Relational schema revision         | Foundation Service migration history     |
+| `TurnStateEnvelope.schema_version` | Foundation Turn state contract           |
+| Turn payload object schema version | Foundation Turn payload contract         |
+| `HarnessState.schema_version`      | Agent Harness                            |
+| Capability state version           | Owning Capability                        |
+| Environment state version          | Owning Environment provider              |
+| Host provider continuation version | Selected Foundation provider integration |
+| Agent definition revision          | Foundation immutable Agent domain        |
+| Model execution snapshot schema    | Foundation Model Management domain       |
 
 An unknown required state, payload, Harness, Capability, Environment, or
 provider version fails explicitly unless its owner supplies a compatible
@@ -890,3 +907,6 @@ cannot make external effects exactly once; unresolved calls follow the
 7. Persisted state restores data and correlation, never current authority.
    Events, Items, streams, accounting records, listings, and worker memory never
    select state.
+8. Every accepted Turn retains one non-secret model execution snapshot until
+   sealing and one immutable safe model observation for history; a replacement
+   attempt never reads current ModelConfig as a fallback.

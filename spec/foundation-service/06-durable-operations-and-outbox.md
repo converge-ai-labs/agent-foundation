@@ -11,7 +11,7 @@ This contract owns the shared persistence and retry boundary. Owning domains con
 | Concern                                      | Owner                                                          | Relationship                                                     |
 | -------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Current resource state and legal transitions | Owning domain                                                  | Remains authoritative                                            |
-| HTTP version and idempotency wire semantics  | [Platform API Conventions](../api-conventions.md)              | Supplies `expected_version` and `Idempotency-Key` behavior       |
+| HTTP concurrency and idempotency semantics   | [Platform API Conventions](../api-conventions.md)              | Supplies conditional mutation and `Idempotency-Key` behavior     |
 | Shared operation persistence                 | This contract                                                  | Defines evidence, atomicity, and unknown-outcome handling        |
 | Lifecycle event and Item meaning             | Owning event or interaction domain                             | Supplies bounded records for a committed transition              |
 | Outbox claim and publication                 | This contract                                                  | Delivers committed intents with retry and deduplication identity |
@@ -20,11 +20,22 @@ This contract owns the shared persistence and retry boundary. Owning domains con
 
 The shared operation boundary is not a generic repository, application service base class, event bus, saga engine, or abstract unit-of-work framework. Domains use the canonical short relational transaction and focused helpers for the repeated evidence and outbox records.
 
-## Versioned Mutation
+## Conditional Mutation
 
-A mutable resource exposes one monotonically increasing domain `version` when concurrent updates can be lost. A state-sensitive mutation compares the caller's expected version with the current locked resource version in the same short transaction that applies the change. A mismatch changes nothing and reports a conflict.
+A mutable resource normally exposes one monotonically increasing domain
+`version` when concurrent updates can be lost. A state-sensitive mutation
+compares the caller's expected version with the current locked resource version
+in the same short transaction that applies the change. An owning contract for
+an intentionally non-versioned mutable representation can instead compare a
+strong `If-Match` tag derived from the complete locked representation. A
+mismatch changes nothing and reports the owning conflict or precondition
+failure.
 
-Immutable revisions and append-only records do not gain an artificial version. Internal worker publication additionally verifies the current TurnAttempt ID and generation under the owning fencing contract; a matching resource version does not bypass a stale worker fence.
+Immutable revisions and append-only records do not gain an artificial version.
+An ETag does not create addressable history or rollback. Internal worker
+publication additionally verifies the current TurnAttempt ID and generation
+under the owning fencing contract; a matching resource version or tag does not
+bypass a stale worker fence.
 
 ## Idempotency Evidence
 
@@ -43,7 +54,11 @@ A create or command that can be retried under the public contract records bounde
 
 Raw idempotency keys and secret request content are not stored in logs, events, traces, or diagnostics. The canonical request includes the semantic operation input and excludes transport-only values such as request ID and trace context.
 
-The operation serializes concurrent uses of the same evidence scope. The same key and canonical request return the original result; the same key with different input returns a conflict. Replay resolves before a current-version comparison so a successful mutation can return its original result after advancing the resource version.
+The operation serializes concurrent uses of the same evidence scope. The same
+key and canonical request return the original result; the same key with
+different input returns a conflict. Replay resolves before a version or ETag
+comparison so a successful mutation can return its original result after
+advancing the resource state.
 
 Idempotency evidence commits in the same relational transaction as the accepted mutation and result reference. An operation does not hold an idempotency reservation or database transaction across external I/O. If acceptance requires an external effect, Foundation first commits durable intent and performs the effect outside the transaction under an owning idempotency or reconciliation contract.
 
@@ -151,8 +166,8 @@ The outbox adds relational records, publisher lag, and duplicate-delivery handli
 ## Invariants
 
 01. Current relational resource state, not event replay, is the ordinary product authority.
-02. Version checks, idempotency evidence, mutation, and required outbox intent commit atomically when they belong to one accepted operation.
-03. Idempotency replay resolves before current-version comparison.
+02. Concurrency checks, idempotency evidence, mutation, and required outbox intent commit atomically when they belong to one accepted operation.
+03. Idempotency replay resolves before the owning version or ETag comparison.
 04. No relational transaction spans Redis, object storage, provider, client, or other external I/O.
 05. Outbox publication is at least once and preserves one stable source identity across retries.
 06. Publication acknowledgement never defines the underlying domain transition.

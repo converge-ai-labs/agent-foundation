@@ -29,7 +29,7 @@ flowchart TB
 
     subgraph Service[foundation-service]
         Control[Control plane]
-        Definitions[Agent and integration revisions]
+        Definitions[Agent revisions and ModelConfigs]
         Lifecycle[Durable Turns and TurnAttempts]
         Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
@@ -117,7 +117,7 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 | `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                              | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                         |
 | Foundation SDKs              | Language-typed access to the public Foundation Service `/api` contract                                                                                                                                      | Service internals, product policy, or durable lifecycle authority                                                        |
 | `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                      | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control             |
-| `foundation-service`         | Managed Secrets, Agent/Model Integration/Connector revisions, Presets, reconstruction locks, durable Turns/TurnAttempts, client tools, APIs, events, usage records, and optional web projection             | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning                     |
+| `foundation-service`         | Managed Secrets, ModelConfigs, Agent/Connector revisions, Presets, reconstruction locks, durable Turns/TurnAttempts, client tools, APIs, events, usage records, and optional web projection                 | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning                     |
 | Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                                 | Harness internals and provider implementation                                                                            |
 
 ## Harness Foundation
