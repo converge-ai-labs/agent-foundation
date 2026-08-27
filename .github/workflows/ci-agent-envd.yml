@@ -112,7 +112,7 @@ jobs:
               - 'crates/agent-envd/src/eip/**'
               - 'crates/agent-envd/src/lib.rs'
               - 'packages/agent-envd-client/pyproject.toml'
-              - 'packages/agent-envd-client/converge_agent_envd_client/eip/**'
+              - 'packages/agent-envd-client/a13n_envd_client/eip/**'
               - 'packages/agent-envd-client/tests/eip/**'
               - 'packages/agent-harness/tests/test_environment_eip_e2e.py'
               - 'proto/agent-envd/eip/**'
@@ -193,13 +193,13 @@ jobs:
         run: uv sync --locked --all-packages
 
       - name: Type-check agent-envd client
-        run: uv run --locked pyright packages/agent-envd-client/converge_agent_envd_client
+        run: uv run --locked pyright packages/agent-envd-client/a13n_envd_client
 
       - name: Test agent-envd client
         run: uv run --locked python -m pytest packages/agent-envd-client/tests
 
       - name: Build agent-envd client distribution
-        run: uv build --package converge-agent-envd-client --out-dir dist/agent-envd-client
+        run: uv build --package a13n-envd-client --out-dir dist/agent-envd-client
 
   daemon:
     name: agent-envd (${{ matrix.name }})
@@ -271,4 +271,4 @@ jobs:
 
       - name: Run agent-envd tests
         if: matrix.complete == false
-        run: cargo test --locked --package converge-agent-envd
+        run: cargo test --locked --package agent-envd

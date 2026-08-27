@@ -4,12 +4,12 @@ import asyncio
 from typing import cast
 
 import pytest
-from converge_agent_envd_client import (
+from a13n_envd_client import (
     AcceptedWebSocketTransport,
     ControlFrame,
     EIPProtocolError,
 )
-from converge_agent_envd_client.eip.v1 import DataFrame, DataFrameKind, encode_data_frame
+from a13n_envd_client.eip.v1 import DataFrame, DataFrameKind, encode_data_frame
 from websockets.asyncio.server import ServerConnection
 
 

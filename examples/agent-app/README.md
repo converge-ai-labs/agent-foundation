@@ -1,6 +1,6 @@
 # Agent Application Example
 
-This standalone project shows one Python application adopting `converge-agent-harness` progressively. Start with the minimal embedded Agent, add first-party Capabilities and a Direct Local Environment, then add Host-owned checkpoint selection, fencing, and recovery. The three layers share one explicit Agent build path instead of presenting separate application templates.
+This standalone project shows one Python application adopting `a13n-harness` progressively. Start with the minimal embedded Agent, add first-party Capabilities and a Direct Local Environment, then add Host-owned checkpoint selection, fencing, and recovery. The three layers share one explicit Agent build path instead of presenting separate application templates.
 
 All commands run offline. Deterministic Pydantic AI `FunctionModel` implementations replace only the external model provider; the Harness build, Agent loop, tools, run lifecycle, state, usage, and result boundaries are real.
 
@@ -36,7 +36,7 @@ Do not put `host-state` inside an Agent workspace or disposable Environment. The
 ## Progressive Structure
 
 ```text
-src/converge_agent_app_example/
+src/a13n_agent_app_example/
   application.py  # Shared build path and minimal embedded run
   workspace.py    # Local Capabilities, tools, suspension, and resume
   recovery.py     # Host-owned execution and recovery orchestration

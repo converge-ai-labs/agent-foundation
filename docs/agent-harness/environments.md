@@ -34,14 +34,14 @@ This is the right default for an Agent that needs only a model and non-Environme
 
 ## Direct Local
 
-Direct Local exposes an explicitly selected existing Host directory to a trusted embedded application. It is an operation backend, not a sandbox claim. Its public configuration and lifecycle Manager belong to `converge-agent-environment-provider`; the Harness receives only a fresh runtime attachment.
+Direct Local exposes an explicitly selected existing Host directory to a trusted embedded application. It is an operation backend, not a sandbox claim. Its public configuration and lifecycle Manager belong to `a13n-environment-provider`; the Harness receives only a fresh runtime attachment.
 
 ```python
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderRuntime,
     EnvironmentManagementAction,
     EnvironmentManager,
@@ -49,7 +49,7 @@ from converge_agent_environment_provider import (
     EnvironmentProviderSpec,
     build_environment_provider_factory_catalog,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     EnvironmentAction,
     EnvironmentBindingRequest,
     EnvironmentPermissionSet,
@@ -64,11 +64,11 @@ from converge_agent_harness import (
 
 def direct_local_manager(workspace: Path) -> EnvironmentManager:
     catalog = build_environment_provider_factory_catalog(
-        builtin_keys=("converge.direct-local",),
+        builtin_keys=("a13n.direct-local",),
     )
     return catalog.create_manager(
         EnvironmentProviderSpec(
-            provider_key="converge.direct-local",
+            provider_key="a13n.direct-local",
             schema_version="1",
             parameters={
                 "environment_id": "local-app",
@@ -149,7 +149,7 @@ Direct Local should be used only when the embedding process intentionally grants
 The Environment can exist without model-facing tools. Add `DynamicEnvironmentCapability` to the Agent definition to select a stable tool surface:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
 )
@@ -225,7 +225,7 @@ Portable state cannot create a binding, choose a provider, reconnect a sandbox, 
 
 ## EIP-backed Operations
 
-The Harness includes an `EIPEnvironmentProviderBinding` adapter for fresh single-use runtime attachments from `converge-agent-environment-provider`. It maps the generated Environment Interaction Protocol file, process, output, and port operations onto the same provider-neutral interfaces used by Direct Local.
+The Harness includes an `EIPEnvironmentProviderBinding` adapter for fresh single-use runtime attachments from `a13n-environment-provider`. It maps the generated Environment Interaction Protocol file, process, output, and port operations onto the same provider-neutral interfaces used by Direct Local.
 
 Carrier acquisition and provider resource lifecycle remain outside the Agent definition. A Host must keep the attachment-acquisition scope alive for the complete lifetime of the adapted binding and transfer each attachment at most once.
 

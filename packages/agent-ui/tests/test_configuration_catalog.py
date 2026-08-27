@@ -6,12 +6,11 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
-import converge_agent_ui.configuration.service as configuration_service_module
+import a13n_ui.configuration.service as configuration_service_module
 import pytest
 import yaml
-from anyio import fail_after, sleep
-from converge_agent_ui.application import open_application
-from converge_agent_ui.configuration import (
+from a13n_ui.application import open_application
+from a13n_ui.configuration import (
     AgentDefinitionDocument,
     ConfigurationSettings,
     DefinitionRootSettings,
@@ -27,11 +26,12 @@ from converge_agent_ui.configuration import (
     SourceTransactionManifest,
     load_envd_runtime_manifest,
 )
-from converge_agent_ui.errors import ConfigurationError
-from converge_agent_ui.settings import AgentUiSettings, StorageSettings
-from converge_agent_ui.storage import ObjectKind
-from converge_agent_ui.storage.database import transaction
-from converge_agent_ui.storage.models import ImmutableObjectRecord
+from a13n_ui.errors import ConfigurationError
+from a13n_ui.settings import AgentUiSettings, StorageSettings
+from a13n_ui.storage import ObjectKind
+from a13n_ui.storage.database import transaction
+from a13n_ui.storage.models import ImmutableObjectRecord
+from anyio import fail_after, sleep
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
@@ -50,7 +50,7 @@ def _full_settings(data_root: Path, definition_root: Path, discovery_root: Path)
         configuration=ConfigurationSettings(
             definition_roots=(DefinitionRootSettings(root_id="root-user", path=definition_root, writable=True),),
             local_directories=(LocalDirectorySettings(directory_id="directory-skills", path=discovery_root),),
-            model_adapter_keys=("converge.test-model",),
+            model_adapter_keys=("a13n.test-model",),
             orphan_retention_seconds=60,
         ),
     )
@@ -67,7 +67,7 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
             "schema_version": "1",
             "model_id": "model-main",
             "display_name": "Main Model",
-            "provider_key": "converge.test-model",
+            "provider_key": "a13n.test-model",
             "model_name": "test-v1",
             "endpoint": None,
             "settings": {"temperature": 0},
@@ -379,7 +379,7 @@ async def test_invalid_source_transaction_does_not_select_its_overlay(tmp_path: 
             )
         assert rejected.value.code == "configuration_reference_missing"
         assert await application.current_configuration() == generation
-        assert not (definitions / ".converge-transactions/active.json").exists()
+        assert not (definitions / ".a13n-transactions/active.json").exists()
         assert await application.reload_configuration() == generation
 
 
@@ -468,7 +468,7 @@ async def test_file_backed_process_settings_report_restart_requirement(tmp_path:
         assert first is not None
         assert first.restart_required is False
 
-        desired["credential_backends"] = ["converge.keyring"]
+        desired["credential_backends"] = ["a13n.keyring"]
         _write_yaml(process_path, desired)
         second = await application.reload_configuration()
         assert second.restart_required is True
@@ -494,7 +494,7 @@ def test_literal_credentials_are_rejected_from_generic_resource_configuration() 
                 "schema_version": "1",
                 "plugin_resource_id": "plugin-example",
                 "display_name": "Example Plugin",
-                "plugin_key": "converge.example",
+                "plugin_key": "a13n.example",
                 "plugin_id": "plugin-instance",
                 "enabled": True,
                 "configuration": {"clientSecret": "literal-secret"},
@@ -506,7 +506,7 @@ def test_literal_credentials_are_rejected_from_generic_resource_configuration() 
             {
                 "binding_name": "binding-main",
                 "model_alias": "workspace",
-                "provider_key": "converge.direct-local",
+                "provider_key": "a13n.direct-local",
                 "provider_schema_version": "1",
                 "provider_parameters": {"accessToken": "literal-secret"},
                 "permission_ceiling": [],
@@ -533,7 +533,7 @@ def test_literal_credentials_are_rejected_from_model_content() -> None:
         "schema_version": "1",
         "model_id": "model-main",
         "display_name": "Main Model",
-        "provider_key": "converge.test-model",
+        "provider_key": "a13n.test-model",
         "model_name": "test-v1",
         "endpoint": None,
         "settings": {},
@@ -770,7 +770,7 @@ async def test_source_transaction_rolls_back_when_sources_race_manifest_selectio
             )
         assert stale.value.code == "source_transaction_stale"
         assert await application.current_configuration() == current
-        assert not (definitions / ".converge-transactions/active.json").exists()
+        assert not (definitions / ".a13n-transactions/active.json").exists()
 
         reconciled = await application.reload_configuration()
         prompt_ref = next(item for item in reconciled.resources if item.kind is ResourceKind.prompt)
@@ -815,7 +815,7 @@ async def test_source_transaction_rejects_unreconciled_external_edits(tmp_path: 
                 {"prompts/prompt-main.yaml": content},
             )
         assert stale.value.code == "source_transaction_stale"
-        assert not (definitions / ".converge-transactions/active.json").exists()
+        assert not (definitions / ".a13n-transactions/active.json").exists()
 
 
 async def test_json_shapes_are_not_guessed_as_resource_references(tmp_path: Path) -> None:

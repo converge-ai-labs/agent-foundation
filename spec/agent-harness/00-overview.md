@@ -152,7 +152,7 @@ These facts are independent. A result candidate retained by `RunCleanupError` is
 | Pydantic Capability            | `AgentSpec`, definition, plugin, or run contribution                                     | Pydantic lifecycle plus caller trust            |
 | Native Model/tool/Toolset      | Concrete `AgentDefinition` field                                                         | Trusted in-process object                       |
 | Run-scoped model resolver      | Fresh `ModelRunBinding`                                                                  | Host/provider policy                            |
-| Environment managed resource   | Reusable Host scope from `converge-agent-environment-provider`                           | Provider lifecycle and resource-state authority |
+| Environment managed resource   | Reusable Host scope from `a13n-environment-provider`                                     | Provider lifecycle and resource-state authority |
 | Environment runtime attachment | Fresh single-use Direct Local or EIP attachment from that managed resource               | Host selection and provider enforcement         |
 | Environment provider binding   | Fresh process-local `EnvironmentRunBinding` inputs adapted from an attachment            | Harness run topology and operation scope        |
 | Environment run extension      | Direct object or Host-selected factory result registered on the aggregate                | Trusted aggregate-wide resource scope           |

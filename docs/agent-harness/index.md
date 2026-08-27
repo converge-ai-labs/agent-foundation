@@ -1,13 +1,13 @@
 # Agent Harness
 
-`converge-agent-harness` is an embeddable, process-local runtime for building Pydantic AI agents with typed run bindings, provider-neutral tools and Environments, portable continuation state, normalized events, usage attribution, inline delegation, and restricted CodeAct orchestration.
+`a13n-harness` is an embeddable, process-local runtime for building Pydantic AI agents with typed run bindings, provider-neutral tools and Environments, portable continuation state, normalized events, usage attribution, inline delegation, and restricted CodeAct orchestration.
 
 It is a Python code library, not a hosted service or a second Agent framework.
 
 ## Start Here
 
 ```bash
-pip install converge-agent-harness
+pip install a13n-harness
 ```
 
 The smallest application follows one path:

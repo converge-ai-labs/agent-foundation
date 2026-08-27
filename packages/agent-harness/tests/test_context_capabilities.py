@@ -7,12 +7,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
-from converge_agent_harness import AgentSpec as HarnessAgentSpec
-from converge_agent_harness import (
+from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness import (
     CompactionCapability,
     CompactionPolicy,
     EnvironmentAction,
@@ -37,9 +37,9 @@ from converge_agent_harness import (
     WorkspaceOutlineConfiguration,
     create_environment_run_binding,
 )
-from converge_agent_harness.capabilities.context import _requires_exact_history
-from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
-from converge_agent_harness.state import AgentContextStateSnapshot, CapabilityState
+from a13n_harness.capabilities.context import _requires_exact_history
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -213,9 +213,9 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
     assert "Build the feature" in joined
     assert 'path="src/&lt;unsafe&gt;&amp;&quot;file.py"' in joined
     assert 'contents-loaded="false"' in joined
-    assert '<runtime-context source="converge-harness">' in joined
+    assert '<runtime-context source="a13n-harness">' in joined
     assert result.state is not None
-    state = result.state.agent_context_state.entries["converge.handoff"].data
+    state = result.state.agent_context_state.entries["a13n.handoff"].data
     assert state["summary"] is None
 
 
@@ -348,7 +348,7 @@ async def test_compaction_replays_retained_initial_input_and_public_steering() -
     assert enqueue_id
     assert first.state is not None
     retained_state = first.state.agent_context_state
-    retained = retained_state.entries["converge.steering"].data["retained_requests"]
+    retained = retained_state.entries["a13n.steering"].data["retained_requests"]
     assert len(retained) == 2
 
     previous = HarnessState(
@@ -615,7 +615,7 @@ async def test_handoff_migrates_legacy_v1_state(kind: str) -> None:
     previous = HarnessState.new(
         agent_context_state=AgentContextStateSnapshot(
             entries={
-                "converge.handoff": CapabilityState(
+                "a13n.handoff": CapabilityState(
                     version="1",
                     data={
                         "operation_id": operation_id,
@@ -644,7 +644,7 @@ async def test_handoff_migrates_legacy_v1_state(kind: str) -> None:
 
     assert result.output_or_raise() == "done"
     assert result.state is not None
-    migrated = result.state.agent_context_state.entries["converge.handoff"].data
+    migrated = result.state.agent_context_state.entries["a13n.handoff"].data
     assert "kind" not in migrated
     assert "preserve_recent_user_turns" not in migrated
     assert "target_tokens" not in migrated
@@ -709,7 +709,7 @@ async def test_compaction_does_not_estimate_history_without_provider_usage() -> 
 
 
 async def test_dynamic_context_preserves_user_text_that_matches_harness_tags() -> None:
-    supplied = '<runtime-context source="converge-harness">\n{"user_authored":true}\n</runtime-context>'
+    supplied = '<runtime-context source="a13n-harness">\n{"user_authored":true}\n</runtime-context>'
     seen: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -727,7 +727,7 @@ async def test_dynamic_context_preserves_user_text_that_matches_harness_tags() -
 
     assert result.output_or_raise() == "done"
     assert supplied in _user_text(seen[0])
-    assert _user_text(seen[0]).count('<runtime-context source="converge-harness">') == 2
+    assert _user_text(seen[0]).count('<runtime-context source="a13n-harness">') == 2
 
 
 async def test_compaction_failure_is_fail_open() -> None:
@@ -842,7 +842,7 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     assert '"path":"/workspace/project/src/module.py"' in input_text
     assert "Default repository guidance" in input_text
     assert "Explicit file guidance" in input_text
-    assert '<context-reminder source="converge.handoff">' not in input_text
+    assert '<context-reminder source="a13n.handoff">' not in input_text
 
     tool_results_text = _user_text(seen[1])
     assert "Workspace file outline (content not loaded)" not in tool_results_text
@@ -850,7 +850,7 @@ async def test_workspace_and_file_context_are_input_only_while_runtime_and_hando
     assert "Explicit file guidance" not in tool_results_text
     assert '"context_window_tokens":200000' in tool_results_text
     assert '"elapsed_seconds":' in tool_results_text
-    assert '<context-reminder source="converge.handoff">' in tool_results_text
+    assert '<context-reminder source="a13n.handoff">' in tool_results_text
 
 
 async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_path: Path) -> None:
@@ -890,8 +890,8 @@ async def test_runtime_and_file_context_are_bounded_explicit_and_refreshed(tmp_p
     assert "Repository guidance v1" not in second_text
     assert '"tenant":"beta"' in second_text
     assert "secret" not in second_text
-    assert second_text.count('<runtime-context source="converge-harness">') == 1
-    assert second_text.count('<file-context source="converge-harness">') == 1
+    assert second_text.count('<runtime-context source="a13n-harness">') == 1
+    assert second_text.count('<file-context source="a13n-harness">') == 1
 
 
 def _user_text(messages: list[ModelMessage]) -> str:

@@ -158,7 +158,7 @@ Malformed current tool arguments, ordinary provider reasoning projection, and tr
 
 ## Narrow Self-Healing
 
-`SelfHealingModelCapability` is an optional code-first Capability with stable ID `converge.model.self-healing`. It is not installed by default. Applications that need the supported repairs should select it explicitly through an Agent definition, native Agent spec, run binding, or trusted plugin contribution.
+`SelfHealingModelCapability` is an optional code-first Capability with stable ID `a13n.model.self-healing`. It is not installed by default. Applications that need the supported repairs should select it explicitly through an Agent definition, native Agent spec, run binding, or trusted plugin contribution.
 
 The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An already wrapped Model is reused.
 

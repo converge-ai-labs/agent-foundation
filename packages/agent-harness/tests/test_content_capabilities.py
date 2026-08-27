@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     DocumentAsset,
     DocumentConversionRequest,
     DocumentConversionResult,
@@ -49,11 +49,11 @@ from converge_agent_harness import (
     WebSearchResult,
     create_environment_run_binding,
 )
-from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
-from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
-from converge_agent_harness.toolsets.documents import DocumentsToolset
-from converge_agent_harness.toolsets.media import MediaToolset
-from converge_agent_harness.toolsets.web import WebToolset
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
+from a13n_harness.toolsets.documents import DocumentsToolset
+from a13n_harness.toolsets.media import MediaToolset
+from a13n_harness.toolsets.web import WebToolset
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
@@ -481,7 +481,7 @@ async def test_documents_capability_publishes_one_complete_environment_tree(tmp_
     assert tool_result["export_path"] == "/workspace/export_report_pages_1_3"
     assert (export / "report.md").read_text() == converter.result.markdown
     assert (export / "images" / "page.png").read_bytes() == b"png"
-    assert not list(tmp_path.glob(".export_report_pages_1_3.converge-*"))
+    assert not list(tmp_path.glob(".export_report_pages_1_3.a13n-*"))
 
 
 async def test_pdf_page_ranges_publish_to_distinct_agent_usable_exports(tmp_path: Path) -> None:
@@ -592,7 +592,7 @@ async def test_documents_capability_removes_partial_staging_tree(tmp_path: Path)
     tool_result = next(item for item in _tool_contents(seen) if isinstance(item, dict))
     assert tool_result["ok"] is False
     assert not (tmp_path / "export_broken").exists()
-    assert not list(tmp_path.glob(".export_broken.converge-*"))
+    assert not list(tmp_path.glob(".export_broken.a13n-*"))
 
 
 async def test_documents_rejects_stale_revision_before_publication(tmp_path: Path) -> None:

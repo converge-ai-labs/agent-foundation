@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from converge_agent_envd_client.eip.v1 import (
+from a13n_envd_client.eip.v1 import (
     EIP_ERROR_CODES,
     EIP_PROTO_PACKAGE,
     EIP_PROTOCOL_VERSION,
@@ -21,7 +21,7 @@ from converge_agent_envd_client.eip.v1 import (
     encode_data_frame,
     encode_model,
 )
-from converge_agent_envd_client.eip.v1.models import (
+from a13n_envd_client.eip.v1.models import (
     CommandEnvironment,
     CommandNetwork,
     ContentDigest,
@@ -78,7 +78,7 @@ MODEL_TYPES: dict[str, type[BaseModel]] = {
 
 def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "1.0"
-    assert EIP_PROTO_PACKAGE == "converge.agent_envd.eip.v1"
+    assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
     assert len(METHODS) == 34
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())

@@ -6,6 +6,17 @@ from typing import Any
 
 import anyio
 import pytest
+from a13n_harness import (
+    HarnessBuilder,
+    HarnessEvent,
+    HarnessExtensionEvent,
+    HarnessRunResult,
+    HarnessRunResultEvent,
+    HarnessStreamEvent,
+    RunBindings,
+    SafeFailure,
+)
+from a13n_stream_protocol import AguiObservationError, HarnessAguiObserver
 from ag_ui.core import Event
 from ag_ui.core.events import (
     CustomEvent,
@@ -24,17 +35,6 @@ from ag_ui.core.events import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from converge_agent_harness import (
-    HarnessBuilder,
-    HarnessEvent,
-    HarnessExtensionEvent,
-    HarnessRunResult,
-    HarnessRunResultEvent,
-    HarnessStreamEvent,
-    RunBindings,
-    SafeFailure,
-)
-from converge_agent_stream_protocol import AguiObservationError, HarnessAguiObserver
 from pydantic import TypeAdapter
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
@@ -117,7 +117,7 @@ def test_text_lifecycle_uses_harness_request_identity_and_accumulates() -> None:
 
     assert len(lifecycle) == 1
     assert isinstance(lifecycle[0], CustomEvent)
-    assert lifecycle[0].name == "converge.harness.lifecycle"
+    assert lifecycle[0].name == "a13n.harness.lifecycle"
     assert lifecycle[0].value == {
         "thread_id": "thread-1",
         "run_id": "run-1",
@@ -211,9 +211,9 @@ def test_reasoning_tool_and_tool_result_use_standard_agui_events() -> None:
     ]
     assert [type(event) for event in reasoning_end] == [ReasoningMessageEndEvent]
     assert isinstance(tool_start[0], CustomEvent)
-    assert tool_start[0].name == "converge.pydantic_ai.part_start"
+    assert tool_start[0].name == "a13n.pydantic_ai.part_start"
     assert isinstance(tool_delta[0], CustomEvent)
-    assert tool_delta[0].name == "converge.pydantic_ai.part_delta"
+    assert tool_delta[0].name == "a13n.pydantic_ai.part_delta"
     assert [type(event) for event in tool_end] == [ToolCallStartEvent, ToolCallArgsEvent, ToolCallEndEvent]
     assert tool_end[0].tool_call_name == "search"
     assert tool_end[1].delta == '{"q":"x"}'
@@ -285,7 +285,7 @@ def test_non_success_and_retry_tool_results_use_custom_fallback() -> None:
     )[0]
 
     assert isinstance(failed, CustomEvent)
-    assert failed.name == "converge.pydantic_ai.function_tool_result"
+    assert failed.name == "a13n.pydantic_ai.function_tool_result"
     assert failed.value["event"]["part"]["outcome"] == "failed"
     assert isinstance(retry, CustomEvent)
     assert retry.value["event"]["part"]["part_kind"] == "retry-prompt"
@@ -306,14 +306,14 @@ def test_unmapped_public_events_fall_back_to_namespaced_custom_events() -> None:
     )[0]
 
     assert isinstance(pydantic_event, CustomEvent)
-    assert pydantic_event.name == "converge.pydantic_ai.final_result"
+    assert pydantic_event.name == "a13n.pydantic_ai.final_result"
     assert pydantic_event.value["event"] == {
         "tool_name": "finalize",
         "tool_call_id": "call-final",
         "event_kind": "final_result",
     }
     assert isinstance(extension_event, CustomEvent)
-    assert extension_event.name == "converge.harness.context"
+    assert extension_event.name == "a13n.harness.context"
     assert extension_event.value["sequence"] == 1
 
 
@@ -642,7 +642,7 @@ async def test_real_harness_stream_observes_lifecycle_text_and_terminal_events()
     assert terminal is not None
     events = observer.snapshot()
     custom_names = [event.name for event in events if isinstance(event, CustomEvent)]
-    assert custom_names.count("converge.harness.lifecycle") == 2
+    assert custom_names.count("a13n.harness.lifecycle") == 2
     assert any(isinstance(event, TextMessageStartEvent) for event in events)
     assert any(isinstance(event, TextMessageContentEvent) and event.delta == "hello" for event in events)
     assert any(isinstance(event, TextMessageEndEvent) for event in events)
@@ -723,7 +723,7 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
     opaque_event = HarnessAguiObserver().observe(_result_event(0, opaque))[0]
 
     assert isinstance(suspended_event, CustomEvent)
-    assert suspended_event.name == "converge.harness.run_result"
+    assert suspended_event.name == "a13n.harness.run_result"
     deferred = suspended_event.value["event"]["deferred"]
     assert deferred["calls"][0]["tool_call_id"] == "call-external"
     assert deferred["approvals"][0]["tool_call_id"] == "call-approval"

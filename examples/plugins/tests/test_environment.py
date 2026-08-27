@@ -5,20 +5,20 @@ import sys
 from pathlib import Path
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     EnvironmentProviderError,
     EnvironmentProviderSpec,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
 
-from converge_plugin_examples.demo_environment import (
+from a13n_plugin_examples.demo_environment import (
     PROVIDER_KEY,
     run_environment_code_demo,
     run_environment_entrypoint_demo,
 )
 
-PLUGIN_MODULE = "converge_plugin_examples.environment"
+PLUGIN_MODULE = "a13n_plugin_examples.environment"
 
 
 def _workspace_roots(tmp_path: Path) -> tuple[Path, Path]:
@@ -42,9 +42,9 @@ def test_environment_entrypoint_metadata_is_lazy_and_selection_is_explicit(tmp_p
     assert PLUGIN_MODULE in sys.modules
     registration = catalog.registrations[0]
     assert registration.provider_key == PROVIDER_KEY
-    assert registration.import_target == ("converge_plugin_examples.environment:WorkspaceEnvironmentProviderFactory")
+    assert registration.import_target == ("a13n_plugin_examples.environment:WorkspaceEnvironmentProviderFactory")
 
-    from converge_plugin_examples.environment import WorkspaceEnvironmentRuntime
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
     manager = catalog.create_manager(
         EnvironmentProviderSpec(
@@ -65,16 +65,16 @@ def test_environment_explicit_factory_needs_no_metadata_scan(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from converge_plugin_examples.environment import WorkspaceEnvironmentProviderFactory
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentProviderFactory
 
     monkeypatch.setattr(
-        "converge_agent_environment_provider.factories._entry_points",
+        "a13n_environment_provider.factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
     catalog = build_environment_provider_factory_catalog(explicit_factories=(WorkspaceEnvironmentProviderFactory(),))
 
     assert catalog.registrations[0].import_target is None
-    from converge_plugin_examples.environment import WorkspaceEnvironmentRuntime
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
     manager = catalog.create_manager(
         EnvironmentProviderSpec(
@@ -94,7 +94,7 @@ def test_environment_explicit_factory_needs_no_metadata_scan(
 def test_environment_provider_factory_rejects_invalid_json_configuration() -> None:
     catalog = build_environment_provider_factory_catalog(extension_keys=(PROVIDER_KEY,))
 
-    from converge_plugin_examples.environment import WorkspaceEnvironmentRuntime
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
     with pytest.raises(EnvironmentProviderError) as exc_info:
         catalog.create_manager(

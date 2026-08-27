@@ -46,7 +46,7 @@ def compile_descriptor(output_dir: Path) -> tuple[descriptor_pb2.FileDescriptorS
     if len(option_candidates) != 1:
         raise RuntimeError(f"expected one generated options module, found {option_candidates}")
     options_path = option_candidates[0]
-    spec = importlib.util.spec_from_file_location("converge_eip_options_pb2", options_path)
+    spec = importlib.util.spec_from_file_location("a13n_eip_options_pb2", options_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load generated EIP custom options")
     options_module = importlib.util.module_from_spec(spec)

@@ -11,15 +11,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
-import converge_agent_harness.environment.local.retention as local_retention_module
-import converge_agent_harness.execution as execution_module
-import converge_agent_harness.toolsets.files as file_toolset_module
+import a13n_harness.environment.local.retention as local_retention_module
+import a13n_harness.execution as execution_module
+import a13n_harness.toolsets.files as file_toolset_module
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     ArgvCommand,
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
@@ -39,25 +39,25 @@ from converge_agent_harness import (
     create_environment_run_binding,
     create_noop_environment_run_binding,
 )
-from converge_agent_harness.environment.dynamic import _DynamicEnvironmentRunCapability
-from converge_agent_harness.environment.files import FileEntriesResult, FileMetadata, FileWriteResult
-from converge_agent_harness.environment.local.binding import (
+from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
+from a13n_harness.environment.files import FileEntriesResult, FileMetadata, FileWriteResult
+from a13n_harness.environment.local.binding import (
     DirectLocalEnvironmentProviderBinding,
     _DirectLocalFilePolicy,
 )
-from converge_agent_harness.environment.local.files import LocalFileOperator
-from converge_agent_harness.environment.models import EnvironmentOperationReceipt
-from converge_agent_harness.environment.providers import FileScopeSelection
-from converge_agent_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
-from converge_agent_harness.plugins import (
+from a13n_harness.environment.local.files import LocalFileOperator
+from a13n_harness.environment.models import EnvironmentOperationReceipt
+from a13n_harness.environment.providers import FileScopeSelection
+from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
+from a13n_harness.plugins import (
     AbstractHarnessPlugin,
     PluginOrdering,
     PluginRunExchange,
     PluginRunNext,
     PluginRunResponse,
 )
-from converge_agent_harness.result import HarnessRunResult
-from converge_agent_harness.tools import (
+from a13n_harness.result import HarnessRunResult
+from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     HarnessTool,
     HarnessToolMetadata,
@@ -65,13 +65,13 @@ from converge_agent_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from converge_agent_harness.toolsets.files import FileToolset
-from converge_agent_harness.toolsets.output import (
+from a13n_harness.toolsets.files import FileToolset
+from a13n_harness.toolsets.output import (
     DEFAULT_TOOL_OUTPUT_CHARS,
     disclose_sequence_field,
     tool_output_size,
 )
-from converge_agent_harness.toolsets.shell import ShellToolset, _CompactReferenceTable, _fit_stream_prefixes
+from a13n_harness.toolsets.shell import ShellToolset, _CompactReferenceTable, _fit_stream_prefixes
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability

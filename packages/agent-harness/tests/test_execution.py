@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentDefinition,
     DefinitionError,
     EnvironmentState,
@@ -23,7 +23,7 @@ from converge_agent_harness import (
     RunError,
     SubagentDefinition,
 )
-from converge_agent_harness.events import _RunEventEmitter
+from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import converge_agent_environment_provider as environment_provider
-import converge_agent_harness as harness
-import converge_agent_harness.capabilities as capabilities
-import converge_agent_harness.environment as environment
-import converge_agent_harness.filters as filters
-import converge_agent_harness.tools as tools
-import converge_agent_harness.toolsets as toolsets
+import a13n_environment_provider as environment_provider
+import a13n_harness as harness
+import a13n_harness.capabilities as capabilities
+import a13n_harness.environment as environment
+import a13n_harness.filters as filters
+import a13n_harness.tools as tools
+import a13n_harness.toolsets as toolsets
 
 
 def test_root_facade_exports_documented_capabilities_and_toolsets() -> None:

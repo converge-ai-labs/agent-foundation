@@ -35,7 +35,7 @@ The conceptual factory API is process-local:
 
 ```python
 ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP = (
-    "converge_agent_environment_provider.providers"
+    "a13n_environment_provider.providers"
 )
 
 
@@ -81,15 +81,15 @@ The resolved value is not serialized. It retains trusted code selected by the Ho
 
 The package ships four factories under exact keys:
 
-- `converge.direct-local`;
-- `converge.local-envd`;
-- `converge.docker`;
-- `converge.e2b`.
+- `a13n.direct-local`;
+- `a13n.local-envd`;
+- `a13n.docker`;
+- `a13n.e2b`.
 
 Built-ins are selectable directly and do not depend on installed entry-point metadata. Third-party distributions can register one factory class:
 
 ```toml
-[project.entry-points."converge_agent_environment_provider.providers"]
+[project.entry-points."a13n_environment_provider.providers"]
 "acme.sandbox" = "acme_environment.provider:AcmeEnvironmentProviderFactory"
 ```
 

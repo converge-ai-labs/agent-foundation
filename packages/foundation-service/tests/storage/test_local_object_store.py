@@ -2,7 +2,7 @@ from pathlib import Path
 
 import anyio
 import pytest
-from converge_foundation_service.storage.object_store import (
+from a13n_service.storage.object_store import (
     LocalObjectStore,
     ObjectConflict,
     ObjectNotFound,

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`converge-agent-environment-provider` is the shared Host-facing package for declaring, validating, provisioning, attaching, reconciling, observing, and retiring Environment provider resources. It lets independently structured Host components understand the same provider configuration without importing Pydantic AI or the complete Harness runtime.
+`a13n-environment-provider` is the shared Host-facing package for declaring, validating, provisioning, attaching, reconciling, observing, and retiring Environment provider resources. It lets independently structured Host components understand the same provider configuration without importing Pydantic AI or the complete Harness runtime.
 
 The package separates three values with different authority:
 
@@ -10,7 +10,7 @@ The package separates three values with different authority:
 2. `EnvironmentProviderResourceState` is sensitive provider-owned data persisted and selected by a Host;
 3. an `EnvironmentRuntimeAttachment` is a fresh process-local value used to create one Harness run binding.
 
-The package contains built-in Direct Local, Local Envd, Docker, and E2B factories. `converge-agent-harness` depends on it and adapts attachments into provider-neutral run bindings. Any Host can use the same manager directly while retaining its own optional persistence and lifecycle authority. Local Envd consumes one exact Host-resolved daemon executable and owns its local process/private runtime without searching or downloading binaries.
+The package contains built-in Direct Local, Local Envd, Docker, and E2B factories. `a13n-harness` depends on it and adapts attachments into provider-neutral run bindings. Any Host can use the same manager directly while retaining its own optional persistence and lifecycle authority. Local Envd consumes one exact Host-resolved daemon executable and owns its local process/private runtime without searching or downloading binaries.
 
 ## Architecture
 
@@ -23,7 +23,7 @@ flowchart TB
         Orchestrator[Provider resource orchestrator]
     end
 
-    subgraph ProviderPackage[converge-agent-environment-provider]
+    subgraph ProviderPackage[a13n-environment-provider]
         Catalog[Provider factory catalog]
         Manager[EnvironmentManager]
         Resource[ManagedEnvironment]
@@ -31,14 +31,14 @@ flowchart TB
         Builtins[Direct Local, Local Envd, Docker, and E2B]
     end
 
-    subgraph Harness[converge-agent-harness]
+    subgraph Harness[a13n-harness]
         Adapter[Attachment-to-binding adapter]
         Binding[EnvironmentProviderBinding]
         Environment[BoundEnvironment]
     end
 
     subgraph EIPLayer[EIP layer]
-        Client[converge-agent-envd-client]
+        Client[a13n-envd-client]
         Envd[agent-envd]
     end
 
@@ -54,19 +54,19 @@ The Host decides whether to provision, attach, keep, replace, or destroy a resou
 
 ## Boundaries
 
-| Concern                                                                                    | Owner                                         | Explicit boundary                                                 |
-| ------------------------------------------------------------------------------------------ | --------------------------------------------- | ----------------------------------------------------------------- |
-| Provider specification schema and provider key                                             | Provider package and selected factory         | Serializable, credential-free desired configuration               |
-| User authorization and allowed provider configuration                                      | Host                                          | Evaluated before manager invocation                               |
-| Catalog selection and installed-code trust                                                 | Host and provider package                     | Availability is not authorization                                 |
-| Provision, attach, exact-operation reconciliation, maintenance, and destroy implementation | Provider manager                              | External effects and read-only reconciliation with typed outcomes |
-| Durable resource records, operation fencing, retry policy, and lease selection             | Host                                          | Never delegated to package-global state                           |
-| Resource-state field meaning and codec                                                     | Selected provider                             | Opaque to the Host except envelope and policy metadata            |
-| Resource-state storage, encryption, retention, and authoritative selection                 | Host                                          | Separate from `HarnessState`                                      |
-| Live provider client and reusable resource scope                                           | Bound provider resource                       | Process-local and explicitly closed                               |
-| Fresh runtime attachment                                                                   | Bound provider resource                       | Single-use, process-local, and non-serializable                   |
-| Attachment-to-binding adaptation and Environment operations                                | Harness                                       | No provider lifecycle authority                                   |
-| EIP protocol and session behavior                                                          | `converge-agent-envd-client` and `agent-envd` | Independent from vendor provisioning                              |
+| Concern                                                                                    | Owner                                 | Explicit boundary                                                 |
+| ------------------------------------------------------------------------------------------ | ------------------------------------- | ----------------------------------------------------------------- |
+| Provider specification schema and provider key                                             | Provider package and selected factory | Serializable, credential-free desired configuration               |
+| User authorization and allowed provider configuration                                      | Host                                  | Evaluated before manager invocation                               |
+| Catalog selection and installed-code trust                                                 | Host and provider package             | Availability is not authorization                                 |
+| Provision, attach, exact-operation reconciliation, maintenance, and destroy implementation | Provider manager                      | External effects and read-only reconciliation with typed outcomes |
+| Durable resource records, operation fencing, retry policy, and lease selection             | Host                                  | Never delegated to package-global state                           |
+| Resource-state field meaning and codec                                                     | Selected provider                     | Opaque to the Host except envelope and policy metadata            |
+| Resource-state storage, encryption, retention, and authoritative selection                 | Host                                  | Separate from `HarnessState`                                      |
+| Live provider client and reusable resource scope                                           | Bound provider resource               | Process-local and explicitly closed                               |
+| Fresh runtime attachment                                                                   | Bound provider resource               | Single-use, process-local, and non-serializable                   |
+| Attachment-to-binding adaptation and Environment operations                                | Harness                               | No provider lifecycle authority                                   |
+| EIP protocol and session behavior                                                          | `a13n-envd-client` and `agent-envd`   | Independent from vendor provisioning                              |
 
 The provider package does not own an Agent schema, Harness `EnvironmentState`, desired Environment topology, model-facing aliases, tools, durable Execution, queue, database, user API, or product policy.
 
@@ -128,11 +128,11 @@ Local Envd never falls back to Direct Local, and Docker/E2B never use vendor fil
 
 ## Dependency and Release Direction
 
-The package imports no Harness, Pydantic AI, Host implementation, database, or presentation type. It can depend on the low-level `converge-agent-envd-client`, Docker SDK, E2B SDK, Pydantic, AnyIO, and package-discovery support required by its public contracts.
+The package imports no Harness, Pydantic AI, Host implementation, database, or presentation type. It can depend on the low-level `a13n-envd-client`, Docker SDK, E2B SDK, Pydantic, AnyIO, and package-discovery support required by its public contracts.
 
-Both a resource-managing Host and `converge-agent-harness` depend on `converge-agent-environment-provider`, but they consume different parts of its public boundary. The Host selects and imports trusted provider plugins, validates specifications, constructs Managers, chooses lifecycle operations, retains resource state, and acquires attachments. The Harness imports only the shared attachment/session-source values needed for exhaustive attachment-to-binding adaptation and never discovers a provider plugin or invokes its Manager. A third-party provider plugin depends on the provider package, not on Harness internals; one installed plugin can therefore serve any Host that later passes its standard attachment to the Harness.
+Both a resource-managing Host and `a13n-harness` depend on `a13n-environment-provider`, but they consume different parts of its public boundary. The Host selects and imports trusted provider plugins, validates specifications, constructs Managers, chooses lifecycle operations, retains resource state, and acquires attachments. The Harness imports only the shared attachment/session-source values needed for exhaustive attachment-to-binding adaptation and never discovers a provider plugin or invokes its Manager. A third-party provider plugin depends on the provider package, not on Harness internals; one installed plugin can therefore serve any Host that later passes its standard attachment to the Harness.
 
-`converge-agent-environment-provider` belongs to the Harness release group with `converge-agent-harness` and `converge-agent-stream-protocol`. One Harness release assigns the same version to all three. Published Harness metadata requires the exact provider-package version, while the provider package selects a compatible independently released `converge-agent-envd-client` range. Package version does not replace EIP version negotiation.
+`a13n-environment-provider` belongs to the Harness release group with `a13n-harness` and `a13n-stream-protocol`. One Harness release assigns the same version to all three. Published Harness metadata requires the exact provider-package version, while the provider package selects a compatible independently released `a13n-envd-client` range. Package version does not replace EIP version negotiation.
 
 ## Security Position
 

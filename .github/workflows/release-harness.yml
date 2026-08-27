@@ -54,12 +54,12 @@ jobs:
         run: |
           python scripts/check-release-version.py harness "$VERSION"
           python_version="${VERSION/-rc./rc}"
-          test -f "dist/converge_agent_environment_provider-${python_version}-py3-none-any.whl"
-          test -f "dist/converge_agent_environment_provider-${python_version}.tar.gz"
-          test -f "dist/converge_agent_harness-${python_version}-py3-none-any.whl"
-          test -f "dist/converge_agent_harness-${python_version}.tar.gz"
-          test -f "dist/converge_agent_stream_protocol-${python_version}-py3-none-any.whl"
-          test -f "dist/converge_agent_stream_protocol-${python_version}.tar.gz"
+          test -f "dist/a13n_environment_provider-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_environment_provider-${python_version}.tar.gz"
+          test -f "dist/a13n_harness-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_harness-${python_version}.tar.gz"
+          test -f "dist/a13n_stream_protocol-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_stream_protocol-${python_version}.tar.gz"
           test "$(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 6
 
       - name: Upload Harness distributions
@@ -119,4 +119,4 @@ jobs:
           VERSION: ${{ needs.build-python.outputs.version }}
         run: >-
           python3 scripts/create-github-release.py harness "$VERSION"
-          "Converge Agent Harness $VERSION" dist/*
+          "Agent Foundation Harness $VERSION" dist/*

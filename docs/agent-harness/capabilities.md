@@ -53,7 +53,7 @@ Harness context features use one model-context coordinator, so each owner contri
 A practical general-purpose context composition is:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     FileContextCapability,
     RuntimeContextCapability,
     WorkspaceOutlineCapability,
@@ -79,7 +79,7 @@ For context lifecycle features, Harness `AgentSpec.model_configuration` can reso
 `WorkingStateCapability` can keep tasks and notes inside its portable Capability namespace:
 
 ```python
-from converge_agent_harness import WorkingStateCapability
+from a13n_harness import WorkingStateCapability
 
 capabilities = (WorkingStateCapability(),)
 ```
@@ -99,7 +99,7 @@ See [State and Resume](state-and-resume.md).
 These features separate stable model-facing schemas from fresh provider implementations:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     DocumentsCapability,
     DocumentsRunCapability,
     RunBindings,
@@ -134,7 +134,7 @@ The Harness does not turn monitored processes into a durable background schedule
 `MessageIntegrityFilterCapability` is mandatory and builder-owned. Two optional filters are public:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     ColdStartFilterCapability,
     ColdStartFilterConfiguration,
     ContentFilterCapability,

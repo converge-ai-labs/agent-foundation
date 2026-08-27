@@ -6,13 +6,13 @@ Agent Foundation is an open-source foundation for embedding Agents or hosting th
 
 The platform consists of:
 
-- `agent-harness`, distributed as `converge-agent-harness`, for code-first Pydantic AI execution;
-- `agent-environment-provider`, distributed as `converge-agent-environment-provider`, for shared Environment provider specifications, Managers, built-ins, and runtime attachments;
-- `agent-stream-protocol`, distributed as `converge-agent-stream-protocol`, for shared Harness-to-AG-UI observation;
-- `agent-ui`, distributed as `converge-agent-ui`, for reloadable local Agent/Environment composition, Sessions, and complete WebUI/TUI interaction;
-- `agent-envd`, distributed as `converge-agent-envd`, for Environment Interaction Protocol operations;
-- `converge-agent-envd-client`, the generated low-level Python EIP client;
-- `foundation-service`, distributed as `converge-foundation-service`, for optional durable hosting;
+- `agent-harness`, distributed as `a13n-harness`, for code-first Pydantic AI execution;
+- `agent-environment-provider`, distributed as `a13n-environment-provider`, for shared Environment provider specifications, Managers, built-ins, and runtime attachments;
+- `agent-stream-protocol`, distributed as `a13n-stream-protocol`, for shared Harness-to-AG-UI observation;
+- `agent-ui`, distributed as `a13n-ui`, for reloadable local Agent/Environment composition, Sessions, and complete WebUI/TUI interaction;
+- `agent-envd`, distributed as `agent-envd`, for Environment Interaction Protocol operations;
+- `a13n-envd-client`, the generated low-level Python EIP client;
+- `foundation-service`, distributed as `a13n-service`, for optional durable hosting;
 - Foundation Service SDKs for typed access to the hosted `/api` boundary;
 - `agent-foundation`, a cross-platform remote CLI built above the Foundation Rust SDK.
 
@@ -63,7 +63,7 @@ flowchart TB
     subgraph Environment[Environment layer]
         Bound[BoundEnvironment]
         Local[Direct local operators]
-        EIPClient[converge-agent-envd-client]
+        EIPClient[a13n-envd-client]
         EIP[EIP]
         Envd[agent-envd]
     end
@@ -132,7 +132,7 @@ The Harness is built directly on Pydantic AI 2:
 - `HarnessState` carries one stable `thread_id`, public messages, detached Capability JSON namespaces, and optional portable Environment backend data; desired topology, provider incarnation envelope, and launch payload remain Host-owned;
 - Pydantic AI owns native Model profiles, transport/output retries, provider-suspended continuation, deferred external calls/approvals, Toolsets, messages, events, and usage.
 
-Harness middleware plugins are trusted concrete objects, and the Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `converge_agent_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment provider specifications, factories, Managers, and built-ins belong to `converge-agent-environment-provider`; the Harness receives only fresh single-use attachments. A Host owns serializable Agent schemas, artifact locks, package trust, optional provider resource-state storage, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
+Harness middleware plugins are trusted concrete objects, and the Harness does not compile serialized Agent definitions. It owns a narrow versioned preferred YAML or supported JSON plugin document and Build Context that may, when explicitly enabled, select `a13n_harness.plugins` factories and append fresh concrete plugins during each definition build. Environment provider specifications, factories, Managers, and built-ins belong to `a13n-environment-provider`; the Harness receives only fresh single-use attachments. A Host owns serializable Agent schemas, artifact locks, package trust, optional provider resource-state storage, and durable execution; package presence and Harness import alone never enable behavior or supply an arbitrary import target.
 
 The complete design is indexed in [agent-harness/README.md](agent-harness/README.md).
 
@@ -140,7 +140,7 @@ The complete design is indexed in [agent-harness/README.md](agent-harness/README
 
 Agent UI is a complete local single-user workstation above the Harness. Human- and agent-editable configuration dynamically publishes validated Model, Prompt, Plugin, local Skill source/package, Agent, and Environment catalogs. Each Session pins immutable Agent and Environment snapshots plus validated root/child Skill exposure, references Host-managed Environment Provider resources through explicit assignments, selects complete `HarnessState` checkpoints, and manages Host-coordinated asynchronous child jobs over exact Harness-built subagents. Agent UI never enables the Harness blocking inline Delegation Capability. SQLite owns mutable metadata and control state, while resolved snapshots, provider state, Harness state, and retained AG-UI events live in verified compressed files; OpenTelemetry remains an independent export path. One application service exposes the same product semantics through a default bundled WebUI or a direct in-process TUI. Neither surface interprets private Harness events, reads storage for authority, operates providers independently, or owns a second Session model.
 
-`converge-agent-harness`, `converge-agent-environment-provider`, and `converge-agent-stream-protocol` form the Harness release group. One `release/harness-v<version>` tag assigns the same version to all three distributions. Published Harness metadata pins the exact provider-package version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently through `release/agent-ui-v<version>` and its published artifact pins the reviewed Harness release dependencies. Source checkouts continue to resolve unversioned package dependencies from the shared uv workspace. Each tag version is a stable `X.Y.Z` identity or an RC `X.Y.Z-rc.N` identity as defined by [repository release automation](repository-model.md#release-automation). Source directories omit the distribution prefix (`packages/agent-*`), while Python distribution names use `converge-` and import packages use `converge_`.
+`a13n-harness`, `a13n-environment-provider`, and `a13n-stream-protocol` form the Harness release group. One `release/harness-v<version>` tag assigns the same version to all three distributions. Published Harness metadata pins the exact provider-package version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently through `release/agent-ui-v<version>` and its published artifact pins the reviewed Harness release dependencies. Source checkouts continue to resolve unversioned package dependencies from the shared uv workspace. Each tag version is a stable `X.Y.Z` identity or an RC `X.Y.Z-rc.N` identity as defined by [repository release automation](repository-model.md#release-automation). Source directories omit the distribution prefix (`packages/agent-*`), while Python distribution names use `a13n-` and import packages use `a13n_`.
 
 The complete local Host design is indexed in [agent-ui/README.md](agent-ui/README.md), and the shared presentation protocol is indexed in [agent-stream-protocol/README.md](agent-stream-protocol/README.md).
 
@@ -161,11 +161,11 @@ Recovery never converts missing evidence into rollback or exactly-once success. 
 
 Environment is a Harness-owned run lifecycle resource, not a Capability. `BoundEnvironment` gives trusted code and optional model-facing Capabilities a stable run- and Identity-bound facade over provider-neutral file, shell, process, and port operations. Its paired Host-retained controller activates after initial portable-state restore and supports atomic add, refresh, and removal throughout the active logical run. Direct Local and EIP are the only operation backends.
 
-`converge-agent-environment-provider` owns shared provider specifications, the create/resume/pause/destroy Manager API, provider resource state, fresh runtime attachments, and the built-in `converge.direct-local`, `converge.local-envd`, `converge.docker`, and `converge.e2b` providers. A Host chooses lifecycle actions and optional storage. Local Envd owns a required-isolation local daemon process over a Host-selected workspace and never falls back to Direct Local. The Harness adapts fresh Direct Local or EIP attachments into single-use bindings and never manages the outer resource.
+`a13n-environment-provider` owns shared provider specifications, the create/resume/pause/destroy Manager API, provider resource state, fresh runtime attachments, and the built-in `a13n.direct-local`, `a13n.local-envd`, `a13n.docker`, and `a13n.e2b` providers. A Host chooses lifecycle actions and optional storage. Local Envd owns a required-isolation local daemon process over a Host-selected workspace and never falls back to Direct Local. The Harness adapts fresh Direct Local or EIP attachments into single-use bindings and never manages the outer resource.
 
-The Harness adapts EIP through `converge-agent-envd-client`; other trusted consumers can use that client independently. The client communicates only over a supplied session source and never discovers, downloads, installs, or launches an executable. `agent-envd` carries JSON-RPC control and raw file transfer over trusted stdio, Host-dialed HTTP, or an envd-initiated reverse WebSocket. It owns daemon-generation operation/receipt evidence, process handles, disk-backed command output with explicit-offset reads, session-scoped transfers, and Linux/macOS/Windows command containment. Carrier direction never changes the low-level client's requester role or envd's responder role.
+The Harness adapts EIP through `a13n-envd-client`; other trusted consumers can use that client independently. The client communicates only over a supplied session source and never discovers, downloads, installs, or launches an executable. `agent-envd` carries JSON-RPC control and raw file transfer over trusted stdio, Host-dialed HTTP, or an envd-initiated reverse WebSocket. It owns daemon-generation operation/receipt evidence, process handles, disk-backed command output with explicit-offset reads, session-scoped transfers, and Linux/macOS/Windows command containment. Carrier direction never changes the low-level client's requester role or envd's responder role.
 
-Agent UI exposes `converge.local-envd` as Local Sandbox. Its release pins one exact agent-envd version and target hashes, lazily downloads only the selected Host binary into an Agent UI-managed runtime cache, and never searches ambient `PATH`; an advanced absolute executable override must pass version, isolation, and EIP compatibility checks. Direct Local, Docker, and E2B do not trigger this Host download.
+Agent UI exposes `a13n.local-envd` as Local Sandbox. Its release pins one exact agent-envd version and target hashes, lazily downloads only the selected Host binary into an Agent UI-managed runtime cache, and never searches ambient `PATH`; an advanced absolute executable override must pass version, isolation, and EIP compatibility checks. Direct Local, Docker, and E2B do not trigger this Host download.
 
 Provider-defined portable backend data can enter only the explicit `HarnessState.environment_state` field after fresh bindings are selected. Provider resource-incarnation evidence and optional launch/reattachment payload remain in a separate encrypted Host envelope. Live clients, sockets, credentials, process handles, readiness, controllers, and provider authority do not become Harness state. Optional `DynamicEnvironmentCapability` composes File/Shell tools with dynamic model context but owns neither provider lifecycle nor state.
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     CodeActCapability,
     CodeActPolicyToolset,
     CodeActToolPolicy,
@@ -15,7 +15,7 @@ from converge_agent_harness import (
     HarnessBuilder,
     RunBindings,
 )
-from converge_agent_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability, CapabilityOrdering
 from pydantic_ai.messages import ModelMessage

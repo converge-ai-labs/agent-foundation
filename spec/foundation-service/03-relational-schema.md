@@ -29,7 +29,7 @@ The following internal Python shape is representative; concrete fields and invar
 ```python
 from sqlalchemy.orm import Mapped, mapped_column
 
-from converge_foundation_service.database import Base
+from a13n_service.database import Base
 
 
 class DomainRecord(Base):

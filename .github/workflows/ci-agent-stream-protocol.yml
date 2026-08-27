@@ -67,7 +67,7 @@ jobs:
       - name: Type-check Agent Stream Protocol
         run: >-
           uv run --locked pyright
-          packages/agent-stream-protocol/converge_agent_stream_protocol
+          packages/agent-stream-protocol/a13n_stream_protocol
           scripts/check-agent-distributions.py
 
       - name: Test Agent Stream Protocol
@@ -78,10 +78,10 @@ jobs:
 
       - name: Build Harness libraries and local distribution dependencies
         run: |
-          uv build --package converge-agent-envd-client --out-dir dist/harness
-          uv build --package converge-agent-environment-provider --out-dir dist/harness
-          uv build --package converge-agent-harness --out-dir dist/harness
-          uv build --package converge-agent-stream-protocol --out-dir dist/harness
+          uv build --package a13n-envd-client --out-dir dist/harness
+          uv build --package a13n-environment-provider --out-dir dist/harness
+          uv build --package a13n-harness --out-dir dist/harness
+          uv build --package a13n-stream-protocol --out-dir dist/harness
 
       - name: Verify isolated development distributions
         run: >-

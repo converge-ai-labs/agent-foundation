@@ -7,7 +7,7 @@ import pytest
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from converge_agent_app_example import build_agent, run_basic_agent
+from a13n_agent_app_example import build_agent, run_basic_agent
 
 pytestmark = pytest.mark.anyio
 
@@ -42,9 +42,9 @@ async def test_agent_definition_ignores_ambient_plugins(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setenv("CONVERGE_HARNESS_PLUGIN_CONFIG_ENABLED", "true")
+    monkeypatch.setenv("A13N_HARNESS_PLUGIN_CONFIG_ENABLED", "true")
     monkeypatch.setenv(
-        "CONVERGE_HARNESS_PLUGIN_CONFIG_FILE",
+        "A13N_HARNESS_PLUGIN_CONFIG_FILE",
         str(tmp_path / "missing-harness-plugins.yaml"),
     )
 

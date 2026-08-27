@@ -4,14 +4,14 @@ requires-python = ">=3.13"
 
 [manifest]
 members = [
-    "converge-agent-envd-client",
-    "converge-agent-environment-provider",
-    "converge-agent-foundation",
-    "converge-agent-harness",
-    "converge-agent-stream-protocol",
-    "converge-agent-ui",
-    "converge-foundation-service",
-    "converge-logging",
+    "a13n-envd-client",
+    "a13n-environment-provider",
+    "a13n-workspace",
+    "a13n-harness",
+    "a13n-stream-protocol",
+    "a13n-ui",
+    "a13n-service",
+    "a13n-logging",
 ]
 
 [[package]]
@@ -414,7 +414,7 @@ wheels = [
 ]
 
 [[package]]
-name = "converge-agent-envd-client"
+name = "a13n-envd-client"
 version = "0.0.0"
 source = { editable = "packages/agent-envd-client" }
 dependencies = [
@@ -439,11 +439,11 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "converge-agent-environment-provider"
+name = "a13n-environment-provider"
 version = "0.0.0"
 source = { editable = "packages/agent-environment-provider" }
 dependencies = [
-    { name = "converge-agent-envd-client" },
+    { name = "a13n-envd-client" },
     { name = "pydantic" },
     { name = "websockets" },
 ]
@@ -455,7 +455,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "converge-agent-envd-client", editable = "packages/agent-envd-client" },
+    { name = "a13n-envd-client", editable = "packages/agent-envd-client" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]
@@ -464,7 +464,7 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "converge-agent-foundation"
+name = "a13n-workspace"
 version = "0.0.0"
 source = { virtual = "." }
 
@@ -509,12 +509,12 @@ dev = [
 docs = [{ name = "mkdocs-material", specifier = ">=9.6,<10" }]
 
 [[package]]
-name = "converge-agent-harness"
+name = "a13n-harness"
 version = "0.0.0"
 source = { editable = "packages/agent-harness" }
 dependencies = [
-    { name = "converge-agent-envd-client" },
-    { name = "converge-agent-environment-provider" },
+    { name = "a13n-envd-client" },
+    { name = "a13n-environment-provider" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
     { name = "pydantic-core" },
@@ -530,8 +530,8 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "converge-agent-envd-client", editable = "packages/agent-envd-client" },
-    { name = "converge-agent-environment-provider", editable = "packages/agent-environment-provider" },
+    { name = "a13n-envd-client", editable = "packages/agent-envd-client" },
+    { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.31.1,<2.32" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
@@ -544,12 +544,12 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "converge-agent-stream-protocol"
+name = "a13n-stream-protocol"
 version = "0.0.0"
 source = { editable = "packages/agent-stream-protocol" }
 dependencies = [
     { name = "ag-ui-protocol" },
-    { name = "converge-agent-harness" },
+    { name = "a13n-harness" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
 ]
@@ -562,7 +562,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
-    { name = "converge-agent-harness", editable = "packages/agent-harness" },
+    { name = "a13n-harness", editable = "packages/agent-harness" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.31.1,<2.32" },
 ]
@@ -571,17 +571,17 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "converge-agent-ui"
+name = "a13n-ui"
 version = "0.0.0"
 source = { editable = "packages/agent-ui" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
     { name = "anyio" },
-    { name = "converge-agent-environment-provider" },
-    { name = "converge-agent-harness" },
-    { name = "converge-agent-stream-protocol" },
-    { name = "converge-logging" },
+    { name = "a13n-environment-provider" },
+    { name = "a13n-harness" },
+    { name = "a13n-stream-protocol" },
+    { name = "a13n-logging" },
     { name = "filelock" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -599,10 +599,10 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.21,<1" },
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anyio", specifier = ">=4,<5" },
-    { name = "converge-agent-environment-provider", editable = "packages/agent-environment-provider" },
-    { name = "converge-agent-harness", editable = "packages/agent-harness" },
-    { name = "converge-agent-stream-protocol", editable = "packages/agent-stream-protocol" },
-    { name = "converge-logging", editable = "packages/logging" },
+    { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
+    { name = "a13n-harness", editable = "packages/agent-harness" },
+    { name = "a13n-stream-protocol", editable = "packages/agent-stream-protocol" },
+    { name = "a13n-logging", editable = "packages/logging" },
     { name = "filelock", specifier = ">=3.20,<4" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
@@ -614,7 +614,7 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "converge-foundation-service"
+name = "a13n-service"
 version = "0.0.0"
 source = { editable = "packages/foundation-service" }
 dependencies = [
@@ -624,7 +624,7 @@ dependencies = [
     { name = "anyio" },
     { name = "botocore" },
     { name = "click" },
-    { name = "converge-logging" },
+    { name = "a13n-logging" },
     { name = "fakeredis" },
     { name = "fastapi" },
     { name = "httpx2" },
@@ -645,7 +645,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4,<5" },
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
     { name = "click", specifier = ">=8.2,<9" },
-    { name = "converge-logging", editable = "packages/logging" },
+    { name = "a13n-logging", editable = "packages/logging" },
     { name = "fakeredis", specifier = ">=2.31,<3" },
     { name = "fastapi", specifier = ">=0.116,<1" },
     { name = "httpx2", specifier = ">=2.5,<3" },
@@ -659,7 +659,7 @@ requires-dist = [
 ]
 
 [[package]]
-name = "converge-logging"
+name = "a13n-logging"
 version = "0.0.0"
 source = { editable = "packages/logging" }
 dependencies = [

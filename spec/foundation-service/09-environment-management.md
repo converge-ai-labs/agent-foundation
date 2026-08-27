@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation is a complete durable Host of [`converge-agent-environment-provider`](../agent-environment-provider/README.md). It owns Organization and Workspace Environment resources, desired provider specifications and revisions, lifecycle policy, operation fencing, encrypted provider resource-state persistence, retries, reconciliation, management APIs, and lifecycle events.
+Foundation is a complete durable Host of [`a13n-environment-provider`](../agent-environment-provider/README.md). It owns Organization and Workspace Environment resources, desired provider specifications and revisions, lifecycle policy, operation fencing, encrypted provider resource-state persistence, retries, reconciliation, management APIs, and lifecycle events.
 
 Foundation does not define another provider framework. Provider configuration, lifecycle effects, exact-operation reconciliation, reusable managed resources, and fresh runtime attachments use the canonical `EnvironmentProviderSpec`, `EnvironmentProviderResourceState`, `EnvironmentManager`, `ManagedEnvironment`, and `EnvironmentRuntimeAttachment` contracts.
 

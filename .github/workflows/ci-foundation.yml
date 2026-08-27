@@ -99,8 +99,8 @@ jobs:
       - name: Type-check Foundation Python packages
         run: >-
           uv run --locked pyright
-          packages/logging/converge_logging
-          packages/foundation-service/converge_foundation_service
+          packages/logging/a13n_logging
+          packages/foundation-service/a13n_service
 
       - name: Test Foundation Python packages
         run: >-
@@ -110,8 +110,8 @@ jobs:
 
       - name: Build Foundation Python distributions
         run: |
-          uv build --package converge-logging --out-dir dist/foundation
-          uv build --package converge-foundation-service --out-dir dist/foundation
+          uv build --package a13n-logging --out-dir dist/foundation
+          uv build --package a13n-service --out-dir dist/foundation
 
   web:
     name: Foundation Web

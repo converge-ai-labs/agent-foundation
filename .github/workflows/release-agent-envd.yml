@@ -190,7 +190,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          cargo build --release --locked --package converge-agent-envd --target "$TARGET"
+          cargo build --release --locked --package agent-envd --target "$TARGET"
           mkdir -p staging
           cp "target/$TARGET/release/agent-envd" staging/agent-envd
           cp LICENSE staging/LICENSE
@@ -214,7 +214,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          cargo build --release --locked --package converge-agent-envd --target $env:TARGET
+          cargo build --release --locked --package agent-envd --target $env:TARGET
           New-Item -ItemType Directory -Force staging | Out-Null
           Copy-Item "target/$env:TARGET/release/agent-envd.exe" staging/agent-envd.exe
           Copy-Item LICENSE staging/LICENSE
@@ -231,7 +231,7 @@ jobs:
 
       - name: Verify crate package
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: cargo package --locked --allow-dirty --package converge-agent-envd
+        run: cargo package --locked --allow-dirty --package agent-envd
 
   publish-crate:
     name: Publish crate
@@ -259,7 +259,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.96.0
 
       - name: Package crate
-        run: cargo package --locked --allow-dirty --package converge-agent-envd
+        run: cargo package --locked --allow-dirty --package agent-envd
 
       - name: Resolve crate publication state
         id: crate-status
@@ -268,16 +268,16 @@ jobs:
         run: |
           status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
             --user-agent "agent-foundation-release/$GITHUB_RUN_ID" \
-            "https://crates.io/api/v1/crates/converge-agent-envd/$VERSION")"
+            "https://crates.io/api/v1/crates/agent-envd/$VERSION")"
           case "$status" in
             200)
               curl --fail --location --silent --show-error \
                 --user-agent "agent-foundation-release/$GITHUB_RUN_ID" \
                 --output published.crate \
-                "https://crates.io/api/v1/crates/converge-agent-envd/$VERSION/download"
-              local_crate="target/package/converge-agent-envd-$VERSION.crate"
+                "https://crates.io/api/v1/crates/agent-envd/$VERSION/download"
+              local_crate="target/package/agent-envd-$VERSION.crate"
               if ! cmp --silent "$local_crate" published.crate; then
-                echo "Published converge-agent-envd $VERSION does not match this release tag" >&2
+                echo "Published agent-envd $VERSION does not match this release tag" >&2
                 sha256sum "$local_crate" published.crate >&2
                 exit 1
               fi
@@ -296,7 +296,7 @@ jobs:
         if: steps.crate-status.outputs.published != 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked --allow-dirty --package converge-agent-envd
+        run: cargo publish --locked --allow-dirty --package agent-envd
 
   publish-client:
     name: Publish Python client

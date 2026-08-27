@@ -2,14 +2,14 @@
 
 ## Design Position
 
-`converge-agent-environment-provider` ships four providers in its main distribution:
+`a13n-environment-provider` ships four providers in its main distribution:
 
-| Provider key            | Managed resource                             | Runtime attachment | Harness backend |
-| ----------------------- | -------------------------------------------- | ------------------ | --------------- |
-| `converge.direct-local` | One configured local root and process policy | Direct Local       | Direct Local    |
-| `converge.local-envd`   | One local `agent-envd` process and runtime   | EIP                | EIP             |
-| `converge.docker`       | One Docker container running `agent-envd`    | EIP                | EIP             |
-| `converge.e2b`          | One E2B sandbox running `agent-envd`         | EIP                | EIP             |
+| Provider key        | Managed resource                             | Runtime attachment | Harness backend |
+| ------------------- | -------------------------------------------- | ------------------ | --------------- |
+| `a13n.direct-local` | One configured local root and process policy | Direct Local       | Direct Local    |
+| `a13n.local-envd`   | One local `agent-envd` process and runtime   | EIP                | EIP             |
+| `a13n.docker`       | One Docker container running `agent-envd`    | EIP                | EIP             |
+| `a13n.e2b`          | One E2B sandbox running `agent-envd`         | EIP                | EIP             |
 
 The built-ins share the specification, Manager, resource-state, and attachment contracts. They do not share lifecycle implementation. Local Envd owns a Host-launched local daemon process, while Docker and E2B use their SDKs for outer resource lifecycle and bootstrap. After attachment, every Local Envd, Docker, and E2B Harness file, shell, process, output, and port operation uses EIP.
 
@@ -25,7 +25,7 @@ Each provider validates its own configuration, resource lifecycle, daemon bootst
 
 ### Configuration
 
-The provider package owns the public Direct Local configuration values. `converge.direct-local` accepts configuration schema version `1` in the first public contract. Its exact runtime collaborator is an empty frozen `DirectLocalProviderRuntime`; Direct Local needs no credential or client factory, but the explicit value preserves the same inert factory/Manager construction boundary as other providers.
+The provider package owns the public Direct Local configuration values. `a13n.direct-local` accepts configuration schema version `1` in the first public contract. Its exact runtime collaborator is an empty frozen `DirectLocalProviderRuntime`; Direct Local needs no credential or client factory, but the explicit value preserves the same inert factory/Manager construction boundary as other providers.
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -98,7 +98,7 @@ Direct Local makes no sandbox or network-isolation claim. Its existing path, pro
 
 ### Configuration and runtime
 
-The `converge.local-envd` provider is the built-in local sandbox. Its versioned credential-free configuration contains one Environment identity, one Host-selected existing workspace root and access policy, bounded command and resource limits, a required native-isolation policy, an explicit network posture, and the required EIP compatibility. It contains no daemon executable path, ambient `PATH` selector, download location, package URL, process ID, private runtime path, or live EIP value.
+The `a13n.local-envd` provider is the built-in local sandbox. Its versioned credential-free configuration contains one Environment identity, one Host-selected existing workspace root and access policy, bounded command and resource limits, a required native-isolation policy, an explicit network posture, and the required EIP compatibility. It contains no daemon executable path, ambient `PATH` selector, download location, package URL, process ID, private runtime path, or live EIP value.
 
 A fresh typed `LocalEnvdProviderRuntime` supplies the absolute `agent-envd` executable and private-runtime allocator already resolved and validated by the Host. Manager construction records that collaborator but performs no path search, download, installation, subprocess launch, probe, or filesystem mutation. The provider never consults ambient `PATH` and never substitutes another executable. Agent UI's managed-runtime selection contract is defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); another Host must provide an equivalent resolved runtime explicitly.
 
@@ -114,7 +114,7 @@ Local Envd advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_conc
 
 `destroy()` stops the exact owned daemon process, closes its private pipes, and removes its private runtime. It never deletes or mutates the selected workspace merely because the provider resource is destroyed. Process termination and private-runtime cleanup must be proven before success; uncertain cleanup remains explicit rather than being reported as absence. Reconciliation uses only exact local process-owner and configuration evidence and never launches a replacement as an observation.
 
-A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, or inability to prove cleanup makes Local Envd unavailable. The Manager does not fall back to `converge.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
+A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, or inability to prove cleanup makes Local Envd unavailable. The Manager does not fall back to `a13n.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
 
 ## Docker
 

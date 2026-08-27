@@ -12,8 +12,7 @@ fn main() {
         }
     }
     if arguments.first().is_some_and(|value| value == "isolation") {
-        match isolation_probe_config(&arguments).and_then(converge_agent_envd::run_isolation_probe)
-        {
+        match isolation_probe_config(&arguments).and_then(agent_envd::run_isolation_probe) {
             Ok(()) => return,
             Err(error) => {
                 eprintln!("agent-envd failed: {error}");
@@ -34,9 +33,9 @@ fn main() {
     };
     let internal_supervisor = arguments.as_slice() == [OsString::from("--internal-supervisor")];
     let result = if internal_supervisor {
-        runtime.block_on(converge_agent_envd::run_internal_supervisor())
+        runtime.block_on(agent_envd::run_internal_supervisor())
     } else {
-        runtime.block_on(converge_agent_envd::run_from_environment())
+        runtime.block_on(agent_envd::run_from_environment())
     };
     // Tokio's portable stdin adapter may have one blocking read in progress when
     // an operator signal wins the shutdown race. Keep process shutdown bounded.
@@ -52,15 +51,13 @@ fn run_private_mode(
 ) -> Option<Result<i32, Box<dyn std::error::Error + Send + Sync>>> {
     let (mode, rest) = arguments.split_first()?;
     match mode.to_str()? {
-        "--internal-isolation-probe" => {
-            Some(converge_agent_envd::run_internal_isolation_probe(rest))
+        "--internal-isolation-probe" => Some(agent_envd::run_internal_isolation_probe(rest)),
+        "--internal-isolation-probe-child" => {
+            Some(agent_envd::run_internal_isolation_probe_child(rest))
         }
-        "--internal-isolation-probe-child" => Some(
-            converge_agent_envd::run_internal_isolation_probe_child(rest),
-        ),
-        "--internal-isolation-probe-sleeper" => Some(
-            converge_agent_envd::run_internal_isolation_probe_sleeper(rest),
-        ),
+        "--internal-isolation-probe-sleeper" => {
+            Some(agent_envd::run_internal_isolation_probe_sleeper(rest))
+        }
         _ => None,
     }
 }

@@ -6,7 +6,7 @@ use prost_reflect::{
     MessageDescriptor, MethodDescriptor, ReflectMessage,
 };
 
-const PACKAGE: &str = "converge.agent_envd.eip.v1";
+const PACKAGE: &str = "a13n.agent_envd.eip.v1";
 const TOOLING_MESSAGES: &[&str] = &[
     "EIPMethodOptions",
     "EIPMessageOptions",

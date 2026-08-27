@@ -49,7 +49,7 @@ second = await executable.run(
 `HarnessState` is a frozen Pydantic model:
 
 ```python
-from converge_agent_harness import HarnessState
+from a13n_harness import HarnessState
 
 payload = state.model_dump_json()
 restored = HarnessState.model_validate_json(payload)
@@ -93,7 +93,7 @@ Native deferred tools and approvals end the logical run with `status="suspended"
 The application performs external interaction after the run is closed, then starts a new run:
 
 ```python
-from converge_agent_harness import DeferredToolResume
+from a13n_harness import DeferredToolResume
 
 first = await executable.run(
     "Ask for confirmation",

@@ -7,11 +7,11 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     FILE_VIEW_RULES,
     AgentContext,
     AgentDefinition,
@@ -44,12 +44,12 @@ from converge_agent_harness import (
     SubagentDefinition,
     create_environment_run_binding,
 )
-from converge_agent_harness.environment.local.binding import (
+from a13n_harness.environment.local.binding import (
     DirectLocalEnvironmentProviderBinding,
     _DirectLocalFilePolicy,
 )
-from converge_agent_harness.environment.local.files import LocalFileOperator
-from converge_agent_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
+from a13n_harness.environment.local.files import LocalFileOperator
+from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability

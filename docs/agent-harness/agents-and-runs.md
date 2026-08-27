@@ -7,7 +7,7 @@ Agent Harness keeps Agent construction code-first and process-local. It adds one
 Use `HarnessBuilder.build_code()` for direct application composition:
 
 ```python
-from converge_agent_harness import (
+from a13n_harness import (
     AgentSpec,
     HarnessBuilder,
     ModelConfiguration,
@@ -31,7 +31,7 @@ executable = HarnessBuilder().build_code(
 Use an explicit `AgentDefinition` when the definition is assembled or retained separately:
 
 ```python
-from converge_agent_harness import AgentDefinition, HarnessBuilder
+from a13n_harness import AgentDefinition, HarnessBuilder
 
 agent_definition = AgentDefinition(
     agent=AgentSpec(model="logical:support"),
@@ -93,7 +93,7 @@ Application code must not add a second mandatory boundary. Optional request/hist
 `RunBindings` carries current, trusted run inputs:
 
 ```python
-from converge_agent_harness import RunBindings
+from a13n_harness import RunBindings
 
 bindings = RunBindings.local(
     environment=environment_binding,
@@ -172,7 +172,7 @@ Use `raise_for_status()` when only completion is acceptable. Use `output_or_rais
 `stream()` is lazy, single-entry, and single-consumer:
 
 ```python
-from converge_agent_harness import HarnessEvent, HarnessRunResultEvent
+from a13n_harness import HarnessEvent, HarnessRunResultEvent
 
 async with executable.stream("Do the work", bindings=bindings) as stream:
     async for item in stream:

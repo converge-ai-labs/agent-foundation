@@ -106,7 +106,7 @@ jobs:
         if: matrix.name == 'Linux'
         run: >-
           uv run --locked pyright
-          packages/agent-ui/converge_agent_ui
+          packages/agent-ui/a13n_ui
           scripts/check-agent-ui-distribution.py
           scripts/check_agent_ui_distribution.py
           scripts/prepare-agent-ui-assets.py
@@ -126,7 +126,7 @@ jobs:
 
       - name: Build Agent UI distribution
         if: matrix.name == 'Linux'
-        run: uv build --package converge-agent-ui --out-dir dist/agent-ui
+        run: uv build --package a13n-ui --out-dir dist/agent-ui
 
       - name: Verify bundled assets and sdist wheel rebuild
         if: matrix.name == 'Linux'

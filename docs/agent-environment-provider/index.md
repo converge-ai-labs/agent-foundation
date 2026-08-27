@@ -1,11 +1,11 @@
 # Environment Providers
 
-`converge-agent-environment-provider` is the shared Host-facing contract for Environment specifications, provider plugins, resource lifecycle Managers, provider state, and fresh runtime attachments.
+`a13n-environment-provider` is the shared Host-facing contract for Environment specifications, provider plugins, resource lifecycle Managers, provider state, and fresh runtime attachments.
 
 A Host and the Harness both depend on this package for different reasons:
 
 - the Host loads trusted provider plugins, validates exact specifications, supplies runtime collaborators, chooses lifecycle operations, retains provider state, and acquires attachments;
-- `converge-agent-harness` consumes the shared attachment types and converts them into provider-neutral run bindings;
+- `a13n-harness` consumes the shared attachment types and converts them into provider-neutral run bindings;
 - a provider plugin implements the Provider package contracts and does not import Harness internals.
 
 The Harness never discovers a provider plugin and never calls `create()`, `resume()`, `pause()`, `destroy()`, or `reconcile()`. Those are Host decisions performed through the selected Manager before or after a Harness run.
@@ -30,7 +30,7 @@ A typical Host path is:
 
 ```python
 factory_catalog = build_environment_provider_factory_catalog(
-    builtin_keys=("converge.direct-local",),
+    builtin_keys=("a13n.direct-local",),
     extension_keys=selected_provider_keys,
 )
 
@@ -71,7 +71,7 @@ A provider plugin implements the complete Manager interface even when one action
 
 ## Direct Local Sharing
 
-`converge.direct-local` exposes one existing Host directory. The directory has no Agent, Session, Harness, or Provider owner.
+`a13n.direct-local` exposes one existing Host directory. The directory has no Agent, Session, Harness, or Provider owner.
 
 - the Host creates, selects, retains, backs up, shares, and removes the directory;
 - Direct Local validates it and issues fresh shared attachments;
@@ -140,7 +140,7 @@ class AcmeSandboxFactory(EnvironmentProviderFactory):
 Register the factory class through the Provider entry-point group:
 
 ```toml
-[project.entry-points."converge_agent_environment_provider.providers"]
+[project.entry-points."a13n_environment_provider.providers"]
 "acme.sandbox" = "acme_environment.provider:AcmeSandboxFactory"
 ```
 

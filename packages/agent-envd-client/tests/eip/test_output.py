@@ -5,8 +5,8 @@ import base64
 from typing import Any
 
 import pytest
-from converge_agent_envd_client import EIPOutputReader
-from converge_agent_envd_client.eip.v1 import (
+from a13n_envd_client import EIPOutputReader
+from a13n_envd_client.eip.v1 import (
     EIPClient,
     EncodedBytes,
     MethodSpec,
@@ -15,7 +15,7 @@ from converge_agent_envd_client.eip.v1 import (
     OutputReadResult,
     OutputReference,
 )
-from converge_agent_envd_client.errors import EIPProtocolError, EIPTransportClosedError
+from a13n_envd_client.errors import EIPProtocolError, EIPTransportClosedError
 
 
 class FakeRequester:

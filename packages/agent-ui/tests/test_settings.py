@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from converge_agent_ui.settings import AgentUiSettings, DurabilityProfile, StorageSettings
+from a13n_ui.settings import AgentUiSettings, DurabilityProfile, StorageSettings
 from pydantic import ValidationError
 
 

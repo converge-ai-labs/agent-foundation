@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     CompactionCapability,
     CompactionPolicy,
     CreateTask,
@@ -23,8 +23,8 @@ from converge_agent_harness import (
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
-from converge_agent_harness.capabilities.lifecycle import _safe_error_code
-from converge_agent_harness.events import ContextOperationCompletedPayload
+from a13n_harness.capabilities.lifecycle import _safe_error_code
+from a13n_harness.events import ContextOperationCompletedPayload
 from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import UnexpectedModelBehavior

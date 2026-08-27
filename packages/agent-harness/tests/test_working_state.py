@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentContextStateSnapshot,
     CapabilityState,
     CreateTask,
@@ -22,8 +22,8 @@ from converge_agent_harness import (
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
-from converge_agent_harness.capabilities.context import _requires_exact_history
-from converge_agent_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
+from a13n_harness.capabilities.context import _requires_exact_history
+from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     ModelMessage,

@@ -6,7 +6,7 @@ from typing import Any
 
 import pydantic_ai.models as pydantic_models
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     HarnessBuilder,
     HarnessState,
     ModelResolutionError,

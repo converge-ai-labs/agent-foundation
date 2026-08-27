@@ -5,10 +5,10 @@ This guide builds and runs the smallest useful Agent Harness application. It use
 ## Requirements
 
 - Python 3.13 or later
-- `converge-agent-harness`
+- `a13n-harness`
 
 ```bash
-pip install converge-agent-harness
+pip install a13n-harness
 ```
 
 The package includes Pydantic AI's slim runtime. Add the model-provider dependency required by your application separately.
@@ -21,7 +21,7 @@ Create `app.py`:
 import asyncio
 from collections.abc import AsyncIterator
 
-from converge_agent_harness import HarnessBuilder, RunBindings
+from a13n_harness import HarnessBuilder, RunBindings
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -109,7 +109,7 @@ When `previous_state` is supplied, the second run continues the same Thread and 
 The minimal Agent has the mandatory Harness boundaries but no optional tools. Add behavior through definition-selected Capabilities:
 
 ```python
-from converge_agent_harness import RuntimeContextCapability, WorkingStateCapability
+from a13n_harness import RuntimeContextCapability, WorkingStateCapability
 
 executable = HarnessBuilder().build_code(
     AgentSpec(model="logical:example"),

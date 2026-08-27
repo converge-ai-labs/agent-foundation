@@ -7,12 +7,12 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from converge_agent_harness import HarnessState
+from a13n_harness import HarnessState
 from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart
 
-import converge_agent_app_example.store as store_module
-from converge_agent_app_example.recovery import run_host_recovery
-from converge_agent_app_example.store import HostStoreError, JsonFileHostStore
+import a13n_agent_app_example.store as store_module
+from a13n_agent_app_example.recovery import run_host_recovery
+from a13n_agent_app_example.store import HostStoreError, JsonFileHostStore
 
 
 def test_host_recovery_selects_state_and_rejects_the_stale_execution_attempt(tmp_path: Path) -> None:

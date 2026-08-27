@@ -1,6 +1,6 @@
 # agent-envd
 
-`agent-envd` is the environment daemon and Environment Interaction Protocol provider for Agent Foundation. It is distributed as the `converge-agent-envd` crate and installs the `agent-envd` binary.
+`agent-envd` is the environment daemon and Environment Interaction Protocol provider for Agent Foundation. It is distributed as the `agent-envd` crate and installs the `agent-envd` binary.
 
 ## Current runtime profile
 
@@ -137,7 +137,7 @@ Payloads receive a finite allowlist of ordinary locale, terminal, certificate, a
 ## Installation
 
 ```bash
-cargo install converge-agent-envd
+cargo install agent-envd
 ```
 
 ## License

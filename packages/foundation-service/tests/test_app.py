@@ -3,8 +3,8 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from converge_foundation_service.app import create_app
-from converge_foundation_service.settings import ServiceRole, ServiceSettings
+from a13n_service.app import create_app
+from a13n_service.settings import ServiceRole, ServiceSettings
 from fastapi import FastAPI
 
 

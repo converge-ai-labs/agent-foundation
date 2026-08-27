@@ -1,8 +1,8 @@
 # Harness UI
 
-Harness UI is the private browser source application bundled into the `converge-agent-ui` Python distribution. It is not published to npm and does not have an independent version or release workflow.
+Harness UI is the private browser source application bundled into the `a13n-ui` Python distribution. It is not published to npm and does not have an independent version or release workflow.
 
-Repository automation builds this application, copies `dist/` into the generated `converge_agent_ui/static/` package tree, and verifies that both the Agent UI sdist and wheel contain the compiled assets. Neither generated directory is committed to Git. A wheel rebuilt from the sdist does not require Node.js.
+Repository automation builds this application, copies `dist/` into the generated `a13n_ui/static/` package tree, and verifies that both the Agent UI sdist and wheel contain the compiled assets. Neither generated directory is committed to Git. A wheel rebuilt from the sdist does not require Node.js.
 
 Run Agent UI or validate/build its browser assets through the repository targets:
 

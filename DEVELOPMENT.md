@@ -46,7 +46,7 @@ Create process-wide engines and clients during FastAPI lifespan, store them in e
 
 ## Database Sessions and Transactions
 
-All service code obtains the canonical engine and session factory from `open_storage()` and uses `short_session()` and `transaction()` from `converge_foundation_service.storage`. Do not construct local engines or session makers.
+All service code obtains the canonical engine and session factory from `open_storage()` and uses `short_session()` and `transaction()` from `a13n_service.storage`. Do not construct local engines or session makers.
 
 An `AsyncSession` is a mutable unit of work. Never share it across concurrent tasks or store it in a singleton. Keep each transaction around one small database operation, and do not hold a session, connection, transaction, or lock while waiting for:
 
@@ -66,7 +66,7 @@ Complete authentication, authorization, and initial reads in a short session tha
 
 ## Migrations
 
-Alembic metadata comes from `converge_foundation_service.database.metadata`. Every concrete ORM model must be imported into that explicit registry before generating a revision. Domains own model meaning, while Foundation Service owns one combined metadata registry and one linear migration history.
+Alembic metadata comes from `a13n_service.database.metadata`. Every concrete ORM model must be imported into that explicit registry before generating a revision. Domains own model meaning, while Foundation Service owns one combined metadata registry and one linear migration history.
 
 Use the repository workflow rather than creating files manually:
 
@@ -95,7 +95,7 @@ These values apply only to migration connections. Override them only for a revie
 
 ## Logging
 
-Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `converge-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout or stderr.
+Configure Python logging once in the executable before Uvicorn or a worker starts. Libraries only obtain namespaced loggers through `a13n-logging`. Use Rich-backed `pretty` output locally and structured `json` output in deployments, writing to stdout or stderr.
 
 Prefer stable event names and structured fields. Include service, role, build version, request or trace ID, and applicable conversation/session/run IDs. Log exceptions with stack traces at the boundary that handles them. Never log credentials, authorization headers, password-bearing URLs, cookies, raw prompts, model output, tool payloads, or uploaded content by default.
 

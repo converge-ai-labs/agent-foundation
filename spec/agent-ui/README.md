@@ -2,9 +2,9 @@
 
 ## Overview
 
-This directory defines `agent-ui`, the complete local single-user Agent workstation distributed as `converge-agent-ui`. It owns reloadable local configuration, explicit local Skill sources and managed Skill packages, reusable Model, Prompt, Plugin, Agent, and Environment definitions, Codex-style Sessions, Environment resource lifecycle, foreground root execution, async-only subagent jobs, durable local presentation history, and equivalent WebUI and TUI product surfaces.
+This directory defines `agent-ui`, the complete local single-user Agent workstation distributed as `a13n-ui`. It owns reloadable local configuration, explicit local Skill sources and managed Skill packages, reusable Model, Prompt, Plugin, Agent, and Environment definitions, Codex-style Sessions, Environment resource lifecycle, foreground root execution, async-only subagent jobs, durable local presentation history, and equivalent WebUI and TUI product surfaces.
 
-Agent UI is not a reduced Foundation Service. It implements the shared [`Session`, `Thread`, `Turn`, and `Item` interaction model](../interaction-model.md) for one local Host. The [Harness](../agent-harness/README.md) remains the process-local Agent runtime, the [Environment Provider package](../agent-environment-provider/README.md) remains the provider lifecycle and attachment boundary, and [Agent Stream Protocol](../agent-stream-protocol/README.md) remains the Harness-to-AG-UI observation boundary. The user-facing Local Sandbox selects the distinct `converge.local-envd` provider over an exact Agent UI-resolved envd executable; it never silently becomes Direct Local.
+Agent UI is not a reduced Foundation Service. It implements the shared [`Session`, `Thread`, `Turn`, and `Item` interaction model](../interaction-model.md) for one local Host. The [Harness](../agent-harness/README.md) remains the process-local Agent runtime, the [Environment Provider package](../agent-environment-provider/README.md) remains the provider lifecycle and attachment boundary, and [Agent Stream Protocol](../agent-stream-protocol/README.md) remains the Harness-to-AG-UI observation boundary. The user-facing Local Sandbox selects the distinct `a13n.local-envd` provider over an exact Agent UI-resolved envd executable; it never silently becomes Direct Local.
 
 ## Document Catalog
 

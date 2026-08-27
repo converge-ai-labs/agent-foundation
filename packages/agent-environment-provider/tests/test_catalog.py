@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalEnvironmentProviderFactory,
     DirectLocalProviderRuntime,
     EnvironmentManager,
@@ -124,15 +124,15 @@ def test_builtin_catalog_resolves_direct_local_without_metadata_scan(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        "converge_agent_environment_provider.factories._entry_points",
+        "a13n_environment_provider.factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("must not scan metadata")),
     )
-    catalog = build_environment_provider_factory_catalog(builtin_keys=("converge.direct-local",))
+    catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
 
-    assert isinstance(catalog.require("converge.direct-local"), DirectLocalEnvironmentProviderFactory)
+    assert isinstance(catalog.require("a13n.direct-local"), DirectLocalEnvironmentProviderFactory)
     manager = catalog.create_manager(
         EnvironmentProviderSpec(
-            provider_key="converge.direct-local",
+            provider_key="a13n.direct-local",
             schema_version="1",
             parameters={
                 "environment_id": "local-1",
@@ -150,7 +150,7 @@ def test_extension_catalog_loads_only_explicitly_selected_target(
     selected = _FakeEntryPoint("test.sandbox", _Factory)
     unselected = _FakeEntryPoint("other.sandbox", RuntimeError)
     monkeypatch.setattr(
-        "converge_agent_environment_provider.factories._entry_points",
+        "a13n_environment_provider.factories._entry_points",
         lambda: (unselected, selected),
     )
 
@@ -173,7 +173,7 @@ def test_extension_catalog_loads_only_explicitly_selected_target(
 def test_discovery_reads_metadata_without_loading_target(monkeypatch: pytest.MonkeyPatch) -> None:
     entry = _FakeEntryPoint("test.sandbox", _Factory)
     monkeypatch.setattr(
-        "converge_agent_environment_provider.factories._entry_points",
+        "a13n_environment_provider.factories._entry_points",
         lambda: (entry,),
     )
 
@@ -186,16 +186,16 @@ def test_discovery_reads_metadata_without_loading_target(monkeypatch: pytest.Mon
 @pytest.mark.parametrize(
     ("kwargs", "code"),
     [
-        ({"builtin_keys": ("converge.local-envd",)}, "provider_factory_missing"),
+        ({"builtin_keys": ("a13n.local-envd",)}, "provider_factory_missing"),
         (
             {
-                "builtin_keys": ("converge.direct-local",),
+                "builtin_keys": ("a13n.direct-local",),
                 "explicit_factories": (DirectLocalEnvironmentProviderFactory(),),
             },
             "provider_factory_duplicate",
         ),
         (
-            {"extension_keys": ("converge.direct-local",)},
+            {"extension_keys": ("a13n.direct-local",)},
             "provider_factory_duplicate",
         ),
     ],

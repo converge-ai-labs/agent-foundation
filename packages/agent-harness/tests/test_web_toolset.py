@@ -5,15 +5,15 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from converge_agent_harness.context import AgentContext
-from converge_agent_harness.toolsets.output import (
+from a13n_harness.context import AgentContext
+from a13n_harness.toolsets.output import (
     DEFAULT_TOOL_OUTPUT_CHARS,
     disclose_text_fields,
     fit_text_fields_to_limit,
     tool_output_bytes,
     tool_output_size,
 )
-from converge_agent_harness.toolsets.web import (
+from a13n_harness.toolsets.web import (
     WebConfiguration,
     WebRequest,
     WebResponse,

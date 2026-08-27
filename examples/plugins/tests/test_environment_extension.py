@@ -5,20 +5,20 @@ import sys
 from pathlib import Path
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     EnvironmentError,
     EnvironmentRunExtensionFactoryContext,
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
 
-from converge_plugin_examples.demo_environment_extension import (
+from a13n_plugin_examples.demo_environment_extension import (
     EXTENSION_KEY,
     run_environment_extension_code_demo,
     run_environment_extension_entrypoint_demo,
 )
 
-EXTENSION_MODULE = "converge_plugin_examples.environment_extension"
+EXTENSION_MODULE = "a13n_plugin_examples.environment_extension"
 
 
 def test_environment_extension_metadata_is_lazy_and_selection_is_explicit() -> None:
@@ -32,18 +32,16 @@ def test_environment_extension_metadata_is_lazy_and_selection_is_explicit() -> N
     assert EXTENSION_MODULE in sys.modules
     registration = catalog.registrations[0]
     assert registration.extension_key == EXTENSION_KEY
-    assert registration.import_target == (
-        "converge_plugin_examples.environment_extension:WorkspaceMarkerExtensionFactory"
-    )
+    assert registration.import_target == ("a13n_plugin_examples.environment_extension:WorkspaceMarkerExtensionFactory")
 
 
 def test_environment_extension_explicit_factory_needs_no_metadata_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from converge_plugin_examples.environment_extension import WorkspaceMarkerExtensionFactory
+    from a13n_plugin_examples.environment_extension import WorkspaceMarkerExtensionFactory
 
     monkeypatch.setattr(
-        "converge_agent_harness.environment.extension_factories._entry_points",
+        "a13n_harness.environment.extension_factories._entry_points",
         lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
     catalog = build_environment_run_extension_factory_catalog(explicit_factories=(WorkspaceMarkerExtensionFactory(),))

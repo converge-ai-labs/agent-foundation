@@ -331,7 +331,7 @@ class EIPSessionSource(ABC):
     async def discard(self) -> None: ...
 ```
 
-Each entry returns a fresh initialized low-level `EIPSession` or fails. `discard()` returns an unentered stdio lease to its managed resource without closing resource-owned pipes, closes an unclaimed accepted WebSocket, and clears retained HTTP credential material; it is idempotently invoked only through the owning attachment/binding cleanup path. The source owns its single-use session admission and profile-specific transport authentication, but never the managed stdio process or pipes. Generated methods, initialization validation, operation IDs, transfers, timeout, cancellation, reconciliation, and errors remain owned by `converge-agent-envd-client` and EIP.
+Each entry returns a fresh initialized low-level `EIPSession` or fails. `discard()` returns an unentered stdio lease to its managed resource without closing resource-owned pipes, closes an unclaimed accepted WebSocket, and clears retained HTTP credential material; it is idempotently invoked only through the owning attachment/binding cleanup path. The source owns its single-use session admission and profile-specific transport authentication, but never the managed stdio process or pipes. Generated methods, initialization validation, operation IDs, transfers, timeout, cancellation, reconciliation, and errors remain owned by `a13n-envd-client` and EIP.
 
 Supported sources are:
 

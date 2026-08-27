@@ -1,5 +1,5 @@
 [package]
-name = "converge-foundation-sdk"
+name = "a13n-sdk"
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.96"
@@ -13,5 +13,5 @@ keywords = ["agents", "ai", "api", "sdk"]
 categories = ["api-bindings"]
 
 [lib]
-name = "converge_foundation_sdk"
+name = "a13n_sdk"
 path = "src/lib.rs"

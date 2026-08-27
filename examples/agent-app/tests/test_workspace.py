@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from converge_agent_app_example import run_local_workspace
+from a13n_agent_app_example import run_local_workspace
 
 pytestmark = pytest.mark.anyio
 

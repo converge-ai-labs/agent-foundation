@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     AgentContext,
     BoundedRequestUsage,
     HarnessBuilder,
@@ -25,7 +25,7 @@ from converge_agent_harness import (
     RunUsageLedger,
     UsageMeasure,
 )
-from converge_agent_harness.tools import (
+from a13n_harness.tools import (
     HarnessTool,
     HarnessToolMetadata,
     InvocationPolicyCapability,

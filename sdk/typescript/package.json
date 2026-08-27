@@ -1,5 +1,5 @@
 {
-  "name": "@converge.ai/foundation-sdk",
+  "name": "a13n-sdk",
   "version": "0.0.1",
   "description": "TypeScript SDK for Agent Foundation Service",
   "license": "Apache-2.0",

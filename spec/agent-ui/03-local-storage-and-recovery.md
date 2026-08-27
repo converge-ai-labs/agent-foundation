@@ -26,7 +26,7 @@ The design does not claim a cross-file transaction between SQLite and the filesy
 | Managed Local Sandbox envd executable cache                                  | Package manifest plus runtime cache                | Replaceable runtime material; no Session or Environment authority     |
 | Live execution, tasks, streams, clients, attachments, credentials            | Process memory and owning runtime                  | Never reconstructed by reading local storage alone                    |
 | OpenTelemetry                                                                | Configured OTel SDK/exporter                       | Independent diagnostic delivery; no local lifecycle authority         |
-| Ordinary application logs                                                    | `converge-logging` process boundary                | Separate from SQLite and Session history                              |
+| Ordinary application logs                                                    | `a13n-logging` process boundary                    | Separate from SQLite and Session history                              |
 
 SQLite is not a disposable cache as a whole. Some tables are authoritative control state, while resource and event indexes can be rebuilt from their owning files. Each table documents which category it belongs to; recovery never guesses SQLite-owned facts from display history.
 

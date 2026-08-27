@@ -820,7 +820,7 @@ from .models import EIPError
 EIP_PROTOCOL_VERSION: Final = "1.0"
 EIP_PROTOCOL_MAJOR: Final = 1
 EIP_PROTOCOL_MINOR: Final = 0
-EIP_PROTO_PACKAGE: Final = "converge.agent_envd.eip.v1"
+EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
 EIP_DESCRIPTOR_SHA256: Final = "__DESCRIPTOR_SHA256__"
 
 type JsonRpcId = StrictStr | Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)]

@@ -5,15 +5,15 @@ import os
 import sys
 from pathlib import Path
 
-import converge_agent_harness.environment.local.processes as local_processes_module
-import converge_agent_harness.environment.local.retention as local_retention_module
+import a13n_harness.environment.local.processes as local_processes_module
+import a13n_harness.environment.local.retention as local_retention_module
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
 )
-from converge_agent_harness import (
+from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     ArgvCommand,
@@ -32,7 +32,7 @@ from converge_agent_harness import (
     ShellCommand,
     create_environment_run_binding,
 )
-from converge_agent_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 
 pytestmark = pytest.mark.anyio
 requires_posix_processes = pytest.mark.skipif(

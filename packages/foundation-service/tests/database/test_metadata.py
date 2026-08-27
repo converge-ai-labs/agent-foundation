@@ -1,4 +1,4 @@
-from converge_foundation_service.database.metadata import NAMING_CONVENTION, Base, service_metadata
+from a13n_service.database.metadata import NAMING_CONVENTION, Base, service_metadata
 from sqlalchemy import CheckConstraint, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 

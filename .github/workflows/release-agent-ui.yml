@@ -64,8 +64,8 @@ jobs:
         run: |
           python scripts/check-release-version.py agent-ui "$VERSION"
           python_version="${VERSION/-rc./rc}"
-          test -f "dist/converge_agent_ui-${python_version}-py3-none-any.whl"
-          test -f "dist/converge_agent_ui-${python_version}.tar.gz"
+          test -f "dist/a13n_ui-${python_version}-py3-none-any.whl"
+          test -f "dist/a13n_ui-${python_version}.tar.gz"
           test "$(find dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) | wc -l)" -eq 2
 
       - name: Verify selected Harness release from PyPI
@@ -79,8 +79,8 @@ jobs:
             --python "$environment/bin/python" \
             --no-cache \
             --index-url https://pypi.org/simple \
-            "dist/converge_agent_ui-${python_version}-py3-none-any.whl"
-          "$environment/bin/converge-agent-ui" --help
+            "dist/a13n_ui-${python_version}-py3-none-any.whl"
+          "$environment/bin/a13n-ui" --help
 
       - name: Upload Agent UI distribution
         uses: actions/upload-artifact@v4
@@ -139,4 +139,4 @@ jobs:
           VERSION: ${{ needs.build-python.outputs.version }}
         run: >-
           python3 scripts/create-github-release.py agent-ui "$VERSION"
-          "Converge Agent UI $VERSION" dist/*
+          "Agent Foundation UI $VERSION" dist/*

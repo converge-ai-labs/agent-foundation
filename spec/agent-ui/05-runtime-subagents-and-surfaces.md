@@ -101,7 +101,7 @@ Deleting or replacing current source content never removes immutable snapshots r
 
 ## Local Sandbox Runtime Resolution
 
-Agent UI presents `converge.local-envd` as **Local Sandbox**. This is distinct from Direct Local: it requires a Host-launched envd process, trusted stdio EIP, and successful native isolation. Selecting Direct Local, Docker, or E2B never invokes Host envd acquisition.
+Agent UI presents `a13n.local-envd` as **Local Sandbox**. This is distinct from Direct Local: it requires a Host-launched envd process, trusted stdio EIP, and successful native isolation. Selecting Direct Local, Docker, or E2B never invokes Host envd acquisition.
 
 Each Agent UI release contains one package-owned immutable manifest that pins an exact canonical agent-envd release and, for each supported Linux, macOS, and Windows x86_64/ARM64 target, the exact release archive identity, archive SHA-256, extracted executable SHA-256, and expected executable name. The wheel and sdist contain the manifest but do not bundle all native executables. Release validation rejects missing targets, mutable asset selectors, inconsistent versions, or hashes not reproduced from the selected agent-envd release artifacts.
 
@@ -112,9 +112,9 @@ The Host resolves Local Sandbox in this order:
 3. when the managed executable is absent or fails hash validation, lazily download only the selected immutable archive, verify its embedded manifest hash, extract the one expected executable through bounded staging, verify the executable hash, and atomically publish it;
 4. execute `agent-envd --version` and require the manifest's exact canonical release identity;
 5. execute `agent-envd isolation probe --json` and require successful production-equivalent native isolation;
-6. supply the resolved absolute executable and a private-runtime allocator to the `converge.local-envd` provider runtime; provider attachment entry then launches envd and completes ordinary EIP initialization.
+6. supply the resolved absolute executable and a private-runtime allocator to the `a13n.local-envd` provider runtime; provider attachment entry then launches envd and completes ordinary EIP initialization.
 
-Both the default managed path and an advanced absolute override must report the manifest's exact release identity; the override changes executable location, not Agent UI's selected envd version. Neither path searches ambient `PATH`. Download, hash verification, cache publication, target detection, override validation, and user-facing availability diagnostics belong to the Agent UI Host. The Local Envd Provider owns daemon configuration, private runtime and subprocess lifecycle, and fresh stdio `EIPEnvironmentAttachment`; `converge-agent-envd-client` owns only EIP transport/session behavior.
+Both the default managed path and an advanced absolute override must report the manifest's exact release identity; the override changes executable location, not Agent UI's selected envd version. Neither path searches ambient `PATH`. Download, hash verification, cache publication, target detection, override validation, and user-facing availability diagnostics belong to the Agent UI Host. The Local Envd Provider owns daemon configuration, private runtime and subprocess lifecycle, and fresh stdio `EIPEnvironmentAttachment`; `a13n-envd-client` owns only EIP transport/session behavior.
 
 Artifact resolution and probe failure occur before provider or Harness dispatch. Daemon startup, isolation-descriptor, Environment-identity, required-method, or EIP compatibility failure closes the attempted provider process and leaves Local Sandbox unavailable. Agent UI never falls back to Direct Local, disables isolation, or silently selects an ambient executable.
 
@@ -349,7 +349,7 @@ Subscribers never consume the Harness stream, file watcher, SQLite WAL, or event
 
 ## WebUI
 
-WebUI is a complete browser product compiled into `converge-agent-ui`. It exposes pages and workflows for:
+WebUI is a complete browser product compiled into `a13n-ui`. It exposes pages and workflows for:
 
 - Models and credential-reference status;
 - Prompts;
@@ -404,9 +404,9 @@ A renderer-only preference can remain surface-specific. Any operation that affec
 flowchart LR
     Source[Private WebUI source] --> Build[Vite production build]
     Build --> Static[Prepared immutable assets]
-    Python[Agent UI Python source] --> Wheel[converge-agent-ui wheel]
+    Python[Agent UI Python source] --> Wheel[a13n-ui wheel]
     Static --> Wheel
-    Python & Static --> Sdist[converge-agent-ui sdist]
+    Python & Static --> Sdist[a13n-ui sdist]
     Sdist --> Rebuilt[Wheel without Node.js]
 ```
 

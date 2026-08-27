@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncIterator
 
 import pytest
-from converge_agent_harness import (
+from a13n_harness import (
     DeferredToolResume,
     HarnessBuilder,
     RunBindings,

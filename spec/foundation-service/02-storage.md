@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation Service owns one internal storage substrate for relational data, Redis-compatible data structures, object storage, and mounted filesystems. It is part of `converge-foundation-service`; it is not an independently published Python distribution, a public SDK surface, or a business-domain repository layer.
+Foundation Service owns one internal storage substrate for relational data, Redis-compatible data structures, object storage, and mounted filesystems. It is part of `a13n-service`; it is not an independently published Python distribution, a public SDK surface, or a business-domain repository layer.
 
 The substrate standardizes backend selection, process lifecycle, safety, and the semantics that local and network backends share. It does not force unlike storage systems behind one generic provider interface. Consumers use mature upstream Python interfaces directly when those interfaces already own the semantics. Foundation defines a small protocol only for object storage, where the local filesystem and S3-compatible services otherwise lack a shared application-facing contract.
 

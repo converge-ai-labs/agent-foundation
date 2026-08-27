@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from converge_agent_ui import tui, webui
-from converge_agent_ui.cli import main
+from a13n_ui import tui, webui
+from a13n_ui.cli import main
 
 
 def test_defaults_to_webui(monkeypatch) -> None:

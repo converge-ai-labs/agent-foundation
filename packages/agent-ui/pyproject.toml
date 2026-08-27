@@ -1,7 +1,7 @@
 [project]
-name = "converge-agent-ui"
+name = "a13n-ui"
 version = "0.0.0"
-description = "Local WebUI and TUI Host for Converge Agent Harness"
+description = "Local WebUI and TUI Host for Agent Foundation Harness"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -10,10 +10,10 @@ dependencies = [
     "aiosqlite>=0.21,<1",
     "alembic>=1.17.1,<2",
     "anyio>=4,<5",
-    "converge-agent-environment-provider",
-    "converge-agent-harness",
-    "converge-agent-stream-protocol",
-    "converge-logging",
+    "a13n-environment-provider",
+    "a13n-harness",
+    "a13n-stream-protocol",
+    "a13n-logging",
     "filelock>=3.20,<4",
     "pydantic>=2.12,<3",
     "pyyaml>=6.0.2,<7",
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-converge-agent-ui = "converge_agent_ui.cli:main"
+a13n-ui = "a13n_ui.cli:main"
 
 [dependency-groups]
 test = [
@@ -34,14 +34,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-artifacts = ["converge_agent_ui/static/**"]
+artifacts = ["a13n_ui/static/**"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["converge_agent_ui"]
+packages = ["a13n_ui"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "converge_agent_ui",
+    "a13n_ui",
     "hatch_build.py",
     "LICENSE",
     "README.md",
@@ -51,14 +51,14 @@ include = [
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"
 
-[tool.converge.agent-ui-release]
-harness-version = "0.0.0"
+[tool.a13n.agent-ui-release]
+harness-version = "0.0.3"
 
 [tool.deptry]
-known_first_party = ["converge_agent_ui"]
-package_module_name_map = { "converge-agent-environment-provider" = "converge_agent_environment_provider", "converge-agent-harness" = "converge_agent_harness", "converge-agent-stream-protocol" = "converge_agent_stream_protocol", "converge-logging" = "converge_logging", "sqlalchemy" = "sqlalchemy" }
+known_first_party = ["a13n_ui"]
+package_module_name_map = { "a13n-environment-provider" = "a13n_environment_provider", "a13n-harness" = "a13n_harness", "a13n-stream-protocol" = "a13n_stream_protocol", "a13n-logging" = "a13n_logging", "sqlalchemy" = "sqlalchemy" }
 
 # aiosqlite is loaded by SQLAlchemy through the configured async driver. The
 # runtime packages remain selected for later Agent UI application blocks.
 [tool.deptry.per_rule_ignores]
-DEP002 = ["aiosqlite", "converge-agent-environment-provider", "converge-agent-harness", "converge-agent-stream-protocol"]
+DEP002 = ["aiosqlite", "a13n-environment-provider", "a13n-harness", "a13n-stream-protocol"]

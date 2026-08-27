@@ -43,15 +43,15 @@ Read `00`, `06`, and `07` together before changing the control/execution boundar
 
 The current package establishes these service-wide roots:
 
-| Path                                                                            | Architectural role                                                                     |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `packages/foundation-service/converge_foundation_service/settings.py`           | Maps process environment into typed provider and migration configuration               |
-| `packages/foundation-service/converge_foundation_service/app.py`                | Owns FastAPI lifespan, constructs one storage resource set, and exposes readiness      |
-| `packages/foundation-service/converge_foundation_service/storage/`              | Generic backend configuration, construction, lifecycle, and capability semantics       |
-| `packages/foundation-service/converge_foundation_service/database/metadata.py`  | Explicit registry of all service-owned relational models                               |
-| `packages/foundation-service/converge_foundation_service/database/migration.py` | Programmatic Alembic runner and bounded migration coordination                         |
-| `packages/foundation-service/converge_foundation_service/database/migrations/`  | Single ordered revision history                                                        |
-| `packages/foundation-service/converge_foundation_service/cli.py`                | Stable `foundation-service serve` and `foundation-service db ...` executable interface |
+| Path                                                             | Architectural role                                                                     |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `packages/foundation-service/a13n_service/settings.py`           | Maps process environment into typed provider and migration configuration               |
+| `packages/foundation-service/a13n_service/app.py`                | Owns FastAPI lifespan, constructs one storage resource set, and exposes readiness      |
+| `packages/foundation-service/a13n_service/storage/`              | Generic backend configuration, construction, lifecycle, and capability semantics       |
+| `packages/foundation-service/a13n_service/database/metadata.py`  | Explicit registry of all service-owned relational models                               |
+| `packages/foundation-service/a13n_service/database/migration.py` | Programmatic Alembic runner and bounded migration coordination                         |
+| `packages/foundation-service/a13n_service/database/migrations/`  | Single ordered revision history                                                        |
+| `packages/foundation-service/a13n_service/cli.py`                | Stable `foundation-service serve` and `foundation-service db ...` executable interface |
 
 These roots are boundaries, not a requirement that every capability become a subpackage. Small capabilities remain focused modules; a capability gains a subdirectory only when it owns several cohesive implementations or contracts. Runnable configuration and migration usage live in the [Foundation Service package guide](../../packages/foundation-service/README.md).
 

@@ -8,22 +8,22 @@ from pathlib import Path
 from threading import Event
 from typing import NoReturn
 
-import converge_agent_ui.application as application_module
-import converge_agent_ui.storage.runtime as storage_runtime
+import a13n_ui.application as application_module
+import a13n_ui.storage.runtime as storage_runtime
 import pytest
-from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep, sleep_forever
-from anyio import Event as AsyncEvent
-from anyio.abc import TaskStatus
-from converge_agent_ui.application import AgentUiApplication, ApplicationState, open_application
-from converge_agent_ui.errors import (
+from a13n_ui.application import AgentUiApplication, ApplicationState, open_application
+from a13n_ui.errors import (
     ApplicationStateError,
     ObjectIntegrityError,
     StoreIntegrityError,
     StoreLeaseConflict,
 )
-from converge_agent_ui.settings import AgentUiSettings, StorageSettings
-from converge_agent_ui.storage import ObjectEnvelope, ObjectKind, short_session
-from converge_agent_ui.storage.models import StoreLeaseRecord
+from a13n_ui.settings import AgentUiSettings, StorageSettings
+from a13n_ui.storage import ObjectEnvelope, ObjectKind, short_session
+from a13n_ui.storage.models import StoreLeaseRecord
+from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep, sleep_forever
+from anyio import Event as AsyncEvent
+from anyio.abc import TaskStatus
 from pydantic import JsonValue
 
 pytestmark = pytest.mark.anyio

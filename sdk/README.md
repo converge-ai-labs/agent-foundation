@@ -4,12 +4,12 @@ The Foundation Service SDKs live under one standalone `sdk/` boundary. They are 
 
 | Language   | Distribution or module                                | Source directory | Release tag                        |
 | ---------- | ----------------------------------------------------- | ---------------- | ---------------------------------- |
-| Python     | `converge-foundation-sdk`                             | `sdk/python`     | `release/sdk/python/<version>`     |
+| Python     | `a13n-sdk`                                            | `sdk/python`     | `release/sdk/python/<version>`     |
 | Go         | `github.com/converge-ai-labs/agent-foundation/sdk/go` | `sdk/go`         | `release/sdk/go/<version>`         |
-| Rust       | `converge-foundation-sdk`                             | `sdk/rust`       | `release/sdk/rust/<version>`       |
-| TypeScript | `@converge.ai/foundation-sdk`                         | `sdk/typescript` | `release/sdk/typescript/<version>` |
+| Rust       | `a13n-sdk`                                            | `sdk/rust`       | `release/sdk/rust/<version>`       |
+| TypeScript | `a13n-sdk`                                            | `sdk/typescript` | `release/sdk/typescript/<version>` |
 
-The `agent-foundation` remote CLI is a companion to these SDKs, not another SDK distribution. It is an independent Cargo project at `sdk/rust/agent-foundation-cli` with package name `agent-foundation-cli`, its own lock file, and no membership in the root Rust workspace or the Rust SDK project. Network commands use typed operations from `converge-foundation-sdk`; they do not maintain a separate HTTP client. The CLI does not manage Foundation Service processes or access service implementation internals.
+The `agent-foundation` remote CLI is a companion to these SDKs, not another SDK distribution. It is an independent Cargo project at `sdk/rust/agent-foundation-cli` with package name `agent-foundation-cli`, its own lock file, and no membership in the root Rust workspace or the Rust SDK project. Network commands use typed operations from `a13n-sdk`; they do not maintain a separate HTTP client. The CLI does not manage Foundation Service processes or access service implementation internals.
 
 `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata normalizes an RC to `X.Y.ZrcN`, and TypeScript RCs publish under the npm `rc` dist-tag rather than `latest`.
 

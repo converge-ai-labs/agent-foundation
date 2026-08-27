@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from converge_agent_harness import HarnessBuilder, HarnessEvent, RunBindings
-from converge_agent_harness.tools import (
+from a13n_harness import HarnessBuilder, HarnessEvent, RunBindings
+from a13n_harness.tools import (
     CanonicalResource,
     CredentialLease,
     HarnessTool,
@@ -21,7 +21,7 @@ from converge_agent_harness.tools import (
     ToolOutputPolicy,
     current_invocation_scope,
 )
-from converge_agent_harness.tools.invocation import _apply_result_policy
+from a13n_harness.tools.invocation import _apply_result_policy
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ToolFailed

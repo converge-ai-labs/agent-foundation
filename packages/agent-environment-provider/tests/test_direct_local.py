@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from converge_agent_environment_provider import (
+from a13n_environment_provider import (
     DirectLocalEnvironmentAttachment,
     DirectLocalEnvironmentManager,
     DirectLocalProviderConfiguration,
@@ -32,10 +32,10 @@ def _operation(action: EnvironmentManagementAction, suffix: str) -> EnvironmentO
 
 
 def _manager(root: Path, *, environment_id: str = "local-1") -> DirectLocalEnvironmentManager:
-    catalog = build_environment_provider_factory_catalog(builtin_keys=("converge.direct-local",))
+    catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
     manager = catalog.create_manager(
         spec=EnvironmentProviderSpec(
-            provider_key="converge.direct-local",
+            provider_key="a13n.direct-local",
             schema_version="1",
             parameters={
                 "environment_id": environment_id,

@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 import zstandard
-from converge_agent_ui.errors import ObjectIntegrityError, StoreIntegrityError
-from converge_agent_ui.settings import StorageSettings
-from converge_agent_ui.storage.layout import StorageLayout
-from converge_agent_ui.storage.objects import ImmutableObjectStore, ObjectKind, ObjectRef
+from a13n_ui.errors import ObjectIntegrityError, StoreIntegrityError
+from a13n_ui.settings import StorageSettings
+from a13n_ui.storage.layout import StorageLayout
+from a13n_ui.storage.objects import ImmutableObjectStore, ObjectKind, ObjectRef
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio

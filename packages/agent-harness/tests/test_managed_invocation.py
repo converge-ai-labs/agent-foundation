@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from converge_agent_harness import AgentContext, HarnessBuilder, HarnessEvent, RunBindings
-from converge_agent_harness.errors import DefinitionError
-from converge_agent_harness.tools import (
+from a13n_harness import AgentContext, HarnessBuilder, HarnessEvent, RunBindings
+from a13n_harness.errors import DefinitionError
+from a13n_harness.tools import (
     ClientToolsCapability,
     HarnessTool,
     HarnessToolMetadata,
@@ -16,8 +16,8 @@ from converge_agent_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from converge_agent_harness.tools.invocation import _apply_result_policy
-from converge_agent_harness.toolsets import (
+from a13n_harness.tools.invocation import _apply_result_policy
+from a13n_harness.toolsets import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     acknowledge_tool_output,
     tool_output_bytes,
@@ -623,7 +623,7 @@ async def test_duplicate_managed_identity_fails_before_model_request() -> None:
 @dataclass
 class _CompetingBoundary(AbstractCapability[Any]):
     def get_ordering(self) -> CapabilityOrdering:
-        from converge_agent_harness.tools.invocation import ToolExecutionBoundaryCapability
+        from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
 
         return CapabilityOrdering(position="outermost", wraps=(ToolExecutionBoundaryCapability,))
 

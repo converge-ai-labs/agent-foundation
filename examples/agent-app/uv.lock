@@ -42,12 +42,12 @@ wheels = [
 ]
 
 [[package]]
-name = "converge-agent-app-example"
+name = "a13n-agent-app-example"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
-    { name = "converge-agent-environment-provider" },
-    { name = "converge-agent-harness" },
+    { name = "a13n-environment-provider" },
+    { name = "a13n-harness" },
     { name = "pydantic-ai-slim" },
 ]
 
@@ -60,8 +60,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "converge-agent-environment-provider", editable = "../../packages/agent-environment-provider" },
-    { name = "converge-agent-harness", editable = "../../packages/agent-harness" },
+    { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
+    { name = "a13n-harness", editable = "../../packages/agent-harness" },
     { name = "pydantic-ai-slim", specifier = ">=2.31.1,<2.32" },
 ]
 
@@ -73,7 +73,7 @@ dev = [
 ]
 
 [[package]]
-name = "converge-agent-envd-client"
+name = "a13n-envd-client"
 version = "0.0.0"
 source = { editable = "../../packages/agent-envd-client" }
 dependencies = [
@@ -93,18 +93,18 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "converge-agent-environment-provider"
+name = "a13n-environment-provider"
 version = "0.0.0"
 source = { editable = "../../packages/agent-environment-provider" }
 dependencies = [
-    { name = "converge-agent-envd-client" },
+    { name = "a13n-envd-client" },
     { name = "pydantic" },
     { name = "websockets" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "converge-agent-envd-client", editable = "../../packages/agent-envd-client" },
+    { name = "a13n-envd-client", editable = "../../packages/agent-envd-client" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]
@@ -113,12 +113,12 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "converge-agent-harness"
+name = "a13n-harness"
 version = "0.0.0"
 source = { editable = "../../packages/agent-harness" }
 dependencies = [
-    { name = "converge-agent-envd-client" },
-    { name = "converge-agent-environment-provider" },
+    { name = "a13n-envd-client" },
+    { name = "a13n-environment-provider" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
     { name = "pydantic-core" },
@@ -129,8 +129,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "converge-agent-envd-client", editable = "../../packages/agent-envd-client" },
-    { name = "converge-agent-environment-provider", editable = "../../packages/agent-environment-provider" },
+    { name = "a13n-envd-client", editable = "../../packages/agent-envd-client" },
+    { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.31.1,<2.32" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },

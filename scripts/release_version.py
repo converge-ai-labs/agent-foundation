@@ -21,9 +21,9 @@ COMPONENTS = (
     "sdk-typescript",
 )
 ENVIRONMENT_PROVIDER_MANIFEST = Path("packages/agent-environment-provider/pyproject.toml")
-ENVIRONMENT_PROVIDER_PACKAGE = "converge-agent-environment-provider"
+ENVIRONMENT_PROVIDER_PACKAGE = "a13n-environment-provider"
 HARNESS_MANIFEST = Path("packages/agent-harness/pyproject.toml")
-HARNESS_PACKAGE = "converge-agent-harness"
+HARNESS_PACKAGE = "a13n-harness"
 STREAM_PROTOCOL_MANIFEST = Path("packages/agent-stream-protocol/pyproject.toml")
 HARNESS_MANIFESTS = (
     ENVIRONMENT_PROVIDER_MANIFEST,
@@ -33,27 +33,27 @@ HARNESS_MANIFESTS = (
 HARNESS_PACKAGES = (
     ENVIRONMENT_PROVIDER_PACKAGE,
     HARNESS_PACKAGE,
-    "converge-agent-stream-protocol",
+    "a13n-stream-protocol",
 )
 AGENT_UI_MANIFEST = Path("packages/agent-ui/pyproject.toml")
-AGENT_UI_PACKAGE = "converge-agent-ui"
-AGENT_UI_RELEASE_TOOL = "tool.converge.agent-ui-release"
+AGENT_UI_PACKAGE = "a13n-ui"
+AGENT_UI_RELEASE_TOOL = "tool.a13n.agent-ui-release"
 FOUNDATION_MANIFESTS = (
     Path("pyproject.toml"),
     Path("packages/logging/pyproject.toml"),
     Path("packages/foundation-service/pyproject.toml"),
 )
 FOUNDATION_PACKAGES = (
-    "converge-agent-foundation",
-    "converge-logging",
-    "converge-foundation-service",
+    "a13n-workspace",
+    "a13n-logging",
+    "a13n-service",
 )
 ROOT_UV_LOCK = Path("uv.lock")
 AGENT_ENVD_WORKSPACE_MANIFEST = Path("Cargo.toml")
 AGENT_ENVD_MANIFEST = Path("crates/agent-envd/Cargo.toml")
 AGENT_ENVD_LOCK = Path("Cargo.lock")
 AGENT_ENVD_CLIENT_MANIFEST = Path("packages/agent-envd-client/pyproject.toml")
-AGENT_ENVD_CLIENT_PACKAGE = "converge-agent-envd-client"
+AGENT_ENVD_CLIENT_PACKAGE = "a13n-envd-client"
 SDK_PYTHON_MANIFEST = Path("sdk/python/pyproject.toml")
 SDK_PYTHON_LOCK = Path("sdk/python/uv.lock")
 SDK_RUST_MANIFEST = Path("sdk/rust/Cargo.toml")
@@ -184,9 +184,9 @@ def _project_dependency_requirement(root: Path, relative_path: Path, package_nam
 def _agent_ui_harness_release(root: Path) -> ReleaseVersion:
     data = _load_toml(root, AGENT_UI_MANIFEST)
     tool = _mapping(data.get("tool"), f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}")
-    converge = _mapping(tool.get("converge"), f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}")
+    a13n = _mapping(tool.get("a13n"), f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}")
     release = _mapping(
-        converge.get("agent-ui-release"),
+        a13n.get("agent-ui-release"),
         f"{AGENT_UI_RELEASE_TOOL}.harness-version in {AGENT_UI_MANIFEST}",
     )
     version = _string(
@@ -304,10 +304,10 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
         return {
             f"{AGENT_ENVD_WORKSPACE_MANIFEST} workspace package": _workspace_package_version(root),
             f"{AGENT_ENVD_MANIFEST} inherited workspace package": _workspace_package_version(root),
-            f"{AGENT_ENVD_LOCK} package converge-agent-envd": _lock_package_version(
+            f"{AGENT_ENVD_LOCK} package agent-envd": _lock_package_version(
                 root,
                 AGENT_ENVD_LOCK,
-                "converge-agent-envd",
+                "agent-envd",
             ),
             str(AGENT_ENVD_CLIENT_MANIFEST): _project_version(root, AGENT_ENVD_CLIENT_MANIFEST),
             f"{ROOT_UV_LOCK} package {AGENT_ENVD_CLIENT_PACKAGE}": _lock_package_version(
@@ -319,19 +319,19 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
     if component == "sdk-python":
         return {
             str(SDK_PYTHON_MANIFEST): _project_version(root, SDK_PYTHON_MANIFEST),
-            f"{SDK_PYTHON_LOCK} package converge-foundation-sdk": _lock_package_version(
+            f"{SDK_PYTHON_LOCK} package a13n-sdk": _lock_package_version(
                 root,
                 SDK_PYTHON_LOCK,
-                "converge-foundation-sdk",
+                "a13n-sdk",
             ),
         }
     if component == "sdk-rust":
         return {
             str(SDK_RUST_MANIFEST): _cargo_package_version(root, SDK_RUST_MANIFEST),
-            f"{SDK_RUST_LOCK} package converge-foundation-sdk": _lock_package_version(
+            f"{SDK_RUST_LOCK} package a13n-sdk": _lock_package_version(
                 root,
                 SDK_RUST_LOCK,
-                "converge-foundation-sdk",
+                "a13n-sdk",
             ),
         }
     if component == "foundation-cli":
@@ -632,7 +632,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         )
         planned[AGENT_ENVD_LOCK] = _replace_lock_package_version(
             _read_text(root, AGENT_ENVD_LOCK),
-            "converge-agent-envd",
+            "agent-envd",
             canonical_version,
             AGENT_ENVD_LOCK,
         )
@@ -657,7 +657,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         )
         planned[SDK_PYTHON_LOCK] = _replace_lock_package_version(
             _read_text(root, SDK_PYTHON_LOCK),
-            "converge-foundation-sdk",
+            "a13n-sdk",
             python_version,
             SDK_PYTHON_LOCK,
         )
@@ -670,7 +670,7 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
         )
         planned[SDK_RUST_LOCK] = _replace_lock_package_version(
             _read_text(root, SDK_RUST_LOCK),
-            "converge-foundation-sdk",
+            "a13n-sdk",
             canonical_version,
             SDK_RUST_LOCK,
         )

@@ -3,7 +3,7 @@ from typing import cast
 
 import anyio
 import pytest
-from converge_foundation_service.storage.object_store import (
+from a13n_service.storage.object_store import (
     ByteRange,
     InvalidObjectRequest,
     ObjectConflict,

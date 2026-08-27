@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
-from converge_agent_harness import DefinitionError
-from converge_agent_harness.tools import HarnessToolMetadata, ToolOutputPolicy
-from converge_agent_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness import DefinitionError
+from a13n_harness.tools import HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from pydantic import ValidationError
 
 
