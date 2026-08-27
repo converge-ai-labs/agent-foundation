@@ -57,7 +57,7 @@ async def main() -> None:
     async with executable:
         result = await executable.run(
             "Say hello",
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
         )
 
     print(result.output_or_raise())

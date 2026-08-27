@@ -108,7 +108,7 @@ class AbstractModelContextCapability(
     ) -> ModelContextProjection: ...
 
 
-class ModelContextRunBinding(Protocol):
+class ModelContextMiddleware(Protocol):
     async def wrap_model_context(
         self,
         ctx: AgentContext,
@@ -189,13 +189,13 @@ An explicit file reference carries only a model-facing logical path and a bounde
 
 An explicit `summarize` handoff uses its own validated history-replacement path. It preserves the original request as native structured `UserContent`, including multimodal values, rather than extracting only plain text; the continuation summary and file reminders remain separately identifiable context. A pending `DeferredToolRequests` boundary is not part of the replaceable prefix: its exact suspended message tail, call IDs, categories, and message identity remain unchanged through authoritative resume validation until matching results are incorporated. Provider-suspended continuation receives the same protection. Only after those exact continuations advance can a validated replacement become ordinary active messages and reintroduce pending handoff guidance once.
 
-Handoff reminder thresholds consult only the latest provider-reported usage and never replace provider enforcement. Automatic plain-text compaction is the independent Capability contract below. [`Events, Observability, and Usage`](12-events-observability-and-usage.md#first-party-event-contracts) owns the bounded context observations for both paths.
+Handoff reminder thresholds consult only the latest provider-reported usage and never replace provider enforcement. Automatic plain-text compaction is the independent Capability contract below. [Events and Usage](12-events-observability-and-usage.md#first-party-event-contracts) owns the bounded context observations for both paths.
 
 ## Working State Capability
 
 Tasks and notes form one optional Working State Capability. It owns their model tools, bounded request-time presentation, and one versioned `AgentContextState` namespace; it is coordination context rather than execution authority, a scheduler, or a durable business workflow.
 
-Task references use concise scope-local `task-{N}` values allocated monotonically by the authoritative task store. Creation, claims, dependencies, and updates share one internal revision boundary so concurrent Agents cannot reuse an ID or silently overwrite newer state. Ordinary model tools expose intent-level create, start, update, and complete operations without requiring the Agent to orchestrate claims or compare-and-swap revisions. Completed tasks remain available through explicit task reads but leave bounded request-time context. Notes remain private to one Agent instance. Committed task changes produce only the bounded deltas owned by [`Events, Observability, and Usage`](12-events-observability-and-usage.md#first-party-event-contracts).
+Task references use concise scope-local `task-{N}` values allocated monotonically by the authoritative task store. Creation, claims, dependencies, and updates share one internal revision boundary so concurrent Agents cannot reuse an ID or silently overwrite newer state. Ordinary model tools expose intent-level create, start, update, and complete operations without requiring the Agent to orchestrate claims or compare-and-swap revisions. Completed tasks remain available through explicit task reads but leave bounded request-time context. Notes remain private to one Agent instance. Committed task changes produce only the bounded deltas owned by [Events and Usage](12-events-observability-and-usage.md#first-party-event-contracts).
 
 The definition fixes one task mode:
 

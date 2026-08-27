@@ -21,13 +21,14 @@ from a13n_harness.state import AgentContextState, HarnessState
 if TYPE_CHECKING:
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.environment.models import EnvironmentPath
-    from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRunBinding
+    from a13n_harness.environment.providers import BoundEnvironment as Environment
+    from a13n_harness.environment.providers import EnvironmentRunBinding
     from a13n_harness.events import HarnessEventEmitter
     from a13n_harness.execution import AgentDefinition, ExecutableAgent, SubagentDefinition
     from a13n_harness.model_context import (
+        ModelContextMiddleware,
         ModelContextProjection,
         ModelContextProjectionRequest,
-        ModelContextRunBinding,
     )
     from a13n_harness.models import RunModelResolver
     from a13n_harness.plugins import BoundPluginContext
@@ -112,14 +113,14 @@ class _CapabilityProvenance:
 
 @dataclass(frozen=True, slots=True)
 class RunBindings:
-    """Fresh trusted authority and run integrations supplied by the caller."""
+    """Fresh trusted authority and optional advanced integrations supplied by the caller."""
 
     instance: AgentInstanceContext
-    environment: EnvironmentRunBinding
+    environment: EnvironmentRunBinding | None = None
     model_resolver: RunModelResolver | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
-    model_context: ModelContextRunBinding | None = None
+    model_context: ModelContextMiddleware | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
         repr=False,
@@ -131,26 +132,24 @@ class RunBindings:
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
     @classmethod
-    def local(
+    def embedded(
         cls,
         *,
         identity: AgentIdentityRef | None = None,
         environment: EnvironmentRunBinding | None = None,
         model_resolver: RunModelResolver | None = None,
-        model_context: ModelContextRunBinding | None = None,
+        model_context: ModelContextMiddleware | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         metadata: Mapping[str, JsonValue] | None = None,
     ) -> RunBindings:
-        """Create fresh bindings for an embedded process-local run."""
-        from a13n_harness.environment.coordinator import NoopEnvironmentRunBinding
-
+        """Create fresh trusted bindings for one embedded run."""
         instance_id = str(uuid4())
         return cls(
             instance=AgentInstanceContext(
                 identity=identity or AgentIdentityRef(issuer="local", subject="embedded"),
                 agent_instance_id=instance_id,
             ),
-            environment=environment or NoopEnvironmentRunBinding(),
+            environment=environment,
             model_resolver=model_resolver,
             model_context=model_context,
             capabilities=tuple(capabilities),
@@ -259,7 +258,7 @@ class AgentContext:
     thread_id: str
     instance: AgentInstanceContext
     state: AgentContextState
-    environment: BoundEnvironment
+    environment: Environment
     model_resolver: RunModelResolver | None
     plugins: BoundPluginContext
     subagents: SubagentCollection
@@ -268,7 +267,7 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
-    model_context: ModelContextRunBinding | None = None
+    model_context: ModelContextMiddleware | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
         repr=False,

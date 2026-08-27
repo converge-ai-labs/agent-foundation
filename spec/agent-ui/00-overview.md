@@ -56,7 +56,7 @@ An Agent is the exact composition of Model, Prompt, Plugin, available Skill, def
 | Desired product definitions                                           | Reloadable Agent UI files          | Models, Prompts, Plugins, local Skill sources/packages, Agents, and Environments accepted as one generation |
 | Immutable resolved composition                                        | Agent UI snapshot resolver         | Publishes content-addressed Agent and Environment snapshots                                                 |
 | Native Agent construction and loop                                    | Harness and Pydantic AI            | Calls public build/stream APIs with fresh bindings                                                          |
-| Provider specification and lifecycle implementation                   | Environment Provider package       | Uses selected factory, Manager, resource state, and fresh attachment contracts                              |
+| Provider specification and lifecycle implementation                   | Environment Provider package       | Uses selected factory, Provider, Resource state, and fresh attachment contracts                             |
 | Local Sandbox envd artifact selection                                 | Agent UI Host                      | Exact release/target manifest, lazy verified cache, override validation, and availability diagnostics       |
 | Session/Turn/resource control state                                   | Agent UI SQLite metadata           | Owns revisions, selections, lifecycle, queues, jobs, and indexes                                            |
 | Harness/provider/snapshot/Skill payloads                              | Agent UI compressed object store   | Stores verified immutable files referenced by SQLite                                                        |
@@ -98,7 +98,7 @@ flowchart TB
     end
 
     subgraph Runtime[Harness and providers]
-        Provider[Environment Provider Managers]
+        Provider[Environment Providers]
         Model[Fresh Model resolver]
         Executable[ExecutableAgent]
         Stream[HarnessRunStream]
@@ -122,7 +122,7 @@ flowchart TB
     Events --> Web & TUI
 ```
 
-The application service is the only product boundary. Neither surface reads configuration or storage directly, constructs a Model/Agent, operates a provider Manager, calls `ExecutableAgent.stream()`, or translates Harness events.
+The application service is the only product boundary. Neither surface reads configuration or storage directly, constructs a Model/Agent, operates a `EnvironmentProvider`, calls `ExecutableAgent.stream()`, or translates Harness events.
 
 ## Configuration and Reload
 

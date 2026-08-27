@@ -22,13 +22,14 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, compaction, and memory boundary                         |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                         |
 | [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, inline delegation, and Host asynchronous-child boundary                                                                 |
-| [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Events, telemetry, mixed-source usage attribution, pricing catalogs, reporting, and accounting boundary                                 |
+| [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Process-local events, mixed-source usage attribution, pricing catalogs, reporting, and accounting boundary                              |
 | [13-hosting-contract.md](13-hosting-contract.md)                                         | Host-owned schemas/reconstruction, fresh bindings, durable lifecycle, and completion mapping                                            |
 | [14-public-api-and-packaging.md](14-public-api-and-packaging.md)                         | Public Python API, package boundary, errors, and compatibility                                                                          |
 | [15-security-compatibility-and-tradeoffs.md](15-security-compatibility-and-tradeoffs.md) | Trust boundaries, authority, data safety, compatibility, and trade-offs                                                                 |
 | [16-input-model-and-output.md](16-input-model-and-output.md)                             | Native input, thin model resolution, self-healing, semantic recovery, streaming, and output                                             |
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                           |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch                 |
+| [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry ownership, hierarchy, correlation, information boundary, Host profiles, and exporter-failure semantics                    |
 
 ## Reading Paths
 
@@ -51,6 +52,10 @@ Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](
 ### Implement Hosting or Persistence
 
 Read `10`, `12`, `13`, and `14`, then the Foundation Service catalog.
+
+### Integrate Observation
+
+Read `06`, `19`, `13`, and `15`. Read `12` separately for process-local events and usage; telemetry never replaces either contract.
 
 ## Authority Rules
 

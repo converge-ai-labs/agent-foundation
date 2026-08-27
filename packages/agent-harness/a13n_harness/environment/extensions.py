@@ -6,10 +6,10 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from .providers import BoundEnvironment
-
 if TYPE_CHECKING:
     from a13n_harness.identity import AgentInstanceContext
+
+    from .providers import BoundEnvironment as Environment
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +18,7 @@ class EnvironmentRunExtensionContext:
 
     run_id: str
     instance: AgentInstanceContext
-    environment: BoundEnvironment
+    environment: Environment
 
 
 @runtime_checkable

@@ -138,7 +138,7 @@ async def test_tool_runtime_metadata_is_reused_across_inner_recovery_attempts() 
         ),
     )
 
-    result = await executable.run("start", bindings=RunBindings.local())
+    result = await executable.run("start", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert calls == 2

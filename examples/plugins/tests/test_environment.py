@@ -46,7 +46,7 @@ def test_environment_entrypoint_metadata_is_lazy_and_selection_is_explicit(tmp_p
 
     from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
-    manager = catalog.create_manager(
+    provider = catalog.create_provider(
         EnvironmentProviderSpec(
             provider_key=PROVIDER_KEY,
             schema_version="1",
@@ -57,7 +57,7 @@ def test_environment_entrypoint_metadata_is_lazy_and_selection_is_explicit(tmp_p
         ),
         runtime=WorkspaceEnvironmentRuntime(),
     )
-    assert manager.lifecycle_capabilities.resource_allocation.value == "single_from_spec"
+    assert provider.lifecycle_capabilities.resource_allocation.value == "single_from_spec"
     assert not (tmp_path / "not-created-by-the-factory").exists()
 
 
@@ -76,7 +76,7 @@ def test_environment_explicit_factory_needs_no_metadata_scan(
     assert catalog.registrations[0].import_target is None
     from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
-    manager = catalog.create_manager(
+    provider = catalog.create_provider(
         EnvironmentProviderSpec(
             provider_key=PROVIDER_KEY,
             schema_version="1",
@@ -87,7 +87,7 @@ def test_environment_explicit_factory_needs_no_metadata_scan(
         ),
         runtime=WorkspaceEnvironmentRuntime(),
     )
-    assert manager.lifecycle_capabilities.attachment_concurrency.value == "shared"
+    assert provider.lifecycle_capabilities.attachment_concurrency.value == "shared"
     assert not (tmp_path / "still-inert").exists()
 
 
@@ -97,7 +97,7 @@ def test_environment_provider_factory_rejects_invalid_json_configuration() -> No
     from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
     with pytest.raises(EnvironmentProviderError) as exc_info:
-        catalog.create_manager(
+        catalog.create_provider(
             EnvironmentProviderSpec(
                 provider_key=PROVIDER_KEY,
                 schema_version="1",
@@ -119,6 +119,8 @@ def test_environment_entrypoint_demo_routes_two_bindings(tmp_path: Path) -> None
     assert result.default_text == "source workspace\n"
     assert result.docs_text == "documentation workspace\n"
     assert result.aliases == ("source", "docs")
+    assert result.durable_lifecycle_phases == ("running", "running", "absent")
+    assert not result.pause_supported
 
 
 def test_environment_code_demo_routes_two_bindings(tmp_path: Path) -> None:
@@ -131,3 +133,5 @@ def test_environment_code_demo_routes_two_bindings(tmp_path: Path) -> None:
     assert result.default_text == "source workspace\n"
     assert result.docs_text == "documentation workspace\n"
     assert result.aliases == ("source", "docs")
+    assert result.durable_lifecycle_phases == ("running", "running", "absent")
+    assert not result.pause_supported

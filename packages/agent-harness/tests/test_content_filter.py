@@ -92,7 +92,7 @@ async def test_content_filter_handles_user_and_tool_return_media_without_text_sp
             Capability(tools=[attach], id="content-filter-tools"),
         ),
     )
-    result = await executable.run([safe_image], bindings=RunBindings.local())
+    result = await executable.run([safe_image], bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert safe_image.url == "https://example.com/safe.png"

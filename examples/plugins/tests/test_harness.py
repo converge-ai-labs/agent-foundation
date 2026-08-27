@@ -122,8 +122,8 @@ def test_harness_plugin_creates_isolated_state_for_concurrent_runs() -> None:
     async def run_both() -> tuple[str, str]:
         async with executable:
             first, second = await asyncio.gather(
-                executable.run("first", bindings=RunBindings.local()),
-                executable.run("second", bindings=RunBindings.local()),
+                executable.run("first", bindings=RunBindings.embedded()),
+                executable.run("second", bindings=RunBindings.embedded()),
             )
         return first.run_id, second.run_id
 

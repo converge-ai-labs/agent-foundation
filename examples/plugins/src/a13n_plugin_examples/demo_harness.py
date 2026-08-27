@@ -102,7 +102,7 @@ async def _run_demo(
     async with executable:
         async with executable.stream(
             "Return the deterministic offline response.",
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
         ) as stream:
             plugin = stream.context.plugins.require(plugin_id, RunRecorderPlugin)
             items = [item async for item in stream]

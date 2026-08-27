@@ -16,7 +16,7 @@ One process-local observer binds to one Harness Run, can apply an optional Host 
 
 ### Observe Harness Runs
 
-Read `00`, then [Harness Events, Observability, and Usage](../agent-harness/12-events-observability-and-usage.md) for the source event and lifecycle contract. Agent Stream Protocol translates that public stream and does not invent missing Harness observations.
+Read `00`, then [Harness Events and Usage](../agent-harness/12-events-observability-and-usage.md) for the source event and lifecycle contract. Agent Stream Protocol translates that public stream and does not invent missing Harness observations.
 
 ### Build Agent UI Surfaces
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -24,7 +25,7 @@ class _Extension:
         return self._extension_id
 
     @asynccontextmanager
-    async def bind(self, *, context):
+    async def bind(self, *, context) -> AsyncGenerator[None]:
         del context
         yield
 

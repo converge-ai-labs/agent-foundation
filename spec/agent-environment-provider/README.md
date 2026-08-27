@@ -31,7 +31,7 @@ Read all four documents, then the [EIP carrier contract](../agent-envd/03-transp
 
 ### Add a third-party provider
 
-Read `01` and `02`. A third-party factory uses the same provider-specification, manager, resource-state, and attachment contracts and registers one namespaced key through the documented entry-point group.
+Read `01` and `02`. A third-party factory uses the same provider-specification, provider, resource-state, and attachment contracts and registers one namespaced key through the documented entry-point group.
 
 ## Authority Rules
 

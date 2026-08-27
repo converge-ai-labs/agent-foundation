@@ -19,7 +19,7 @@ from ..errors import (
     EnvironmentProviderRecoveryHint,
 )
 from ..factories import EnvironmentProviderFactory
-from ..management import EnvironmentManager, EnvironmentProviderRuntime, ManagedEnvironment
+from ..management import EnvironmentProvider, EnvironmentProviderRuntime, EnvironmentResource
 from ..models import (
     EnvironmentAttachmentConcurrency,
     EnvironmentLifecycleCapabilities,
@@ -72,12 +72,12 @@ class DirectLocalEnvironmentProviderFactory(EnvironmentProviderFactory):
             )
         return DirectLocalProviderConfiguration
 
-    def create_manager(
+    def create_provider(
         self,
         configuration: BaseModel,
         *,
         runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentManager:
+    ) -> EnvironmentProvider:
         if not isinstance(configuration, DirectLocalProviderConfiguration):
             raise EnvironmentProviderError(
                 "Direct Local requires DirectLocalProviderConfiguration.",
@@ -96,10 +96,10 @@ class DirectLocalEnvironmentProviderFactory(EnvironmentProviderFactory):
                 recovery_hint=EnvironmentProviderRecoveryHint.REFRESH_RUNTIME,
                 context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
             )
-        return DirectLocalEnvironmentManager(configuration)
+        return DirectLocalEnvironmentProvider(configuration)
 
 
-class DirectLocalEnvironmentManager(EnvironmentManager):
+class DirectLocalEnvironmentProvider(EnvironmentProvider):
     def __init__(self, configuration: DirectLocalProviderConfiguration) -> None:
         super().__init__()
         self._configuration = configuration.model_copy(deep=True)
@@ -108,26 +108,26 @@ class DirectLocalEnvironmentManager(EnvironmentManager):
     def lifecycle_capabilities(self) -> EnvironmentLifecycleCapabilities:
         return _CAPABILITIES
 
-    async def create(self, *, operation: EnvironmentOperationContext) -> ManagedEnvironment:
+    async def create(self, *, operation: EnvironmentOperationContext) -> EnvironmentResource:
         self._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key=_PROVIDER_KEY)
         configuration = await _validated_configuration(self._configuration)
-        return DirectLocalManagedEnvironment(configuration, _build_state(configuration))
+        return DirectLocalEnvironmentResource(configuration, _build_state(configuration))
 
     async def resume(
         self,
         state: EnvironmentProviderResourceState,
         *,
         operation: EnvironmentOperationContext,
-    ) -> ManagedEnvironment:
+    ) -> EnvironmentResource:
         self._require_operation(operation, EnvironmentManagementAction.RESUME, provider_key=_PROVIDER_KEY)
         configuration = await _validated_configuration(self._configuration)
         expected = _build_state(configuration)
         _validate_state(state, expected=expected)
-        return DirectLocalManagedEnvironment(configuration, expected)
+        return DirectLocalEnvironmentResource(configuration, expected)
 
     async def pause(
         self,
-        environment: ManagedEnvironment,
+        environment: EnvironmentResource,
         *,
         operation: EnvironmentOperationContext,
         mode: EnvironmentPauseMode = EnvironmentPauseMode.FULL,
@@ -221,7 +221,7 @@ class DirectLocalEnvironmentManager(EnvironmentManager):
         )
 
 
-class DirectLocalManagedEnvironment(ManagedEnvironment):
+class DirectLocalEnvironmentResource(EnvironmentResource):
     def __init__(
         self,
         configuration: DirectLocalProviderConfiguration,
@@ -261,7 +261,7 @@ class DirectLocalManagedEnvironment(ManagedEnvironment):
             active = self._active_attachments
         if active:
             raise EnvironmentProviderError(
-                "Direct Local managed resource closed with active attachment scopes.",
+                "Direct Local EnvironmentResource closed with active attachment scopes.",
                 code="provider_cleanup_failed",
                 category=EnvironmentProviderErrorCategory.CLEANUP,
                 certainty=EnvironmentProviderOutcomeCertainty.KNOWN,

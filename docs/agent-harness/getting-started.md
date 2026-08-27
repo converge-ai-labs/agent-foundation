@@ -45,7 +45,7 @@ async def main() -> None:
     async with executable:
         result = await executable.run(
             "Say hello",
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
         )
 
     print(result.output_or_raise())
@@ -94,10 +94,10 @@ An executable is reusable until it is closed. Each call still receives fresh bin
 
 ```python
 async with executable:
-    first = await executable.run("First turn", bindings=RunBindings.local())
+    first = await executable.run("First turn", bindings=RunBindings.embedded())
     second = await executable.run(
         "Second turn",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=first.state,
     )
 ```

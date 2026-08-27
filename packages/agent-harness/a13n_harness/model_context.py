@@ -89,7 +89,7 @@ class ModelContextProjection:
 ModelContextNext = Callable[[ModelContextProjectionRequest], Awaitable[ModelContextProjection]]
 
 
-class ModelContextRunBinding(Protocol):
+class ModelContextMiddleware(Protocol):
     """Fresh Host middleware around one run's default projection chain."""
 
     async def wrap_model_context(
@@ -398,10 +398,10 @@ __all__ = [
     "AbstractModelContextCapability",
     "ModelContextBlock",
     "ModelContextInputOrigin",
+    "ModelContextMiddleware",
     "ModelContextNext",
     "ModelContextPlacement",
     "ModelContextProjection",
     "ModelContextProjectionRequest",
     "ModelContextRequestKind",
-    "ModelContextRunBinding",
 ]

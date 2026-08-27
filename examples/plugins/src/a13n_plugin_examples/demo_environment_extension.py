@@ -16,18 +16,20 @@ from a13n_environment_provider import (
 )
 from a13n_harness import (
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
     EnvironmentRunExtensionFactoryCatalog,
     EnvironmentRunExtensionFactoryContext,
+    RunBindings,
+    build_environment_run_extension_factory_catalog,
+    discover_environment_run_extension_factory_references,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
-    RunBindings,
-    build_environment_run_extension_factory_catalog,
     create_environment_provider_binding,
     create_environment_run_binding,
-    discover_environment_run_extension_factory_references,
 )
 
 EXTENSION_KEY = "example.workspace-marker"
@@ -57,7 +59,7 @@ async def _run_extension_demo(
     provider_catalog = build_environment_provider_factory_catalog(
         explicit_factories=(WorkspaceEnvironmentProviderFactory(),)
     )
-    manager = provider_catalog.create_manager(
+    manager = provider_catalog.create_provider(
         EnvironmentProviderSpec(
             provider_key="example.workspace",
             schema_version="1",
@@ -117,9 +119,9 @@ async def _run_extension_demo(
                 state_limits=EnvironmentStateLimits(max_binding_entries=1),
                 extensions=(extension,),
             )
-            run_bindings = RunBindings.local(environment=environment_binding)
+            run_bindings = RunBindings.embedded(environment=environment_binding)
 
-            async with run_bindings.environment.bind(
+            async with environment_binding.bind(
                 run_id="run-extension-example",
                 instance=run_bindings.instance,
             ) as environment:

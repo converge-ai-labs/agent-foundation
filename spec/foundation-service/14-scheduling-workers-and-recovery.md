@@ -76,7 +76,7 @@ A reconciler detects an expired lease under a lock that verifies its Attempt gen
 | Attempt crossed `effects_possible` without conclusive evidence | Execution enters `waiting` with `reconciliation_required`             |
 | Selected revision or state is permanently incompatible         | Execution fails with a bounded durable reason                         |
 
-The `pre_dispatch` conclusion comes from the fenced Attempt record, not from missing logs, receipts, heartbeats, or telemetry. After `effects_possible`, Foundation uses the owning Environment Manager reconciliation operation, tool/provider receipts, client evidence, or an explicit authorized operator decision. It never converts lack of evidence into proof of no side effect.
+The `pre_dispatch` conclusion comes from the fenced Attempt record, not from missing logs, receipts, heartbeats, or telemetry. After `effects_possible`, Foundation uses the owning Environment Provider reconciliation operation, tool/provider receipts, client evidence, or an explicit authorized operator decision. It never converts lack of evidence into proof of no side effect.
 
 Replacement work creates a new ExecutionAttempt, Harness Run, Environment attachment, controller, credentials, and provider clients. It never restores another process's live task, session, socket, dispatcher, controller, or attachment.
 

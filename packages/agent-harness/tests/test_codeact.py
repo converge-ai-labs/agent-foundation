@@ -20,17 +20,19 @@ from a13n_harness import (
     DelegationCapability,
     DelegationRunCapability,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
-    NoopEnvironmentRunBinding,
     RunBindings,
     SubagentDefinition,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
+    NoopEnvironmentRunBinding,
     create_environment_run_binding,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
@@ -142,7 +144,7 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     )
 
     events: list[HarnessEvent] = []
-    async with executable.stream("run", bindings=RunBindings.local()) as stream:
+    async with executable.stream("run", bindings=RunBindings.embedded()) as stream:
         async for item in stream:
             if isinstance(item, HarnessEvent):
                 events.append(item)
@@ -195,7 +197,7 @@ async def test_run_program_reads_direct_local_source_and_dispatches_current_tool
     )
     result = await executable.run(
         "run program",
-        bindings=RunBindings.local(environment=_local_environment(tmp_path)),
+        bindings=RunBindings.embedded(environment=_local_environment(tmp_path)),
     )
 
     assert result.output_or_raise() == "done"

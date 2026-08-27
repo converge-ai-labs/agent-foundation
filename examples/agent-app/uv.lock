@@ -7,6 +7,7 @@ name = "a13n-agent-app-example"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "a13n-environment-provider" },
     { name = "a13n-harness" },
     { name = "pydantic-ai-slim" },
 ]
@@ -20,6 +21,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a13n-environment-provider", editable = "../../packages/agent-environment-provider" },
     { name = "a13n-harness", editable = "../../packages/agent-harness" },
     { name = "pydantic-ai-slim", specifier = ">=2.31.1,<2.32" },
 ]

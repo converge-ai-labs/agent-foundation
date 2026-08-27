@@ -18,13 +18,15 @@ from a13n_environment_provider import (
 )
 from a13n_harness import (
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
+    RunBindings,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
     EnvironmentProviderBinding,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
-    RunBindings,
     create_environment_provider_binding,
     create_environment_run_binding,
 )
@@ -42,6 +44,8 @@ class EnvironmentDemoResult:
     aliases: tuple[str, ...]
     default_text: str
     docs_text: str
+    durable_lifecycle_phases: tuple[str, ...]
+    pause_supported: bool
 
 
 def _provider_spec(root: Path, environment_id: str) -> EnvironmentProviderSpec:
@@ -91,20 +95,18 @@ async def _run_environment_demo(
 ) -> EnvironmentDemoResult:
     from a13n_plugin_examples.environment import WorkspaceEnvironmentRuntime
 
-    source_manager = catalog.create_manager(
+    source_provider = catalog.create_provider(
         _provider_spec(source_root, "workspace-source"),
         runtime=WorkspaceEnvironmentRuntime(),
     )
-    docs_manager = catalog.create_manager(
+    docs_provider = catalog.create_provider(
         _provider_spec(docs_root, "workspace-docs"),
         runtime=WorkspaceEnvironmentRuntime(),
     )
-    source_resource = await source_manager.create(
-        operation=_operation(EnvironmentManagementAction.CREATE, "workspace-source")
-    )
-    docs_resource = await docs_manager.create(
-        operation=_operation(EnvironmentManagementAction.CREATE, "workspace-docs")
-    )
+    source_create = _operation(EnvironmentManagementAction.CREATE, "workspace-source")
+    docs_create = _operation(EnvironmentManagementAction.CREATE, "workspace-docs")
+    source_resource = await source_provider.create(operation=source_create)
+    docs_resource = await docs_provider.create(operation=docs_create)
     source_state = source_resource.state
     docs_state = docs_resource.state
 
@@ -128,10 +130,10 @@ async def _run_environment_demo(
                 topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=1),
                 state_limits=EnvironmentStateLimits(max_binding_entries=2),
             )
-            run_bindings = RunBindings.local(environment=environment_binding)
+            run_bindings = RunBindings.embedded(environment=environment_binding)
 
             # HarnessRunStream performs this same aggregate bind/activate lifecycle.
-            async with run_bindings.environment.bind(
+            async with environment_binding.bind(
                 run_id="run-example",
                 instance=run_bindings.instance,
             ) as environment:
@@ -140,11 +142,18 @@ async def _run_environment_demo(
                 docs_page = await environment.files.read_text("/environment/docs/message.txt")
                 aliases = tuple(binding.alias for binding in environment.topology.bindings)
 
-    await source_manager.destroy(
-        source_state,
-        operation=_operation(EnvironmentManagementAction.DESTROY, "workspace-source"),
-    )
-    await docs_manager.destroy(
+    created = await source_provider.reconcile(source_create, last_known_state=source_state)
+    source_resume = _operation(EnvironmentManagementAction.RESUME, "workspace-source")
+    resumed_resource = await source_provider.resume(source_state, operation=source_resume)
+    async with resumed_resource:
+        async with resumed_resource.acquire_attachment():
+            resumed_state = resumed_resource.state
+    resumed = await source_provider.reconcile(source_resume, last_known_state=resumed_state)
+
+    source_destroy = _operation(EnvironmentManagementAction.DESTROY, "workspace-source")
+    await source_provider.destroy(resumed_state, operation=source_destroy)
+    destroyed = await source_provider.reconcile(source_destroy, last_known_state=resumed_state)
+    await docs_provider.destroy(
         docs_state,
         operation=_operation(EnvironmentManagementAction.DESTROY, "workspace-docs"),
     )
@@ -155,6 +164,8 @@ async def _run_environment_demo(
         aliases=aliases,
         default_text=default_page.text,
         docs_text=docs_page.text,
+        durable_lifecycle_phases=(created.phase.value, resumed.phase.value, destroyed.phase.value),
+        pause_supported=bool(source_provider.lifecycle_capabilities.pause_modes),
     )
 
 
@@ -213,6 +224,8 @@ def _run_main(selection_mode: EnvironmentSelectionMode) -> None:
     print(f"active aliases: {', '.join(result.aliases)}")
     print(f"default route: {result.default_text.strip()}")
     print(f"docs route: {result.docs_text.strip()}")
+    print(f"durable lifecycle: {' -> '.join(result.durable_lifecycle_phases)}")
+    print(f"pause supported: {result.pause_supported}")
 
 
 def main_entrypoint() -> None:

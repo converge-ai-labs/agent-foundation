@@ -27,16 +27,18 @@ from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentError,
     EnvironmentOutputPolicy,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     FileQueryRequest,
     FileTextSearchRequest,
     OpaqueOutputReference,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_provider_binding,
     create_environment_run_binding,
 )
@@ -104,7 +106,7 @@ def test_direct_local_configuration_defaults_and_exact_schema(tmp_path: Path) ->
 
 async def test_host_manager_attachment_path_supports_sequential_harness_runs(tmp_path: Path) -> None:
     catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
-    manager = catalog.create_manager(
+    manager = catalog.create_provider(
         EnvironmentProviderSpec(
             provider_key="a13n.direct-local",
             schema_version="1",

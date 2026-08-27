@@ -124,7 +124,7 @@ async def test_each_model_request_reports_mixed_usage_once() -> None:
 
     async with executable.stream(
         "go",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=_allow),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=_allow),)),
     ) as stream:
         assert isinstance(stream.context.usage_attribution, RunUsageLedger)
         items = [item async for item in stream]
@@ -153,7 +153,7 @@ async def test_each_model_request_reports_mixed_usage_once() -> None:
 
     repeated = await executable.run(
         "go again",
-        bindings=RunBindings.local(capabilities=(InvocationPolicyCapability(evaluator=_allow),)),
+        bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=_allow),)),
     )
     repeated_provider = next(record for record in repeated.usage_records if isinstance(record, ProviderUsageRecord))
     assert repeated_provider.record_id == provider.record_id
@@ -184,7 +184,7 @@ async def test_recovery_reports_interrupted_and_completed_model_requests() -> No
         ),
     )
 
-    async with executable.stream("go", bindings=RunBindings.local()) as stream:
+    async with executable.stream("go", bindings=RunBindings.embedded()) as stream:
         items = [item async for item in stream]
 
     result = items[-1].result
@@ -245,7 +245,7 @@ async def test_provider_usage_after_final_model_request_is_reported_at_terminal(
         capabilities=(_LateProviderUsageCapability(receipt=receipt),),
     )
 
-    async with executable.stream("go", bindings=RunBindings.local()) as run:
+    async with executable.stream("go", bindings=RunBindings.embedded()) as run:
         items = [item async for item in run]
 
     reports = [
@@ -295,7 +295,7 @@ async def test_custom_model_cost_is_applied_before_native_accumulation() -> None
         model=FunctionModel(stream_function=stream),
         capabilities=(cost_capability,),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert result.usage.cost == Decimal("0.125")
     assert len(inputs) == 1
@@ -349,7 +349,7 @@ async def test_custom_pricing_survives_retry_of_a_committed_response() -> None:
         model=FunctionModel(stream_function=stream),
         capabilities=(retry, _FixedCostCapability(inputs=inputs)),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     model_records = [record for record in result.usage_records if isinstance(record, ModelUsageRecord)]
     assert retry.calls == 2
@@ -372,7 +372,7 @@ async def test_later_response_replacement_cannot_mislabel_custom_cost() -> None:
         model=FunctionModel(stream_function=stream),
         capabilities=(_ReplaceResponseCost(), _FixedCostCapability(inputs=inputs)),
     )
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     record = result.usage_records[0]
     assert isinstance(record, ModelUsageRecord)
@@ -393,7 +393,7 @@ async def test_post_response_failure_does_not_mint_uncommitted_usage_record() ->
         model=FunctionModel(stream_function=stream),
         capabilities=(_FailAfterResponse(),),
     )
-    async with executable.stream("go", bindings=RunBindings.local()) as run:
+    async with executable.stream("go", bindings=RunBindings.embedded()) as run:
         items = [item async for item in run]
 
     assert items[-1].result.status == "failed"
@@ -419,11 +419,11 @@ async def test_imported_history_is_not_reattributed_on_resume() -> None:
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
-    first = await executable.run("one", bindings=RunBindings.local())
+    first = await executable.run("one", bindings=RunBindings.embedded())
     state = first.state
     assert isinstance(state, HarnessState)
 
-    second = await executable.run("two", bindings=RunBindings.local(), previous_state=state)
+    second = await executable.run("two", bindings=RunBindings.embedded(), previous_state=state)
 
     first_records = [record for record in first.usage_records if isinstance(record, ModelUsageRecord)]
     second_records = [record for record in second.usage_records if isinstance(record, ModelUsageRecord)]

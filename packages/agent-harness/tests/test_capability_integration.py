@@ -10,7 +10,6 @@ from a13n_environment_provider import (
     DirectLocalRootConfiguration,
 )
 from a13n_harness import (
-    BoundEnvironment,
     BoundProcessHandle,
     CompactionCapability,
     CompactionPolicy,
@@ -21,11 +20,7 @@ from a13n_harness import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     FileContextCapability,
     FileContextConfiguration,
     FileSkillSource,
@@ -54,6 +49,13 @@ from a13n_harness import (
     WebSearchRequest,
     WebSearchResponse,
     WorkingStateCapability,
+)
+from a13n_harness.environment.advanced import (
+    BoundEnvironment,
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_run_binding,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
@@ -188,7 +190,7 @@ def _environment(root: Path):
 
 
 def _bindings(root: Path, monitor: _Monitor) -> RunBindings:
-    return RunBindings.local(
+    return RunBindings.embedded(
         environment=_environment(root),
         metadata={"tenant": "integration-test"},
         capabilities=(

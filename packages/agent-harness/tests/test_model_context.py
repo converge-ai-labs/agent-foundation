@@ -169,7 +169,7 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
         model=FunctionModel(stream_function=stream),
         plugins=(_ProjectionPlugin(calls),),
     )
-    result = await executable.run("hello", bindings=RunBindings.local(model_context=host))
+    result = await executable.run("hello", bindings=RunBindings.embedded(model_context=host))
 
     assert result.output_or_raise() == "done"
     assert calls == ["host:before", "capability:before", "capability:after", "host:after"]
@@ -203,7 +203,7 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
-    await executable.run("hello", bindings=RunBindings.local(model_context=host))
+    await executable.run("hello", bindings=RunBindings.embedded(model_context=host))
 
     request = seen[0][-1]
     assert isinstance(request, ModelRequest)

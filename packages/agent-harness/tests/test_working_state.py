@@ -230,7 +230,7 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
     )
-    first = await executable.run("Coordinate work", bindings=RunBindings.local())
+    first = await executable.run("Coordinate work", bindings=RunBindings.embedded())
 
     assert first.output_or_raise() == "done"
     assert first.state is not None
@@ -257,7 +257,7 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
     )
     result = await resumed.run(
         "Continue",
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=first.state,
     )
 
@@ -313,7 +313,7 @@ async def test_pending_task_non_status_mutation_atomically_claims_owner() -> Non
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
     )
-    result = await executable.run("Coordinate", bindings=RunBindings.local())
+    result = await executable.run("Coordinate", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert observed[-1]["task"]["description"] == "After"
@@ -345,7 +345,7 @@ async def test_working_state_context_has_hard_utf8_budget() -> None:
     )
     result = await executable.run(
         "Continue",
-        bindings=RunBindings.local(capabilities=(TaskStateRunCapability(source="provider", cell=cell),)),
+        bindings=RunBindings.embedded(capabilities=(TaskStateRunCapability(source="provider", cell=cell),)),
     )
 
     assert result.output_or_raise() == "done"
@@ -401,7 +401,7 @@ async def test_task_list_and_task_results_hide_internal_revisions() -> None:
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
     )
-    result = await executable.run("Coordinate", bindings=RunBindings.local())
+    result = await executable.run("Coordinate", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert "revision" not in observed[0]["task"]
@@ -462,7 +462,7 @@ async def test_working_state_tools_normalize_internal_validation_errors() -> Non
         model=FunctionModel(stream_function=stream),
         capabilities=(WorkingStateCapability(),),
     )
-    result = await executable.run("Coordinate", bindings=RunBindings.local())
+    result = await executable.run("Coordinate", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert results[0]["error"]["code"] == "task_request_invalid"
@@ -498,14 +498,14 @@ async def test_provider_mode_requires_fresh_binding_and_discards_mismatched_curs
     with pytest.raises(DefinitionError) as missing:
         await executable.run(
             "Continue",
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=previous,
         )
     assert missing.value.code == "task_state_binding_missing"
 
     result = await executable.run(
         "Continue",
-        bindings=RunBindings.local(
+        bindings=RunBindings.embedded(
             capabilities=(
                 TaskStateRunCapability(
                     source="provider",
@@ -534,7 +534,7 @@ async def test_provider_mode_without_task_surface_does_not_require_task_binding(
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider", tasks_enabled=False)),),
     )
 
-    result = await executable.run("Continue", bindings=RunBindings.local())
+    result = await executable.run("Continue", bindings=RunBindings.embedded())
     assert result.output_or_raise() == "done"
 
 
@@ -548,7 +548,7 @@ async def test_task_attachment_without_working_state_owner_fails_closed() -> Non
     with pytest.raises(DefinitionError) as exc_info:
         await executable.run(
             "Continue",
-            bindings=RunBindings.local(
+            bindings=RunBindings.embedded(
                 capabilities=(TaskStateRunCapability(source="provider", cell=EmbeddedTaskStateCell()),)
             ),
         )

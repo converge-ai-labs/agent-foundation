@@ -9,7 +9,7 @@ import os
 import stat
 import struct
 import uuid
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -94,7 +94,7 @@ class LocalObjectStore:
                 await to_thread.run_sync(_unlink_if_present, temporary, limiter=self._limiter)
 
     @asynccontextmanager
-    async def open(self, key: str, *, byte_range: ByteRange | None = None) -> AsyncIterator[ObjectReader]:
+    async def open(self, key: str, *, byte_range: ByteRange | None = None) -> AsyncGenerator[ObjectReader]:
         validate_key(key)
         path = self._object_path(key)
         shard_exists = await to_thread.run_sync(

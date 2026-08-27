@@ -1,6 +1,6 @@
 """Async relational storage construction and short session scopes."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Protocol, cast
@@ -71,7 +71,7 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
 @asynccontextmanager
 async def short_session(
     factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
-) -> AsyncIterator[AsyncSession]:
+) -> AsyncGenerator[AsyncSession]:
     session = factory()
     try:
         yield session
@@ -83,7 +83,7 @@ async def short_session(
 @asynccontextmanager
 async def transaction(
     factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
-) -> AsyncIterator[AsyncSession]:
+) -> AsyncGenerator[AsyncSession]:
     async with short_session(factory, cleanup_timeout_seconds=cleanup_timeout_seconds) as session:
         database_transaction = await session.begin()
         try:

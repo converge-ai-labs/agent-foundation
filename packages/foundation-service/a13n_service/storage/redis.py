@@ -1,6 +1,6 @@
 """Redis-compatible client construction."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -13,7 +13,7 @@ from .config import RedisMemoryConfig, RedisServerConfig
 
 
 @asynccontextmanager
-async def open_redis(config: RedisServerConfig | RedisMemoryConfig) -> AsyncIterator[Redis]:
+async def open_redis(config: RedisServerConfig | RedisMemoryConfig) -> AsyncGenerator[Redis]:
     if isinstance(config, RedisServerConfig):
         client = Redis.from_url(
             config.url.get_secret_value(),

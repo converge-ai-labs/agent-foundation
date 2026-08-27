@@ -158,7 +158,7 @@ The host policy chooses:
 
 The Delegation Capability creates bounded child input under `DelegationContextPolicy`. A provider can reject the request but cannot widen the context or limit ceilings. The child always receives a fresh `AgentContext`; that context initializes its private state and messages from the selected nested `HarnessState` after fresh bindings are authorized. No live parent plugin instance or chain, `BoundPluginContext`, mutable message list, whole `AgentContextState`, model session, provider handle, credential, or event queue is shared. Its exact definition selects its own plugin specs, its executable owns a separately constructed Agent-bound graph, and each invocation derives fresh run-bound replacements. When task sharing is enabled, only the Working State Capability's typed task cell crosses the state boundary through its explicit child binding. Every other Capability state remains child-private.
 
-An embedded application supplies a local `DelegationRunCapability` with an explicit child-binding factory when it enables delegation. `RunBindings.local()` does not derive child filesystem, shell, provider, model, or client-tool authority from the parent binding.
+An embedded application supplies a local `DelegationRunCapability` with an explicit child-binding factory when it enables delegation. `RunBindings.embedded()` does not derive child filesystem, shell, provider, model, or client-tool authority from the parent binding.
 
 ## Child Usage Limits
 
@@ -201,7 +201,9 @@ sequenceDiagram
 
 Native parent cancellation cancels and drains the active delegation tool task. That task closes the child `HarnessRunStream`, whose underlying `AgentRunEvents.aclose()` cancels and drains the child run. Child output is validated and bounded before entering the parent result. Raw exceptions, private messages, and state are not returned to the model.
 
-Parent and child events use separate Thread IDs, Run IDs, and Agent instance lineage. The Harness binds a private forwarder to the exact child stream and projects validated child events into the parent stream while the Delegation Capability consumes the terminal child result internally. Forwarding preserves the child's Thread, Run, and source sequence through plugin processing. Passing the parent's live `RunContext.usage` makes the root result accumulate usage from the complete inline descendant tree. Child results contain cumulative snapshots rather than child-only deltas; child-correlated messages, events, and telemetry retain per-response attribution.
+Parent and child events use separate Thread IDs, Run IDs, and Agent instance lineage. The Harness binds a private forwarder to the exact child stream and projects validated child events into the parent stream while the Delegation Capability consumes the terminal child result internally. Forwarding preserves the child's Thread, Run, and source sequence through plugin processing. Passing the parent's live `RunContext.usage` makes the root result accumulate usage from the complete inline descendant tree. Child results contain cumulative snapshots rather than child-only deltas; child-correlated messages, events, and Observation retain per-response attribution.
+
+When [Harness Observation](19-observation-model.md#inline-children) is enabled, the blocking child logical Run creates one nested logical-run span inside the active trace and contains its own Pydantic Agent/model/tool descendants. The same invocation has no duplicate sibling dispatch span; event forwarding and span parentage remain independent projections.
 
 ## Parent Checkpoint and Crash Boundary
 
@@ -239,7 +241,9 @@ sequenceDiagram
 
 The spawn result is not `CallDeferred`. Child completion does not satisfy the original tool-call ID and does not resume a suspended parent tool call. If the parent is active, the Host may deliver through native enqueue or another Capability-owned message seam. If no eligible run is active, it can retain the result for a later turn or start a fresh parent run. Delivery acceptance, incorporation, duplicate suppression, and the decision not to run two parent executions concurrently are Host policies.
 
-The Host owns child target identity, execution or task records, persistence, queues, leases, retries, cancellation, steering, result retention, wake-up, active-parent routing, fresh-run creation, and cross-run accounting. It obtains fresh child authority when execution starts. No live parent `RunBindings`, `BoundPluginContext`, plugin instance or chain, Environment, client connection, or credential is retained as durable child authority.
+The Host owns child target identity, execution or task records, persistence, queues, leases, retries, cancellation, steering, result retention, wake-up, active-parent routing, fresh-run creation, and cross-run accounting. It obtains fresh child authority when execution starts. No live parent `RunBindings`, `BoundPluginContext`, plugin instance or chain, Environment, client connection, credential, or OpenTelemetry span object is retained as durable child authority.
+
+The Host also owns asynchronous-child trace propagation. It may continue bounded work with W3C Trace Context, while independently scheduled or durable work starts a new trace linked to the dispatch context. A correlation string does not replace the propagation context or OpenTelemetry span link. The complete boundary belongs to [Harness Observation](19-observation-model.md#host-managed-asynchronous-children).
 
 A process-local Host such as a CLI selects a child from `SubagentCollection`, creates fresh child bindings, and calls that child's ordinary `ExecutableAgent.stream()` inside a Host-owned background job. It stores the resulting child `HarnessState` in its own bounded job record and owns synchronization, retention, result routing, and any serialized later mapping into parent Delegation State; it never lets the first-party blocking inline tool task outlive its parent run or retain that run's usage, borrowed cell, or authority. A durable service instead gives each child its own execution and checkpoint records while storing the child's `HarnessState` inside those records. Both choices reuse Harness execution and state without making the Harness a scheduler.
 
@@ -325,3 +329,4 @@ Leaving background scheduling with the Host preserves true parent/child parallel
 10. A Host async spawn returns an ordinary tool result; later completion is new Host-routed input and never a deferred result for the spawn call.
 11. Host-managed child execution obtains fresh authority and owns durability, delivery, wake-up, retries, cancellation, and cross-run accounting.
 12. Every child State owns a Thread ID distinct from its parent and siblings; continuation restores it from nested `HarnessState`, never from `AgentInstanceRef` or a transient child Harness run ID.
+13. Inline child Observation nests once in the active trace; Host-managed asynchronous children use Host-owned W3C propagation or a new trace with a span link.

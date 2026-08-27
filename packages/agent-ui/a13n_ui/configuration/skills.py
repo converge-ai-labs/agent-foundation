@@ -27,21 +27,23 @@ from a13n_environment_provider import (
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
-    BoundEnvironment,
     BoundSkillCatalog,
     BoundSkillCatalogItem,
     DefinitionError,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentError,
     EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     FileOperator,
     FileSkillSource,
     SkillManager,
     SkillsPolicy,
+)
+from a13n_harness.environment.advanced import (
+    BoundEnvironment,
+    EnvironmentBindingRequest,
+    EnvironmentStateLimits,
+    EnvironmentTopologyLimits,
+    EnvironmentTopologyRequest,
     create_environment_provider_binding,
     create_environment_run_binding,
 )
@@ -898,7 +900,7 @@ async def _open_environment(
                     "root": {"path": str(path), "read_only": True},
                 },
             )
-            manager = factory_catalog.create_manager(spec, runtime=DirectLocalProviderRuntime())
+            manager = factory_catalog.create_provider(spec, runtime=DirectLocalProviderRuntime())
             managed = await manager.create(
                 operation=EnvironmentOperationContext(
                     operation_id=f"skill-create-{len(alias_by_directory)}",

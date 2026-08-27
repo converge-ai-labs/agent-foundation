@@ -63,7 +63,7 @@ def _build() -> object:
 
 async def test_structured_question_suspends_and_resumes_through_native_deferred_values() -> None:
     executable = _build()
-    first = await executable.run("clarify", bindings=RunBindings.local())
+    first = await executable.run("clarify", bindings=RunBindings.embedded())
 
     assert first.status == "suspended"
     assert first.state is not None and first.deferred is not None
@@ -71,7 +71,7 @@ async def test_structured_question_suspends_and_resumes_through_native_deferred_
     call_id = first.deferred.calls[0].tool_call_id
 
     second = await _build().run(
-        bindings=RunBindings.local(),
+        bindings=RunBindings.embedded(),
         previous_state=first.state,
         deferred_resume=DeferredToolResume(
             first.deferred,
@@ -90,13 +90,13 @@ async def test_structured_question_suspends_and_resumes_through_native_deferred_
 
 
 async def test_structured_question_rejects_uncorrelated_answer_shape_before_resume() -> None:
-    first = await _build().run("clarify", bindings=RunBindings.local())
+    first = await _build().run("clarify", bindings=RunBindings.embedded())
     assert first.state is not None and first.deferred is not None
     call_id = first.deferred.calls[0].tool_call_id
 
     with pytest.raises(RunError) as invalid:
         await _build().run(
-            bindings=RunBindings.local(),
+            bindings=RunBindings.embedded(),
             previous_state=first.state,
             deferred_resume=DeferredToolResume(
                 first.deferred,

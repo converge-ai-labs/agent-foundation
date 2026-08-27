@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING, Any
 
-from .attachments import create_environment_provider_binding
 from .commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -22,14 +21,6 @@ from .commands import (
     ProcessWriteStdinResult,
     ShellCommand,
     ShellExecResult,
-)
-from .coordinator import (
-    CompositeBoundEnvironment,
-    CompositeEnvironmentRunBinding,
-    NoopBoundEnvironment,
-    NoopEnvironmentRunBinding,
-    create_environment_run_binding,
-    create_noop_environment_run_binding,
 )
 from .extension_factories import (
     ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP,
@@ -66,7 +57,6 @@ from .models import (
     EnvironmentAvailability,
     EnvironmentBinding,
     EnvironmentBindingObservation,
-    EnvironmentBindingRequest,
     EnvironmentBindingState,
     EnvironmentDescriptor,
     EnvironmentError,
@@ -76,24 +66,12 @@ from .models import (
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
     EnvironmentState,
-    EnvironmentStateLimits,
     EnvironmentTopology,
     EnvironmentTopologyBindingChange,
     EnvironmentTopologyChange,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
 )
-from .providers import (
-    BoundEnvironment,
-    BoundEnvironmentProvider,
-    EnvironmentProviderBinding,
-    EnvironmentProviderOperations,
-    EnvironmentRunBinding,
-    EnvironmentTopologyController,
-    EnvironmentTopologyObserver,
-    FileScopeProvider,
-    FileScopeSelection,
-)
+from .providers import BoundEnvironment as Environment
+from .providers import FileScopeSelection
 from .retention import (
     BoundOutputCursor,
     BoundOutputReference,
@@ -105,6 +83,7 @@ from .retention import (
     OpaqueOutputReference,
     OpaqueProcessHandle,
 )
+from .sources import EnvironmentAccess, EnvironmentEntry, EnvironmentMount, EnvironmentSource
 from .virtual_files import VirtualFileOperator
 
 if TYPE_CHECKING:
@@ -130,27 +109,26 @@ __all__ = [
     "ENVIRONMENT_ACTION_DISPATCH",
     "ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP",
     "ArgvCommand",
-    "BoundEnvironment",
-    "BoundEnvironmentProvider",
     "BoundOutputCursor",
     "BoundOutputReference",
     "BoundProcessHandle",
     "CommandEnvironment",
     "CommandLimits",
     "CommandRequest",
-    "CompositeBoundEnvironment",
-    "CompositeEnvironmentRunBinding",
     "DynamicEnvironmentCapability",
     "DynamicEnvironmentConfiguration",
+    "Environment",
+    "EnvironmentAccess",
     "EnvironmentAction",
     "EnvironmentActionDispatch",
     "EnvironmentAvailability",
     "EnvironmentBinding",
     "EnvironmentBindingObservation",
-    "EnvironmentBindingRequest",
     "EnvironmentBindingState",
     "EnvironmentDescriptor",
+    "EnvironmentEntry",
     "EnvironmentError",
+    "EnvironmentMount",
     "EnvironmentMountDescriptor",
     "EnvironmentOperationFamily",
     "EnvironmentOutputCapture",
@@ -159,10 +137,7 @@ __all__ = [
     "EnvironmentOutputSegment",
     "EnvironmentPath",
     "EnvironmentPermissionSet",
-    "EnvironmentProviderBinding",
-    "EnvironmentProviderOperations",
     "EnvironmentReadinessRequirement",
-    "EnvironmentRunBinding",
     "EnvironmentRunExtension",
     "EnvironmentRunExtensionContext",
     "EnvironmentRunExtensionFactory",
@@ -170,15 +145,11 @@ __all__ = [
     "EnvironmentRunExtensionFactoryContext",
     "EnvironmentRunExtensionFactoryReference",
     "EnvironmentRunExtensionFactoryRegistration",
+    "EnvironmentSource",
     "EnvironmentState",
-    "EnvironmentStateLimits",
     "EnvironmentTopology",
     "EnvironmentTopologyBindingChange",
     "EnvironmentTopologyChange",
-    "EnvironmentTopologyController",
-    "EnvironmentTopologyLimits",
-    "EnvironmentTopologyObserver",
-    "EnvironmentTopologyRequest",
     "FileCopyResult",
     "FileEntriesResult",
     "FileMetadata",
@@ -186,7 +157,6 @@ __all__ = [
     "FileOperator",
     "FilePatchResult",
     "FileQueryRequest",
-    "FileScopeProvider",
     "FileScopeSelection",
     "FileTextMatch",
     "FileTextResult",
@@ -194,8 +164,6 @@ __all__ = [
     "FileTextSearchResult",
     "FileWriteMode",
     "FileWriteResult",
-    "NoopBoundEnvironment",
-    "NoopEnvironmentRunBinding",
     "OpaqueOutputCursor",
     "OpaqueOutputReference",
     "OpaqueProcessHandle",
@@ -214,8 +182,5 @@ __all__ = [
     "ShellExecResult",
     "VirtualFileOperator",
     "build_environment_run_extension_factory_catalog",
-    "create_environment_provider_binding",
-    "create_environment_run_binding",
-    "create_noop_environment_run_binding",
     "discover_environment_run_extension_factory_references",
 ]

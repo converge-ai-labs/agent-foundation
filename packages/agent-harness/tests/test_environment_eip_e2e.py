@@ -18,8 +18,10 @@ from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentPermissionSet,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,

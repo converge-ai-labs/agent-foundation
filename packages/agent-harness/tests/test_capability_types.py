@@ -116,7 +116,7 @@ async def test_bare_capability_functions_are_rejected_from_definition_and_run_so
     with pytest.raises(DefinitionError) as run_error:
         executable.stream(
             "run",
-            bindings=RunBindings.local(capabilities=cast(Any, (dynamic,))),
+            bindings=RunBindings.embedded(capabilities=cast(Any, (dynamic,))),
         )
     assert run_error.value.code == "capability_type_invalid"
 
@@ -146,7 +146,7 @@ async def test_agent_spec_tool_timeout_does_not_apply_to_capability_owned_tools(
         capabilities=(Capability(tools=[slow_tool], id="slow-feature"),),
     )
 
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
 
@@ -189,7 +189,7 @@ async def test_capability_owned_toolset_is_exposed_and_dispatched() -> None:
         ),
     )
 
-    result = await executable.run("go", bindings=RunBindings.local())
+    result = await executable.run("go", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
     assert toolset_ids

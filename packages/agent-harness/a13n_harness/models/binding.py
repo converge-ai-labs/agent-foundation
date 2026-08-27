@@ -29,7 +29,7 @@ async def resolve_run_model(
     context: ModelResolutionContext[AgentContext],
     model_id: str,
 ) -> Model | None:
-    """Resolve through the fresh callable, or delegate to native inference."""
+    """Resolve through the fresh callable, or signal builder inference."""
     resolver = context.deps.model_resolver
     if resolver is None:
         return None

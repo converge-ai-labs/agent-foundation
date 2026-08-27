@@ -21,15 +21,17 @@ from a13n_harness import (
     CommandLimits,
     CommandRequest,
     EnvironmentAction,
-    EnvironmentBindingRequest,
     EnvironmentError,
     EnvironmentOutputPolicy,
     EnvironmentPermissionSet,
+    PortTarget,
+    ShellCommand,
+)
+from a13n_harness.environment.advanced import (
+    EnvironmentBindingRequest,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
     EnvironmentTopologyRequest,
-    PortTarget,
-    ShellCommand,
     create_environment_run_binding,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding

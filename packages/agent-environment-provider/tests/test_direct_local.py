@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from a13n_environment_provider import (
     DirectLocalEnvironmentAttachment,
-    DirectLocalEnvironmentManager,
+    DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalProviderRuntime,
     DirectLocalRootConfiguration,
@@ -31,9 +31,9 @@ def _operation(action: EnvironmentManagementAction, suffix: str) -> EnvironmentO
     )
 
 
-def _manager(root: Path, *, environment_id: str = "local-1") -> DirectLocalEnvironmentManager:
+def _provider(root: Path, *, environment_id: str = "local-1") -> DirectLocalEnvironmentProvider:
     catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
-    manager = catalog.create_manager(
+    provider = catalog.create_provider(
         spec=EnvironmentProviderSpec(
             provider_key="a13n.direct-local",
             schema_version="1",
@@ -44,8 +44,8 @@ def _manager(root: Path, *, environment_id: str = "local-1") -> DirectLocalEnvir
         ),
         runtime=DirectLocalProviderRuntime(),
     )
-    assert isinstance(manager, DirectLocalEnvironmentManager)
-    return manager
+    assert isinstance(provider, DirectLocalEnvironmentProvider)
+    return provider
 
 
 async def test_direct_local_create_issues_shared_fresh_attachments_without_mutating_root(
@@ -53,8 +53,8 @@ async def test_direct_local_create_issues_shared_fresh_attachments_without_mutat
 ) -> None:
     marker = tmp_path / "host-owned.txt"
     marker.write_text("preserve")
-    manager = _manager(tmp_path)
-    resource = await manager.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+    provider = _provider(tmp_path)
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
 
     async with resource:
         async with (
@@ -67,7 +67,7 @@ async def test_direct_local_create_issues_shared_fresh_attachments_without_mutat
             assert first.configuration.root.path == tmp_path.resolve()
         state = resource.state
 
-    await manager.destroy(
+    await provider.destroy(
         state,
         operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
     )
@@ -78,11 +78,11 @@ async def test_direct_local_create_issues_shared_fresh_attachments_without_mutat
 async def test_direct_local_resume_validates_exact_state_and_existing_directory(
     tmp_path: Path,
 ) -> None:
-    manager = _manager(tmp_path)
-    created = await manager.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+    provider = _provider(tmp_path)
+    created = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
     state = created.state
 
-    resumed = await manager.resume(
+    resumed = await provider.resume(
         state,
         operation=_operation(EnvironmentManagementAction.RESUME, "resume"),
     )
@@ -99,7 +99,7 @@ async def test_direct_local_resume_validates_exact_state_and_existing_directory(
         },
     )
     with pytest.raises(EnvironmentProviderError) as exc_info:
-        await manager.resume(
+        await provider.resume(
             invalid,
             operation=_operation(EnvironmentManagementAction.RESUME, "invalid"),
         )
@@ -107,11 +107,11 @@ async def test_direct_local_resume_validates_exact_state_and_existing_directory(
 
 
 async def test_direct_local_pause_is_rejected_before_effect(tmp_path: Path) -> None:
-    manager = _manager(tmp_path)
-    resource = await manager.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+    provider = _provider(tmp_path)
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
     async with resource:
         with pytest.raises(EnvironmentProviderError) as exc_info:
-            await manager.pause(
+            await provider.pause(
                 resource,
                 operation=_operation(EnvironmentManagementAction.PAUSE, "pause"),
                 mode=EnvironmentPauseMode.FILESYSTEM,
@@ -121,18 +121,18 @@ async def test_direct_local_pause_is_rejected_before_effect(tmp_path: Path) -> N
 
 
 async def test_direct_local_reconciliation_is_deterministic_and_read_only(tmp_path: Path) -> None:
-    manager = _manager(tmp_path)
+    provider = _provider(tmp_path)
     create_operation = _operation(EnvironmentManagementAction.CREATE, "create")
-    running = await manager.reconcile(create_operation, last_known_state=None)
+    running = await provider.reconcile(create_operation, last_known_state=None)
     assert running.phase is EnvironmentReconciliationPhase.RUNNING
     assert running.state is not None
 
     tmp_path.rmdir()
-    absent = await manager.reconcile(create_operation, last_known_state=None)
+    absent = await provider.reconcile(create_operation, last_known_state=None)
     assert absent.phase is EnvironmentReconciliationPhase.ABSENT
     assert absent.state is None
 
-    destroyed = await manager.reconcile(
+    destroyed = await provider.reconcile(
         _operation(EnvironmentManagementAction.DESTROY, "destroy"),
         last_known_state=running.state,
     )
@@ -163,15 +163,15 @@ async def test_direct_local_state_uses_canonical_root_and_rejects_symlink_retarg
     except OSError:
         pytest.skip("directory symlinks are unavailable")
 
-    direct = await _manager(first_root).create(operation=_operation(EnvironmentManagementAction.CREATE, "direct"))
-    via_alias_manager = _manager(alias)
-    via_alias = await via_alias_manager.create(operation=_operation(EnvironmentManagementAction.CREATE, "alias"))
+    direct = await _provider(first_root).create(operation=_operation(EnvironmentManagementAction.CREATE, "direct"))
+    via_alias_provider = _provider(alias)
+    via_alias = await via_alias_provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "alias"))
     assert direct.state == via_alias.state
 
     alias.unlink()
     alias.symlink_to(second_root, target_is_directory=True)
     with pytest.raises(EnvironmentProviderError) as exc_info:
-        await via_alias_manager.resume(
+        await via_alias_provider.resume(
             via_alias.state,
             operation=_operation(EnvironmentManagementAction.RESUME, "retargeted"),
         )
@@ -183,13 +183,13 @@ async def test_direct_local_destroy_rejects_another_environment_state(tmp_path: 
     second_root = tmp_path / "second"
     first_root.mkdir()
     second_root.mkdir()
-    first = _manager(first_root, environment_id="local-1")
+    first = _provider(first_root, environment_id="local-1")
     created = await first.create(operation=_operation(EnvironmentManagementAction.CREATE, "first"))
 
     for index, second in enumerate(
         (
-            _manager(first_root, environment_id="local-2"),
-            _manager(second_root, environment_id="local-1"),
+            _provider(first_root, environment_id="local-2"),
+            _provider(second_root, environment_id="local-1"),
         ),
         start=1,
     ):
@@ -202,12 +202,12 @@ async def test_direct_local_destroy_rejects_another_environment_state(tmp_path: 
 
 
 async def test_direct_local_rejects_inconsistent_operation_identity(tmp_path: Path) -> None:
-    manager = _manager(tmp_path)
+    provider = _provider(tmp_path)
     operation = _operation(EnvironmentManagementAction.CREATE, "shared")
-    resource = await manager.create(operation=operation)
+    resource = await provider.create(operation=operation)
 
     with pytest.raises(EnvironmentProviderError) as reuse_error:
-        await manager.destroy(
+        await provider.destroy(
             resource.state,
             operation=operation.model_copy(
                 update={
@@ -219,7 +219,7 @@ async def test_direct_local_rejects_inconsistent_operation_identity(tmp_path: Pa
     assert reuse_error.value.code == "provider_conflict"
 
     with pytest.raises(EnvironmentProviderError) as reconcile_error:
-        await manager.reconcile(
+        await provider.reconcile(
             operation.model_copy(
                 update={
                     "action": EnvironmentManagementAction.DESTROY,
