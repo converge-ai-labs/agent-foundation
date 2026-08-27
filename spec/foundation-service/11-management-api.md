@@ -34,7 +34,7 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Model integrations        | `/workspaces/{workspace_id}/model-integrations`                                                                                             | Mutable heads with immutable integration revisions                                        |
 | Sessions                  | `/workspaces/{workspace_id}/sessions`                                                                                                       | Hosted interaction tree and product/presentation scope                                    |
 | Threads                   | `/sessions/{session_id}/threads`                                                                                                            | Independently advancing histories within one Session                                      |
-| Turns                     | `/threads/{thread_id}/turns`                                                                                                                | Host-accepted advancement and Item scope                                                  |
+| Turns                     | `/threads/{thread_id}/turns`, `/turns/{turn_id}/lineage`                                                                                    | Host-accepted advancement and exact ancestor lineage                                      |
 | Items                     | `/turns/{turn_id}/items`                                                                                                                    | Ordered user-visible semantic records                                                     |
 | Executions                | `/workspaces/{workspace_id}/executions`, `/executions/{execution_id}`                                                                       | Interactive and standalone durable work                                                   |
 | ExecutionAttempts         | `/executions/{execution_id}/attempts`                                                                                                       | Read-only operational history; workers mutate internally                                  |
@@ -106,6 +106,49 @@ Public resources expose stable product fields and safe references, not ORM objec
 - UsageRecord reads preserve immutable identity and attribution.
 
 An Item read never substitutes for lifecycle event replay, and an event read never expands private Item or object-backed content without separate authorization.
+
+## Turn Lineage Read
+
+Foundation exposes the exact ancestor path of one caller-selected Turn:
+
+```http
+GET /api/v1/turns/{turn_id}/lineage
+```
+
+The route selects an explicit head and follows the
+[`parent_turn_id` persistence contract](12-turn-persistence.md#git-like-turn-dag).
+It does not infer the latest Turn or accept a Thread selector in place of the
+head. Its direct response has this conceptual shape:
+
+```python
+class TurnLineageItem:
+    turn_id: str
+    session_id: str
+    thread_id: str
+    parent_turn_id: str | None
+    lineage_kind: TurnLineageKind
+    status: TurnStatus
+    depth_from_head: int
+    created_at: datetime
+
+
+class TurnLineage:
+    head_turn_id: str
+    items: tuple[TurnLineageItem, ...]
+```
+
+`items` is ordered from root to head. The head has `depth_from_head=0`; each
+ancestor's depth is its number of parent edges from the head. The path can cross
+Session and Thread boundaries through retained parent edges and never includes
+siblings or descendants.
+
+The service authorizes the head and every ancestor under current tenant,
+principal, visibility, archival, and retention policy. An absent or concealed
+head returns `404 turn_not_found`. A missing or unauthorized ancestor, cycle, or
+path deeper than 1,000 Turns returns `409 turn_lineage_invalid` with safe reason
+`missing_parent`, `cycle`, or `max_depth`; the route never returns a
+complete-looking prefix. The complete bounded path is one response and is not
+cursor-paginated.
 
 ## Pagination, Filtering, and Replay
 

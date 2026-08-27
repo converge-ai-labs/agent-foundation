@@ -96,7 +96,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-`waiting` names one explicit durable reason such as approval, client tool, structured user input, child Execution, retry backoff, Environment reconciliation, or unknown external outcome. Waiting holds no worker lease. Resumption returns the same Execution to `queued` and later creates another Attempt.
+`waiting` names one explicit durable reason such as approval, client tool, structured user input, child Execution, retry backoff, or Environment reconciliation. Waiting holds no worker lease. Resumption returns the same Execution to `queued` and later creates another Attempt. An ordinary Agent tool call with no recorded result is instead an `unknown_outcome` supplied to the next Agent attempt; it does not create a waiting-for-business-reconciliation state.
 
 Terminal Execution states are immutable. Repeating terminal intent creates a successor Execution linked by `retry_of_execution_id`. For interactive work, the Host also creates the corresponding successor Turn rather than reopening the terminal Turn.
 
@@ -113,7 +113,7 @@ stateDiagram-v2
 
 The transition is deliberately conservative. A worker can crash after committing `effects_possible` but before dispatching anything; recovery still treats the outcome as potentially effectful. This false positive is safer than replaying a mutation after a worker dispatched it but failed to write evidence.
 
-Automatic requeue after lease loss is permitted only when durable state proves the current Attempt remained `pre_dispatch`. After `effects_possible`, recovery requires a selected complete checkpoint, operation idempotency, provider or client evidence, or an explicit reconciliation decision. Missing receipts and absent telemetry do not prove that no effect occurred.
+Automatic requeue after lease loss is permitted when durable state proves the current Attempt remained `pre_dispatch`. After `effects_possible`, a selected complete checkpoint remains the only Agent continuation state. A durably dispatched Agent tool call with no matching result in that state becomes `unknown_outcome` context for the next Attempt rather than a runtime replay. Environment management and other non-Agent provider operations continue to use their owning idempotency or exact-reconciliation contracts. Missing receipts and absent telemetry never prove that an external effect did not occur.
 
 ## Attempt and Harness Mapping
 
@@ -151,7 +151,7 @@ Standalone acceptance performs the same checks for its Workspace and declared so
 
 Cancellation is durable intent followed by cooperative enforcement. A worker checks cancellation before expensive or effectful boundaries and attempts a generation-fenced outcome commit. Cancellation never claims rollback of model, tool, child, Environment, provider, or client effects.
 
-If the worker disappears after `effects_possible`, the Execution remains waiting for evidence or explicit reconciliation unless a selected checkpoint or idempotency contract proves safe continuation. Exactly one legal generation-fenced transition wins a cancellation/completion race; the losing local result remains diagnostic only.
+If the worker disappears after `effects_possible`, Foundation fences the Attempt and preserves every unmatched durably dispatched Agent tool call as `unknown_outcome`. A later Attempt resumes the selected checkpoint within budget and lets the Agent decide its next action; Foundation neither assumes failure nor replays the call. An unresolved Environment-management or other non-Agent provider operation remains governed by its owning reconciliation contract. Exactly one legal generation-fenced transition wins a cancellation/completion race; the losing local result remains diagnostic only.
 
 ## Invariants
 
@@ -161,7 +161,8 @@ If the worker disappears after `effects_possible`, the Execution remains waiting
 04. One live Attempt generation owns an Execution, and one Attempt starts at most one Harness Run.
 05. A stale Attempt cannot commit lifecycle state, checkpoint selection, pending work, or terminal outcome.
 06. `effects_possible` is committed before any operation that may cause an external effect.
-07. Absence of a receipt, event, or telemetry signal never proves pre-dispatch safety.
+07. Absence of a receipt, event, or telemetry signal never proves pre-dispatch safety or tool-call failure.
 08. Only a complete selected `HarnessState` checkpoint advances Thread continuation.
 09. Terminal records are immutable; retry creates explicit successor records.
 10. Cancellation records intent and never implies rollback of external effects.
+11. An Agent-selected post-recovery tool call is a new invocation; Foundation never converts recovery into automatic replay.

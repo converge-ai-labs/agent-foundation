@@ -4,7 +4,7 @@
 
 Foundation stores serializable Agent authoring resources and immutable executable revisions. It does not persist a Harness `AgentDefinition`, Python import target, plugin instance, native Model, Toolset, Capability, callable, client, credential, or provider binding. An execution worker reconstructs those process-local values through trusted installed adapters after verifying every selected revision and lock.
 
-An Execution selects exact immutable inputs. It never resolves `latest` after durable acceptance or silently adopts edits made while queued, suspended, or recovering. An interactive Turn references that Execution; a standalone Execution needs no synthetic Turn.
+An Execution selects exact immutable inputs. It never resolves `latest` after durable acceptance or silently adopts edits made while queued, suspended, or resuming after worker loss. An interactive Turn references that Execution; a standalone Execution needs no synthetic Turn.
 
 ## Authoring Model
 
