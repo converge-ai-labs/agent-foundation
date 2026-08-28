@@ -1916,47 +1916,53 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
         stdout_transport = process.stdout._transport
         assert stdout_transport is not None
         stdout_transport.pause_reading()
+        try:
+            next_id = 2
+            input_backpressured = False
+            for _batch in range(256):
+                frames = bytearray()
+                for _frame in range(256):
+                    body = json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": next_id,
+                            "method": "environment.describe",
+                            "params": {"context": {"operation_id": f"backpressure-{next_id}"}},
+                        },
+                        separators=(",", ":"),
+                    ).encode()
+                    frames.extend(f"Content-Length: {len(body)}\r\n\r\n".encode())
+                    frames.extend(body)
+                    next_id += 1
+                process.stdin.write(frames)
+                try:
+                    async with asyncio.timeout(1):
+                        await process.stdin.drain()
+                except TimeoutError:
+                    input_backpressured = True
+                    break
+            assert input_backpressured, "stdio request input did not backpressure behind blocked stdout"
 
-        next_id = 2
-        input_backpressured = False
-        for _batch in range(256):
-            frames = bytearray()
-            for _frame in range(256):
-                body = json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": next_id,
-                        "method": "environment.describe",
-                        "params": {"context": {"operation_id": f"backpressure-{next_id}"}},
-                    },
-                    separators=(",", ":"),
-                ).encode()
-                frames.extend(f"Content-Length: {len(body)}\r\n\r\n".encode())
-                frames.extend(body)
-                next_id += 1
-            process.stdin.write(frames)
-            try:
-                async with asyncio.timeout(1):
-                    await process.stdin.drain()
-            except TimeoutError:
-                input_backpressured = True
-                break
-        assert input_backpressured, "stdio request input did not backpressure behind blocked stdout"
+            process.terminate()
+            async with asyncio.timeout(5):
+                while process.returncode is None:
+                    await asyncio.sleep(0.01)
+            returncode = process.returncode
+        finally:
+            # asyncio's subprocess transport does not finish wait() while an
+            # unread stdout pipe remains paused with buffered data, even after
+            # child exit.
+            stdout_transport.resume_reading()
+            if process.returncode is None:
+                process.kill()
+            await process.stdout.read()
+            await process.wait()
 
-        process.terminate()
-        async with asyncio.timeout(5):
-            while process.returncode is None:
-                await asyncio.sleep(0.01)
-        assert process.returncode == 1
+        assert returncode == 1
         assert process.stderr is not None
         stderr = await process.stderr.read()
         assert_disabled_isolation_warning(stderr)
         assert b"drain exceeded its shutdown deadline" in stderr
-        # asyncio's subprocess transport does not finish wait() while an unread
-        # stdout pipe remains paused with buffered data, even after child exit.
-        stdout_transport.resume_reading()
-        await process.stdout.read()
-        await process.wait()
 
     asyncio.run(scenario())
 
