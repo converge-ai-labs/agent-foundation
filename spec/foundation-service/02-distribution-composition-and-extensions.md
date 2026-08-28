@@ -20,6 +20,8 @@ A distribution identifies the product release composition, not where or for whom
 
 Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Internal classes, module discovery, installation order, and package naming are not part of the product contract.
 
+Foundation's [managed Harness plugin artifacts](25-harness-plugin-artifacts-and-runtime-loading.md) are a separate Host execution input. They can supply trusted in-process Harness middleware selected by an exact AgentRevision lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
+
 ## Dependency Direction
 
 ```mermaid
@@ -135,3 +137,4 @@ Explicit composition requires each distribution to enumerate its application sur
 09. An extension adds behavior through an owned capability or narrow port and cannot reinterpret common contracts.
 10. Every final distribution schema has at most one migration head.
 11. Runtime input, tenant state, and license response never select or replace the artifact's distribution.
+12. A managed Harness plugin artifact can affect only explicitly locked Harness reconstruction and never contributes Foundation distribution contents.

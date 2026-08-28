@@ -8,15 +8,18 @@ Resource routes, fields, commands, and authorization actions remain owned by the
 
 ## Role Surfaces
 
-| Surface                                   | `control` | `worker` | `all` |
-| ----------------------------------------- | --------: | -------: | ----: |
-| `/api/v1` product routes                  |       Yes |       No |   Yes |
-| OpenAPI and interactive API documentation |       Yes |       No |   Yes |
-| Browser application and static assets     |       Yes |       No |   Yes |
-| Authorized SSE or WebSocket delivery      |       Yes |       No |   Yes |
-| `/healthz` and `/readyz`                  |       Yes |      Yes |   Yes |
+| Surface                                        | `control` | `worker` | `all` |
+| ---------------------------------------------- | --------: | -------: | ----: |
+| `/api/v1` product routes                       |       Yes |       No |   Yes |
+| OpenAPI and interactive API documentation      |       Yes |       No |   Yes |
+| Browser application and static assets          |       Yes |       No |   Yes |
+| Authorized SSE or WebSocket delivery           |       Yes |       No |   Yes |
+| `/internal/v1` operator routes when configured |       Yes |       No |   Yes |
+| `/healthz` and `/readyz`                       |       Yes |      Yes |   Yes |
 
 A worker-only process returns no product route, product OpenAPI document, browser fallback, static application, or authenticated product stream. Unknown `/api` paths remain JSON API failures and are never rewritten to browser HTML. Operational paths are outside `/api`, unversioned, bounded, and excluded from product OpenAPI.
+
+The internal operator surface is excluded from the public product OpenAPI, SDKs, browser application, and tenant IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
 
 ## Request Boundary
 
@@ -107,3 +110,4 @@ A new common ingress check can be added when it rejects only requests outside th
 08. Client disconnect and transport delivery never define Turn cancellation or completion.
 09. Drain rejects new work before closing streams and ingress.
 10. An open HTTP socket does not make an unready process product-available.
+11. Internal network placement alone never authenticates an operator route, and internal routes never become public SDK or tenant-role surfaces.

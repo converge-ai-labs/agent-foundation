@@ -213,7 +213,7 @@ Client-side tools use native Pydantic deferred values. Foundation seals the wait
 
 Foundation's [Thread persistence](foundation-service/24-thread-persistence.md)
 owns one independent versioned relational Thread resource, its Session
-membership, active Turn, and selected continuation head. [Turn
+membership, current Turn, and selected continuation head. [Turn
 persistence](foundation-service/14-turn-persistence.md) owns
 durable Agent-work identity, scheduling, the recovery budget, the interactive
 recovery boundary, and complete Turn-state object schema. [Turn Attempt
@@ -280,7 +280,7 @@ flowchart LR
     Agent --> Provider[Feature provider]
 ```
 
-Installed plugins and native objects are trusted in-process code. Harness plugin, Connector Provider, Environment provider, and Environment run-extension package presence is only availability; an operator explicitly enables or selects the relevant key and exact artifact before import/use. Factory-produced and directly constructed objects enter the same concrete composition path for their extension kind. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or package-installation system.
+Installed plugins and native objects are trusted in-process code. Harness plugin, Connector Provider, Environment provider, and Environment run-extension package presence is only availability; an operator explicitly enables or selects the relevant key and exact artifact before import/use. Factory-produced and directly constructed objects enter the same concrete composition path for their extension kind. Untrusted or independently governed behavior belongs behind feature-specific protocols. The core defines no universal remote-plugin or package-installation system. Foundation's [managed Harness plugin artifacts](foundation-service/25-harness-plugin-artifacts-and-runtime-loading.md) are a Host-specific internal code-deployment boundary that preserves this trust model rather than a new platform-wide extension mechanism.
 
 ## Observability and Cost
 
@@ -347,3 +347,4 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 | Foundation scheduling and recovery     | [foundation-service/16-scheduling-workers-and-recovery.md](foundation-service/16-scheduling-workers-and-recovery.md)                                 |
 | Foundation lifecycle and Turn streams  | [foundation-service/17-lifecycle-and-stream-persistence.md](foundation-service/17-lifecycle-and-stream-persistence.md)                               |
 | Foundation public API                  | [foundation-service/21-management-api.md](foundation-service/21-management-api.md)                                                                   |
+| Foundation managed Harness plugins     | [foundation-service/25-harness-plugin-artifacts-and-runtime-loading.md](foundation-service/25-harness-plugin-artifacts-and-runtime-loading.md)       |

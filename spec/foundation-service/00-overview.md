@@ -6,7 +6,7 @@ Foundation Service is the optional modular durable Host for Agent Foundation. It
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Turn` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and uses `TurnAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Turn; Foundation defines no separate durable Execution resource.
 
-The worker embeds the public Harness Python API. It reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness in process. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
+The worker embeds the public Harness Python API. It loads exact [managed Harness plugin revisions](25-harness-plugin-artifacts-and-runtime-loading.md) on demand from each AgentRevision lock, reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness and selected trusted plugins in process. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -64,21 +64,22 @@ PostgreSQL is the distributed authority for accepted resources, Thread version a
 
 ## Component Boundaries
 
-| Concern                                                       | Owner                                                         | Relationship                                                                 |
-| ------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations                |
-| Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                        |
-| OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                  |
-| Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                       |
-| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks                       |
-| Durable Thread resource                                       | Foundation                                                    | Owns Session membership, origin, active Turn, continuation head, and version |
-| Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                |
-| Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                         |
-| Provider specification and Resource operations                | `a13n-environment-provider`                                   | Foundation invokes Providers and persists selected provider state            |
-| Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it           |
-| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery           |
-| Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations          |
-| Client-side effects                                           | External client                                               | Foundation authenticates feedback but does not claim the effect              |
+| Concern                                                       | Owner                                                         | Relationship                                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Session, Thread, Turn, and Item meaning                       | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations                              |
+| Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                                      |
+| OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                                |
+| Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                                     |
+| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks                                     |
+| Managed Harness plugin artifacts and Worker compatibility     | Foundation control plane and Worker runtime                   | Publishes exact trusted wheels and loads them on demand under process-local version checks |
+| Durable Thread resource                                       | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version              |
+| Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                              |
+| Process-local Agent composition and loop                      | Harness                                                       | Built by a trusted Foundation reconstruction adapter                                       |
+| Provider specification and Resource operations                | `a13n-environment-provider`                                   | Foundation invokes Providers and persists selected provider state                          |
+| Runtime Environment attachment and routing                    | Provider package and Harness                                  | Provider supplies a fresh attachment; Harness adapts and enters it                         |
+| Harness-to-AG-UI conversion                                   | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery                         |
+| Durable lifecycle events, Items, and usage                    | Foundation                                                    | Commits product facts independently from process-local observations                        |
+| Client-side effects                                           | External client                                               | Foundation authenticates feedback but does not claim the effect                            |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
 

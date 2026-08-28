@@ -5,7 +5,7 @@
 | Dimension               | Core question                              | Foundation choice                                                                                                                                                                                                                                   |
 | ----------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Identity and boundary   | When are Turn and TurnAttempt created?     | Accepting a new Agent request creates a Turn. Starting or restarting a worker for that same accepted request creates a `TurnAttempt` under the existing Turn; its input, parent, selections, and state key do not change                            |
-| Logical history         | How do Turns form history?                 | `parent_turn_id` forms a Git-like DAG; the independent Thread row selects active and continuation-head Turns, continue preserves Thread identity, and fork creates a new Thread                                                                     |
+| Logical history         | How do Turns form history?                 | `parent_turn_id` forms a Git-like DAG; the independent Thread row selects current and continuation-head Turns, continue preserves Thread identity, and fork creates a new Thread                                                                    |
 | Persistence             | Where is a Turn persisted?                 | Turn metadata lives in the relational database; resumable state and large Turn inputs and outputs live in object storage                                                                                                                            |
 | Stored data             | What does a Turn persist?                  | The Turn row holds metadata and object references; `TurnStateEnvelope` holds Harness and Host continuation state; `TurnPayloadEnvelope` holds large Turn inputs and outputs                                                                         |
 | State advancement       | Which service instance can commit updates? | At most one worker service instance is lease-authorized through the current fenced `TurnAttempt`; only its relational and conditional object writes can commit, while stale or partitioned instances are rejected                                   |
@@ -18,9 +18,9 @@ finite recovery budget, lifecycle, and sealed outcome.
 
 [Durable Thread Persistence](24-thread-persistence.md) separately owns the
 versioned Thread row. Turn acceptance atomically creates or advances that row,
-and Turn outcome commit clears its active selection and either selects a new
-continuation head or preserves the prior head. A Turn row does not infer Thread
-existence or head state by timestamp.
+and Turn outcome commit verifies that the sealing Turn remains current and
+either selects a new continuation head or preserves the prior head. A Turn row
+does not infer Thread existence, current selection, or head state by timestamp.
 
 Each Turn also owns one complete state object at a tenant- and Turn-derived key.
 The control plane initializes it from a new root state or the selected parent's
@@ -49,22 +49,22 @@ generation, and Foundation defines no generic `Execution` resource.
 
 ## Boundaries
 
-| Concern                                                                     | Owner                                                                              | Contract                                                                                      |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                                     | [Platform Interaction Model](../interaction-model.md)                              | Defines public identity and relationships                                                     |
-| Thread row, Session membership, version, active Turn, and continuation head | [Durable Thread Persistence](24-thread-persistence.md)                             | Serializes accepted advancement and selects the exact resumable history head                  |
-| Portable messages, Capability namespaces, Environment data, and Thread ID   | [Harness State](../agent-harness/10-snapshot-and-resume.md)                        | Supplies detached state without Host authority                                                |
-| Turn row, parent edge, state selection, and outcome                         | Foundation Turn domain                                                             | Forms the authoritative interaction history and Turn-level recovery boundary                  |
-| Connector selections and accepted Trigger source                            | [Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md) | Defines the exact Connector-owned facts frozen at Turn acceptance                             |
-| Scheduling, recovery budget, and current-attempt selection                  | Foundation Turn domain                                                             | Authorizes initial dispatch, bounded recovery, and one sealed outcome                         |
-| Worker generation, lease, and stale-writer fencing                          | [Turn Attempt Persistence](15-turn-attempt-persistence.md)                         | Authorizes one worker generation and preserves its immutable attempt audit                    |
-| Current complete Turn state                                                 | One deterministic Turn state object                                                | Stores the latest conditionally committed Harness and Host state; freezes when the Turn seals |
-| Provider resource launch, reattachment, and non-portable continuation       | Foundation Host state and selected provider integration                            | Reconstructs fresh bindings without becoming Harness state                                    |
-| Object storage operations                                                   | [Object storage](03-storage.md#object-storage)                                     | Supplies atomic whole-object publication and expected-version replacement                     |
-| Lifecycle events, stream messages, and Items                                | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)         | Stores ordered facts, transports live observations, and retains presentation projections      |
-| Pending calls and approvals                                                 | Waiting Turn plus its frozen Turn state                                            | Stores a bounded relational summary and the complete deferred value without a separate table  |
-| Unresolved Agent tool calls                                                 | `TurnAttempt` dispatch summary plus fresh Host model context                       | Preserves `unknown_outcome` without replaying the call or blocking semantic resume            |
-| Credentials and invocation authority                                        | Foundation Secret and policy boundaries                                            | Resolves fresh authority; plaintext credentials never enter Turn state                        |
+| Concern                                                                      | Owner                                                                              | Contract                                                                                      |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                                      | [Platform Interaction Model](../interaction-model.md)                              | Defines public identity and relationships                                                     |
+| Thread row, Session membership, version, current Turn, and continuation head | [Durable Thread Persistence](24-thread-persistence.md)                             | Serializes accepted advancement and selects the exact resumable history head                  |
+| Portable messages, Capability namespaces, Environment data, and Thread ID    | [Harness State](../agent-harness/10-snapshot-and-resume.md)                        | Supplies detached state without Host authority                                                |
+| Turn row, parent edge, state selection, and outcome                          | Foundation Turn domain                                                             | Forms the authoritative interaction history and Turn-level recovery boundary                  |
+| Connector selections and accepted Trigger source                             | [Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md) | Defines the exact Connector-owned facts frozen at Turn acceptance                             |
+| Scheduling, recovery budget, and current-attempt selection                   | Foundation Turn domain                                                             | Authorizes initial dispatch, bounded recovery, and one sealed outcome                         |
+| Worker generation, lease, and stale-writer fencing                           | [Turn Attempt Persistence](15-turn-attempt-persistence.md)                         | Authorizes one worker generation and preserves its immutable attempt audit                    |
+| Current complete Turn state                                                  | One deterministic Turn state object                                                | Stores the latest conditionally committed Harness and Host state; freezes when the Turn seals |
+| Provider resource launch, reattachment, and non-portable continuation        | Foundation Host state and selected provider integration                            | Reconstructs fresh bindings without becoming Harness state                                    |
+| Object storage operations                                                    | [Object storage](03-storage.md#object-storage)                                     | Supplies atomic whole-object publication and expected-version replacement                     |
+| Lifecycle events, stream messages, and Items                                 | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)         | Stores ordered facts, transports live observations, and retains presentation projections      |
+| Pending calls and approvals                                                  | Waiting Turn plus its frozen Turn state                                            | Stores a bounded relational summary and the complete deferred value without a separate table  |
+| Unresolved Agent tool calls                                                  | `TurnAttempt` dispatch summary plus fresh Host model context                       | Preserves `unknown_outcome` without replaying the call or blocking semantic resume            |
+| Credentials and invocation authority                                         | Foundation Secret and policy boundaries                                            | Resolves fresh authority; plaintext credentials never enter Turn state                        |
 
 ## Durable Turn Model
 
@@ -384,7 +384,7 @@ The independent Thread row serializes every accepted advancement. At most one
 Turn with a given `(thread_id, parent_turn_id)` can be active or seal as
 `waiting` or `completed`; failed and cancelled siblings do not block a later
 accepted advancement from the same eligible parent. Acceptance locks the
-Thread, verifies its exact version, active selection, and continuation head,
+Thread, verifies its exact version, current selection, and continuation head,
 then advances it atomically with the new Turn. An explicit fork creates a new
 Thread row and first Turn in the same transaction.
 
@@ -660,7 +660,7 @@ on object age alone.
 Turn acceptance creates or advances the Thread row together with the Turn row
 and its initial state as one externally indivisible acceptance operation:
 
-1. validate authorization, Thread version, active/head selection, lineage,
+1. validate authorization, Thread version, current/head selection, lineage,
    selections, and any parent state, then build the complete Turn-owned initial
    state;
 2. publish object-backed input and `state.json` create-only;
@@ -724,9 +724,9 @@ A waiting or completed outcome commits in this order:
 3. in one short transaction, revalidate current Turn and `TurnAttempt`, select
    the candidate's exact digest and checkpoint sequence as `sealed_state`, copy
    its bounded output or pending summary into the Turn row, terminalize the
-   attempt, charge known usage, append lifecycle facts, seal the Turn, clear
-   the Thread's active Turn, select this Turn as its continuation head, and
-   increment the Thread version;
+   attempt, charge known usage, append lifecycle facts, verify that this Turn is
+   still the Thread's current Turn, seal it, select it as the continuation head,
+   and increment the Thread version;
 4. after commit, reject every later write to the state key.
 
 If the object write succeeds but the relational transaction does not commit,
@@ -737,10 +737,9 @@ or listings never authorize that adoption.
 
 A failed or cancelled outcome freezes the latest valid state by recording its
 digest and checkpoint sequence while sealing the relational outcome. The same
-transaction clears the Thread's active Turn, preserves its prior continuation
-head, retains the failed or cancelled Turn as the Thread's latest Turn, and
-increments the Thread version. It does not make that state eligible as a
-parent.
+transaction verifies that the Turn remains current, preserves it as the
+Thread's current Turn, preserves the prior continuation head, and increments
+the Thread version. It does not make that state eligible as a parent.
 
 ## Accounting Boundary
 
