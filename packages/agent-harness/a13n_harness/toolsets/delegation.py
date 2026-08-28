@@ -27,6 +27,7 @@ from a13n_harness.events import (
     emit_harness_event,
 )
 from a13n_harness.input import RunInputValue
+from a13n_harness.observation import observe_operation
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
@@ -153,15 +154,20 @@ class DelegationToolset:
                     child.declaration.usage_limits,
                     self._require_binding(ctx).usage_limits,
                 )
-                bindings = await self._require_binding(ctx).bind_inline(
-                    child,
-                    child_input,
-                    reserved_id,
-                    continuation,
-                    limits,
-                )
-                _validate_child_lineage(self._context, bindings, reserved_id)
-                bindings = await _finalize_child_bindings(ctx, child, bindings)
+                with observe_operation(
+                    "delegation",
+                    capability_id=self._owner.id,
+                    operation_id=invocation_id,
+                ):
+                    bindings = await self._require_binding(ctx).bind_inline(
+                        child,
+                        child_input,
+                        reserved_id,
+                        continuation,
+                        limits,
+                    )
+                    _validate_child_lineage(self._context, bindings, reserved_id)
+                    bindings = await _finalize_child_bindings(ctx, child, bindings)
                 result = await self._run_child(
                     ctx,
                     child,

@@ -955,6 +955,11 @@ async def test_repeated_external_cancellation_attempts_remaining_cleanup_and_sta
     assert any("environment cleanup failed" in note for note in (exc_info.value.__notes__ or []))
 
 
+def test_plugin_ordering_rejects_invalid_position() -> None:
+    with pytest.raises(ValueError, match="position"):
+        PluginOrdering(position=cast(Any, "middle"))
+
+
 def test_plugin_ordering_rejects_unknown_references_and_cycles() -> None:
     model = _model([])
     with pytest.raises(PluginError, match="unknown plugin"):

@@ -39,6 +39,7 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "AGENT_ENVD_REVERSE_WS_CA_FILE",
     "AGENT_ENVD_ENVIRONMENT_ID",
     "AGENT_ENVD_RUNTIME_DIR",
+    "AGENT_ENVD_READY_FILE",
     "AGENT_ENVD_EXECUTION_ISOLATION",
     "AGENT_ENVD_EXECUTION_NETWORK",
     "AGENT_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS",
@@ -246,6 +247,7 @@ pub(crate) struct Config {
     pub(crate) mounts: Vec<TrustedMountConfig>,
     pub(crate) command: Option<CommandConfig>,
     pub(crate) runtime: Option<RuntimeState>,
+    pub(crate) ready_file: Option<PathBuf>,
 }
 
 impl Config {
@@ -301,8 +303,8 @@ impl Config {
 
         let execution = prepare_execution_config(file.execution)?;
 
-        let runtime_dir = optional_unicode("AGENT_ENVD_RUNTIME_DIR")?.map(PathBuf::from);
-        if runtime_dir.as_ref().is_some_and(|path| !path.is_absolute()) {
+        let runtime_dir = PathBuf::from(required_unicode("AGENT_ENVD_RUNTIME_DIR")?);
+        if !runtime_dir.is_absolute() {
             return Err(ConfigError::new(
                 "AGENT_ENVD_RUNTIME_DIR must be an absolute path",
             ));
@@ -321,11 +323,16 @@ impl Config {
 
         let mut limits = default_limits();
         apply_file_limits(&mut limits, file.limits)?;
-        let runtime = runtime_dir
-            .as_deref()
-            .map(RuntimeState::prepare)
-            .transpose()
-            .map_err(ConfigError::new)?;
+        let runtime = Some(RuntimeState::prepare(&runtime_dir).map_err(ConfigError::new)?);
+        let ready_file = optional_unicode("AGENT_ENVD_READY_FILE")?
+            .map(PathBuf::from)
+            .map(|path| validate_ready_file(path, runtime.as_ref().expect("runtime is prepared")))
+            .transpose()?;
+        if ready_file.is_some() && !matches!(transport, TransportConfig::Stdio) {
+            return Err(ConfigError::new(
+                "AGENT_ENVD_READY_FILE is valid only with stdio transport",
+            ));
+        }
         let command = prepare_command_config(
             runtime.as_ref(),
             file.trusted_executable_roots,
@@ -342,6 +349,7 @@ impl Config {
             mounts: file.mounts,
             command,
             runtime,
+            ready_file,
             limits,
         })
     }
@@ -366,7 +374,40 @@ impl Config {
             mounts: Vec::new(),
             command: None,
             runtime: None,
+            ready_file: None,
         }
+    }
+}
+
+fn validate_ready_file(path: PathBuf, runtime: &RuntimeState) -> Result<PathBuf, ConfigError> {
+    if !path.is_absolute() {
+        return Err(ConfigError::new(
+            "AGENT_ENVD_READY_FILE must be an absolute path",
+        ));
+    }
+    let Some(parent) = path.parent() else {
+        return Err(ConfigError::new(
+            "AGENT_ENVD_READY_FILE must be a direct child of AGENT_ENVD_RUNTIME_DIR",
+        ));
+    };
+    let parent = fs::canonicalize(parent).map_err(|error| {
+        ConfigError::new(format!(
+            "cannot canonicalize AGENT_ENVD_READY_FILE parent: {error}"
+        ))
+    })?;
+    if parent != runtime.parent() || path.file_name().is_none() {
+        return Err(ConfigError::new(
+            "AGENT_ENVD_READY_FILE must be a direct child of AGENT_ENVD_RUNTIME_DIR",
+        ));
+    }
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+        Err(error) => Err(ConfigError::new(format!(
+            "cannot inspect AGENT_ENVD_READY_FILE: {error}"
+        ))),
+        Ok(_) => Err(ConfigError::new(
+            "AGENT_ENVD_READY_FILE must not already exist",
+        )),
     }
 }
 

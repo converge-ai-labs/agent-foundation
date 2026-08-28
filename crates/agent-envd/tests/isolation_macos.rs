@@ -1,6 +1,9 @@
 #![cfg(target_os = "macos")]
 
-use std::process::{Command, Stdio};
+use std::{
+    fs,
+    process::{Command, Stdio},
+};
 
 use serde_json::Value;
 
@@ -35,13 +38,18 @@ fn required_isolation_is_default_and_probes_host_and_deny_networking() {
 
 #[test]
 fn standalone_daemon_starts_with_required_isolation_when_override_is_omitted() {
+    let runtime =
+        std::env::temp_dir().join(format!("agent-envd-isolation-test-{}", std::process::id()));
+    fs::create_dir(&runtime).expect("creates runtime parent");
     let status = Command::new(env!("CARGO_BIN_EXE_agent-envd"))
         .env("AGENT_ENVD_ENVIRONMENT_ID", "isolation-default-test")
+        .env("AGENT_ENVD_RUNTIME_DIR", &runtime)
         .env_remove("AGENT_ENVD_EXECUTION_ISOLATION")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .status()
         .expect("starts standalone daemon");
+    fs::remove_dir_all(&runtime).expect("removes runtime parent");
     assert!(status.success());
 }

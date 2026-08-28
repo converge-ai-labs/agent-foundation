@@ -58,6 +58,8 @@ class AgentUiApplication(Protocol):
 
 Commands carry stable resource selectors, expected revisions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, `EnvironmentProvider`, Environment attachment, credential, task, lock, or raw `HarnessState`.
 
+The embedding Host constructs the application with one process-local `RunModelResolverFactory`, conceptually `Callable[[ResolvedAgentSnapshot], Awaitable[RunModelResolver]]`. Each attempted root or child Run invokes it with the exact pinned Agent snapshot and requires a fresh callable resolver before Harness dispatch. The default factory fails execution explicitly with `model_resolver_unavailable`; an invalid return fails with `model_resolver_invalid`. Configuration, Session, Environment, and replay operations remain available without a resolver, and neither the factory nor any returned resolver is persisted or reconstructed from ambient state.
+
 All mutation and execution paths are available to both TUI and WebUI according to the same local-user policy. A surface cannot acquire extra authority by reading storage or calling runtime packages directly.
 
 ## Application Lifetime
@@ -112,7 +114,7 @@ The Host resolves Local Sandbox in this order:
 3. when the managed executable is absent or fails hash validation, lazily download only the selected immutable archive, verify its embedded manifest hash, extract the one expected executable through bounded staging, verify the executable hash, and atomically publish it;
 4. execute `agent-envd --version` and require the manifest's exact canonical release identity;
 5. execute `agent-envd isolation probe --json` and require successful production-equivalent native isolation;
-6. supply the resolved absolute executable and a private-runtime allocator to the `a13n.local-envd` provider runtime; provider attachment entry then launches envd and completes ordinary EIP initialization.
+6. when the installed Environment Provider release exposes the required Local Envd runtime integration, supply the resolved absolute executable and a private-runtime allocator to that provider runtime; otherwise report `local_envd_provider_unavailable` before Provider or Harness dispatch.
 
 Both the default managed path and an advanced absolute override must report the manifest's exact release identity; the override changes executable location, not Agent UI's selected envd version. Neither path searches ambient `PATH`. Download, hash verification, cache publication, target detection, override validation, and user-facing availability diagnostics belong to the Agent UI Host. The Local Envd Provider owns daemon configuration, private runtime and subprocess lifecycle, and fresh stdio `EIPEnvironmentAttachment`; `a13n-envd-client` owns only EIP transport/session behavior.
 
@@ -134,9 +136,9 @@ sequenceDiagram
     participant Files as Compressed object/event files
 
     Surface->>App: SubmitTurn(session, thread, expected revision, input)
+    App->>Resolver: preflight pinned snapshots checkpoint executable and fresh Model resolver
+    Resolver-->>App: executable and fresh resolver
     App->>DB: accept Turn under short transaction
-    App->>Resolver: load pinned Agent and Environment snapshots
-    Resolver-->>App: executable and binding factories
     App->>Provider: create/resume fenced Session resources
     Provider-->>App: Resources and fresh attachments
     App->>Harness: stream(input, selected HarnessState, fresh RunBindings)
@@ -144,9 +146,9 @@ sequenceDiagram
         Harness-->>App: Harness stream item
         App->>Observer: observe item
         Observer-->>App: processed AG-UI events
-        App-->>Surface: live event fan-out
         App->>Files: publish bounded compressed event segments
         App->>DB: register segment metadata in short transaction
+        App-->>Surface: live-after-registration event fan-out
     end
     Harness-->>App: terminal Run result and complete state
     App->>Observer: observe terminal item
@@ -158,15 +160,15 @@ sequenceDiagram
         App->>Files: publish terminal event segment and state object
         App->>DB: commit Turn terminal outcome and selected checkpoint
     end
+    App->>Provider: close attachments then pause retain or disconnect by Session policy
     App-->>Surface: durable Session projection
-    App->>Provider: pause, retain, or disconnect by Session policy
 ```
 
 The coordinator is the sole `HarnessRunStream` consumer. It routes every item to the observer before any surface sees it, captures the terminal result, validates complete state, and closes the stream and fresh attachments in their owning scope.
 
-Model resolution, credential reads, Host run Capabilities, Plugin run binding, Session-read collaboration, async-subagent collaboration, exact Skill selection, Environment attachments, Identity, usage, and policy are fresh for every root and child Run. Pinned snapshots can narrow current authority but cannot restore it.
+Model resolution, credential reads, Host run Capabilities, Plugin run binding, Session-read collaboration, async-subagent collaboration, exact Skill selection, Environment attachments, Identity, usage, and policy are fresh for every root and child Run. The embedding Host supplies the application-lifetime `RunModelResolverFactory`; the coordinator invokes it for each Run with the exact pinned Agent snapshot and passes its fresh resolver through public `RunBindings`. The default boundary is explicitly unavailable rather than ambient or synthetic. Pinned snapshots can narrow current authority but cannot restore it.
 
-Input acceptance, Environment availability, Harness start, live event delivery, event-file registration, Harness terminal result, checkpoint selection, Environment pause, OTel export, and surface rendering are independent facts. A surface disconnect does not cancel work. Explicit cancellation requests ordinary Harness cancellation and records its actual outcome.
+Input acceptance, Environment availability, Harness start, event-file registration, live event delivery, Harness terminal result, checkpoint selection, Environment pause, OTel export, and surface rendering are independent facts. Event fan-out follows successful durable registration, but neither delivery fact establishes the Harness or Turn outcome. A surface disconnect does not cancel work. Explicit cancellation requests ordinary Harness cancellation, drains the same entered stream, and records its actual outcome. Accepted or waiting work with no active stream can be cancelled directly under the expected Thread revision; cancellation never selects partial state.
 
 The fresh root bindings include the Agent UI async-subagent run Capability only when the pinned Agent node selects the behavior Capability. It is scoped to the exact Session, parent Thread, Turn, Run, Agent node, process generation, and current policy. Possession of the built child collection, a job ID, or a prior run Capability does not authorize submission.
 
@@ -330,20 +332,22 @@ Delivery into an active Run, delivery in a later Run, explicit result inspection
 
 ## Cancellation and Unknown Outcomes
 
-Foreground or async-child cancellation first records intent for the exact Turn or job, then requests its live coordinator task when present, drains the Harness stream and attachments, and records the observed outcome. Edge `lifetime="parent_scope"` requests child cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` does not couple ordinary parent-scope completion or cancellation to the child. Session deletion fences and cancels every nonterminal child regardless of edge lifetime.
+Foreground cancellation of an active Run is a process-local request to that exact `HarnessRunStream`; the cancellation command returns the current Turn projection, while the sole coordinator drains the same entered stream and commits the observed terminal outcome. An accepted or waiting foreground Turn with no active stream can commit `cancelled` directly under the expected Thread revision. Neither path selects partial state. Async-child cancellation records intent for the exact job before requesting its live coordinator task. Edge `lifetime="parent_scope"` requests child cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` does not couple ordinary parent-scope completion or cancellation to the child. Session deletion fences and cancels every nonterminal child regardless of edge lifetime.
 
 Cancellation does not roll back provider, tool, Environment, or external effects. If cleanup or external dispatch outcome is uncertain, the Turn/job/resource remains `interrupted` or `unknown` with bounded reconciliation evidence. Repeated cancel of a terminal job returns the same terminal projection. Duplicate event notification, surface reconnect, status query, or completion wake-up never duplicates execution or parent delivery. A stale run Capability cannot submit, steer, cancel, or claim delivery after its Run closes; a later fresh Capability must independently authorize the exact scope.
 
 ## Retained and Live AG-UI
 
-The application service observes each complete root and async-child Harness Run once, applies the Agent UI processor, assigns Session presentation sequence and event identity, stores compressed segments, updates query projection, and fans out detached values to subscribers. Every async child has its own Thread, Run, Agent-node, job, and lineage correlation and produces its own real terminal AG-UI outcome. Child presentation never substitutes for the job outcome, child checkpoint, deferred object, or parent-delivery ledger.
+The application service observes each public item of every complete root and async-child Harness Run once, including the terminal result item, applies the Agent UI processor, assigns Session presentation sequence and event identity, stores and registers compressed segments, and only then fans out detached values to subscribers. Every async child has its own Thread, Run, Agent-node, job, and lineage correlation and produces its own real terminal AG-UI outcome. Child presentation never substitutes for the job outcome, child checkpoint, deferred object, or parent-delivery ledger.
 
 A subscription consists of:
 
-1. a retained replay query from an opaque cursor or Session snapshot boundary;
-2. an atomic handoff to live events after the replay watermark;
-3. deduplication by Host event identity;
-4. explicit gap/snapshot response when retention or corruption prevents exact continuation.
+1. registration of one bounded live queue and capture of the current durable replay watermark under the Session append lock;
+2. one finite retained replay query ending exactly at that watermark;
+3. live deliveries beginning strictly after the watermark, with deduplication by Host event identity and sequence;
+4. explicit closure and replay resumption when backpressure, retention, or corruption prevents exact continuation.
+
+This cutover is gap-free with respect to successfully registered segments: a concurrent append occurs wholly before the captured replay boundary or enters the already registered live queue. A bounded slow subscriber is disconnected instead of receiving silent interior loss and resumes through ordinary finite replay after its last sequence.
 
 Subscribers never consume the Harness stream, file watcher, SQLite WAL, or event files directly. A query can page durable Items and protocol events without loading complete `HarnessState` or provider-state payloads.
 
@@ -416,21 +420,21 @@ Agent UI releases independently and pins one exact compatible Harness release gr
 
 ## Failure Semantics
 
-| Failure                                         | Outcome                                                                                           |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Configuration edit or manifest fails validation | Application-owned transaction manifest is not selected; prior generation remains active           |
-| Stale command revision                          | Conflict before affected dispatch or mutation                                                     |
-| Model or credential resolution fails            | Run fails before model use; pinned snapshot remains unchanged                                     |
-| Required Environment cannot become available    | Run does not enter Harness; provider lifecycle retains exact failure/unknown state                |
-| Local Sandbox artifact, version, or probe fails | No provider/Harness dispatch and no Direct Local or ambient-executable fallback                   |
-| Harness stream/projection fails                 | Coordinator closes stream and attachments; Turn records actual failed/interrupted outcome         |
-| Event persistence fails after live delivery     | Subscriber saw a non-durable observation; replay later exposes a gap                              |
-| Surface disconnect                              | Work continues unless explicit cancellation/policy says otherwise                                 |
-| Unknown child name or owner-scoped execution ID | Validation/not-found before async-child side effects                                              |
-| Fresh child bindings or Skill selection denied  | Accepted job fails with bounded outcome before child Harness dispatch                             |
-| Child cleanup uncertain                         | Job becomes interrupted; no invented terminal success                                             |
-| Duplicate notification                          | Same job/event identity; no duplicate execution or delivery                                       |
-| Process exits during active work                | Runs/jobs become interrupted, resources follow bounded cleanup, and no live authority is restored |
+| Failure                                                                        | Outcome                                                                                                                                       |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuration edit or manifest fails validation                                | Application-owned transaction manifest is not selected; prior generation remains active                                                       |
+| Stale command revision                                                         | Conflict before affected dispatch or mutation                                                                                                 |
+| Model or credential resolution fails                                           | Run fails before model use; pinned snapshot remains unchanged                                                                                 |
+| Required Environment cannot become available                                   | Run does not enter Harness; provider lifecycle retains exact failure/unknown state                                                            |
+| Local Sandbox artifact, version, probe, or Provider integration is unavailable | No provider/Harness dispatch and no Direct Local or ambient-executable fallback                                                               |
+| Harness stream/projection fails                                                | Coordinator closes stream and attachments; Turn records actual failed/interrupted outcome                                                     |
+| Event publication or registration fails                                        | No live fan-out occurs for that batch; Run completion remains independent and replay/recovery reports missing or directly recoverable history |
+| Surface disconnect                                                             | Work continues unless explicit cancellation/policy says otherwise                                                                             |
+| Unknown child name or owner-scoped execution ID                                | Validation/not-found before async-child side effects                                                                                          |
+| Fresh child bindings or Skill selection denied                                 | Accepted job fails with bounded outcome before child Harness dispatch                                                                         |
+| Child cleanup uncertain                                                        | Job becomes interrupted; no invented terminal success                                                                                         |
+| Duplicate notification                                                         | Same job/event identity; no duplicate execution or delivery                                                                                   |
+| Process exits during active work                                               | Runs/jobs become interrupted, resources follow bounded cleanup, and no live authority is restored                                             |
 
 ## Compatibility
 
@@ -460,7 +464,7 @@ Using one processed event sequence makes live delivery, replay, protocol inspect
 04. Every root and child Run receives fresh model, Environment, credential, policy, and Host collaboration bindings.
 05. Agent UI never enables Harness inline delegation; its async Capability selects exact Harness-built children and executes them only through Host-owned jobs and the ordinary child stream API.
 06. An async spawn completes with ordinary accepted metadata; child start, waiting/terminal outcome, and parent delivery are later independent facts.
-07. Live event delivery, durable event registration, Harness result, checkpoint selection, Environment lifecycle, OTel export, and rendering remain independent.
+07. Durable event registration precedes live delivery; both remain independent from Harness result, checkpoint selection, Environment lifecycle, OTel export, and rendering.
 08. Dynamic configuration reload can affect new selections but never mutates an active executable, Run, job, pinned Skill selection, or Session composition.
 09. Browser capability, model credential, Environment credential/attachment, and Session selector are separate authority domains.
 10. Work requiring distributed durable acceptance, failover, retry, or remote multi-user policy uses Foundation Service rather than local process state.

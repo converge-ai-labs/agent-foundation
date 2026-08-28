@@ -156,6 +156,36 @@ capabilities = (
 
 Use content filtering only for provider/model multimodal compatibility. Use cold-start filtering only when reducing old, already-consumed tool-result strings materially improves a cold-cache request. Neither is transport retry, semantic recovery, or long-term memory.
 
+## Native MCP
+
+MCP uses Pydantic AI's native `MCP` Capability. Keep it in `AgentSpec.capabilities`; Agent Harness does not define a second MCP server schema or a peer `mcp_servers` field.
+
+A local URL server can be reconstructed directly from an AgentSpec document:
+
+```python
+from a13n_harness import AgentSpec
+
+agent_spec = AgentSpec.from_dict(
+    {
+        "capabilities": [
+            {
+                "MCP": {
+                    "url": "https://mcp.example.com/mcp",
+                    "id": "knowledge",
+                    "local": True,
+                    "native": False,
+                    "allowed_tools": ["search"],
+                }
+            }
+        ]
+    }
+)
+```
+
+The default `a13n-harness` installation includes Pydantic AI's MCP client runtime, so local URL and stdio transports need no separate Harness extra. For richer process-local inputs such as an in-process server, transport, script path, or prebuilt `MCPToolset`, construct `pydantic_ai.capabilities.MCP` in trusted code and pass it through definition Capability composition. Use `native=True, local=False` when the selected model provider should execute a URL MCP server natively.
+
+Locally executed MCP tools are ordinary dynamically discovered function tools. Their text and JSON returns cross the mandatory Harness result boundary and default to explicit truncation rather than spill when oversized. This bounds the value integrated into model history; it does not impose a transport-body or process-memory limit before the MCP client receives the result. Provider-native MCP execution remains on the provider path and does not cross the local function-tool boundary.
+
 ## Native Capabilities and Tools
 
 Ordinary Pydantic AI Capabilities remain valid. Place native tools or Toolsets inside a Capability rather than bypassing native composition:

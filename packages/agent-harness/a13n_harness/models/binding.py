@@ -6,6 +6,7 @@ from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Protocol
 
 from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.models.instrumented import InstrumentedModel
 
 from a13n_harness.errors import ModelResolutionError
 
@@ -47,6 +48,12 @@ async def resolve_run_model(
         raise ModelResolutionError(
             "Run model resolution returned an invalid value.",
             code="model_resolution_invalid",
+            details={"model_id": model_id},
+        )
+    if isinstance(model, InstrumentedModel):
+        raise ModelResolutionError(
+            "Run model resolution returned an InstrumentedModel reserved to Harness instrumentation.",
+            code="instrumentation_owner_conflict",
             details={"model_id": model_id},
         )
     return model

@@ -50,7 +50,7 @@ def _settings(data_root: Path, definitions: Path, workspace: Path) -> AgentUiSet
     )
 
 
-def _write_composition(definitions: Path, *, instruction: str = "Be concise.") -> None:
+def _write_composition(definitions: Path, *, system_prompt: str = "Be concise.") -> None:
     _write_yaml(
         definitions / "models/model-main.yaml",
         {
@@ -68,7 +68,7 @@ def _write_composition(definitions: Path, *, instruction: str = "Be concise.") -
             "schema_version": "1",
             "prompt_id": "prompt-main",
             "display_name": "Main Prompt",
-            "instruction_blocks": [{"content": instruction}],
+            "system_prompt_blocks": [{"content": system_prompt}],
         },
     )
     _write_yaml(
@@ -134,7 +134,10 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
             environment_reference,
         )
         await application.validate_agent_executable(agent_reference)
+        executable = await application._composition.executable(agent_reference)
 
+        assert executable.definition.agent.system_prompt == ["Be concise."]
+        assert executable.definition.agent.instructions is None
         assert agent.root_agent.resource_id == "agent-main"
         assert agent.adapter_locks[0].dependency_kind == "model_adapter"
         assert agent.adapter_locks[0].key == "a13n.pydantic-ai"
@@ -152,7 +155,7 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         }
         assert compatibility.agent_snapshot_digest == agent.logical_agent_digest
 
-        _write_composition(definitions, instruction="Be precise.")
+        _write_composition(definitions, system_prompt="Be precise.")
         generation_two = await application.reload_configuration()
         changed_reference = await application.resolve_agent_snapshot("agent-main")
         assert generation_two.generation_id != generation_one.generation_id

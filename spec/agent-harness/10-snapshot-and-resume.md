@@ -140,7 +140,17 @@ Each synthesized failed result says:
 
 This transformation closes the public conversation shape. It does not claim that the external operation failed, did not execute, rolled back, or is safe to repeat.
 
-No normalization occurs for ordinary complete history or for a provider-suspended response. Provider-suspended continuation remains native Pydantic behavior.
+No interrupted-history normalization occurs for ordinary complete history or for a provider-suspended response. Provider-suspended continuation remains native Pydantic behavior.
+
+## System Prompt Reconciliation
+
+The current Harness `AgentSpec` owns the complete ordered static system prompt. `HarnessState` retains public Pydantic messages, including the system-prompt parts materialized for the definition that produced its selected checkpoint, but those historical parts do not override the definition selected for a later model request.
+
+Before passing non-empty imported history into a new Pydantic model request, the Harness creates a detached canonical history projection. It removes every `SystemPromptPart` from every `ModelRequest`, then inserts the current definition's normalized system-prompt blocks at the beginning of the first request. A definition with no system prompt removes historical blocks without replacement. All non-system parts, request instructions, metadata, timestamps, responses, and ordering remain unchanged. The normalized messages become the Pydantic history for the run, so a successful exported checkpoint carries the current definition's prompt rather than requiring a permanent model-bound overlay.
+
+Empty history uses Pydantic AI's native `Agent.from_spec(system_prompt=...)` construction path. System-prompt reconciliation does not reinterpret or merge `ModelRequest.instructions`: static and dynamic instructions retain their native per-request lifecycle.
+
+A provider-suspended response is continuation of an already issued model request rather than a new request. The Host must resume that response with its compatible definition and provider integration; a changed system prompt takes effect only on a later new model request. The Harness does not rewrite a provider-suspended request in place.
 
 ## Import and Resume
 
@@ -154,8 +164,9 @@ A new run receives `previous_state` separately from fresh `RunBindings`. Stream 
 06. restores the selected `thread_id` into a read-only field on the fresh `AgentContext`;
 07. creates one `AgentContextState` initialized from the imported Capability snapshot;
 08. creates the remaining fresh `AgentContext` dependencies and plugin graph;
-09. passes imported messages to the first `ModelAttempt`;
-10. lets each Capability read and validate only the namespaces it understands.
+09. reconciles non-empty imported history with the current definition-owned system prompt before a new model request, while leaving provider-suspended continuation unchanged;
+10. passes the resulting messages to the first `ModelAttempt`;
+11. lets each Capability read and validate only the namespaces it understands.
 
 Environment restore and ordered run-extension entry finish before controller activation and input production, never overlap `apply()`, and never create a binding, choose topology, consume Host launch state, or grant access. An unmatched saved binding is ignored with a bounded diagnostic; an incompatible selected binding fails according to the Environment codec contract. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.
 
@@ -196,7 +207,7 @@ Four compatibility axes remain independent:
 | Capability entry version          | Owning Capability    |
 | Environment binding-state version | Environment provider |
 
-Invalid messages, unsupported envelope versions, blank namespace IDs or versions, and invalid Capability or Environment payloads fail without mutating the supplied value. A Host that changes process-local Agent composition or provider integration decides whether to retain, migrate, or remove incompatible opaque data before resume.
+Invalid messages, unsupported envelope versions, blank namespace IDs or versions, and invalid Capability or Environment payloads fail without mutating the supplied value. A Host that changes process-local Agent composition or provider integration decides whether to retain, migrate, or remove incompatible opaque data before resume. Definition-owned system-prompt replacement is the explicit exception for a new model request: the Harness reconciles public prompt parts from the current definition without treating them as opaque Capability or provider state.
 
 ## Boundaries
 

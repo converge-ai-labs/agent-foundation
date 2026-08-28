@@ -15,6 +15,7 @@ from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     CodeActCapability,
+    CodeActConfig,
     CodeActPolicyToolset,
     CodeActToolPolicy,
     DelegationCapability,
@@ -27,6 +28,7 @@ from a13n_harness import (
     RunBindings,
     SubagentDefinition,
 )
+from a13n_harness.codeact.runtime import CodeActRunState
 from a13n_harness.environment.advanced import (
     EnvironmentBindingRequest,
     EnvironmentStateLimits,
@@ -39,7 +41,7 @@ from a13n_harness.environment.local.binding import DirectLocalEnvironmentProvide
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -67,6 +69,17 @@ def _codeact_tools(*tools: Any, allowed: tuple[str, ...]) -> Capability[Any]:
         ],
         id="codeact-test-tools",
     )
+
+
+def test_codeact_policy_detaches_and_freezes_tool_decisions() -> None:
+    source = {"allowed": True}
+    policy = CodeActToolPolicy(tools=source)
+
+    source["allowed"] = False
+
+    assert policy.allows("allowed") is True
+    with pytest.raises(TypeError):
+        policy.tools["allowed"] = False  # type: ignore[index]
 
 
 def _local_environment(root: Path):
@@ -163,6 +176,51 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     assert payload_types.count("codeact_execution_completed") == 4
     assert payload_types.count("codeact_tool_call_started") == 1
     assert payload_types.count("codeact_tool_call_completed") == 1
+
+
+async def test_failed_inline_result_validation_discards_session_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_count = 0
+    original_reset = CodeActRunState.reset_inline
+
+    async def observe_reset(state: CodeActRunState) -> None:
+        nonlocal reset_count
+        reset_count += 1
+        await original_reset(state)
+
+    monkeypatch.setattr(CodeActRunState, "reset_inline", observe_reset)
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        retries = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, RetryPromptPart) and part.tool_name == "run_code"
+        ]
+        if not retries:
+            yield {
+                0: DeltaToolCall(
+                    name="run_code",
+                    json_args=json.dumps({"code": "saved = 3\n'123456789'"}),
+                    tool_call_id="code-overflow",
+                )
+            }
+        else:
+            yield "reset" if reset_count > 0 else "retained"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(CodeActConfig(max_output_bytes=8)),),
+    )
+    result = await executable.run("test failed feed", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "reset"
+    assert reset_count >= 1
 
 
 async def test_run_program_reads_direct_local_source_and_dispatches_current_tools(tmp_path: Path) -> None:

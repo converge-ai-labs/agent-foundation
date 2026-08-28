@@ -1264,14 +1264,11 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
     assert not (tmp_path / observed_path.removeprefix("/workspace/")).exists()
 
 
-async def test_unmanaged_large_json_result_crosses_the_same_spill_boundary(tmp_path: Path) -> None:
+async def test_unmanaged_large_json_result_uses_default_truncation(tmp_path: Path) -> None:
     def produce() -> dict[str, str]:
         return {"content": "x" * (300 * 1024), "hint": "native-tool"}
 
-    observed_path: str | None = None
-
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        nonlocal observed_path
         del info
         returns = [
             part.content
@@ -1287,12 +1284,10 @@ async def test_unmanaged_large_json_result_crosses_the_same_spill_boundary(tmp_p
         assert isinstance(content, dict)
         assert content["truncated"] is True
         assert content["output_bytes"] > 300 * 1024
+        assert content["output_file_path"] is None
         result = content["result"]
         assert isinstance(result, dict)
         assert result["hint"] == "native-tool"
-        observed_path = cast(str, content["output_file_path"])
-        spilled = tmp_path / observed_path.removeprefix("/workspace/")
-        assert json.loads(spilled.read_text(encoding="utf-8")) == produce()
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -1307,8 +1302,6 @@ async def test_unmanaged_large_json_result_crosses_the_same_spill_boundary(tmp_p
     )
 
     assert result.output_or_raise() == "done"
-    assert observed_path is not None
-    assert not (tmp_path / observed_path.removeprefix("/workspace/")).exists()
 
 
 async def test_model_error_projection_omits_internal_environment_details() -> None:

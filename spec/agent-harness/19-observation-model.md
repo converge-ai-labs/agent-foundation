@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Harness Observation is the process-local OpenTelemetry trace and metric projection of one logical Harness Run and its causal descendants. The Host owns the OpenTelemetry SDK, resource, sampling, readers/processors, exporters, propagation, flush, and shutdown. The Harness remains inert unless the Host supplies at least one explicit instrumentation provider.
+Harness Observation is the process-local OpenTelemetry trace and metric projection of one logical Harness Run and its causal descendants. The Host owns the OpenTelemetry SDK, resource, sampling, readers/processors, exporters, propagation, flush, and shutdown. The Harness remains inert unless bounded Harness environment policy selects a signal from Host-configured global providers or the Host supplies at least one explicit instrumentation provider.
 
 Pydantic AI instrumentation is the sole owner of Agent-attempt, model-request, tool-execution, native usage, streaming, and cancellation spans and its native model metrics. The Harness owns one outer logical-run span, optional child spans for independently meaningful Harness operations, and a small low-cardinality metric registry. Langfuse v4 and Logfire are optional Host profiles over the same providers and telemetry hierarchy, not separate Harness pipelines.
 
@@ -10,16 +10,16 @@ An Observation is never execution, continuation, side-effect, result, checkpoint
 
 ## Boundaries
 
-| Concern                                                                                                     | Owner                         | Contract                                                                                                              |
-| ----------------------------------------------------------------------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| OpenTelemetry SDK, `Resource`, sampler, readers/processors, exporters, batching, retry, flush, and shutdown | Host                          | The Harness receives explicit providers and configures no process-global telemetry.                                   |
-| logical Harness Run                                                                                         | Harness                       | One outer span and low-cardinality metrics cover the complete process-local lifecycle when their signals are enabled. |
-| Agent attempt, model request, tool execution, native usage, streaming, and cancellation                     | Pydantic AI                   | One Harness-selected `Instrumentation` Capability owns enabled native spans and model metrics.                        |
-| Provider SDK or HTTP request                                                                                | Provider or OTel instrumentor | Ordinary current-context propagation may create descendants; the Harness does not synthesize them.                    |
-| Harness context, state, recovery, delegation, handoff, compaction, and plugin-validation operations         | Owning Harness component      | A child span exists only at verbose trace level; bounded operation metrics remain independently selectable.           |
-| Process-local events and usage records                                                                      | Event and usage owners        | They remain independent observations and do not become spans or metrics automatically.                                |
-| Durable lifecycle, audit, delivery, accounting, and billing                                                 | Host                          | A telemetry backend never commits these facts.                                                                        |
-| Vendor grouping, filtering, and enrichment                                                                  | Host profile                  | Existing telemetry is selected or enriched without replacing its owner or creating duplicates.                        |
+| Concern                                                                                                     | Owner                         | Contract                                                                                                               |
+| ----------------------------------------------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| OpenTelemetry SDK, `Resource`, sampler, readers/processors, exporters, batching, retry, flush, and shutdown | Host                          | The Harness receives explicit providers or selects Host-configured globals and configures no process-global telemetry. |
+| logical Harness Run                                                                                         | Harness                       | One outer span and low-cardinality metrics cover the complete process-local lifecycle when their signals are enabled.  |
+| Agent attempt, model request, tool execution, native usage, streaming, and cancellation                     | Pydantic AI                   | One Harness-selected `Instrumentation` Capability owns enabled native spans and model metrics.                         |
+| Provider SDK or HTTP request                                                                                | Provider or OTel instrumentor | Ordinary current-context propagation may create descendants; the Harness does not synthesize them.                     |
+| Harness context, state, recovery, delegation, handoff, compaction, and plugin-validation operations         | Owning Harness component      | A child span exists only at verbose trace level; bounded operation metrics remain independently selectable.            |
+| Process-local events and usage records                                                                      | Event and usage owners        | They remain independent observations and do not become spans or metrics automatically.                                 |
+| Durable lifecycle, audit, delivery, accounting, and billing                                                 | Host                          | A telemetry backend never commits these facts.                                                                         |
+| Vendor grouping, filtering, and enrichment                                                                  | Host profile                  | Existing telemetry is selected or enriched without replacing its owner or creating duplicates.                         |
 
 A Harness component owns a span only when its operation remains independently meaningful after Pydantic model and tool execution are removed. Otherwise it enriches the current owning span or retains the existing event.
 
@@ -53,7 +53,7 @@ class HarnessInstrumentation:
     trace_content: HarnessTraceContent = HarnessTraceContent.NONE
 ```
 
-The Host supplies this value to `HarnessBuilder`; the builder applies it consistently to the root executable and every recursively built child. At least one provider must be present. A missing tracer provider disables Harness-selected traces, and a missing meter provider disables both Harness and Pydantic metrics. `None` disables all Harness Observation. Disabled signals preserve execution, event, usage, state, cancellation, result, and cleanup behavior and cannot fall back to process-global Pydantic providers.
+The Host may supply this value to `HarnessBuilder`; the builder applies it consistently to the root executable and every recursively built child. At least one provider must be present. A missing tracer provider disables Harness-selected traces, and a missing meter provider disables both Harness and Pydantic metrics. Explicit `None` disables all Harness Observation regardless of environment. The default builder selection resolves the bounded Harness environment convention once and obtains the corresponding Host-configured global providers. Disabled Pydantic signals preserve execution, event, usage, state, cancellation, result, and cleanup behavior and receive explicit no-op providers rather than falling back to unrelated globals.
 
 A supplied tracer provider defaults to summary tracing, which creates only the Harness logical-run span. Trace content defaults to `none`. A non-`none` content policy requires standard or verbose tracing because summary tracing creates no Pydantic spans on which it could take effect. The policies map to supported Pydantic settings as follows:
 
@@ -96,15 +96,17 @@ Summary trace with metrics uses the real tracer only for Harness spans and gives
 
 ### Host Environment Convention
 
-The Harness library does not read telemetry environment variables or obtain global providers. A Host profile may explicitly map this stable environment convention into `HarnessInstrumentation` while constructing `HarnessBuilder`:
+`HarnessBuilder` defaults to environment selection. It resolves this stable convention once during builder construction and obtains the selected global providers already configured by the executable Host:
 
-| Variable                     | Values                                  | Default when using environment mapping | Mapping                                                                                              |
-| ---------------------------- | --------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `A13N_HARNESS_TRACE_LEVEL`   | `off`, `summary`, `standard`, `verbose` | `off`                                  | `off` withholds the tracer provider; other values supply it and select the corresponding level.      |
-| `A13N_HARNESS_TRACE_CONTENT` | `none`, `standard`, `full`              | `none`                                 | Selects the Pydantic content policy; non-`none` requires standard or verbose tracing.                |
-| `A13N_HARNESS_METRICS`       | `off`, `standard`                       | `off`                                  | `off` withholds the meter provider; `standard` supplies it and enables the complete metric registry. |
+| Variable                     | Values                                  | Default | Mapping                                                                                              |
+| ---------------------------- | --------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `A13N_HARNESS_TRACE_LEVEL`   | `off`, `summary`, `standard`, `verbose` | `off`   | `off` withholds the tracer provider; other values select the Host-configured global tracer provider. |
+| `A13N_HARNESS_TRACE_CONTENT` | `none`, `standard`, `full`              | `none`  | Selects the Pydantic content policy; non-`none` requires standard or verbose tracing.                |
+| `A13N_HARNESS_METRICS`       | `off`, `standard`                       | `off`   | `off` withholds the meter provider; `standard` selects the Host-configured global meter provider.    |
 
-Explicit Host code configuration wins over environment-derived values. Unknown values and incompatible combinations fail Host configuration before Agent construction. If both signals resolve to `off`, the Host passes `instrumentation=None`. Standard `OTEL_*` variables continue to own SDK exporters, endpoints, sampling, resources, and temporality; the `A13N_HARNESS_*` variables select only Harness signal/detail policy and do not duplicate OpenTelemetry SDK configuration.
+Unknown values and incompatible combinations fail before Agent construction. Both signals `off` resolve to disabled Observation. Explicit `HarnessInstrumentation` wins over environment-derived values, and explicit `instrumentation=None` disables Observation regardless of environment.
+
+The Harness does not construct or register an SDK provider, processor, reader, exporter, or collector client. The official OpenTelemetry Python distro and OTLP exporters may configure global providers before application startup. Standard `OTEL_*` variables own exporters, common or signal-specific collector endpoints, protocols, headers, TLS, sampling, resources, batching, timeout, compression, and temporality; the `A13N_HARNESS_*` variables select only Harness signal/detail policy and do not duplicate OpenTelemetry SDK configuration.
 
 This convention preserves an inert environment default. A Host that explicitly supplies a tracer provider directly but omits `trace_level` receives the low-detail `summary` default.
 
@@ -116,7 +118,7 @@ The Harness rejects any competing instrumentation path:
 - a build-time or run-time resolved `InstrumentedModel`;
 - the same conflict in any recursively built child definition.
 
-Build validation covers authored and plugin contributions. Run validation covers fresh run Capabilities and models unavailable until resolution. Trusted custom Models remain responsible for any internal telemetry they emit; such telemetry is not Harness-managed Observation.
+Build validation covers authored and plugin contributions. Run validation covers fresh run Capabilities, every Capability replacement returned by `for_run()`, and models unavailable until resolution; a run-resolved Capability cannot introduce or replace Pydantic instrumentation before its hooks execute. Trusted custom Models remain responsible for any internal telemetry they emit; such telemetry is not Harness-managed Observation.
 
 When standard or verbose tracing or metrics is enabled, the Harness installs exactly one mandatory Pydantic AI `Instrumentation` Capability using the selected real and no-op providers, content policy, and conventions supported by the repository's selected Pydantic AI release. Summary trace without metrics does not install Pydantic instrumentation because it owns no selected Pydantic signal. Harness-authored spans and metrics use the stable OpenTelemetry instrumentation scope name `a13n-harness`; Pydantic telemetry retains its upstream scope. The built Pydantic Agent does not consult ambient `Agent.instrument_all()` state. When either signal is disabled, no authored, resolved, ambient, or global-provider path becomes an uncontrolled fallback.
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
 from time import monotonic
 from types import MappingProxyType
@@ -16,6 +17,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.observation import observe_operation
 from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
@@ -129,7 +131,7 @@ class RunBindings:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
-        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
+        object.__setattr__(self, "metadata", MappingProxyType(deepcopy(dict(self.metadata))))
 
     @classmethod
     def embedded(
@@ -417,13 +419,14 @@ class AgentContext:
 
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope without persistence side effects."""
-        return HarnessState(
-            schema_version="1",
-            thread_id=self.thread_id,
-            message_history=tuple(message_history),
-            agent_context_state=await self.state.snapshot(),
-            environment_state=await self.environment.export_state(),
-        )
+        with observe_operation("state"):
+            return HarnessState(
+                schema_version="1",
+                thread_id=self.thread_id,
+                message_history=tuple(message_history),
+                agent_context_state=await self.state.snapshot(),
+                environment_state=await self.environment.export_state(),
+            )
 
 
 class _ToolResultSpillStore:

@@ -1,0 +1,556 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import shutil
+import sys
+from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from pathlib import Path
+
+import pytest
+from a13n_envd_client import EIPMethodError
+from a13n_envd_client import __version__ as envd_client_version
+from a13n_environment_provider import (
+    A13N_AGENT_ENVD_EXECUTABLE,
+    EIPEnvironmentAttachment,
+    EnvironmentManagementAction,
+    EnvironmentOperationContext,
+    EnvironmentPauseMode,
+    EnvironmentProviderError,
+    EnvironmentProviderSpec,
+    EnvironmentReconciliationPhase,
+    LocalEnvdEnvironmentProvider,
+    LocalEnvdProviderConfiguration,
+    LocalEnvdProviderRuntime,
+    LocalEnvdProviderStateData,
+    LocalEnvdResourcePhase,
+    LocalEnvdWorkspaceConfiguration,
+    TemporaryLocalEnvdRuntimeAllocator,
+    build_environment_provider_factory_catalog,
+    resolve_agent_envd_executable,
+)
+from a13n_environment_provider.local_envd import provider as local_envd_provider_module
+
+pytestmark = pytest.mark.anyio
+
+
+def _operation(
+    action: EnvironmentManagementAction,
+    suffix: str,
+    *,
+    correlation: str = "resource-local-envd-1",
+) -> EnvironmentOperationContext:
+    return EnvironmentOperationContext(
+        operation_id=f"operation-{suffix}",
+        action=action,
+        resource_correlation=correlation,
+        attempt=1,
+    )
+
+
+def _write_fake_envd(
+    path: Path,
+    *,
+    version: str = envd_client_version,
+    probe_ready: bool = True,
+    exit_after_ready: bool = False,
+) -> Path:
+    script = f"""#!{sys.executable}
+import json
+import os
+import sys
+
+if sys.argv[1:] == ["--version"]:
+    sys.stdout.write("agent-envd {version}\\n")
+    raise SystemExit(0)
+if sys.argv[1:] == ["isolation", "probe", "--json"]:
+    json.dump({{
+        "ready": {probe_ready!r},
+        "isolation": True,
+        "backend": "test",
+        "network_isolation": True,
+        "filesystem_containment": True,
+        "process_containment": True,
+        "cleanup": "test",
+    }}, sys.stdout)
+    raise SystemExit(0)
+if len(sys.argv) == 3 and sys.argv[1] == "--config":
+    with open(sys.argv[2], encoding="utf-8") as stream:
+        json.load(stream)
+    ready_file = os.environ.get("AGENT_ENVD_READY_FILE")
+    if ready_file is not None:
+        with open(ready_file, "xb") as stream:
+            stream.write(b"agent-envd-ready-v1\\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    if {exit_after_ready!r}:
+        raise SystemExit(0)
+    sys.stdin.buffer.read()
+    raise SystemExit(0)
+raise SystemExit(2)
+"""
+    path.write_text(script)
+    path.chmod(0o755)
+    return path.resolve()
+
+
+def _provider(
+    workspace: Path,
+    executable: Path,
+    allocator: Callable[[], AbstractAsyncContextManager[Path]],
+    *,
+    read_only: bool = False,
+) -> LocalEnvdEnvironmentProvider:
+    catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.local-envd",))
+    provider = catalog.create_provider(
+        EnvironmentProviderSpec(
+            provider_key="a13n.local-envd",
+            schema_version="1",
+            parameters={
+                "environment_id": "local-envd-1",
+                "workspace": {
+                    "path": str(workspace),
+                    "read_only": read_only,
+                },
+            },
+        ),
+        runtime=LocalEnvdProviderRuntime(
+            executable=executable,
+            allocate_private_runtime=allocator,
+        ),
+    )
+    assert isinstance(provider, LocalEnvdEnvironmentProvider)
+    return provider
+
+
+def test_resolve_agent_envd_executable_uses_explicit_env_then_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    explicit = _write_fake_envd(tmp_path / "explicit-envd")
+    configured = _write_fake_envd(tmp_path / "configured-envd")
+    discovered = _write_fake_envd(tmp_path / "discovered-envd")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(A13N_AGENT_ENVD_EXECUTABLE, str(configured))
+    monkeypatch.setattr(shutil, "which", lambda _name: str(discovered))
+
+    assert resolve_agent_envd_executable(explicit.name) == explicit
+    alias = tmp_path / "agent-envd-alias"
+    try:
+        alias.symlink_to(explicit)
+    except OSError:
+        pass
+    else:
+        assert resolve_agent_envd_executable(alias.name) == alias.absolute()
+    assert resolve_agent_envd_executable() == configured
+
+    monkeypatch.delenv(A13N_AGENT_ENVD_EXECUTABLE)
+    assert resolve_agent_envd_executable() == discovered
+
+
+def test_local_envd_normalizes_python_rc_version_to_canonical_release_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(local_envd_provider_module, "envd_client_version", "1.2.3rc4")
+    assert local_envd_provider_module._client_release_identity() == "1.2.3-rc.4"
+
+
+def test_resolve_agent_envd_executable_rejects_missing_selection(tmp_path: Path) -> None:
+    with pytest.raises(EnvironmentProviderError) as exc_info:
+        resolve_agent_envd_executable(tmp_path / "missing")
+    assert exc_info.value.code == "provider_runtime_invalid"
+
+
+def test_local_envd_configuration_validates_bounded_limits_and_absolute_paths(
+    tmp_path: Path,
+) -> None:
+    configuration = LocalEnvdProviderConfiguration(
+        environment_id="local-envd-1",
+        workspace=LocalEnvdWorkspaceConfiguration(path=tmp_path),
+    )
+    assert configuration.workspace.path == tmp_path
+
+    with pytest.raises(ValueError):
+        LocalEnvdProviderConfiguration(
+            environment_id="local-envd-1",
+            workspace=LocalEnvdWorkspaceConfiguration(path=tmp_path),
+            max_output_bytes_per_stream=1024,
+            max_spool_bytes=1024,
+        )
+    with pytest.raises(ValueError):
+        LocalEnvdWorkspaceConfiguration(path=Path("relative"))
+
+
+async def test_local_envd_rejects_mismatched_release_and_failed_isolation_without_allocating(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    allocation_attempted = False
+
+    @asynccontextmanager
+    async def allocate() -> AsyncGenerator[Path]:
+        nonlocal allocation_attempted
+        allocation_attempted = True
+        raise AssertionError("validation failure must not allocate a runtime")
+        yield tmp_path
+
+    executables = (
+        _write_fake_envd(tmp_path / "wrong-version-envd", version="9.9.9"),
+        _write_fake_envd(tmp_path / "failed-probe-envd", probe_ready=False),
+    )
+    for index, executable in enumerate(executables):
+        provider = _provider(workspace, executable, allocate)
+        reconciled = await provider.reconcile(
+            _operation(EnvironmentManagementAction.CREATE, f"reconcile-invalid-runtime-{index}"),
+            last_known_state=None,
+        )
+        assert reconciled.phase is EnvironmentReconciliationPhase.UNKNOWN
+        assert reconciled.evidence == {"reason": "runtime_compatibility_unconfirmed"}
+        with pytest.raises(EnvironmentProviderError) as exc_info:
+            await provider.create(
+                operation=_operation(
+                    EnvironmentManagementAction.CREATE,
+                    f"invalid-runtime-{index}",
+                )
+            )
+        assert exc_info.value.code == "provider_unavailable"
+    assert not allocation_attempted
+
+
+async def test_local_envd_resource_writes_strict_config_and_reuses_one_carrier(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    executable = _write_fake_envd(tmp_path / "agent-envd")
+    allocation = tmp_path / "allocation"
+
+    @asynccontextmanager
+    async def allocate() -> AsyncGenerator[Path]:
+        allocation.mkdir()
+        try:
+            yield allocation
+        finally:
+            shutil.rmtree(allocation, ignore_errors=True)
+
+    provider = _provider(workspace, executable, allocate)
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+    assert not allocation.exists()
+    state_data = LocalEnvdProviderStateData.model_validate(resource.state.data)
+    assert state_data.phase is LocalEnvdResourcePhase.RUNNING
+    assert state_data.resource_correlation == "resource-local-envd-1"
+
+    async with resource:
+        bootstrap = json.loads((allocation / "agent-envd.json").read_text())
+        assert bootstrap["root_mount_id"] == "workspace"
+        assert bootstrap["execution"] == {
+            "extra_read_only_paths": [],
+            "isolation": "required",
+            "network": "host",
+        }
+        mount = bootstrap["mounts"][0]
+        assert mount["native_root"] == str(workspace.resolve())
+        assert mount["allowed_operations"] == [
+            "stat",
+            "read_text",
+            "open_reader",
+            "list",
+            "find",
+            "search",
+            "write_text",
+            "open_writer",
+            "remove",
+            "move",
+        ]
+
+        async with resource.acquire_attachment() as first:
+            assert isinstance(first, EIPEnvironmentAttachment)
+        async with resource.acquire_attachment() as second:
+            assert isinstance(second, EIPEnvironmentAttachment)
+        assert first.attachment_id != second.attachment_id
+        running_state = resource.state
+
+    assert not allocation.exists()
+    await provider.destroy(
+        running_state,
+        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
+    )
+
+
+async def test_local_envd_entry_rejects_daemon_that_exits_after_readiness(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime_parent = tmp_path / "runtimes"
+    workspace.mkdir()
+    runtime_parent.mkdir()
+    provider = _provider(
+        workspace,
+        _write_fake_envd(tmp_path / "agent-envd", exit_after_ready=True),
+        TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
+    )
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+
+    with pytest.raises(EnvironmentProviderError) as exc_info:
+        async with resource:
+            raise AssertionError("an exited daemon must not enter a Resource")
+    assert exc_info.value.code == "provider_unavailable"
+    assert not tuple(runtime_parent.iterdir())
+
+
+async def test_local_envd_resource_exit_defers_cancellation_until_cleanup_finishes(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    allocation = tmp_path / "allocation"
+    workspace.mkdir()
+    release_started = asyncio.Event()
+    allow_release = asyncio.Event()
+
+    @asynccontextmanager
+    async def allocate() -> AsyncGenerator[Path]:
+        allocation.mkdir()
+        try:
+            yield allocation
+        finally:
+            release_started.set()
+            await allow_release.wait()
+            shutil.rmtree(allocation)
+
+    provider = _provider(workspace, _write_fake_envd(tmp_path / "agent-envd"), allocate)
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+    await resource.__aenter__()
+    exiting = asyncio.create_task(resource.__aexit__(None, None, None))
+    await release_started.wait()
+
+    exiting.cancel()
+    await asyncio.sleep(0)
+    assert not exiting.done()
+    assert allocation.exists()
+
+    allow_release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await exiting
+    assert not allocation.exists()
+
+
+async def test_local_envd_state_correlation_and_resume_phase_are_exact(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime_parent = tmp_path / "runtimes"
+    workspace.mkdir()
+    runtime_parent.mkdir()
+    provider = _provider(
+        workspace,
+        _write_fake_envd(tmp_path / "agent-envd"),
+        TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
+    )
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+    async with resource:
+        running = resource.state
+    resumed = await provider.resume(
+        running,
+        operation=_operation(EnvironmentManagementAction.RESUME, "resume-running"),
+    )
+    async with resumed:
+        assert LocalEnvdProviderStateData.model_validate(resumed.state.data).phase is LocalEnvdResourcePhase.RUNNING
+
+    with pytest.raises(EnvironmentProviderError) as destroy_error:
+        await provider.destroy(
+            resource.state,
+            operation=_operation(
+                EnvironmentManagementAction.DESTROY,
+                "destroy-other",
+                correlation="resource-other",
+            ),
+        )
+    assert destroy_error.value.code == "provider_state_invalid"
+
+    await provider.destroy(
+        resource.state,
+        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
+    )
+
+
+async def test_local_envd_filesystem_pause_cleans_entry_and_resume_starts_fresh_entry(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    runtime_parent = tmp_path / "runtimes"
+    workspace.mkdir()
+    runtime_parent.mkdir()
+    executable = _write_fake_envd(tmp_path / "agent-envd")
+    allocator = TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent)
+    provider = _provider(workspace, executable, allocator)
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+
+    async with resource:
+        pause_operation = _operation(EnvironmentManagementAction.PAUSE, "pause")
+        paused = await provider.pause(
+            resource,
+            operation=pause_operation,
+            mode=EnvironmentPauseMode.FILESYSTEM,
+        )
+        assert LocalEnvdProviderStateData.model_validate(paused.data).phase is LocalEnvdResourcePhase.PAUSED
+        assert (
+            await provider.pause(
+                resource,
+                operation=pause_operation,
+                mode=EnvironmentPauseMode.FILESYSTEM,
+            )
+            == paused
+        )
+        assert not tuple(runtime_parent.iterdir())
+
+    with pytest.raises(EnvironmentProviderError) as pause_error:
+        await provider.pause(
+            resource,
+            operation=pause_operation,
+            mode=EnvironmentPauseMode.FILESYSTEM,
+        )
+    assert pause_error.value.code == "provider_attachment_conflict"
+
+    resumed = await provider.resume(
+        paused,
+        operation=_operation(EnvironmentManagementAction.RESUME, "resume"),
+    )
+    async with resumed:
+        assert tuple(runtime_parent.iterdir())
+        running = resumed.state
+    assert not tuple(runtime_parent.iterdir())
+
+    await provider.destroy(
+        running,
+        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
+    )
+    assert workspace.is_dir()
+
+
+async def test_local_envd_rejects_pause_with_active_attachment(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime_parent = tmp_path / "runtimes"
+    workspace.mkdir()
+    runtime_parent.mkdir()
+    provider = _provider(
+        workspace,
+        _write_fake_envd(tmp_path / "agent-envd"),
+        TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
+    )
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+
+    async with resource:
+        async with resource.acquire_attachment():
+            with pytest.raises(EnvironmentProviderError) as exc_info:
+                await provider.pause(
+                    resource,
+                    operation=_operation(EnvironmentManagementAction.PAUSE, "pause"),
+                    mode=EnvironmentPauseMode.FILESYSTEM,
+                )
+            assert exc_info.value.code == "provider_conflict"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups are required")
+async def test_local_envd_cleanup_terminates_descendants_after_leader_exit(tmp_path: Path) -> None:
+    pid_file = tmp_path / "child.pid"
+    leader = tmp_path / "leader.py"
+    leader.write_text(
+        "\n".join(
+            (
+                "import subprocess",
+                "import sys",
+                "from pathlib import Path",
+                "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)",
+                f"Path({str(pid_file)!r}).write_text(str(child.pid))",
+            )
+        )
+    )
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(leader),
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    await process.wait()
+    child_pid = int(pid_file.read_text())
+    assert local_envd_provider_module._posix_process_group_exists(process.pid)
+
+    await local_envd_provider_module._terminate_process_tree(process)
+
+    assert not local_envd_provider_module._posix_process_group_exists(process.pid)
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+
+
+async def test_local_envd_real_daemon_fences_carrier_after_failed_initialization(
+    tmp_path: Path,
+) -> None:
+    configured = os.environ.get(A13N_AGENT_ENVD_EXECUTABLE)
+    if configured is None:
+        pytest.skip(f"{A13N_AGENT_ENVD_EXECUTABLE} is not configured")
+    workspace = tmp_path / "workspace"
+    runtime_parent = tmp_path / "runtimes"
+    workspace.mkdir()
+    runtime_parent.mkdir()
+    provider = _provider(
+        workspace,
+        resolve_agent_envd_executable(configured),
+        TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
+    )
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+
+    async with resource:
+        with pytest.raises(EIPMethodError):
+            async with resource.acquire_attachment() as attachment:
+                assert isinstance(attachment, EIPEnvironmentAttachment)
+                async with attachment.session_source.open_session(
+                    expected_environment_id="wrong-environment",
+                    required_methods=frozenset({"session.close"}),
+                ):
+                    raise AssertionError("incompatible initialization must not open a session")
+        with pytest.raises(EnvironmentProviderError) as exc_info:
+            async with resource.acquire_attachment():
+                raise AssertionError("a fenced carrier must not issue another attachment")
+        assert exc_info.value.code == "provider_unavailable"
+        state = resource.state
+
+    await provider.destroy(
+        state,
+        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
+    )
+
+
+async def test_local_envd_real_daemon_supports_sequential_sessions(tmp_path: Path) -> None:
+    configured = os.environ.get(A13N_AGENT_ENVD_EXECUTABLE)
+    if configured is None:
+        pytest.skip(f"{A13N_AGENT_ENVD_EXECUTABLE} is not configured")
+    executable = resolve_agent_envd_executable(configured)
+    workspace = tmp_path / "workspace"
+    runtime_parent = tmp_path / "runtimes"
+    workspace.mkdir()
+    runtime_parent.mkdir()
+    provider = _provider(
+        workspace,
+        executable,
+        TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
+    )
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+
+    async with resource:
+        generations = []
+        for _index in range(2):
+            async with resource.acquire_attachment() as attachment:
+                assert isinstance(attachment, EIPEnvironmentAttachment)
+                async with attachment.session_source.open_session(
+                    expected_environment_id="local-envd-1",
+                    required_methods=frozenset({"environment.describe", "file.stat", "session.close"}),
+                ) as session:
+                    generations.append(session.generation)
+                    assert session.descriptor.environment_id == "local-envd-1"
+        assert generations[0] == generations[1]
+        state = resource.state
+
+    await provider.destroy(
+        state,
+        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
+    )
+    assert not tuple(runtime_parent.iterdir())

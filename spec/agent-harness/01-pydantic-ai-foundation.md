@@ -16,6 +16,7 @@ The Harness does not fork or reproduce the Agent graph, Model interface, Model p
 | `AbstractCapability[AgentContext]` | Reusable behavior inside the Agent loop                                                                              |
 | `CapabilityOrdering`               | Native Capability dependencies and wrapper order                                                                     |
 | Tools and Toolsets                 | Native tool schema, preparation, and dispatch                                                                        |
+| `MCP` and `MCPToolset`             | Native MCP definition composition, discovery, transport, and local or provider-native execution                      |
 | `ExternalToolset`                  | Native external/client-side deferral                                                                                 |
 | `DeferredToolRequests` and results | Native external-call and approval stop/resume values                                                                 |
 | `RunContext[AgentContext]`         | Live messages, usage, limits, capabilities, and typed dependencies                                                   |
@@ -146,7 +147,7 @@ The repository selects a compatible Pydantic AI release and validates only docum
 - `Agent.from_spec()` with native build inputs;
 - deferred string-model resolution through `ResolveModelId`;
 - native Model profiles and wrapper behavior;
-- Capability and Toolset composition;
+- Capability and Toolset composition, including native MCP AgentSpec reconstruction and local MCP dynamic tools;
 - lazy `AgentRunEvents` streaming and cancellation;
 - public messages, deferred values, output contracts, and usage;
 - instrumentation hierarchy, current-context parentage, convention fields, trace-content switches, native metrics, explicit no-op providers, and ambient suppression;

@@ -169,7 +169,47 @@ Persist `EnvironmentProviderResourceState` after each successful lifecycle trans
 - `destroy()` detaches the logical Provider resource only;
 - `read_only` restricts operations through the binding but is not an OS sandbox against an allowed local child process.
 
-Use Docker, E2B, or another EIP provider when workloads require isolation from the embedding OS account.
+Use Local Envd, Docker, E2B, or another EIP provider when workloads require isolation from the embedding OS account.
+
+## Local Envd sandbox
+
+`a13n.local-envd` runs a compatible `agent-envd` executable selected by the Host. Each entered Resource owns one daemon generation, one private runtime allocation, and one reusable stdio carrier. Attachments remain sequential and single-use: each one initializes and closes a fresh EIP session, then returns the healthy carrier for the next attachment. Resource exit stops the daemon and removes only its private runtime; it never removes the selected workspace.
+
+Executable discovery is an explicit Host convenience rather than library-global configuration:
+
+```python
+from pathlib import Path
+
+from a13n_environment_provider import (
+    EnvironmentProviderSpec,
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+    build_environment_provider_factory_catalog,
+    resolve_agent_envd_executable,
+)
+
+catalog = build_environment_provider_factory_catalog(
+    builtin_keys=("a13n.local-envd",),
+)
+spec = EnvironmentProviderSpec(
+    provider_key="a13n.local-envd",
+    schema_version="1",
+    parameters={
+        "environment_id": "sandbox",
+        "workspace": {"path": str(Path("./workspace").resolve())},
+        "execution_network": "deny",
+    },
+)
+runtime = LocalEnvdProviderRuntime(
+    executable=resolve_agent_envd_executable(),
+    allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+)
+provider = catalog.create_provider(spec, runtime=runtime)
+```
+
+`resolve_agent_envd_executable()` checks an explicit argument, then `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` or `agent-envd.exe` through `shutil.which()`. It returns one validated absolute executable. The library does not read `.env`; a Host or development command may load one before calling the resolver. In this repository, `make local-envd-test` builds the Rust daemon, loads the optional root `.env` only for that command, defaults to `target/debug/agent-envd`, and exercises the real provider path.
+
+Local Envd validates the exact daemon/client release and required native-isolation probe during create and resume. It does not fall back to Direct Local or disable isolation. Filesystem pause stops the current daemon generation while preserving workspace files; resume starts a fresh Resource entry and generation.
 
 ## Create a provider plugin
 

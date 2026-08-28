@@ -338,8 +338,13 @@ def build_environment_provider_factory_catalog(
 
 def _builtin_factory_types() -> dict[str, type[EnvironmentProviderFactory]]:
     from .direct_local.provider import DirectLocalEnvironmentProviderFactory
+    from .local_envd.provider import LocalEnvdEnvironmentProviderFactory
 
-    return {DirectLocalEnvironmentProviderFactory.provider_key(): DirectLocalEnvironmentProviderFactory}
+    factory_types = (
+        DirectLocalEnvironmentProviderFactory,
+        LocalEnvdEnvironmentProviderFactory,
+    )
+    return {factory_type.provider_key(): factory_type for factory_type in factory_types}
 
 
 def _entry_points() -> tuple[importlib.metadata.EntryPoint, ...]:

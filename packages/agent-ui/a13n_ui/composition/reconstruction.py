@@ -7,7 +7,7 @@ import hashlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 from a13n_harness import (
@@ -338,18 +338,20 @@ class AgentReconstructor:
             if node.skills:
                 assert environment is not None
                 capabilities.append(await self._skills(snapshot, environment, node))
-            instructions = [block.content for block in node.prompt.definition.instruction_blocks]
-            if any(content is None for content in instructions):
-                raise CompositionError(
-                    "A resolved Prompt retained an unresolved source reference.",
-                    code="prompt_snapshot_invalid",
-                    details={"agent_id": node.agent_id},
-                )
+            system_prompt: list[str] = []
+            for block in node.prompt.definition.system_prompt_blocks:
+                if block.content is None:
+                    raise CompositionError(
+                        "A resolved Prompt retained an unresolved source reference.",
+                        code="prompt_snapshot_invalid",
+                        details={"agent_id": node.agent_id},
+                    )
+                system_prompt.append(block.content)
             spec = AgentSpec(
                 model=node.model.definition.model_id,
                 name=node.agent_id,
                 description=node.description,
-                instructions=cast(Any, instructions),
+                system_prompt=system_prompt,
                 model_settings=node.model.definition.settings or None,
                 metadata={
                     "agent_snapshot": snapshot.logical_agent_digest,

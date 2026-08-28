@@ -16,7 +16,7 @@ from a13n_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
-from a13n_harness.tools.invocation import _apply_result_policy
+from a13n_harness.tools.invocation import _UNMANAGED_OUTPUT_POLICY, _apply_result_policy
 from a13n_harness.toolsets import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     acknowledge_tool_output,
@@ -149,6 +149,10 @@ async def test_managed_tool_without_fresh_policy_is_denied_without_dispatch() ->
     assert executed is False
     assert result.status == "completed"
     assert "authorization is unavailable" in result.output_or_raise()
+
+
+async def test_unmanaged_output_policy_defaults_to_truncate() -> None:
+    assert _UNMANAGED_OUTPUT_POLICY.overflow == "truncate"
 
 
 async def test_unmanaged_native_tool_keeps_pydantic_semantics() -> None:

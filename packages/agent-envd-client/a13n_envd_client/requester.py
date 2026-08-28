@@ -185,6 +185,7 @@ class RequestCoordinator(EIPRequester):
         self._next_id = 1
         self._reader_task: asyncio.Task[None] | None = None
         self._close_task: asyncio.Task[None] | None = None
+        self._detach_task: asyncio.Task[None] | None = None
         self._closed = False
         self._terminal_error: BaseException | None = None
 
@@ -400,6 +401,37 @@ class RequestCoordinator(EIPRequester):
         close_task = self._close_task
         assert close_task is not None
         await _await_shared_close(close_task)
+
+    async def detach(self) -> None:
+        """Stop this requester while preserving an unambiguous reusable transport."""
+        if self._close_task is not None:
+            await self.close()
+            raise EIPSessionStateError("cannot detach a requester whose transport is closing")
+        if self._detach_task is None:
+            self._closed = True
+            self._detach_task = asyncio.create_task(self._detach(), name="eip-requester-detach")
+        await _await_shared_close(self._detach_task)
+
+    async def _detach(self) -> None:
+        reader_task = self._reader_task
+        if reader_task is not None:
+            reader_task.cancel()
+            await asyncio.gather(reader_task, return_exceptions=True)
+        if (
+            self._terminal_error is not None
+            or self._pending
+            or self._abandoned_ids
+            or self._transfers
+            or self._retired_transfers
+        ):
+            error = EIPSessionStateError("EIP requester cannot detach with ambiguous session state")
+            try:
+                await self._transport.close()
+            finally:
+                self._terminate(error)
+                self._abandoned_ids.clear()
+                self._clear_retired_transfers()
+            raise error from self._terminal_error
 
     async def _close(self) -> None:
         reader_task = self._reader_task

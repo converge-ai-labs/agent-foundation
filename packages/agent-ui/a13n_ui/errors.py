@@ -42,6 +42,26 @@ class StoreIntegrityError(StoreError):
     """Stored authority is missing, corrupt, incompatible, or internally inconsistent."""
 
 
+class SessionError(AgentUiError):
+    """A Session, Thread, Turn, or checkpoint command is invalid or conflicted."""
+
+
+class EnvironmentLifecycleError(AgentUiError):
+    """An Environment resource lifecycle command could not complete safely."""
+
+
+class RunCoordinationError(AgentUiError):
+    """A foreground Harness Run could not be accepted or committed safely."""
+
+
+class EventStoreError(StoreError):
+    """Retained AG-UI history could not be published, verified, or replayed."""
+
+
+class RuntimeResolutionError(AgentUiError):
+    """A required Host-native runtime could not be resolved or verified."""
+
+
 class ObjectIntegrityError(StoreIntegrityError):
     """An immutable object failed codec, identity, or payload validation."""
 
@@ -51,7 +71,12 @@ __all__ = [
     "ApplicationStateError",
     "CompositionError",
     "ConfigurationError",
+    "EnvironmentLifecycleError",
+    "EventStoreError",
     "ObjectIntegrityError",
+    "RunCoordinationError",
+    "RuntimeResolutionError",
+    "SessionError",
     "SkillManagementError",
     "StoreError",
     "StoreIntegrityError",

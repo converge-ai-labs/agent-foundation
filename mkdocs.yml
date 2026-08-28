@@ -17,6 +17,7 @@ nav:
       - Capabilities: agent-harness/capabilities.md
       - Environments: agent-harness/environments.md
       - State and Resume: agent-harness/state-and-resume.md
+      - Observation: agent-harness/observation.md
       - Delegation and CodeAct: agent-harness/delegation-and-codeact.md
       - Skills: agent-harness/skills.md
       - Plugins and Extensions: agent-harness/plugins.md

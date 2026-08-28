@@ -171,8 +171,8 @@ sequenceDiagram
     participant Files as Compressed files
 
     Surface->>App: submit input with Session Thread and expected revision
+    App->>App: preflight pinned snapshots checkpoint executable and fresh Model resolver
     App->>DB: accept Turn in short transaction
-    App->>App: load pinned Agent and Environment snapshots
     App->>Provider: create/resume fenced resources and acquire fresh attachments
     Provider-->>App: current resource state and attachments
     App->>Harness: stream input checkpoint and fresh RunBindings
@@ -180,9 +180,9 @@ sequenceDiagram
         Harness-->>App: public Harness item
         App->>AGUI: observe once
         AGUI-->>App: processed AG-UI batch
-        App-->>Surface: live fan-out
         App->>Files: publish compressed event segments
         App->>DB: register ranges/projections in short transactions
+        App-->>Surface: live-after-registration fan-out
     end
     Harness-->>App: terminal Run result and complete state
     App->>AGUI: observe terminal item
@@ -193,11 +193,11 @@ sequenceDiagram
         App->>Files: publish terminal AG-UI segment and state object
         App->>DB: commit Turn terminal outcome and selected checkpoint
     end
+    App->>Provider: close attachments then retain pause or disconnect by policy
     App-->>Surface: durable Session projection
-    App->>Provider: retain pause or disconnect by policy
 ```
 
-Input acceptance, provider operation, Harness start, Harness result, live event delivery, durable AG-UI registration, checkpoint selection, provider pause, async-child result delivery, OTel export, and rendering are distinct facts. A disconnected surface does not cancel work. Explicit cancellation follows the ordinary Harness and provider cleanup contracts and preserves unknown external effects.
+Input acceptance, provider operation, Harness start, Harness result, durable AG-UI registration, live event delivery, checkpoint selection, provider pause, async-child result delivery, OTel export, and rendering are distinct facts. Live delivery follows durable event registration but does not imply a Turn checkpoint or terminal outcome. A disconnected surface does not cancel work. Explicit cancellation follows the ordinary Harness and provider cleanup contracts and preserves unknown external effects.
 
 ## Application Lifetime
 
@@ -237,8 +237,8 @@ The same Agent UI release pins one exact agent-envd release and per-target asset
 | Session command accepted          | SQLite committed the command's control fact; execution may not have started       |
 | Environment operation dispatched  | Provider side effects may have occurred; durable terminal lifecycle is separate   |
 | Harness result delivered          | One process-local Run reached a terminal Harness result                           |
-| AG-UI event delivered live        | One subscriber observed a presentation event; it may not yet be durable           |
 | AG-UI segment registered          | A verified compressed event range became available for replay                     |
+| AG-UI event delivered live        | One subscriber observed an already registered event; Turn completion is separate  |
 | Session checkpoint selected       | SQLite atomically advanced the Turn and selected a verified complete state object |
 | Async subagent accepted           | SQLite owns a Host job record; the child may not have started                     |
 | Async subagent result retained    | A safe child terminal outcome became available independently from parent delivery |

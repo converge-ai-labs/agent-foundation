@@ -11,7 +11,7 @@ This guide builds and runs the smallest useful Agent Harness application. It use
 pip install a13n-harness
 ```
 
-The package includes Pydantic AI's slim runtime. Add the model-provider dependency required by your application separately.
+The package includes Pydantic AI's slim runtime and MCP client support. Add the model-provider dependency required by your application separately.
 
 ## Run an Offline Agent
 

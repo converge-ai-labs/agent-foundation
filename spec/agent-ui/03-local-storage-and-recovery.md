@@ -243,9 +243,11 @@ class StoredAguiEvent(BaseModel):
 
 `presentation_sequence` is monotonic within one Session across root and exposed child streams. `stream` preserves root/child correlation without deriving authority from presentation identity. Segments cover contiguous non-overlapping ranges and link to the prior retained segment digest. The chain detects gaps and wrong ordering; it is an integrity structure, not a tamper-proof audit log.
 
-The application service accumulates bounded event batches, serializes them into an immutable compressed segment, publishes the file, and then registers its range in a short SQLite transaction. Live subscribers can observe an event before that event is in a durable segment. The delivery record identifies live versus durable replay origin, and a live observation never strengthens Turn or checkpoint completion.
+The application service accumulates bounded event batches, serializes each batch into an immutable compressed segment, publishes the file, and then registers its range in a short SQLite transaction. Only after registration succeeds does it fan those stored events out to process-local live subscribers. The delivery record identifies durable replay versus live-after-registration origin; either origin carries the same `event_id` and `presentation_sequence`, and neither strengthens Turn or checkpoint completion.
 
-At a terminal Harness result, the coordinator flushes the terminal AG-UI batch to a published segment before publishing the durable terminal Session projection. Event-segment registration and checkpoint selection use independent short SQLite transactions; neither waits inside the other, and no cross-store transaction is claimed. If event registration fails while checkpoint selection succeeds, execution continuation remains valid and presentation recovery indexes the verified segment or reports an explicit gap.
+A subscription installs its bounded live queue and captures the current durable Session watermark under the same per-Session append lock. The caller first performs a finite replay through that watermark and then consumes live deliveries, so an append cannot fall between replay selection and live registration. Queue overflow or subscription closure terminates that live path rather than silently dropping an interior event; the client resumes finite replay after its last received sequence.
+
+At a terminal Harness result, the coordinator observes the terminal public item and attempts to publish and register its terminal AG-UI batch before publishing the durable terminal Session projection. Event-segment registration and checkpoint selection use independent short SQLite transactions; neither waits inside the other, and no cross-store transaction is claimed. If event publication or registration fails while checkpoint selection succeeds, execution continuation remains valid, the presentation failure remains explicit, and startup recovery indexes a verified directly appendable segment or reports the missing history. It never rolls back or invents the terminal checkpoint from presentation state.
 
 AG-UI files are presentation history, not `HarnessState`, a provider operation journal, OpenTelemetry, or an authorization log. They can reconstruct WebUI/TUI Items and protocol inspection, but cannot resume a pending tool call, recreate an async-subagent task, restore Environment authority, or prove absence of an external side effect.
 
@@ -274,17 +276,19 @@ This inspectability grants no application command authority. Directly editing an
 
 Startup recovery proceeds before command acceptance:
 
-1. acquire the configured application/store ownership lease;
-2. open SQLite, validate schema, apply owned migrations, and verify integrity needed for authoritative tables;
-3. validate the latest accepted configuration generation or accept a newer complete file generation;
-4. reconcile staging files and quarantine malformed objects;
-5. remove immutable objects whose file age exceeds the configured orphan-retention period and which have no durable reference;
-6. verify every selected Agent snapshot, managed Skill package, Environment snapshot, provider-state reference needed for lifecycle, selected root/child checkpoint, and pending deferred-request object;
-7. scan registered AG-UI segment chains and repair rebuildable projection lag;
-8. mark prior-process `accepted` or `running` Turns and `accepted`, `queued`, or `running` async jobs interrupted, while preserving a root Turn or child job in `waiting` only when its complete checkpoint and exact deferred correlations validate;
-9. publish the recovered application view.
+01. acquire the configured application/store ownership lease;
+02. open SQLite, validate schema, apply owned migrations, and verify integrity needed for authoritative tables;
+03. validate the latest accepted configuration generation or accept a newer complete file generation;
+04. reconcile staging files and quarantine malformed objects;
+05. remove immutable objects whose file age exceeds the configured orphan-retention period and which have no durable reference;
+06. verify every selected Agent snapshot, managed Skill package, Environment snapshot, provider-state reference needed for lifecycle, selected root/child checkpoint, and pending deferred-request object;
+07. verify registered AG-UI segment headers, indexes, digests, contiguous ranges, and digest linkage, then repair rebuildable projection lag;
+08. discover complete unregistered event files left by file-first publication and register one only when its first sequence and previous digest directly extend the Session's current durable presentation head; process additional candidates only when each then directly extends the newly selected head;
+09. retain a conflicting, forked, malformed, gapped, or otherwise non-authoritative candidate as unselected evidence and record a bounded path-free recovery diagnostic rather than guessing its authority;
+10. mark prior-process `accepted` or `running` Turns and `accepted`, `queued`, or `running` async jobs interrupted, while preserving a root Turn or child job in `waiting` only when its complete checkpoint and exact deferred correlations validate;
+11. publish the recovered application view.
 
-Startup retention cleanup removes an immutable object only when no durable reference retains it and its file age exceeds the configured orphan-retention period. Recent unreferenced publications remain available across interruption, while referenced objects never expire merely because of age. Referenced missing or corrupt objects have type-specific outcomes:
+Registered corruption and an unselected event candidate do not invalidate an otherwise verified selected `HarnessState`. They remain explicit presentation diagnostics, and finite replay fails at an affected retained range rather than skipping it. Startup records bounded path-free diagnostics for each invalid selected authority and marks the affected Session `blocked` or provider resource `unknown` before command acceptance; it does not report either as silently usable. Startup retention cleanup removes an immutable object only when no durable reference retains it and its file age exceeds the configured orphan-retention period. Recent unreferenced publications remain available across interruption, while referenced objects never expire merely because of age. Referenced missing or corrupt objects have type-specific outcomes:
 
 | Missing or corrupt value                     | Recovery outcome                                                                                                                   |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -334,8 +338,8 @@ The Host declares one local durability profile governing file flush, file synchr
 Application acknowledgement distinguishes:
 
 - command accepted in SQLite;
-- event observed live;
 - event segment durably registered;
+- the registered event observed live;
 - Harness result observed;
 - checkpoint selected;
 - Environment state selected;
@@ -345,18 +349,18 @@ None substitutes for another.
 
 ## Failure Semantics
 
-| Failure                                                    | Outcome                                                                                                            |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Compression or object validation fails                     | No SQLite reference is committed                                                                                   |
-| Object publishes but SQLite commit fails                   | Object remains unreferenced and is removed after orphan retention; prior selected metadata remains                 |
-| SQLite selects a reference but later file loss is detected | Type-specific corruption outcome; no fallback fabrication                                                          |
-| AG-UI projection update fails                              | Event file remains durable; projection catches up later                                                            |
-| AG-UI event file fails after live delivery                 | Replay contains an explicit gap; live delivery does not become durable history                                     |
-| Checkpoint commit succeeds but AG-UI registration lags     | Thread can continue; presentation repair indexes verified files or reports a gap                                   |
-| SQLite busy timeout expires before dispatch                | Command conflicts/fails before Harness or provider side effects                                                    |
-| SQLite commit fails after external work                    | Prior selected state remains; effect outcome is unknown and requires reconciliation                                |
-| Store lease owner disappears                               | Recovery interrupts prior active execution, preserves validated waiting root/child boundaries, and never auto-runs |
-| OTel exporter or ordinary logging fails                    | Diagnostic loss only; product lifecycle facts are unchanged                                                        |
+| Failure                                                    | Outcome                                                                                                                           |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Compression or object validation fails                     | No SQLite reference is committed                                                                                                  |
+| Object publishes but SQLite commit fails                   | Object remains unreferenced and is removed after orphan retention; prior selected metadata remains                                |
+| SQLite selects a reference but later file loss is detected | Type-specific corruption outcome; no fallback fabrication                                                                         |
+| AG-UI projection update fails                              | Event file remains durable; projection catches up later                                                                           |
+| AG-UI event publication or registration fails              | That batch receives no live fan-out; directly appendable published evidence can recover, otherwise replay reports missing history |
+| Checkpoint commit succeeds but AG-UI registration fails    | Thread can continue; presentation repair indexes verified files or reports missing history                                        |
+| SQLite busy timeout expires before dispatch                | Command conflicts/fails before Harness or provider side effects                                                                   |
+| SQLite commit fails after external work                    | Prior selected state remains; effect outcome is unknown and requires reconciliation                                               |
+| Store lease owner disappears                               | Recovery interrupts prior active execution, preserves validated waiting root/child boundaries, and never auto-runs                |
+| OTel exporter or ordinary logging fails                    | Diagnostic loss only; product lifecycle facts are unchanged                                                                       |
 
 ## Compatibility
 

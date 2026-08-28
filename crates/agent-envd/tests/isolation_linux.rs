@@ -110,13 +110,18 @@ fn protected_config_hard_links_fail_closed() {
 
 #[test]
 fn standalone_daemon_starts_with_required_isolation_when_override_is_omitted() {
+    let directory = fixture_directory("standalone");
+    let runtime = directory.join("runtime");
+    fs::create_dir(&runtime).expect("creates runtime parent");
     let status = Command::new(env!("CARGO_BIN_EXE_agent-envd"))
         .env_clear()
         .env("AGENT_ENVD_ENVIRONMENT_ID", "isolation-default-test")
+        .env("AGENT_ENVD_RUNTIME_DIR", &runtime)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .status()
         .expect("starts standalone daemon");
+    let _ = fs::remove_dir_all(&directory);
     assert!(status.success());
 }

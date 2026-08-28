@@ -133,7 +133,7 @@ Installed adapter code and model names are validated as far as possible without 
 
 ### Prompts
 
-A Prompt definition owns ordered Agent instructions:
+A Prompt definition owns the complete ordered static Agent system prompt:
 
 ```python
 class PromptDefinition(BaseModel):
@@ -141,10 +141,10 @@ class PromptDefinition(BaseModel):
     prompt_id: str
     display_name: str
     description: str | None
-    instruction_blocks: tuple[PromptBlock, ...]
+    system_prompt_blocks: tuple[PromptBlock, ...]
 ```
 
-A block contains normalized instruction content or one source-relative Markdown reference. Reload resolves the complete referenced content before computing the revision digest. A Prompt revision never depends on a mutable path at execution time. Prompt files are inspectable text and do not embed executable templates or arbitrary Python expressions.
+A block contains normalized system-prompt content or one source-relative Markdown reference. Reload resolves the complete referenced content before computing the revision digest. A Prompt revision never depends on a mutable path at execution time. Prompt files are inspectable text and do not embed executable templates or arbitrary Python expressions.
 
 ### Plugin Instances
 

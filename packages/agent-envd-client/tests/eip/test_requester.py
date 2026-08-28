@@ -42,6 +42,7 @@ from a13n_envd_client.eip.v1 import (
     JsonRpcRequest,
     JsonRpcSuccessResponse,
     RetryHint,
+    SessionCloseResult,
     decode_model,
     encode_model,
 )
@@ -145,6 +146,55 @@ def success_response(
     )
 
 
+def close_response(request_id: str | int) -> bytes:
+    result = SessionCloseResult(closed=True)
+    return encode_model(
+        JsonRpcSuccessResponse(
+            jsonrpc="2.0",
+            id=request_id,
+            result=json.loads(encode_model(result)),
+        )
+    )
+
+
+def test_session_concurrent_close_shares_cleanup_and_survives_waiter_cancellation() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        requester = RequestCoordinator(transport, request_timeout=1)
+        session = EIPSession(requester, descriptor(1), reuse_transport=True)
+
+        cancelled_waiter = asyncio.create_task(session.close())
+        request = decode_sent_request(await transport.sent.get())
+        completing_waiter = asyncio.create_task(session.close())
+        await asyncio.sleep(0)
+        assert transport.sent.empty()
+
+        cancelled_waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_waiter
+        await transport.responses.put(close_response(request.id))
+        await completing_waiter
+
+        assert not transport.closed
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_session_abort_is_terminal_and_closes_reusable_transport() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        requester = RequestCoordinator(transport, request_timeout=1)
+        session = EIPSession(requester, descriptor(1), reuse_transport=True)
+
+        await session.abort()
+        assert transport.closed
+        with pytest.raises(EIPSessionStateError, match="did not close cleanly"):
+            await session.close()
+
+    asyncio.run(scenario())
+
+
 def test_request_coordinator_correlates_out_of_order_responses() -> None:
     async def scenario() -> None:
         transport = FakeTransport()
@@ -166,6 +216,54 @@ def test_request_coordinator_correlates_out_of_order_responses() -> None:
         assert first_result.descriptor.generation == 1
         assert second_result.descriptor.generation == 2
         await requester.close()
+
+    asyncio.run(scenario())
+
+
+def test_request_coordinator_detaches_without_closing_a_clean_transport() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        first_requester = RequestCoordinator(transport, request_timeout=1)
+        first_client = EIPClient(first_requester)
+        first_call = asyncio.create_task(
+            first_client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="first")))
+        )
+        first_request = decode_sent_request(await transport.sent.get())
+        await transport.responses.put(success_response(first_request.id, 1))
+        assert (await first_call).descriptor.generation == 1
+
+        await first_requester.detach()
+        assert not transport.closed
+
+        second_requester = RequestCoordinator(transport, request_timeout=1)
+        second_client = EIPClient(second_requester)
+        second_call = asyncio.create_task(
+            second_client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="second")))
+        )
+        second_request = decode_sent_request(await transport.sent.get())
+        await transport.responses.put(success_response(second_request.id, 2))
+        assert (await second_call).descriptor.generation == 2
+        await second_requester.close()
+        assert transport.closed
+
+    asyncio.run(scenario())
+
+
+def test_request_coordinator_detach_closes_ambiguous_transport() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        requester = RequestCoordinator(transport, request_timeout=None)
+        client = EIPClient(requester)
+        call = asyncio.create_task(
+            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="pending")))
+        )
+        await transport.sent.get()
+
+        with pytest.raises(EIPSessionStateError, match="ambiguous"):
+            await requester.detach()
+        assert transport.closed
+        with pytest.raises(EIPSessionStateError):
+            await call
 
     asyncio.run(scenario())
 

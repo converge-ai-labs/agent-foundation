@@ -79,7 +79,7 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
             "prompt_id": "prompt-main",
             "display_name": "Main Prompt",
             "description": None,
-            "instruction_blocks": [{"content": "Be concise.", "source": None}],
+            "system_prompt_blocks": [{"content": "Be concise.", "source": None}],
         },
         "skill-sources/skill-source-local.yaml": {
             "schema_version": "1",
@@ -178,7 +178,7 @@ async def test_catalog_accepts_restarts_rejects_invalid_and_applies_batch(tmp_pa
         model = yaml.safe_load(source["models/model-main.yaml"])
         model["model_name"] = "test-v2"
         prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
-        prompt["instruction_blocks"] = [{"content": "Be precise.", "source": None}]
+        prompt["system_prompt_blocks"] = [{"content": "Be precise.", "source": None}]
         replacements = {
             "models/model-main.yaml": yaml.safe_dump(model, sort_keys=True).encode(),
             "prompts/prompt-main.yaml": yaml.safe_dump(prompt, sort_keys=True).encode(),
@@ -603,7 +603,7 @@ async def test_oversized_resolved_prompt_keeps_last_known_good(tmp_path: Path) -
     discovery.mkdir()
     source = _write_complete_tree(definitions)
     prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
-    prompt["instruction_blocks"] = [{"content": None, "source": "prompt-main.md"}]
+    prompt["system_prompt_blocks"] = [{"content": None, "source": "prompt-main.md"}]
     _write_yaml(definitions / "prompts/prompt-main.yaml", prompt)
     (definitions / "prompts/prompt-main.md").write_text("Valid prompt.\n")
     settings = _full_settings(tmp_path / "data", definitions, discovery)
@@ -757,7 +757,7 @@ async def test_source_transaction_rolls_back_when_sources_race_manifest_selectio
         current = await application.current_configuration()
         assert current is not None
         prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
-        prompt["instruction_blocks"] = [{"content": "Transaction edit.", "source": None}]
+        prompt["system_prompt_blocks"] = [{"content": "Transaction edit.", "source": None}]
         content = yaml.safe_dump(prompt, sort_keys=True).encode()
         manifest = SourceTransactionManifest(
             schema_version="1",
@@ -797,7 +797,7 @@ async def test_source_transaction_rolls_back_when_sources_race_manifest_selectio
         reconciled = await application.reload_configuration()
         prompt_ref = next(item for item in reconciled.resources if item.kind is ResourceKind.prompt)
         prompt_revision = await application.configuration_resource(prompt_ref)
-        assert prompt_revision.normalized_content["instruction_blocks"] == [  # type: ignore[index]
+        assert prompt_revision.normalized_content["system_prompt_blocks"] == [  # type: ignore[index]
             {"content": "Be concise.", "source": None}
         ]
 
@@ -816,7 +816,7 @@ async def test_source_transaction_rejects_unreconciled_external_edits(tmp_path: 
         model["model_name"] = "externally-edited"
         _write_yaml(definitions / "models/model-main.yaml", model)
         prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
-        prompt["instruction_blocks"] = [{"content": "Transaction edit.", "source": None}]
+        prompt["system_prompt_blocks"] = [{"content": "Transaction edit.", "source": None}]
         content = yaml.safe_dump(prompt, sort_keys=True).encode()
         manifest = SourceTransactionManifest(
             schema_version="1",

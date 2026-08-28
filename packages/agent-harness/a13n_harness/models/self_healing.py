@@ -239,12 +239,12 @@ def _is_stale_reasoning(error: Exception) -> bool:
 
 
 _OVERSIZED_PAYLOAD_MARKERS = (
-    "message size",
-    "exceeds",
+    "message size exceeds",
+    "message size exceeded",
+    "message size is greater than",
     "request entity too large",
     "payload too large",
     "request payload size exceeds",
-    "failed_precondition",
 )
 _OVERSIZED_IMAGE_REMINDER = (
     "<system-reminder>An image was removed because the request exceeded the "

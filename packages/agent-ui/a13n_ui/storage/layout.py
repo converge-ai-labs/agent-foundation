@@ -15,6 +15,7 @@ class StorageLayout:
     database: Path
     objects: Path
     sessions: Path
+    runtimes: Path
     staging: Path
     quarantine: Path
     lock_file: Path
@@ -26,6 +27,7 @@ class StorageLayout:
             database=root / "metadata.sqlite3",
             objects=root / "objects",
             sessions=root / "sessions",
+            runtimes=root / "runtimes",
             staging=root / "staging",
             quarantine=root / "quarantine",
             lock_file=root / ".agent-ui.lock",
@@ -34,7 +36,7 @@ class StorageLayout:
     def prepare(self) -> None:
         """Create private storage directories without creating source configuration."""
 
-        for path in (self.root, self.objects, self.sessions, self.staging, self.quarantine):
+        for path in (self.root, self.objects, self.sessions, self.runtimes, self.staging, self.quarantine):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
             if os.name != "nt":
                 path.chmod(0o700)

@@ -16,7 +16,7 @@ from a13n_harness import (
 
 executable = HarnessBuilder().build(
     AgentSpec(
-        instructions="Answer concisely.",
+        system_prompt="Answer concisely.",
         model_config=ModelConfiguration(context_window=200_000),
     ),
     output_type=str,
@@ -47,7 +47,7 @@ Both overloads follow the same validation and construction path. Build is synchr
 
 An `AgentDefinition` fixes:
 
-- the Harness `AgentSpec`, which remains a native Pydantic AI spec and may add resolved model characteristics;
+- the Harness `AgentSpec`, which remains a native Pydantic AI spec and may add an ordered static system prompt and resolved model characteristics;
 - one output contract;
 - one string or concrete model selection;
 - definition-selected Capabilities;
@@ -57,6 +57,23 @@ An `AgentDefinition` fixes:
 - one default-on build-time model-cost policy.
 
 The output contract cannot change per run. Pass a Python output type or Pydantic AI `OutputSpec` through `output_type`, or use `AgentSpec.output_schema`; do not set both.
+
+### System prompt and instructions
+
+Use the Harness `AgentSpec.system_prompt` field for definition-owned static system-prompt content. A string creates one block, a list preserves ordered blocks, and `None` or an empty list supplies no block:
+
+```python
+spec = AgentSpec(
+    system_prompt=[
+        "You are the support Agent.",
+        "Answer with verified account information only.",
+    ],
+)
+```
+
+The prompt is fixed for one built definition. When a later definition resumes non-empty `HarnessState`, the Harness removes historical `SystemPromptPart` values and places the current ordered blocks at the beginning of the first request. Removing the prompt from the new definition removes those historical parts. A provider-suspended response remains an in-progress native request and is not rewritten; resume it with a compatible definition.
+
+`AgentSpec.instructions` remains the native Pydantic AI instruction plane. Static and dynamic instructions keep their per-request lifecycle and are not merged into or replaced by `system_prompt` reconciliation. Capability- and Toolset-owned guidance also remains instructions.
 
 ### Model selection
 
@@ -80,7 +97,7 @@ model = infer_model(
     patches=(apply_provider_profile,),
 )
 executable = HarnessBuilder().build(
-    AgentSpec(instructions="Answer concisely."),
+    AgentSpec(system_prompt="Answer concisely."),
     output_type=str,
     model=model,
 )

@@ -281,6 +281,50 @@ class _FixedCostCapability(AbstractModelCostCapability):
         )
 
 
+class _FailingCostCapability(AbstractModelCostCapability):
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+
+    @property
+    def enabled(self) -> bool:
+        if self.stage == "enabled":
+            raise RuntimeError("enabled failed")
+        return True
+
+    @property
+    def revision(self) -> str:
+        if self.stage == "revision":
+            raise RuntimeError("revision failed")
+        return "failing-1"
+
+    def quote(self, value: ModelCostInput) -> ModelCostQuote | None:
+        del value
+        if self.stage == "quote":
+            raise RuntimeError("quote failed")
+        return None
+
+
+@pytest.mark.parametrize("stage", ("enabled", "revision", "quote"))
+async def test_custom_model_cost_failure_does_not_fail_the_agent_run(stage: str) -> None:
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(_FailingCostCapability(stage),),
+    )
+    result = await executable.run("go", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    record = result.usage_records[0]
+    assert isinstance(record, ModelUsageRecord)
+    assert record.pricing_status == "failed"
+    assert record.request_usage.cost is None
+
+
 async def test_custom_model_cost_is_applied_before_native_accumulation() -> None:
     inputs: list[ModelCostInput] = []
     cost_capability = _FixedCostCapability(inputs=inputs)

@@ -126,7 +126,7 @@ Agent revision
 The sources have distinct responsibilities:
 
 - **Model** selects native provider/model behavior and defaults; fresh credentials and native Model resolution remain run-scoped.
-- **Prompt** supplies complete ordered instructions.
+- **Prompt** supplies the complete ordered static system prompt.
 - **Plugin instances** supply trusted Harness-wide middleware through the Harness-owned plugin contract.
 - **Skills** supply inspectable reusable instructions and artifacts through one explicit Harness `SkillManager` composition plus fresh exact-name run selection.
 - **Capabilities** own Agent-loop tools, Toolsets, guidance, settings, and hooks.
@@ -137,19 +137,23 @@ A plugin can contribute Capabilities through the Harness lifecycle, but Agent UI
 
 ## Model Reconstruction
 
-The resolved Model revision contributes a logical model ID to `AgentSpec`. Every root and child Run receives a fresh Agent UI `RunModelResolver` that:
+The resolved Model revision contributes a logical model ID to `AgentSpec`. Agent UI validates and locks Model adapter provenance, but it does not infer credentials or construct a native Model from ambient process state. The embedding Host supplies one `RunModelResolverFactory` when it opens the application service. For every root or child Harness Run, Agent UI calls that factory with the exact pinned Agent snapshot and requires a fresh callable Harness `RunModelResolver`.
 
-1. verifies the pinned Model revision and current Host policy;
+The returned resolver receives the ordinary Harness run context and logical model ID. Within that invocation scope, the Host collaborator:
+
+1. verifies that the requested logical ID belongs to the pinned Model revision and remains allowed by current Host policy;
 2. resolves current credential material behind the pinned `credential_ref`;
 3. constructs or obtains the exact native Pydantic AI Model through the selected adapter;
 4. applies the pinned endpoint and model settings;
-5. returns the Model only for that Run's resolver scope.
+5. returns the Model only under that fresh Run's authority.
 
-The Agent snapshot locks every selected Model adapter by exact key and Agent UI distribution version. Reconstruction verifies every Model lock as well as every Harness plugin lock before building the definition graph; an allowlisted but unregistered string is never treated as an adapter. A Model adapter can reuse a documented reentrant native client or Model internally, but that cache is process-local and keyed by non-secret configuration plus credential generation. A Session snapshot never stores the native value or historic secret. Credential rotation behind one reference can affect a later Run without changing Agent behavior content; changing provider, endpoint, model name, settings, or credential reference creates another Model revision.
+Opening Agent UI without this collaborator remains valid for configuration, composition, Session, Environment, and replay operations, but foreground or child execution fails explicitly with `model_resolver_unavailable` before Harness dispatch. Agent UI never substitutes a fake Model, historic credential, or ambient provider default. A factory that returns a non-callable value fails as `model_resolver_invalid`.
+
+The Agent snapshot locks every selected Model adapter by exact key and Agent UI distribution version. Reconstruction verifies every Model lock as well as every Harness plugin lock before building the definition graph; an allowlisted but unregistered string is never treated as an adapter. A Host Model adapter can reuse a documented reentrant native client or Model internally, but that cache is process-local and keyed by non-secret configuration plus credential generation. A Session snapshot never stores the native value or historic secret. Credential rotation behind one reference can affect a later Run without changing Agent behavior content; changing provider, endpoint, model name, settings, or credential reference creates another Model revision.
 
 ## Prompt, Skill, and Capability Reconstruction
 
-Prompt resolution produces complete immutable instruction content before the Harness build. The executable never rereads a mutable Prompt source file.
+Prompt resolution produces complete immutable system-prompt content before the Harness build and places its ordered blocks in the Harness `AgentSpec.system_prompt` field. The executable never rereads a mutable Prompt source file. Capability and Toolset instructions remain separate native Pydantic inputs with their own static or dynamic lifecycle.
 
 Each available Skill revision was imported through the public Harness `SkillManager` and Agent UI's Host-owned revision process. Reconstruction verifies its immutable package object, manifest, and digest. For each Agent node, Agent UI constructs one explicit `SkillManager` whose ordered source roots contain only that node's pinned package revisions and whose trusted materializer writes those exact files through the current run Environment's `FileOperator` into a content-addressed Agent UI-owned logical root. The root is unique to the Agent snapshot and node and resolves beneath `materialization_binding`; materialization verifies or replaces that exact managed subtree before scanning, so stale files from another revision cannot enter the catalog. Session compatibility rejects missing or insufficient file operations before provider effects. Passing this manager to `SkillsCapability` replaces the Harness default workspace source; no ambient home, project, package, or sibling directory enters the runtime catalog.
 
@@ -243,7 +247,7 @@ An Agent graph with no managed Skills produces an `ExecutableAgent` that corresp
 
 A graph with managed Skills produces an executable for one compatibility-validated immutable Agent/Environment snapshot pair. Agent UI's authored `materialization_binding` selects an Environment binding whose resolved `model_alias` is embedded in each explicit `FileSkillSource` root at definition reconstruction, while the actual `FileOperator`, topology revision, and attachment remain fresh Run values. The pair cache key therefore includes both logical digests. This pairing is an Agent UI authoring and materialization-path contract, not a Harness-wide requirement that all definitions bind an Environment at build time. A cache entry contains no Session state, credential, Environment resource, attachment, or run authority.
 
-Changing any behavior-affecting component creates another logical digest and executable. Changing the Environment digest creates another managed-Skill executable pair, even if the selected alias remains textually equal, so reconstruction never reuses a definition across an unvalidated pair. Agent UI never hot-toggles instructions, plugins, available Skills, default Skill exposure, Capabilities, output, recovery policy, async policy, or child edges inside an active executable. A Session can pin an exact root/child Skill exposure override at creation or fork, but changing that pinned override also requires a fork. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
+Changing any behavior-affecting component creates another logical digest and executable. Changing the Environment digest creates another managed-Skill executable pair, even if the selected alias remains textually equal, so reconstruction never reuses a definition across an unvalidated pair. Agent UI never hot-toggles the system prompt, instructions, plugins, available Skills, default Skill exposure, Capabilities, output, recovery policy, async policy, or child edges inside an active executable. A Session can pin an exact root/child Skill exposure override at creation or fork, but changing that pinned override also requires a fork. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
 
 Run-time values vary only through contracts designed for fresh binding: Identity, current model resolver, credentials, exact Skill selection, Environment attachments, policy narrowing, Session-read collaborator, and async-subagent collaborator. Fresh binding realizes the Session-pinned effective Skill selection and can apply current policy narrowing, but it cannot add a Capability, plugin, available Skill, output type, or child edge absent from the snapshot or select a Skill outside that Session policy.
 

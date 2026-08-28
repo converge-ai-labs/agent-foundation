@@ -52,6 +52,7 @@ from a13n_harness.model_context import (
     _requires_exact_boundary,
     _requires_exact_history,
 )
+from a13n_harness.observation import observe_operation
 from a13n_harness.tools.invocation import disabled_tool_execution
 
 RUNTIME_CONTEXT_CAPABILITY_ID = "a13n.runtime-context"
@@ -729,12 +730,17 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         )
         self._depth += 1
         try:
-            summary = await _compact_with_same_agent(ctx, request_context)
-            messages = _build_compacted_history(
-                request_context.messages,
-                summary,
-                retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
-            )
+            with observe_operation(
+                "compaction",
+                capability_id=COMPACTION_CAPABILITY_ID,
+                operation_id=operation_id,
+            ):
+                summary = await _compact_with_same_agent(ctx, request_context)
+                messages = _build_compacted_history(
+                    request_context.messages,
+                    summary,
+                    retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
+                )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

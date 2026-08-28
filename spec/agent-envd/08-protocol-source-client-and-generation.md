@@ -158,7 +158,9 @@ A Host chooses create, resume, pause, destroy, attachment, and optional provider
 
 ## Executable Distribution and Installation
 
-Every agent-envd release publishes native archives for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64, plus one Release `SHA256SUMS` file. Unix assets are named `agent-envd-<version>-<target>.tar.gz`; Windows assets are named `agent-envd-<version>-<target>.zip`. The six exact targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, and `aarch64-pc-windows-msvc`. Each archive contains the `agent-envd` executable and repository license. `agent-envd --version` prints the canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity and exits without starting a daemon or reading runtime configuration.
+Every agent-envd release publishes native archives for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64, plus one Release `SHA256SUMS` file. Unix assets are named `agent-envd-<version>-<target>.tar.gz`; Windows assets are named `agent-envd-<version>-<target>.zip`. The six exact targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`, and `aarch64-pc-windows-msvc`. Each archive contains the `agent-envd` executable and repository license.
+
+Invoking the executable with exactly `agent-envd --version` writes `agent-envd <version>\n` to stdout, writes nothing to stderr, and exits zero. `<version>` is the canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` release identity embedded at build time. This path is side-effect-free: it does not create a Tokio runtime, inspect daemon environment or configuration, run isolation setup, allocate runtime state, emit logs, or open a carrier. `--version` combined with another argument is invalid rather than partially starting a daemon.
 
 The repository provides two standalone installer entry points:
 

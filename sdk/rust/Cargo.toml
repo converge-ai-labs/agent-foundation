@@ -15,3 +15,6 @@ categories = ["api-bindings"]
 [lib]
 name = "a13n_sdk"
 path = "src/lib.rs"
+
+[workspace]
+resolver = "2"

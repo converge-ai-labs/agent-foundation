@@ -2,6 +2,14 @@ use std::{ffi::OsString, path::PathBuf, time::Duration};
 
 fn main() {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if arguments.as_slice() == [OsString::from("--version")] {
+        println!("agent-envd {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if arguments.first().is_some_and(|value| value == "--version") {
+        eprintln!("agent-envd failed: --version cannot be combined with other arguments");
+        std::process::exit(1);
+    }
     if let Some(result) = run_private_mode(&arguments) {
         match result {
             Ok(code) => std::process::exit(code),
@@ -103,6 +111,12 @@ fn isolation_probe_config(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_argument_is_distinct_from_daemon_and_probe_modes() {
+        assert!(run_private_mode(&["--version".into()]).is_none());
+        assert!(isolation_probe_config(&["--version".into()]).is_err());
+    }
 
     #[test]
     fn isolation_probe_cli_accepts_json_with_optional_absolute_config() {
