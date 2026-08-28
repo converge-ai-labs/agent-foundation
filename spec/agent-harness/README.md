@@ -30,6 +30,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                           |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch                 |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics            |
+| [20-file-tools.md](20-file-tools.md)                                                     | File view media policy, provider-side glob/grep semantics, limits, compatibility, and performance invariants                            |
 
 ## Reading Paths
 
@@ -47,7 +48,7 @@ Read `06`, `10`, and `16`. Provider transport retry, exact history repair, `Mode
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
+Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`; for the File Toolset, read `20`. Environment is a fixed run lifecycle resource; an `EnvironmentRunExtension` binds aggregate-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
 
 ### Implement Hosting or Persistence
 

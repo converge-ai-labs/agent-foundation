@@ -241,6 +241,7 @@ class FileFindParams(BaseModel):
     max_results: int = 100
     recursive: bool = True
     include_hidden: bool = False
+    ignore_mode: Literal["none", "git"] = "none"
     kinds: tuple[FileKind, ...] = ()
 
 
@@ -253,6 +254,8 @@ class FileFindResult(BaseModel):
 
 The glob matches each descendant's `/`-separated path relative to `root`; `root` itself is not a result. A bare pattern without `/`, such as `*.py`, matches the basename at any traversed depth. A pattern containing `/` matches the complete relative path, and a leading `/` explicitly anchors that path at `root`. The supported syntax is `*`, `?`, `**`, and bracket character classes. Within a path pattern, `*`, `?`, and classes do not cross `/`, while `**` matches complete path segments. An empty `kinds` tuple accepts every file kind. `recursive=false` restricts the operation to immediate children. Results share `file.list` ordering and offset semantics.
 
+`ignore_mode="git"` evaluates applicable `.gitignore` files rooted at `root`, including nested files, parent-to-child precedence, and negation. Envd prunes an ignored directory only when no applicable negation can re-include a descendant. Ignore files outside `root` have no effect. `ignore_mode="none"` performs no repository-ignore evaluation. Hidden-path selection remains independent of ignore mode; selecting a hidden `root` is explicit access to that root, while hidden descendants remain omitted unless `include_hidden=true`.
+
 ### `file.search`
 
 `file.search` searches UTF-8 regular-file content and emits one result per matching LF-delimited line, not one result per occurrence.
@@ -263,10 +266,17 @@ class FileSearchParams(BaseModel):
     root: EIPPath
     query: str
     mode: Literal["literal", "regex"]
+    include: str = "**/*"
     case_sensitive: bool = True
     offset: int = 0
     max_results: int = 100
+    max_matches_per_file: int = 0
+    max_files: int = 0
+    max_file_bytes: int = 0
     include_hidden: bool = False
+    ignore_mode: Literal["none", "git"] = "none"
+    before_context: int = 0
+    after_context: int = 0
     max_line_length: int
 
 
@@ -275,20 +285,32 @@ class FileSearchMatch(BaseModel):
     line_number: int
     preview: str
     preview_truncated: bool
+    context: str
+    context_start_line: int
+
+
+class FileSearchSkip(BaseModel):
+    path: EIPPath
+    reason: Literal["binary", "invalid_utf8", "too_large", "unreadable"]
 
 
 class FileSearchResult(BaseModel):
     matches: tuple[FileSearchMatch, ...]
+    skipped: tuple[FileSearchSkip, ...]
+    files_seen: int
+    files_searched: int
     offset: int
     has_more: bool
     omitted_unrepresentable_entries: int
 ```
 
-Search recursively considers regular files under `root`, omitting hidden path components unless requested. A file containing invalid UTF-8 or NUL is skipped deterministically. Literal and regex matching are applied independently to each complete logical line and cannot span LF boundaries. `case_sensitive=false` uses explicit Unicode case-insensitive matching.
+Search recursively considers regular files under `root` whose relative paths match `include`. Include, hidden-path, and `ignore_mode` semantics are identical to `file.find`; filtering occurs during traversal rather than after content transfer. A file containing invalid UTF-8 or NUL is skipped deterministically. Literal and regex matching are applied independently to each complete logical line and cannot span LF boundaries. `case_sensitive=false` uses explicit Unicode case-insensitive matching.
 
-`line_number` is one-based. `preview` is the containing line with only its LF terminator removed and at most `max_line_length` characters; `preview_truncated` reports an omitted suffix. EIP does not expose a raw byte offset or duplicate the same line for several occurrences. Results are ordered by relative path and then line number.
+Positive `max_files` bounds regular files selected for content inspection, positive `max_matches_per_file` bounds accepted matching lines from one file, and positive `max_file_bytes` skips an oversized file before scanning. Zero selects the corresponding finite daemon hard ceiling, preserving the original request shape for older clients without making any dimension unlimited. A skipped file returns one bounded reason without leaking native errors. `files_seen` counts matching regular-file candidates considered before the file limit, while `files_searched` counts files whose content scan began.
 
-Pattern size, incremental traversal work, bytes scanned per file and operation, result count, preview length, response bytes, and duration are finite. A source file can exceed the mutation candidate limit; search streams bounded chunks and applies its independent scan ceiling. `offset` skips ordered matching lines, `max_results` bounds the page, and `has_more` reports another match in that observation. Implementations page deterministically without retaining a complete traversal/result set merely to return the first page. Unrepresentable path entries are omitted and counted. A response ceiling can narrow result count; if the first selected item cannot fit, the method returns `output_limit_exceeded`. Cancellation and timeout return typed errors rather than partial success.
+`line_number` and `context_start_line` are one-based. `preview` is the containing line with only its LF terminator removed and at most `max_line_length` characters; `preview_truncated` reports an omitted suffix. `context` contains at most `before_context` complete preceding lines, the matching line, and at most `after_context` complete following lines, clipped at file boundaries and under the response ceiling. EIP does not expose a raw byte offset or duplicate the same line for several occurrences. Results are ordered by relative path and then line number.
+
+Pattern size, incremental traversal work, bytes scanned per file and operation, result count, preview and context length, response bytes, and duration are finite. A source file can exceed the mutation candidate limit; search streams bounded chunks and applies its independent scan ceiling. `offset` skips ordered matching lines after all request filters and per-file limits, `max_results` bounds the page, and `has_more` reports another match in that observation. Implementations page deterministically without retaining a complete traversal/result set merely to return the first page. Unrepresentable path entries are omitted and counted. A response ceiling can narrow result count; if the first selected item cannot fit, the method returns `output_limit_exceeded`. Cancellation and timeout return typed errors rather than partial success. One request returns match context with the match; clients never need a per-match `file.read_text` round trip.
 
 Neither find nor search follows a symlink outside the selected mount or reads special files. Result text remains untrusted caller-visible content.
 
