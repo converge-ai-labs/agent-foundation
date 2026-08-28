@@ -18,15 +18,16 @@ class FileSearchConformance:
     def populate(self, root: Path) -> None:
         (root / "src").mkdir()
         (root / "ignored").mkdir()
-        (root / ".gitignore").write_text("ignored/\nsrc/generated/\n", encoding="utf-8")
+        (root / ".gitignore").write_text("ignored/\nsrc/generated/\n", encoding="utf-8", newline="\n")
         (root / "src" / "match.py").write_text(
             "before\nneedle one\nafter\nneedle two\n",
             encoding="utf-8",
+            newline="\n",
         )
-        (root / "src" / "other.txt").write_text("needle\n", encoding="utf-8")
+        (root / "src" / "other.txt").write_text("needle\n", encoding="utf-8", newline="\n")
         (root / "src" / "generated").mkdir()
-        (root / "src" / "generated" / "ignored.py").write_text("needle\n", encoding="utf-8")
-        (root / "ignored" / "hidden.py").write_text("needle\n", encoding="utf-8")
+        (root / "src" / "generated" / "ignored.py").write_text("needle\n", encoding="utf-8", newline="\n")
+        (root / "ignored" / "hidden.py").write_text("needle\n", encoding="utf-8", newline="\n")
 
     async def assert_operator(self, files: FileOperator, *, root: str) -> None:
         prefix = PurePosixPath(root)
