@@ -72,6 +72,46 @@ Inline delegation is blocking and process-local. It does not provide:
 
 A Host can implement those as ordinary Host-owned tools and lifecycle records. Do not reinterpret inline delegation as a background protocol.
 
+### Deferred Tools in Child Runs
+
+Every invocation with `parent_agent_instance_id is not None` is non-suspending. This applies to inline Harness children and to Host-scheduled children that use the ordinary child bindings:
+
+| Deferred path                                                                                                                              | Child behavior                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| A prepared `ToolDefinition.defer` is true, including external and declaratively approval-gated tools                                       | The definition and its first-party guidance are absent from the child tool surface                                      |
+| An ordinary function, validator, Capability hook, custom Toolset, or managed policy raises `CallDeferred` or `ApprovalRequired` at runtime | The mandatory Harness boundary returns `ToolDenied` for every request, and Pydantic continues the same child model loop |
+| An unexpected custom or upstream bypass still terminates with `DeferredToolRequests`                                                       | The child fails closed with `subagent_deferred_unsupported`; its parent is never suspended                              |
+
+Root runs are unchanged. They can suspend with native deferred requests or use a Pydantic `HandleDeferredToolCalls` Capability to resolve requests inline. The Harness boundary declines root requests so normal Pydantic accumulation dispatch still applies.
+
+This distinction matters when authoring a plugin, Toolset, validator, or policy. A function can be statically ordinary but request interaction only for particular arguments:
+
+```python
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred
+
+
+def publish_report(*, destination: str, require_review: bool) -> str:
+    if require_review:
+        raise ApprovalRequired({"destination": destination})
+    if destination.startswith("client://"):
+        raise CallDeferred({"destination": destination})
+    return publish_without_external_interaction(destination)
+```
+
+A root model receives normal approval or external-execution behavior. A child model receives a normal denied tool result with the message `Deferred tool interaction is unavailable in subagent runs.` and can choose another argument, another tool, or a final answer. The function stays visible because the deferral decision is argument- or policy-specific; the Harness does not permanently hide it after one denial. If restricted CodeAct calls that function, the same handler chain produces the denial, CodeAct ends that runner invocation as a bounded failure because it cannot suspend a Monty frame, and the surrounding child model loop continues.
+
+When designing extension behavior:
+
+1. Set native Pydantic `requires_approval` or external tool kinds honestly. Do not disguise a declaratively deferred tool as an ordinary function merely to keep it visible to children.
+2. Treat `ToolDenied` as an ordinary expected outcome. Give the model enough tool description or adjacent ordinary tools to make progress without Host interaction when child use is intended.
+3. If a tool fundamentally requires a user, browser client, or external executor, accept that it is root-only. Configure a child definition without depending on that tool for its required output path.
+4. Keep argument-sensitive deferral dynamic. Do not remove a function from later child requests merely because one argument or one live policy decision required approval.
+5. Do not install an auto-approving `HandleDeferredToolCalls` handler to bypass child policy. The mandatory child boundary resolves the complete batch first; custom handlers still work for roots.
+6. Treat only a terminal root `HarnessRunResult(status="suspended")` and its exact `deferred` value as suspension authority. Deferred stream events are observations, and child jobs have no deferred-response lifecycle.
+7. Test the same extension as both a root and a child. Cover static surface omission, dynamic `CallDeferred`, dynamic `ApprovalRequired`, managed-policy approval, mixed ordinary/deferred batches, and the model's denial recovery path.
+
+Usage limits remain the bound on a model that repeatedly retries denied interactions. An inline child receives the strictest per-field intersection of the parent effective limit, its own `AgentSpec.usage_limits`, the authored subagent edge, and current Host policy. The Harness does not add a second hidden retry counter or mutate the extension definition.
+
 ## CodeAct
 
 `CodeActCapability` can expose:
@@ -120,7 +160,7 @@ Eligibility is not inferred from arbitrary metadata, model visibility, or a tool
 
 ### Nested Dispatch
 
-Restricted code receives generated typed host functions. A nested call validates and executes through the active final Pydantic AI `ToolManager`, not through a second dispatcher. Therefore ordinary Capability hooks, Harness managed-tool policy, provider enforcement, events, usage, and deferred behavior still apply.
+Restricted code receives generated typed host functions. A nested call validates and executes through the active final Pydantic AI `ToolManager`, not through a second dispatcher. Therefore ordinary Capability hooks, Harness managed-tool policy, provider enforcement, events, usage, and deferred behavior still apply. A root inline deferred handler can supply the nested result. A child denial or unresolved root request fails only the current CodeAct runner invocation; CodeAct never persists or resumes an interpreter frame.
 
 A nested call that may have reached an external side effect is never reported as safely retryable merely because the Python program failed later.
 

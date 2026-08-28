@@ -8,7 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -31,6 +31,8 @@ from a13n_harness.pricing import (
 )
 
 if TYPE_CHECKING:
+    from pydantic_ai.capabilities import AgentNode, NodeResult, WrapModelRequestHandler, WrapNodeRunHandler
+
     from a13n_harness.events import HarnessEventEmitter
 
 USAGE_CAPABILITY_ID = "a13n.usage"
@@ -411,14 +413,15 @@ class _UsageActiveCapability(UsageCapability):
             self._request_started_at[ctx.run_id] = datetime.now(UTC)
         return request_context
 
-    async def after_model_request(
+    async def wrap_model_request(
         self,
         ctx: RunContext[AgentContext],
         *,
         request_context: ModelRequestContext,
-        response: ModelResponse,
+        handler: WrapModelRequestHandler,
     ) -> ModelResponse:
         self._require_context(ctx)
+        response = await handler(request_context)
         capability = self._resolve_cost_capability(ctx)
         original_cost_present = response.usage.cost is not None
         request_started_at = (
@@ -463,25 +466,27 @@ class _UsageActiveCapability(UsageCapability):
                 await _pricing_diagnostic(ctx, response, revision)
             except Exception:
                 pass
+        outcome = _PricingOutcome(
+            status=status,
+            revision=quote.pricing_revision if quote is not None else revision,
+            rule_id=quote.rule_id if quote is not None else None,
+            quote_source=quote.source if quote is not None else None,
+            original_cost_present=original_cost_present,
+            calculated_cost=calculated_cost,
+            response=priced,
+        )
+        _enrich_current_model_span(priced, outcome)
         if ctx.run_id is not None:
-            self._pending_pricing[ctx.run_id] = _PricingOutcome(
-                status=status,
-                revision=quote.pricing_revision if quote is not None else revision,
-                rule_id=quote.rule_id if quote is not None else None,
-                quote_source=quote.source if quote is not None else None,
-                original_cost_present=original_cost_present,
-                calculated_cost=calculated_cost,
-                response=priced,
-            )
+            self._pending_pricing[ctx.run_id] = outcome
         return priced
 
     async def wrap_node_run(
         self,
         ctx: RunContext[AgentContext],
         *,
-        node: Any,
-        handler: Any,
-    ) -> Any:
+        node: AgentNode[AgentContext],
+        handler: WrapNodeRunHandler[AgentContext],
+    ) -> NodeResult[AgentContext]:
         self._require_context(ctx)
         if not isinstance(node, ModelRequestNode):
             return await handler(node)
@@ -607,6 +612,23 @@ def _cost_source(response: ModelResponse, pricing: _PricingOutcome | None) -> Co
     if pricing.status == "applied" and pricing.quote_source is not None:
         return pricing.quote_source
     return "provider_or_genai_prices"
+
+
+def _enrich_current_model_span(response: ModelResponse, pricing: _PricingOutcome) -> None:
+    """Add bounded custom-pricing facts to the active Pydantic-owned model span."""
+    from a13n_harness.observation import _set_current_model_span_attributes
+
+    attributes: dict[str, str | float] = {
+        "a13n.usage.cost.source": _cost_source(response, pricing),
+        "a13n.usage.pricing.status": pricing.status,
+    }
+    if response.usage.cost is not None:
+        attributes["gen_ai.usage.cost"] = float(response.usage.cost)
+    if pricing.revision is not None:
+        attributes["a13n.usage.pricing.revision"] = pricing.revision
+    if pricing.rule_id is not None:
+        attributes["a13n.usage.pricing.rule.id"] = pricing.rule_id
+    _set_current_model_span_attributes(attributes)
 
 
 def _stable_id(kind: str, *values: str) -> str:

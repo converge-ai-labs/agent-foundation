@@ -21,6 +21,7 @@ from ..commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
     ProcessReadOutputResult,
@@ -181,6 +182,8 @@ class LocalProcessManager:
         policy: _DirectLocalProcessPolicy,
         output_policy: _DirectLocalOutputPolicy,
         shell_profiles: tuple[DirectLocalShellProfile, ...],
+        provider_type: str,
+        environment_id: str,
         binding_id: str,
         binding_revision: int,
         generation: str,
@@ -196,6 +199,8 @@ class LocalProcessManager:
             for profile in shell_profiles
         }
         self._allowed_executables = {_resolve_configured_executable(path) for path in policy.allowed_executables}
+        self._provider_type = provider_type
+        self._environment_id = environment_id
         self._binding_id = binding_id
         self._binding_revision = binding_revision
         self._generation = generation
@@ -293,6 +298,12 @@ class LocalProcessManager:
             handle = BoundProcessHandle(
                 binding_id=self._binding_id,
                 binding_revision=self._binding_revision,
+                identity=ProcessIdentity(
+                    provider_type=self._provider_type,
+                    environment_id=self._environment_id,
+                    generation=self._generation,
+                    process_id=token,
+                ),
                 observed_generation=self._generation,
                 handle=OpaqueProcessHandle._from_payload(token),
             )
@@ -477,6 +488,24 @@ class LocalProcessManager:
             raise
         finally:
             self._slots.release()
+
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo:
+        del output_policy
+        if (
+            identity.provider_type != self._provider_type
+            or identity.environment_id != self._environment_id
+            or identity.generation != self._generation
+        ):
+            raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_binding")
+        record = self._records.get(identity.process_id)
+        if record is None:
+            raise EnvironmentError("Process is unavailable.", code="environment_not_found")
+        return self._info(record)
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         return self._info(self._record(handle))

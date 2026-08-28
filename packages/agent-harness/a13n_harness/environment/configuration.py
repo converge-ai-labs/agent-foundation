@@ -10,8 +10,6 @@ class DynamicEnvironmentConfiguration(BaseModel):
 
     file_tools: bool = True
     shell_tools: bool = True
-    process_tools: bool = True
-    port_tools: bool = False
     max_reference_entries: int = Field(gt=0, le=100_000)
 
 

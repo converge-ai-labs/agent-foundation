@@ -178,6 +178,14 @@ A suspended Harness result keeps the same Host Turn in `waiting`. The coordinato
 
 The application service loads and validates the complete pending request object, combines the authorized responses with that exact value in `DeferredToolResume`, records one consuming `run_id` before dispatch, creates fresh model/Environment/Host bindings, and appends the Run to the same Turn. AG-UI replay and identifiers alone never reconstruct or satisfy deferred state. Stale, duplicate, mismatched, already-consumed, corrupt, or incompatible responses conflict before another Harness dispatch.
 
+## Background Process Observation
+
+The Harness `ShellToolset` and its recreatable `ProcessManager` own all six shell/process tools, the portable `process-N` projection in `AgentContextState`, independent unread output offsets, exact provider-identity rebinding, Turn-scoped completion waits, native enqueue hints, and terminal release. Agent UI does not implement a second process registry and does not replace `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, or `shell_kill`.
+
+Every foreground root or child Run that enters the configured Dynamic Environment Capability receives the same Turn-scoped Harness observation behavior. Completion and observation-gap events are non-authoritative hints; authoritative status and retained output remain in `BoundProcessOperations` and are reconciled through ordinary Harness tools. Agent UI may supply `ProcessEventHook` values to route a hint into telemetry or durable scheduling, but a hook, Harness task, and live bound handle are process-local and never enter a Session checkpoint or SQLite authority.
+
+Agent UI persists the complete selected `HarnessState`, including the managed process projection, with the normal Thread checkpoint. To preserve a background process across a later Turn, it also retains or reconstructs the provider resource and attaches the same `provider_type`, `environment_id`, and `generation`; the fresh manager then lazily rebinds the exact provider process ID. An absent attachment remains unavailable without erasing the reference. A generation change or authoritative not-found result becomes `backend_lost` and never retargets through a current alias. If completion must wake work while no Harness Turn is active, Agent UI uses provider-native events or polling keyed by its durable Environment-resource record, schedules a new Run, and lets status or wait reconcile the result. The built-in Direct Local binding ends managed processes at binding close and cannot preserve them across Agent UI Runs. EIP can do so only while the `agent-envd` resource and retained output survive under the same generation.
+
 ## Environment Operations
 
 Environment application commands provide full local product control:
@@ -231,7 +239,7 @@ The standard model-facing tools are:
 | `resume_subagent` | Create a new linked job from one compatible terminal execution and its selected complete child state            |
 | `subagent_info`   | Page the current scope's configured child roster and safe job projections, or inspect one exact job             |
 | `wait_subagent`   | Perform one bounded wait for an exact job or a snapshot of current nonterminal jobs; timeout never cancels work |
-| `steer_subagent`  | Persist bounded input for one compatible live or waiting job when its edge enables steering                     |
+| `steer_subagent`  | Persist bounded input for one compatible live job when its edge enables steering                                |
 | `cancel_subagent` | Record cancellation intent and request cancellation of one exact nonterminal job                                |
 
 `delegate` and `resume_subagent` have no mode argument: every accepted execution is Host-scheduled and asynchronous. `wait_subagent` can suspend the current tool coroutine while the independently owned job progresses, but it does not convert the child into inline Harness delegation, share the parent usage accumulator, or make parent cancellation the child execution boundary.
@@ -246,14 +254,17 @@ Job acceptance is a short SQLite transaction that validates the owner scope, par
 
 The async-subagent service then prepares fresh child authority:
 
-1. verify the retained exact `BuiltSubagent` against the child node and edge in the Session-pinned Agent snapshot; after restart from a valid waiting boundary, reconstruct the pinned executable graph and select the exact edge again through its parent `SubagentCollection` rather than building or looking up an independent child executable;
+1. verify the retained exact `BuiltSubagent` against the child node and edge in the Session-pinned Agent snapshot; a new linked continuation reconstructs the pinned executable graph and selects the exact edge again through its parent `SubagentCollection` rather than building or looking up an independent child executable;
 2. derive bounded child input under the authored `DelegationContextPolicy` without sharing parent messages or `AgentContext` by alias;
-3. apply edge `usage_limits`, Host budget narrowing, depth, and current policy;
-4. derive the child node's independent pinned Session Skill selection and supply a fresh `SkillSelectionRunCapability` when exact selection applies;
-5. resolve current Model credentials and every child-required Host run Capability;
-6. persist any child Environment assignments and operation fences before provider dispatch;
-7. acquire fresh single-use Environment attachments and construct complete child `RunBindings`;
-8. enter `selected_built_subagent.executable.stream()` in a supervised Host task and consume it once.
+3. derive a fresh child `AgentIdentityRef` from the parent workload identity and the edge's `SubagentIdentityPolicy`: preserve `issuer`, `subject`, and all claims, then replace `agent_id` with the resolved child Agent's `agent_id` unless `inherit_agent_id=true`;
+4. apply edge `usage_limits`, Host budget narrowing, depth, and current policy;
+5. derive the child node's independent pinned Session Skill selection and supply a fresh `SkillSelectionRunCapability` when exact selection applies;
+6. resolve current Model credentials and every child-required Host run Capability;
+7. persist any child Environment assignments and operation fences before provider dispatch;
+8. acquire fresh single-use Environment attachments and construct complete child `RunBindings` through the trusted Agent UI binder;
+9. enter `selected_built_subagent.executable.stream()` in a supervised Host task and consume it once.
+
+The Agent UI binder owns the final complete child bindings and may replace the derived Identity when current Host authorization requires it; Harness does not rewrite Identity after the binder returns. The binder always creates a fresh child instance and lineage context even when `inherit_agent_id=true` preserves the logical Agent claim.
 
 `dedicated` Environment policy allocates independent `MULTIPLE_FROM_SPEC` Host resources. `shared_root` acquires distinct attachments only from `SHARED` resources. `serialized_root` keeps the accepted job in `queued` until every selected root attachment is released, then acquires fresh sequential attachments. `none` supplies an empty topology. A child never receives the parent's attachment, Model resolver, credential, run Capability, plugin run graph, or live scheduler object by inheritance.
 
@@ -261,7 +272,7 @@ A child can expose its own async-subagent Capability over its recursively built 
 
 ## Async Subagent Job Lifecycle
 
-One logical job can span several child Harness Runs only at complete persisted suspension boundaries:
+One logical job owns exactly one non-suspending child Harness Run:
 
 ```mermaid
 stateDiagram-v2
@@ -275,10 +286,6 @@ stateDiagram-v2
     queued --> failed
     queued --> cancelled
     queued --> interrupted
-    running --> waiting
-    waiting --> running
-    waiting --> cancelled
-    waiting --> interrupted
     running --> succeeded
     running --> failed
     running --> cancelled
@@ -290,21 +297,21 @@ stateDiagram-v2
     interrupted --> [*]
 ```
 
-A job record owns stable job/root/parent/child identities, exact child node and edge, process generation, idempotency and lineage, state, child Run IDs, child Thread ID, Environment assignments, safe result/failure, selected child checkpoint, pending deferred reference, cumulative Host accounting, and delivery identity. The selected child `HarnessState` belongs only to the child Thread and never enters parent `HarnessState` or the parent's selected checkpoint.
+A job record owns stable job/root/parent/child identities, exact child node and edge, process generation, idempotency and lineage, state, one child Run ID, child Thread ID, Environment assignments, safe result/failure, terminal child checkpoint, cumulative Host accounting, and delivery identity. The selected child `HarnessState` belongs only to the child Thread and never enters parent `HarnessState` or the parent's selected checkpoint.
 
 For each nonterminal stream item, the service applies the ordinary child AG-UI observer, persists bounded event segments, and publishes safe live detail. At a completed, failed, or cancelled boundary it publishes any complete child state and terminal events before committing the terminal job outcome. A child failure is a real failed job, not synthetic successful text.
 
-When a child Run returns `DeferredToolRequests`, the service publishes the exact complete child state, separate complete deferred-request object, and pending events before atomically transitioning `running -> waiting`. Surfaces can answer or deny the child request through a typed job command. Resumption marks that request consumed by a fresh child `run_id`, reconstructs fresh bindings including a fresh Skill selection, and invokes the ordinary Harness resume contract. A valid waiting child can survive process restart; identifiers or AG-UI history cannot reconstruct its deferred request.
+Harness child invocations deny runtime deferred calls inside the same Run and never return a suspended result. If an unexpected bypass still produces terminal `DeferredToolRequests`, the Harness normalizes it to `status="failed"` with `code="subagent_deferred_unsupported"`; Agent UI commits that ordinary failed terminal job and exposes no answer, approval, denial, or resume action for it.
 
-A prior-process `accepted`, `queued`, or `running` job becomes `interrupted` during recovery. It is never submitted or replayed automatically, even when no child Run ID was recorded. A valid `waiting` job and committed terminal outcome remain. `resume_subagent` is different from deferred resume: it accepts a compatible terminal job with a selected complete child state and creates a new linked job under a new `execution_id`; it never mutates the terminal record or consults the latest child definition. One terminal job can designate at most one delivery-successor continuation. Creating that successor atomically transfers its still-pending immediate-child delivery targets to the new job under the same stable delivery identities; a different continuation attempt conflicts rather than racing or duplicating delivery.
+A prior-process `accepted`, `queued`, or `running` job becomes `interrupted` during recovery. It is never submitted or replayed automatically, even when no child Run ID was recorded. Committed terminal outcomes remain. `resume_subagent` accepts a compatible terminal job with a selected complete child state and creates a new linked job under a new `execution_id`; it never mutates the terminal record, performs deferred resume, or consults the latest child definition. One terminal job can designate at most one delivery-successor continuation. Creating that successor atomically transfers its still-pending immediate-child delivery targets to the new job under the same stable delivery identities; a different continuation attempt conflicts rather than racing or duplicating delivery.
 
 Active task, stream, model, Environment attachment, cancellation scope, native input router, usage accumulator, and authority remain process-local. Durable acceptance, failover, and automatic retry remain Foundation Service responsibilities.
 
-## Steering and Child Deferred Input
+## Steering
 
 Steering uses an owner-scoped input ledger with stable input ID and states `accepted`, `enqueued`, `applied`, and `rejected`. The service commits content and idempotency before signaling a live child router. The router can apply it only at a native supported boundary; acceptance does not claim that a later child model request incorporated it. Terminal, cancelled, fenced, wrong-owner, disabled-edge, or incompatible jobs reject the input without a tool failure that could invite duplicate submission.
 
-A process loss rejects accepted/enqueued steering that cannot be proven applied. Steering never mutates private Pydantic messages, `HarnessState`, or a live `AgentContext`. Deferred approvals and external results use the exact stored `DeferredToolRequests` contract rather than steering text.
+A process loss rejects accepted/enqueued steering that cannot be proven applied. Steering never mutates private Pydantic messages, `HarnessState`, or a live `AgentContext`, and cannot manufacture deferred approval or external-result input for a child.
 
 ## Completion Retention and Parent Delivery
 
@@ -328,7 +335,7 @@ A terminal result first becomes `pending` with a bounded safe outcome and stable
 
 Delivery content names `execution_id`, child name, terminal state, safe bounded output/failure, and continuation availability. It contains no child state or authority. Each delivery attempt has a deterministic target-run input ID under one stable delivery identity. Input-ledger reconciliation makes retries idempotent within an attempt; a rejected target attempt returns the logical delivery to `pending` for a later compatible parent Run. `applied` means native parent input application was observed, not that a model followed or accepted the result. `subagent_info` and `wait_subagent` are observations and do not rewrite execution outcome; repeated delivery or query uses the same job and delivery identities.
 
-Delivery into an active Run, delivery in a later Run, explicit result inspection, linked continuation, and surface notification all refer to the same retained job. None merges child message history or Capability state into the parent. Retention cannot delete a terminal job while delivery, linked continuation, export, child state, deferred state, or Environment cleanup still references it.
+Delivery into an active Run, delivery in a later Run, explicit result inspection, linked continuation, and surface notification all refer to the same retained job. None merges child message history or Capability state into the parent. Retention cannot delete a terminal job while delivery, linked continuation, export, terminal child state, or Environment cleanup still references it.
 
 ## Cancellation and Unknown Outcomes
 
@@ -338,7 +345,7 @@ Cancellation does not roll back provider, tool, Environment, or external effects
 
 ## Retained and Live AG-UI
 
-The application service observes each public item of every complete root and async-child Harness Run once, including the terminal result item, applies the Agent UI processor, assigns Session presentation sequence and event identity, stores and registers compressed segments, and only then fans out detached values to subscribers. Every async child has its own Thread, Run, Agent-node, job, and lineage correlation and produces its own real terminal AG-UI outcome. Child presentation never substitutes for the job outcome, child checkpoint, deferred object, or parent-delivery ledger.
+The application service observes each public item of every complete root and async-child Harness Run once, including the terminal result item, applies the Agent UI processor, assigns Session presentation sequence and event identity, stores and registers compressed segments, and only then fans out detached values to subscribers. Every async child has its own Thread, Run, Agent-node, job, and lineage correlation and produces its own real terminal AG-UI outcome. Child presentation never substitutes for the job outcome, terminal child checkpoint, or parent-delivery ledger.
 
 A subscription consists of:
 
@@ -363,7 +370,7 @@ WebUI is a complete browser product compiled into `a13n-ui`. It exposes pages an
 - Environment definitions, provider resources, lifecycle, and topology;
 - Session list/search/resume/fork/archive/delete;
 - streaming Agent interaction, reasoning, tools, approvals, questions, cancellation, and queued input;
-- async-subagent configuration, job trees, waiting actions, steering, cancellation, retained results, and parent delivery;
+- async-subagent configuration, job trees, live steering, cancellation, retained terminal results, and parent delivery;
 - configuration reload diagnostics and restart-required settings;
 - retained AG-UI protocol inspection and replay gaps.
 
@@ -395,7 +402,7 @@ Surface equivalence is semantic command and observation parity, not identical la
 - provision, inspect, pause, resume, reset, detach, and destroy authorized Environment resources;
 - submit and queue input, cancel, answer approvals/questions, and inspect terminal outcomes;
 - observe root/child/tool/reasoning/Environment events and replay history;
-- control authorized async children, answer waiting child actions, and inspect or deliver retained outcomes;
+- control authorized live async children and inspect or deliver retained terminal outcomes;
 - inspect safe configuration, storage, and replay diagnostics.
 
 A renderer-only preference can remain surface-specific. Any operation that affects execution, storage, configuration, Environment resources, or authority belongs to the application service and cannot exist only as hidden renderer behavior.
@@ -450,7 +457,7 @@ A shared application core prevents terminal and browser products from diverging 
 
 ### Process-local async children with durable boundaries
 
-Local supervised tasks provide parallel Agent work and immediate visibility without introducing distributed execution. Metadata, terminal outcomes, delivery, and complete waiting boundaries survive restart, but active model/tool execution does not. Process loss interrupts accepted, queued, or running jobs, so durable acceptance, retry, and failover remain Foundation responsibilities.
+Local supervised tasks provide parallel Agent work and immediate visibility without introducing distributed execution. Metadata, terminal outcomes, and delivery survive restart, but active model/tool execution does not. Process loss interrupts accepted, queued, or running jobs, so durable acceptance, retry, and failover remain Foundation responsibilities.
 
 ### Stored AG-UI as the presentation contract
 
@@ -463,7 +470,7 @@ Using one processed event sequence makes live delivery, replay, protocol inspect
 03. No surface reads SQLite/object files for authority, constructs Agents, calls `ExecutableAgent.stream()`, manages provider resources, or translates Harness events independently.
 04. Every root and child Run receives fresh model, Environment, credential, policy, and Host collaboration bindings.
 05. Agent UI never enables Harness inline delegation; its async Capability selects exact Harness-built children and executes them only through Host-owned jobs and the ordinary child stream API.
-06. An async spawn completes with ordinary accepted metadata; child start, waiting/terminal outcome, and parent delivery are later independent facts.
+06. An async spawn completes with ordinary accepted metadata; child start, terminal outcome, and parent delivery are later independent facts, and no child waiting/deferred state exists.
 07. Durable event registration precedes live delivery; both remain independent from Harness result, checkpoint selection, Environment lifecycle, OTel export, and rendering.
 08. Dynamic configuration reload can affect new selections but never mutates an active executable, Run, job, pinned Skill selection, or Session composition.
 09. Browser capability, model credential, Environment credential/attachment, and Session selector are separate authority domains.

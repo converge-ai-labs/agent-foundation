@@ -164,6 +164,7 @@ class DelegationToolset:
                 child_input = _build_child_input(ctx, child, task, self._configuration)
                 limits = _intersect_usage_limits(
                     ctx.usage_limits,
+                    child.executable._fresh_definition_usage_limits(),
                     child.declaration.usage_limits,
                     self._require_binding(ctx).usage_limits,
                 )
@@ -634,13 +635,7 @@ async def _finalize_task_bindings(
             "The parent embedded task view is unavailable.",
             code="task_state_binding_missing",
         )
-    return RunBindings(
-        instance=bindings.instance,
-        environment=bindings.environment,
-        model_resolver=bindings.model_resolver,
-        capabilities=(*bindings.capabilities, borrowed),
-        metadata=bindings.metadata,
-    )
+    return replace(bindings, capabilities=(*bindings.capabilities, borrowed))
 
 
 def _definition_working_state(child: BuiltSubagent):

@@ -23,6 +23,9 @@ from a13n_harness import (
     RunError,
     SubagentDefinition,
 )
+from a13n_harness import (
+    AgentSpec as HarnessAgentSpec,
+)
 from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
@@ -158,6 +161,57 @@ def _build(model: FunctionModel):
         output_type=str,
         model=model,
     )
+
+
+async def test_omitted_limits_allow_more_than_fifty_requests_for_plain_native_spec() -> None:
+    def step() -> None:
+        return None
+
+    async def stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        response_count = sum(isinstance(message, ModelResponse) for message in messages)
+        if response_count < 51:
+            yield {
+                0: DeltaToolCall(
+                    name="step",
+                    json_args="{}",
+                    tool_call_id=f"step-{response_count}",
+                )
+            }
+            return
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(Capability(tools=[Tool(step)]),),
+    )
+
+    result = await executable.run("start")
+
+    assert result.output_or_raise() == "done"
+    assert result.usage.requests == 52
+
+
+async def test_agent_spec_limits_apply_unless_one_run_supplies_an_exact_override() -> None:
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(usage_limits=UsageLimits(request_limit=0)),
+        output_type=str,
+        model=_turn_model([]),
+    )
+
+    limited = await executable.run("blocked")
+    overridden = await executable.run(
+        "allowed",
+        usage_limits=UsageLimits(request_limit=2),
+    )
+
+    assert limited.status == "failed"
+    assert overridden.output_or_raise() == "turn-1"
 
 
 async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() -> None:

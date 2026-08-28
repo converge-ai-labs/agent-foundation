@@ -47,7 +47,11 @@ class InstructionExternalToolset(ExternalToolset[AgentContext]):
         self,
         ctx: RunContext[AgentContext],
     ) -> str | InstructionPart | Sequence[str | InstructionPart] | None:
-        if not ctx.deps.toolset_instructions or not self._instructions:
+        if (
+            ctx.deps.instance.parent_agent_instance_id is not None
+            or not ctx.deps.toolset_instructions
+            or not self._instructions
+        ):
             return None
         return InstructionPart(content=self._instructions, dynamic=False)
 

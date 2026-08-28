@@ -1,4 +1,4 @@
-"""Typed model results returned by ShellToolset and process extensions."""
+"""Typed model results returned by the compact ShellToolset."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class OutputCaptureProjection(TypedDict):
 
 
 class ProcessProjection(TypedDict):
-    process: str
+    process_id: str
     status: ProcessStatusProjection
     stdin_open: bool
     stdout: OutputCaptureProjection
@@ -48,9 +48,12 @@ type ProcessToolResult = ProcessSuccess | ToolFailure
 
 class ShellExecSuccess(TypedDict):
     ok: Literal[True]
+    background: bool
     status: ProcessStatusProjection
     stdout: OutputCaptureProjection
     stderr: OutputCaptureProjection
+    process_id: NotRequired[str]
+    stdin_open: NotRequired[bool]
     disclosure: NotRequired[ToolOutputDisclosure]
 
 
@@ -63,7 +66,7 @@ class ProcessProducedBytes(TypedDict):
 
 
 class ProcessStatusItemSuccess(TypedDict):
-    process: str
+    process_id: str
     ok: Literal[True]
     status: ProcessStatusProjection
     stdin_open: bool
@@ -71,7 +74,7 @@ class ProcessStatusItemSuccess(TypedDict):
 
 
 class ProcessStatusItemFailure(TypedDict):
-    process: str
+    process_id: str
     ok: Literal[False]
     error: dict[str, JsonValue]
 
@@ -91,64 +94,33 @@ class ProcessStatusListSuccess(TypedDict):
 type ProcessStatusListResult = ProcessStatusListSuccess | ToolFailure
 
 
-class ProcessReadOutputSuccess(TypedDict):
-    ok: Literal[True]
-    process: ProcessProjection
-    stdout: OutputCaptureProjection
-    stderr: OutputCaptureProjection
-    disclosure: NotRequired[ToolOutputDisclosure]
+class ProcessReadOutputSuccess(ProcessSuccess):
+    pass
 
 
 type ProcessReadOutputResult = ProcessReadOutputSuccess | ToolFailure
 
 
-class ProcessWriteStdinSuccess(TypedDict):
+class ProcessInputSuccess(TypedDict):
     ok: Literal[True]
     accepted_bytes: int
     stdin_open: bool
 
 
-class BooleanSuccess(TypedDict):
-    ok: Literal[True]
-    closed: bool
+type ProcessInputResult = ProcessInputSuccess | ToolFailure
 
 
-class ProcessSignalSuccess(TypedDict):
+class ProcessSignalSuccess(ProcessProjection):
     ok: Literal[True]
     accepted: bool
-    process: ProcessProjection
 
 
-class ReleaseSuccess(TypedDict):
-    ok: Literal[True]
-    released: Literal[True]
-
-
-type ProcessWriteStdinResult = ProcessWriteStdinSuccess | ToolFailure
-type ProcessCloseStdinResult = BooleanSuccess | ToolFailure
 type ProcessSignalResult = ProcessSignalSuccess | ToolFailure
-type ReleaseResult = ReleaseSuccess | ToolFailure
-
-
-class PortProjection(TypedDict):
-    port: int
-    address: str
-    status: str
-    observed_at: str
-
-
-class PortSuccess(PortProjection):
-    ok: Literal[True]
-
-
-type PortToolResult = PortSuccess | ToolFailure
 
 
 __all__ = [
     "OutputCaptureProjection",
-    "PortProjection",
-    "PortToolResult",
-    "ProcessCloseStdinResult",
+    "ProcessInputResult",
     "ProcessProjection",
     "ProcessReadOutputResult",
     "ProcessSignalResult",
@@ -156,7 +128,5 @@ __all__ = [
     "ProcessStatusListResult",
     "ProcessStatusProjection",
     "ProcessToolResult",
-    "ProcessWriteStdinResult",
-    "ReleaseResult",
     "ShellExecToolResult",
 ]

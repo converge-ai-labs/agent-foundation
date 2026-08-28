@@ -47,7 +47,7 @@ Both overloads follow the same validation and construction path. Build is synchr
 
 An `AgentDefinition` fixes:
 
-- the Harness `AgentSpec`, which remains a native Pydantic AI spec and may add an ordered static system prompt and resolved model characteristics;
+- the Harness `AgentSpec`, which remains a native Pydantic AI spec and may add an ordered static system prompt, definition-level usage limits, and resolved model characteristics;
 - one output contract;
 - one string or concrete model selection;
 - definition-selected Capabilities;
@@ -74,6 +74,44 @@ local = preset.with_updates(
 The optional positional mapping supports dynamic fields and serialization aliases such as `model_config` or `$schema`. Keyword overrides support the ordinary Python field names. Unknown fields, duplicate alias/name updates, and invalid values fail immediately. Updates replace complete top-level fields and do not recursively merge nested provider settings, metadata, schemas, or Capability arguments; construct an explicitly merged field when that behavior is intended.
 
 This happens before `HarnessBuilder.build()` and returns an independent deep copy. It is not the temporary run-scoped context manager exposed by Pydantic AI's built Agent.
+
+### Usage limits and retries
+
+Harness `AgentSpec.usage_limits` is Pydantic AI's native `UsageLimits`. The default permits 1,000 model requests for one logical run and leaves token, tool-call, and cost limits unset:
+
+```python
+from a13n_harness import AgentSpec
+from pydantic_ai.usage import UsageLimits
+
+spec = AgentSpec(
+    usage_limits=UsageLimits(
+        request_limit=300,
+        total_tokens_limit=500_000,
+        cost_limit="25.00",
+    ),
+)
+```
+
+A plain Pydantic AI `AgentSpec` receives the same 1,000-request Harness default. To remove the request-count ceiling explicitly, use `UsageLimits(request_limit=None)`; passing no `usage_limits` argument to `run()` means “use the definition value,” not “disable limits.”
+
+A run can exactly replace the complete definition value:
+
+```python
+result = await executable.run(
+    "Complete the bounded analysis",
+    usage_limits=UsageLimits(request_limit=100, total_tokens_limit=200_000),
+)
+```
+
+The override is not a field-by-field merge. Keep stable workload budgets on `AgentSpec`; use the invocation argument for a narrower or otherwise deliberately different one-run budget. Inline children receive the strictest value for each field across the parent effective limit, child `AgentSpec`, authored edge, and current Host policy.
+
+`AgentSpec.retries` remains the native Pydantic AI setting:
+
+```python
+spec = AgentSpec(retries={"tools": 2, "output": 1})
+```
+
+When omitted, Pydantic AI allows one function-tool retry and one output-validation retry. An integer sets both; a mapping configures them independently. This does not configure provider transport retries or enable Harness model-interruption recovery. `ModelRecoveryPolicy` remains disabled by default and, when enabled, has its own bounded total-attempt budget.
 
 ### System prompt and instructions
 
@@ -286,7 +324,7 @@ Application code must not add a second mandatory boundary. Optional request/hist
 `RunBindings` carries current, trusted run inputs:
 
 ```python
-from a13n_harness import RunBindings
+from a13n_harness import HarnessObservationContext, RunBindings
 
 bindings = RunBindings.embedded(
     environment=environment_binding,
@@ -294,6 +332,11 @@ bindings = RunBindings.embedded(
     model_context=model_context_binding,
     capabilities=run_capabilities,
     metadata={"request_kind": "interactive"},
+    observation=HarnessObservationContext(
+        name="interactive-agent-run",
+        labels=("interactive",),
+        metadata={"channel": "web"},
+    ),
 )
 ```
 
@@ -301,14 +344,14 @@ bindings = RunBindings.embedded(
 
 Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state.
 
-| Stable definition input     | Fresh run input                          |
-| --------------------------- | ---------------------------------------- |
-| `AgentSpec`                 | Identity and Agent instance context      |
-| Output contract             | Environment binding                      |
-| Agent behavior Capabilities | Model resolver and model-context binding |
-| Direct plugins              | Policy and provider collaborators        |
-| Child topology              | Run-specific Capability selection        |
-| Recovery policy             | Bounded non-authoritative metadata       |
+| Stable definition input     | Fresh run input                                            |
+| --------------------------- | ---------------------------------------------------------- |
+| `AgentSpec`                 | Identity and Agent instance context                        |
+| Output contract             | Environment binding                                        |
+| Agent behavior Capabilities | Model resolver and model-context binding                   |
+| Direct plugins              | Policy and provider collaborators                          |
+| Child topology              | Run-specific Capability selection                          |
+| Recovery policy             | Bounded non-authoritative metadata and Observation context |
 
 ## Input
 
@@ -349,14 +392,14 @@ output = result.output_or_raise()
 
 A result has one status:
 
-| Status      | Meaning                                                     | Important fields                           |
-| ----------- | ----------------------------------------------------------- | ------------------------------------------ |
-| `completed` | A validated business output completed and cleanup succeeded | `output`, `state`, `usage`                 |
-| `suspended` | Native deferred tools or approvals require later input      | `state`, `deferred`, `suspend_reason`      |
-| `failed`    | The logical run ended with a safe normalized failure        | `failure`, optional safe `state` candidate |
-| `cancelled` | Cancellation stopped the logical run                        | no business output                         |
+| Status      | Meaning                                                      | Important fields                           |
+| ----------- | ------------------------------------------------------------ | ------------------------------------------ |
+| `completed` | A validated business output completed and cleanup succeeded  | `output`, `state`, `usage`                 |
+| `suspended` | A root native deferred tool or approval requires later input | `state`, `deferred`, `suspend_reason`      |
+| `failed`    | The logical run ended with a safe normalized failure         | `failure`, optional safe `state` candidate |
+| `cancelled` | Cancellation stopped the logical run                         | no business output                         |
 
-Use `raise_for_status()` when only completion is acceptable. Use `output_or_raise()` to both validate status and return the typed output. Inspect `status`, `failure`, or `deferred` when the application handles other outcomes explicitly.
+Use `raise_for_status()` when only completion is acceptable. Use `output_or_raise()` to both validate status and return the typed output. Inspect `status`, `failure`, or `deferred` when the application handles other outcomes explicitly. A child invocation never returns `suspended`: dynamic deferral is denied inside the same model loop, and an unexpected terminal deferred output becomes `failed` with `subagent_deferred_unsupported`.
 
 `all_messages()` returns the complete detached message history represented by the result. `new_messages()` returns only messages added by that logical run.
 

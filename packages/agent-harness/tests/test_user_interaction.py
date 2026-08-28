@@ -5,12 +5,15 @@ from collections.abc import AsyncIterator
 
 import pytest
 from a13n_harness import (
+    AgentIdentityRef,
+    AgentInstanceContext,
     DeferredToolResume,
     HarnessBuilder,
     RunBindings,
     RunError,
     UserInteractionCapability,
 )
+from a13n_harness.environment.advanced import NoopEnvironmentRunBinding
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -87,6 +90,40 @@ async def test_structured_question_suspends_and_resumes_through_native_deferred_
 
     assert second.status == "completed"
     assert "Focused" in second.output_or_raise()
+
+
+async def test_structured_question_is_not_exposed_to_child_runs() -> None:
+    observed_tools: list[set[str]] = []
+    observed_instructions: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        observed_tools.append({tool.name for tool in info.function_tools})
+        observed_instructions.append(info.instructions or "")
+        yield "child-done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(UserInteractionCapability(),),
+    )
+    result = await executable.run(
+        "clarify",
+        bindings=RunBindings(
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="child"),
+                agent_instance_id="child-1",
+                parent_agent_instance_id="parent-1",
+                delegation_id="delegation-1",
+            ),
+            environment=NoopEnvironmentRunBinding(),
+        ),
+    )
+
+    assert result.output_or_raise() == "child-done"
+    assert observed_tools == [set()]
+    assert "ask_user_question" not in observed_instructions[0]
 
 
 async def test_structured_question_rejects_uncorrelated_answer_shape_before_resume() -> None:

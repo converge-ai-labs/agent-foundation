@@ -39,7 +39,14 @@ from .output import (
     tool_output_size,
     tool_output_text,
 )
-from .process_monitor import MonitoredProcessToolset
+from .process_manager import (
+    ManagedProcessState,
+    ProcessEvent,
+    ProcessEventHook,
+    ProcessEventKind,
+    ProcessManager,
+    ProcessManagerState,
+)
 from .shell import ShellToolset
 from .web import WebToolset
 from .working_state import WorkingStateToolset
@@ -65,13 +72,18 @@ __all__ = [
     "FileToolset",
     "FileViewRule",
     "HandoffToolset",
+    "ManagedProcessState",
     "MediaToolset",
     "MediaUnderstandingError",
     "MediaUnderstandingProvider",
     "MediaUnderstandingRequest",
     "MediaUnderstandingResult",
-    "MonitoredProcessToolset",
     "NativeInputMediaKind",
+    "ProcessEvent",
+    "ProcessEventHook",
+    "ProcessEventKind",
+    "ProcessManager",
+    "ProcessManagerState",
     "ShellToolset",
     "ToolOutputDisclosure",
     "UserInteractionToolset",

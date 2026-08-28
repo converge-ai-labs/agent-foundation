@@ -12,7 +12,7 @@ from dataclasses import fields as dataclass_fields
 from datetime import UTC, datetime
 from functools import reduce
 from operator import or_
-from typing import Any, Literal, cast, get_args, get_origin, get_type_hints, overload
+from typing import Any, Literal, Self, cast, get_args, get_origin, get_type_hints, overload
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter, ValidationError
@@ -69,12 +69,6 @@ from a13n_harness.capabilities.media import (
     MEDIA_RUN_CAPABILITY_ID,
     MediaCapability,
     MediaRunCapability,
-)
-from a13n_harness.capabilities.process_monitor import (
-    MONITORED_PROCESS_CAPABILITY_ID,
-    MONITORED_PROCESS_RUN_CAPABILITY_ID,
-    MonitoredProcessCapability,
-    MonitoredProcessRunCapability,
 )
 from a13n_harness.capabilities.skills import (
     SKILL_SELECTION_RUN_CAPABILITY_ID,
@@ -142,6 +136,7 @@ from a13n_harness.filters.integrity import (
     MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID,
     MessageIntegrityFilterCapability,
 )
+from a13n_harness.identity import AgentIdentityRef
 from a13n_harness.input import (
     RunInputFactory,
     RunInputValue,
@@ -195,6 +190,7 @@ from a13n_harness.recovery import (
 )
 from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
+from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
 from a13n_harness.tools.client import (
     CLIENT_TOOLS_CAPABILITY_ID,
@@ -364,6 +360,39 @@ class DelegationContextPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentIdentityPolicy:
+    """Portable child Identity derivation for one authored edge."""
+
+    inherit_agent_id: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.inherit_agent_id, bool):
+            raise DefinitionError(
+                "Subagent inherit_agent_id policy must be a boolean.",
+                code="subagent_identity_invalid",
+            )
+
+
+def derive_child_identity(
+    parent: AgentIdentityRef,
+    child_agent_id: str,
+    policy: SubagentIdentityPolicy | None = None,
+) -> AgentIdentityRef:
+    """Derive a fresh child Identity from one trusted parent Identity."""
+    if not isinstance(parent, AgentIdentityRef):
+        raise TypeError("parent must be an AgentIdentityRef")
+    if not isinstance(child_agent_id, str) or not child_agent_id.strip():
+        raise DefinitionError("child_agent_id must be a non-blank string.", code="subagent_identity_invalid")
+    selected_policy = policy or SubagentIdentityPolicy()
+    if not isinstance(selected_policy, SubagentIdentityPolicy):
+        raise DefinitionError("policy must be SubagentIdentityPolicy.", code="subagent_identity_invalid")
+    claims = dict(parent.claims)
+    if not selected_policy.inherit_agent_id:
+        claims["agent_id"] = child_agent_id
+    return AgentIdentityRef(issuer=parent.issuer, subject=parent.subject, **claims)
+
+
+@dataclass(frozen=True, slots=True)
 class SubagentDefinition:
     """One named process-local child definition and authored edge ceilings."""
 
@@ -371,6 +400,7 @@ class SubagentDefinition:
     description: str
     agent: AgentDefinition[Any]
     context: DelegationContextPolicy = field(default_factory=DelegationContextPolicy)
+    identity: SubagentIdentityPolicy = field(default_factory=SubagentIdentityPolicy)
     usage_limits: UsageLimits | None = None
 
     def __post_init__(self) -> None:
@@ -385,6 +415,8 @@ class SubagentDefinition:
             raise DefinitionError("Subagent agent must be an AgentDefinition.", code="subagent_definition_invalid")
         if not isinstance(self.context, DelegationContextPolicy):
             raise DefinitionError("Subagent context must be DelegationContextPolicy.", code="subagent_context_invalid")
+        if not isinstance(self.identity, SubagentIdentityPolicy):
+            raise DefinitionError("Subagent identity must be SubagentIdentityPolicy.", code="subagent_identity_invalid")
         if self.usage_limits is not None and not isinstance(self.usage_limits, UsageLimits):
             raise DefinitionError("Subagent usage_limits must be UsageLimits or None.", code="subagent_limits_invalid")
         object.__setattr__(self, "usage_limits", deepcopy(self.usage_limits))
@@ -448,6 +480,30 @@ class AgentDefinition[OutputT]:
             raise DefinitionError("Subagent names must be unique within one parent.", code="subagent_name_duplicate")
         object.__setattr__(self, "subagents", subagents)
 
+    def with_updates(
+        self,
+        updates: Mapping[str, object] | None = None,
+        /,
+        **overrides: object,
+    ) -> Self:
+        """Return a fully validated definition with selected top-level fields replaced."""
+
+        requested: dict[str, object] = {}
+        if updates is not None:
+            if not isinstance(updates, Mapping) or not all(isinstance(key, str) for key in updates):
+                raise TypeError("updates must be a mapping with string keys")
+            requested.update(updates)
+        for key, value in overrides.items():
+            if key in requested:
+                raise ValueError(f"AgentDefinition update field {key!r} was supplied more than once")
+            requested[key] = value
+
+        fields = {item.name for item in dataclass_fields(type(self)) if item.init}
+        for key in requested:
+            if key not in fields:
+                raise ValueError(f"AgentDefinition has no updateable field {key!r}")
+        return replace(self, **requested)
+
 
 def _model_cost_capabilities(
     capabilities: Sequence[AbstractCapability[AgentContext]],
@@ -472,6 +528,12 @@ def _normalize_toolset_instructions(agent: AgentSpec) -> bool:
     if isinstance(agent, HarnessAgentSpec):
         return agent.toolset_instructions
     return True
+
+
+def _usage_limits_from_spec(agent: AgentSpec) -> UsageLimits:
+    if isinstance(agent, HarnessAgentSpec):
+        return deepcopy(agent.usage_limits)
+    return _default_usage_limits()
 
 
 def _reconcile_system_prompt(
@@ -855,6 +917,9 @@ class ExecutableAgent[OutputT]:
         self._observation = observation
         self._closed = False
 
+    def _fresh_definition_usage_limits(self) -> UsageLimits:
+        return _usage_limits_from_spec(self.definition.agent)
+
     @overload
     async def run(
         self,
@@ -1048,6 +1113,9 @@ class ExecutableAgent[OutputT]:
             if deferred_resume is not None
             else None
         )
+        effective_usage_limits = (
+            deepcopy(usage_limits) if usage_limits is not None else self._fresh_definition_usage_limits()
+        )
         return HarnessRunStream(
             executable=self,
             input=input,
@@ -1059,7 +1127,7 @@ class ExecutableAgent[OutputT]:
             run_reserved_capability_ids=run_reserved_ids,
             skill_selection_names=skill_selection_names,
             usage=usage,
-            usage_limits=usage_limits,
+            usage_limits=effective_usage_limits,
         )
 
     async def __aenter__(self) -> ExecutableAgent[OutputT]:
@@ -1185,6 +1253,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             thread_id=self.thread_id,
             run_id=self.run_id,
             instance=self._bindings.instance,
+            observation_context=self._bindings.observation,
         )
         activation = self._observation.activate() if self._observation is not None else None
         try:
@@ -1250,8 +1319,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 ),
             )
             self._context = context
-            with observe_operation("plugin_validation"):
-                run_plugins = await bind_run_plugins(self._executable._plugins, context)
+            run_plugins = await bind_run_plugins(self._executable._plugins, context)
             exchange = PluginRunExchange(
                 input=semantic_input,
                 context=context,
@@ -2026,22 +2094,38 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 self._latest_messages = messages
                                 state = await exchange.context.export_state(messages)
                                 if isinstance(result.output, DeferredToolRequests):
-                                    deferred = bind_managed_approval_identities(
-                                        result.output,
-                                        exchange.context._managed_tool_ids,
-                                    )
-                                    candidate = HarnessRunResult(
-                                        thread_id=self.thread_id,
-                                        run_id=self.run_id,
-                                        status="suspended",
-                                        output=None,
-                                        deferred=deferred,
-                                        suspend_reason="deferred",
-                                        state=state,
-                                        usage=result.usage,
-                                        _messages=messages,
-                                        _new_message_index=new_message_index,
-                                    )
+                                    if exchange.context.instance.parent_agent_instance_id is not None:
+                                        candidate = HarnessRunResult(
+                                            thread_id=self.thread_id,
+                                            run_id=self.run_id,
+                                            status="failed",
+                                            output=None,
+                                            failure=SafeFailure(
+                                                code="subagent_deferred_unsupported",
+                                                message="Subagent runs cannot suspend for deferred tool requests.",
+                                            ),
+                                            state=state,
+                                            usage=result.usage,
+                                            _messages=messages,
+                                            _new_message_index=new_message_index,
+                                        )
+                                    else:
+                                        deferred = bind_managed_approval_identities(
+                                            result.output,
+                                            exchange.context._managed_tool_ids,
+                                        )
+                                        candidate = HarnessRunResult(
+                                            thread_id=self.thread_id,
+                                            run_id=self.run_id,
+                                            status="suspended",
+                                            output=None,
+                                            deferred=deferred,
+                                            suspend_reason="deferred",
+                                            state=state,
+                                            usage=result.usage,
+                                            _messages=messages,
+                                            _new_message_index=new_message_index,
+                                        )
                                 else:
                                     candidate = HarnessRunResult(
                                         thread_id=self.thread_id,
@@ -2477,8 +2561,6 @@ def _validate_built_capability_tree(
         FILE_CONTEXT_CAPABILITY_ID,
         HANDOFF_CAPABILITY_ID,
         COMPACTION_CAPABILITY_ID,
-        MONITORED_PROCESS_CAPABILITY_ID,
-        MONITORED_PROCESS_RUN_CAPABILITY_ID,
         USER_INTERACTION_CAPABILITY_ID,
         SKILLS_CAPABILITY_ID,
         SKILL_SELECTION_RUN_CAPABILITY_ID,
@@ -2617,7 +2699,6 @@ def _validate_built_capability_tree(
                 FileContextCapability,
                 HandoffCapability,
                 CompactionCapability,
-                MonitoredProcessCapability,
                 UserInteractionCapability,
                 SkillsCapability,
                 MediaCapability,
@@ -2738,7 +2819,6 @@ def _validate_capability_source(
     run_types = (
         InvocationPolicyCapability,
         ClientToolsRunCapability,
-        MonitoredProcessRunCapability,
         SkillSelectionRunCapability,
         MediaRunCapability,
         DocumentsRunCapability,
@@ -2800,8 +2880,6 @@ def _validate_capability_source(
         FILE_CONTEXT_CAPABILITY_ID,
         HANDOFF_CAPABILITY_ID,
         COMPACTION_CAPABILITY_ID,
-        MONITORED_PROCESS_CAPABILITY_ID,
-        MONITORED_PROCESS_RUN_CAPABILITY_ID,
         USER_INTERACTION_CAPABILITY_ID,
         SKILLS_CAPABILITY_ID,
         SKILL_SELECTION_RUN_CAPABILITY_ID,
@@ -2838,7 +2916,6 @@ def _validate_capability_source(
                     FileContextCapability,
                     HandoffCapability,
                     CompactionCapability,
-                    MonitoredProcessCapability,
                     UserInteractionCapability,
                     SkillsCapability,
                     MediaCapability,
@@ -2868,8 +2945,6 @@ def _validate_capability_source(
             | FileContextCapability
             | HandoffCapability
             | CompactionCapability
-            | MonitoredProcessCapability
-            | MonitoredProcessRunCapability
             | UserInteractionCapability
             | SkillsCapability
             | SkillSelectionRunCapability

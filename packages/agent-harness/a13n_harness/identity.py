@@ -10,25 +10,57 @@ from a13n_harness.errors import IdentityError
 
 
 def _require_non_blank(value: str, field_name: str) -> str:
-    if not value.strip():
+    if not isinstance(value, str) or not value.strip():
         raise IdentityError(
-            f"{field_name} must not be blank.",
+            f"{field_name} must be a non-blank string.",
             code="identity_invalid",
             details={"field": field_name},
         )
     return value
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class AgentIdentityRef:
-    """Stable workload principal supplied by trusted application code."""
+    """Stable workload principal and immutable Host-selected string claims."""
 
     issuer: str
     subject: str
+    _claims: tuple[tuple[str, str], ...] = field(default=(), repr=False)
 
-    def __post_init__(self) -> None:
-        _require_non_blank(self.issuer, "issuer")
-        _require_non_blank(self.subject, "subject")
+    def __init__(self, *, issuer: str, subject: str, **claims: str) -> None:
+        object.__setattr__(self, "issuer", _require_non_blank(issuer, "issuer"))
+        object.__setattr__(self, "subject", _require_non_blank(subject, "subject"))
+        normalized = tuple(
+            sorted(
+                (
+                    _require_non_blank(key, "claim key"),
+                    _require_non_blank(value, f"claim {key!r}"),
+                )
+                for key, value in claims.items()
+            )
+        )
+        object.__setattr__(self, "_claims", normalized)
+
+    @property
+    def claims(self) -> Mapping[str, str]:
+        """Return an immutable view of the Host-selected claims."""
+        return MappingProxyType(dict(self._claims))
+
+    def get_claim(self, key: str) -> str | None:
+        """Return one exact claim when present."""
+        _require_non_blank(key, "claim key")
+        return dict(self._claims).get(key)
+
+    def require_claim(self, key: str) -> str:
+        """Return one exact claim or raise a stable Identity error."""
+        value = self.get_claim(key)
+        if value is None:
+            raise IdentityError(
+                f"Identity claim {key!r} is required.",
+                code="identity_claim_missing",
+                details={"claim": key},
+            )
+        return value
 
 
 @dataclass(frozen=True, slots=True)

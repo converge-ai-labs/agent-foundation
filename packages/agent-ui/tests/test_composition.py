@@ -7,6 +7,7 @@ from pathlib import Path
 import a13n_ui.composition.reconstruction as reconstruction_module
 import pytest
 import yaml
+from a13n_harness import ContextualMCP
 from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
 from a13n_harness.environment.local.files import LocalFileOperator
 from a13n_ui.application import open_application
@@ -15,7 +16,9 @@ from a13n_ui.configuration import (
     ConfigurationSettings,
     DefinitionRootSettings,
     LocalDirectorySettings,
+    canonical_digest,
 )
+from a13n_ui.configuration.models import MCPSelection
 from a13n_ui.errors import CompositionError, ConfigurationError
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 
@@ -194,6 +197,127 @@ async def test_reconstruction_rejects_a_changed_model_adapter_lock(
             await application.validate_agent_executable(agent_reference)
 
     assert error.value.code == "model_adapter_lock_mismatch"
+
+
+async def test_subagent_identity_policy_survives_snapshot_reconstruction(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    _write_yaml(
+        definitions / "agents/agent-child.yaml",
+        {
+            "schema_version": "1",
+            "agent_id": "agent-child",
+            "display_name": "Child Agent",
+            "model": {"kind": "model", "resource_id": "model-main"},
+            "prompt": {"kind": "prompt", "resource_id": "prompt-main"},
+            "async_subagents": {"tools": "disabled"},
+        },
+    )
+    agent_path = definitions / "agents/agent-main.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["subagents"] = [
+        {
+            "name": "child-worker",
+            "description": "Run child work.",
+            "agent": {"kind": "agent", "resource_id": "agent-child"},
+            "identity": {"inherit_agent_id": True},
+        }
+    ]
+    _write_yaml(agent_path, agent)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_application(settings) as application:
+        reference = await application.resolve_agent_snapshot("agent-main")
+        snapshot = await application.agent_snapshot(reference)
+        executable = await application._composition.executable(reference)
+
+    root = next(node for node in snapshot.resolved_agents if node.agent_id == "agent-main")
+    assert root.subagents[0].identity.inherit_agent_id is True
+    assert executable.definition.subagents[0].identity.inherit_agent_id is True
+
+    legacy_payload = snapshot.model_dump(mode="python")
+    for node in legacy_payload["resolved_agents"]:
+        for edge in node["subagents"]:
+            edge.pop("identity")
+    legacy_behavior = {
+        key: value
+        for key, value in legacy_payload.items()
+        if key not in {"logical_agent_digest", "generation_id", "catalog_digest"}
+    }
+    legacy_payload["logical_agent_digest"] = canonical_digest(legacy_behavior)
+    restored = type(snapshot).model_validate(legacy_payload)
+    legacy_root = next(node for node in restored.resolved_agents if node.agent_id == "agent-main")
+    assert legacy_root.subagents[0].identity.inherit_agent_id is False
+
+
+async def test_mcp_selection_survives_snapshot_reconstruction(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    agent_path = definitions / "agents/agent-main.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"] = [
+        {
+            "key": "a13n.mcp",
+            "schema_version": "1",
+            "id": "mcp-main",
+            "url": "https://mcp.example.com/mcp",
+            "execution": "auto",
+            "allowed_tools": ["search"],
+            "description": "Context-aware search.",
+            "defer_loading": True,
+            "context_headers": {
+                "X-Agent": {"source": "identity.agent_id", "required": True},
+                "X-Payload": {
+                    "source": "context.metadata.payload",
+                    "required": False,
+                },
+            },
+        },
+        {
+            "key": "a13n.mcp",
+            "schema_version": "1",
+            "id": "mcp-secondary",
+            "url": "https://secondary.example.com/mcp",
+            "execution": "native",
+            "allowed_tools": None,
+            "description": None,
+            "defer_loading": False,
+            "context_headers": {},
+        },
+    ]
+    _write_yaml(agent_path, agent)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_application(settings) as application:
+        reference = await application.resolve_agent_snapshot("agent-main")
+        snapshot = await application.agent_snapshot(reference)
+        executable = await application._composition.executable(reference)
+
+    root = next(node for node in snapshot.resolved_agents if node.agent_id == "agent-main")
+    assert [selection.model_dump(mode="json") for selection in root.capabilities] == agent["capabilities"]
+    capabilities = [item for item in executable.definition.capabilities if isinstance(item, ContextualMCP)]
+    assert [item.id for item in capabilities] == ["mcp-main", "mcp-secondary"]
+    assert capabilities[0].url == "https://mcp.example.com/mcp"
+    assert capabilities[0].description == "Context-aware search."
+    assert capabilities[0].defer_loading is True
+    assert capabilities[1].url == "https://secondary.example.com/mcp"
+
+
+def test_mcp_selection_preserves_explicit_http_url_components() -> None:
+    url = "https://user:pass@mcp.example.com/mcp?signature=value#route"
+
+    selection = MCPSelection(
+        key="a13n.mcp",
+        id="mcp-main",
+        url=url,
+        context_headers={},
+    )
+
+    assert selection.url == url
 
 
 async def test_unrelated_reload_reuses_the_logical_agent_snapshot(tmp_path: Path) -> None:

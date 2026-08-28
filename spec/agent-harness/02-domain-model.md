@@ -37,9 +37,22 @@ flowchart LR
 ## Identity
 
 ```python
-class AgentIdentityRef(BaseModel):
+class AgentIdentityRef:
     issuer: str
     subject: str
+    claims: Mapping[str, str]
+
+    def __init__(
+        self,
+        *,
+        issuer: str,
+        subject: str,
+        **claims: str,
+    ) -> None: ...
+
+    def get_claim(self, key: str) -> str | None: ...
+
+    def require_claim(self, key: str) -> str: ...
 
 
 class AgentInstanceRef(BaseModel):
@@ -56,30 +69,32 @@ class AgentInstanceContext(BaseModel):
     host_refs: Mapping[str, str]
 ```
 
-The trusted Host supplies `AgentInstanceContext`. Identity names the workload principal but contains no credential or policy decision. Actor, lineage, and Host references are correlation and policy inputs; model content cannot replace them.
+The trusted Host supplies `AgentInstanceContext`. `AgentIdentityRef.issuer` and `subject` name the workload principal for the Agent graph. Its immutable string claims carry Host-selected identity dimensions shared with trusted Capabilities; `user_id` and `agent_id` are the conventional claims for the represented business user and current logical Agent. Other non-blank claim names are allowed. Claims contain no credential, live collaborator, or policy decision and are never projected to a model or external transport merely by being present. Actor, lineage, and Host references remain separate correlation and policy inputs; model content cannot replace them.
 
-A Host can preserve one Agent instance across a durable continuation while every logical Harness run receives a fresh context and bindings. `AgentInstanceRef` is a Host-supplied workload and lineage reference used for policy and correlation; it is not the identity of Pydantic message history. The Harness owns the stable `thread_id` in `HarnessState`, restores it into every fresh `AgentContext`, and does not accept a run-binding, metadata, or invocation override for it.
+The identity hierarchy is explicit: `issuer` plus `subject` identify the workload principal, `agent_id` identifies the current logical Agent when supplied, `agent_instance_id` identifies one Host-owned Agent instance, `thread_id` identifies one independently advancing message history, and `run_id` identifies one logical Harness invocation. A Host can preserve one Agent instance and its effective identity across a durable continuation while every logical Harness run receives fresh context and bindings. `AgentInstanceRef` is a Host-supplied workload and lineage reference used for policy and correlation; it is not the identity of Pydantic message history. Identity and claims are never restored from Harness state or message metadata. The Harness owns the stable `thread_id` in `HarnessState`, restores it into every fresh `AgentContext`, and does not accept a run-binding, metadata, or invocation override for it.
 
 ## Execution Identities
 
 The platform distinguishes:
 
-| Identity                        | Lifetime and owner                                                                  |
-| ------------------------------- | ----------------------------------------------------------------------------------- |
-| Agent definition ID             | Logical process-local correlation; Host may map its own revision                    |
-| Agent instance ID               | Host-supplied workload and lineage correlation used by current policy               |
-| Thread ID                       | Stable Harness-owned identity stored with one independently advancing history       |
-| Provider affinity               | Provider-facing cache/session correlation derived by the selected model integration |
-| Harness run ID                  | One logical process-local invocation                                                |
-| Model-attempt ID                | One `ModelAttempt` inside the logical run                                           |
-| Host Execution/ExecutionAttempt | Durable work and worker generation outside the Harness                              |
-| Tool call ID                    | Pydantic call correlation                                                           |
+| Identity                        | Lifetime and owner                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------ |
+| Workload principal              | Host-bound `issuer` and `subject`, shared across one Agent graph when policy permits |
+| Logical Agent ID                | Optional `agent_id` claim selected by the Host for the current Agent                 |
+| Agent definition ID             | Logical process-local correlation; Host may map its own revision                     |
+| Agent instance ID               | Host-supplied workload and lineage correlation used by current policy                |
+| Thread ID                       | Stable Harness-owned identity stored with one independently advancing history        |
+| Provider affinity               | Provider-facing cache/session correlation derived by the selected model integration  |
+| Harness run ID                  | One logical process-local invocation                                                 |
+| Model-attempt ID                | One `ModelAttempt` inside the logical run                                            |
+| Host Execution/ExecutionAttempt | Durable work and worker generation outside the Harness                               |
+| Tool call ID                    | Pydantic call correlation                                                            |
 
 A Thread is one independently advancing Pydantic message history. Its `thread_id` is generated when a new `HarnessState` is created, preserved by ordinary state export and continuation, and copied into the fresh `AgentContext` selected for a run. A root and every nested inline child state therefore carry independent IDs. A Host-managed child starts from its own state, and `HarnessState.fork()` copies portable continuation data while generating a new ID. The selected model integration reads the ID from `AgentContext` to derive or look up provider-facing affinity; [Input, Model, and Output Boundaries](16-input-model-and-output.md#thread-affinity) owns the detailed cache and session rules.
 
-An ordinary deep copy, serialization round trip, checkpoint selection, or trusted complete-state transform preserves the ID unless it intentionally creates a fork. `AgentInstanceRef`, product interaction correlation, and Host Execution identity remain independent and may change or remain stable under their owning policies without changing model-history identity.
+An ordinary deep copy, serialization round trip, checkpoint selection, or trusted complete-state transform preserves the ID unless it intentionally creates a fork. `AgentInstanceRef`, product interaction correlation, and Host Execution identity remain independent and may change or remain stable under their owning policies without changing model-history identity. A continuation receives a fresh `AgentIdentityRef`; a Host that expects the same effective user or logical Agent scope supplies the same `user_id`, `agent_id`, and relevant claims again.
 
-No identifier or affinity value grants authority by itself.
+No identifier, claim, or affinity value grants authority by itself.
 
 ## Model-facing References
 

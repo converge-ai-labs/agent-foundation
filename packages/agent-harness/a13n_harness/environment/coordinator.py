@@ -23,6 +23,7 @@ from .commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
     ProcessReadOutputResult,
@@ -407,6 +408,31 @@ class _ProcessFacade:
             self._environment._track_process_handle(result.process.handle, added=True)
             return result
 
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo:
+        entered = self._environment._entered_for_process_identity(identity)
+        async with self._environment._operation_lease(
+            entered,
+            EnvironmentAction.PROCESS_INSPECT,
+            "processes",
+        ):
+            processes = entered.operations.processes
+            if processes is None:
+                raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
+            result = await processes.rebind(identity, output_policy=output_policy)
+            _validate_provider_artifacts(entered, result)
+            if result.handle.identity != identity:
+                raise EnvironmentError(
+                    "Environment provider retargeted a restored process identity.",
+                    code="environment_provider_failure",
+                )
+            self._environment._track_process_handle(result.handle, added=True)
+            return result
+
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         return await self._call(handle, EnvironmentAction.PROCESS_INSPECT, "inspect")
 
@@ -461,7 +487,12 @@ class _ProcessFacade:
             if processes is None:
                 raise EnvironmentError("Process operation facet is unavailable.", code="environment_unsupported")
             call = getattr(processes, method)
-            result = await call(handle, *args, **dict(semantic_kwargs or kwargs))
+            try:
+                result = await call(handle, *args, **dict(semantic_kwargs or kwargs))
+            except EnvironmentError as exc:
+                if exc.code == "environment_not_found":
+                    self._environment._track_process_handle(handle, added=False)
+                raise
             _validate_provider_artifacts(entered, result)
             _validate_process_result_identity(handle, result)
             return result
@@ -1189,6 +1220,32 @@ class CompositeBoundEnvironment(BoundEnvironment):
             limits = limits.model_copy(update={"wall_time_seconds": effective})
         return entered, request.model_copy(update={"cwd": cwd, "limits": limits})
 
+    def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredBinding:
+        if not isinstance(identity, ProcessIdentity):
+            raise EnvironmentError("Process identity is invalid.", code="environment_request_invalid")
+        matches = tuple(
+            item
+            for item in self._entered.values()
+            if item.public.provider_type == identity.provider_type and item.environment_id == identity.environment_id
+        )
+        if not matches:
+            raise EnvironmentError(
+                "The process Environment instance is not attached.",
+                code="environment_selection_invalid",
+            )
+        if len(matches) != 1:
+            raise EnvironmentError(
+                "The process Environment instance is attached more than once.",
+                code="environment_conflict",
+            )
+        entered = matches[0]
+        if entered.public.descriptor.generation != identity.generation:
+            raise EnvironmentError(
+                "The process belongs to another Environment generation.",
+                code="environment_process_generation_mismatch",
+            )
+        return entered
+
     def _entered_for_handle(self, handle: BoundProcessHandle) -> _EnteredBinding:
         if not isinstance(handle, BoundProcessHandle):
             raise EnvironmentError("Process handle is invalid.", code="environment_request_invalid")
@@ -1198,6 +1255,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if (
             handle.binding_revision != entered.public.binding_revision
             or handle.observed_generation != entered.public.descriptor.generation
+            or handle.identity.provider_type != entered.public.provider_type
+            or handle.identity.environment_id != entered.environment_id
+            or handle.identity.generation != entered.public.descriptor.generation
         ):
             raise EnvironmentError("Process handle is stale.", code="environment_stale_binding")
         return entered

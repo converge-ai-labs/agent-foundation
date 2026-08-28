@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -24,7 +25,8 @@ from a13n_harness.toolsets.file_media import (
     NativeInputMediaKind,
 )
 from a13n_harness.toolsets.files import FileToolset
-from a13n_harness.toolsets.shell import ShellProcessProjector, ShellToolset
+from a13n_harness.toolsets.process_manager import ProcessEventHook
+from a13n_harness.toolsets.shell import ShellToolset
 
 from ._dynamic_context import _DynamicEnvironmentContext
 from .configuration import DynamicEnvironmentConfiguration
@@ -56,10 +58,19 @@ class DynamicEnvironmentCapability(AbstractModelContextCapability):
 
     id = DYNAMIC_ENVIRONMENT_CAPABILITY_ID
 
-    def __init__(self, configuration: DynamicEnvironmentConfiguration) -> None:
+    def __init__(
+        self,
+        configuration: DynamicEnvironmentConfiguration,
+        *,
+        process_event_hooks: Sequence[ProcessEventHook] = (),
+    ) -> None:
         if not isinstance(configuration, DynamicEnvironmentConfiguration):
             configuration = DynamicEnvironmentConfiguration.model_validate(configuration, strict=True)
+        hooks = tuple(process_event_hooks)
+        if not all(callable(hook) for hook in hooks):
+            raise TypeError("process_event_hooks must contain callables")
         self.configuration = configuration.model_copy(deep=True)
+        self.process_event_hooks = hooks
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(DYNAMIC_ENVIRONMENT_CAPABILITY_ID)
@@ -74,6 +85,7 @@ class DynamicEnvironmentCapability(AbstractModelContextCapability):
             self.configuration,
             run_id=ctx.deps.run_id,
             environment=ctx.deps.environment,
+            process_event_hooks=self.process_event_hooks,
         )
         ctx.deps._record_run_capability(DYNAMIC_ENVIRONMENT_CAPABILITY_ID, replacement)
         return replacement
@@ -89,26 +101,25 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         *,
         run_id: str,
         environment: BoundEnvironment,
+        process_event_hooks: Sequence[ProcessEventHook],
     ) -> None:
-        super().__init__(configuration)
+        super().__init__(configuration, process_event_hooks=process_event_hooks)
         self._run_id = run_id
+        self._cleanup_registered = False
         self._shell_toolset = ShellToolset(
             shell=environment.shell,
             processes=environment.processes,
             outputs=environment.outputs,
-            ports=environment.ports,
             max_reference_entries=configuration.max_reference_entries,
+            process_event_hooks=process_event_hooks,
             resource_resolver=lambda tool_id: self._dynamic_context._resource_resolver(tool_id),
             execution_guard=lambda: self._dynamic_context._assert_authorized_fence(),
-            shell_tools=configuration.shell_tools,
-            process_tools=configuration.process_tools,
-            port_tools=configuration.port_tools,
         )
         self._dynamic_context = _DynamicEnvironmentContext(
             configuration,
             run_id=run_id,
             environment=environment,
-            resolve_process=self._shell_toolset.resolve_process,
+            resolve_process_identity=self._shell_toolset.resolve_process_identity,
         )
         self._file_toolset = FileToolset(
             environment.files,
@@ -121,7 +132,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         toolsets: list[AbstractToolset[AgentContext]] = []
         if configuration.file_tools:
             toolsets.append(self._file_toolset.get_toolset(shell_active=configuration.shell_tools))
-        if configuration.shell_tools or configuration.process_tools or configuration.port_tools:
+        if configuration.shell_tools:
             toolsets.append(self._shell_toolset.get_toolset())
         self._toolset = CombinedToolset(toolsets)
 
@@ -131,13 +142,22 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
                 "Dynamic Environment run replacement cannot cross logical runs.",
                 code="capability_scope_invalid",
             )
+        if not self._cleanup_registered:
+            ctx.deps._register_run_cleanup(
+                f"{DYNAMIC_ENVIRONMENT_CAPABILITY_ID}.processes",
+                self._shell_toolset.close,
+            )
+            self._cleanup_registered = True
         return self
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return self._toolset
 
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Any) -> Any:
-        return await self._dynamic_context.wrap_run(ctx, handler=handler)
+        async def run_with_dynamic_context() -> Any:
+            return await self._dynamic_context.wrap_run(ctx, handler=handler)
+
+        return await self._shell_toolset.wrap_run(ctx, handler=run_with_dynamic_context)
 
     async def wrap_model_context(
         self,
@@ -173,20 +193,6 @@ def _resolve_file_media_understanding(
             code="capability_scope_invalid",
         )
     return attachment.provider
-
-
-def _resolve_dynamic_environment_process_projector(
-    ctx: RunContext[AgentContext],
-) -> ShellProcessProjector | None:
-    value = ctx.capabilities.get(DYNAMIC_ENVIRONMENT_CAPABILITY_ID)
-    if value is None:
-        return None
-    if not isinstance(value, _DynamicEnvironmentRunCapability):
-        raise DefinitionError(
-            "Dynamic Environment Capability has an incompatible finalized run value.",
-            code="capability_type_mismatch",
-        )
-    return value._shell_toolset
 
 
 __all__ = [

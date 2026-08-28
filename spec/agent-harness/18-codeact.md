@@ -179,7 +179,7 @@ Memory, recursion, and pure-compute duration limits are passed through Monty's p
 
 ## Approval, Deferred Calls, and Retry
 
-Approval may succeed only when the active Pydantic capability resolves it inline before the nested callback returns. An unresolved `ApprovalRequired` or `CallDeferred` terminates the current CodeAct execution. CodeAct does not export a Monty frame as deferred state, resume at the old program counter, or replay the whole source after feedback.
+Approval or external execution may succeed only when the active Pydantic capability resolves it inline before the nested callback returns. CodeAct dispatches through `ToolManager.handle_call()`, so root deferred handlers receive nested requests and the mandatory child boundary resolves them first. A root handler result returns normally into restricted code. A child `ToolDenied` or an unresolved root `ApprovalRequired`/`CallDeferred` terminates the current CodeAct execution as a bounded runner failure; it does not export a Monty frame as deferred state, resume at the old program counter, or replay the whole source after feedback. The surrounding Agent loop can continue from that runner result.
 
 Syntax, entrypoint, static preflight, runner-input, missing-tool, and nested argument-validation failures discovered before any nested call starts may ask the model to correct the outer runner call under its normal retry budget. Raw nested validation does not consume the target tool's model-retry counter.
 
@@ -212,7 +212,7 @@ CodeAct source is written for Monty's supported Python subset, not CPython. Chan
 09. Inputs, arguments, results, supplemental content, printed output, and final values cross finite explicit boundaries.
 10. Call count, concurrency, parent usage, deadline, memory, and recursion limits fail closed before they can be bypassed.
 11. A response containing a runner and another executable call is rejected before either begins.
-12. Unresolved approval/deferred work exports no resumable interpreter frame and completed prior effects are not replayed or rolled back.
+12. Nested deferred calls cross the active Pydantic handler chain; child denial and unresolved root work export no resumable interpreter frame, and completed prior effects are not replayed or rolled back.
 13. Failure after a nested call starts never becomes an automatic source replay.
 14. Cancellation drains admitted callbacks before ownership release and then propagates cancellation.
 15. Default diagnostics contain identities, status, timing, and sizes but no source or nested values.

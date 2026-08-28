@@ -7,6 +7,8 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
+import a13n_harness.tools.invocation as tool_invocation_module
+import a13n_harness.tools.surface as tool_surface_module
 import a13n_harness.toolsets.delegation as delegation_toolset_module
 import pytest
 from a13n_harness import (
@@ -51,9 +53,18 @@ from a13n_harness.tools import (
 )
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from pydantic import BaseModel
+from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ToolFailed
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import UsageLimits
 
@@ -291,6 +302,91 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
     assert ('<tool-instruction name="summarize">' in child_instructions[0]) is expected_child_toolset_guidance
 
 
+async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspension(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_resolver = tool_surface_module.resolve_tool_surface
+
+    def bypass_child_filter(candidates, *, allow_deferred=True):
+        del allow_deferred
+        return original_resolver(candidates, allow_deferred=True)
+
+    monkeypatch.setattr(tool_surface_module, "resolve_tool_surface", bypass_child_filter)
+
+    async def bypass_child_runtime_denial(self, ctx, *, requests):
+        del self, ctx, requests
+        return None
+
+    monkeypatch.setattr(
+        tool_invocation_module.ToolExecutionBoundaryCapability,
+        "handle_deferred_tool_calls",
+        bypass_child_runtime_denial,
+    )
+
+    def approved_action(value: int) -> int:
+        return value
+
+    async def child_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del messages, info
+        yield {
+            0: DeltaToolCall(
+                name="approved_action",
+                json_args=json.dumps({"value": 1}),
+                tool_call_id="approval-1",
+            )
+        }
+
+    child = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        definition_id="deferred-child-v1",
+        model=FunctionModel(stream_function=child_stream),
+        capabilities=(
+            Capability(
+                tools=[Tool(approved_action, requires_approval=True)],
+                id="approval-tools",
+            ),
+        ),
+    )
+    child_failures: list[str] = []
+
+    async def parent_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if any(isinstance(message, ModelResponse) for message in messages):
+            failure_parts = [
+                part
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, RetryPromptPart | ToolReturnPart)
+            ]
+            child_failures.extend(str(part.content) for part in failure_parts)
+            yield "parent-recovered"
+            return
+        yield {
+            0: DeltaToolCall(
+                name="delegate",
+                json_args=json.dumps({"subagent": "reviewer", "task": "inspect"}),
+                tool_call_id="delegate-1",
+            )
+        }
+
+    executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
+
+    result = await executable.run("delegate", bindings=_bindings_factory())
+
+    assert result.output_or_raise() == "parent-recovered"
+    assert result.status == "completed"
+    assert child_failures
+    assert "subagent_deferred_unsupported" in child_failures[0]
+
+
 async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
     async def parent_stream(
         messages: list[ModelMessage],
@@ -406,6 +502,60 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert continued.children[child_id].state.thread_id == child_record.state.thread_id
     assert continued.children[child_id].state.thread_id != second.state.thread_id
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
+
+
+async def test_inline_delegation_intersects_child_agent_spec_usage_limits() -> None:
+    async def parent_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if not _returns_after_latest_user(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps(
+                        {
+                            "subagent": "reviewer",
+                            "task": {"request": "inspect"},
+                        }
+                    ),
+                    tool_call_id="delegate-1",
+                )
+            }
+            return
+        yield "parent-done"
+
+    child = _child_definition().with_updates(
+        agent=HarnessAgentSpec(
+            usage_limits=UsageLimits(
+                request_limit=4,
+                total_tokens_limit=90_000,
+            )
+        )
+    )
+    observed_limits: list[UsageLimits | None] = []
+    executable = HarnessBuilder().build(
+        _parent_definition(
+            child,
+            FunctionModel(stream_function=parent_stream),
+        )
+    )
+
+    result = await executable.run(
+        "delegate",
+        bindings=_bindings_factory(
+            host_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
+            observed_limits=observed_limits,
+        ),
+        usage_limits=UsageLimits(request_limit=9, total_tokens_limit=100_000),
+    )
+
+    assert result.output_or_raise() == "parent-done"
+    assert len(observed_limits) == 1
+    assert observed_limits[0] is not None
+    assert observed_limits[0].request_limit == 4
+    assert observed_limits[0].total_tokens_limit == 60_000
 
 
 class ChildEventMutationPlugin(AbstractHarnessPlugin):
