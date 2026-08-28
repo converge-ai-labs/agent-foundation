@@ -939,12 +939,16 @@ async def _wait_for_daemon_readiness(
                         f"Local Envd daemon exited during startup with code {process.returncode}: {detail}"
                     )
                 if await asyncio.to_thread(_has_ready_marker, ready_path):
-                    await asyncio.sleep(0)
-                    if process.returncode is None:
+                    try:
+                        return_code = await asyncio.wait_for(
+                            process.wait(),
+                            timeout=_STARTUP_POLL_SECONDS,
+                        )
+                    except TimeoutError:
                         return
                     detail = await asyncio.to_thread(_read_startup_error, stderr_path)
                     raise _runtime_failure(
-                        f"Local Envd daemon exited after reporting readiness with code {process.returncode}: {detail}"
+                        f"Local Envd daemon exited after reporting readiness with code {return_code}: {detail}"
                     )
                 await asyncio.sleep(_STARTUP_POLL_SECONDS)
     except TimeoutError as error:

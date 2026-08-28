@@ -444,11 +444,12 @@ class SessionEventStore:
                             "An event segment path already contains different content.",
                             code="event_segment_conflict",
                         ) from None
-                directory_fd = os.open(destination.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory_fd)
-                finally:
-                    os.close(directory_fd)
+                if os.name != "nt":
+                    directory_fd = os.open(destination.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(directory_fd)
+                    finally:
+                        os.close(directory_fd)
             finally:
                 stage.unlink(missing_ok=True)
 

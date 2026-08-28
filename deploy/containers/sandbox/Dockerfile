@@ -33,6 +33,7 @@ COPY LICENSE /usr/share/licenses/agent-envd/LICENSE
 
 USER sandbox
 WORKDIR /workspace
-ENV AGENT_ENVD_EXECUTION_ISOLATION=disabled
+ENV AGENT_ENVD_EXECUTION_ISOLATION=disabled \
+    AGENT_ENVD_RUNTIME_DIR=/home/sandbox/.local/state/agent-envd
 ENTRYPOINT ["tini", "--"]
 CMD ["agent-envd"]

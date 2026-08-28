@@ -8,6 +8,7 @@ import sys
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 from a13n_envd_client import EIPMethodError
@@ -34,6 +35,32 @@ from a13n_environment_provider import (
 from a13n_environment_provider.local_envd import provider as local_envd_provider_module
 
 pytestmark = pytest.mark.anyio
+
+_FAKE_ENVD_EXECUTABLES: set[Path] = set()
+
+
+@pytest.fixture(autouse=True)
+def _launch_fake_envd_scripts_with_python_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    if os.name != "nt":
+        return
+    create_subprocess_exec = asyncio.create_subprocess_exec
+
+    async def launch(
+        program: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        *arguments: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        **options: Any,
+    ) -> asyncio.subprocess.Process:
+        candidate = Path(os.fsdecode(program)).resolve()
+        if candidate in _FAKE_ENVD_EXECUTABLES:
+            return await create_subprocess_exec(
+                sys.executable,
+                str(candidate),
+                *arguments,
+                **options,
+            )
+        return await create_subprocess_exec(program, *arguments, **options)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", launch)
 
 
 def _operation(
@@ -93,7 +120,9 @@ raise SystemExit(2)
 """
     path.write_text(script)
     path.chmod(0o755)
-    return path.resolve()
+    resolved = path.resolve()
+    _FAKE_ENVD_EXECUTABLES.add(resolved)
+    return resolved
 
 
 def _provider(
@@ -197,11 +226,17 @@ async def test_local_envd_rejects_mismatched_release_and_failed_isolation_withou
         raise AssertionError("validation failure must not allocate a runtime")
         yield tmp_path
 
-    executables = (
-        _write_fake_envd(tmp_path / "wrong-version-envd", version="9.9.9"),
-        _write_fake_envd(tmp_path / "failed-probe-envd", probe_ready=False),
+    cases = (
+        (
+            _write_fake_envd(tmp_path / "wrong-version-envd", version="9.9.9"),
+            "release does not match",
+        ),
+        (
+            _write_fake_envd(tmp_path / "failed-probe-envd", probe_ready=False),
+            "required isolation probe did not report production readiness",
+        ),
     )
-    for index, executable in enumerate(executables):
+    for index, (executable, expected_error) in enumerate(cases):
         provider = _provider(workspace, executable, allocate)
         reconciled = await provider.reconcile(
             _operation(EnvironmentManagementAction.CREATE, f"reconcile-invalid-runtime-{index}"),
@@ -217,6 +252,7 @@ async def test_local_envd_rejects_mismatched_release_and_failed_isolation_withou
                 )
             )
         assert exc_info.value.code == "provider_unavailable"
+        assert expected_error in str(exc_info.value)
     assert not allocation_attempted
 
 
