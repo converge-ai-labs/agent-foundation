@@ -12,10 +12,13 @@ The worker embeds the public Harness Python API. It loads exact [managed Harness
 
 ```mermaid
 flowchart LR
-    Client[Web, SDK, CLI, webhook, or schedule trigger]
+    Client[Web, SDK, CLI, AG-UI, A2A, webhook, or schedule trigger]
 
     subgraph Control[Control role]
-        API[Management and interaction API]
+        Gateway[Protocol Gateway]
+        Native[Native API and streams]
+        Agui[Hosted AG-UI]
+        A2A[A2A discovery and runtime]
         Auth[Resource authorization]
         Authoring[Agent, Skill, model, and Environment authoring]
         ConnectorControl[Connector and Trigger control]
@@ -44,7 +47,9 @@ flowchart LR
     Envd[agent-envd]
     External[Models, tools, and external clients]
 
-    Client --> API --> Auth
+    Client --> Gateway
+    Gateway --> Native & Agui & A2A
+    Native & Agui & A2A --> Auth
     Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback
     Authoring & Interaction & Lifecycle & ConnectorControl & Feedback --> Database
     WorkerScan --> Database
@@ -81,6 +86,7 @@ PostgreSQL is the distributed authority for accepted resources, Thread version a
 | Provider-neutral Environment operations and routing                        | Harness                                                       | Uses the supplied attachment without owning external resource lifecycle                    |
 | Harness-to-AG-UI conversion                                                | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery                         |
 | Durable lifecycle events, Items, and usage                                 | Foundation                                                    | Commits product facts independently from process-local observations                        |
+| Native, Hosted AG-UI, and A2A public protocols                             | [Protocol Gateway](28-protocol-gateway.md)                    | Map distinct wire protocols to the same application and IAM authority                      |
 | Client-side effects                                                        | External client                                               | Foundation authenticates feedback but does not claim the effect                            |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
@@ -133,7 +139,8 @@ Schedules, webhooks, service requests, and asynchronous children accept Turns an
 
 ```mermaid
 flowchart LR
-    Surfaces[API, SDK, CLI, and Web] --> Applications[Foundation application capabilities]
+    Surfaces[Native, AG-UI, A2A, SDK, CLI, and Web] --> Gateway[Protocol Gateway adapters]
+    Gateway --> Applications[Foundation application capabilities]
     Applications --> Domain[Foundation domain contracts]
     Applications --> Ports[Authorization, storage, coordination, and reconstruction ports]
     Adapters[Database, Redis, object store, and ingress adapters] --> Ports
@@ -147,7 +154,10 @@ flowchart LR
     Harness --> EnvdClient[agent-envd client]
 ```
 
-External applications call Foundation through its HTTP API or language SDKs. The worker does not call the Harness through a Foundation SDK or another service; it imports the Harness package and invokes its public process-local API directly.
+External applications call Foundation through Native HTTP/SDK, Hosted AG-UI,
+or A2A Gateway surfaces. The worker does not call the Harness through a
+Foundation SDK or another service; it imports the Harness package and invokes
+its public process-local API directly.
 
 ## Independent Completion Boundaries
 
@@ -166,12 +176,14 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
 
 ## Invariants
 
-1. Foundation has one domain and authorization model across `all`, `control`, and `worker` roles.
-2. Session, Thread, Turn, and Item follow the shared platform meanings; Thread owns versioned advancement selection, while Turn and TurnAttempt directly own durable scheduling and recovery.
-3. PostgreSQL is accepted lifecycle authority; Redis carries coordination and bounded Turn replay without becoming lifecycle authority.
-4. One TurnAttempt starts at most one logical Harness Run.
-5. Process-local Python values and runtime attachments never become Foundation durable payloads.
-6. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
-7. Every authoritative TurnAttempt publication verifies the current generation and legal transition.
-8. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
-9. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
+01. Foundation has one domain and authorization model across `all`, `control`, and `worker` roles.
+02. Session, Thread, Turn, and Item follow the shared platform meanings; Thread owns versioned advancement selection, while Turn and TurnAttempt directly own durable scheduling and recovery.
+03. PostgreSQL is accepted lifecycle authority; Redis carries coordination and bounded Turn replay without becoming lifecycle authority.
+04. One TurnAttempt starts at most one logical Harness Run.
+05. Process-local Python values and runtime attachments never become Foundation durable payloads.
+06. No database transaction spans model, tool, provider, Environment, queue, stream, sleep, or other external I/O.
+07. Every authoritative TurnAttempt publication verifies the current generation and legal transition.
+08. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
+09. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
+10. Public protocol adapters share application and authorization authority but
+    retain independent wire identities, errors, and delivery contracts.

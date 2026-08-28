@@ -33,6 +33,8 @@ Resolving an Agent ID and version returns this exact reference or fails; it neve
   [Foundation Skill Management](27-skill-management.md#agent-revision-selection);
 - non-secret Secret requirements that bind an exact Workspace-owned Secret reference or declare an invoking-User Secret key under [Secret Management](11-secret-management.md);
 - direct trusted adapter keys and bounded adapter configuration;
+- one versioned Agent protocol configuration for Hosted AG-UI and A2A metadata,
+  accepted input schemas, visibility, media modes, client tools, and limits;
 - optional Harness plugin configuration under the Harness-owned document contract;
 - exact managed Harness plugin package revision IDs and digests selected from the [managed artifact registry](26-harness-plugin-artifacts-and-runtime-loading.md) for every enabled managed plugin key; and
 - exact dependency, package, content-digest, and schema compatibility locks.
@@ -75,8 +77,8 @@ budget does not alter provider capability metadata, and a requested native
 maximum output remains an Agent behavior setting rather than a ModelConfig
 field.
 
-Changing materialized Agent content, `model_id`, native model settings, or a
-dependency lock creates another Agent revision. Editing the referenced
+Changing materialized Agent content, protocol configuration, `model_id`, native
+model settings, or a dependency lock creates another Agent revision. Editing the referenced
 ModelConfig does not create an Agent revision. Prior Agent revisions selected
 by retained Turns remain addressable for their documented retention period.
 
@@ -88,6 +90,58 @@ ModelConfig after accepting a Turn. The worker reconstructs revision `7` and
 the model snapshot stored on that Turn. A later successor Turn uses the current
 ModelConfig.
 
+## Agent Protocol Configuration
+
+Every AgentRevision carries one immutable versioned protocol configuration. It
+customizes Hosted AG-UI and A2A but does not enable or disable a protocol:
+Native and Hosted AG-UI are always available, and the deployment-wide A2A total
+switch applies uniformly to all Agents.
+
+The conceptual configuration is:
+
+```python
+class AgentProtocolConfiguration:
+    schema_version: Literal["1"]
+    public_name: str
+    public_description: str | None
+    input_modes: tuple[str, ...]
+    output_modes: tuple[str, ...]
+    input_data_schema: JsonObject | None
+    state_schema: JsonObject | None
+    context_schema: JsonObject | None
+    client_tools: tuple[ClientToolPolicy, ...]
+    event_visibility: tuple[str, ...]
+    a2a_skills: tuple[A2ASkillProjection, ...]
+    extended_agent_card: ExtendedAgentCardPolicy | None
+    limits: ProtocolLimits
+```
+
+This is a conceptual Foundation schema, not an AG-UI or A2A wire object.
+Foundation materialization validates every embedded JSON Schema, mode, tool,
+event selection, skill projection, metadata field, and limit against the
+Gateway's finite registries and hard safety ceilings. It rejects arbitrary
+protocol extensions, event names, executable targets, credentials, URLs,
+Workspace identity, or authorization claims.
+
+When authoring omits optional protocol detail, materialization applies the
+safe schema-version default: bounded text input/output, standard Run/text/tool
+AG-UI visibility, no client tools, no non-empty state/context, a public-safe A2A
+Card projection, and no authenticated extended Card. The default does not hide
+or disable the Agent's protocol route.
+
+Builder authority over Agent-owned configuration includes this document;
+Workspace Admin inherits that authority. Deployment operators separately own
+accepted hostnames, TLS, proxy trust, the hostname-to-default-Agent mapping,
+A2A total availability, and global hard limits. Agent content cannot modify
+those deployment settings.
+
+Publishing another AgentRevision changes the Card or policy used by later
+acceptance. Each Hosted AG-UI Run and A2A Task acceptance freezes the exact
+AgentRevision ID and canonical protocol-configuration digest. Worker takeover,
+feedback Turns in the same A2A Task, and replay use the frozen values. A later
+A2A Task or Hosted continuation can select the current published revision only
+through ordinary Foundation continuation compatibility.
+
 ## Revision Relationships
 
 ```mermaid
@@ -96,6 +150,7 @@ flowchart LR
     Agent[Agent] --> Materialize
     Model[ModelConfig identity] --> Materialize
     Resources[Skill, Connector, Tool, and Environment revisions] --> Materialize
+    Protocols[Agent protocol configuration] --> Materialize
     Secrets[Non-secret Secret requirements] --> Materialize
     Locks[Dependency and content locks] --> Materialize
     Materialize --> Revision[Immutable AgentRevision]
@@ -226,3 +281,5 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 10. AgentRevision freezes the available managed Skill revisions, names, digests,
     and defaults; Turn state freezes the effective names, and Worker materialization
     completes and verifies before Harness Skill exposure.
+11. AgentRevision freezes one validated protocol configuration; every Hosted
+    AG-UI Run and A2A Task acceptance records its exact revision and digest.

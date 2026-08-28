@@ -10,6 +10,8 @@ dependency locks, Workspace Skill resources and immutable package revisions,
 trusted Harness plugin artifacts, durable Threads, Turns, and TurnAttempts,
 scheduling, pending actions, Environment connection configuration in Turn state,
 lifecycle events, raw usage records, and the public management API.
+The control surface also owns the Foundation Service Protocol Gateway, which
+maps Native, Hosted AG-UI, and A2A callers into the same application authority.
 
 It does not redefine the code-first Harness `AgentDefinition`, Pydantic Agent loop, Harness result and state semantics, Agent Stream Protocol conversion, Environment provider lifecycle types, EIP, or provider-native state. Platform-owned data and APIs follow [Platform Data Conventions](../data-conventions.md) and [Platform API Conventions](../api-conventions.md).
 
@@ -60,6 +62,11 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [25 Model Management](25-model-management.md)                                                         | Workspace ModelConfigs, trusted provider registry, credentials, testing, lifecycle, and Turn-time execution snapshots               |
 | [26 Harness Plugin Artifacts and Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Internal trusted wheel publication, one-plugin packaging, exact artifact locks, and process-local on-demand loading                 |
 | [27 Skill Management](27-skill-management.md)                                                         | Workspace Skills, ZIP/GitHub import, immutable revisions, public APIs, object storage, Agent locks, and Worker materialization      |
+| [28 Protocol Gateway](28-protocol-gateway.md)                                                         | Native, Hosted AG-UI, and A2A composition over one Foundation application and authorization boundary                                |
+| [29 Native Streaming and Notifications](29-native-streaming-and-notifications.md)                     | Turn SSE, Workspace lifecycle event reads, and best-effort Native notification WebSocket                                            |
+| [30 Hosted AG-UI](30-hosted-ag-ui.md)                                                                 | AG-UI input authority, external bindings, Turn mapping, event visibility, SSE replay, and cancellation                              |
+| [31 A2A](31-a2a.md)                                                                                   | A2A 1.0 HTTP+JSON discovery, Context/Task projection, streaming, Artifacts, push notifications, and security                        |
+| [32 Service SDKs and Clients](32-service-sdks-and-clients.md)                                         | Python, Go, Rust, and TypeScript SDK parity plus Foundation Web and remote CLI boundaries                                           |
 
 Read `00`, `01`, and `02` before changing process startup, roles, or distribution
 contents. Read `03`, `04`, and `06` before introducing a durable capability.
@@ -73,6 +80,12 @@ and `16` before changing managed Harness plugin artifacts, process-local loading
 or Worker compatibility. Read the shared interaction model before changing
 Session, Thread, Turn, or Item semantics. Read the Environment Provider and Agent
 Stream Protocol catalogs before adding provider or event adapters.
+
+Read `28` before changing any public protocol adapter. Read `29` with `17`,
+`20`, and `21` before changing Native streams or notifications. Read `30` with
+the Agent Stream Protocol owner before changing Hosted AG-UI. Read `31` before
+changing A2A discovery, Tasks, streaming, or push delivery. Read `32` before
+changing an SDK, Foundation Web network boundary, or remote CLI operation.
 
 Read `27` with the shared [Managed Skill Package
 Contract](../managed-skill-packages.md), `12`, `16`, and the Harness Skill contract
@@ -126,6 +139,9 @@ These roots are boundaries, not a requirement that every capability become a sub
   never automatically replays them. One such outcome does not itself trigger
   Attempt replacement.
 - Harness completion, durable Turn sealing, Item projection, event delivery, external delivery, usage ingestion, and any external settlement are separate facts.
+- Native, Hosted AG-UI, and A2A adapters call the same Foundation application
+  authority; their external identifiers and deliveries never replace current
+  IAM, Turn, or Thread authority.
 
 ## Specification Conventions
 

@@ -10,7 +10,8 @@ retained presentation after the Redis horizon.
 
 Redis and replay snapshots are projections, never Turn or `TurnAttempt`
 authority. Foundation creates no relational table for Items, live or retained
-stream replay, pending calls or approvals, or provider receipts.
+stream replay, Native notifications, pending calls or approvals, or provider
+receipts.
 
 ## Boundaries and Table Inventory
 
@@ -169,6 +170,27 @@ for retryable publication, and set a retention TTL that never expires an active
 Turn's stream. Consumers resume within the live horizon from the last Redis
 Stream entry ID.
 
+The public Native SSE framing, `Last-Event-ID` behavior, and replay-to-live
+cutover are owned by [Native Streaming and
+Notifications](29-native-streaming-and-notifications.md#turn-sse). Hosted AG-UI
+and A2A can project this source under their own protocol identities, but they do
+not reinterpret the Redis entry ID as an AG-UI or A2A cursor.
+
+## Workspace Events and Best-Effort Notifications
+
+Authorized Workspace lifecycle reads page forward over `lifecycle_events.seq`
+under the Native Workspace event collection. The lifecycle cursor is distinct
+from every Turn Stream entry ID. Retention below a Workspace cursor produces an
+explicit lifecycle replay gap and never falls through to a surviving row as if
+history were complete.
+
+Native WebSocket notifications are an ephemeral wake-up projection of current
+resource and lifecycle changes. They have no relational row, Redis replay
+stream, retained object, delivery acknowledgement, or cursor. Their loss cannot
+remove a lifecycle event, Turn Stream entry, Item, or resource mutation.
+Disconnected clients reconcile through the Workspace event collection and
+current resource reads.
+
 ## Items and Retained Replay Object
 
 Agent Stream Protocol projection assigns stable Item IDs and emits their changes
@@ -243,6 +265,7 @@ execution, provider side effects, or Turn completion.
 | Lifecycle live projection fails                                 | Fact remains pending or retryable | Projector reclaims it without repeating the source mutation                 |
 | Redis stream is lost while Turn is active                       | Live observation is unavailable   | Work continues from durable Turn and attempt state; no cursor becomes state |
 | Replay snapshot publication fails                               | Turn outcome remains committed    | Retry deterministic create-only publication while source stream is complete |
+| Native notification is dropped or duplicated                    | Wake-up observation is incomplete | Client reconciles durable Workspace events and current resources            |
 
 ## Compatibility and Trade-offs
 
@@ -272,3 +295,7 @@ authority.
    partial source never produces a complete-looking snapshot.
 6. Events, Items, Redis, and replay objects never select Turn state or authorize
    another `TurnAttempt`.
+7. Workspace lifecycle cursors, Turn Stream cursors, Hosted delivery cursors,
+   and best-effort notification identities remain separate domains.
+8. Native notifications have no durable replay source and never replace
+   lifecycle or resource reads.

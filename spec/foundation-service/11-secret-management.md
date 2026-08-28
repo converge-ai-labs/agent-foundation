@@ -26,13 +26,19 @@ Every Secret belongs to one immutable Organization and Workspace boundary and ha
 ```python
 # Conceptual domain schema; not a wire model.
 class SecretOwnerRef:
-    owner_type: Literal["workspace", "user", "connection", "trigger"]
+    owner_type: Literal[
+        "workspace",
+        "user",
+        "connection",
+        "trigger",
+        "a2a_push_configuration",
+    ]
     owner_id: str
 ```
 
-`SecretOwnerType` is a string enum owned by Foundation IAM and serialized as lowercase `snake_case`. OSS supports `workspace`, `user`, `connection`, and `trigger`. Adding another enum value is additive; removing, renaming, or repurposing one is incompatible while durable data refers to it.
+`SecretOwnerType` is a string enum owned by Foundation IAM and serialized as lowercase `snake_case`. OSS supports `workspace`, `user`, `connection`, `trigger`, and `a2a_push_configuration`. Adding another enum value is additive; removing, renaming, or repurposing one is incompatible while durable data refers to it.
 
-`owner_id` is interpreted according to `owner_type`. A Workspace-owned Secret uses the stored `workspace_id` as `owner_id`. A User-owned Secret uses the User ID and remains bounded to the stored Organization and Workspace. A Connection- or Trigger-owned Secret uses that exact resource ID and the resource's stored tenant boundary. The pair determines ownership and key uniqueness, while the explicit tenant fields determine isolation and routing. Foundation validates the owner, Organization, Workspace, current RoleBindings, and lifecycle before accepting a mutation. An owner reference grants no authority, and the service infers no tenant or routing fact from the identifier string.
+`owner_id` is interpreted according to `owner_type`. A Workspace-owned Secret uses the stored `workspace_id` as `owner_id`. A User-owned Secret uses the User ID and remains bounded to the stored Organization and Workspace. A Connection-, Trigger-, or A2A push-configuration-owned Secret uses that exact resource ID and the resource's stored tenant boundary. The pair determines ownership and key uniqueness, while the explicit tenant fields determine isolation and routing. Foundation validates the owner, Organization, Workspace, current RoleBindings, and lifecycle before accepting a mutation. An owner reference grants no authority, and the service infers no tenant or routing fact from the identifier string.
 
 A Workspace Builder or Admin manages Workspace-owned Secrets. Only the owning
 User manages a User-owned Secret; another Builder or Admin cannot list,
@@ -42,7 +48,15 @@ when the active invoking Principal is that User, the User currently has access
 to the Workspace, and the selected ModelConfig or other Agent input declares
 the matching User Secret key. A Service Account cannot use a User-owned Secret.
 
-Connection- and Trigger-owned Secrets are internal lifecycle data. Generic Secret routes never create, enumerate, replace, or delete them. The owning Connector operation creates or rotates their values and returns only the safe Connection or Trigger projection. Runtime resolution permits a Connection-owned Secret only for that exact currently authorized Connection and a Trigger-owned Secret only for its inbound source operation. Trigger credentials never become Agent input or satisfy a tool Connection.
+Connection-, Trigger-, and A2A push-configuration-owned Secrets are internal
+lifecycle data. Generic Secret routes never create, enumerate, replace, or
+delete them. The owning operation creates or rotates their values and returns
+only its safe resource projection. Runtime resolution permits a
+Connection-owned Secret only for that exact currently authorized Connection, a
+Trigger-owned Secret only for its inbound source operation, and an A2A push
+Secret only for the exact active configuration and fenced delivery generation.
+Trigger and push credentials never become Agent input or satisfy a tool
+Connection.
 
 Secret keys, owner references, timestamps, and versions are protected metadata even though they are not plaintext Secret values. Management operations disclose them only after current authorization. Management authority and runtime resolution authority remain separate.
 
@@ -162,7 +176,7 @@ The row enforces these consistency rules:
 - a tombstone has `deleted_at IS NOT NULL` and null `ciphertext`, `nonce`, and `encryption_key_id`;
 - one partial unique index covers `(organization_id, workspace_id, owner_type, owner_id, key)` only for active rows;
 - owner-scoped listing uses an index beginning with `(organization_id, workspace_id, owner_type, owner_id, key, id)`;
-- a Workspace owner has `owner_id = workspace_id`, a User owner must be a current platform User eligible for the stored Workspace, and a Connection or Trigger owner must be that active resource in the same stored tenant boundary;
+- a Workspace owner has `owner_id = workspace_id`, a User owner must be a current platform User eligible for the stored Workspace, and a Connection, Trigger, or A2A push configuration owner must be that active resource in the same stored tenant boundary;
 - no update can change `id`, `organization_id`, `workspace_id`, `owner_type`, `owner_id`, `key`, or `created_at`.
 
 Bounded text columns preserve the validated public limits. `version` uses a non-overflowing positive integer domain, timestamps preserve UTC instants, and `ciphertext` and `nonce` use binary columns rather than text or JSON encoding. `encryption_key_id` is bounded and non-blank; it identifies key material but never contains that material.
@@ -230,7 +244,7 @@ sequenceDiagram
 
 Direct deletion locks the active row, rechecks authorization and `expected_version`, nulls `ciphertext`, `nonce`, and `encryption_key_id`, sets `deleted_at`, and commits the tombstone and security audit event atomically. It performs no cryptographic operation.
 
-Owner deletion first makes the owner ineligible for Secret creation and replacement. It then tombstones owned Secrets in bounded, restartable batches. Durable batch progress makes interruption and replay safe. Owner deletion is complete only after an authoritative query finds no active owned Secret, and reconciliation repeats cleanup after interruption. Connection revocation and Trigger source cleanup apply their owning lifecycle before tombstoning associated Secrets. Secret resolution denies as soon as any owner is disabled, revoked, deleting, or otherwise ineligible even if physical cleanup has not completed.
+Owner deletion first makes the owner ineligible for Secret creation and replacement. It then tombstones owned Secrets in bounded, restartable batches. Durable batch progress makes interruption and replay safe. Owner deletion is complete only after an authoritative query finds no active owned Secret, and reconciliation repeats cleanup after interruption. Connection revocation, Trigger source cleanup, and A2A push-configuration fencing apply their owning lifecycle before tombstoning associated Secrets. Secret resolution denies as soon as any owner is disabled, revoked, deleting, or otherwise ineligible even if physical cleanup has not completed.
 
 ## Failure, Cancellation, and Retry Semantics
 

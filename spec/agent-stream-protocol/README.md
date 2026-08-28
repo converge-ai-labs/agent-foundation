@@ -24,7 +24,11 @@ Read `00`, then [Agent UI Runtime Subagents and Surfaces](../agent-ui/05-runtime
 
 ### Add Hosted AG-UI Delivery
 
-Read `00`, then [Foundation Service](../foundation-service/README.md) for hosted durability boundaries. A hosted adapter can use the same observer, but Foundation owns its lifecycle records, event identities, retention, and delivery.
+Read `00`, then [Foundation Hosted
+AG-UI](../foundation-service/30-hosted-ag-ui.md) for input acceptance, durable
+Run/Turn binding, event filtering, lifecycle projection, cursor, and SSE.
+Foundation uses the same observer while owning lifecycle records, event
+identities, retention, and delivery.
 
 ## Authority Rules
 

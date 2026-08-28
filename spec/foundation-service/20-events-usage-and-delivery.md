@@ -15,6 +15,7 @@ Harness observations follow the accepted Agent Stream Protocol path. Foundation 
 | Turn Stream entry    | Bounded Turn-scoped live or lifecycle projection in Redis       | Transport and bounded replay only                   |
 | Item                 | User-visible semantic unit within a Turn                        | Retained projection in `TurnReplaySnapshot`         |
 | Lifecycle event      | Fact that a Foundation resource transition committed            | Relational audit and publication fact               |
+| Native notification  | Lightweight subscribed resource wake-up                         | Best-effort delivery only                           |
 | UsageRecord          | Immutable incurred-usage fact                                   | Durable usage attribution after validated ingestion |
 | Destination record   | Delivery progress for one authorized external sink              | Delivery only; never source lifecycle authority     |
 
@@ -35,9 +36,11 @@ flowchart LR
     Redis[Turn-scoped Redis Stream]
 
     subgraph Control[Control role]
-        Subscriber[Authorized subscriber]
-        Envelope[Foundation delivery envelope]
-        Subscriber --> Envelope
+        Subscriber[Authorized source reader]
+        Native[Native SSE or notification projection]
+        Agui[Hosted AG-UI projection]
+        A2A[A2A Task and Artifact projection]
+        Subscriber --> Native & Agui & A2A
     end
 
     Publisher --> Redis --> Subscriber
@@ -48,6 +51,13 @@ One observer belongs to one Harness Run and is consumed by its current worker. T
 Before publishing its first live observation, the worker durably binds the immutable Harness Run identity to the current TurnAttempt. It then appends bounded messages to the one stable tenant-scoped Redis Stream owned by the Turn. Replacement TurnAttempts create fresh Harness Runs but continue the same Turn Stream; every entry carries exact TurnAttempt and Harness Run provenance.
 
 Redis Stream entry IDs are bounded live replay cursors, not product authority. Stream possession and cursor knowledge grant no access. Control authenticates and authorizes the caller against current Foundation state before reading or subscribing, and it releases all database sessions before streaming.
+
+The [Protocol Gateway](28-protocol-gateway.md) owns each public wire projection.
+Native Turn SSE preserves the Turn Stream cursor; Hosted AG-UI assigns its own
+retained delivery cursor; A2A exposes current Task state rather than a Native
+cursor. The best-effort Native notification WebSocket carries only wake-up
+metadata and has no retained delivery source. None of these projections changes
+the source event or Item.
 
 Bounded queues and explicit overflow handling prevent a slow client from blocking Harness work. When the retained Redis prefix is unavailable, control returns the explicit replay-gap semantics defined by the stream owner. Once a Turn seals with a complete, nonempty stream within the retention bounds, Foundation publishes its immutable `TurnReplaySnapshot`; reconnect and retained reads use the snapshot rather than reconstructing presentation from relational rows, object listings, telemetry, or Harness state. An incomplete, trimmed, empty, or oversized stream reports retained replay as unavailable.
 
@@ -83,6 +93,11 @@ The schema is conceptual. A live Turn Stream envelope carries its Redis entry ID
 Re-delivery of the same source to the same destination preserves `delivery_id`. Source commitment, Turn Stream append, retained-snapshot publication, destination acknowledgement, and client receipt are separate facts.
 
 Streaming routes follow the [HTTP streaming contract](05-http-ingress-and-request-contract.md#streaming-connections). Disconnect never cancels or seals a Turn.
+
+The old combined Workspace SSE/WebSocket delivery surface does not exist.
+Durable Workspace lifecycle reads, detailed Turn SSE, and best-effort Native
+notifications use the distinct contracts in [Native Streaming and
+Notifications](29-native-streaming-and-notifications.md).
 
 ## Durable Usage Ingestion
 
@@ -152,3 +167,5 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
 08. Late stale-TurnAttempt usage cannot change lifecycle state.
 09. Object references and signed delivery URLs grant no product authority.
 10. Telemetry observes the system and never acts as durable lifecycle authority.
+11. Native, Hosted AG-UI, and A2A delivery are independent projections over
+    shared Foundation facts and never translate through one another.

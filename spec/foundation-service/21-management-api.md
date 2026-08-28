@@ -18,7 +18,18 @@ authorization, and error codes are owned in detail by [Foundation Skill
 Management](27-skill-management.md#public-management-api); this catalog does not
 redefine them.
 
-The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and external webhook payloads retain their own contracts. The deployment-authenticated [Harness plugin artifact operator API](26-harness-plugin-artifacts-and-runtime-loading.md#internal-operator-api) and [Environment connector package operator API](19-environment-management.md#provider-catalog-and-workspace-selection) are deliberately outside `/api/v1` and are not added to public clients.
+The API is the Native boundary consumed by Foundation SDKs and the remote
+`agent-foundation` CLI. The [Protocol Gateway](28-protocol-gateway.md) also
+exposes Hosted AG-UI and A2A as separate standard protocol surfaces; they call
+the same application authority but are not `/api/v1` aliases. SDKs map this
+contract and do not invent another lifecycle, retry policy, or HTTP client
+semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and
+external webhook payloads retain their own contracts. The
+deployment-authenticated [Harness plugin artifact operator
+API](26-harness-plugin-artifacts-and-runtime-loading.md#internal-operator-api)
+and [Environment connector package operator
+API](19-environment-management.md#provider-catalog-and-workspace-selection) are
+deliberately outside `/api/v1` and are not added to public clients.
 
 ## Scope and Authorization
 
@@ -66,8 +77,9 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Environment revisions     | `/environments/{environment_id}/revisions`, `/environment-revisions/{environment_revision_id}`                                              | Immutable connection configuration, credential references, permissions, and connector lock |
 | Secrets                   | Routes owned by [Secret Management](11-secret-management.md)                                                                                | Workspace and User ownership with metadata-only reads and write-only values                |
 | Security audit            | `/organizations/{organization_id}/security-audit-events`, `/workspaces/{workspace_id}/security-audit-events`, `/users/me/security-activity` | IAM-owned bounded security projections                                                     |
-| Lifecycle events          | `/workspaces/{workspace_id}/events` and resource-scoped event collections                                                                   | Durable replay, not ordinary pagination                                                    |
-| Delivery stream           | `GET /workspaces/{workspace_id}/stream`, `WS /workspaces/{workspace_id}/stream`                                                             | SSE or WebSocket over the same retained and live delivery-envelope contract                |
+| Lifecycle events          | `/workspaces/{workspace_id}/events` and resource-scoped event collections                                                                   | Durable lifecycle replay with its own cursor                                               |
+| Turn stream               | `GET /turns/{turn_id}/stream`                                                                                                               | Detailed Turn SSE with bounded replay and live cutover                                     |
+| Native notifications      | `WS /notifications`                                                                                                                         | Explicit Thread or Workspace subscriptions; best-effort wake-ups without replay            |
 | Usage records             | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                             |
 
 The selected [distribution](02-distribution-composition-and-extensions.md) registers exactly the routes for its supported capabilities. An EE or Cloud capability can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
@@ -284,9 +296,19 @@ cursor-paginated.
 
 Ordinary collections use `limit` and opaque `cursor` exactly as defined by Platform API Conventions. Each resource defines deterministic default ordering and explicit filters. Cursors are bound to principal scope, filter, order, and retention.
 
-Lifecycle and interaction replay use opaque replay cursors over the retained Workspace stream, with optional Session, Thread, Turn, TurnAttempt, source-kind, and event-type filters. A replay response labels each envelope source kind and reports `replay_gap` when the cursor generation differs or its sequence precedes the retained floor. The response includes the current generation, retained floor, high watermark, and authorized resource links. The client then reads current resource state and an authorized semantic snapshot; it never treats the newest event as a complete missing history.
+Workspace lifecycle replay uses its own opaque cursor over authorized durable
+`lifecycle_events`. It supports only owning lifecycle/resource filters and
+reports an explicit retained-floor gap. It does not include detailed Turn text,
+reasoning, tool, or message deltas.
 
-`GET /api/v1/workspaces/{workspace_id}/stream` opens SSE. A WebSocket upgrade at `/api/v1/workspaces/{workspace_id}/stream` exposes the same envelope, cursor, filters, gap response, and replay-to-live cutover under the shared [HTTP streaming boundary](05-http-ingress-and-request-contract.md#streaming-connections). Transport disconnect does not cancel work, and live-only AG-UI observations do not advance the retained replay cursor.
+`GET /api/v1/turns/{turn_id}/stream` opens the detailed Turn SSE and resumes
+with `Last-Event-ID`. `WS /api/v1/notifications` opens the distinct Native
+best-effort notification channel and begins with no subscriptions. Their
+framing, topic registry, cursor, gap, heartbeat, and reconciliation behavior are
+owned by [Native Streaming and
+Notifications](29-native-streaming-and-notifications.md). There is no
+`GET` or `WS /api/v1/workspaces/{workspace_id}/stream` route and no detailed
+Turn WebSocket.
 
 ## Concurrency and Idempotency
 
@@ -321,3 +343,5 @@ The API uses the shared bounded errors and stable codes enforced by the [HTTP in
 10. Connector and Model Provider catalog routes never install or import
     caller-selected code, and public Turn routes never forge Trigger,
     Connection, or model selections.
+11. Workspace lifecycle events, Turn SSE, and Native WebSocket notifications
+    have separate envelopes, continuation behavior, and replay guarantees.

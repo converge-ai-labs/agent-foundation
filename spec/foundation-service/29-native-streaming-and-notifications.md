@@ -1,0 +1,256 @@
+# Native Streaming and Notifications
+
+## Design Position
+
+Foundation Native clients use three deliberately different delivery surfaces:
+
+- Turn SSE carries detailed ordered interaction observations for one Turn and
+  supports bounded replay with the Turn Stream cursor;
+- the Workspace event collection reads durable lifecycle facts
+  with its own relational cursor; and
+- one WebSocket notification endpoint delivers lightweight best-effort wake-ups
+  for explicitly subscribed resources.
+
+These surfaces do not share an envelope, cursor, replay promise, or authority.
+There is no combined Workspace SSE/WebSocket stream and no WebSocket variant of
+the detailed Turn stream.
+
+## Boundaries
+
+| Concern                                                  | Owner                                                                      |
+| -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Turn Stream entries, Redis cursor, and retained snapshot | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) |
+| Durable lifecycle facts and retention floor              | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) |
+| Resource and lifecycle collection authorization          | [Management API](21-management-api.md) and the owning domain               |
+| HTTP and streaming resource safety                       | [HTTP ingress](05-http-ingress-and-request-contract.md)                    |
+| SSE framing and Native notification WebSocket            | This document                                                              |
+
+A transport cursor or notification identity grants no resource access. Every
+attachment authenticates and authorizes the selected resource under current
+[IAM](10-identity-and-access-management.md).
+
+## Turn SSE
+
+```http
+GET /api/v1/turns/{turn_id}/stream
+Accept: text/event-stream
+Last-Event-ID: <turn-stream-cursor>
+```
+
+`Last-Event-ID` is optional. When present, it names the last completely applied
+Turn Stream entry and replay begins exclusively after it. A client does not
+place the cursor in an authorization header, query filter, or Foundation
+resource ID.
+
+Each data event uses canonical SSE framing:
+
+```text
+id: <turn-stream-cursor>
+event: <event_type>
+data: <one-line JSON TurnStreamEvent>
+
+```
+
+`id` is the Redis Stream entry ID retained in the Turn replay snapshot.
+`event` equals the bounded `event_type` carried by `data`. `data` is the complete
+versioned `TurnStreamEvent` owned by the persistence contract. JSON is encoded
+on one UTF-8 line; clients ignore unknown additive object fields but do not
+guess unknown required schema versions.
+
+The service sends SSE comments as heartbeats. A heartbeat carries no `id`, does
+not advance replay, and is not a Turn observation. The server can close a
+healthy connection at its configured maximum lifetime; clients reconnect with
+the last applied event ID.
+
+### Replay and Live Cutover
+
+The attachment establishes one high watermark after authorization, returns the
+authorized retained or live entries through that watermark in order, and then
+subscribes after the same boundary. An entry is neither skipped nor delivered
+twice by the replay-to-live cutover. Duplicate delivery after a client loses an
+acknowledgement remains possible, so clients deduplicate by cursor or stable
+event identity.
+
+If `Last-Event-ID` is covered by the live Redis prefix or complete immutable
+snapshot, replay continues from that source. If the requested prefix is no
+longer available and no complete snapshot bridges it, the route returns
+`409 turn_stream_replay_gap` before opening SSE when the gap is known during
+attachment. A gap discovered after the response starts emits one terminal
+`a13n.foundation.replay_gap` event without a replay-advancing `id` and closes
+the attachment. Its bounded data identifies the Turn, requested cursor,
+available floor, and current high watermark; it contains no missing content.
+
+The client reconciles a gap through current Turn, Item, and pending-action
+reads. It never treats the first surviving stream event as complete history.
+
+A sealed Turn stream closes after its final retained observation is delivered.
+The terminal stream observation reports a projection of the authoritative
+sealed Turn outcome; closing the connection alone does not prove completion.
+
+## Workspace Lifecycle Event Collection
+
+```http
+GET /api/v1/workspaces/{workspace_id}/events?limit=50&cursor=<opaque>
+```
+
+This is a bounded JSON collection, not an SSE endpoint. It returns authorized
+durable lifecycle and management facts in ascending relational sequence order:
+
+```python
+class WorkspaceEventPage:
+    items: tuple[LifecycleEventResource, ...]
+    next_cursor: str | None
+    retained_floor: str
+    high_watermark: str
+```
+
+The schema is a conceptual wire shape. The cursor binds the Workspace,
+Principal scope, filters, and last returned lifecycle sequence. A cursor below
+the retained floor returns `409 lifecycle_replay_gap` with the safe current
+floor and high watermark. Resource filters never mix detailed Turn token,
+reasoning, tool-argument, or message deltas into this collection.
+
+Clients use this collection to reconcile background lifecycle and management
+changes after a notification disconnect. It does not replace resource reads or
+the detailed Turn SSE.
+
+## Notification WebSocket
+
+```http
+GET /api/v1/notifications
+Upgrade: websocket
+Sec-WebSocket-Protocol: foundation.notifications.v1
+```
+
+The endpoint accepts exactly the `foundation.notifications.v1` subprotocol.
+Authentication completes before upgrade. A connection begins with no resource
+subscription and therefore receives no product notification until the client
+subscribes.
+
+Client and server data frames are UTF-8 JSON objects with a required `type`.
+Unknown frame types or fields are protocol errors.
+
+### Subscription Frames
+
+```python
+class NotificationSubscription:
+    subscription_id: str
+    scope: Literal["thread", "workspace"]
+    resource_id: str
+    topics: tuple[NotificationTopic, ...]
+
+
+class SubscribeFrame:
+    type: Literal["subscribe"]
+    request_id: str
+    subscriptions: tuple[NotificationSubscription, ...]
+
+
+class UnsubscribeFrame:
+    type: Literal["unsubscribe"]
+    request_id: str
+    subscription_ids: tuple[str, ...]
+```
+
+The schemas are wire contracts. A `thread` subscription names a Thread; the
+server resolves its Workspace. A `workspace` subscription names a Workspace.
+There is no Organization-, deployment-, or implicit all-Workspace subscription.
+
+One subscribe frame is atomic. The server validates limits and authorizes every
+subscription and topic before changing connection state. If one entry fails,
+the whole frame fails and prior subscriptions remain unchanged. A successful
+`subscribed` or `unsubscribed` frame echoes `request_id` and the resulting
+subscription IDs. A rejected request returns an `error` frame with a stable
+safe code and leaves subscription state unchanged.
+
+The stable topic registry is:
+
+| Topic                    | Thread scope | Workspace scope | Meaning                                                    |
+| ------------------------ | -----------: | --------------: | ---------------------------------------------------------- |
+| `thread.updated`         |          Yes |             Yes | Thread version, current Turn, or head may have changed     |
+| `turn.updated`           |          Yes |             Yes | A correlated Turn lifecycle or summary may have changed    |
+| `pending_action.updated` |          Yes |             Yes | Authorized pending-action state may require reconciliation |
+| `session.updated`        |           No |             Yes | Session list or summary may have changed                   |
+
+Adding a topic is additive. Clients ignore an unknown notification topic only
+after negotiating a profile that permits additive topics; they never interpret
+it as a known state transition.
+
+### Notification Envelope
+
+```python
+class NotificationFrame:
+    type: Literal["notification"]
+    schema_version: Literal["1"]
+    notification_id: str
+    subscription_id: str
+    topic: NotificationTopic
+    workspace_id: str
+    resource_type: str
+    resource_id: str
+    resource_version: int | None
+    session_id: str | None
+    thread_id: str | None
+    turn_id: str | None
+    occurred_at: datetime
+```
+
+The notification is a best-effort wake-up. It carries no prompt, message text,
+reasoning, tool arguments or results, pending response schema, Artifact content,
+Secret, credential, or internal execution identity. It is not acknowledged,
+persisted for the client, replayed, or ordered across subscriptions. Duplicate,
+coalesced, delayed, and dropped notifications are all permitted.
+
+After any disconnect, the client resubscribes and reconciles through Workspace
+events and current resource reads. `notification_id` supports diagnostics and
+local duplicate suppression only; it is not a cursor.
+
+### Heartbeat, Limits, and Close
+
+The server emits an application `heartbeat` frame containing an opaque nonce
+and timestamp. The client returns `heartbeat_ack` with the same nonce within
+the declared interval. Heartbeats carry no product state. Missing acknowledgement
+closes the connection.
+
+The connection has bounded frame size, subscriptions, topics, queue depth,
+idle interval, and lifetime. Overflow closes only that connection. Standard
+close codes have these meanings:
+
+|   Code | Meaning                                                     |
+| -----: | ----------------------------------------------------------- |
+| `1000` | Normal client or server close                               |
+| `1001` | Service drain or bounded connection replacement             |
+| `1008` | Authentication, authorization, or protocol-policy violation |
+| `1009` | Frame or subscription limit exceeded                        |
+| `1011` | Required notification dependency failed                     |
+
+Authentication failure known before upgrade returns the ordinary HTTP `401`
+and does not create a WebSocket.
+
+## Failure Semantics
+
+| Failure                                    | Client action                                                  | Turn consequence |
+| ------------------------------------------ | -------------------------------------------------------------- | ---------------- |
+| SSE cursor is outside retained history     | Read current resources and reattach from an available boundary | None             |
+| SSE delivery disconnects                   | Reconnect with last fully applied event ID                     | None             |
+| Workspace lifecycle cursor expires         | Reconcile current resources and restart at returned floor      | None             |
+| Notification connection drops or overflows | Reconnect, resubscribe, and reconcile                          | None             |
+| Subscription authorization is revoked      | Subscription is denied or removed; safe error/close follows    | None             |
+| Service drains                             | Reconnect to another ready replica                             | None             |
+
+## Compatibility and Invariants
+
+SSE event schemas and Turn Stream cursor compatibility belong to the Turn Stream
+owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event
+owner. `foundation.notifications.v1` versions the WebSocket frame contract;
+breaking frame or subscription changes require another subprotocol.
+
+1. Detailed Turn observations use SSE only.
+2. Durable Workspace lifecycle replay uses a bounded JSON collection only.
+3. Native WebSocket notifications are best effort and have no cursor or replay.
+4. A notification contains wake-up metadata, never detailed interaction
+   content or a domain command.
+5. A new WebSocket connection has no subscriptions.
+6. Every subscription is explicitly authorized, bounded, and removed on
+   disconnect.
+7. Disconnecting any Native transport never cancels or seals a Turn.

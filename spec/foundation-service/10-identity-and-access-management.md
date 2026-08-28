@@ -17,6 +17,7 @@ IAM authorizes a caller to inspect, change, invoke, or administer Foundation res
 | Agent revision, Turn, and TurnAttempt identity                  | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
 | Model-triggered tool and Environment authority                  | Harness run grants and providers                                       | Narrows an authorized invocation independently from product RBAC                 |
 | OSS, EE, and Cloud capability composition                       | [Distribution boundary](02-distribution-composition-and-extensions.md) | Adds capabilities without edition fields or bypassing common IAM checks          |
+| Native, Hosted AG-UI, and A2A authentication                    | [Protocol Gateway](28-protocol-gateway.md)                             | Maps protocol credentials to this document's Principals and authorizer           |
 
 The canonical resource hierarchy is:
 
@@ -43,6 +44,14 @@ The common relational model permits several Organizations so EE and Cloud can us
 - an Organization Admin may create and delete additional Workspaces.
 
 OSS supplies local email-and-password authentication, invitations, browser sessions, Workspace-bound User and Service Account API keys, built-in roles, and direct User or Service Account RoleBindings. It does not supply SSO, OIDC, external identity records, Groups, custom roles, Organization-bound API keys, product quotas, billing, or platform-operator elevation.
+
+Native, Hosted AG-UI, and A2A use these same credential and Principal kinds.
+Hosted AG-UI can use the current browser session or bearer API key. A2A runtime
+security schemes resolve to a User or Service Account through the existing
+credential boundary. Foundation defines no AG-UI or A2A Principal, role, API
+key, or implicit Agent identity. Public A2A Agent Card reads are the deliberate
+anonymous discovery exception and return only the safe projection owned by the
+[A2A contract](31-a2a.md#agent-card-projection).
 
 EE and Cloud distributions add capabilities through the explicit composition contract while preserving the identifiers, tenant fields, Principal meaning, credential boundary, and authorizer contract defined here. Core rows contain no `edition`, `plan`, `license`, or deployment-placement field.
 
@@ -358,12 +367,12 @@ An Organization role applies only to a User. The last effective Organization Adm
 
 ### Workspace roles
 
-| Role key  | Permissions                                                                                                                                                                                                                    |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `viewer`  | Read safe Workspace metadata, resources, managed Skill metadata/content, and histories; read Secret metadata but never Secret values                                                                                           |
-| `runner`  | Viewer permissions; invoke every Agent; cancel active Turns and retry eligible sealed Turns in the Workspace                                                                                                                   |
-| `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration; create, revise, delete, and bind Workspace Skills; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
-| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                |
+| Role key  | Permissions                                                                                                                                                                                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `viewer`  | Read safe Workspace metadata, resources, managed Skill metadata/content, and histories; read Secret metadata but never Secret values                                                                                                                                   |
+| `runner`  | Viewer permissions; invoke every Agent; cancel active Turns and retry eligible sealed Turns in the Workspace                                                                                                                                                           |
+| `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration, including protocol metadata and policy; create, revise, delete, and bind Workspace Skills; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
+| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                                                        |
 
 The role table does not decide whether Tool, Connector, Environment, or another
 Agent input is an independent Workspace resource. The [Skill Management
@@ -425,6 +434,11 @@ async def authorize(request: AuthorizationInput) -> AuthorizationDecision:
 The code is semantic pseudocode. Implementations centralize these checks but use canonical short-session helpers and never retain a database session across streaming, agent execution, or external I/O.
 
 No credential contains a role snapshot. Identifier possession, an earlier allow, a cursor, an idempotency key, a queue message, or an existing Harness checkpoint never preserves authority for another operation.
+
+Persisted Hosted AG-UI `threadId`/`runId` bindings and A2A Context, Task,
+Message, Artifact, or push-configuration IDs are also non-authoritative
+selectors. Every operation and stream continuation resolves their owning
+Foundation resource and evaluates current authority again.
 
 ## Product Authorization and Run Grants
 
