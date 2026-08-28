@@ -9,6 +9,7 @@ from .attachments import (
     EIPSessionSource,
     EnvironmentRuntimeAttachment,
     HttpEIPSessionSource,
+    StdioEIPCarrier,
     StdioEIPSessionSource,
 )
 from .direct_local.configuration import (
@@ -41,6 +42,22 @@ from .factories import (
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
+from .local_envd import (
+    A13N_AGENT_ENVD_EXECUTABLE,
+    LocalEnvdEnvironmentProvider,
+    LocalEnvdEnvironmentProviderFactory,
+    LocalEnvdEnvironmentResource,
+    LocalEnvdNetworkMode,
+    LocalEnvdProviderConfiguration,
+    LocalEnvdProviderRuntime,
+    LocalEnvdProviderStateData,
+    LocalEnvdResourcePhase,
+    LocalEnvdRuntimeAllocator,
+    LocalEnvdShellProfile,
+    LocalEnvdWorkspaceConfiguration,
+    TemporaryLocalEnvdRuntimeAllocator,
+    resolve_agent_envd_executable,
+)
 from .management import EnvironmentProvider, EnvironmentProviderRuntime, EnvironmentResource
 from .models import (
     EnvironmentAttachmentConcurrency,
@@ -61,6 +78,7 @@ except PackageNotFoundError:  # pragma: no cover - source-tree imports without i
     __version__ = "0.0.0"
 
 __all__ = [
+    "A13N_AGENT_ENVD_EXECUTABLE",
     "ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP",
     "AcceptedWebSocketEIPSessionSource",
     "DirectLocalEnvironmentAttachment",
@@ -99,9 +117,23 @@ __all__ = [
     "EnvironmentResourceAllocation",
     "EnvironmentRuntimeAttachment",
     "HttpEIPSessionSource",
+    "LocalEnvdEnvironmentProvider",
+    "LocalEnvdEnvironmentProviderFactory",
+    "LocalEnvdEnvironmentResource",
+    "LocalEnvdNetworkMode",
+    "LocalEnvdProviderConfiguration",
+    "LocalEnvdProviderRuntime",
+    "LocalEnvdProviderStateData",
+    "LocalEnvdResourcePhase",
+    "LocalEnvdRuntimeAllocator",
+    "LocalEnvdShellProfile",
+    "LocalEnvdWorkspaceConfiguration",
     "ResolvedEnvironmentProviderSpec",
+    "StdioEIPCarrier",
     "StdioEIPSessionSource",
+    "TemporaryLocalEnvdRuntimeAllocator",
     "__version__",
     "build_environment_provider_factory_catalog",
     "discover_environment_provider_factory_references",
+    "resolve_agent_envd_executable",
 ]

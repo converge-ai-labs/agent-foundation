@@ -37,6 +37,16 @@ class StorageSettings(BaseModel):
         return value.expanduser().resolve(strict=False)
 
 
+class EnvdRuntimeSettings(BaseModel):
+    """Bounded Host behavior for the package-selected Local Sandbox runtime."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    download_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
+    command_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    max_archive_bytes: int = Field(default=512 * 1024 * 1024, ge=1024, le=2 * 1024 * 1024 * 1024)
+
+
 class AgentUiSettings(BaseModel):
     """Process settings required to construct the surface-neutral application."""
 
@@ -44,6 +54,7 @@ class AgentUiSettings(BaseModel):
 
     storage: StorageSettings
     configuration: ConfigurationSettings = ConfigurationSettings()
+    envd_runtime: EnvdRuntimeSettings = EnvdRuntimeSettings()
     process_settings_path: Path | None = None
     shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=300)
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
@@ -70,4 +81,4 @@ class AgentUiSettings(BaseModel):
         return normalized
 
 
-__all__ = ["AgentUiSettings", "DurabilityProfile", "StorageSettings"]
+__all__ = ["AgentUiSettings", "DurabilityProfile", "EnvdRuntimeSettings", "StorageSettings"]

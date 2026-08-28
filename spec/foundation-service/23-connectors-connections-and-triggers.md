@@ -404,7 +404,7 @@ The worker reconstructs one in-process Connector Toolset from the
 frozen declarations. Each candidate is a metadata-aware function tool over a
 Provider call adapter. The Harness mandatory tool-surface resolver, Pydantic Tool
 Manager, and outer tool-execution boundary remain the sole schema, collision,
-authorization, credential, result-safety, and model-integration path.
+authorization, credential, result-safety, and model-adapter path.
 
 ```mermaid
 sequenceDiagram

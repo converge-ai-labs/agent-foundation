@@ -117,7 +117,9 @@ The default shell path projects no credential. A provider that must inject one o
 
 Managed tools and first-party Environment operations enforce finite inline and per-capture output ceilings, explicit incompleteness, and provider-owned aggregate storage bounds. Direct Local bounds actual private-spool bytes. Envd reserves separate finite stdout/stderr allowances under a daemon-wide private disk-spool ceiling and retains valid references until explicit release or generation end. Harness model-facing limits can narrow what is read or projected but never widen provider capture ceilings.
 
-This does not prevent trusted Python from allocating an oversized object before the wrapper receives it. OS/container limits remain the final process-memory boundary.
+Locally executed MCP function results cross the same final output boundary after upstream `MCPToolset` has received and mapped them. The code-owned default truncation policy therefore bounds model-visible text and JSON but is not a transport-body, remote-process, or client-materialization limit. Provider-native MCP runs inside the provider path and does not cross this local function boundary. Native multimodal MCP content remains subject to the later model-request content boundary.
+
+This does not prevent trusted Python or an MCP client from allocating an oversized object before the wrapper receives it. OS/container limits remain the final process-memory boundary.
 
 ## State Integrity
 

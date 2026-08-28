@@ -26,13 +26,13 @@ Pydantic's finalized Capability map and ToolManager remain authoritative. Harnes
 
 Capability availability and Capability grant are distinct. The Harness assigns every Capability to one construction source and rejects a type or reserved ID from any source not explicitly allowed:
 
-| Source                                     | Accepted value                                                        | Authority boundary                                           |
-| ------------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Native `AgentSpec.capabilities`            | Native built-ins and exact Host-authorized serializable feature types | Definition behavior only; no fresh Host authority            |
-| `AgentDefinition.capabilities`             | Concrete `AbstractCapability[AgentContext]` feature instances         | Trusted process-local definition behavior                    |
-| `AbstractHarnessPlugin.get_capabilities()` | Concrete plugin-owned feature or infrastructure instances             | Plugin contribution only                                     |
-| Mandatory Harness infrastructure           | Exact Harness-created concrete types                                  | Framework authority; never declarative or caller-replaceable |
-| `RunBindings.capabilities`                 | Exact documented concrete fresh attachment/policy types               | Current-run authority under reserved types and IDs           |
+| Source                                     | Accepted value                                                                                           | Authority boundary                                           |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Native `AgentSpec.capabilities`            | Native built-ins, first-party Harness serializable feature types, and exact Host-authorized custom types | Definition behavior only; no fresh Host authority            |
+| `AgentDefinition.capabilities`             | Concrete `AbstractCapability[AgentContext]` feature instances                                            | Trusted process-local definition behavior                    |
+| `AbstractHarnessPlugin.get_capabilities()` | Concrete plugin-owned feature or infrastructure instances                                                | Plugin contribution only                                     |
+| Mandatory Harness infrastructure           | Exact Harness-created concrete types                                                                     | Framework authority; never declarative or caller-replaceable |
+| `RunBindings.capabilities`                 | Exact documented concrete fresh attachment/policy types                                                  | Current-run authority under reserved types and IDs           |
 
 A type is denied from every unlisted source. Mandatory infrastructure and run-only authority types never enter the declarative custom-type catalog. A definition or plugin instance cannot use `for_run()` to replace itself with a run-only reserved type or ID, and a run attachment cannot launder itself into definition or mandatory infrastructure.
 
@@ -71,7 +71,7 @@ class CapabilityTypeCatalog(
 
 Every registered class is a direct dataclass-declared `AbstractCapability`, has a non-blank stable serialization name, does not collide with native or Harness names, is authorized for the `AgentSpec` source, and can participate in deterministic native schema construction. The Host owns package discovery, installation trust, artifact locks, and catalog population. Two builders can use different immutable catalogs in one process without global mutation.
 
-Before `Agent.from_spec()`, the Harness validates every visible `CapabilitySpec` name and nested capability-valued spec against the native registry plus the exact catalog. After construction, it traverses the complete instantiated Capability tree and verifies type/source permission, stable IDs, singleton constraints, and reserved infrastructure provenance before publishing the executable. At each native run boundary it revalidates the finalized Capability mapping so `for_run()` replacement cannot change a protected type, ID, or source. Custom type availability alone grants no Capability; the `AgentSpec` must explicitly select it.
+Before `Agent.from_spec()`, the Harness validates every visible `CapabilitySpec` name and nested capability-valued spec against the native registry, the closed first-party Harness declarative set, and the exact Host catalog. After construction, it traverses the complete instantiated Capability tree and verifies type/source permission, stable IDs, singleton constraints, and reserved infrastructure provenance before publishing the executable. At each native run boundary it revalidates the finalized Capability mapping so `for_run()` replacement cannot change a protected type, ID, or source. Custom type availability alone grants no Capability; the `AgentSpec` must explicitly select it.
 
 ## AgentContext
 

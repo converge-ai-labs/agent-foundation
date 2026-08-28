@@ -23,11 +23,14 @@ from .database import Database, open_database, short_session, transaction
 from .layout import StorageLayout
 from .models import (
     CompositionSnapshotRecord,
+    HostEnvironmentResourceRecord,
     ImmutableObjectRecord,
+    PendingDeferredRecord,
     RecoveryDiagnosticRecord,
     ResourceRevisionRecord,
     SkillPackageReferenceRecord,
     StoreLeaseRecord,
+    ThreadCheckpointRecord,
 )
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef, RecoveryDiagnostic
 
@@ -173,6 +176,16 @@ class LocalStore:
             referenced = set((await session.execute(select(ResourceRevisionRecord.object_digest))).scalars())
             referenced.update((await session.execute(select(SkillPackageReferenceRecord.object_digest))).scalars())
             referenced.update((await session.execute(select(CompositionSnapshotRecord.object_digest))).scalars())
+            referenced.update((await session.execute(select(ThreadCheckpointRecord.state_object_digest))).scalars())
+            referenced.update((await session.execute(select(PendingDeferredRecord.object_digest))).scalars())
+            provider_state_digests = (
+                await session.execute(
+                    select(HostEnvironmentResourceRecord.selected_provider_state_digest).where(
+                        HostEnvironmentResourceRecord.selected_provider_state_digest.is_not(None)
+                    )
+                )
+            ).scalars()
+            referenced.update(digest for digest in provider_state_digests if digest is not None)
             registrations = tuple(
                 (
                     await session.execute(
@@ -217,6 +230,24 @@ class LocalStore:
             cutoff=cutoff,
         )
         return len(removed) + unregistered
+
+    async def record_recovery_diagnostic(self, *, code: str, detail: str) -> None:
+        """Append bounded path-free recovery evidence from a feature-owned scan."""
+
+        if not code or len(code) > 64 or not detail:
+            raise ValueError("recovery diagnostic fields are invalid")
+        async with transaction(
+            self.database.sessions,
+            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
+        ) as session:
+            session.add(
+                RecoveryDiagnosticRecord(
+                    process_generation=self.process_generation,
+                    code=code,
+                    detail=detail[:255],
+                    recorded_at=datetime.now(UTC),
+                )
+            )
 
     async def recovery_diagnostics(self, *, limit: int = 100) -> tuple[StoreDiagnostic, ...]:
         """Return recent recovery evidence without exposing persistence entities."""

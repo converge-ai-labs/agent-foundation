@@ -6,7 +6,7 @@ Foundation Service is the optional modular durable Host for Agent Foundation. It
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Turn` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and uses `TurnAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Turn; Foundation defines no separate durable Execution resource.
 
-The worker embeds the public Harness Python API. It loads exact [managed Harness plugin revisions](25-harness-plugin-artifacts-and-runtime-loading.md) on demand from each AgentRevision lock, reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness and selected trusted plugins in process. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
+The worker embeds the public Harness Python API. It loads exact [managed Harness plugin revisions](26-harness-plugin-artifacts-and-runtime-loading.md) on demand from each AgentRevision lock, reconstructs process-local Agent values, acquires fresh Environment attachments through the shared Provider package, and calls the Harness and selected trusted plugins in process. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -17,7 +17,7 @@ flowchart LR
     subgraph Control[Control role]
         API[Management and interaction API]
         Auth[Resource authorization]
-        Authoring[Agent and integration authoring]
+        Authoring[Agent and model authoring]
         Interaction[Session, Thread, Turn, and Item]
         Lifecycle[Turn lifecycle]
         Scheduler[Scheduler and reconcilers]
@@ -70,7 +70,7 @@ PostgreSQL is the distributed authority for accepted resources, Thread version a
 | Runtime configuration, process roles, readiness, and drain    | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                                      |
 | OSS, EE, and Cloud application composition                    | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                                |
 | Organization, Workspace, identity, and resource authorization | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                                     |
-| Durable Agent and integration revisions                       | Foundation control plane                                      | Selects exact serializable inputs and dependency locks                                     |
+| Durable Agent revisions and mutable ModelConfigs              | Foundation control plane                                      | Selects exact Agent inputs and freezes current model configuration per Turn                |
 | Managed Harness plugin artifacts and Worker compatibility     | Foundation control plane and Worker runtime                   | Publishes exact trusted wheels and loads them on demand under process-local version checks |
 | Durable Thread resource                                       | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version              |
 | Turn and TurnAttempt                                          | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                              |
@@ -106,7 +106,7 @@ sequenceDiagram
     participant Harness
 
     Caller->>Control: submit Turn with idempotency key
-    Control->>Control: authenticate, authorize, resolve exact revisions
+    Control->>Control: authorize, resolve revisions, snapshot current ModelConfig
     Control->>DB: publish initial state and commit Thread advancement and Turn
     Control-->>Caller: durable acceptance
     Scheduler->>DB: find eligible Turn

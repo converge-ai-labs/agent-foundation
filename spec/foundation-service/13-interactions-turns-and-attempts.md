@@ -38,7 +38,13 @@ Items and replay data are projections of a Turn and never become continuation st
 
 ## Acceptance and Lineage
 
-Turn acceptance authenticates and authorizes the caller or internal principal, validates the selected Session and Thread, resolves exact revisions and policy, applies the scoped idempotency contract, publishes the initial Turn state, and atomically creates or advances the versioned Thread together with the accepted Turn and its lifecycle publication intent. The Turn becomes schedulable only after the complete initial state object is durably available.
+Turn acceptance authenticates and authorizes the caller or internal principal,
+validates the selected Session and Thread, resolves exact revisions and policy,
+freezes the current enabled ModelConfig as a non-secret execution snapshot,
+applies the scoped idempotency contract, publishes the initial Turn state, and
+atomically creates or advances the versioned Thread together with the accepted
+Turn and its lifecycle publication intent. The Turn becomes schedulable only
+after the complete initial state object is durably available.
 
 The accepted operation chooses exactly one lineage form:
 
@@ -81,7 +87,10 @@ Environment management and other non-Agent provider operations retain their owni
 
 ## TurnAttempt and Harness Mapping
 
-One TurnAttempt starts at most one logical Harness Run. Before Harness entry, the worker resolves exact immutable revisions, creates fresh run Capabilities, acquires fresh Environment attachments, and builds fresh `RunBindings`.
+One TurnAttempt starts at most one logical Harness Run. Before Harness entry,
+the worker resolves exact immutable revisions, reuses the Turn-owned model
+execution snapshot, creates fresh run Capabilities, resolves fresh credentials,
+acquires fresh Environment attachments, and builds fresh `RunBindings`.
 
 As soon as the Harness supplies its Run identity and before the worker publishes the first live observation, the worker binds `harness_run_id` immutably to the current TurnAttempt under the attempt fence. That durable binding provides provenance and authorization correlation; it does not define the Turn-scoped Redis Stream, whose stable identity and replay contract are owned by [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md).
 
@@ -110,3 +119,5 @@ Exactly one legal generation-fenced transition wins a cancellation, waiting, or 
 11. Foundation resumes from complete Turn state, projects unmatched Agent tool calls as `unknown_outcome`, and never automatically replays them.
 12. Terminal Turn and TurnAttempt records are immutable; retry and feedback create explicit successor records.
 13. Cancellation records intent and never implies rollback of external effects.
+14. A new Turn freezes current model configuration once; replacement
+    TurnAttempts reuse that snapshot and resolve only fresh credential values.

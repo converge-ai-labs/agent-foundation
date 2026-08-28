@@ -10,8 +10,8 @@ The package owns:
 - sensitive provider-owned `EnvironmentProviderResourceState` envelopes;
 - single-entry `EnvironmentResource` scopes and fresh runtime attachments;
 - typed provider errors with bounded safe projections;
-- the working `a13n.direct-local` built-in;
-- EIP attachment and session-source values shared with managed sandbox providers.
+- the working `a13n.direct-local` and `a13n.local-envd` built-ins;
+- EIP attachment and reusable stdio-carrier values shared with managed sandbox providers.
 
 The source type passed to Agent Harness defines ownership:
 
@@ -27,7 +27,36 @@ async with resource:
 
 The package does not own durable storage, Host authorization or scheduling, Harness runs, model-facing tools, or provider-neutral Environment operations. A Host explicitly manages reusable resources and persists current provider state. The Harness owns a Provider input only through the bounded ephemeral lifecycle.
 
-Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd and Docker are intentionally deferred until their working implementations; E2B is deferred to its planned provider phase. The catalog contains no placeholder factories or fallback provider selection.
+Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd launches one compatible Host-selected `agent-envd` process per entered Resource and uses reusable sequential EIP sessions over its private stdio carrier. Docker and E2B remain deferred to their planned provider phases. The catalog contains no placeholder factories or fallback provider selection.
+
+## Local Envd development
+
+Hosts select the daemon executable once when constructing `LocalEnvdProviderRuntime`. The convenience resolver uses this precedence:
+
+1. an explicit path passed to `resolve_agent_envd_executable()`;
+2. `A13N_AGENT_ENVD_EXECUTABLE`;
+3. `agent-envd` (or `agent-envd.exe`) discovered through `PATH` with `shutil.which()`.
+
+The resolver expands path values, resolves them against the caller's current directory, validates one executable regular file, and returns an absolute path. The package never reads `.env`, changes `PATH`, installs a daemon, or rediscovers the executable after Provider construction.
+
+```python
+from a13n_environment_provider import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+    resolve_agent_envd_executable,
+)
+
+runtime = LocalEnvdProviderRuntime(
+    executable=resolve_agent_envd_executable(),
+    allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+)
+```
+
+Repository developers can optionally copy `.env.example` to `.env` and set `A13N_AGENT_ENVD_EXECUTABLE`. The focused target builds the source-tree daemon, loads `.env` only inside the target shell, defaults the variable to `target/debug/agent-envd`, and runs the real Local Envd tests:
+
+```bash
+make local-envd-test
+```
 
 See the [Environment Provider guide](../../docs/agent-environment-provider/index.md) for high-level Harness usage, Host orchestration, lifecycle reconciliation, and third-party plugin development.
 

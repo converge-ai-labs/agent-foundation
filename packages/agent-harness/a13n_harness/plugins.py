@@ -36,6 +36,10 @@ class PluginOrdering:
     wrapped_by: tuple[str, ...] = ()
     requires: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if self.position not in {None, "outermost", "innermost"}:
+            raise ValueError("PluginOrdering.position must be 'outermost', 'innermost', or None")
+
 
 @dataclass(frozen=True, slots=True)
 class PluginRunExchange:

@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import random
 from collections.abc import Awaitable, Callable, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
 from pydantic_ai.exceptions import (
@@ -81,7 +82,8 @@ class ModelRecoveryPolicy:
     ) -> RunInputValue:
         if self.prompt_factory is None:
             return self.continuation_prompt
-        value = self.prompt_factory(error, attempt_index, messages)
+        detached_messages = deepcopy(tuple(messages))
+        value = self.prompt_factory(error, attempt_index, detached_messages)
         if inspect.isawaitable(value):
             value = await value
         return value

@@ -14,7 +14,9 @@ dependencies = [
     "a13n-harness",
     "a13n-stream-protocol",
     "a13n-logging",
+    "ag-ui-protocol>=0.1.18,<0.2",
     "filelock>=3.20,<4",
+    "httpx2>=2.5,<3",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.31.1,<2.32",
     "pyyaml>=6.0.2,<7",
@@ -57,7 +59,7 @@ harness-version = "0.0.3"
 
 [tool.deptry]
 known_first_party = ["a13n_ui"]
-package_module_name_map = { "a13n-environment-provider" = "a13n_environment_provider", "a13n-harness" = "a13n_harness", "a13n-stream-protocol" = "a13n_stream_protocol", "a13n-logging" = "a13n_logging", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-environment-provider" = "a13n_environment_provider", "a13n-harness" = "a13n_harness", "a13n-stream-protocol" = "a13n_stream_protocol", "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "sqlalchemy" = "sqlalchemy" }
 
 # aiosqlite is loaded by SQLAlchemy through the configured async driver. The
 # runtime packages remain selected for later Agent UI application blocks.

@@ -98,23 +98,93 @@ Direct Local makes no sandbox or network-isolation claim. Its existing path, pro
 
 ### Configuration and runtime
 
-The `a13n.local-envd` provider is the built-in local sandbox. Its versioned credential-free configuration contains one Environment identity, one Host-selected existing workspace root and access policy, bounded command and resource limits, a required native-isolation policy, an explicit network posture, and the required EIP compatibility. It contains no daemon executable path, ambient `PATH` selector, download location, package URL, process ID, private runtime path, or live EIP value.
+The `a13n.local-envd` provider is the built-in local sandbox. Schema version `1` is credential-free and has this exact conceptual public shape:
 
-A fresh typed `LocalEnvdProviderRuntime` supplies the absolute `agent-envd` executable and private-runtime allocator already resolved and validated by the Host. Provider construction records that collaborator but performs no path search, download, installation, subprocess launch, probe, or filesystem mutation. The provider never consults ambient `PATH` and never substitutes another executable. Agent UI's managed-runtime selection contract is defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution); another Host must provide an equivalent resolved runtime explicitly.
+```python
+class LocalEnvdNetworkMode(StrEnum):
+    HOST = "host"
+    DENY = "deny"
 
-The selected daemon must report a compatible release identity through `agent-envd --version` and pass the production-equivalent `agent-envd isolation probe --json` in required mode before provider creation. An explicit outer-Host `disabled` isolation posture is invalid for this built-in. These checks establish local runtime availability; successful EIP initialization against the launched process independently establishes the actual daemon generation, Environment identity, required methods, and protocol compatibility.
+
+class LocalEnvdWorkspaceConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    path: Path
+    read_only: bool = False
+
+
+class LocalEnvdShellProfile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    profile_id: str
+    executable: Path
+    fixed_arguments: tuple[str, ...] = ()
+    allow_login: bool = False
+    max_script_bytes: int = 1024 * 1024
+
+
+class LocalEnvdProviderConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    environment_id: str
+    workspace: LocalEnvdWorkspaceConfiguration
+    execution_network: LocalEnvdNetworkMode = LocalEnvdNetworkMode.HOST
+    trusted_executable_roots: tuple[Path, ...] = ()
+    shell_profiles: tuple[LocalEnvdShellProfile, ...] = ()
+    max_file_bytes: int = 16 * 1024 * 1024
+    max_output_preview_bytes: int = 64 * 1024
+    max_output_bytes_per_stream: int = 1024 * 1024 * 1024
+    max_spool_bytes: int = 64 * 1024 * 1024 * 1024
+```
+
+The workspace, trusted executable roots, and shell executables are absolute after user expansion. The workspace must be an existing accessible directory. Identities are bounded, nonblank, and unique where applicable; paths and fixed arguments contain no NUL; byte limits are positive; the output preview fits the daemon response envelope; and the spool ceiling can reserve both output streams for one command. Local Envd always selects required native isolation. The user cannot disable it through provider configuration.
+
+The provider maps this narrow model to strict envd bootstrap configuration: one `workspace` root mount, its read-only or writable policy, required isolation, the selected network ceiling, trusted executable roots, shell profiles, and the bounded file/output/spool limits. Schema version 1 always permits `stat`, `read_text`, `open_reader`, `list`, `find`, and `search`; a writable workspace additionally permits `write_text`, `open_writer`, `remove`, and `move`; command-enabled configuration additionally permits `command_cwd` and `executable_source`. It intentionally does not expose an arbitrary envd operation subset or enable `mkdir`, `patch_text`, or `copy`. It does not expose raw envd JSON, transport selection, native runtime paths, payload identities, or arbitrary environment variables. The desired configuration contains no daemon executable path, ambient `PATH` selector, download location, package URL, PID, private runtime path, or live EIP value.
+
+A fresh typed `LocalEnvdProviderRuntime` supplies exactly one absolute `agent-envd` executable and a Host-owned allocator for a protected private runtime parent. Provider construction records those collaborators but performs no filesystem inspection, path search, download, installation, subprocess launch, probe, or allocation. Once constructed, a Provider never changes or rediscovers its executable.
+
+The package exposes a separate Host convenience `resolve_agent_envd_executable()` boundary. It resolves, in order, an explicit Host path, `A13N_AGENT_ENVD_EXECUTABLE`, then the platform executable name through `shutil.which`. A path value is expanded and made absolute relative to the caller's current directory; a command discovered by `which` is made absolute. The helper rejects a missing path, directory, non-regular file, or non-executable file and returns one exact absolute path suitable for `LocalEnvdProviderRuntime`. It does not read a dotenv file, install or download a binary, execute it, construct a Provider, or become part of the low-level EIP client. A development command may load a repository `.env` before calling this helper, but library import and Provider construction never load `.env` implicitly.
+
+Agent UI's managed-runtime selection contract remains independently defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution). Its package-pinned default continues not to search ambient `PATH`; only a Host integration that explicitly selects the generic convenience helper opts into its environment and `which` precedence.
+
+At lifecycle time, the Provider requires the selected executable to report the client release identity through `agent-envd --version` and to pass the production-equivalent `agent-envd isolation probe --json`. These checks establish local runtime availability without creating an EIP session. Successful initialization by the first real attachment independently establishes the launched daemon generation, Environment identity, required methods, and protocol compatibility.
 
 ### Resource state and Provider behavior
 
-A Local Envd resource owns one local daemon process and its private runtime tree over a Host-selected existing workspace. It does not own, create, delete, retain, back up, or exclusively lock that workspace. Provider state records only bounded Environment/configuration correlation and lifecycle evidence; the executable path, process object, PID, pipes, runtime tree, EIP session, and isolation-probe details remain process-local.
+A Local Envd provider resource is uniquely correlated logical state over a Host-selected existing workspace and desired configuration. An entered Resource additionally owns one local daemon generation, its complete process tree, trusted stdio pipes, one physical carrier, and one private runtime parent allocated for that entry. It does not own, create, delete, retain, back up, or exclusively lock the workspace.
 
-`create()` and `resume()` validate the exact configuration and Host-resolved runtime, allocate a fresh private runtime, and start a fresh `agent-envd` process generation with trusted stdio. They issue no attachment until process launch reaches local readiness and required isolation succeeds. The entered Resource remains the sole owner of that process, complete process tree, private runtime, and pipes. `acquire_attachment()` returns one fresh `EIPEnvironmentAttachment` whose `StdioEIPSessionSource` carries an exclusive one-shot lease over the resource-owned carrier; attachment entry performs ordinary EIP initialization and establishes carrier readiness before the Harness can publish a binding. After envd delivers a successful `session.close` response, cleans session-owned state, and rearms stdio admission, the source returns the healthy carrier lease so a later sequential attachment can initialize against the same daemon generation. Lost close response, failed reinitialization, fatal carrier failure, or unexpected process exit makes the resource unavailable and never starts a replacement implicitly.
+Local Envd state uses `state_version="1"` with this exact provider-owned data codec:
 
-Local Envd advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. Each create owns an independent daemon process/private runtime even when several specifications intentionally select the same Host workspace. `pause(mode=FILESYSTEM)` closes the active attachment, stops the complete daemon process tree, and removes only the provider-owned private runtime while leaving workspace files untouched. `resume()` starts another private runtime and daemon generation. `FULL` is unsupported.
+```python
+class LocalEnvdResourcePhase(StrEnum):
+    RUNNING = "running"
+    PAUSED = "paused"
 
-`destroy()` stops the exact owned daemon process, closes its private pipes, and removes its private runtime. It never deletes or mutates the selected workspace merely because the provider resource is destroyed. Process termination and private-runtime cleanup must be proven before success; uncertain cleanup remains explicit rather than being reported as absence. Reconciliation uses only exact local process-owner and configuration evidence and never launches a replacement as an observation.
 
-A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, or inability to prove cleanup makes Local Envd unavailable. The Provider does not fall back to `a13n.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
+class LocalEnvdProviderStateData(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    environment_id: str
+    resource_correlation: str
+    configuration_fingerprint: str
+    phase: LocalEnvdResourcePhase
+```
+
+The fingerprint covers the exact normalized schema-version-1 configuration, including canonical Host paths. The state never contains the executable path, PID, process handle, pipes, private runtime path, daemon generation, EIP descriptor, session, or probe output. `resource_correlation` distinguishes independent `MULTIPLE_FROM_SPEC` logical resources even when they use the same specification and workspace.
+
+`create()` validates the configured workspace, executable shape and release, required isolation probe, and operation correlation, then returns a pre-entry Resource with `RUNNING` state. `resume()` accepts valid `RUNNING` or `PAUSED` state, validates its configuration fingerprint, correlation, workspace, executable, release, and isolation probe, normalizes the result to `RUNNING`, and returns a new pre-entry Resource. Accepting `RUNNING` permits ordinary Resource exit and later re-entry without pretending that exit paused the logical resource. Neither method allocates a private runtime, launches envd, nor opens a hidden preflight EIP session.
+
+Resource entry asks the Host allocator for a fresh protected runtime parent, writes one strict private envd configuration file, and launches one stdio daemon generation with `AGENT_ENVD_RUNTIME_DIR` and an absent direct-child `AGENT_ENVD_READY_FILE` set inside that parent. It waits under a finite deadline for the envd-owned private readiness marker while also observing process exit; a fixed startup sleep is not readiness. The first real attachment owns EIP initialization after readiness. Resource exit first fences attachment admission, requires attachment scopes to be closed, terminates the complete daemon process tree, closes its pipes, and releases only that entry's private runtime. Exit does not pause, destroy, or rewrite the logical provider state.
+
+`acquire_attachment()` returns one fresh `EIPEnvironmentAttachment` whose `StdioEIPSessionSource` carries an exclusive single-use lease over the Resource-owned carrier. Attachment entry performs ordinary EIP initialization before the Harness can publish a binding. After envd cleans session-owned state and fully writes a successful `session.close` response, the source detaches its requester and returns the healthy carrier lease so a later sequential attachment can initialize against the same daemon generation. Initialization failure, a lost or malformed close response, ambiguous request correlation, fatal protocol or framing failure, carrier EOF, or unexpected process exit permanently fences that carrier and makes the Resource unavailable. The Provider never starts a replacement implicitly within the same Resource entry.
+
+Local Envd advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. `pause(mode=FILESYSTEM)` requires the matching entered Resource after attachment scopes close, fences new attachments, stops its complete daemon process tree, releases its private runtime, leaves workspace files untouched, and returns state with `phase=PAUSED`. Resource exit then completes any idempotent local cleanup. `FULL` is unsupported. A later `resume()` returns a new Resource whose next entry starts a fresh private runtime and daemon generation.
+
+`destroy()` is called only after Resource exit. It validates the exact state/configuration/resource correlation and ends the logical provider lifecycle; the entry-owned daemon and private runtime must already have been removed. It never deletes or mutates the selected workspace. If prior Resource cleanup could not prove process termination or private-runtime release, that cleanup fails and the Host must not treat a later logical destroy as proof that the process-local resource disappeared.
+
+Local Envd reconciliation is bounded and read-only. Destroy reconciliation returns `ABSENT` after valid state correlation because no provider-owned durable object remains after Resource exit. Pause reconciliation returns validated `PAUSED` state when supplied evidence identifies that completed local transition. Create and resume compatibility requires executing the release and isolation checks, so reconciliation validates only supplied state correlation and static filesystem shape, then returns `UNKNOWN`; the Host retries the side-effect-free lifecycle validation with the same operation identity rather than weakening it inside reconciliation. Inaccessible or ambiguous local evidence also returns `UNKNOWN`. Reconciliation never allocates a runtime, launches a process, mutates the workspace, or substitutes another executable.
+
+A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, unexpected process exit, or inability to prove cleanup makes Local Envd unavailable. The Provider does not fall back to `a13n.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
 
 ## Docker
 

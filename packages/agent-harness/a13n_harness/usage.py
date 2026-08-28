@@ -421,26 +421,33 @@ class _UsageActiveCapability(UsageCapability):
         self._require_context(ctx)
         capability = self._resolve_cost_capability(ctx)
         original_cost_present = response.usage.cost is not None
-        revision = capability.revision
-        status: PricingStatus = "disabled" if not capability.enabled else "declined"
+        request_started_at = (
+            self._request_started_at.pop(ctx.run_id, None) if ctx.run_id is not None else None
+        ) or response.timestamp
+        revision: str | None = None
+        status: PricingStatus = "failed"
         priced = response
         calculated_cost: Decimal | None = None
         quote: ModelCostQuote | None = None
-        if capability.enabled:
-            usage = deepcopy(response.usage)
-            usage.cost = None
-            request_started_at = (
-                self._request_started_at.pop(ctx.run_id, None) if ctx.run_id is not None else None
-            ) or response.timestamp
-            value = ModelCostInput(
-                model_name=response.model_name,
-                provider_name=response.provider_name,
-                provider_url=_safe_provider_url(response.provider_url),
-                request_started_at=request_started_at,
-                response_timestamp=response.timestamp,
-                usage=usage,
-            )
-            try:
+        try:
+            enabled = capability.enabled
+            revision = capability.revision
+            if not isinstance(enabled, bool):
+                raise TypeError("model-cost Capability enabled flag must be a boolean")
+            if not isinstance(revision, str) or not revision:
+                raise TypeError("model-cost Capability revision must be a non-empty string")
+            status = "disabled" if not enabled else "declined"
+            if enabled:
+                usage = deepcopy(response.usage)
+                usage.cost = None
+                value = ModelCostInput(
+                    model_name=response.model_name,
+                    provider_name=response.provider_name,
+                    provider_url=_safe_provider_url(response.provider_url),
+                    request_started_at=request_started_at,
+                    response_timestamp=response.timestamp,
+                    usage=usage,
+                )
                 quote = capability.quote(value)
                 if quote is not None:
                     if not isinstance(quote, ModelCostQuote):
@@ -448,10 +455,14 @@ class _UsageActiveCapability(UsageCapability):
                     status = "applied"
                     calculated_cost = quote.cost_usd
                     response.usage.cost = quote.cost_usd
-            except Exception:
-                status = "failed"
-                quote = None
+        except Exception:
+            status = "failed"
+            quote = None
+            calculated_cost = None
+            try:
                 await _pricing_diagnostic(ctx, response, revision)
+            except Exception:
+                pass
         if ctx.run_id is not None:
             self._pending_pricing[ctx.run_id] = _PricingOutcome(
                 status=status,

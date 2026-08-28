@@ -58,6 +58,17 @@ def _skill_path(name: str = "review") -> SkillPath:
     )
 
 
+def test_run_bindings_metadata_detaches_nested_caller_values() -> None:
+    source = {"correlation": {"labels": ["initial"]}}
+
+    bindings = RunBindings.embedded(metadata=source)
+    source["correlation"]["labels"].append("mutated")
+
+    assert bindings.metadata == {"correlation": {"labels": ["initial"]}}
+    with pytest.raises(TypeError):
+        bindings.metadata["other"] = "value"  # type: ignore[index]
+
+
 def test_skill_paths_publish_immutable_owner_bound_snapshots() -> None:
     paths = RunSkillPaths()
     selected = _skill_path()

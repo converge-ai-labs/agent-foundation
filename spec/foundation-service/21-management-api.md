@@ -2,9 +2,18 @@
 
 ## Design Position
 
-Foundation exposes one resource-oriented `/api/v1` management contract for IAM, Agent authoring, interaction, durable Turns, deferred work, Environment resources, events, and raw usage. The API follows [Platform API Conventions](../api-conventions.md), [Platform Data Conventions](../data-conventions.md), the [HTTP ingress contract](05-http-ingress-and-request-contract.md), the shared [durable operation contract](06-durable-operations-and-outbox.md), and the [Identity and Access Management contract](10-identity-and-access-management.md); this document owns Foundation resource routes, command boundaries, read models, and cross-resource mutation behavior.
+Foundation exposes one resource-oriented `/api/v1` management contract for IAM,
+Agent authoring, model configuration, interaction, durable Turns, deferred work,
+Environment resources, events, and raw usage. The API follows
+[Platform API Conventions](../api-conventions.md),
+[Platform Data Conventions](../data-conventions.md), the
+[HTTP ingress contract](05-http-ingress-and-request-contract.md), the shared
+[durable operation contract](06-durable-operations-and-outbox.md), and the
+[Identity and Access Management contract](10-identity-and-access-management.md);
+this document owns Foundation resource routes, command boundaries, read models,
+and cross-resource mutation behavior.
 
-The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and external webhook payloads retain their own contracts. The deployment-authenticated [Harness plugin artifact operator API](25-harness-plugin-artifacts-and-runtime-loading.md#internal-operator-api) is deliberately outside `/api/v1` and is not added to public clients.
+The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and external webhook payloads retain their own contracts. The deployment-authenticated [Harness plugin artifact operator API](26-harness-plugin-artifacts-and-runtime-loading.md#internal-operator-api) is deliberately outside `/api/v1` and is not added to public clients.
 
 ## Scope and Authorization
 
@@ -31,7 +40,8 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Service Account API keys  | `/service-accounts/{service_account_id}/api-keys`, `/api-keys/{api_key_id}`                                                                 | Admin-managed Workspace-bound keys                                                        |
 | Presets and Agents        | `/workspaces/{workspace_id}/presets`, `/workspaces/{workspace_id}/agents`                                                                   | Mutable authoring heads and immutable selected revisions                                  |
 | Agent revisions           | `/agents/{agent_id}/revisions`                                                                                                              | Immutable create/read collection; no in-place revision mutation                           |
-| Model integrations        | `/workspaces/{workspace_id}/model-integrations`                                                                                             | Mutable heads with immutable integration revisions                                        |
+| Model Providers           | `/model-providers`                                                                                                                          | Read-only trusted Provider registry; not an installation API                              |
+| Models                    | `/workspaces/{workspace_id}/models`, `/workspaces/{workspace_id}/models/{model_id}`                                                         | Mutable current ModelConfig resources with strong ETag concurrency                        |
 | Connector Providers       | `/connector-providers`, `/connector-providers/{provider_key}`                                                                               | Read-only catalog of deployment-trusted Provider metadata; not an installation API        |
 | Connectors                | `/workspaces/{workspace_id}/connectors`, `/connectors/{connector_id}`                                                                       | Stable Workspace resources; create atomically includes revision `1`                       |
 | Connector revisions       | `/connectors/{connector_id}/revisions`, `/connector-revisions/{connector_revision_id}`                                                      | Immutable create/read configuration revisions                                             |
@@ -139,22 +149,24 @@ operation and is never implied by this route.
 
 Commands are subordinate to the resource whose state they mutate:
 
-| Command                          | Route                                                | Required mutation contract                                                                                                                                              |
-| -------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accept invitation                | `POST /invitations/{invitation_id}/accept`           | Exact single-use token; atomically creates User credentials and RoleBindings                                                                                            |
-| Resend invitation                | `POST /invitations/{invitation_id}/resend`           | Current authorization; rotates the token under the same Invitation ID                                                                                                   |
-| Revoke invitation                | `POST /invitations/{invitation_id}/revoke`           | Current authorization; terminal for the current invitation                                                                                                              |
-| Rotate API key                   | `POST /api-keys/{api_key_id}/rotate`                 | Authorized owner or Service Account Admin; same key ID and immediate cutover                                                                                            |
-| Revoke API key                   | `POST /api-keys/{api_key_id}/revoke`                 | Idempotently sets permanent revocation without deleting metadata                                                                                                        |
-| Cancel active Turn               | `POST /turns/{turn_id}/cancel`                       | Idempotency key and current authorization; seals the active Turn                                                                                                        |
-| Retry failed or cancelled Turn   | `POST /turns/{turn_id}/retry`                        | Target must be the Thread's current failed or cancelled Turn; expected Thread version and idempotency key; advances the same Thread without reopening the sealed source |
-| Fork completed Turn              | `POST /turns/{turn_id}/fork`                         | Idempotency key; creates an independent Thread and first Turn from exact frozen source state                                                                            |
-| Approve pending action           | `POST /pending-actions/{pending_action_id}/approve`  | Expected pending and Thread versions plus idempotency key                                                                                                               |
-| Reject pending action            | `POST /pending-actions/{pending_action_id}/reject`   | Expected pending and Thread versions plus idempotency key                                                                                                               |
-| Submit client-tool result        | `POST /pending-actions/{pending_action_id}/complete` | Expected Thread version, exact native result envelope, and idempotency key                                                                                              |
-| Supply structured user input     | `POST /pending-actions/{pending_action_id}/respond`  | Expected Thread version, schema-valid bounded response, and idempotency key                                                                                             |
-| Resume/pause/destroy Environment | `POST /environments/{environment_id}/{action}`       | Expected Environment version and idempotency key                                                                                                                        |
-| Reconcile Environment operation  | `POST /environments/{environment_id}/reconcile`      | Targets the exact unresolved operation identity                                                                                                                         |
+| Command                          | Route                                                    | Required mutation contract                                                                                                                                              |
+| -------------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accept invitation                | `POST /invitations/{invitation_id}/accept`               | Exact single-use token; atomically creates User credentials and RoleBindings                                                                                            |
+| Resend invitation                | `POST /invitations/{invitation_id}/resend`               | Current authorization; rotates the token under the same Invitation ID                                                                                                   |
+| Revoke invitation                | `POST /invitations/{invitation_id}/revoke`               | Current authorization; terminal for the current invitation                                                                                                              |
+| Rotate API key                   | `POST /api-keys/{api_key_id}/rotate`                     | Authorized owner or Service Account Admin; same key ID and immediate cutover                                                                                            |
+| Revoke API key                   | `POST /api-keys/{api_key_id}/revoke`                     | Idempotently sets permanent revocation without deleting metadata                                                                                                        |
+| Test candidate ModelConfig       | `POST /workspaces/{workspace_id}/models/test`            | Synchronous candidate test using Secret references; creates no health resource                                                                                          |
+| Copy ModelConfig                 | `POST /workspaces/{workspace_id}/models/{model_id}/copy` | Idempotency key; creates a new ModelConfig and copies no Secret value                                                                                                   |
+| Cancel active Turn               | `POST /turns/{turn_id}/cancel`                           | Idempotency key and current authorization; seals the active Turn                                                                                                        |
+| Retry failed or cancelled Turn   | `POST /turns/{turn_id}/retry`                            | Target must be the Thread's current failed or cancelled Turn; expected Thread version and idempotency key; advances the same Thread without reopening the sealed source |
+| Fork completed Turn              | `POST /turns/{turn_id}/fork`                             | Idempotency key; creates an independent Thread and first Turn from exact frozen source state                                                                            |
+| Approve pending action           | `POST /pending-actions/{pending_action_id}/approve`      | Expected pending and Thread versions plus idempotency key                                                                                                               |
+| Reject pending action            | `POST /pending-actions/{pending_action_id}/reject`       | Expected pending and Thread versions plus idempotency key                                                                                                               |
+| Submit client-tool result        | `POST /pending-actions/{pending_action_id}/complete`     | Expected Thread version, exact native result envelope, and idempotency key                                                                                              |
+| Supply structured user input     | `POST /pending-actions/{pending_action_id}/respond`      | Expected Thread version, schema-valid bounded response, and idempotency key                                                                                             |
+| Resume/pause/destroy Environment | `POST /environments/{environment_id}/{action}`           | Expected Environment version and idempotency key                                                                                                                        |
+| Reconcile Environment operation  | `POST /environments/{environment_id}/reconcile`          | Targets the exact unresolved operation identity                                                                                                                         |
 
 A command returns the mutated resource or a durable receipt. `202` means accepted, not completed. Unknown outcome after possible dispatch is reconciled by repeating the same idempotency key or reading the returned resource; clients never generate a new key merely because acknowledgement was lost.
 
@@ -166,8 +178,9 @@ Public resources expose stable product fields and safe references, not ORM objec
 
 - Session, Thread, Turn, and Item use the shared interaction meanings;
 - Thread exposes its stored version, Session membership, origin, current Turn, continuation head, and timestamps; current-Turn status supplies the latest execution/result projection and determines whether the Thread is active;
-- Turn exposes lifecycle, wait reason, selected revisions, interaction lineage, trigger and retry correlation, cancellation intent, and timestamps;
-- TurnAttempt exposes generation, worker-safe status, dispatch phase, lease timing, Harness correlation, and bounded failure evidence, but no credential or process-private value;
+- ModelConfig exposes only safe provider, endpoint, credential-reference, capability, lifecycle, and actor metadata;
+- Turn exposes lifecycle, wait reason, selected revisions, safe model observation, interaction lineage, trigger and retry correlation, cancellation intent, and timestamps;
+- TurnAttempt exposes generation, worker-safe status, safe model observation, dispatch phase, lease timing, Harness correlation, and bounded failure evidence, but no credential or process-private value;
 - Environment exposes desired spec revision, desired phase, safe lifecycle status, current operation, and effective observations, but never provider resource-state ciphertext or attachment material;
 - LifecycleEvent reads preserve event type, schema version, owning-resource sequence, subject, actor when applicable, TurnAttempt attribution, resource version, bounded payload, and commit time;
 - UsageRecord reads preserve immutable identity and attribution.
@@ -227,7 +240,16 @@ Lifecycle and interaction replay use opaque replay cursors over the retained Wor
 
 ## Concurrency and Idempotency
 
-Routes identify which mutable resources require `expected_version` and which retryable creates or commands require `Idempotency-Key`. Their shared wire behavior follows [Platform API Conventions](../api-conventions.md#mutations-and-retries), and their evidence and atomic commit follow [Durable Operations and Outbox](06-durable-operations-and-outbox.md). Immutable revisions and usage records reject mutation rather than carrying artificial versions.
+Routes identify which mutable resources require `expected_version`, which
+intentionally non-versioned representations require a strong `ETag` and
+`If-Match`, and which retryable creates or commands require `Idempotency-Key`.
+Their shared wire behavior follows
+[Platform API Conventions](../api-conventions.md#mutations-and-retries), and
+their evidence and atomic commit follow
+[Durable Operations and Outbox](06-durable-operations-and-outbox.md). Immutable
+revisions and usage records reject mutation rather than carrying artificial
+versions. ModelConfig is the non-versioned exception defined by
+[Model Management](25-model-management.md).
 
 ## Errors and Compatibility
 
@@ -246,4 +268,6 @@ The API uses the shared bounded errors and stable codes enforced by the [HTTP in
 07. Replay cursors, identifiers, receipts, and signed URLs grant no authority by possession.
 08. API read models contain no process-local object, provider resource-state data, attachment, credential, or Secret value.
 09. SDKs and the CLI consume this API rather than defining parallel lifecycle or retry semantics.
-10. Connector Provider catalog routes never install or import caller-selected code, and public Turn routes never forge Trigger or Connection selections.
+10. Connector and Model Provider catalog routes never install or import
+    caller-selected code, and public Turn routes never forge Trigger,
+    Connection, or model selections.

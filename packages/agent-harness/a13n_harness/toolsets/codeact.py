@@ -11,6 +11,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 from typing import Annotated, Any, Protocol, Self, cast, runtime_checkable
 from uuid import uuid4
 
@@ -86,7 +87,7 @@ class CodeActToolPolicy:
         values = dict(self.tools)
         if not all(isinstance(name, str) and name and isinstance(value, bool) for name, value in values.items()):
             raise TypeError("CodeActToolPolicy.tools must map non-empty names to booleans")
-        object.__setattr__(self, "tools", values)
+        object.__setattr__(self, "tools", MappingProxyType(values))
 
     def allows(self, owner_local_name: str) -> bool:
         return self.tools.get(owner_local_name, self.default)
@@ -109,8 +110,13 @@ class CodeActPolicyProvider(Protocol):
     def codeact_policy(self) -> CodeActToolPolicy: ...
 
 
-@dataclass(kw_only=True)
-class _CodeActPolicyTool(ToolsetTool[Any]):
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _CodeActPolicyTool:
+    toolset: AbstractToolset[Any]
+    tool_def: ToolDefinition
+    max_retries: int
+    args_validator: Any
+    args_validator_func: Any
     source_tool: ToolsetTool[Any]
     owner_local_name: str
     codeact_eligible: bool
@@ -133,7 +139,7 @@ class CodeActPolicyToolset(WrapperToolset[Any]):
             unknown = sorted(set(self.policy.tools) - set(tools))
             if unknown:
                 raise UserError(f"CodeAct policy references unknown tools: {', '.join(unknown)}")
-        return {
+        prepared = {
             name: _CodeActPolicyTool(
                 toolset=self,
                 tool_def=tool.tool_def,
@@ -146,6 +152,7 @@ class CodeActPolicyToolset(WrapperToolset[Any]):
             )
             for name, tool in tools.items()
         }
+        return cast(dict[str, ToolsetTool[Any]], prepared)
 
     async def call_tool(
         self,
@@ -532,7 +539,12 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         sequential_names=sequential_names,
                         global_sequential=global_sequential,
                     )
-            result = await self._success_result(execution, budget=budget)
+            try:
+                result = await self._success_result(execution, budget=budget)
+            except BaseException:
+                if source_path is None:
+                    await self.state.reset_inline()
+                raise
             status = "completed"
             return result
         except asyncio.CancelledError as exc:

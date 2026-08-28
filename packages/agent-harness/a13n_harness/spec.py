@@ -35,10 +35,11 @@ class ModelConfiguration(BaseModel):
 
 
 class AgentSpec(PydanticAgentSpec):
-    """Native AgentSpec plus resolved Harness model characteristics."""
+    """Native AgentSpec plus Harness-owned system prompt and model characteristics."""
 
     model_config = ConfigDict(populate_by_name=True)
 
+    system_prompt: str | list[str] | None = None
     model_configuration: ModelConfiguration | None = Field(default=None, alias="model_config")
 
     @classmethod
@@ -49,6 +50,14 @@ class AgentSpec(PydanticAgentSpec):
         """Include Harness model configuration in the native strict AgentSpec schema."""
         schema = super().model_json_schema_with_capabilities(custom_capability_types)
         schema.setdefault("$defs", {})["ModelConfiguration"] = ModelConfiguration.model_json_schema()
+        schema["properties"]["system_prompt"] = {
+            "anyOf": [
+                {"type": "string"},
+                {"items": {"type": "string"}, "type": "array"},
+                {"type": "null"},
+            ],
+            "default": None,
+        }
         schema["properties"]["model_config"] = {
             "anyOf": [
                 {"$ref": "#/$defs/ModelConfiguration"},

@@ -23,6 +23,7 @@ from pydantic_ai.messages import (
     ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, DeltaToolCall, FunctionModel
@@ -42,6 +43,32 @@ def _recovery_policy(*, max_attempts: int = 2) -> ModelRecoveryPolicy:
         backoff_initial_seconds=0,
         backoff_max_seconds=0,
     )
+
+
+async def test_recovery_prompt_factory_receives_detached_messages() -> None:
+    original = ModelRequest(parts=[UserPromptPart(content="original")])
+
+    def prompt_factory(
+        error: BaseException,
+        attempt_index: int,
+        messages: Sequence[ModelMessage],
+    ) -> str:
+        del error, attempt_index
+        request = messages[0]
+        assert isinstance(request, ModelRequest)
+        prompt = request.parts[0]
+        assert isinstance(prompt, UserPromptPart)
+        prompt.content = "mutated"
+        return "continue"
+
+    policy = ModelRecoveryPolicy(enabled=True, prompt_factory=prompt_factory)
+
+    value = await policy.build_prompt(RuntimeError("failed"), 1, (original,))
+
+    assert value == "continue"
+    prompt = original.parts[0]
+    assert isinstance(prompt, UserPromptPart)
+    assert prompt.content == "original"
 
 
 async def test_stream_failure_resumes_with_partial_history_and_shared_usage() -> None:

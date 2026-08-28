@@ -314,6 +314,81 @@ async def test_ephemeral_destroys_created_state_when_resource_entry_fails() -> N
     assert provider.events == ["create:1", "enter", "destroy:1"]
 
 
+async def test_ephemeral_reconciles_and_destroys_create_cancelled_after_dispatch() -> None:
+    provider = _Provider()
+    dispatched = asyncio.Event()
+
+    async def create(*, operation: EnvironmentOperationContext) -> EnvironmentResource:
+        provider._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key="test.provider")
+        provider.create_operations.append(operation)
+        provider.events.append(f"create:{operation.attempt}")
+        provider.reconciliation.append(_result(operation.operation_id, EnvironmentReconciliationPhase.RUNNING))
+        dispatched.set()
+        await asyncio.Future()
+        raise AssertionError("cancelled create must not return")
+
+    async def use_provider() -> None:
+        async with provider.ephemeral(resource_correlation="resource-cancelled"):
+            raise AssertionError("body must not start")
+
+    provider.create = create  # type: ignore[method-assign]
+    task = asyncio.create_task(use_provider())
+    await dispatched.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert provider.reconcile_operations == provider.create_operations
+    assert provider.destroy_states == [_STATE]
+    assert provider.destroy_operations[0].resource_correlation == "resource-cancelled"
+    assert provider.events == ["create:1", "reconcile:create:1", "destroy:1"]
+
+
+async def test_ephemeral_accepts_absent_reconciliation_for_cancelled_create() -> None:
+    provider = _Provider()
+    cancellation = asyncio.CancelledError("stop")
+
+    async def create(*, operation: EnvironmentOperationContext) -> EnvironmentResource:
+        provider._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key="test.provider")
+        provider.create_operations.append(operation)
+        provider.events.append(f"create:{operation.attempt}")
+        provider.reconciliation.append(_result(operation.operation_id, EnvironmentReconciliationPhase.ABSENT))
+        raise cancellation
+
+    provider.create = create  # type: ignore[method-assign]
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        async with provider.ephemeral():
+            raise AssertionError("body must not start")
+
+    assert exc_info.value is cancellation
+    assert provider.reconcile_operations == provider.create_operations
+    assert provider.destroy_operations == []
+    assert provider.events == ["create:1", "reconcile:create:1"]
+
+
+async def test_ephemeral_notes_unresolved_cancelled_create_reconciliation() -> None:
+    provider = _Provider()
+    cancellation = asyncio.CancelledError("stop")
+
+    async def create(*, operation: EnvironmentOperationContext) -> EnvironmentResource:
+        provider._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key="test.provider")
+        provider.create_operations.append(operation)
+        provider.reconciliation.append(_result(operation.operation_id, EnvironmentReconciliationPhase.UNKNOWN))
+        raise cancellation
+
+    provider.create = create  # type: ignore[method-assign]
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        async with provider.ephemeral():
+            raise AssertionError("body must not start")
+
+    assert exc_info.value is cancellation
+    assert provider.destroy_operations == []
+    assert any("reconciliation also failed" in note for note in cancellation.__notes__)
+
+
 async def test_ephemeral_preserves_cancellation_when_resource_exit_fails() -> None:
     provider = _Provider(exit_error=RuntimeError("exit failed"))
     cancellation = asyncio.CancelledError("stop")

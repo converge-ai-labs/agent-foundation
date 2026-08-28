@@ -5,7 +5,9 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -66,6 +68,8 @@ from a13n_envd_client.eip.v1 import (
     ShellExecParams,
 )
 
+_OWNED_RUNTIME_DIRECTORIES: dict[int, Path] = {}
+
 
 def agent_envd_binary() -> Path:
     configured = os.environ.get("AGENT_ENVD_TEST_BINARY")
@@ -104,15 +108,20 @@ async def start_daemon(
     }
     if execution_isolation is not None:
         environment["AGENT_ENVD_EXECUTION_ISOLATION"] = execution_isolation
-    if runtime_dir is not None:
-        environment["AGENT_ENVD_RUNTIME_DIR"] = str(runtime_dir)
-    return await asyncio.create_subprocess_exec(
+    owned_runtime = runtime_dir is None
+    if runtime_dir is None:
+        runtime_dir = Path(tempfile.mkdtemp(prefix="agent-envd-e2e-"))
+    environment["AGENT_ENVD_RUNTIME_DIR"] = str(runtime_dir)
+    process = await asyncio.create_subprocess_exec(
         *arguments,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=environment,
     )
+    if owned_runtime:
+        _OWNED_RUNTIME_DIRECTORIES[id(process)] = runtime_dir
+    return process
 
 
 async def wait_for_exit(process: asyncio.subprocess.Process, expected_code: int = 0) -> bytes:
@@ -124,6 +133,9 @@ async def wait_for_exit(process: asyncio.subprocess.Process, expected_code: int 
         raise
     assert process.stderr is not None
     stderr = await process.stderr.read()
+    runtime_directory = _OWNED_RUNTIME_DIRECTORIES.pop(id(process), None)
+    if runtime_directory is not None:
+        shutil.rmtree(runtime_directory, ignore_errors=True)
     assert returncode == expected_code, stderr.decode("utf-8", errors="replace")
     return stderr
 
@@ -228,6 +240,30 @@ def test_real_daemon_session_round_trip_and_fresh_generations() -> None:
         first = await one_run()
         second = await one_run()
         assert first != second
+
+    asyncio.run(scenario())
+
+
+def test_real_daemon_reuses_one_stdio_carrier_for_sequential_sessions() -> None:
+    async def scenario() -> None:
+        process = await start_daemon(agent_envd_binary())
+        transport = StdioTransport.from_process(process)
+        generations: list[int] = []
+        for _ in range(2):
+            session = await EIPSession.initialize(
+                transport,
+                expected_environment_id="env-e2e",
+                required_methods=("environment.describe", "session.close"),
+                reuse_transport=True,
+            )
+            generations.append(session.generation)
+            await session.describe()
+            await session.close()
+            assert process.returncode is None
+
+        assert generations[0] == generations[1]
+        await transport.close()
+        assert_disabled_isolation_warning(await wait_for_exit(process))
 
     asyncio.run(scenario())
 

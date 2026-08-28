@@ -354,7 +354,7 @@ class PromptDefinition(StrictModel):
     prompt_id: _ID
     display_name: _NAME
     description: str | None = Field(default=None, max_length=16 * 1024)
-    instruction_blocks: tuple[PromptBlock, ...] = Field(min_length=1, max_length=1024)
+    system_prompt_blocks: tuple[PromptBlock, ...] = Field(min_length=1, max_length=1024)
 
 
 class PluginInstanceDefinition(StrictModel):

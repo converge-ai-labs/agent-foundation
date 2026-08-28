@@ -22,7 +22,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ResolveModelId, WrapModelRequestHandler
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     BinaryContent,
@@ -675,6 +675,55 @@ async def test_self_healing_propagates_unmatched_errors_without_retrying() -> No
 
     assert exc_info.value is error
     assert wrapped.calls == 1
+
+
+@pytest.mark.parametrize(
+    "status_code,message",
+    (
+        (429, "quota exceeds account limit"),
+        (400, "failed_precondition: billing is disabled"),
+    ),
+)
+async def test_self_healing_does_not_treat_unrelated_provider_failures_as_oversized(
+    status_code: int,
+    message: str,
+) -> None:
+    error = ModelHTTPError(
+        status_code=status_code,
+        model_name="failing",
+        body={"message": message},
+    )
+    wrapped = FailingModel(error)
+    model = SelfHealingModel(wrapped)
+    image = BinaryContent(data=b"image", media_type="image/png")
+    history: list[ModelMessage] = [
+        ModelRequest(parts=[ToolReturnPart(tool_name="view", tool_call_id="view-1", content=[image])])
+    ]
+
+    with pytest.raises(ModelHTTPError) as exc_info:
+        await model.request(history, None, ModelRequestParameters())
+
+    assert exc_info.value is error
+    assert wrapped.calls == 1
+    tool_result = history[0].parts[0]
+    assert isinstance(tool_result, ToolReturnPart)
+    assert tool_result.content == [image]
+
+
+async def test_definition_cannot_add_a_second_model_resolver() -> None:
+    async def resolver(context: ModelResolutionContext, model_id: str) -> None:
+        del context, model_id
+        return None
+
+    with pytest.raises(DefinitionError) as exc_info:
+        HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(lambda messages, info: "unused"),
+            capabilities=(ResolveModelId(resolver),),
+        )
+
+    assert exc_info.value.code == "capability_scope_invalid"
 
 
 async def test_self_healing_does_not_retry_when_the_matching_repair_is_a_noop() -> None:

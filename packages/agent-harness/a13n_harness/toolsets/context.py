@@ -20,6 +20,7 @@ from a13n_harness.events import (
     ContextOperationStartedPayload,
     emit_harness_event,
 )
+from a13n_harness.observation import observe_operation
 
 if TYPE_CHECKING:
     from a13n_harness.capabilities.context import _HandoffState
@@ -110,7 +111,12 @@ class HandoffToolset:
                     ),
                 )
             try:
-                await self.replace_state(state)
+                with observe_operation(
+                    "handoff",
+                    capability_id=self._owner.id,
+                    operation_id=operation_id,
+                ):
+                    await self.replace_state(state)
             except BaseException as exc:
                 error_code = _safe_context_error_code(exc)
                 await emit_harness_event(

@@ -23,6 +23,9 @@ from a13n_environment_provider import (
     EnvironmentReconciliationResult,
     EnvironmentResource,
     EnvironmentResourceAllocation,
+    LocalEnvdEnvironmentProviderFactory,
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
@@ -189,6 +192,34 @@ def test_builtin_catalog_resolves_direct_local_without_metadata_scan(
     assert isinstance(provider, EnvironmentProvider)
 
 
+def test_builtin_catalog_resolves_local_envd_without_metadata_scan(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "a13n_environment_provider.factories._entry_points",
+        lambda: (_ for _ in ()).throw(AssertionError("must not scan metadata")),
+    )
+    catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.local-envd",))
+
+    assert isinstance(catalog.require("a13n.local-envd"), LocalEnvdEnvironmentProviderFactory)
+    provider = catalog.create_provider(
+        EnvironmentProviderSpec(
+            provider_key="a13n.local-envd",
+            schema_version="1",
+            parameters={
+                "environment_id": "local-envd-1",
+                "workspace": {"path": str(tmp_path)},
+            },
+        ),
+        runtime=LocalEnvdProviderRuntime(
+            executable=(tmp_path / "agent-envd").absolute(),
+            allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        ),
+    )
+    assert isinstance(provider, EnvironmentProvider)
+
+
 def test_extension_catalog_loads_only_explicitly_selected_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -231,7 +262,6 @@ def test_discovery_reads_metadata_without_loading_target(monkeypatch: pytest.Mon
 @pytest.mark.parametrize(
     ("kwargs", "code"),
     [
-        ({"builtin_keys": ("a13n.local-envd",)}, "provider_factory_missing"),
         (
             {
                 "builtin_keys": ("a13n.direct-local",),
@@ -245,7 +275,7 @@ def test_discovery_reads_metadata_without_loading_target(monkeypatch: pytest.Mon
         ),
     ],
 )
-def test_catalog_rejects_placeholders_and_builtin_shadowing(
+def test_catalog_rejects_builtin_shadowing(
     kwargs: dict[str, Any],
     code: str,
 ) -> None:

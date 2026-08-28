@@ -58,7 +58,7 @@ MAX_ARGUMENT_BYTES = 64 * 1024
 _UNMANAGED_OUTPUT_POLICY = ToolOutputPolicy(
     max_inline_bytes=256 * 1024,
     max_output_bytes=4 * 1024 * 1024,
-    overflow="spill",
+    overflow="truncate",
     redact=True,
 )
 

@@ -91,7 +91,8 @@ The Harness owns native `RunUsage`, the run-local attribution ledger, immutable 
 - Organization, Workspace, Session, Thread, and Turn;
 - originating TurnAttempt and Harness Run;
 - Agent revision; and
-- model/provider identity and measures from the record.
+- accepted `model_id`, provider type, and model name from the TurnAttempt
+  observation, plus model/provider identity and measures from the record.
 
 A `usage_report` ID is a delivery identity, not another usage fact. Reports can overlap through retries or chunk delivery. `HarnessRunResult.usage_records` is a complete detached run-local snapshot and can overlap records already delivered incrementally. Foundation deduplicates all paths by immutable `record_id` and rejects conflicting content for the same identity.
 

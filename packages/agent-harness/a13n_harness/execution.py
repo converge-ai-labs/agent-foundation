@@ -7,7 +7,7 @@ import inspect
 import typing
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, field, is_dataclass
+from dataclasses import dataclass, field, is_dataclass, replace
 from dataclasses import fields as dataclass_fields
 from datetime import UTC, datetime
 from functools import reduce
@@ -19,10 +19,11 @@ from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationE
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunEvents
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import AbstractCapability, ResolveModelId
+from pydantic_ai.capabilities import AbstractCapability, Instrumentation, ResolveModelId
 from pydantic_ai.exceptions import AgentRunError, RunCancelled, UsageLimitExceeded, UserError
-from pydantic_ai.messages import AgentStreamEvent, ModelMessage
+from pydantic_ai.messages import AgentStreamEvent, ModelMessage, ModelRequest, ModelResponse, SystemPromptPart
 from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.models.instrumented import InstrumentedModel
 from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, StructuredDict, TextOutput, ToolOutput
 from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
@@ -120,6 +121,7 @@ from a13n_harness.environment.sources import EnvironmentEntry, normalize_environ
 from a13n_harness.errors import (
     DefinitionError,
     HarnessError,
+    ModelResolutionError,
     PluginError,
     RunCleanupError,
     RunError,
@@ -155,6 +157,13 @@ from a13n_harness.models.request_headers import (
     MODEL_REQUEST_HEADERS_CAPABILITY_ID,
     ModelRequestHeadersCapability,
     ModelRequestPatchConfiguration,
+)
+from a13n_harness.observation import (
+    HarnessInstrumentation,
+    _compile_observation,
+    _LogicalRunObservation,
+    _ObservationRuntime,
+    observe_operation,
 )
 from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
 from a13n_harness.plugin_factories import (
@@ -397,6 +406,11 @@ class AgentDefinition[OutputT]:
             raise DefinitionError("definition_id must not be blank.", code="definition_id_invalid")
         if self.model is not None and not isinstance(self.model, Model):
             raise DefinitionError("model must be a native Model or None.", code="model_invalid")
+        if isinstance(self.model, InstrumentedModel) or isinstance(self.agent.model, InstrumentedModel):
+            raise DefinitionError(
+                "InstrumentedModel is reserved to Harness-managed instrumentation.",
+                code="instrumentation_owner_conflict",
+            )
         if self.model is not None and self.agent.model is not None:
             raise DefinitionError(
                 "AgentSpec.model and AgentDefinition.model are mutually exclusive.",
@@ -442,6 +456,35 @@ def _model_cost_capabilities(
             continue
         capability.apply(leaves.append)
     return tuple(capability for capability in leaves if isinstance(capability, AbstractModelCostCapability))
+
+
+def _normalize_system_prompt(agent: AgentSpec) -> tuple[str, ...]:
+    if not isinstance(agent, HarnessAgentSpec) or agent.system_prompt is None:
+        return ()
+    if isinstance(agent.system_prompt, str):
+        return (agent.system_prompt,)
+    return tuple(agent.system_prompt)
+
+
+def _reconcile_system_prompt(
+    messages: Sequence[ModelMessage],
+    system_prompt: Sequence[str],
+) -> tuple[ModelMessage, ...]:
+    if not messages or (isinstance(messages[-1], ModelResponse) and messages[-1].state == "suspended"):
+        return tuple(messages)
+
+    reconciled = list(messages)
+    first_request = True
+    for index, message in enumerate(reconciled):
+        if not isinstance(message, ModelRequest):
+            continue
+        parts = tuple(part for part in message.parts if not isinstance(part, SystemPromptPart))
+        if first_request:
+            parts = (*[SystemPromptPart(content=block) for block in system_prompt], *parts)
+            first_request = False
+        if parts != tuple(message.parts):
+            reconciled[index] = replace(message, parts=parts)
+    return tuple(reconciled)
 
 
 def _resolve_model_configured_capabilities(
@@ -495,6 +538,7 @@ class HarnessBuilder:
         build_context: HarnessBuildContext | None = None,
         configured_plugins_enabled: bool | None = None,
         gateway_provider_factory: GatewayModelProviderFactory | None = None,
+        instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
     ) -> None:
         if capability_type_catalog is not None and not isinstance(capability_type_catalog, CapabilityTypeCatalog):
             raise DefinitionError(
@@ -518,6 +562,10 @@ class HarnessBuilder:
             )
         self._capability_type_catalog = capability_type_catalog or _EMPTY_CAPABILITY_TYPE_CATALOG
         self._gateway_provider_factory = gateway_provider_factory
+        resolved_instrumentation = (
+            HarnessInstrumentation.from_environment() if instrumentation == "environment" else instrumentation
+        )
+        self._observation = _compile_observation(resolved_instrumentation)
         self._model_request_patch_configuration = ModelRequestPatchConfiguration.from_environment()
         if build_context is None:
             resolved_build_context = HarnessBuildContext.from_environment(enabled=configured_plugins_enabled)
@@ -679,13 +727,27 @@ class HarnessBuilder:
         ) -> Model:
             resolved = await resolve_run_model(context, model_id)
             if resolved is not None:
+                if isinstance(resolved, InstrumentedModel):
+                    raise ModelResolutionError(
+                        "Run model resolution returned an InstrumentedModel reserved to Harness instrumentation.",
+                        code="instrumentation_owner_conflict",
+                        details={"model_id": model_id},
+                    )
                 return resolved
-            return infer_model(
+            inferred = infer_model(
                 model_id,
                 gateway_provider_factory=self._gateway_provider_factory,
             )
+            if isinstance(inferred, InstrumentedModel):
+                raise ModelResolutionError(
+                    "Model inference returned an InstrumentedModel reserved to Harness instrumentation.",
+                    code="instrumentation_owner_conflict",
+                    details={"model_id": model_id},
+                )
+            return inferred
 
         capabilities = (
+            *self._observation.pydantic_capabilities,
             ToolExecutionBoundaryCapability(),
             ToolSurfaceCapability(),
             MessageIntegrityFilterCapability(),
@@ -701,18 +763,22 @@ class HarnessBuilder:
         try:
             construction_spec, business_output, output_adapter = _resolve_business_output(definition)
             complete_output = [business_output, DeferredToolRequests]
+            system_prompt = _normalize_system_prompt(construction_spec)
             agent = Agent.from_spec(
                 construction_spec,
                 deps_type=AgentContext,
+                system_prompt=system_prompt,
                 custom_capability_types=self._capability_type_catalog.custom_capability_types,
                 model=definition.model,
                 output_type=complete_output,
                 capabilities=capabilities,
                 defer_model_check=True,
             )
+            agent.instrument = False
             _validate_built_capability_tree(
                 agent.root_capability,
                 definition_reserved_ids=definition_reserved_ids,
+                expected_instrumentation=self._observation.pydantic_instrumentation,
             )
         except Exception as exc:
             if isinstance(exc, HarnessError):
@@ -725,10 +791,12 @@ class HarnessBuilder:
         return ExecutableAgent(
             definition=definition,
             agent=cast(Agent[AgentContext, BuildOutputT | DeferredToolRequests], agent),
+            system_prompt=system_prompt,
             output_adapter=output_adapter,
             plugins=plugins,
             subagents=subagents,
             definition_reserved_capability_ids=definition_reserved_ids,
+            observation=self._observation,
         )
 
     def _create_configured_plugins(self) -> tuple[AbstractHarnessPlugin, ...]:
@@ -762,17 +830,21 @@ class ExecutableAgent[OutputT]:
         *,
         definition: AgentDefinition[OutputT],
         agent: Agent[AgentContext, OutputT | DeferredToolRequests],
+        system_prompt: tuple[str, ...],
         output_adapter: TypeAdapter[Any],
         plugins: tuple[AbstractHarnessPlugin, ...],
         subagents: SubagentCollection,
         definition_reserved_capability_ids: frozenset[str],
+        observation: _ObservationRuntime,
     ) -> None:
         self.definition = definition
         self.subagents = subagents
         self._agent = agent
+        self._system_prompt = system_prompt
         self._output_adapter = output_adapter
         self._plugins = plugins
         self._definition_reserved_capability_ids = definition_reserved_capability_ids
+        self._observation = observation
         self._closed = False
 
     @overload
@@ -1067,6 +1139,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._cancel_requested = False
         self._cancel_event = asyncio.Event()
         self._next_active = False
+        self._observation: _LogicalRunObservation | None = None
 
     @property
     def context(self) -> AgentContext:
@@ -1100,6 +1173,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if self._entered:
             raise RunError("HarnessRunStream cannot be entered more than once.", code="run_stream_reused")
         self._entered = True
+        self._observation = self._executable._observation.start_run(
+            thread_id=self.thread_id,
+            run_id=self.run_id,
+            instance=self._bindings.instance,
+        )
+        activation = self._observation.activate() if self._observation is not None else None
         try:
             self._environment_ready = asyncio.get_running_loop().create_future()
             self._environment_lifecycle_task = asyncio.create_task(self._run_environment_lifecycle())
@@ -1152,7 +1231,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 ),
             )
             self._context = context
-            run_plugins = await bind_run_plugins(self._executable._plugins, context)
+            with observe_operation("plugin_validation"):
+                run_plugins = await bind_run_plugins(self._executable._plugins, context)
             exchange = PluginRunExchange(
                 input=semantic_input,
                 context=context,
@@ -1163,9 +1243,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         except asyncio.CancelledError as exc:
             await self._close_resources(outcome=None, cancellation=exc)
             raise
-        except BaseException:
-            await self._close_resources(outcome=None)
+        except BaseException as exc:
+            await self._close_resources(outcome=None, failure=exc)
             raise
+        finally:
+            if activation is not None:
+                _LogicalRunObservation.deactivate(activation)
 
     async def _run_environment_lifecycle(self) -> None:
         ready = self._environment_ready
@@ -1239,11 +1322,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         traceback: object,
     ) -> None:
         del exc_type, traceback
-        if self._terminal_close_task is not None:
-            await self._terminal_close_task
-        elif not self._closed:
-            cancellation = exc_value if isinstance(exc_value, asyncio.CancelledError) else None
-            await self._close_resources(outcome=self._last_valid_outcome, cancellation=cancellation)
+        activation = self._observation.activate() if self._observation is not None else None
+        try:
+            if self._terminal_close_task is not None:
+                await self._terminal_close_task
+            elif not self._closed:
+                cancellation = exc_value if isinstance(exc_value, asyncio.CancelledError) else None
+                failure = exc_value if isinstance(exc_value, BaseException) else None
+                await self._close_resources(
+                    outcome=self._last_valid_outcome,
+                    cancellation=cancellation,
+                    failure=failure,
+                )
+        finally:
+            if activation is not None:
+                _LogicalRunObservation.deactivate(activation)
 
     def __aiter__(self) -> HarnessRunStream[OutputT]:
         if not self._entered or self._closed:
@@ -1262,9 +1355,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 code="run_stream_concurrent_next",
             )
         self._next_active = True
+        activation = self._observation.activate() if self._observation is not None else None
         try:
             return await self._next_item()
         finally:
+            if activation is not None:
+                _LogicalRunObservation.deactivate(activation)
             self._next_active = False
 
     async def _next_item(self) -> HarnessStreamEvent[OutputT]:
@@ -1339,7 +1435,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 except BaseException as cleanup:
                     exc.add_note(f"Harness cleanup also failed: {cleanup!r}")
                 raise
-            await self._close_resources(outcome=self._last_valid_outcome, cancellation=exc)
+            await self._close_resources(outcome=self._last_valid_outcome, cancellation=exc, failure=exc)
             raise
         except RunCleanupError as exc:
             if self._closed:
@@ -1558,7 +1654,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         """Close a failed stream and retain an already validated inner outcome."""
         outcome = self._last_valid_outcome
         try:
-            await self._close_resources(outcome=outcome)
+            await self._close_resources(outcome=outcome, failure=failure)
         except RunCleanupError as cleanup_error:
             if outcome is None:
                 raise cleanup_error from failure
@@ -1866,12 +1962,17 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
         current_history, _ = normalize_interrupted_history(self._previous_state.message_history)
+        current_history = _reconcile_system_prompt(
+            current_history,
+            self._executable._system_prompt,
+        )
         self._latest_messages = current_history
 
         while True:
             retry_error: BaseException | None = None
             next_attempt_index = attempt_index + 1
             response_tracker = InterruptedResponseTracker()
+            attempt_token = self._observation.record_model_attempt() if self._observation is not None else None
             manager = self._executable._agent.run_stream_events(
                 current_input.value,
                 message_history=current_history,
@@ -1879,6 +1980,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     self._deferred_resume.results if attempt_index == 0 and self._deferred_resume is not None else None
                 ),
                 run_id=f"model-attempt-{uuid4().hex}",
+                conversation_id=self.thread_id,
                 deps=self.context,
                 usage=self._usage,
                 usage_limits=self._usage_limits,
@@ -2016,14 +2118,17 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             raise
             finally:
                 self._pydantic_events = None
+                if attempt_token is not None:
+                    _LogicalRunObservation.reset_model_attempt(attempt_token)
 
             assert retry_error is not None
             delay = policy.delay(next_attempt_index)
             if delay > 0:
-                try:
-                    await asyncio.wait_for(self._cancel_event.wait(), timeout=delay)
-                except TimeoutError:
-                    pass
+                with observe_operation("recovery"):
+                    try:
+                        await asyncio.wait_for(self._cancel_event.wait(), timeout=delay)
+                    except TimeoutError:
+                        pass
             if self._cancel_requested:
                 state = await exchange.context.export_state(self._latest_messages) if self._latest_messages else None
                 yield self._record_inner_candidate(
@@ -2039,7 +2144,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     )
                 )
                 return
-            retry_input = await policy.build_prompt(retry_error, next_attempt_index, self._latest_messages)
+            with observe_operation("recovery"):
+                retry_input = await policy.build_prompt(retry_error, next_attempt_index, self._latest_messages)
             current_input = normalize_input(retry_input)
             current_history = self._latest_messages
             attempt_index = next_attempt_index
@@ -2184,6 +2290,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         *,
         outcome: HarnessRunResult[Any] | None,
         cancellation: asyncio.CancelledError | None = None,
+        failure: BaseException | None = None,
     ) -> None:
         if self._closed:
             if cancellation is not None:
@@ -2238,6 +2345,33 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await finish_cleanup(_stop_environment_event_task(task))
         self._closed = True
 
+        observation = self._observation
+        if observation is not None:
+            cleanup_failed = bool(causes)
+            if cancellation is not None:
+                observed_outcome = "cancelled"
+            elif cleanup_failed or failure is not None:
+                observed_outcome = "failed"
+            elif outcome is not None:
+                observed_outcome = outcome.status
+            else:
+                observed_outcome = "cancelled"
+
+            failure_code: str | None = None
+            if cleanup_failed:
+                failure_code = "run_cleanup_failed"
+            elif observed_outcome == "failed" and outcome is not None and outcome.failure is not None:
+                failure_code = outcome.failure.code
+            elif observed_outcome == "failed" and isinstance(failure, HarnessError):
+                failure_code = failure.code
+            elif observed_outcome == "failed":
+                failure_code = "run_unhandled"
+            observation.finish(
+                outcome=observed_outcome,
+                failure_code=failure_code,
+                error=observed_outcome == "failed" or cleanup_failed,
+            )
+
         if cancellation is not None:
             for cause in causes:
                 cancellation.add_note(f"Harness cleanup also failed: {cause!r}")
@@ -2286,6 +2420,7 @@ def _validate_built_capability_tree(
     root: AbstractCapability[AgentContext],
     *,
     definition_reserved_ids: frozenset[str],
+    expected_instrumentation: Instrumentation | None,
 ) -> None:
     """Validate stable IDs and protected provenance on the complete Agent-bound tree."""
     leaves: list[AbstractCapability[AgentContext]] = []
@@ -2297,9 +2432,11 @@ def _validate_built_capability_tree(
     lifecycle_event_count = 0
     steering_count = 0
     model_context_coordinator_count = 0
+    model_resolver_count = 0
     model_request_headers_capability_count = 0
     usage_count = 0
     model_cost_count = 0
+    instrumentation_count = 0
     reserved_ids = {
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
         TOOL_SURFACE_CAPABILITY_ID,
@@ -2364,6 +2501,15 @@ def _validate_built_capability_tree(
                 )
             seen_ids[capability_id] = type(capability).__name__
 
+        if isinstance(capability, Instrumentation):
+            instrumentation_count += 1
+            if capability is not expected_instrumentation:
+                raise DefinitionError(
+                    "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
+                    code="instrumentation_owner_conflict",
+                    details={"source": "built"},
+                )
+            continue
         if isinstance(capability, ToolExecutionBoundaryCapability):
             execution_boundary_count += 1
             if capability_id != TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID:
@@ -2411,6 +2557,9 @@ def _validate_built_capability_tree(
                     "The mandatory model context coordinator Capability has an invalid ID.",
                     code="capability_scope_invalid",
                 )
+            continue
+        if isinstance(capability, ResolveModelId):
+            model_resolver_count += 1
             continue
         if type(capability) is ModelRequestHeadersCapability:
             model_request_headers_capability_count += 1
@@ -2488,6 +2637,13 @@ def _validate_built_capability_tree(
                     details={"capability_type": type(capability).__name__},
                 )
 
+    expected_instrumentation_count = 1 if expected_instrumentation is not None else 0
+    if instrumentation_count != expected_instrumentation_count:
+        raise DefinitionError(
+            "The built Agent has an invalid Pydantic AI Instrumentation owner count.",
+            code="instrumentation_owner_conflict",
+            details={"source": "built"},
+        )
     if execution_boundary_count != 1:
         raise DefinitionError(
             "The built Agent must contain exactly one mandatory tool execution boundary Capability.",
@@ -2516,6 +2672,11 @@ def _validate_built_capability_tree(
     if model_context_coordinator_count != 1:
         raise DefinitionError(
             "The built Agent must contain exactly one mandatory model context coordinator Capability.",
+            code="capability_scope_invalid",
+        )
+    if model_resolver_count != 1:
+        raise DefinitionError(
+            "The built Agent must contain exactly one mandatory model resolver Capability.",
             code="capability_scope_invalid",
         )
     if model_request_headers_capability_count != 1:
@@ -2573,6 +2734,12 @@ def _validate_capability_source(
                 code="capability_type_invalid",
                 details={"source": source},
             )
+        if isinstance(capability, Instrumentation):
+            raise DefinitionError(
+                "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
+                code="instrumentation_owner_conflict",
+                details={"source": source},
+            )
         if source == "run" and type(capability) not in run_types:
             raise DefinitionError(
                 "RunBindings accepts only exact documented run attachment Capability types.",
@@ -2584,6 +2751,13 @@ def _validate_capability_source(
                 },
             )
         capability.apply(leaves.append)
+
+    if any(isinstance(capability, Instrumentation) for capability in leaves):
+        raise DefinitionError(
+            "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
+            code="instrumentation_owner_conflict",
+            details={"source": source},
+        )
 
     reserved_ids = {
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,

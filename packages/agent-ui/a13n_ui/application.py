@@ -6,9 +6,12 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from enum import StrEnum
 
+from a13n_environment_provider import build_environment_provider_factory_catalog
+from a13n_harness import RunInputValue
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after
 from anyio.streams.memory import MemoryObjectReceiveStream
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
 from a13n_ui.composition import (
     AgentEnvironmentCompatibility,
@@ -32,7 +35,27 @@ from a13n_ui.configuration import (
     SourceTransactionManifest,
 )
 from a13n_ui.configuration.catalog import CatalogRepository
-from a13n_ui.errors import ApplicationStateError
+from a13n_ui.environments import (
+    EnvdExecutableResolver,
+    EnvironmentAvailability,
+    EnvironmentService,
+    ProviderRuntimeResolver,
+)
+from a13n_ui.errors import ApplicationStateError, SessionError
+from a13n_ui.model_adapters import RunModelResolverFactory, unavailable_run_model_resolver_factory
+from a13n_ui.runs import ForegroundRunCoordinator
+from a13n_ui.sessions import (
+    EventSubscription,
+    LocalSession,
+    PresentationDelivery,
+    SessionAgentSkillSelection,
+    SessionEventStore,
+    SessionLifecycleState,
+    SessionService,
+    SessionSummary,
+    SessionUpdate,
+    TurnView,
+)
 from a13n_ui.settings import AgentUiSettings
 from a13n_ui.storage import LocalStore, StoreDiagnostic, open_local_store
 
@@ -59,7 +82,13 @@ class ApplicationStatus(BaseModel):
 class AgentUiApplication:
     """The only product boundary shared by Agent UI presentation surfaces."""
 
-    def __init__(self, settings: AgentUiSettings, store: LocalStore) -> None:
+    def __init__(
+        self,
+        settings: AgentUiSettings,
+        store: LocalStore,
+        *,
+        model_resolver_factory: RunModelResolverFactory = unavailable_run_model_resolver_factory,
+    ) -> None:
         self._settings = settings
         self._store = store
         self._state = ApplicationState.starting
@@ -70,6 +99,29 @@ class AgentUiApplication:
             process_settings_path=settings.process_settings_path,
         )
         self._composition = CompositionService(store, catalog)
+        factories = build_environment_provider_factory_catalog(
+            builtin_keys=settings.configuration.builtin_provider_keys,
+            extension_keys=settings.configuration.extension_provider_keys,
+        )
+        self._envd = EnvdExecutableResolver(
+            layout=store.layout,
+            settings=settings.envd_runtime,
+            executable_override=settings.configuration.envd_executable_override,
+        )
+        self._environments = EnvironmentService(
+            store=store,
+            factories=factories,
+            runtimes=ProviderRuntimeResolver(self._envd),
+        )
+        self._sessions = SessionService(store, self._composition)
+        self._events = SessionEventStore(store)
+        self._runs = ForegroundRunCoordinator(
+            sessions=self._sessions,
+            composition=self._composition,
+            environments=self._environments,
+            events=self._events,
+            model_resolver_factory=model_resolver_factory,
+        )
         self._operation_lock = Lock()
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
@@ -167,6 +219,218 @@ class AgentUiApplication:
                 reference,
                 environment_reference,
             )
+
+    async def create_session(
+        self,
+        *,
+        agent_snapshot: SnapshotReference,
+        environment_snapshot: SnapshotReference,
+        creation_request_id: str | None = None,
+        title: str | None = None,
+        skill_selections: tuple[SessionAgentSkillSelection, ...] = (),
+    ) -> LocalSession:
+        async with self._operation():
+            session = await self._sessions.create(
+                agent_snapshot=agent_snapshot,
+                environment_snapshot=environment_snapshot,
+                creation_request_id=creation_request_id,
+                title=title,
+                skill_selections=skill_selections,
+            )
+            return await self._complete_session_provisioning(session)
+
+    async def fork_session(
+        self,
+        source_session_id: str,
+        *,
+        expected_source_revision: int,
+        agent_snapshot: SnapshotReference | None = None,
+        environment_snapshot: SnapshotReference | None = None,
+        creation_request_id: str | None = None,
+        title: str | None = None,
+        skill_selections: tuple[SessionAgentSkillSelection, ...] | None = None,
+    ) -> LocalSession:
+        async with self._operation():
+            session = await self._sessions.fork(
+                source_session_id,
+                expected_source_revision=expected_source_revision,
+                agent_snapshot=agent_snapshot,
+                environment_snapshot=environment_snapshot,
+                creation_request_id=creation_request_id,
+                title=title,
+                skill_selections=skill_selections,
+            )
+            return await self._complete_session_provisioning(session)
+
+    async def session(self, session_id: str) -> LocalSession:
+        async with self._operation():
+            return await self._sessions.get(session_id)
+
+    async def sessions(
+        self,
+        *,
+        include_archived: bool = False,
+        limit: int = 100,
+    ) -> tuple[SessionSummary, ...]:
+        async with self._operation():
+            return await self._sessions.list(include_archived=include_archived, limit=limit)
+
+    async def update_session(
+        self,
+        session_id: str,
+        *,
+        expected_revision: int,
+        update: SessionUpdate,
+    ) -> LocalSession:
+        async with self._operation():
+            return await self._sessions.update(
+                session_id,
+                expected_revision=expected_revision,
+                update=update,
+            )
+
+    async def session_environment(self, session_id: str) -> EnvironmentAvailability:
+        async with self._operation():
+            return await self._environments.availability(session_id)
+
+    async def run_session_turn(
+        self,
+        session_id: str,
+        *,
+        thread_id: str,
+        expected_thread_revision: int,
+        input_value: RunInputValue,
+    ) -> TurnView:
+        async with self._operation():
+            return await self._runs.run_turn(
+                session_id=session_id,
+                thread_id=thread_id,
+                expected_thread_revision=expected_thread_revision,
+                input_value=input_value,
+            )
+
+    async def resume_session_turn(
+        self,
+        session_id: str,
+        *,
+        turn_id: str,
+        expected_thread_revision: int,
+        results: DeferredToolResults,
+    ) -> TurnView:
+        async with self._operation():
+            return await self._runs.resume_turn(
+                session_id=session_id,
+                turn_id=turn_id,
+                expected_thread_revision=expected_thread_revision,
+                results=results,
+            )
+
+    async def session_deferred_requests(
+        self,
+        session_id: str,
+        *,
+        turn_id: str,
+    ) -> DeferredToolRequests:
+        async with self._operation():
+            return await self._runs.deferred_requests(
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+
+    async def cancel_session_turn(
+        self,
+        session_id: str,
+        *,
+        turn_id: str,
+        expected_thread_revision: int,
+    ) -> TurnView:
+        async with self._operation():
+            return await self._runs.cancel_turn(
+                session_id=session_id,
+                turn_id=turn_id,
+                expected_thread_revision=expected_thread_revision,
+            )
+
+    async def session_events(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+        through_sequence: int | None = None,
+        limit: int = 10_000,
+    ) -> tuple[PresentationDelivery, ...]:
+        async with self._operation():
+            return await self._events.replay(
+                session_id,
+                after_sequence=after_sequence,
+                through_sequence=through_sequence,
+                limit=limit,
+            )
+
+    @asynccontextmanager
+    async def subscribe_session_events(
+        self,
+        session_id: str,
+        *,
+        capacity: int = 256,
+    ) -> AsyncGenerator[EventSubscription]:
+        async with self._operation():
+            async with self._events.subscribe(session_id, capacity=capacity) as subscription:
+                yield subscription
+
+    async def retry_session_provisioning(
+        self,
+        session_id: str,
+        *,
+        expected_revision: int,
+    ) -> LocalSession:
+        async with self._operation():
+            session = await self._sessions.get(session_id)
+            if session.control_revision != expected_revision:
+                raise SessionError(
+                    "The Session control revision is stale.",
+                    code="session_revision_conflict",
+                    details={"current_revision": session.control_revision},
+                )
+            if session.lifecycle_state is SessionLifecycleState.blocked:
+                await self._sessions.validate_selected_authority(session_id)
+                session = await self._sessions.set_lifecycle(
+                    session_id,
+                    expected_revision=expected_revision,
+                    state=SessionLifecycleState.provisioning,
+                )
+            return await self._complete_session_provisioning(session)
+
+    async def delete_session(self, session_id: str, *, expected_revision: int) -> None:
+        async with self._operation():
+            current = await self._sessions.get(session_id)
+            if current.control_revision != expected_revision:
+                raise SessionError(
+                    "The Session control revision is stale.",
+                    code="session_revision_conflict",
+                    details={"current_revision": current.control_revision},
+                )
+            if current.root.active_turn_id is not None:
+                raise SessionError(
+                    "A Session with active work cannot be deleted.",
+                    code="session_work_active",
+                )
+            session = await self._sessions.set_lifecycle(
+                session_id,
+                expected_revision=expected_revision,
+                state=SessionLifecycleState.deleting,
+            )
+            snapshot = await self._composition.environment(session.environment_snapshot)
+            try:
+                await self._environments.release_session(session_id, snapshot)
+            except BaseException:
+                await self._sessions.set_lifecycle(
+                    session_id,
+                    expected_revision=session.control_revision,
+                    state=SessionLifecycleState.cleanup_pending,
+                )
+                raise
+            await self._sessions.delete(session_id, expected_revision=session.control_revision)
 
     async def apply_source_transaction(
         self,
@@ -304,6 +568,26 @@ class AgentUiApplication:
                 code="application_stopping",
             )
 
+    async def _complete_session_provisioning(self, session: LocalSession) -> LocalSession:
+        if session.lifecycle_state is not SessionLifecycleState.provisioning:
+            return session
+        snapshot = await self._composition.environment(session.environment_snapshot)
+        try:
+            if snapshot.definition.lifecycle.provision == "eager":
+                await self._environments.provision(session.session_id)
+        except Exception as exc:
+            return await self._sessions.set_lifecycle(
+                session.session_id,
+                expected_revision=session.control_revision,
+                state=SessionLifecycleState.blocked,
+                failure={"code": getattr(exc, "code", "environment_provisioning_failed")},
+            )
+        return await self._sessions.set_lifecycle(
+            session.session_id,
+            expected_revision=session.control_revision,
+            state=SessionLifecycleState.ready,
+        )
+
     async def _stop(self) -> None:
         async with self._operation_lock:
             if self._state is not ApplicationState.ready:
@@ -311,6 +595,7 @@ class AgentUiApplication:
             self._state = ApplicationState.stopping
             idle = self._operations_idle
 
+        await self._runs.cancel_all()
         with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
             await idle.wait()
         if not drain_scope.cancel_called:
@@ -333,14 +618,26 @@ class AgentUiApplication:
 
 
 @asynccontextmanager
-async def open_application(settings: AgentUiSettings) -> AsyncGenerator[AgentUiApplication]:
+async def open_application(
+    settings: AgentUiSettings,
+    *,
+    model_resolver_factory: RunModelResolverFactory = unavailable_run_model_resolver_factory,
+) -> AsyncGenerator[AgentUiApplication]:
     """Start, expose, and close one complete Agent UI application lifetime."""
 
     application: AgentUiApplication | None = None
     try:
         async with open_local_store(settings.storage) as store:
-            application = AgentUiApplication(settings, store)
+            application = AgentUiApplication(
+                settings,
+                store,
+                model_resolver_factory=model_resolver_factory,
+            )
             await application._configuration.initialize()
+            await application._envd.recover_staging()
+            await application._sessions.initialize()
+            await application._environments.initialize()
+            await application._events.initialize()
             await store.cleanup_unreferenced_objects(
                 retention_seconds=application._configuration.settings.orphan_retention_seconds,
             )
@@ -356,6 +653,8 @@ async def open_application(settings: AgentUiSettings) -> AsyncGenerator[AgentUiA
                         tasks.cancel_scope.cancel()
                         try:
                             with move_on_after(application._settings.shutdown_timeout_seconds):
+                                await application._runs.close()
+                                await application._environments.close()
                                 await application._composition.close()
                         finally:
                             await application._configuration.close()

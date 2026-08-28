@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Coroutine
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import TracebackType
+from typing import Any
 from uuid import uuid4
 
 from .attachments import EnvironmentRuntimeAttachment
@@ -182,7 +183,17 @@ class EnvironmentProvider(ABC):
         """Create, enter, and destroy one temporary provider resource."""
         correlation = resource_correlation or f"resource-{uuid4().hex}"
         create_operation = _new_operation(EnvironmentManagementAction.CREATE, correlation)
-        resource = await self._create_ephemeral_resource(create_operation)
+        try:
+            resource = await self._create_ephemeral_resource(create_operation)
+        except asyncio.CancelledError as cancellation:
+            try:
+                await _await_cleanup(
+                    self._cleanup_cancelled_ephemeral_create(create_operation),
+                    name="environment-provider-cancelled-create-cleanup",
+                )
+            except BaseException as cleanup_error:
+                cancellation.add_note(f"Cancelled environment create reconciliation also failed: {cleanup_error!r}")
+            raise cancellation from None
         state = resource.state
         primary_error: BaseException | None = None
         try:
@@ -237,6 +248,40 @@ class EnvironmentProvider(ABC):
                     continue
                 raise
         raise AssertionError("ephemeral create retry loop exhausted")
+
+    async def _cleanup_cancelled_ephemeral_create(
+        self,
+        operation: EnvironmentOperationContext,
+    ) -> None:
+        reconciled = await self.reconcile(operation, last_known_state=None)
+        _require_reconciliation_identity(operation, reconciled)
+        if reconciled.phase is EnvironmentReconciliationPhase.ABSENT:
+            return
+        if reconciled.phase in {
+            EnvironmentReconciliationPhase.RUNNING,
+            EnvironmentReconciliationPhase.PAUSED,
+        }:
+            assert reconciled.state is not None
+            await self._destroy_ephemeral_resource(
+                reconciled.state,
+                _new_operation(
+                    EnvironmentManagementAction.DESTROY,
+                    operation.resource_correlation,
+                ),
+            )
+            return
+        raise EnvironmentProviderError(
+            "Cancelled environment create reconciliation did not reach a terminal phase.",
+            code="provider_unknown_outcome",
+            category=EnvironmentProviderErrorCategory.UNKNOWN_OUTCOME,
+            certainty=EnvironmentProviderOutcomeCertainty.UNKNOWN,
+            recovery_hint=EnvironmentProviderRecoveryHint.RECONCILE,
+            context=EnvironmentProviderErrorContext(
+                action=operation.action,
+                operation_id=operation.operation_id,
+                resource_correlation=operation.resource_correlation,
+            ),
+        )
 
     async def _resume_ephemeral_resource(
         self,
@@ -392,6 +437,20 @@ def _require_reconciliation_identity(
                 resource_correlation=operation.resource_correlation,
             ),
         )
+
+
+async def _await_cleanup[ResultT](
+    coroutine: Coroutine[Any, Any, ResultT],
+    *,
+    name: str,
+) -> ResultT:
+    task = asyncio.create_task(coroutine, name=name)
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            continue
+    return task.result()
 
 
 def _new_operation(

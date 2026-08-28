@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
 from types import TracebackType
 from typing import Never
@@ -26,7 +27,15 @@ from a13n_envd_client.errors import EIPProtocolError, EIPSessionStateError
 from a13n_envd_client.file_transfer import EIPFileReader, EIPFileWriter
 from a13n_envd_client.output import EIPOutputReader
 from a13n_envd_client.requester import RequestCoordinator
+from a13n_envd_client.stdio import StdioTransport
 from a13n_envd_client.transport import EIPTransport
+
+
+class _SessionCloseState(Enum):
+    OPEN = "open"
+    CLOSING = "closing"
+    CLEAN = "clean"
+    TERMINAL = "terminal"
 
 
 class EIPSession:
@@ -36,12 +45,17 @@ class EIPSession:
         self,
         requester: RequestCoordinator,
         descriptor: EnvironmentDescriptor,
+        *,
+        reuse_transport: bool = False,
     ) -> None:
         self._requester = requester
         self._client = EIPClient(requester)
         self._descriptor = descriptor
+        self._reuse_transport = reuse_transport
         self._describe_lock = asyncio.Lock()
-        self._closed = False
+        self._close_state = _SessionCloseState.OPEN
+        self._close_task: asyncio.Task[None] | None = None
+        self._abort_task: asyncio.Task[None] | None = None
 
     @classmethod
     async def initialize(
@@ -55,11 +69,16 @@ class EIPSession:
         initialization_timeout: float = 10.0,
         request_timeout: float | None = None,
         max_in_flight: int = 32,
+        reuse_transport: bool = False,
     ) -> EIPSession:
         if initialization_timeout <= 0:
             raise ValueError("initialization_timeout must be positive")
         if not isinstance(max_in_flight, int) or isinstance(max_in_flight, bool) or max_in_flight < 1:
             raise ValueError("max_in_flight must be a positive integer")
+        if not isinstance(reuse_transport, bool):
+            raise TypeError("reuse_transport must be a boolean")
+        if reuse_transport and not isinstance(transport, StdioTransport):
+            raise ValueError("only trusted stdio transports can be reused")
         requester = RequestCoordinator(
             transport,
             max_in_flight=1,
@@ -94,7 +113,7 @@ class EIPSession:
                 max_transfer_frame_bytes=descriptor.limits.max_transfer_frame_bytes,
                 max_concurrent_file_transfers=descriptor.limits.max_concurrent_file_transfers,
             )
-            return cls(requester, descriptor)
+            return cls(requester, descriptor, reuse_transport=reuse_transport)
         except BaseException:
             await requester.close()
             raise
@@ -192,20 +211,41 @@ class EIPSession:
             return descriptor
 
     async def close(self) -> None:
-        if self._closed:
+        if self._close_state is _SessionCloseState.CLEAN:
             return
-        self._closed = True
+        if self._close_state is _SessionCloseState.TERMINAL:
+            raise EIPSessionStateError("EIP session did not close cleanly")
+        if self._close_task is None:
+            self._close_state = _SessionCloseState.CLOSING
+            self._close_task = asyncio.create_task(self._close_cleanly(), name="eip-session-close")
+        await asyncio.shield(self._close_task)
+
+    async def _close_cleanly(self) -> None:
         try:
             await self._client.session_close(SessionCloseParams(context=EIPCallContext(operation_id=_operation_id())))
-        finally:
+            if self._reuse_transport:
+                await self._requester.detach()
+            else:
+                await self._requester.close()
+            if self._close_state is _SessionCloseState.TERMINAL:
+                raise EIPSessionStateError("EIP session was aborted while closing")
+        except BaseException:
+            self._close_state = _SessionCloseState.TERMINAL
             await self._requester.close()
+            raise
+        self._close_state = _SessionCloseState.CLEAN
 
     async def abort(self) -> None:
         """Close the carrier without claiming an in-flight operation outcome."""
-        if self._closed:
+        if self._close_state is _SessionCloseState.CLEAN:
             return
-        self._closed = True
-        await self._requester.close()
+        self._close_state = _SessionCloseState.TERMINAL
+        if self._abort_task is None:
+            self._abort_task = asyncio.create_task(self._requester.close(), name="eip-session-abort")
+        await asyncio.shield(self._abort_task)
+        close_task = self._close_task
+        if close_task is not None and close_task is not asyncio.current_task():
+            await asyncio.gather(close_task, return_exceptions=True)
 
     async def __aenter__(self) -> EIPSession:
         self._ensure_open()
@@ -226,12 +266,14 @@ class EIPSession:
             pass
 
     async def _terminate_protocol_error(self, error: EIPProtocolError) -> Never:
-        self._closed = True
-        await self._requester.close()
+        self._close_state = _SessionCloseState.TERMINAL
+        if self._abort_task is None:
+            self._abort_task = asyncio.create_task(self._requester.close(), name="eip-session-protocol-close")
+        await asyncio.shield(self._abort_task)
         raise error
 
     def _ensure_open(self) -> None:
-        if self._closed:
+        if self._close_state is not _SessionCloseState.OPEN:
             raise EIPSessionStateError("EIP session is closed")
 
     def _require_method(self, method: str) -> None:

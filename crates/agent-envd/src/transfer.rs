@@ -1,14 +1,17 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     io::{Read, Seek, SeekFrom},
-    sync::{Arc, Mutex as StdMutex, PoisonError},
+    sync::{
+        Arc, Mutex as StdMutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
-    sync::{Mutex, mpsc, watch},
+    sync::{Mutex, Notify, mpsc, watch},
 };
 
 use crate::{
@@ -39,6 +42,8 @@ struct TransferInner {
     max_duration: Duration,
     max_operation_duration: Duration,
     selector_ids: ShortIdAllocator,
+    active_producers: AtomicUsize,
+    producers_idle: Notify,
 }
 
 #[derive(Default)]
@@ -48,6 +53,18 @@ struct TransferState {
     terminal_order: VecDeque<(String, Instant)>,
     reservations: usize,
     session_closed: bool,
+}
+
+struct ProducerGuard {
+    inner: Arc<TransferInner>,
+}
+
+impl Drop for ProducerGuard {
+    fn drop(&mut self) {
+        if self.inner.active_producers.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.inner.producers_idle.notify_waiters();
+        }
+    }
 }
 
 struct TransferReservation {
@@ -201,6 +218,8 @@ impl TransferRegistry {
                     config.limits.max_operation_duration_ms,
                 ),
                 selector_ids: ShortIdAllocator::for_generation(generation),
+                active_producers: AtomicUsize::new(0),
+                producers_idle: Notify::new(),
             }),
         })
     }
@@ -623,6 +642,7 @@ impl TransferRegistry {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
+        self.wait_for_producers().await;
     }
 
     async fn handle_reader_frame(
@@ -655,7 +675,9 @@ impl TransferRegistry {
                 })
                 .await?;
                 let registry = self.clone();
+                let producer = self.track_producer();
                 tokio::spawn(async move {
+                    let _producer = producer;
                     registry
                         .produce_reader(record, file, handle, &mut cancellation)
                         .await;
@@ -735,7 +757,9 @@ impl TransferRegistry {
                 biased;
                 changed = cancellation.changed() => {
                     let _ = changed;
-                    self.reset_reader(&record, &handle, DataResetStatus::Cancelled).await;
+                    if !self.session_closed() {
+                        self.reset_reader(&record, &handle, DataResetStatus::Cancelled).await;
+                    }
                     return;
                 }
                 result = self.send(frame) => {
@@ -760,18 +784,26 @@ impl TransferRegistry {
             reader.phase = ReaderPhase::AwaitingAck;
             reader.last_progress = Instant::now();
         }
-        if self
-            .send(DataFrame {
-                kind: DataFrameKind::End,
-                handle,
-                offset,
-                payload: Vec::new(),
-                reset_status: None,
-            })
-            .await
-            .is_err()
-        {
-            record.lock().await.phase = ReaderPhase::Reset;
+        let end = DataFrame {
+            kind: DataFrameKind::End,
+            handle: handle.clone(),
+            offset,
+            payload: Vec::new(),
+            reset_status: None,
+        };
+        tokio::select! {
+            biased;
+            changed = cancellation.changed() => {
+                let _ = changed;
+                if !self.session_closed() {
+                    self.reset_reader(&record, &handle, DataResetStatus::Cancelled).await;
+                }
+            }
+            result = self.send(end) => {
+                if result.is_err() {
+                    record.lock().await.phase = ReaderPhase::Reset;
+                }
+            }
         }
     }
 
@@ -903,6 +935,31 @@ impl TransferRegistry {
             }
             _ => Err(TransferError::Protocol),
         }
+    }
+
+    fn track_producer(&self) -> ProducerGuard {
+        self.inner.active_producers.fetch_add(1, Ordering::AcqRel);
+        ProducerGuard {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+
+    async fn wait_for_producers(&self) {
+        while self.inner.active_producers.load(Ordering::Acquire) != 0 {
+            let notified = self.inner.producers_idle.notified();
+            if self.inner.active_producers.load(Ordering::Acquire) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn session_closed(&self) -> bool {
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .session_closed
     }
 
     async fn send(&self, frame: DataFrame) -> Result<(), TransferError> {
@@ -1473,7 +1530,7 @@ fn map_ledger_error(_error: LedgerError) -> TransferError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, sync::atomic::Ordering, time::Duration};
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use std::io::{Seek, Write};
@@ -1663,6 +1720,48 @@ mod tests {
             completion.digest.value,
             format!("{:x}", Sha256::digest(content))
         );
+    }
+
+    #[tokio::test]
+    async fn session_close_waits_for_detached_reader_producers() {
+        let (tree, _config, mounts, transfers, mut outbound) = setup(false, 60_000);
+        fs::write(tree.child("native/source.bin"), vec![b'x'; 1024 * 1024])
+            .expect("writes a source that fills the outbound queue");
+        let opened = transfers
+            .open_reader(
+                &mounts,
+                &FileReaderOpenParams {
+                    context: context("open-reader-for-close"),
+                    path: path("/source.bin"),
+                    byte_range: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .expect("opens reader");
+        transfers
+            .handle_frame(DataFrame {
+                kind: DataFrameKind::Attach,
+                handle: opened.reader.0,
+                offset: 0,
+                payload: Vec::new(),
+                reset_status: None,
+            })
+            .await
+            .expect("attaches reader");
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while transfers.inner.active_producers.load(Ordering::Acquire) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("reader producer starts");
+
+        tokio::time::timeout(Duration::from_secs(1), transfers.close_session())
+            .await
+            .expect("session close cancels and joins the detached producer");
+        assert_eq!(transfers.inner.active_producers.load(Ordering::Acquire), 0);
+        while outbound.recv().await.is_some() {}
     }
 
     #[tokio::test]

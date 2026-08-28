@@ -481,7 +481,7 @@ async def _normalize_document(item: _LoadedDocument, settings: ConfigurationSett
     document = item.document
     if isinstance(document, PromptDefinition):
         blocks: list[PromptBlock] = []
-        for block in document.instruction_blocks:
+        for block in document.system_prompt_blocks:
             if block.source is None:
                 blocks.append(block)
                 continue
@@ -503,7 +503,7 @@ async def _normalize_document(item: _LoadedDocument, settings: ConfigurationSett
                     "A resolved Prompt source is invalid.",
                     details={"validation_error_count": exc.error_count()},
                 ) from exc
-        return document.model_copy(update={"instruction_blocks": tuple(blocks)}, deep=True)
+        return document.model_copy(update={"system_prompt_blocks": tuple(blocks)}, deep=True)
     return document
 
 

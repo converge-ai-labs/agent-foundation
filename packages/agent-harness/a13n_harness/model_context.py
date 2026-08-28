@@ -24,6 +24,7 @@ from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.observation import observe_operation
 
 MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID = "a13n.model-context-coordinator"
 _MODEL_CONTEXT_METADATA_KEY = "a13n.model-context-overlay"
@@ -174,9 +175,10 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
 
             projection_handler = host_wrapped
 
-        projection = await projection_handler(request)
-        _validate_projection(projection, request)
-        committed = _commit_projection(request_context.messages, request, projection)
+        with observe_operation("context", capability_id=MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID):
+            projection = await projection_handler(request)
+            _validate_projection(projection, request)
+            committed = _commit_projection(request_context.messages, request, projection)
         return await handler(_replace_messages(request_context, committed))
 
 

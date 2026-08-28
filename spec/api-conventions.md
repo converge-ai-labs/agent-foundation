@@ -97,6 +97,8 @@ HTTP status expresses the broad failure class:
 |  `403` | Authenticated but not authorized                       |
 |  `404` | Resource absent or intentionally concealed             |
 |  `409` | State, version, or idempotency conflict                |
+|  `412` | Required representation precondition is stale          |
+|  `428` | Required mutation precondition is absent               |
 |  `429` | Request rate or admitted-capacity limit                |
 |  `500` | Unexpected service failure                             |
 |  `503` | Service or required dependency temporarily unavailable |
@@ -107,11 +109,24 @@ SDKs expose one common API error base carrying HTTP status, `code`, `message`, `
 
 ## Mutations and Retries
 
-A mutation that can lose a concurrent update accepts `expected_version` and compares it with the current domain-object `version`. A mismatch returns `409`. APIs do not add a parallel generic `revision` field. Resources that cannot lose updates do not require an artificial concurrency token.
+A versioned mutation that can lose a concurrent update accepts
+`expected_version` and compares it with the current domain-object `version`. A
+mismatch returns `409`. An owning contract can instead declare an intentionally
+non-versioned mutable representation and require a strong `ETag` plus
+`If-Match`; an absent precondition returns `428` and a stale tag returns `412`.
+The tag changes whenever that complete representation changes and is not an
+addressable version, revision, or history selector. One resource uses exactly
+one of these concurrency contracts. Resources that cannot lose updates do not
+require an artificial concurrency token.
 
 A create or command that callers may safely retry accepts an `Idempotency-Key` header. Within the operation's documented authenticated principal and resource scope, the same key and same canonical request return the original receipt or result; reuse with different content returns `409`. The owning API defines finite evidence retention. Once evidence has expired, absence does not prove that an earlier request was never dispatched.
 
-Idempotent replay is resolved before evaluating `expected_version`, so replay of a committed mutation does not conflict with the version it already changed. A timeout or lost response after possible dispatch has unknown outcome unless the same idempotency key or authoritative receipt reconciles it. A caller never changes the key merely because acknowledgement was lost.
+Idempotent replay is resolved before evaluating `expected_version` or
+`If-Match`, so replay of a committed mutation does not conflict with the state
+it already changed. A timeout or lost response after possible dispatch has
+unknown outcome unless the same idempotency key or authoritative receipt
+reconciles it. A caller never changes the key merely because acknowledgement
+was lost.
 
 SDKs automatically retry only bounded reads and mutations whose owning contract and idempotency evidence make replay safe. They honor `Retry-After` when present and never label an unknown mutation outcome as failure or success.
 
@@ -130,6 +145,8 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 3. Wire fields use `snake_case`, presence is explicit, timestamps are UTC, and scalar units appear in field names.
 4. Every collection read is bounded, deterministically ordered, and reauthorized; cursors are opaque and non-authoritative.
 5. Clients branch on stable error codes, never message text, and errors disclose no implementation-private or secret data.
-6. Concurrent mutation uses `version` and `expected_version`, not a second generic revision counter.
+6. Concurrent mutation uses either `version` and `expected_version`, or an
+   owner-declared strong `ETag` and `If-Match` for a non-versioned mutable
+   representation; it never adds a second generic revision counter.
 7. A mutation is retried only with idempotency or other authoritative replay evidence; post-dispatch uncertainty remains explicit.
 8. `v1` changes are additive, and unknown response additions do not prevent an older client from decoding the response.
