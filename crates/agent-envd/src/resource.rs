@@ -1,11 +1,12 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     io::{BufRead, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use globset::GlobBuilder;
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use regex::Regex;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -31,8 +32,15 @@ const MAX_PATCH_HUNKS: u64 = 10_000;
 const MAX_SEARCH_BYTES_PER_FILE: u64 = 64 * 1024 * 1024;
 const MAX_SEARCH_BYTES_PER_OPERATION: u64 = 256 * 1024 * 1024;
 
-type TraversalEntry = (PathBuf, String, u32);
+type IgnoreStack = Arc<Vec<Arc<IgnoreSpec>>>;
+type TraversalEntry = (PathBuf, String, u32, IgnoreStack);
 const RESPONSE_RESERVE_BYTES: u64 = 4096;
+const MAX_GIT_IGNORE_BYTES: u64 = 1024 * 1024;
+
+struct IgnoreSpec {
+    base: PathBuf,
+    matcher: Gitignore,
+}
 
 #[derive(Clone)]
 pub(crate) struct ResourceRegistry {
@@ -49,6 +57,13 @@ struct ResourceInner {
 struct RemovePlanEntry {
     relative: PathBuf,
     directory: bool,
+}
+
+#[derive(Clone, Copy)]
+struct WalkOptions {
+    max_depth: u32,
+    include_hidden: bool,
+    respect_git_ignore: bool,
 }
 
 struct PageCollector<T> {
@@ -166,8 +181,11 @@ impl ResourceRegistry {
         let omitted = walk_entries(
             &mount,
             &params.path,
-            1,
-            params.include_hidden,
+            WalkOptions {
+                max_depth: 1,
+                include_hidden: params.include_hidden,
+                respect_git_ignore: false,
+            },
             &self.inner.operations,
             &params.context.operation_id,
             |entry| {
@@ -175,7 +193,7 @@ impl ResourceRegistry {
                     let key = entry.relative_path.as_bytes().to_vec();
                     page.push(key, entry)?;
                 }
-                Ok(())
+                Ok(true)
             },
         )?;
         let (entries, has_more) = page.finish()?;
@@ -205,12 +223,15 @@ impl ResourceRegistry {
         let omitted = walk_entries(
             &mount,
             &params.root,
-            if params.recursive {
-                MAX_TRAVERSAL_DEPTH
-            } else {
-                1
+            WalkOptions {
+                max_depth: if params.recursive {
+                    MAX_TRAVERSAL_DEPTH
+                } else {
+                    1
+                },
+                include_hidden: params.include_hidden,
+                respect_git_ignore: params.respect_git_ignore,
             },
-            params.include_hidden,
             &self.inner.operations,
             &params.context.operation_id,
             |entry| {
@@ -221,7 +242,7 @@ impl ResourceRegistry {
                     let key = entry.relative_path.as_bytes().to_vec();
                     page.push(key, entry)?;
                 }
-                Ok(())
+                Ok(true)
             },
         )?;
         let (entries, has_more) = page.finish()?;
@@ -240,12 +261,18 @@ impl ResourceRegistry {
     ) -> Result<FileSearchResult, ResourceError> {
         if params.query.is_empty()
             || params.query.len() > MAX_PATTERN_BYTES
+            || params.include_pattern.len() > MAX_PATTERN_BYTES
             || params.max_results == 0
             || params.max_line_length == 0
+            || params.max_file_bytes == 0
+            || params.context_lines > 20
+            || params.max_matches_per_file == Some(0)
+            || params.max_files == Some(0)
         {
             return Err(ResourceError::Invalid);
         }
         let content = ContentMatcher::new(params.mode, &params.query, params.case_sensitive)?;
+        let include = PathMatcher::new(&params.include_pattern)?;
         let mount = read_mount(mounts, &params.root, "search")?;
         let mut page = PageCollector::new(
             params.offset,
@@ -253,31 +280,51 @@ impl ResourceRegistry {
             self.response_item_limit(),
         );
         let mut scanned_bytes = 0_u64;
+        let mut scanned_files = 0_u32;
+        let max_file_bytes = params.max_file_bytes.min(MAX_SEARCH_BYTES_PER_FILE);
         let omitted = walk_entries(
             &mount,
             &params.root,
-            MAX_TRAVERSAL_DEPTH,
-            params.include_hidden,
+            WalkOptions {
+                max_depth: MAX_TRAVERSAL_DEPTH,
+                include_hidden: params.include_hidden,
+                respect_git_ignore: params.respect_git_ignore,
+            },
             &self.inner.operations,
             &params.context.operation_id,
             |entry| {
                 if entry.info.kind != FileKind::File
                     || (!params.include_hidden && is_hidden_path(&entry.relative_path))
+                    || !include.matches(&entry.relative_path)
+                    || entry
+                        .info
+                        .size_bytes
+                        .is_some_and(|size| size > max_file_bytes)
                 {
-                    return Ok(());
+                    return Ok(true);
                 }
+                if params
+                    .max_files
+                    .is_some_and(|max_files| scanned_files >= max_files)
+                {
+                    return Err(ResourceError::Limit);
+                }
+                scanned_files = scanned_files.checked_add(1).ok_or(ResourceError::Limit)?;
                 self.check_cancelled(&params.context.operation_id)?;
                 let file_matches = match search_file(
                     &mount,
                     &entry.info.path,
                     &content,
                     params.max_line_length,
+                    params.context_lines,
+                    params.max_matches_per_file,
+                    max_file_bytes,
                     &mut scanned_bytes,
                     &self.inner.operations,
                     &params.context.operation_id,
                 ) {
                     Ok(matches) => matches,
-                    Err(ResourceError::Unsupported) => return Ok(()),
+                    Err(ResourceError::Unsupported) => return Ok(true),
                     Err(error) => return Err(error),
                 };
                 for matched in file_matches {
@@ -286,7 +333,7 @@ impl ResourceRegistry {
                     key.extend_from_slice(&matched.line_number.to_be_bytes());
                     page.push(key, matched)?;
                 }
-                Ok(())
+                Ok(true)
             },
         )?;
         let (matches, has_more) = page.finish()?;
@@ -884,29 +931,41 @@ fn build_remove_plan(
 fn walk_entries<F>(
     mount: &Arc<Mount>,
     root: &EIPPath,
-    max_depth: u32,
-    include_hidden: bool,
+    options: WalkOptions,
     operations: &OperationLedger,
     operation_id: &str,
     mut visit: F,
 ) -> Result<u64, ResourceError>
 where
-    F: FnMut(FileListEntry) -> Result<(), ResourceError>,
+    F: FnMut(FileListEntry) -> Result<bool, ResourceError>,
 {
     let root_relative = mount
         .resolve_followed_relative(root)
         .map_err(map_mount_error)?;
+    let mut ignore_specs = Arc::new(Vec::new());
+    if options.respect_git_ignore {
+        let mut ancestors = root_relative.ancestors().collect::<Vec<_>>();
+        ancestors.reverse();
+        for ancestor in ancestors {
+            if ancestor == root_relative {
+                break;
+            }
+            ignore_specs = extend_ignore_specs(mount, ancestor, ignore_specs)?;
+        }
+    }
     let (mut pending, mut omitted) = read_children_counting(
         mount,
         &root_relative,
         "",
         1,
-        include_hidden,
+        options.include_hidden,
+        options.respect_git_ignore,
+        ignore_specs,
         MAX_TRAVERSAL_ENTRIES,
     )?;
     pending.reverse();
     let mut discovered = 0_usize;
-    while let Some((relative, relative_path, depth)) = pending.pop() {
+    while let Some((relative, relative_path, depth, ignore_specs)) = pending.pop() {
         check_operation(operations, operation_id)?;
         discovered = discovered.checked_add(1).ok_or(ResourceError::Limit)?;
         if discovered > MAX_TRAVERSAL_ENTRIES {
@@ -923,11 +982,13 @@ where
         };
         let directory = metadata.is_dir() && !metadata.file_type().is_symlink();
         let info = cap_file_info(&path, &metadata);
-        visit(FileListEntry {
+        if !visit(FileListEntry {
             relative_path: relative_path.clone(),
             info,
-        })?;
-        if directory && depth < max_depth {
+        })? {
+            break;
+        }
+        if directory && depth < options.max_depth {
             let remaining = MAX_TRAVERSAL_ENTRIES
                 .saturating_sub(discovered)
                 .saturating_sub(pending.len());
@@ -936,7 +997,9 @@ where
                 &relative,
                 &relative_path,
                 depth + 1,
-                include_hidden,
+                options.include_hidden,
+                options.respect_git_ignore,
+                ignore_specs,
                 remaining,
             )?;
             omitted = omitted.saturating_add(skipped);
@@ -947,17 +1010,25 @@ where
     Ok(omitted)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn read_children_counting(
     mount: &Arc<Mount>,
     directory: &Path,
     prefix: &str,
     depth: u32,
     include_hidden: bool,
+    respect_git_ignore: bool,
+    ignore_specs: IgnoreStack,
     max_children: usize,
 ) -> Result<(Vec<TraversalEntry>, u64), ResourceError> {
     mount
         .ensure_unprotected(directory)
         .map_err(map_mount_error)?;
+    let ignore_specs = if respect_git_ignore {
+        extend_ignore_specs(mount, directory, ignore_specs)?
+    } else {
+        ignore_specs
+    };
     let reader = mount
         .root
         .read_dir(directory)
@@ -983,18 +1054,74 @@ fn read_children_counting(
             Err(MountPathError::Denied) => continue,
             Err(error) => return Err(map_mount_error(error)),
         }
-        if children.len() >= max_children {
-            return Err(ResourceError::Limit);
-        }
         let relative_path = if prefix.is_empty() {
             name
         } else {
             format!("{prefix}/{name}")
         };
-        children.push((child_relative, relative_path, depth));
+        let is_directory = entry.file_type().map_err(|_| ResourceError::Io)?.is_dir();
+        if respect_git_ignore && is_git_ignored(&child_relative, is_directory, &ignore_specs) {
+            continue;
+        }
+        if children.len() >= max_children {
+            return Err(ResourceError::Limit);
+        }
+        children.push((child_relative, relative_path, depth, ignore_specs.clone()));
     }
     children.sort_by(|left, right| left.1.as_bytes().cmp(right.1.as_bytes()));
     Ok((children, omitted))
+}
+
+fn extend_ignore_specs(
+    mount: &Arc<Mount>,
+    directory: &Path,
+    ignore_specs: IgnoreStack,
+) -> Result<IgnoreStack, ResourceError> {
+    let path = directory.join(".gitignore");
+    let Ok(file) = mount.root.open(&path) else {
+        return Ok(ignore_specs);
+    };
+    let mut bytes = Vec::new();
+    file.take(MAX_GIT_IGNORE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| ResourceError::Io)?;
+    if bytes.len() as u64 > MAX_GIT_IGNORE_BYTES {
+        return Ok(ignore_specs);
+    }
+    let text = String::from_utf8_lossy(&bytes);
+    let mut builder = GitignoreBuilder::new("");
+    for line in text.lines() {
+        builder
+            .add_line(None, line)
+            .map_err(|_| ResourceError::Invalid)?;
+    }
+    let matcher = builder.build().map_err(|_| ResourceError::Invalid)?;
+    let mut extended = Vec::with_capacity(ignore_specs.len() + 1);
+    extended.extend(ignore_specs.iter().cloned());
+    extended.push(Arc::new(IgnoreSpec {
+        base: directory.to_path_buf(),
+        matcher,
+    }));
+    Ok(Arc::new(extended))
+}
+
+fn is_git_ignored(path: &Path, is_directory: bool, specs: &IgnoreStack) -> bool {
+    if path.components().any(|part| part.as_os_str() == ".git") {
+        return true;
+    }
+    let mut ignored = false;
+    for spec in specs.iter() {
+        let Ok(candidate) = path.strip_prefix(&spec.base) else {
+            continue;
+        };
+        let matched = spec.matcher.matched(candidate, is_directory);
+        if matched.is_ignore() {
+            ignored = true;
+        } else if matched.is_whitelist() {
+            ignored = false;
+        }
+    }
+    ignored
 }
 
 fn join_logical(root: &str, relative: &str) -> String {
@@ -1315,24 +1442,44 @@ fn truncate_chars(value: &str, max_chars: usize) -> (&str, bool) {
     }
 }
 
+struct PendingSearchMatch {
+    line_number: u64,
+    preview: String,
+    preview_truncated: bool,
+    context: String,
+    context_start_line: u64,
+    remaining_context: u32,
+}
+
+#[allow(clippy::too_many_arguments)]
 fn search_file(
     mount: &Arc<Mount>,
     path: &EIPPath,
     matcher: &ContentMatcher,
     max_line_length: u64,
+    context_lines: u32,
+    max_matches_per_file: Option<u32>,
+    max_file_bytes: u64,
     operation_scanned: &mut u64,
     operations: &OperationLedger,
     operation_id: &str,
 ) -> Result<Vec<FileSearchMatch>, ResourceError> {
     let opened = mount.open_regular(path).map_err(map_mount_error)?;
     let requested_chars = usize::try_from(max_line_length).map_err(|_| ResourceError::Limit)?;
+    let match_limit = max_matches_per_file
+        .unwrap_or(MAX_TRAVERSAL_ENTRIES as u32)
+        .min(MAX_TRAVERSAL_ENTRIES as u32) as usize;
     let mut reader = BufReader::new(opened.file);
     let mut file_scanned = 0_u64;
     let mut line_number = 0_u64;
+    let mut matched = 0_usize;
     let mut matches = Vec::new();
+    let mut before = VecDeque::<(u64, String)>::with_capacity(context_lines as usize);
+    let mut pending = Vec::<PendingSearchMatch>::new();
+    let mut reached_match_limit = false;
     loop {
         check_operation(operations, operation_id)?;
-        let remaining = MAX_SEARCH_BYTES_PER_FILE
+        let remaining = max_file_bytes
             .saturating_sub(file_scanned)
             .min(MAX_SEARCH_BYTES_PER_OPERATION.saturating_sub(*operation_scanned));
         let Some(mut line_bytes) = read_bounded_search_line(&mut reader, remaining)? else {
@@ -1346,23 +1493,86 @@ fn search_file(
         if line_bytes.contains(&0) {
             return Err(ResourceError::Unsupported);
         }
-        if line_bytes.last() == Some(&b'\n') {
+        let terminated = line_bytes.last() == Some(&b'\n');
+        if terminated {
             line_bytes.pop();
         }
         let line = std::str::from_utf8(&line_bytes).map_err(|_| ResourceError::Unsupported)?;
         line_number = line_number.checked_add(1).ok_or(ResourceError::Limit)?;
-        if matcher.matches(line) {
-            let (preview, preview_truncated) = truncate_chars(line, requested_chars);
-            matches.push(FileSearchMatch {
-                path: path.clone(),
+        let (preview, preview_truncated) = truncate_chars(line, requested_chars);
+        let mut rendered = preview.to_owned();
+        if terminated {
+            rendered.push('\n');
+        }
+
+        let mut remaining_pending = Vec::with_capacity(pending.len());
+        for mut item in pending {
+            item.context.push_str(&rendered);
+            item.remaining_context -= 1;
+            if item.remaining_context == 0 {
+                matches.push(FileSearchMatch {
+                    path: path.clone(),
+                    line_number: item.line_number,
+                    preview: item.preview,
+                    preview_truncated: item.preview_truncated,
+                    context: item.context,
+                    context_start_line: item.context_start_line,
+                });
+            } else {
+                remaining_pending.push(item);
+            }
+        }
+        pending = remaining_pending;
+        if reached_match_limit && pending.is_empty() {
+            break;
+        }
+
+        if matcher.matches(line) && matched < match_limit {
+            let context_start_line = before.front().map_or(line_number, |(number, _)| *number);
+            let mut context = String::new();
+            for (_, value) in &before {
+                context.push_str(value);
+            }
+            context.push_str(&rendered);
+            let item = PendingSearchMatch {
                 line_number,
                 preview: preview.to_owned(),
                 preview_truncated,
-            });
-            if matches.len() > MAX_TRAVERSAL_ENTRIES {
-                return Err(ResourceError::Limit);
+                context,
+                context_start_line,
+                remaining_context: context_lines,
+            };
+            if context_lines == 0 {
+                matches.push(FileSearchMatch {
+                    path: path.clone(),
+                    line_number: item.line_number,
+                    preview: item.preview,
+                    preview_truncated: item.preview_truncated,
+                    context: item.context,
+                    context_start_line: item.context_start_line,
+                });
+            } else {
+                pending.push(item);
             }
+            matched += 1;
+            reached_match_limit = matched == match_limit;
         }
+        if context_lines > 0 {
+            if before.len() == context_lines as usize {
+                before.pop_front();
+            }
+            before.push_back((line_number, rendered));
+        }
+    }
+    for item in pending {
+        matches.push(FileSearchMatch {
+            path: path.clone(),
+            line_number: item.line_number,
+            preview: item.preview,
+            preview_truncated: item.preview_truncated,
+            context: item.context,
+            context_start_line: item.context_start_line,
+        });
     }
     Ok(matches)
 }
@@ -2070,6 +2280,7 @@ mod tests {
                     recursive: true,
                     include_hidden: false,
                     kinds: vec![FileKind::File],
+                    respect_git_ignore: false,
                 },
             )
             .expect("find succeeds");
@@ -2090,6 +2301,12 @@ mod tests {
                     max_results: 100,
                     include_hidden: false,
                     max_line_length: 2_000,
+                    include_pattern: "**/*".to_owned(),
+                    respect_git_ignore: false,
+                    context_lines: 0,
+                    max_matches_per_file: None,
+                    max_files: None,
+                    max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
                 },
             )
             .expect("search succeeds");
@@ -2116,6 +2333,12 @@ mod tests {
                     max_results: 10,
                     include_hidden: false,
                     max_line_length: 2_000,
+                    include_pattern: "**/*".to_owned(),
+                    respect_git_ignore: false,
+                    context_lines: 0,
+                    max_matches_per_file: None,
+                    max_files: None,
+                    max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
                 },
             )
             .expect("LF-only search succeeds");
@@ -2166,6 +2389,12 @@ mod tests {
                     max_results: 10,
                     include_hidden: false,
                     max_line_length: 32,
+                    include_pattern: "**/*".to_owned(),
+                    respect_git_ignore: false,
+                    context_lines: 0,
+                    max_matches_per_file: None,
+                    max_files: None,
+                    max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
                 },
             )
             .expect("search uses its own scan ceiling");
@@ -2199,6 +2428,7 @@ mod tests {
                     recursive: true,
                     include_hidden: false,
                     kinds: vec![FileKind::File],
+                    respect_git_ignore: false,
                 },
             )
             .expect("find prunes hidden directories");
@@ -2225,10 +2455,88 @@ mod tests {
                     max_results: 10,
                     include_hidden: false,
                     max_line_length: 32,
+                    include_pattern: "**/*".to_owned(),
+                    respect_git_ignore: false,
+                    context_lines: 0,
+                    max_matches_per_file: None,
+                    max_files: None,
+                    max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
                 },
             )
             .expect("search never scans the hidden sparse source");
         assert!(searched.matches.is_empty());
+    }
+
+    #[test]
+    fn find_and_search_apply_gitignore_include_context_and_limits_in_resource_worker() {
+        let fixture = Fixture::read_only();
+        fs::create_dir_all(fixture.native.join("src")).expect("source directory");
+        fs::create_dir_all(fixture.native.join("ignored")).expect("ignored directory");
+        fs::write(fixture.native.join(".gitignore"), "ignored/\n").expect("gitignore fixture");
+        fs::write(
+            fixture.native.join("src/match.py"),
+            "before\nneedle one\nafter\nneedle two\n",
+        )
+        .expect("search fixture");
+        fs::write(fixture.native.join("src/other.txt"), "needle\n").expect("excluded fixture");
+        fs::write(fixture.native.join("ignored/hidden.py"), "needle\n")
+            .expect("ignored search fixture");
+
+        let found = fixture
+            .resources
+            .find(
+                &fixture.mounts,
+                &FileFindParams {
+                    context: context("gitignore-find"),
+                    root: path("/"),
+                    pattern: "*.py".to_owned(),
+                    offset: 0,
+                    max_results: 10,
+                    recursive: true,
+                    include_hidden: false,
+                    kinds: vec![FileKind::File],
+                    respect_git_ignore: true,
+                },
+            )
+            .expect("gitignore-aware find succeeds");
+        assert_eq!(
+            found
+                .entries
+                .iter()
+                .map(|entry| entry.relative_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["src/match.py"]
+        );
+
+        let searched = fixture
+            .resources
+            .search(
+                &fixture.mounts,
+                &FileSearchParams {
+                    context: context("filtered-search"),
+                    root: path("/"),
+                    query: "needle".to_owned(),
+                    mode: SearchMode::Literal,
+                    case_sensitive: true,
+                    offset: 0,
+                    max_results: 10,
+                    include_hidden: false,
+                    max_line_length: 2_000,
+                    include_pattern: "**/*.py".to_owned(),
+                    respect_git_ignore: true,
+                    context_lines: 1,
+                    max_matches_per_file: Some(1),
+                    max_files: Some(10),
+                    max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
+                },
+            )
+            .expect("bounded filtered search succeeds");
+        assert_eq!(searched.matches.len(), 1);
+        assert_eq!(searched.matches[0].path, path("/src/match.py"));
+        assert_eq!(searched.matches[0].line_number, 2);
+        assert_eq!(searched.matches[0].context, "before\nneedle one\nafter\n");
+        assert_eq!(searched.matches[0].context_start_line, 1);
+        assert!(!searched.has_more);
     }
 
     #[cfg(target_os = "linux")]
@@ -2535,6 +2843,12 @@ mod tests {
                 max_results: 100,
                 include_hidden: false,
                 max_line_length: 2_000,
+                include_pattern: "**/*".to_owned(),
+                respect_git_ignore: false,
+                context_lines: 0,
+                max_matches_per_file: None,
+                max_files: None,
+                max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
             },
         );
         let searched = searched.expect("long search line is readable through a bounded preview");

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from pydantic_ai import BinaryContent, RunContext, ToolReturn
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -24,6 +24,8 @@ from a13n_harness.environment.files import (
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import FileScopeProvider
+from a13n_harness.errors import HarnessError
+from a13n_harness.spec import ModelCapability
 from a13n_harness.tools.metadata import (
     HarnessTool,
     HarnessToolMetadata,
@@ -31,9 +33,19 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     ToolResourceResolver,
 )
+from a13n_harness.usage import ProviderUsage
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
 from ._scoped_files import ScopedFileAccess
+from .file_media import (
+    MAX_MEDIA_UNDERSTANDING_BYTES,
+    MediaUnderstandingError,
+    MediaUnderstandingProvider,
+    MediaUnderstandingRequest,
+    MediaUnderstandingResult,
+    NativeInputMediaKind,
+)
 from .file_results import (
     FileCopyItem,
     FileCopyToolResult,
@@ -65,10 +77,26 @@ _MAX_MODEL_TEXT_BYTES = 256 * 1024
 _MAX_MODEL_TEXT_PAGE_BYTES = 4 * 1024 * 1024
 _MAX_MODEL_EDIT_BYTES = 16 * 1024 * 1024
 _MAX_MODEL_RESULTS = 1_000
-_MAX_MODEL_MEDIA_BYTES = 16 * 1024 * 1024
+_MAX_MODEL_MEDIA_BYTES = MAX_MEDIA_UNDERSTANDING_BYTES
 _MAX_MODEL_TEXT_RULE_PAGE_BYTES = 16 * 1024 * 1024
 _SKILL_MARKDOWN_LINE_LIMIT = 800
 _SKILL_MARKDOWN_MAX_LINE_LENGTH = 20_000
+
+_FILE_TOOL_INSTRUCTIONS = (
+    tool_instruction("view"),
+    tool_instruction("write"),
+    tool_instruction("edit"),
+    tool_instruction("multi_edit"),
+    tool_instruction("ls"),
+    tool_instruction("glob"),
+    tool_instruction("grep"),
+)
+
+_FILE_SHELL_SUPPRESSED_INSTRUCTIONS = (
+    tool_instruction("move"),
+    tool_instruction("copy"),
+    tool_instruction("delete"),
+)
 
 type _UnlimitedOrPositiveResults = Literal[-1] | Annotated[int, Field(gt=0, le=_MAX_MODEL_RESULTS)]
 
@@ -158,16 +186,25 @@ class FileToolset:
         resource_resolver: Callable[[str], ToolResourceResolver] | None = None,
         execution_guard: Callable[[], None] | None = None,
         file_scopes: FileScopeProvider | None = None,
+        media_understanding: (
+            MediaUnderstandingProvider
+            | Callable[[RunContext[AgentContext], NativeInputMediaKind], MediaUnderstandingProvider | None]
+            | None
+        ) = None,
     ) -> None:
         self._files = files
         self._file_access = ScopedFileAccess(files, file_scopes)
         self._has_file_scopes = file_scopes is not None
         self._resource_resolver = resource_resolver
         self._execution_guard = execution_guard
+        self._media_understanding = media_understanding
         self._mutation_lock = asyncio.Lock()
 
-    def get_toolset(self) -> FunctionToolset[AgentContext]:
-        return FunctionToolset(
+    def get_toolset(self, *, shell_active: bool = False) -> FunctionToolset[AgentContext]:
+        instructions = list(_FILE_TOOL_INSTRUCTIONS)
+        if not shell_active:
+            instructions.extend(_FILE_SHELL_SUPPRESSED_INSTRUCTIONS)
+        return InstructionFunctionToolset(
             tools=(
                 self._tool(
                     self.view,
@@ -209,7 +246,6 @@ class FileToolset:
                     "none",
                     name="mkdir",
                     description="Create multiple directories in one bounded batch.",
-                    superseded_by_tool_ids={"environment.shell_exec"},
                 ),
                 self._tool(
                     self.move,
@@ -227,6 +263,7 @@ class FileToolset:
                     "none",
                     name="copy",
                     description="Copy files, including streaming copies across Environment bindings.",
+                    superseded_by_tool_ids={"environment.shell_exec"},
                 ),
                 self._tool(
                     self.delete,
@@ -263,6 +300,7 @@ class FileToolset:
                 ),
             ),
             id="a13n-file-tools",
+            instructions=instructions,
         )
 
     def _tool(
@@ -349,13 +387,53 @@ class FileToolset:
                             "Media file exceeds the model view limit.",
                             code="environment_too_large",
                         )
-                    message = f"The {media_type} file {file_path} is attached in the user message."
-                    return ToolReturn(
-                        return_value=message,
-                        content=[BinaryContent(data=data, media_type=media_type)],
-                    )
+                    source = self._file_access.resolved_path(file_path)
             except EnvironmentError as exc:
                 return _environment_error_result(exc)
+
+            kind = cast(NativeInputMediaKind, media_type.split("/", maxsplit=1)[0])
+            if _model_supports_native_media(ctx, kind):
+                message = f"The {media_type} file {file_path} is attached in the user message."
+                return ToolReturn(
+                    return_value=message,
+                    content=[BinaryContent(data=data, media_type=media_type)],
+                )
+
+            try:
+                provider = self._resolve_media_understanding(ctx, kind)
+            except HarnessError:
+                raise
+            except MediaUnderstandingError as exc:
+                await _record_media_understanding_usage(ctx, exc.usage)
+                return _media_understanding_error(exc.code)
+            except Exception:
+                return _media_understanding_error("media_understanding_failed")
+            if provider is None:
+                return _media_understanding_error("media_understanding_unavailable")
+
+            request = MediaUnderstandingRequest(
+                kind=kind,
+                media_type=media_type,
+                source=source,
+                source_name=file_path,
+                source_bytes=data,
+                instructions=instructions,
+            )
+            try:
+                raw = await provider.understand(request)
+            except HarnessError:
+                raise
+            except MediaUnderstandingError as exc:
+                await _record_media_understanding_usage(ctx, exc.usage)
+                return _media_understanding_error(exc.code)
+            except Exception:
+                return _media_understanding_error("media_understanding_failed")
+            try:
+                result = MediaUnderstandingResult.model_validate(raw)
+            except ValidationError:
+                return _media_understanding_error("media_understanding_response_invalid")
+            await _record_media_understanding_usage(ctx, result.usage)
+            return ToolReturn(return_value=result.text)
 
         profile = _file_view_profile(ctx.deps, file_path)
         effective_line_limit = line_limit
@@ -651,25 +729,20 @@ class FileToolset:
         root: Annotated[str, Field(default=".", description="Logical root to search from")] = ".",
         include_ignored: Annotated[
             bool,
-            Field(
-                default=False,
-                description=(
-                    "Compatibility parameter; provider-neutral Environments do not interpret repository ignore files"
-                ),
-            ),
+            Field(default=False, description="If true, do not interpret repository ignore files"),
         ] = False,
         include_hidden: Annotated[bool, Field(default=False)] = False,
         offset: Annotated[int, Field(default=0, ge=0)] = 0,
         max_results: _UnlimitedOrPositiveResults = 500,
     ) -> FileGlobResult:
-        """Find matching paths through the provider-neutral Environment query operation."""
-        del include_ignored  # Environment providers expose no repository-specific ignore authority.
+        """Find matching paths through one provider-neutral Environment query operation."""
         limit = _MAX_MODEL_RESULTS if max_results == -1 else max_results
         request = FileQueryRequest(
             root=root,
             pattern=pattern,
             recursive=True,
             include_hidden=include_hidden,
+            ignore_mode="none" if include_ignored else "git",
             offset=offset,
             max_results=limit,
         )
@@ -716,83 +789,36 @@ class FileToolset:
         include: Annotated[str, Field(default="**/*", description="Glob selecting files to include")] = "**/*",
         include_ignored: Annotated[
             bool,
-            Field(
-                default=False,
-                description=(
-                    "Compatibility parameter; provider-neutral Environments do not interpret repository ignore files"
-                ),
-            ),
+            Field(default=False, description="If true, do not interpret repository ignore files"),
         ] = False,
         include_hidden: Annotated[bool, Field(default=False)] = False,
         context_lines: Annotated[int, Field(default=2, ge=0, le=20)] = 2,
         offset: Annotated[int, Field(default=0, ge=0)] = 0,
         max_results: _UnlimitedOrPositiveResults = 100,
         max_matches_per_file: _UnlimitedOrPositiveResults = 20,
-        max_files: _UnlimitedOrPositiveResults = 50,
+        max_files: _UnlimitedOrPositiveResults = -1,
     ) -> FileGrepResult:
-        """Search bounded UTF-8 text and return reference-compatible match records."""
-        del include_ignored
+        """Search bounded UTF-8 text through one provider-neutral Environment operation."""
         result_limit = _MAX_MODEL_RESULTS if max_results == -1 else max_results
         request = FileTextSearchRequest(
             root=root,
             pattern=pattern,
             regex=True,
             case_sensitive=True,
+            include=include,
             include_hidden=include_hidden,
+            ignore_mode="none" if include_ignored else "git",
+            context_lines=context_lines,
             offset=offset,
-            max_matches=_MAX_MODEL_RESULTS,
+            max_matches=result_limit,
+            max_matches_per_file=None if max_matches_per_file == -1 else max_matches_per_file,
+            max_files=None if max_files == -1 else max_files,
             max_line_length=2_000,
         )
 
-        async def operation(files: FileOperator):
-            result = await files.search_text(request)
-            selected = []
-            consumed = 0
-            per_file: dict[str, int] = {}
-            selected_files: set[str] = set()
-            for match in result.matches:
-                if len(selected) >= result_limit:
-                    break
-                consumed += 1
-                if not _matches_file_glob(match.path, root=root, pattern=include):
-                    continue
-                if max_files != -1 and match.path not in selected_files and len(selected_files) >= max_files:
-                    continue
-                count = per_file.get(match.path, 0)
-                if max_matches_per_file != -1 and count >= max_matches_per_file:
-                    continue
-                selected_files.add(match.path)
-                per_file[match.path] = count + 1
-                selected.append(match)
-
-            widest_context = context_lines * 2 + 1
-            max_context_line_length = min(
-                2_000,
-                max(
-                    1,
-                    _MAX_MODEL_TEXT_BYTES // max(1, 4 * len(selected) * widest_context),
-                ),
-            )
-            projected = []
-            for match in selected:
-                context_start_line = max(1, match.line - context_lines)
-                context_end_line = match.line + context_lines
-                self._guard_unscoped_step()
-                context = await files.read_text(
-                    match.path,
-                    line_offset=context_start_line - 1,
-                    line_limit=context_end_line - context_start_line + 1,
-                    max_line_length=max_context_line_length,
-                )
-                projected.append((match, context, context_start_line))
-            has_more = result.has_more or consumed < len(result.matches)
-            next_offset = result.offset + consumed if has_more else None
-            return projected, next_offset, has_more
-
-        def project(value) -> Mapping[str, JsonValue]:
-            projected, next_offset, has_more = value
+        def project(result) -> Mapping[str, JsonValue]:
             matches: dict[str, JsonValue] = {}
-            for match, context, context_start_line in projected:
+            for match in result.matches:
                 key = f"{match.path}:{match.line}"
                 matches[key] = cast(
                     JsonValue,
@@ -801,16 +827,16 @@ class FileToolset:
                         "line_number": match.line,
                         "matching_line": match.text,
                         "text_truncated": match.text_truncated,
-                        "context": context.text,
-                        "context_start_line": context_start_line,
+                        "context": match.context,
+                        "context_start_line": match.context_start_line,
                     },
                 )
             return {
                 "matches": cast(JsonValue, matches),
                 "count": len(matches),
                 "showing": len(matches),
-                "has_more": has_more,
-                "next_offset": next_offset,
+                "has_more": result.has_more,
+                "next_offset": result.offset + len(result.matches) if result.has_more else None,
             }
 
         async def disclose(value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
@@ -836,7 +862,7 @@ class FileToolset:
 
         return await self._execute(
             root,
-            operation,
+            lambda files: files.search_text(request),
             project,
             disclose=disclose,
         )
@@ -935,6 +961,21 @@ class FileToolset:
         except EnvironmentError as exc:
             return _environment_error_result(exc)
 
+    def _resolve_media_understanding(
+        self,
+        ctx: RunContext[AgentContext],
+        kind: NativeInputMediaKind,
+    ) -> MediaUnderstandingProvider | None:
+        value = self._media_understanding
+        if value is None:
+            return None
+        if isinstance(value, MediaUnderstandingProvider):
+            return value
+        provider = value(ctx, kind)
+        if provider is not None and not isinstance(provider, MediaUnderstandingProvider):
+            raise TypeError("media_understanding resolver returned an invalid provider")
+        return provider
+
     def _guard_execution(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()
@@ -942,6 +983,34 @@ class FileToolset:
     def _guard_unscoped_step(self) -> None:
         if not self._has_file_scopes:
             self._guard_execution()
+
+
+def _model_supports_native_media(
+    ctx: RunContext[AgentContext],
+    kind: NativeInputMediaKind,
+) -> bool:
+    configuration = ctx.deps.model_configuration
+    if configuration is None:
+        return False
+    capability = ModelCapability(f"{kind}_understanding")
+    return capability in configuration.capabilities
+
+
+async def _record_media_understanding_usage(
+    ctx: RunContext[AgentContext],
+    usage_receipts: Sequence[ProviderUsage],
+) -> None:
+    for usage in usage_receipts:
+        await ctx.deps.record_provider_usage(
+            usage,
+            source="files.media_understanding",
+            tool_id="filesystem.view",
+            tool_call_id=ctx.tool_call_id,
+        )
+
+
+def _media_understanding_error(code: str) -> ToolFailure:
+    return {"ok": False, "error": {"code": code, "retry_hint": "dependency_change"}}
 
 
 def _restart_unspilled_page(

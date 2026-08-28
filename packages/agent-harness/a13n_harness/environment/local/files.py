@@ -12,11 +12,14 @@ import shutil
 import stat as stat_module
 import sys
 import tempfile
+from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
+
+from pathspec.gitignore import GitIgnoreSpec
 
 from ..files import (
     FileCopyResult,
@@ -588,9 +591,11 @@ class LocalFileOperator:
         root = self._resolve_directory(request.root, "Query root")
         selected, has_more = _collect_query_slice(
             root,
+            self._root,
             request.pattern,
             request.recursive,
             request.include_hidden,
+            request.ignore_mode,
             request.kinds,
             request.offset,
             request.max_results,
@@ -599,9 +604,13 @@ class LocalFileOperator:
         return FileEntriesResult(entries=entries, offset=request.offset, has_more=has_more)
 
     async def search_text(self, request: FileTextSearchRequest) -> FileTextSearchResult:
-        root = await asyncio.to_thread(self._resolve_directory, request.root, "Search root")
+        return await asyncio.to_thread(self._search_page, request)
+
+    def _search_page(self, request: FileTextSearchRequest) -> FileTextSearchResult:
+        root = self._resolve_directory(request.root, "Search root")
         if not request.pattern:
             raise EnvironmentError("Search pattern must not be empty.", code="environment_request_invalid")
+        _validate_query_pattern(request.include)
         needle = request.pattern if request.case_sensitive else request.pattern.casefold()
         try:
             regex = (
@@ -612,21 +621,41 @@ class LocalFileOperator:
 
         matches: list[FileTextMatch] = []
         seen = 0
-        paths = _iter_native_paths(root, recursive=True, include_hidden=request.include_hidden)
-        while (native := await asyncio.to_thread(next, paths, None)) is not None:
-            if not await asyncio.to_thread(_is_regular_search_file, native):
+        files_scanned = 0
+        paths = _iter_native_paths(
+            root,
+            recursive=True,
+            include_hidden=request.include_hidden,
+            ignore_mode=request.ignore_mode,
+            ignore_root=self._root,
+        )
+        for native in paths:
+            relative = native.relative_to(root).as_posix()
+            if not _query_glob_matches(relative, request.include):
                 continue
+            metadata = _regular_search_file_metadata(native)
+            if metadata is None or metadata.st_size > request.max_file_bytes:
+                continue
+            if request.max_files is not None and files_scanned >= request.max_files:
+                raise EnvironmentError(
+                    "Text search exceeded the eligible file limit.",
+                    code="environment_too_large",
+                )
+            files_scanned += 1
+            per_file_limit = request.max_matches_per_file
+            remaining = request.max_matches - len(matches) + 1
             try:
-                scanned = await asyncio.to_thread(
-                    _search_text_file,
+                scanned = _search_text_file(
                     native,
                     needle,
                     regex,
                     request.case_sensitive,
                     max(request.offset - seen, 0),
-                    request.max_matches - len(matches) + 1,
+                    remaining,
+                    per_file_limit,
+                    request.context_lines,
                     request.max_line_length,
-                    self._policy.max_value_bytes,
+                    min(self._policy.max_value_bytes, request.max_file_bytes),
                 )
             except OSError:
                 continue
@@ -640,8 +669,10 @@ class LocalFileOperator:
                     line=line_number,
                     text=text,
                     text_truncated=truncated,
+                    context=context,
+                    context_start_line=context_start_line,
                 )
-                for line_number, text, truncated in file_matches
+                for line_number, text, truncated, context, context_start_line in file_matches
             )
             if len(matches) > request.max_matches:
                 return FileTextSearchResult(
@@ -918,10 +949,20 @@ def _iter_native_paths(
     *,
     recursive: bool,
     include_hidden: bool,
+    ignore_mode: str = "none",
+    ignore_root: Path | None = None,
 ) -> Iterator[Path]:
-    """Walk incrementally in deterministic path order."""
+    """Walk incrementally in deterministic order with optional nested git-ignore pruning."""
 
-    def iterate(directory: Path) -> Iterator[Path]:
+    def iterate(
+        directory: Path,
+        ignore_specs: tuple[tuple[Path, GitIgnoreSpec], ...],
+    ) -> Iterator[Path]:
+        active_specs = ignore_specs
+        if ignore_mode == "git":
+            spec = _load_git_ignore(directory / ".gitignore")
+            if spec is not None:
+                active_specs += ((directory, spec),)
         try:
             children = sorted(directory.iterdir(), key=lambda item: item.name)
         except OSError as exc:
@@ -932,18 +973,71 @@ def _iter_native_paths(
             relative = child.relative_to(root)
             if not include_hidden and any(part.startswith(".") for part in relative.parts):
                 continue
+            try:
+                is_directory = child.is_dir() and not child.is_symlink()
+            except OSError:
+                continue
+            if ignore_mode == "git" and _is_git_ignored(child, is_directory, active_specs):
+                continue
             yield child
-            if recursive and child.is_dir() and not child.is_symlink():
-                yield from iterate(child)
+            if recursive and is_directory:
+                yield from iterate(child, active_specs)
 
-    return iterate(root)
+    initial_specs: tuple[tuple[Path, GitIgnoreSpec], ...] = ()
+    if ignore_mode == "git" and ignore_root is not None:
+        try:
+            relative_root = root.relative_to(ignore_root)
+        except ValueError:
+            relative_root = None
+        if relative_root is not None:
+            directory = ignore_root
+            for part in relative_root.parts:
+                if directory == root:
+                    break
+                spec = _load_git_ignore(directory / ".gitignore")
+                if spec is not None:
+                    initial_specs += ((directory, spec),)
+                directory /= part
+    return iterate(root, initial_specs)
+
+
+def _load_git_ignore(path: Path) -> GitIgnoreSpec | None:
+    try:
+        if not path.is_file() or path.stat().st_size > 1024 * 1024:
+            return None
+        with path.open("r", encoding="utf-8", errors="replace") as file:
+            return GitIgnoreSpec.from_lines(file)
+    except OSError:
+        return None
+
+
+def _is_git_ignored(
+    path: Path,
+    is_directory: bool,
+    specs: tuple[tuple[Path, GitIgnoreSpec], ...],
+) -> bool:
+    if ".git" in path.parts:
+        return True
+    ignored = False
+    for base, spec in specs:
+        try:
+            local = path.relative_to(base)
+        except ValueError:
+            continue
+        candidate = local.as_posix() + ("/" if is_directory else "")
+        result = spec.check_file(candidate)
+        if result.include is not None:
+            ignored = result.include
+    return ignored
 
 
 def _collect_query_slice(
     root: Path,
+    ignore_root: Path,
     pattern: str,
     recursive: bool,
     include_hidden: bool,
+    ignore_mode: str,
     kinds: frozenset[FileKind] | None,
     offset: int,
     limit: int,
@@ -953,7 +1047,13 @@ def _collect_query_slice(
     _validate_query_pattern(pattern)
     selected: list[Path] = []
     matched = 0
-    for item in _iter_native_paths(root, recursive=recursive, include_hidden=include_hidden):
+    for item in _iter_native_paths(
+        root,
+        recursive=recursive,
+        include_hidden=include_hidden,
+        ignore_mode=ignore_mode,
+        ignore_root=ignore_root,
+    ):
         relative = item.relative_to(root).as_posix()
         if not _query_glob_matches(relative, pattern):
             continue
@@ -977,12 +1077,17 @@ def _search_text_file(
     case_sensitive: bool,
     skip: int,
     limit: int,
+    max_matches_per_file: int | None,
+    context_lines: int,
     max_line_length: int,
     max_line_bytes: int,
-) -> tuple[list[tuple[int, str, bool]], int] | None:
-    """Scan one UTF-8/LF file incrementally and retain only a bounded result slice."""
-    selected: list[tuple[int, str, bool]] = []
+) -> tuple[list[tuple[int, str, bool, str, int]], int] | None:
+    """Scan one UTF-8 file incrementally and emit bounded matches with inline context."""
+    selected: list[tuple[int, str, bool, str, int]] = []
+    before: deque[tuple[int, str]] = deque(maxlen=context_lines)
+    pending: list[dict[str, object]] = []
     matched = 0
+    stop_after_context = False
     with path.open("rb") as file:
         line_number = 0
         while raw := file.readline(max_line_bytes + 2):
@@ -997,19 +1102,75 @@ def _search_text_file(
                 line = content.decode("utf-8", errors="strict")
             except UnicodeDecodeError:
                 return None
+            rendered = line[:max_line_length] + ("\n" if terminated else "")
+
+            remaining_pending: list[dict[str, object]] = []
+            for item in pending:
+                context = cast(list[str], item["context"])
+                context.append(rendered)
+                remaining = cast(int, item["remaining"]) - 1
+                if remaining == 0:
+                    selected.append(
+                        (
+                            cast(int, item["line"]),
+                            cast(str, item["text"]),
+                            cast(bool, item["truncated"]),
+                            "".join(context),
+                            cast(int, item["context_start_line"]),
+                        )
+                    )
+                else:
+                    item["remaining"] = remaining
+                    remaining_pending.append(item)
+            pending = remaining_pending
+            if stop_after_context and not pending:
+                break
+
             candidate = line if case_sensitive else line.casefold()
             is_match = regex.search(line) is not None if regex is not None else needle in candidate
-            if not is_match:
-                continue
-            if matched >= skip and len(selected) < limit:
-                selected.append(
-                    (
-                        line_number,
-                        line[:max_line_length],
-                        len(line) > max_line_length,
-                    )
+            within_file_limit = max_matches_per_file is None or matched < max_matches_per_file
+            if is_match and within_file_limit:
+                if matched >= skip and len(selected) + len(pending) < limit:
+                    context = [text for _, text in before]
+                    context.append(rendered)
+                    item = {
+                        "line": line_number,
+                        "text": line[:max_line_length],
+                        "truncated": len(line) > max_line_length,
+                        "context": context,
+                        "context_start_line": before[0][0] if before else line_number,
+                        "remaining": context_lines,
+                    }
+                    if context_lines == 0:
+                        selected.append(
+                            (
+                                line_number,
+                                cast(str, item["text"]),
+                                cast(bool, item["truncated"]),
+                                "".join(context),
+                                cast(int, item["context_start_line"]),
+                            )
+                        )
+                    else:
+                        pending.append(item)
+                matched += 1
+                if len(selected) + len(pending) >= limit or (
+                    max_matches_per_file is not None and matched >= max_matches_per_file
+                ):
+                    stop_after_context = True
+                if stop_after_context and not pending:
+                    break
+            before.append((line_number, rendered))
+        for item in pending:
+            selected.append(
+                (
+                    cast(int, item["line"]),
+                    cast(str, item["text"]),
+                    cast(bool, item["truncated"]),
+                    "".join(cast(list[str], item["context"])),
+                    cast(int, item["context_start_line"]),
                 )
-            matched += 1
+            )
     return selected, matched
 
 
@@ -1023,14 +1184,14 @@ def _native_kind(path: Path) -> str:
     return "other"
 
 
-def _is_regular_search_file(path: Path) -> bool:
+def _regular_search_file_metadata(path: Path) -> os.stat_result | None:
     try:
         metadata = path.lstat()
     except FileNotFoundError:
-        return False
+        return None
     except OSError as exc:
         raise _environment_error_from_os(exc, action="inspect a search candidate") from exc
-    return stat_module.S_ISREG(metadata.st_mode)
+    return metadata if stat_module.S_ISREG(metadata.st_mode) else None
 
 
 def _iter_lf_lines(text: str) -> Iterator[str]:

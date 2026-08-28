@@ -40,6 +40,10 @@ def test_harness_agent_spec_schema_includes_system_prompt() -> None:
         ],
         "default": None,
     }
+    assert schema["properties"]["toolset_instructions"] == {
+        "type": "boolean",
+        "default": True,
+    }
     assert AgentSpec(system_prompt=["first", "second"]).model_dump()["system_prompt"] == [
         "first",
         "second",

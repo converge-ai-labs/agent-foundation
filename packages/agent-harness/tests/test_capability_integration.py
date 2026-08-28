@@ -41,11 +41,13 @@ from a13n_harness import (
     SkillsCapability,
     UserInteractionCapability,
     WebCapability,
+    WebConfiguration,
     WebRequest,
     WebResponse,
     WebRunCapability,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResponse,
     WorkingStateCapability,
@@ -67,7 +69,6 @@ pytestmark = pytest.mark.anyio
 
 _EXPECTED_TOOLS = {
     "ask_user_question",
-    "copy",
     "download",
     "edit",
     "environment_port_inspect",
@@ -88,6 +89,7 @@ _EXPECTED_TOOLS = {
     "glob",
     "grep",
     "ls",
+    "mkdir",
     "multi_edit",
     "note",
     "note_get",
@@ -229,7 +231,7 @@ def _definition_capabilities():
         MonitoredProcessCapability(),
         MediaCapability(),
         DocumentsCapability(),
-        WebCapability(),
+        WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="host"))),
     )
 
 
@@ -290,3 +292,7 @@ async def test_core_capabilities_compose_through_run_and_stream(tmp_path: Path) 
     assert all("<file-context" in text and "Canonical file context." in text for text in observed_request_text)
     assert all("<available-skills>" in instructions for instructions in observed_instructions)
     assert all("Review the current implementation." in instructions for instructions in observed_instructions)
+    assert all('<tool-instruction name="view">' in instructions for instructions in observed_instructions)
+    assert all('<tool-instruction name="environment-shell">' in instructions for instructions in observed_instructions)
+    assert all('<tool-instruction name="copy">' not in instructions for instructions in observed_instructions)
+    assert all('<tool-instruction name="delete">' not in instructions for instructions in observed_instructions)

@@ -1,10 +1,10 @@
 {
   "generated": true,
-  "method_count": 34,
+  "method_count": 35,
   "methods": [
     {
       "error_family": "common",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "environment.describe",
       "kind": "request_response",
       "params_type": "EnvironmentDescribeParams",
@@ -15,8 +15,20 @@
       "transfer_direction": null
     },
     {
+      "error_family": "common",
+      "introduced": "0.1",
+      "jsonrpc_method": "environment.readiness",
+      "kind": "request_response",
+      "params_type": "EnvironmentReadinessParams",
+      "replay_class": "active_only",
+      "result_type": "EnvironmentReadinessResult",
+      "rpc_name": "EnvironmentReadiness",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.abort_writer",
       "kind": "request_response",
       "params_type": "FileWriterAbortParams",
@@ -28,7 +40,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.close_reader",
       "kind": "request_response",
       "params_type": "FileReaderCloseParams",
@@ -40,7 +52,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.commit_writer",
       "kind": "request_response",
       "params_type": "FileWriterCommitParams",
@@ -52,7 +64,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.copy",
       "kind": "request_response",
       "params_type": "FileCopyParams",
@@ -64,7 +76,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.find",
       "kind": "request_response",
       "params_type": "FileFindParams",
@@ -76,7 +88,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.list",
       "kind": "request_response",
       "params_type": "FileListParams",
@@ -88,7 +100,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.mkdir",
       "kind": "request_response",
       "params_type": "FileMkdirParams",
@@ -100,7 +112,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.move",
       "kind": "request_response",
       "params_type": "FileMoveParams",
@@ -112,7 +124,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.open_reader",
       "kind": "request_response",
       "params_type": "FileReaderOpenParams",
@@ -124,7 +136,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.open_writer",
       "kind": "request_response",
       "params_type": "FileWriterOpenParams",
@@ -136,7 +148,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.patch_text",
       "kind": "request_response",
       "params_type": "FilePatchTextParams",
@@ -148,7 +160,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.read_text",
       "kind": "request_response",
       "params_type": "FileReadTextParams",
@@ -160,7 +172,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.remove",
       "kind": "request_response",
       "params_type": "FileRemoveParams",
@@ -172,7 +184,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.search",
       "kind": "request_response",
       "params_type": "FileSearchParams",
@@ -184,7 +196,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.stat",
       "kind": "request_response",
       "params_type": "FileStatParams",
@@ -196,7 +208,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "file.write_text",
       "kind": "request_response",
       "params_type": "FileWriteTextParams",
@@ -208,7 +220,7 @@
     },
     {
       "error_family": "initialization",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "initialize",
       "kind": "request_response",
       "params_type": "InitializeParams",
@@ -220,7 +232,7 @@
     },
     {
       "error_family": "common",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "operation.cancel",
       "kind": "request_response",
       "params_type": "OperationCancelParams",
@@ -232,7 +244,7 @@
     },
     {
       "error_family": "output",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "output.read",
       "kind": "request_response",
       "params_type": "OutputReadParams",
@@ -244,7 +256,7 @@
     },
     {
       "error_family": "output",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "output.release",
       "kind": "request_response",
       "params_type": "OutputReleaseParams",
@@ -256,7 +268,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "port.inspect",
       "kind": "request_response",
       "params_type": "PortInspectParams",
@@ -268,7 +280,7 @@
     },
     {
       "error_family": "resource",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "port.wait",
       "kind": "request_response",
       "params_type": "PortWaitParams",
@@ -280,7 +292,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.close_stdin",
       "kind": "request_response",
       "params_type": "ProcessCloseStdinParams",
@@ -292,7 +304,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.inspect",
       "kind": "request_response",
       "params_type": "ProcessInspectParams",
@@ -304,7 +316,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.kill",
       "kind": "request_response",
       "params_type": "ProcessKillParams",
@@ -316,7 +328,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.release",
       "kind": "request_response",
       "params_type": "ProcessReleaseParams",
@@ -328,7 +340,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.signal",
       "kind": "request_response",
       "params_type": "ProcessSignalParams",
@@ -340,7 +352,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.start",
       "kind": "request_response",
       "params_type": "ProcessStartParams",
@@ -352,7 +364,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.wait",
       "kind": "request_response",
       "params_type": "ProcessWaitParams",
@@ -364,7 +376,7 @@
     },
     {
       "error_family": "process",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "process.write_stdin",
       "kind": "request_response",
       "params_type": "ProcessWriteStdinParams",
@@ -376,7 +388,7 @@
     },
     {
       "error_family": "common",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "receipt.get",
       "kind": "request_response",
       "params_type": "ReceiptGetParams",
@@ -388,7 +400,7 @@
     },
     {
       "error_family": "session",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "session.close",
       "kind": "request_response",
       "params_type": "SessionCloseParams",
@@ -400,7 +412,7 @@
     },
     {
       "error_family": "command",
-      "introduced": "1.0",
+      "introduced": "0.1",
       "jsonrpc_method": "shell.exec",
       "kind": "request_response",
       "params_type": "ShellExecParams",
@@ -413,6 +425,6 @@
   ],
   "protocol": {
     "package": "a13n.agent_envd.eip.v1",
-    "version": "1.0"
+    "version": "0.1"
   }
 }

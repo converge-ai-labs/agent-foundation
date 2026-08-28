@@ -232,6 +232,7 @@ class EIPFileOperator:
                     recursive=request.recursive,
                     include_hidden=request.include_hidden,
                     kinds=() if request.kinds is None else tuple(eip.FileKind(kind) for kind in sorted(request.kinds)),
+                    respect_git_ignore=request.ignore_mode == "git",
                     offset=request.offset,
                     max_results=request.max_results,
                 )
@@ -256,6 +257,12 @@ class EIPFileOperator:
                     offset=request.offset,
                     max_results=request.max_matches,
                     max_line_length=request.max_line_length,
+                    include_pattern=request.include,
+                    respect_git_ignore=request.ignore_mode == "git",
+                    context_lines=request.context_lines,
+                    max_matches_per_file=request.max_matches_per_file,
+                    max_files=request.max_files,
+                    max_file_bytes=request.max_file_bytes,
                 )
             )
         )
@@ -266,6 +273,8 @@ class EIPFileOperator:
                     line=match.line_number,
                     text=match.preview,
                     text_truncated=match.preview_truncated,
+                    context=match.context,
+                    context_start_line=match.context_start_line,
                 )
                 for match in result.matches
             ),

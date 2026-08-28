@@ -2,7 +2,7 @@
 
 The Harness exposes an opt-in OpenTelemetry observation layer. The Host owns SDK configuration, resources, sampling, processors, exporters, propagation, flush, and shutdown. The Harness never constructs an exporter or collector client.
 
-`HarnessBuilder()` reads the bounded `A13N_HARNESS_*` policy variables at construction time. Their defaults keep observation disabled. Pass `instrumentation=None` to disable observation explicitly regardless of the environment, or pass a `HarnessInstrumentation` value to override the environment with exact providers.
+`HarnessBuilder()` reads the bounded `A13N_HARNESS_*` policy variables directly from `os.environ` at construction time. It never opens `.env` or any other configuration file. A Host process, launcher, container runtime, or development command may load a file and export its values before the Harness starts. The defaults keep observation disabled. Pass `instrumentation=None` to disable observation explicitly regardless of the environment, or pass a `HarnessInstrumentation` value to override the environment with exact providers.
 
 ## Configure a generic OpenTelemetry Host
 
@@ -99,7 +99,181 @@ opentelemetry-instrument python -m my_agent_host
 
 `OTEL_EXPORTER_OTLP_ENDPOINT` selects a common collector endpoint; the official OTLP/HTTP exporters append `/v1/traces` and `/v1/metrics`. Signal-specific `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` take precedence when set. Standard `OTEL_*` variables also own resources, sampling, batching, headers, TLS, compression, timeout, and temporality.
 
-The `opentelemetry-instrument` launcher configures global SDK providers before application code constructs `HarnessBuilder()`. An executable that configures providers in code can instead call `HarnessInstrumentation.from_environment(tracer_provider=..., meter_provider=...)`, or pass a fully explicit `HarnessInstrumentation` value. Explicit builder configuration wins over `A13N_HARNESS_*`; `instrumentation=None` is an explicit opt-out.
+The `opentelemetry-instrument` launcher configures global SDK providers before application code constructs `HarnessBuilder()`. `make dev` performs the same wrapping automatically when `.env` enables either Harness signal. An executable that configures providers in code can instead call `HarnessInstrumentation.from_environment(tracer_provider=..., meter_provider=...)`, or pass a fully explicit `HarnessInstrumentation` value. Explicit builder configuration wins over `A13N_HARNESS_*`; `instrumentation=None` is an explicit opt-out.
+
+Use these safe process-environment defaults when no backend is selected:
+
+```bash
+export A13N_HARNESS_TRACE_LEVEL=off
+export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_METRICS=off
+export OTEL_TRACES_EXPORTER=none
+export OTEL_METRICS_EXPORTER=none
+```
+
+The later backend sections contain complete Logfire and Langfuse profiles. Put the selected values directly in the process environment, or let Host-owned deployment tooling export them. Do not add file loading to Harness code.
+
+## Use one OpenTelemetry pipeline
+
+Use OpenTelemetry APIs for Host-owned roots and custom lifecycle spans regardless of the selected backend. Backend SDKs configure providers, processors, exporters, and vendor-specific features; they do not own a second logical trace.
+
+This gives the following behavior:
+
+- with Logfire only, `logfire.configure()` installs the global OpenTelemetry trace and metric providers, so every Harness and Host OTel span is exported to Logfire;
+- with Langfuse only, a generic OTLP provider or `LangfuseSpanProcessor` exports the same OTel trace to Langfuse;
+- with both, one shared provider has both Logfire's processors and `LangfuseSpanProcessor`; do not create one Logfire root and another Langfuse root;
+- Langfuse-specific APIs for scores, prompt management, or trace updates remain vendor-specific and are not reproduced automatically in Logfire.
+
+A span created by the Langfuse Python SDK v3 is still an OpenTelemetry span. It reaches Logfire when both SDKs share Logfire's global provider, even if no Langfuse exporter is configured. However, generic Host and Harness spans should use `opentelemetry.trace` directly so backend selection remains portable.
+
+## Recommended Logfire profile
+
+Logfire is the recommended profile when one backend should receive both Harness traces and metrics. The Logfire SDK is built on OpenTelemetry and installs its trace and metric providers globally. It is not necessary to point a generic OTLP exporter at Logfire Cloud.
+
+Install Logfire in the executable Host and set its write token:
+
+```bash
+python -m pip install logfire
+
+export LOGFIRE_TOKEN=your-logfire-write-token
+export LOGFIRE_SERVICE_NAME=agent-worker
+export LOGFIRE_SEND_TO_LOGFIRE=if-token-present
+export A13N_HARNESS_TRACE_LEVEL=standard
+export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_METRICS=standard
+```
+
+Call a small backend bootstrap before constructing the builder. The conditional makes setting `LOGFIRE_TOKEN` the only deployment change needed to activate Logfire:
+
+```python
+import os
+
+from opentelemetry import trace
+
+from a13n_harness import HarnessBuilder
+
+if os.environ.get("LOGFIRE_TOKEN"):
+    import logfire
+
+    logfire.configure()
+
+builder = HarnessBuilder()
+host_tracer = trace.get_tracer("agent-host")
+
+with host_tracer.start_as_current_span("host.work"):
+    result = await executable.run("Complete the task")
+```
+
+Logfire still requires one `logfire.configure()` call; environment variables configure the call rather than replacing it. `LOGFIRE_SERVICE_NAME` supplies the OpenTelemetry `service.name` without a hard-coded Python value, and `OTEL_SERVICE_NAME` is its standard fallback alias. `LOGFIRE_TOKEN` selects the project, while `LOGFIRE_SEND_TO_LOGFIRE=if-token-present` keeps the same bootstrap safe in processes without a token.
+
+`logfire.configure()` creates the global OpenTelemetry providers and configures Logfire's exporters. This is OpenTelemetry export managed by the Logfire SDK rather than a separately configured generic OTLP endpoint. The default `HarnessBuilder()` then selects those exact providers from the global OpenTelemetry registry. Automatic vendor bootstrap belongs at the executable Host boundary; the Harness only auto-selects its environment policy and the already configured global OTel providers. Do not call `logfire.instrument_pydantic_ai()`; Harness already owns the one Pydantic AI `Instrumentation` capability.
+
+For an alternative OTLP backend instead of Logfire Cloud, configure Logfire with `send_to_logfire=False` and use the standard `OTEL_EXPORTER_OTLP_*` variables. See the [Logfire alternative-backend guide](https://pydantic.dev/docs/logfire/guides/alternative-backends/) and [Logfire configuration reference](https://pydantic.dev/docs/logfire/manage/configuration/).
+
+## Recommended Langfuse profile
+
+Langfuse is the recommended LLM trace backend. Its OTLP endpoint ingests traces, but it is not a Harness metrics backend. Keep `A13N_HARNESS_METRICS=off` and `OTEL_METRICS_EXPORTER=none` unless a separate metric-capable provider or collector is configured.
+
+Configure Langfuse Cloud or a self-hosted instance through standard OTLP variables:
+
+```bash
+export LANGFUSE_PUBLIC_KEY=lf_pk_...
+export LANGFUSE_SECRET_KEY=lf_sk_...
+export LANGFUSE_BASE_URL=https://cloud.langfuse.com
+
+export A13N_HARNESS_TRACE_LEVEL=standard
+export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_METRICS=off
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_METRICS_EXPORTER=none
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_ENDPOINT="$LANGFUSE_BASE_URL/api/public/otel"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic $(printf '%s' "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" | base64 | tr -d '\n'),x-langfuse-ingestion-version=4"
+
+opentelemetry-instrument python -m my_agent_host
+```
+
+Use `https://us.cloud.langfuse.com`, `https://jp.cloud.langfuse.com`, or the selected regional URL when the project is not in the default EU region. The endpoint for the repository's local stack is `http://127.0.0.1:3000/api/public/otel`.
+
+Direct OTLP export sends `harness.run`, Pydantic Agent/model/tool spans, and verbose `harness.operation` spans to one Langfuse trace. If the Host uses the Langfuse Python SDK instead, attach `LangfuseSpanProcessor` to the existing shared provider rather than registering a second provider. Langfuse's default export filter is LLM-focused, so explicitly include the `a13n-harness` and Host-root instrumentation scopes when filtering; otherwise those structural spans may be omitted.
+
+For example, one Logfire-owned provider can export the same trace to both backends:
+
+```python
+import os
+
+import logfire
+from langfuse.opentelemetry import LangfuseSpanProcessor
+from langfuse.span_filter import is_default_export_span
+
+structural_scopes = {"a13n-harness", "agent-host"}
+langfuse_processor = LangfuseSpanProcessor(
+    public_key=os.environ["LANGFUSE_PUBLIC_KEY"],
+    secret_key=os.environ["LANGFUSE_SECRET_KEY"],
+    base_url=os.environ.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.com"),
+    should_export_span=lambda span: (
+        is_default_export_span(span)
+        or (
+            span.instrumentation_scope is not None
+            and span.instrumentation_scope.name in structural_scopes
+        )
+    ),
+)
+logfire.configure(additional_span_processors=[langfuse_processor])
+```
+
+Set `LOGFIRE_SERVICE_NAME` or `OTEL_SERVICE_NAME` in the process environment, then construct `HarnessBuilder()` only after this configuration. Host roots created with `trace.get_tracer("agent-host")` flow to both processors, while Harness still owns Pydantic AI instrumentation exactly once.
+
+See the [Langfuse native OpenTelemetry guide](https://langfuse.com/integrations/native/opentelemetry) and [existing OpenTelemetry setup guide](https://langfuse.com/faq/all/existing-otel-setup).
+
+### Run Langfuse locally
+
+The repository includes an isolated Langfuse v4 development stack based on the official deployment composition:
+
+```bash
+make langfuse-up
+```
+
+Open <http://127.0.0.1:3000> and sign in with these local development credentials:
+
+```text
+Email: dev@agent-foundation.local
+Password: agent-foundation-local
+```
+
+The stack pre-creates the `Agent Foundation Local` organization and project with these deterministic development-only API keys:
+
+```text
+Public key: lf_pk_agent_foundation_local
+Secret key: lf_sk_agent_foundation_local
+```
+
+Export this complete trace-only profile before launching an embedded Host. Repository development may place the same values in a root `.env`; `make dev` loads that file only at the Host launcher boundary.
+
+```bash
+export A13N_HARNESS_TRACE_LEVEL=standard
+export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_METRICS=off
+export OTEL_SERVICE_NAME=agent-worker
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_METRICS_EXPORTER=none
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:3000/api/public/otel
+export OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic bGZfcGtfYWdlbnRfZm91bmRhdGlvbl9sb2NhbDpsZl9za19hZ2VudF9mb3VuZGF0aW9uX2xvY2Fs,x-langfuse-ingestion-version=4'
+
+opentelemetry-instrument python -m my_agent_host
+```
+
+The trace appears in the local project after the Harness run completes. Langfuse does not receive metrics from this profile.
+
+Stop the stack while preserving data, or remove it completely:
+
+```bash
+make langfuse-down
+make langfuse-reset
+```
+
+The composition binds the Langfuse UI and media endpoint to loopback and does not reuse the repository's PostgreSQL or Redis services. Its credentials are for local development only. For production and high-availability deployments, follow the official [Langfuse self-hosting documentation](https://langfuse.com/self-hosting) rather than adapting this development composition.
 
 ## Parent Harness runs through current context
 

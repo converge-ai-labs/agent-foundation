@@ -112,7 +112,7 @@ Resolution follows these rules:
 3. With a `RunModelResolver`, the resolver calls the async callable directly and requires a native `Model`; an invalid value or exception becomes `ModelResolutionError`.
 4. Without a resolver, the thin Capability calls Harness `infer_model()` with the builder's optional `gateway_provider_factory`. This makes Harness compatibility aliases and `gateway@` routing the default string path rather than delegating to a separate Pydantic inference call.
 
-Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Harness `infer_model()`. The Harness has no second model profile, provider settings, registry, route envelope, or fallback policy. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises. The builder-level gateway factory is construction policy shared by every recursively built child; current-run credentials or authorization remain in `RunModelResolver`.
+Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Harness `infer_model()`. The Harness has no second provider profile, provider settings, registry, or route envelope. Harness-owned `AgentSpec.model_configuration` contains only explicit lifecycle and behavior characteristics, including native media-understanding capabilities; it does not copy or infer provider profile fields. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises. The builder-level gateway factory is construction policy shared by every recursively built child; current-run credentials or authorization remain in `RunModelResolver`.
 
 `RunBindings` supplies a fresh resolver for each logical Harness run. The same resolver and `AgentContext` are shared by all internal recovery attempts. Pydantic's `ModelResolutionContext` carries the effective Agent dependencies and native resolution semantics. Freshness applies to current-run authority, credentials, policy, and affinity; the callable may reference a Host-owned concurrency-safe provider client whose lifecycle is broader than the run.
 
@@ -144,7 +144,8 @@ Pydantic AI retains the complete layering:
 
 - `ModelSettings` expresses request intent and tuning;
 - native Model/provider settings merge under upstream rules;
-- `Model.profile` and provider adapters own compatibility and rendering facts;
+- `Model.profile` and provider adapters own provider compatibility and rendering facts;
+- Harness `AgentSpec.model_configuration` owns explicit Harness lifecycle and feature characteristics that must be stable across providers, including native image, video, and audio understanding;
 - Capabilities own reusable Agent-loop behavior.
 
 For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle configuration and native provider request settings:
@@ -227,7 +228,7 @@ Resolution follows these rules:
 5. Callers place the concrete results in `AgentSpec.model_configuration` and native `AgentSpec.model_settings`, pass them through ordinary Pydantic construction, or persist them under Host-owned concrete schemas. Alias names never enter `AgentSpec`, `AgentDefinition`, `HarnessBuilder`, `RunBindings`, `HarnessState`, a Host revision, or a worker reconstruction record.
 6. A Host may construct immutable catalogs containing additional deployment-specific aliases, but resolves them only at its authoring or integration input boundary. Durable and process-local core contracts still contain concrete values. The Harness catalogs have no inheritance, dynamic discovery, environment loading, pricing coupling, or provider registry role.
 
-The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. A hosted model integration may retain durable gateway and provider configuration and use Harness `infer_model()` as its shared construction boundary. It supplies a Host-owned gateway provider factory or ordinary provider factory, composes required patches, and returns the native Model directly or through `RunModelResolver`.
+The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. Explicit `ModelConfiguration.capabilities` are independent Harness facts and never derive from profile keys or a model name. A hosted model integration may retain durable gateway and provider configuration and use Harness `infer_model()` as its shared construction boundary. It supplies a Host-owned gateway provider factory or ordinary provider factory, composes required patches, and returns the native Model directly or through `RunModelResolver`.
 
 An enterprise gateway integration remains explicit model construction, not another Capability or an ambient inference registry. It may select OAuth or WebSocket transport, attach provider profiles and bounded retry configuration, and reuse a Host-owned async client through its provider factory or patches. Harness-owned compatibility normalization and `RequestHeadersModel` provide the shared behavior that embedded applications, Agent UI, and Foundation Service would otherwise duplicate. The integration still owns credential handling, client lifecycle, provider compatibility, and route authorization; the Harness does not infer those facts from process environment.
 

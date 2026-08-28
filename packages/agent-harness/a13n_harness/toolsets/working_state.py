@@ -17,7 +17,11 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import TaskChangedPayload, TaskEventProjection, emit_harness_event
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
+
+_TASK_INSTRUCTION = tool_instruction("task-manager")
+_NOTE_INSTRUCTION = tool_instruction("note")
 
 
 class TaskProjection(TypedDict):
@@ -83,11 +87,22 @@ class WorkingStateToolset:
 
     def get_toolset(self, *, tasks: bool, notes: bool) -> FunctionToolset[AgentContext] | None:
         tools = []
+        instructions: list[str] = []
         if tasks:
             tools.extend((self.task_create, self.task_get, self.task_list, self.task_update))
+            instructions.append(_TASK_INSTRUCTION)
         if notes:
             tools.extend((self.note, self.note_get))
-        return FunctionToolset(tools=tools, id="a13n-working-state-tools") if tools else None
+            instructions.append(_NOTE_INSTRUCTION)
+        return (
+            InstructionFunctionToolset(
+                tools=tools,
+                id="a13n-working-state-tools",
+                instructions=instructions,
+            )
+            if tools
+            else None
+        )
 
     async def embedded_task_cell(self, ctx: RunContext[AgentContext]):
         """Return the validated parent-owned embedded cell to the owning Capability."""

@@ -143,7 +143,7 @@ Pydantic AI `RunUsage` remains the sole process-local accumulator for model requ
 - `ModelUsageRecord` captures one model response proven to have entered native `RunUsage`, including bounded request usage, model/provider attribution, response state, lineage, and pricing coverage;
 - `ProviderUsageRecord` captures a stable provider receipt contributed by a managed tool or Capability, with provider-neutral measures and optional currency-denominated cost.
 
-Provider records do not modify model token totals or native limits. Capability-owned paths record them through `AgentContext.record_provider_usage()`; raw provider metadata, credentials, content, and private provider enums are not part of the contract. Reusing the same provider/product/usage ID is idempotent, while conflicting semantic usage or attribution fails closed.
+Provider records do not modify model token totals or native limits. Capability-owned paths record them through `AgentContext.record_provider_usage()`; raw provider metadata, credentials, content, and private provider enums are not part of the contract. Dedicated file media-understanding Agents contribute their aggregated model counters as provider-neutral receipts with source `files.media_understanding` and tool ID `filesystem.view`, keeping that nested model work distinct from the active Agent's native `RunUsage`. A failed or timed-out nested run contributes counters already proven by its run accumulator before the ordinary tool failure is returned; a pre-request failure with no counters contributes no fabricated receipt. Reusing the same provider/product/usage ID is idempotent, while conflicting semantic usage or attribution fails closed.
 
 ### Reporting Boundary
 

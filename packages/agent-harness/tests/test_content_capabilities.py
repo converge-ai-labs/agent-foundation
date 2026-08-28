@@ -40,6 +40,7 @@ from a13n_harness import (
     WebRunCapability,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResponse,
     WebSearchResult,
@@ -689,7 +690,7 @@ async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path
             {"urls": ["https://example.com/file.txt"], "save_dir": "/workspace/downloads"},
             seen=seen,
         ),
-        capabilities=(WebCapability(),),
+        capabilities=(WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="off"))),),
     )
     result = await executable.run(
         "Download",
@@ -737,7 +738,7 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
         AgentSpec(),
         output_type=str,
         model=_one_tool_model("search", {"query": "agent", "num": 5}, seen=seen, infos=infos),
-        capabilities=(WebCapability(),),
+        capabilities=(WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="host"))),),
     )
 
     result = await executable.run(
@@ -777,7 +778,7 @@ async def test_web_search_strips_credential_aliases_from_model_history(credentia
         AgentSpec(),
         output_type=str,
         model=_one_tool_model("search", {"query": "agent"}, seen=seen),
-        capabilities=(WebCapability(),),
+        capabilities=(WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="host"))),),
     )
 
     result = await executable.run(
@@ -938,7 +939,7 @@ async def test_web_download_isolates_batch_failures_and_uses_response_media_type
             },
             seen=seen,
         ),
-        capabilities=(WebCapability(),),
+        capabilities=(WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="off"))),),
     )
 
     result = await executable.run(

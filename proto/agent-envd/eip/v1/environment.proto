@@ -111,6 +111,16 @@ message InitializeResult {
   EnvironmentDescriptor descriptor = 3;
 }
 
+message EnvironmentReadinessParams {
+  EIPCallContext context = 1;
+}
+
+message EnvironmentReadinessResult {
+  bool ready = 1;
+  string environment_id = 2 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint64 generation = 3 [(eip_field).minimum = 1];
+}
+
 message EnvironmentDescribeParams {
   EIPCallContext context = 1;
 }

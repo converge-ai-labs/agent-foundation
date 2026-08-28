@@ -5,24 +5,19 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import TYPE_CHECKING
 
-from pydantic_ai import RunContext
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, ExternalToolset
 
 from a13n_harness.context import AgentContext
 
+from ._instructions import InstructionExternalToolset
+
 if TYPE_CHECKING:
     from a13n_harness.tools.client import ClientToolsetDefinition
 
 
-class _ClientExternalToolset(ExternalToolset[AgentContext]):
-    def __init__(self, tool_defs: list[ToolDefinition], *, id: str, instructions: str | None) -> None:
-        super().__init__(tool_defs, id=id)
-        self._instructions = instructions
-
-    async def get_instructions(self, ctx: RunContext[AgentContext]) -> str | None:
-        del ctx
-        return self._instructions
+class _ClientExternalToolset(InstructionExternalToolset):
+    pass
 
 
 class ClientToolsToolset:

@@ -157,6 +157,7 @@ message FileFindParams {
   optional bool recursive = 11 [(eip_field).default_bool = true];
   optional bool include_hidden = 12 [(eip_field).default_bool = false];
   repeated FileKind kinds = 13;
+  optional bool respect_git_ignore = 14 [(eip_field).default_bool = false];
 }
 
 message FileFindResult {
@@ -191,6 +192,12 @@ message FileSearchParams {
   optional uint32 max_results = 12 [(eip_field).minimum = 1, (eip_field).default_uint = 100];
   optional bool include_hidden = 13 [(eip_field).default_bool = false];
   uint64 max_line_length = 14 [(eip_field).minimum = 1];
+  optional string include_pattern = 15 [(eip_field).default_string = "**/*"];
+  optional bool respect_git_ignore = 16 [(eip_field).default_bool = false];
+  optional uint32 context_lines = 17 [(eip_field).default_uint = 0, (eip_field).maximum = 20];
+  optional uint32 max_matches_per_file = 18 [(eip_field).minimum = 1];
+  optional uint32 max_files = 19 [(eip_field).minimum = 1];
+  optional uint64 max_file_bytes = 20 [(eip_field).minimum = 1, (eip_field).default_uint = 67108864];
 }
 
 message FileSearchMatch {
@@ -201,6 +208,8 @@ message FileSearchMatch {
   uint64 line_number = 2 [(eip_field).minimum = 1];
   string preview = 4;
   bool preview_truncated = 5;
+  optional string context = 6 [(eip_field).default_string = ""];
+  optional uint64 context_start_line = 7 [(eip_field).minimum = 1, (eip_field).default_uint = 1];
 }
 
 message FileSearchResult {

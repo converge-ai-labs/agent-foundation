@@ -740,6 +740,46 @@
       "title": "EnvironmentDescriptor",
       "type": "object"
     },
+    "EnvironmentReadinessParams": {
+      "additionalProperties": false,
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/EIPCallContext"
+        }
+      },
+      "required": [
+        "context"
+      ],
+      "title": "EnvironmentReadinessParams",
+      "type": "object"
+    },
+    "EnvironmentReadinessResult": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "minLength": 1,
+          "title": "Environment Id",
+          "type": "string"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready",
+        "environment_id",
+        "generation"
+      ],
+      "title": "EnvironmentReadinessResult",
+      "type": "object"
+    },
     "ErrorType": {
       "enum": [
         "parse_error",
@@ -985,6 +1025,11 @@
         "recursive": {
           "default": true,
           "title": "Recursive",
+          "type": "boolean"
+        },
+        "respect_git_ignore": {
+          "default": false,
+          "title": "Respect Git Ignore",
           "type": "boolean"
         },
         "root": {
@@ -1598,6 +1643,18 @@
     "FileSearchMatch": {
       "additionalProperties": false,
       "properties": {
+        "context": {
+          "default": "",
+          "title": "Context",
+          "type": "string"
+        },
+        "context_start_line": {
+          "default": 1,
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Context Start Line",
+          "type": "integer"
+        },
         "line_number": {
           "maximum": 18446744073709551615,
           "minimum": 1,
@@ -1636,16 +1693,63 @@
         "context": {
           "$ref": "#/$defs/EIPCallContext"
         },
+        "context_lines": {
+          "default": 0,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Context Lines",
+          "type": "integer"
+        },
         "include_hidden": {
           "default": false,
           "title": "Include Hidden",
           "type": "boolean"
+        },
+        "include_pattern": {
+          "default": "**/*",
+          "title": "Include Pattern",
+          "type": "string"
+        },
+        "max_file_bytes": {
+          "default": 67108864,
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max File Bytes",
+          "type": "integer"
+        },
+        "max_files": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Files"
         },
         "max_line_length": {
           "maximum": 18446744073709551615,
           "minimum": 1,
           "title": "Max Line Length",
           "type": "integer"
+        },
+        "max_matches_per_file": {
+          "anyOf": [
+            {
+              "maximum": 4294967295,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Matches Per File"
         },
         "max_results": {
           "default": 100,
@@ -1667,6 +1771,11 @@
         "query": {
           "title": "Query",
           "type": "string"
+        },
+        "respect_git_ignore": {
+          "default": false,
+          "title": "Respect Git Ignore",
+          "type": "boolean"
         },
         "root": {
           "$ref": "#/$defs/EIPPath"
@@ -2042,7 +2151,7 @@
           "$ref": "#/$defs/EnvironmentDescriptor"
         },
         "protocol_version": {
-          "pattern": "^[1-9][0-9]*\\.[0-9]+$",
+          "pattern": "^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -3265,5 +3374,5 @@
   },
   "$id": "https://github.com/converge-ai-labs/agent-foundation/eip/v1/schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Environment Interaction Protocol 1.0"
+  "title": "Environment Interaction Protocol 0.1"
 }

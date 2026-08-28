@@ -1,6 +1,7 @@
 # Local reference and discussion material
 discussion/
 local-reference/
+tmp/
 
 # Python bytecode and native extensions
 __pycache__/
@@ -19,6 +20,7 @@ wheels/
 .env
 .env.*
 !.env.example
+!.env.harness.example
 .venv/
 env/
 venv/

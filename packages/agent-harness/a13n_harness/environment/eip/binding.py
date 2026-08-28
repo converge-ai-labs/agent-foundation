@@ -18,6 +18,7 @@ from ..models import (
     EnvironmentPermissionSet,
 )
 from ..providers import BoundEnvironmentProvider, EnvironmentProviderBinding, EnvironmentProviderOperations
+from ._common import invoke
 from .files import EIPFileOperator
 from .output import EIPOutputOperations, EIPOutputRegistry
 from .processes import (
@@ -104,7 +105,7 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
         self._entry_started = True
         async with self._session_source.open_session(
             expected_environment_id=self._environment_id,
-            required_methods=frozenset({"environment.describe", "session.close"}),
+            required_methods=frozenset({"environment.describe", "environment.readiness", "session.close"}),
         ) as session:
             if session.descriptor.environment_id != self._environment_id:
                 raise EnvironmentError(
@@ -209,6 +210,14 @@ class _BoundEIPProvider:
             raise EnvironmentError(
                 "EIP provider does not expose the requested operation family",
                 code="environment_unsupported",
+            )
+        readiness = await invoke(self._session.readiness())
+        if not readiness.ready:
+            self._availability = EnvironmentAvailability(status="unavailable")
+            raise EnvironmentError(
+                "EIP environment is not ready",
+                code="environment_unavailable",
+                retry_hint="new_run",
             )
 
     async def close(self) -> None:

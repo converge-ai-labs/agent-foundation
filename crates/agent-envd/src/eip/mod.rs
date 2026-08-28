@@ -13,11 +13,12 @@ mod tests {
     use super::{
         CommandNetwork, DataFrame, DataFrameKind, DataResetStatus, EIP_DESCRIPTOR_SHA256,
         EIP_PROTO_PACKAGE, EIP_PROTOCOL_VERSION, EIPCallContext, EIPError, EIPLimits,
-        EIPServerInfo, EipValidate, EncodedBytes, ErrorType, FileFindParams, FileStatParams,
-        FileStatResult, InitializeParams, JsonRpcErrorResponse, JsonRpcRequest,
-        JsonRpcSuccessResponse, METHODS, OutputInfo, OutputReadParams, OutputReference,
-        ProcessWriteStdinParams, ReceiptGetParams, ShellExecParams, decode, decode_data_frame,
-        encode, encode_data_frame,
+        EIPServerInfo, EipValidate, EncodedBytes, EnvironmentReadinessParams,
+        EnvironmentReadinessResult, ErrorType, FileFindParams, FileSearchMatch, FileSearchParams,
+        FileSearchResult, FileStatParams, FileStatResult, InitializeParams, JsonRpcErrorResponse,
+        JsonRpcRequest, JsonRpcSuccessResponse, METHODS, OutputInfo, OutputReadParams,
+        OutputReference, ProcessWriteStdinParams, ReceiptGetParams, ShellExecParams, decode,
+        decode_data_frame, encode, encode_data_frame,
     };
 
     fn assert_golden<T>(value: serde_json::Value)
@@ -39,9 +40,9 @@ mod tests {
 
     #[test]
     fn generated_registry_has_complete_v1_surface() {
-        assert_eq!(EIP_PROTOCOL_VERSION, "1.0");
+        assert_eq!(EIP_PROTOCOL_VERSION, "0.1");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 34);
+        assert_eq!(METHODS.len(), 35);
         assert!(
             METHODS
                 .iter()
@@ -53,7 +54,7 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            18
+            19
         );
         assert_eq!(
             METHODS
@@ -110,7 +111,12 @@ mod tests {
             let value = case["value"].clone();
             match case["type"].as_str().expect("case type is a string") {
                 "InitializeParams" => assert_golden::<InitializeParams>(value),
+                "EnvironmentReadinessParams" => assert_golden::<EnvironmentReadinessParams>(value),
+                "EnvironmentReadinessResult" => assert_golden::<EnvironmentReadinessResult>(value),
                 "FileFindParams" => assert_golden::<FileFindParams>(value),
+                "FileSearchParams" => assert_golden::<FileSearchParams>(value),
+                "FileSearchMatch" => assert_golden::<FileSearchMatch>(value),
+                "FileSearchResult" => assert_golden::<FileSearchResult>(value),
                 "FileStatParams" => assert_golden::<FileStatParams>(value),
                 "FileStatResult" => assert_golden::<FileStatResult>(value),
                 "ShellExecParams" => assert_golden::<ShellExecParams>(value),

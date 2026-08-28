@@ -6,6 +6,7 @@ import os
 import socket
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from a13n_environment_provider import (
@@ -74,7 +75,7 @@ def prepare_environment(tmp_path: Path, name: str) -> tuple[Path, Path, Path, Pa
                         "writable": True,
                         "allow_command_execution": False,
                         "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": ["open_reader", "open_writer"],
+                        "allowed_operations": ["open_reader", "open_writer", "find", "search"],
                     }
                 ],
             }
@@ -131,7 +132,11 @@ async def wait_until_listening(port: int) -> None:
     raise AssertionError("agent-envd listener did not become ready")
 
 
-async def exercise_attachment(attachment: EIPEnvironmentAttachment, expected: bytes) -> None:
+async def exercise_attachment(
+    attachment: EIPEnvironmentAttachment,
+    expected: bytes,
+    search_conformance: Any,
+) -> None:
     provider_binding = create_environment_provider_binding(attachment)
     run_binding = create_environment_run_binding(
         initial_topology=EnvironmentTopologyRequest(
@@ -146,6 +151,8 @@ async def exercise_attachment(attachment: EIPEnvironmentAttachment, expected: by
                             {
                                 EnvironmentAction.FILE_READ_BYTES,
                                 EnvironmentAction.FILE_WRITE_BYTES,
+                                EnvironmentAction.FILE_QUERY,
+                                EnvironmentAction.FILE_SEARCH_TEXT,
                             }
                         )
                     ),
@@ -176,13 +183,18 @@ async def exercise_attachment(attachment: EIPEnvironmentAttachment, expected: by
         )
         assert result.bytes_written == len(expected)
         assert await environment.files.read_bytes("/workspace/payload.bin") == expected
+        await search_conformance.assert_operator(environment.files, root="/workspace")
 
 
-def test_harness_attachment_runs_over_stdio_http_and_reverse_websocket(tmp_path: Path) -> None:
+def test_harness_attachment_runs_over_stdio_http_and_reverse_websocket(
+    tmp_path: Path,
+    file_search_conformance: Any,
+) -> None:
     async def scenario() -> None:
         payload = bytes(range(256)) * 8
 
         stdio_runtime, stdio_workspace, _credential, stdio_config = prepare_environment(tmp_path, "stdio")
+        file_search_conformance.populate(stdio_workspace)
         stdio_process = await start_daemon(
             runtime=stdio_runtime,
             config=stdio_config,
@@ -196,11 +208,13 @@ def test_harness_attachment_runs_over_stdio_http_and_reverse_websocket(tmp_path:
                 session_source=StdioEIPSessionSource(stdio_process, request_timeout=5),
             ),
             payload,
+            file_search_conformance,
         )
         assert (stdio_workspace / "payload.bin").read_bytes() == payload
         await stop_daemon(stdio_process)
 
         http_runtime, http_workspace, http_credential, http_config = prepare_environment(tmp_path, "http")
+        file_search_conformance.populate(http_workspace)
         http_port = reserve_port()
         http_process = await start_daemon(
             runtime=http_runtime,
@@ -225,6 +239,7 @@ def test_harness_attachment_runs_over_stdio_http_and_reverse_websocket(tmp_path:
                 ),
             ),
             payload,
+            file_search_conformance,
         )
         assert (http_workspace / "payload.bin").read_bytes() == payload
         await stop_daemon(http_process)
@@ -252,6 +267,7 @@ def test_harness_attachment_runs_over_stdio_http_and_reverse_websocket(tmp_path:
         assert websocket_server.sockets
         websocket_port = websocket_server.sockets[0].getsockname()[1]
         ws_runtime, ws_workspace, ws_credential, ws_config = prepare_environment(tmp_path, "websocket")
+        file_search_conformance.populate(ws_workspace)
         ws_process = await start_daemon(
             runtime=ws_runtime,
             config=ws_config,
@@ -271,6 +287,7 @@ def test_harness_attachment_runs_over_stdio_http_and_reverse_websocket(tmp_path:
                     session_source=AcceptedWebSocketEIPSessionSource(connection, request_timeout=5),
                 ),
                 payload,
+                file_search_conformance,
             )
             assert (ws_workspace / "payload.bin").read_bytes() == payload
         finally:

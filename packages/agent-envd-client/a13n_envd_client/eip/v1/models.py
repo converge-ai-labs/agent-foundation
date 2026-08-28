@@ -96,7 +96,7 @@ Base64Unpadded = Annotated[
     Field(json_schema_extra={"format": "eip-base64-unpadded"}),
     AfterValidator(_validate_base64_unpadded),
 ]
-ProtocolVersion = Annotated[StrictStr, Field(pattern=r"^[1-9][0-9]*\.[0-9]+$")]
+ProtocolVersion = Annotated[StrictStr, Field(pattern=r"^(?:0\.[1-9][0-9]*|[1-9][0-9]*\.[0-9]+)$")]
 Sha256Digest = Annotated[StrictStr, Field(pattern=r"^[0-9a-f]{64}$")]
 EIPTimestamp = Annotated[
     StrictStr,
@@ -388,6 +388,16 @@ class EnvironmentDescribeParams(EIPModel):
     context: EIPCallContext
 
 
+class EnvironmentReadinessParams(EIPModel):
+    context: EIPCallContext
+
+
+class EnvironmentReadinessResult(EIPModel):
+    ready: StrictBool
+    environment_id: Identifier
+    generation: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+
+
 class ExecutableName(EIPModel):
     kind: Literal["name"]
     name: StrictStr
@@ -434,6 +444,7 @@ class FileFindParams(EIPModel):
     recursive: StrictBool = True
     include_hidden: StrictBool = False
     kinds: tuple[FileKind, ...] = ()
+    respect_git_ignore: StrictBool = False
 
 
 class FileInfo(EIPModel):
@@ -542,6 +553,8 @@ class FileSearchMatch(EIPModel):
     line_number: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
     preview: StrictStr
     preview_truncated: StrictBool
+    context: StrictStr = ""
+    context_start_line: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] = 1
 
 
 class FileSearchParams(EIPModel):
@@ -554,6 +567,12 @@ class FileSearchParams(EIPModel):
     max_results: Annotated[StrictInt, Field(ge=1, le=4294967295)] = 100
     include_hidden: StrictBool = False
     max_line_length: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)]
+    include_pattern: StrictStr = "**/*"
+    respect_git_ignore: StrictBool = False
+    context_lines: Annotated[StrictInt, Field(ge=0, le=20)] = 0
+    max_matches_per_file: Annotated[StrictInt, Field(ge=1, le=4294967295)] | None = None
+    max_files: Annotated[StrictInt, Field(ge=1, le=4294967295)] | None = None
+    max_file_bytes: Annotated[StrictInt, Field(ge=1, le=18446744073709551615)] = 67108864
 
 
 class FileSearchResult(EIPModel):
@@ -1033,6 +1052,8 @@ EIPPath.model_rebuild()
 EIPServerInfo.model_rebuild()
 EncodedBytes.model_rebuild()
 EnvironmentDescribeParams.model_rebuild()
+EnvironmentReadinessParams.model_rebuild()
+EnvironmentReadinessResult.model_rebuild()
 ExecutableName.model_rebuild()
 ExecutablePath.model_rebuild()
 ExecutionFeatures.model_rebuild()
@@ -1148,6 +1169,8 @@ __all__ = [
     "EnvironmentDescribeParams",
     "EnvironmentDescribeResult",
     "EnvironmentDescriptor",
+    "EnvironmentReadinessParams",
+    "EnvironmentReadinessResult",
     "ErrorType",
     "ExecutableName",
     "ExecutablePath",

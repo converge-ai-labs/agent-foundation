@@ -21,8 +21,14 @@ from a13n_harness.errors import RunError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.usage import ProviderUsage
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
 from ._scoped_files import ScopedFileAccess
+
+_DOCUMENT_INSTRUCTIONS = (
+    tool_instruction("pdf_convert"),
+    tool_instruction("office_to_markdown"),
+)
 
 _SUPPORTED_OFFICE_EXTENSIONS = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".epub"})
 
@@ -189,7 +195,7 @@ class DocumentsToolset:
             ),
             "resource_resolver": self._file_access.resource_resolver("file_path"),
         }
-        return FunctionToolset(
+        return InstructionFunctionToolset(
             tools=[
                 HarnessTool(
                     self.pdf_convert,
@@ -205,6 +211,7 @@ class DocumentsToolset:
                 ),
             ],
             id="a13n-document-tool-functions",
+            instructions=_DOCUMENT_INSTRUCTIONS,
         )
 
     async def pdf_convert(

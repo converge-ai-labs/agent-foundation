@@ -29,9 +29,14 @@ from a13n_envd_client.eip.v1.models import (
     EIPError,
     EIPLimits,
     EncodedBytes,
+    EnvironmentReadinessParams,
+    EnvironmentReadinessResult,
     ErrorType,
     FileFindParams,
     FileReadCompletion,
+    FileSearchMatch,
+    FileSearchParams,
+    FileSearchResult,
     FileStatParams,
     FileStatResult,
     InitializeParams,
@@ -65,7 +70,12 @@ def valid_eip_limits() -> dict[str, int]:
 
 MODEL_TYPES: dict[str, type[BaseModel]] = {
     "InitializeParams": InitializeParams,
+    "EnvironmentReadinessParams": EnvironmentReadinessParams,
+    "EnvironmentReadinessResult": EnvironmentReadinessResult,
     "FileFindParams": FileFindParams,
+    "FileSearchParams": FileSearchParams,
+    "FileSearchMatch": FileSearchMatch,
+    "FileSearchResult": FileSearchResult,
     "FileStatParams": FileStatParams,
     "FileStatResult": FileStatResult,
     "ShellExecParams": ShellExecParams,
@@ -77,15 +87,15 @@ MODEL_TYPES: dict[str, type[BaseModel]] = {
 
 
 def test_generated_surface_covers_eip_v1() -> None:
-    assert EIP_PROTOCOL_VERSION == "1.0"
+    assert EIP_PROTOCOL_VERSION == "0.1"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 34
+    assert len(METHODS) == 35
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
-    assert all(method.introduced == "1.0" for method in METHODS.values())
+    assert all(method.introduced == "0.1" for method in METHODS.values())
     assert EIP_ERROR_CODES[ErrorType.INTEGRITY_MISMATCH] == -32061
-    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 18
+    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 19
     assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 15
     assert [method.name for method in METHODS.values() if method.replay_class == "ledger_external"] == ["initialize"]
     transfer_methods = [method for method in METHODS.values() if method.transfer_action is not None]
@@ -95,6 +105,8 @@ def test_generated_surface_covers_eip_v1() -> None:
 
 def test_shared_golden_values_round_trip_canonically() -> None:
     fixture = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+    initialize = next(case for case in fixture["cases"] if case["type"] == "InitializeParams")
+    assert initialize["value"]["supported_protocol_versions"] == [EIP_PROTOCOL_VERSION]
     for case in fixture["cases"]:
         model_type = MODEL_TYPES[case["type"]]
         encoded_fixture = json.dumps(case["value"], separators=(",", ":"), sort_keys=True)

@@ -38,13 +38,6 @@ class UserInteractionCapability(AbstractCapability[AgentContext]):
             return None
         return UserInteractionToolset().get_toolset()
 
-    def get_instructions(self) -> str:
-        return (
-            "Use ask_user_question only when a user's answer materially changes the result. The call suspends the "
-            "run through Pydantic AI native deferred execution; the Host presents the questions and later resumes "
-            "the run with correlated, schema-validated answers."
-        )
-
 
 __all__ = [
     "AskUserQuestionRequest",

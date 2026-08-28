@@ -20,7 +20,7 @@ from .direct_local.configuration import DirectLocalProviderConfiguration
 
 
 class EIPSessionSource(ABC):
-    """Single-use source for one freshly initialized EIP client session."""
+    """Single-use source for one freshly initialized and readiness-confirmed EIP Session."""
 
     def __init__(self) -> None:
         self._claimed = False

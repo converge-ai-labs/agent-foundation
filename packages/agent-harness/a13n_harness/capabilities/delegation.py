@@ -195,19 +195,6 @@ class _DelegationActiveCapability(DelegationCapability):
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return self._toolset.get_toolset()
 
-    def get_instructions(self) -> str:
-        children = tuple(self._context.subagents.values())
-        if not children:
-            return "No inline subagents are declared for this Agent."
-        rendered = "; ".join(
-            f"{child.declaration.name}: {child.declaration.description[:512]}" for child in children[:64]
-        )
-        return (
-            "Use delegate for bounded blocking work that should be completed by one declared subagent. "
-            "Reuse a returned child_instance_id only to continue that exact child. Available subagents: "
-            f"{rendered}"
-        )
-
 
 def _validate_delegation_state(
     state: DelegationState,

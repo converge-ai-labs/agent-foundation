@@ -34,42 +34,52 @@ class AgentDefinition[OutputT]:
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
 ```
 
-| Field            | Meaning                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `agent`          | Harness or native Pydantic AI declarative Agent configuration                                                    |
-| `output_type`    | Explicit native process-local `OutputSpec`, or `None` to select the object schema in `AgentSpec.output_schema`   |
-| `definition_id`  | Non-blank logical correlation value; it grants no authority                                                      |
-| `model`          | Optional concrete native Model used instead of string selection in `AgentSpec`                                   |
-| `capabilities`   | The only top-level feature plane; each native Capability owns its tools, Toolsets, guidance, settings, and hooks |
-| `plugins`        | Trusted concrete Harness middleware instances supplied directly with this definition                             |
-| `subagents`      | Named complete process-local child definitions and authored edge ceilings                                        |
-| `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run         |
+| Field            | Meaning                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `agent`          | Harness or native Pydantic AI declarative Agent configuration                                                              |
+| `output_type`    | Explicit native process-local `OutputSpec`, or `None` to select the object schema in `AgentSpec.output_schema`             |
+| `definition_id`  | Non-blank logical correlation value; it grants no authority                                                                |
+| `model`          | Optional concrete native Model used instead of string selection in `AgentSpec`                                             |
+| `capabilities`   | The only top-level feature plane; each native Capability owns feature activation, Toolset composition, settings, and hooks |
+| `plugins`        | Trusted concrete Harness middleware instances supplied directly with this definition                                       |
+| `subagents`      | Named complete process-local child definitions and authored edge ceilings                                                  |
+| `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                   |
 
 Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. String model selection belongs only to `AgentSpec.model`; a concrete process-local Model belongs only to `AgentDefinition.model`. Supplying both is rejected rather than assigning hidden precedence, and a concrete Model requires `AgentSpec.model=None`. Child names are unique within one parent. The finite acyclic child graph and its exact `SubagentDefinition` contract are owned by [Delegation and Subagents](11-delegation-and-subagents.md#child-definitions-and-built-collection). The Harness does not require every trusted Python object to be serializable, hashable, deeply immutable, or reconstructible from metadata. Reentrancy remains the responsibility of native objects and Agent-bound extensions whose instances are shared by concurrent runs.
 
-`AgentSpec` remains the owner of instructions, request settings, output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. The Harness subclass additionally owns ordered static `system_prompt` blocks and the construction and serialization key `model_config`, backed by the Python attribute `model_configuration`, for one resolved `ModelConfiguration` describing model characteristics that native provider `ModelProfile` does not own. A system prompt is fixed within one resolved `AgentSpec`; another definition can replace, reorder, or remove it when starting a later model request over retained history. Instructions retain native Pydantic AI static and dynamic semantics and are not a substitute for the definition-owned system prompt.
+`AgentSpec` remains the owner of instructions, request settings, output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. The Harness subclass additionally owns ordered static `system_prompt` blocks, the default-on `toolset_instructions` policy, and the construction and serialization key `model_config`, backed by the Python attribute `model_configuration`, for one resolved `ModelConfiguration` describing model characteristics that native provider `ModelProfile` does not own. A system prompt is fixed within one resolved `AgentSpec`; another definition can replace, reorder, or remove it when starting a later model request over retained history. Instructions retain native Pydantic AI static and dynamic semantics and are not a substitute for the definition-owned system prompt. The Toolset switch changes only Harness Toolset-owned guidance and does not suppress explicit Agent or Capability instructions.
 
 Exactly one build-time output source is selected: an explicit `AgentDefinition.output_type`, or native `AgentSpec.output_schema` when `output_type is None`. The latter produces `dict[str, JsonValue]`; `None` without a schema and an explicit output together with a schema are rejected. Native `OutputSpec`, Model profiles, Capability-owned tools and Toolsets, and explicit Capability instances retain their upstream Pydantic AI semantics. The Harness does not mirror those types in a second schema.
 
 MCP definition behavior uses Pydantic AI's native `MCP` Capability in `AgentSpec.capabilities`. The Harness accepts and reconstructs that upstream Capability through the same native Capability path and does not add a peer `mcp`, `mcp_servers`, transport schema, or Harness-specific MCP Capability. A serializable native `MCP` Capability owns the upstream URL-based server fields it exposes; trusted process-local code can instead supply any richer native MCP Capability or Toolset composition supported by Pydantic AI. Provider-native MCP and locally executed MCP Toolsets retain their distinct upstream execution paths.
 
 ```python
+class ModelCapability(StrEnum):
+    IMAGE_UNDERSTANDING = "image_understanding"
+    VIDEO_UNDERSTANDING = "video_understanding"
+    AUDIO_UNDERSTANDING = "audio_understanding"
+
+
 class ModelConfiguration(BaseModel):
+    capabilities: frozenset[ModelCapability] = frozenset()
     context_window: int | None = None
     proactive_context_management_threshold: float | None = 0.65
     compact_threshold: float = 0.90
 
 class AgentSpec(PydanticAgentSpec):
     system_prompt: str | list[str] | None = None
+    toolset_instructions: bool = True
     model_configuration: ModelConfiguration | None = Field(
         default=None,
         alias="model_config",
     )
 ```
 
-`system_prompt=None` or an empty list means that the definition supplies no system-prompt block. A string is one block; a list preserves authored order. The builder normalizes this field once, supplies it through Pydantic AI's native `system_prompt` construction argument for an empty history, and retains it on the copied definition for later history reconciliation. A Host convenience API may materialize a system-prompt argument into this field, but no lower layer accepts a competing prompt source or silently merges two owners.
+`AgentSpec.with_updates()` refines a loaded preset without mutating it. It accepts field names or serialization aliases through one optional mapping plus keyword overrides, rejects unknown fields and duplicate alias/name ownership, deep-copies retained and replacement values, and revalidates the complete resulting `AgentSpec`. Each supplied top-level field is an exact replacement; the method never recursively merges provider-specific settings, metadata, schemas, Capability arguments, or other nested mappings. A caller that wants a nested merge constructs that field explicitly before supplying it. This is definition materialization before build, not the temporary run-scoped behavior of native `Agent.override()`.
 
-`ModelConfiguration` is the resolved per-model value, not a provider request setting or a replacement for native `ModelProfile`. `context_window=None` means the Harness cannot derive context thresholds. When known, the builder derives the summarize reminder threshold as `int(context_window * proactive_context_management_threshold)` and the compaction trigger as `int(context_window * compact_threshold)`. A `None` proactive threshold disables the automatic summarize reminder. The defaults are 65% and 90%, matching the context lifecycle rather than a provider wire contract.
+`system_prompt=None` or an empty list means that the definition supplies no system-prompt block. A string is one block; a list preserves authored order. The builder normalizes this field once, supplies it through Pydantic AI's native `system_prompt` construction argument for an empty history, and retains it on the copied definition for later history reconciliation. A Host convenience API may materialize a system-prompt argument into this field, but no lower layer accepts a competing prompt source or silently merges two owners. `toolset_instructions=True` enables Harness Toolset instruction blocks by default; the single-run override and child inheritance contract belong to [Context and Memory](09-context-and-memory.md#toolset-instruction-enablement).
+
+`ModelConfiguration` is the resolved per-model Harness value, not a provider request setting or a replacement for native `ModelProfile`. Its `capabilities` set is authoritative for Harness behavior that Pydantic AI profiles do not represent consistently. `IMAGE_UNDERSTANDING`, `VIDEO_UNDERSTANDING`, and `AUDIO_UNDERSTANDING` mean the active Agent model can consume that native media kind; absence means the Harness must use an explicitly configured fallback or report unavailability. The Harness never infers these facts from a model name or provider profile. `context_window=None` means the Harness cannot derive context thresholds. When known, the builder derives the summarize reminder threshold as `int(context_window * proactive_context_management_threshold)` and the compaction trigger as `int(context_window * compact_threshold)`. A `None` proactive threshold disables the automatic summarize reminder. The defaults are 65% and 90%, matching the context lifecycle rather than a provider wire contract.
 
 The Harness ships an immutable, release-pinned `OfficialModelCatalog` containing a deliberately small set of provider-qualified official direct-provider model IDs, their objective `ModelConfiguration`, and an official source URL. It contains no gateway aliases, labels, credentials, request presets, reasoning defaults, routing policy, or deployment-specific availability claims. A Host may use `get_official_model_catalog()` or `get_official_model()` to materialize configuration, may select models outside the catalog, and remains responsible for provider access and policy. Catalog lookup is explicit: the builder does not silently replace or infer `AgentSpec.model_configuration`.
 

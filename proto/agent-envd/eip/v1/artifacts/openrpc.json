@@ -1,7 +1,7 @@
 {
   "info": {
     "title": "Environment Interaction Protocol",
-    "version": "1.0"
+    "version": "0.1"
   },
   "methods": [
     {
@@ -23,10 +23,38 @@
         }
       },
       "x-eip-error-family": "common",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/EnvironmentDescribeParams"
+      },
+      "x-eip-replay-class": "active_only",
+      "x-eip-transfer-action": null,
+      "x-eip-transfer-direction": null
+    },
+    {
+      "name": "environment.readiness",
+      "paramStructure": "by-name",
+      "params": [
+        {
+          "name": "context",
+          "required": true,
+          "schema": {
+            "$ref": "schema.json#/$defs/EnvironmentReadinessParams/properties/context"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "schema.json#/$defs/EnvironmentReadinessResult"
+        }
+      },
+      "x-eip-error-family": "common",
+      "x-eip-introduced": "0.1",
+      "x-eip-kind": "request_response",
+      "x-eip-params-schema": {
+        "$ref": "schema.json#/$defs/EnvironmentReadinessParams"
       },
       "x-eip-replay-class": "active_only",
       "x-eip-transfer-action": null,
@@ -58,7 +86,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileWriterAbortParams"
@@ -93,7 +121,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileReaderCloseParams"
@@ -142,7 +170,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileWriterCommitParams"
@@ -191,7 +219,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileCopyParams"
@@ -259,6 +287,13 @@
           "schema": {
             "$ref": "schema.json#/$defs/FileFindParams/properties/kinds"
           }
+        },
+        {
+          "name": "respect_git_ignore",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileFindParams/properties/respect_git_ignore"
+          }
         }
       ],
       "result": {
@@ -268,7 +303,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileFindParams"
@@ -324,7 +359,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileListParams"
@@ -373,7 +408,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileMkdirParams"
@@ -422,7 +457,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileMoveParams"
@@ -471,7 +506,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileReaderOpenParams"
@@ -527,7 +562,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileWriterOpenParams"
@@ -576,7 +611,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FilePatchTextParams"
@@ -632,7 +667,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileReadTextParams"
@@ -688,7 +723,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileRemoveParams"
@@ -763,6 +798,48 @@
           "schema": {
             "$ref": "schema.json#/$defs/FileSearchParams/properties/max_line_length"
           }
+        },
+        {
+          "name": "include_pattern",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileSearchParams/properties/include_pattern"
+          }
+        },
+        {
+          "name": "respect_git_ignore",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileSearchParams/properties/respect_git_ignore"
+          }
+        },
+        {
+          "name": "context_lines",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileSearchParams/properties/context_lines"
+          }
+        },
+        {
+          "name": "max_matches_per_file",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileSearchParams/properties/max_matches_per_file"
+          }
+        },
+        {
+          "name": "max_files",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileSearchParams/properties/max_files"
+          }
+        },
+        {
+          "name": "max_file_bytes",
+          "required": false,
+          "schema": {
+            "$ref": "schema.json#/$defs/FileSearchParams/properties/max_file_bytes"
+          }
         }
       ],
       "result": {
@@ -772,7 +849,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileSearchParams"
@@ -814,7 +891,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileStatParams"
@@ -870,7 +947,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/FileWriteTextParams"
@@ -919,7 +996,7 @@
         }
       },
       "x-eip-error-family": "initialization",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/InitializeParams"
@@ -954,7 +1031,7 @@
         }
       },
       "x-eip-error-family": "common",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/OperationCancelParams"
@@ -1003,7 +1080,7 @@
         }
       },
       "x-eip-error-family": "output",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/OutputReadParams"
@@ -1038,7 +1115,7 @@
         }
       },
       "x-eip-error-family": "output",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/OutputReleaseParams"
@@ -1073,7 +1150,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/PortInspectParams"
@@ -1115,7 +1192,7 @@
         }
       },
       "x-eip-error-family": "resource",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/PortWaitParams"
@@ -1150,7 +1227,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessCloseStdinParams"
@@ -1185,7 +1262,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessInspectParams"
@@ -1220,7 +1297,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessKillParams"
@@ -1255,7 +1332,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessReleaseParams"
@@ -1297,7 +1374,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessSignalParams"
@@ -1332,7 +1409,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessStartParams"
@@ -1374,7 +1451,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessWaitParams"
@@ -1423,7 +1500,7 @@
         }
       },
       "x-eip-error-family": "process",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ProcessWriteStdinParams"
@@ -1458,7 +1535,7 @@
         }
       },
       "x-eip-error-family": "common",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ReceiptGetParams"
@@ -1486,7 +1563,7 @@
         }
       },
       "x-eip-error-family": "session",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/SessionCloseParams"
@@ -1521,7 +1598,7 @@
         }
       },
       "x-eip-error-family": "command",
-      "x-eip-introduced": "1.0",
+      "x-eip-introduced": "0.1",
       "x-eip-kind": "request_response",
       "x-eip-params-schema": {
         "$ref": "schema.json#/$defs/ShellExecParams"

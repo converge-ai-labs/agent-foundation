@@ -79,10 +79,18 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert all(item["required"] is True for item in shell_exec["params"])
     receipt_get = next(method for method in openrpc["methods"] if method["name"] == "receipt.get")
     assert receipt_get["x-eip-params-schema"] == {"$ref": "schema.json#/$defs/ReceiptGetParams"}
+    readiness = next(method for method in openrpc["methods"] if method["name"] == "environment.readiness")
+    assert readiness["x-eip-replay-class"] == "active_only"
+    assert readiness["x-eip-params-schema"] == {"$ref": "schema.json#/$defs/EnvironmentReadinessParams"}
+    assert readiness["result"]["schema"] == {"$ref": "schema.json#/$defs/EnvironmentReadinessResult"}
+    readiness_result = schema["EnvironmentReadinessResult"]
+    assert set(readiness_result["required"]) == {"ready", "environment_id", "generation"}
+    assert readiness_result["properties"]["generation"]["minimum"] == 1
+    assert readiness_result["properties"]["environment_id"]["minLength"] == 1
 
     methods = json.loads(METHODS_PATH.read_text(encoding="utf-8"))
-    assert methods["method_count"] == 34
-    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 18
+    assert methods["method_count"] == 35
+    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 19
     assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 15
     assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 1
     descriptor = (REPOSITORY_ROOT / DESCRIPTOR_PATH).read_bytes()

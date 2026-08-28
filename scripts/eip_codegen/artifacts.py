@@ -78,7 +78,7 @@ def build_schema(index: SchemaIndex, options: OptionReader, models_path: Path) -
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://github.com/converge-ai-labs/agent-foundation/eip/v1/schema.json",
-        "title": "Environment Interaction Protocol 1.0",
+        "title": "Environment Interaction Protocol 0.1",
         "$defs": definitions,
     }
 
@@ -123,7 +123,7 @@ def build_openrpc(records: list[dict[str, Any]], schema: dict[str, object]) -> d
         methods.append(method)
     return {
         "openrpc": "1.3.2",
-        "info": {"title": "Environment Interaction Protocol", "version": "1.0"},
+        "info": {"title": "Environment Interaction Protocol", "version": "0.1"},
         "methods": methods,
     }
 
@@ -168,7 +168,7 @@ def write_artifacts(
     records = method_records(index, options)
     inventory = {
         "generated": True,
-        "protocol": {"package": "a13n.agent_envd.eip.v1", "version": "1.0"},
+        "protocol": {"package": "a13n.agent_envd.eip.v1", "version": "0.1"},
         "method_count": len(records),
         "methods": records,
     }

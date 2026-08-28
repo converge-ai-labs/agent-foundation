@@ -82,12 +82,42 @@ def _write_fake_envd(
     *,
     version: str = envd_client_version,
     probe_ready: bool = True,
+    readiness_ready: bool = True,
     exit_after_ready: bool = False,
 ) -> Path:
     script = f"""#!{sys.executable}
 import json
 import os
 import sys
+
+
+def read_request():
+    content_length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        if line == b"\\r\\n":
+            break
+        name, value = line.decode("ascii").split(":", 1)
+        if name.lower() == "content-length":
+            content_length = int(value.strip())
+    if content_length is None:
+        raise SystemExit(3)
+    payload = sys.stdin.buffer.read(content_length)
+    if len(payload) != content_length:
+        return None
+    return json.loads(payload)
+
+
+def write_response(request_id, result):
+    payload = json.dumps(
+        {{"jsonrpc": "2.0", "id": request_id, "result": result}},
+        separators=(",", ":"),
+    ).encode()
+    sys.stdout.buffer.write(b"Content-Length: " + str(len(payload)).encode() + b"\\r\\n\\r\\n" + payload)
+    sys.stdout.buffer.flush()
+
 
 if sys.argv[1:] == ["--version"]:
     sys.stdout.buffer.write(b"agent-envd {version}\\n")
@@ -106,15 +136,63 @@ if sys.argv[1:] == ["isolation", "probe", "--json"]:
 if len(sys.argv) == 3 and sys.argv[1] == "--config":
     with open(sys.argv[2], encoding="utf-8") as stream:
         json.load(stream)
-    ready_file = os.environ.get("AGENT_ENVD_READY_FILE")
-    if ready_file is not None:
-        with open(ready_file, "xb") as stream:
-            stream.write(b"agent-envd-ready-v1\\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-    if {exit_after_ready!r}:
-        os._exit(0)
-    sys.stdin.buffer.read()
+    if "AGENT_ENVD_READY_FILE" in os.environ:
+        raise SystemExit(5)
+    environment_id = os.environ["AGENT_ENVD_ENVIRONMENT_ID"]
+    descriptor = {{
+        "environment_id": environment_id,
+        "generation": 1,
+        "available_methods": ["environment.readiness", "session.close"],
+        "limits": {{
+            "max_request_bytes": 16777216,
+            "max_response_bytes": 16777216,
+            "max_concurrent_operations": 4,
+            "max_processes": 1,
+            "max_operation_duration_ms": 10000,
+            "max_output_preview_bytes": 1,
+            "max_output_bytes_per_stream": 1,
+            "max_transfer_frame_bytes": 4194304,
+            "max_concurrent_file_transfers": 1,
+            "max_file_transfer_bytes": 1,
+        }},
+        "isolation": {{
+            "mode": "disabled",
+            "backend": "outer_host",
+            "filesystem_containment": False,
+            "process_containment": False,
+            "network_containment": False,
+            "network_policy": "host",
+            "cleanup_guarantee": "outer_host",
+        }},
+        "execution_features": {{
+            "process_count_limit": False,
+            "memory_bytes_limit": False,
+            "cpu_time_limit": False,
+            "per_command_network_deny": False,
+            "signal_interrupt": False,
+            "signal_terminate": False,
+        }},
+    }}
+    while request := read_request():
+        method = request["method"]
+        if method == "initialize":
+            write_response(request["id"], {{
+                "protocol_version": "0.1",
+                "server": {{"name": "agent-envd", "version": "{version}"}},
+                "descriptor": descriptor,
+            }})
+        elif method == "environment.readiness":
+            write_response(request["id"], {{
+                "ready": {readiness_ready!r},
+                "environment_id": environment_id,
+                "generation": 1,
+            }})
+            if {exit_after_ready!r}:
+                os._exit(0)
+        elif method == "session.close":
+            write_response(request["id"], {{"closed": True}})
+        else:
+            raise SystemExit(4)
     raise SystemExit(0)
 raise SystemExit(2)
 """
@@ -314,6 +392,25 @@ async def test_local_envd_resource_writes_strict_config_and_reuses_one_carrier(
         running_state,
         operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
     )
+
+
+async def test_local_envd_entry_rejects_false_eip_readiness(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    runtime_parent = tmp_path / "runtimes"
+    workspace.mkdir()
+    runtime_parent.mkdir()
+    provider = _provider(
+        workspace,
+        _write_fake_envd(tmp_path / "agent-envd", readiness_ready=False),
+        TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
+    )
+    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+
+    with pytest.raises(EnvironmentProviderError) as exc_info:
+        async with resource:
+            raise AssertionError("a not-ready daemon must not enter a Resource")
+    assert exc_info.value.code == "provider_unavailable"
+    assert not tuple(runtime_parent.iterdir())
 
 
 async def test_local_envd_entry_rejects_daemon_that_exits_after_readiness(tmp_path: Path) -> None:

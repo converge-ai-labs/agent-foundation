@@ -1,0 +1,5 @@
+<office-convert-guidelines>
+Use Office conversion for Word, PowerPoint, Excel, and EPUB sources; use PDF conversion for PDFs.
+After conversion, inspect the returned Markdown and export paths instead of rereading the binary source.
+For large or media-heavy documents, read the converted Markdown first and inspect extracted assets only when needed.
+</office-convert-guidelines>

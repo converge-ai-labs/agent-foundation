@@ -10,13 +10,13 @@ Bootstrap configuration is operator or provider-adapter input. EIP requests can 
 
 ## Boundaries
 
-| Concern                                                                                                                | Owner                                                    | Relationship                                  |
-| ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------- |
-| Provider resource lifecycle, current credential use, endpoint routing, and envd attachment-token issuance              | Environment Provider package and Host                    | Completes trusted bootstrap                   |
-| Envd executable, configuration, private bootstrap channel, and process lifecycle                                       | Operator or provider adapter                             | Launches envd inside the selected Environment |
-| Configuration validation, generation, resource owners, isolation probe, local readiness, connector, drain, and cleanup | `agent-envd`                                             | One daemon lifecycle                          |
-| Carrier framing, HTTP listener, reverse-WebSocket handshake/reconnect, and EIP session                                 | [Transports and Sessions](03-transports-and-sessions.md) | Begins only after local readiness             |
-| Harness run and durable execution lifecycle                                                                            | Harness and Host                                         | Independent of daemon process lifetime        |
+| Concern                                                                                                     | Owner                                                    | Relationship                                  |
+| ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------- |
+| Provider resource lifecycle, current credential use, endpoint routing, and envd attachment-token issuance   | Environment Provider package and Host                    | Completes trusted bootstrap                   |
+| Envd executable, configuration, protected bootstrap inputs, and process lifecycle                           | Operator or provider adapter                             | Launches envd inside the selected Environment |
+| Configuration validation, generation, resource owners, isolation probe, carrier startup, drain, and cleanup | `agent-envd`                                             | One daemon lifecycle                          |
+| Carrier framing, HTTP listener, reverse-WebSocket handshake/reconnect, EIP Session, and readiness operation | [Transports and Sessions](03-transports-and-sessions.md) | Begins only after daemon bootstrap            |
+| Harness run and durable execution lifecycle                                                                 | Harness and Host                                         | Independent of daemon process lifetime        |
 
 One ready daemon admits at most one active initialized EIP session and can then serve fresh sequential sessions over its selected carrier while retaining generation-owned resources. A session is a protocol carrier, not a tenant, principal, or run. Another user, mutually untrusted workload, or concurrent independent session requires another daemon instance, runtime root, bootstrap binding, and provider resource boundary.
 
@@ -111,7 +111,6 @@ Stable non-secret environment configuration includes:
 | `AGENT_ENVD_REVERSE_WS_CREDENTIAL_FILE`                          | Required only for reverse WebSocket                                | Absolute path to the protected Bearer token file                    |
 | `AGENT_ENVD_REVERSE_WS_CA_FILE`                                  | Optional absolute PEM file for `wss`                               | Additional operator-trusted certificate roots                       |
 | `AGENT_ENVD_RUNTIME_DIR`                                         | Required absolute path                                             | Parent for fresh generation-private runtime state                   |
-| `AGENT_ENVD_READY_FILE`                                          | Optional with stdio; absolute direct child of the runtime parent   | Private provider-facing local readiness marker                      |
 | `AGENT_ENVD_EXECUTION_ISOLATION`                                 | `required` or `disabled`; default `required`                       | Selects envd inner command isolation                                |
 | `AGENT_ENVD_EXECUTION_NETWORK`                                   | `host` or `deny`; default `host`                                   | Selects required-backend network ceiling                            |
 | `AGENT_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS`                     | JSON array; default `[]`                                           | Adds trusted command runtime roots                                  |
@@ -119,7 +118,7 @@ Stable non-secret environment configuration includes:
 
 The runtime parent is required on every platform and carrier profile because generation-private spool, control, probe, and connector state is unconditional. Envd does not derive an authority-bearing parent from the ambient current directory, user home, or platform temporary-directory environment. The provider creates and protects the parent before launch; envd creates a fresh unpredictable generation child and validates ownership, permissions or ACLs, and no-link/reparse shape before use.
 
-A provider can supply `AGENT_ENVD_READY_FILE` only with trusted stdio. When supplied, the absent target must be an exact direct child of the canonical runtime parent. After configuration, generation-private runtime state, resource owners, and required command isolation are usable, but before the selected carrier admits traffic, envd creates that marker as a private non-link regular file containing exactly `agent-envd-ready-v1\n`. Failure to create and persist it fails startup. The marker reports only local process readiness, contains no credential or endpoint, and is removed during ordinary daemon teardown; it is not an EIP method, network readiness endpoint, or substitute for EIP initialization. A provider waits on the marker and process exit under its own finite launch deadline.
+Envd starts its selected carrier only after configuration, generation-private runtime state, resource owners, and required command isolation are usable. Providers establish externally observable readiness through the mandatory EIP initialize/readiness sequence while concurrently observing process or carrier failure; envd creates no readiness marker and exposes no separate readiness endpoint.
 
 Each network profile requires a provider-owned short-lived attachment token stored in the regular file selected by its profile-specific `*_CREDENTIAL_FILE` setting. The path is non-secret trusted bootstrap configuration; it is absolute and must identify a non-symlink regular file. Envd reads one bounded non-empty token before network admission or a connection attempt, removes one optional trailing line ending, and rejects whitespace or control characters. A missing, unreadable, empty, malformed, or oversized configured token is generation-fatal. The provider can replace the protected reverse-WebSocket token file before a later reconnect attempt, but an upgrade `401` or `403` is immediately generation-fatal rather than triggering unauthenticated retry or an in-process refresh protocol.
 
@@ -211,7 +210,7 @@ Startup order is:
 6. Initialize the selected execution backend.
 7. In `required` mode, run the native production probe for Linux, macOS, or Windows.
 8. Reserve stdio framing, bind the scoped authenticated HTTP listener, or initialize the outbound connector and credential source.
-9. Publish local readiness to the trusted provider lifecycle boundary and begin carrier admission.
+9. Begin carrier admission; a requester establishes externally observable readiness through EIP initialization and `environment.readiness`.
 
 No stdio frame is accepted, HTTP listener begins admission, or reverse-WebSocket attempt begins before the required isolation probe succeeds. Only the selected HTTP profile binds an inbound EIP socket.
 
@@ -222,11 +221,11 @@ No stdio frame is accepted, HTTP listener begins admission, or reverse-WebSocket
 Readiness has two distinct facts:
 
 - **local readiness**: configuration, generation-private state, mounts, owners, and isolation probe are usable;
-- **carrier readiness**: one current trusted carrier has completed EIP initialization for the expected Environment and generation.
+- **Session readiness**: one current trusted carrier has completed EIP initialization and a successful `environment.readiness` operation for the expected Environment and generation.
 
-In stdio mode, successful `initialize` is the usable readiness boundary for each logical session. After a successful `session.close` response and session cleanup, the generation-owned carrier returns to local `StdioReady` state and requires another `initialize` before admitting work. Stdout contains only framed EIP messages; startup diagnostics use stderr and process exit.
+In stdio mode, the initialize/readiness sequence is the usable boundary for each logical Session. After a successful `session.close` response and session cleanup, the generation-owned carrier returns to local `StdioReady` state and requires another initialize/readiness sequence before admitting application work. Stdout contains only framed EIP messages; startup diagnostics use stderr and process exit.
 
-In HTTP mode, the provider obtains the configured listener address through its trusted launch boundary and the client observes carrier readiness only after authenticated initialization. In reverse-WebSocket mode, the provider observes local readiness through that launch boundary while the control service observes carrier readiness from the initialized connection. There is no readiness JSON line and no `/healthz` or `/readyz` route. Consumers dispatch only after carrier readiness. Losing carrier readiness leaves local generation-owned resources intact while a fresh session can be established.
+In HTTP mode, the provider obtains the configured listener address through its trusted launch boundary and the client observes Session readiness only after authenticated initialization and `environment.readiness`. In reverse-WebSocket mode, the provider observes local readiness through that launch boundary while the control service observes Session readiness through the same EIP sequence on the accepted carrier. There is no readiness JSON line and no `/healthz` or `/readyz` route. Consumers dispatch only after Session readiness. Losing Session readiness leaves local generation-owned resources intact while a fresh Session can be established.
 
 Readiness never contains credentials, native roots, protected paths, helper locations, command content, or private runtime names.
 
@@ -305,6 +304,6 @@ Provider configuration changes restart envd and create a new generation. Live EI
 06. One operation ledger owns running admission and retained terminal replay/receipt evidence for effectful methods; response-waiter loss cannot erase accepted mutation evidence.
 07. Command output capacity is reserved before payload release, and valid process/output records are reclaimed only explicitly or at generation end.
 08. Required isolation probes Linux, macOS, or Windows before carrier admission and never selects disabled after failure.
-09. Local readiness and initialized-carrier readiness remain distinct; reconnect does not change generation or erase generation-owned resources.
+09. Local readiness and EIP Session readiness remain distinct; initialization alone is not Session readiness, and reconnect does not change generation or erase generation-owned resources.
 10. Each start exclusively locks its dedicated runtime parent, proves removal of every validated crash-left generation tree, then creates fresh command-home, command-temp, spool, control, and probe state; stale spool bytes are never left outside current capacity accounting while service starts.
 11. Shutdown stops admission before cleanup, applies the strongest platform cleanup to every backend-managed command target, removes volatile generation state, and reports uncertainty rather than false success.

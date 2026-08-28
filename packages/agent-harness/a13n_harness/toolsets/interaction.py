@@ -8,6 +8,10 @@ from pydantic_ai.toolsets import ExternalToolset
 
 from a13n_harness.context import AgentContext
 
+from ._instructions import InstructionExternalToolset, tool_instruction
+
+_USER_INTERACTION_INSTRUCTION = tool_instruction("ask_user_question")
+
 ASK_USER_QUESTION_KIND = "ask_user_question"
 ASK_USER_QUESTION_TOOL_NAME = "ask_user_question"
 
@@ -93,7 +97,11 @@ class UserInteractionToolset:
             parameters_json_schema=AskUserQuestionRequest.model_json_schema(by_alias=True),
             metadata={"kind": ASK_USER_QUESTION_KIND},
         )
-        return ExternalToolset([definition], id="a13n-user-interaction-tools")
+        return InstructionExternalToolset(
+            [definition],
+            id="a13n-user-interaction-tools",
+            instructions=_USER_INTERACTION_INSTRUCTION,
+        )
 
 
 def validate_user_question_result(arguments: object, value: object) -> dict[str, object]:

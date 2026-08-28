@@ -19,6 +19,8 @@ from a13n_harness import (
     DelegationConfiguration,
     DelegationRunCapability,
     DelegationState,
+    HandoffCapability,
+    HandoffConfiguration,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -33,6 +35,9 @@ from a13n_harness import (
     SubagentDefinition,
     WorkingState,
     WorkingStateCapability,
+)
+from a13n_harness import (
+    AgentSpec as HarnessAgentSpec,
 )
 from a13n_harness.capabilities.delegation import DELEGATION_CAPABILITY_ID
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
@@ -211,6 +216,79 @@ def _bindings_factory(
             *extra_capabilities,
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("parent_default", "child_default", "run_override", "expected_child_toolset_guidance"),
+    [
+        (False, True, None, True),
+        (True, True, False, False),
+        (False, False, True, True),
+    ],
+)
+async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
+    parent_default: bool,
+    child_default: bool,
+    run_override: bool | None,
+    expected_child_toolset_guidance: bool,
+) -> None:
+    child_instructions: list[str] = []
+
+    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        child_instructions.append(info.instructions or "")
+        yield "child-done"
+
+    child = AgentDefinition(
+        agent=HarnessAgentSpec(
+            instructions="Child authored instruction.",
+            toolset_instructions=child_default,
+        ),
+        output_type=str,
+        definition_id="instruction-child-v1",
+        model=FunctionModel(stream_function=child_stream),
+        capabilities=(HandoffCapability(HandoffConfiguration(include_summary_reminder=False)),),
+    )
+
+    async def parent_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        if not _returns_after_latest_user(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "reviewer", "task": "inspect"}),
+                    tool_call_id="delegate-1",
+                )
+            }
+            return
+        yield "parent-done"
+
+    parent = AgentDefinition(
+        agent=HarnessAgentSpec(toolset_instructions=parent_default),
+        output_type=str,
+        definition_id="instruction-parent-v1",
+        model=FunctionModel(stream_function=parent_stream),
+        capabilities=(DelegationCapability(),),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="Inspect instruction inheritance.",
+                agent=child,
+            ),
+        ),
+    )
+    executable = HarnessBuilder().build(parent)
+    bindings = replace(_bindings_factory(), toolset_instructions=run_override)
+
+    result = await executable.run("delegate", bindings=bindings)
+
+    assert result.output_or_raise() == "parent-done"
+    assert len(child_instructions) == 1
+    assert "Child authored instruction." in child_instructions[0]
+    assert ('<tool-instruction name="summarize">' in child_instructions[0]) is expected_child_toolset_guidance
 
 
 async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:

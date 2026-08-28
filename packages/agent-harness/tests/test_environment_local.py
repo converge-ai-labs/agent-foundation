@@ -4,6 +4,7 @@ import asyncio
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 import a13n_harness as harness_module
 import a13n_harness.environment as environment_module
@@ -977,6 +978,60 @@ async def test_search_result_page_does_not_limit_file_traversal(tmp_path: Path) 
             "/workspace/01.txt",
         ]
         assert first.has_more is True
+
+
+async def test_query_and_search_share_provider_conformance_and_use_one_worker_each(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    file_search_conformance: Any,
+) -> None:
+    file_search_conformance.populate(tmp_path)
+    files = local_files_module.LocalFileOperator(
+        root=tmp_path,
+        read_only=True,
+        policy=local_binding_module._DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        binding_id="binding-1",
+        binding_revision=1,
+        generation="generation-1",
+    )
+
+    original_to_thread = local_files_module.asyncio.to_thread
+    calls: list[str] = []
+
+    async def tracked_to_thread(function, /, *args, **kwargs):
+        calls.append(function.__name__)
+        return await original_to_thread(function, *args, **kwargs)
+
+    monkeypatch.setattr(local_files_module.asyncio, "to_thread", tracked_to_thread)
+    await file_search_conformance.assert_operator(files, root="/")
+
+    assert calls == ["_query_page", "_query_page", "_search_page"]
+
+
+async def test_search_fails_explicitly_when_eligible_file_limit_hides_candidates(tmp_path: Path) -> None:
+    _write_utf8(tmp_path / "a.py", "needle\n")
+    _write_utf8(tmp_path / "b.py", "needle\n")
+    files = local_files_module.LocalFileOperator(
+        root=tmp_path,
+        read_only=True,
+        policy=local_binding_module._DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        binding_id="binding-1",
+        binding_revision=1,
+        generation="generation-1",
+    )
+
+    with pytest.raises(EnvironmentError) as captured:
+        await files.search_text(
+            FileTextSearchRequest(
+                root="/",
+                pattern="needle",
+                include="**/*.py",
+                max_matches=10,
+                max_files=1,
+            )
+        )
+
+    assert captured.value.code == "environment_too_large"
 
 
 async def test_local_retention_is_bounded_readable_and_released(tmp_path: Path) -> None:

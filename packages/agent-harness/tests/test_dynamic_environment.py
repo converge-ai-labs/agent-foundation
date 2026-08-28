@@ -13,12 +13,14 @@ from typing import Any, cast
 
 import a13n_harness.environment.local.retention as local_retention_module
 import a13n_harness.execution as execution_module
+import a13n_harness.toolsets.file_media as file_media_module
 import a13n_harness.toolsets.files as file_toolset_module
 import pytest
 from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
 )
+from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
     ArgvCommand,
     DynamicEnvironmentCapability,
@@ -27,10 +29,16 @@ from a13n_harness import (
     EnvironmentError,
     EnvironmentPath,
     EnvironmentPermissionSet,
+    FileMediaUnderstandingRunCapability,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    MediaUnderstandingRequest,
+    MediaUnderstandingResult,
+    ModelCapability,
+    ModelConfiguration,
     ModelRecoveryPolicy,
+    ProviderUsageRecord,
     RunBindings,
 )
 from a13n_harness.environment.advanced import (
@@ -42,7 +50,13 @@ from a13n_harness.environment.advanced import (
     create_noop_environment_run_binding,
 )
 from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
-from a13n_harness.environment.files import FileEntriesResult, FileMetadata, FileWriteResult
+from a13n_harness.environment.files import (
+    FileEntriesResult,
+    FileMetadata,
+    FileTextMatch,
+    FileTextSearchResult,
+    FileWriteResult,
+)
 from a13n_harness.environment.local.binding import (
     DirectLocalEnvironmentProviderBinding,
     _DirectLocalFilePolicy,
@@ -77,8 +91,17 @@ from a13n_harness.toolsets.shell import ShellToolset, _CompactReferenceTable, _f
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    TextPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.usage import RequestUsage
 
 pytestmark = pytest.mark.anyio
 requires_posix_process_groups = pytest.mark.skipif(
@@ -341,10 +364,9 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_s
         for tool in info.function_tools
         if tool.metadata is not None and HARNESS_TOOL_METADATA_KEY in tool.metadata
     }
-    assert {"mkdir", "move", "delete"}.isdisjoint(names)
-    assert "copy" in names
+    assert "mkdir" in names
+    assert {"move", "copy", "delete"}.isdisjoint(names)
     assert metadata["edit"].effects == frozenset({"read", "write"})
-    assert metadata["copy"].effects == frozenset({"read", "write"})
     assert metadata["environment_shell_exec"].effects == frozenset(
         {"read", "write", "delete", "execute", "external_communication"}
     )
@@ -354,6 +376,10 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_s
     assert "do not interpret repository ignore files" in ignored_description
     assert info.instructions is not None
     assert "Agent-wide tool timeout" in info.instructions
+    assert '<tool-instruction name="view">' in info.instructions
+    assert '<tool-instruction name="environment-shell">' in info.instructions
+    assert '<tool-instruction name="copy">' not in info.instructions
+    assert '<tool-instruction name="delete">' not in info.instructions
     topology_parts = [
         part.content
         for message in messages
@@ -455,6 +481,11 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
         ]
         observed_results[:] = [cast(dict[str, Any], part.content) for part in returns]
         assert {"mkdir", "move", "copy", "delete"} <= {tool.name for tool in info.function_tools}
+        assert info.instructions is not None
+        assert '<tool-instruction name="move">' in info.instructions
+        assert '<tool-instruction name="copy">' in info.instructions
+        assert '<tool-instruction name="delete">' in info.instructions
+        assert '<tool-instruction name="environment-shell">' not in info.instructions
         if len(returns) < len(calls):
             name, arguments = calls[len(returns)]
             yield {
@@ -542,7 +573,7 @@ async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path
     assert not (tmp_path / "must-not-exist").exists()
 
 
-async def test_copy_streams_across_bindings_while_shell_supersedes_other_mutations(tmp_path: Path) -> None:
+async def test_copy_streams_across_bindings_when_shell_is_disabled(tmp_path: Path) -> None:
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     first_root.mkdir()
@@ -558,8 +589,10 @@ async def test_copy_streams_across_bindings_while_shell_supersedes_other_mutatio
             if isinstance(part, ToolReturnPart) and part.tool_name == "copy"
         ]
         names = {tool.name for tool in info.function_tools}
-        assert "copy" in names
-        assert {"mkdir", "move", "delete"}.isdisjoint(names)
+        assert {"mkdir", "move", "copy", "delete"} <= names
+        assert info.instructions is not None
+        assert '<tool-instruction name="copy">' in info.instructions
+        assert '<tool-instruction name="environment-shell">' not in info.instructions
         if not returns:
             yield {
                 0: DeltaToolCall(
@@ -586,7 +619,14 @@ async def test_copy_streams_across_bindings_while_shell_supersedes_other_mutatio
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+        capabilities=(
+            DynamicEnvironmentCapability(
+                _configuration(
+                    shell_tools=False,
+                    process_tools=False,
+                )
+            ),
+        ),
     )
     result = await executable.run(
         "copy",
@@ -636,7 +676,9 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
             yield "done"
 
     executable = HarnessBuilder().build(
-        AgentSpec(),
+        HarnessAgentSpec(
+            model_config=ModelConfiguration(capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING})),
+        ),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
@@ -660,6 +702,392 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
     assert len(binaries) == 1
     assert binaries[0].data == b"\x89PNG"
     assert binaries[0].media_type == "image/png"
+
+
+async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native_media(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+    requests: list[MediaUnderstandingRequest] = []
+    tool_returns: list[ToolReturnPart] = []
+
+    class UnderstandingProvider:
+        async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
+            requests.append(request)
+            return MediaUnderstandingResult(text="Detected text: hello")
+
+    monkeypatch.setenv("A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL", "test:must-not-be-resolved")
+
+    def unexpected_inference(model: str):
+        raise AssertionError(f"run provider must take precedence over environment model {model!r}")
+
+    monkeypatch.setattr(file_media_module, "infer_model", unexpected_inference)
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        tool_returns[:] = returns
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="view",
+                    json_args=json.dumps(
+                        {
+                            "file_path": "/workspace/image.png",
+                            "instructions": "Read visible text.",
+                        }
+                    ),
+                    tool_call_id="view-image-1",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "view",
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path),
+            capabilities=(
+                _policy(),
+                FileMediaUnderstandingRunCapability(provider=UnderstandingProvider()),
+            ),
+        ),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 1
+    assert requests[0].kind == "image"
+    assert requests[0].media_type == "image/png"
+    assert requests[0].source_bytes == b"\x89PNG"
+    assert requests[0].source == EnvironmentPath(
+        binding_id="binding-1",
+        binding_revision=1,
+        path="/image.png",
+    )
+    assert requests[0].source_name == "/workspace/image.png"
+    assert requests[0].instructions == "Read visible text."
+    assert len(tool_returns) == 1
+    assert tool_returns[0].content == "Detected text: hello"
+
+
+async def test_view_uses_environment_configured_default_understanding_agent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+    understanding_calls: list[list[ModelMessage]] = []
+    tool_returns: list[ToolReturnPart] = []
+
+    def understand(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        understanding_calls.append(messages)
+        assert info.model_settings is not None
+        assert info.model_settings["temperature"] == 0.2
+        return ModelResponse(
+            parts=[TextPart("Environment agent detected: hello")],
+            model_name="vision-model",
+            provider_name="function",
+            usage=RequestUsage(input_tokens=5, output_tokens=3),
+        )
+
+    understanding_model = FunctionModel(understand)
+    selected_models: list[str] = []
+
+    def infer_understanding_model(model: str):
+        selected_models.append(model)
+        return understanding_model
+
+    monkeypatch.setenv("A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL", "test:vision-model")
+    monkeypatch.setenv(
+        "A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL_SETTINGS",
+        '{"temperature": 0.2}',
+    )
+    monkeypatch.setattr(file_media_module, "infer_model", infer_understanding_model)
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        tool_returns[:] = returns
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="view",
+                    json_args=json.dumps(
+                        {
+                            "file_path": "/workspace/image.png",
+                            "instructions": "Read visible text.",
+                        }
+                    ),
+                    tool_call_id="view-image-default-agent",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "view",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+
+    assert result.output_or_raise() == "done"
+    assert selected_models == ["test:vision-model"]
+    assert len(understanding_calls) == 1
+    binary = next(
+        item
+        for message in understanding_calls[0]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart) and isinstance(part.content, list)
+        for item in part.content
+        if isinstance(item, BinaryContent)
+    )
+    assert binary.data == b"\x89PNG"
+    assert binary.media_type == "image/png"
+    assert tool_returns[0].content == "Environment agent detected: hello"
+    provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
+    assert provider_record.source == "files.media_understanding"
+    assert provider_record.tool_id == "filesystem.view"
+    assert {measure.unit: measure.quantity for measure in provider_record.usage.measures} == {
+        "requests": 1,
+        "input_tokens": 5,
+        "output_tokens": 3,
+    }
+
+
+async def test_view_records_nested_usage_when_understanding_output_retries_exhaust(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+    tool_returns: list[ToolReturnPart] = []
+
+    def understand(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        del messages, info
+        return ModelResponse(
+            parts=[TextPart("   ")],
+            model_name="vision-model",
+            provider_name="function",
+            usage=RequestUsage(input_tokens=2, output_tokens=1),
+        )
+
+    monkeypatch.setenv("A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL", "test:vision-model")
+    monkeypatch.setattr(file_media_module, "infer_model", lambda model: FunctionModel(understand))
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        tool_returns[:] = returns
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="view",
+                    json_args=json.dumps({"file_path": "/workspace/image.png"}),
+                    tool_call_id="view-image-invalid-output",
+                )
+            }
+        else:
+            yield "handled invalid media output"
+
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "view",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+
+    assert result.output_or_raise() == "handled invalid media output"
+    assert tool_returns[0].content == {
+        "ok": False,
+        "error": {
+            "code": "media_understanding_response_invalid",
+            "retry_hint": "dependency_change",
+        },
+    }
+    provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
+    assert provider_record.source == "files.media_understanding"
+    assert provider_record.tool_id == "filesystem.view"
+    assert provider_record.tool_call_id == "view-image-invalid-output"
+    assert {measure.unit: measure.quantity for measure in provider_record.usage.measures} == {
+        "requests": 3,
+        "input_tokens": 6,
+        "output_tokens": 3,
+    }
+
+
+async def test_view_reports_unavailable_understanding_as_an_ordinary_tool_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+    for variable in (
+        "A13N_HARNESS_IMAGE_UNDERSTANDING_MODEL",
+        "A13N_HARNESS_VIDEO_UNDERSTANDING_MODEL",
+        "A13N_HARNESS_AUDIO_UNDERSTANDING_MODEL",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        calls.append(messages)
+        returns = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="view",
+                    json_args=json.dumps({"file_path": "/workspace/image.png"}),
+                    tool_call_id="view-image-unavailable",
+                )
+            }
+        else:
+            yield "handled unavailable media"
+
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "view",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+
+    assert result.output_or_raise() == "handled unavailable media"
+    assert len(calls) == 2
+    second_request_parts = [part for message in calls[1] if isinstance(message, ModelRequest) for part in message.parts]
+    assert not any(isinstance(part, RetryPromptPart) for part in second_request_parts)
+    tool_result = next(part for part in second_request_parts if isinstance(part, ToolReturnPart))
+    assert tool_result.content == {
+        "ok": False,
+        "error": {
+            "code": "media_understanding_unavailable",
+            "retry_hint": "dependency_change",
+        },
+    }
+
+
+async def test_media_understanding_releases_revision_scope_before_model_execution() -> None:
+    scope_open = False
+    scope_released = asyncio.Event()
+    provider_started = asyncio.Event()
+    release_provider = asyncio.Event()
+
+    class RevisionFiles:
+        async def stat(self, path: str) -> FileMetadata:
+            assert scope_open
+            return FileMetadata(path=path, kind="file", size=4, writable=False)
+
+        async def read_bytes(self, path: str, *, offset: int = 0, length: int | None = None) -> bytes:
+            del path, offset, length
+            assert scope_open
+            return b"\x89PNG"
+
+    files = RevisionFiles()
+
+    class Scopes:
+        def select_files(self, path: str) -> FileScopeSelection:
+            return FileScopeSelection(
+                logical_path=path,
+                resolved_path=EnvironmentPath(
+                    binding_id="binding-1",
+                    binding_revision=1,
+                    path="/image.png",
+                ),
+                observed_generation="generation-1",
+            )
+
+        @asynccontextmanager
+        async def open_files(self, selection: FileScopeSelection) -> AsyncGenerator[Any]:
+            nonlocal scope_open
+            del selection
+            scope_open = True
+            try:
+                yield files
+            finally:
+                scope_open = False
+                scope_released.set()
+
+    class BlockingProvider:
+        async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
+            assert request.source == EnvironmentPath(
+                binding_id="binding-1",
+                binding_revision=1,
+                path="/image.png",
+            )
+            assert not scope_open
+            provider_started.set()
+            await release_provider.wait()
+            return MediaUnderstandingResult(text="detached analysis")
+
+    async def record_provider_usage(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+
+    context = cast(
+        Any,
+        SimpleNamespace(
+            deps=SimpleNamespace(
+                model_configuration=None,
+                record_provider_usage=record_provider_usage,
+            ),
+            tool_call_id="view-detached-media",
+        ),
+    )
+    toolset = FileToolset(
+        cast(Any, files),
+        file_scopes=Scopes(),
+        media_understanding=BlockingProvider(),
+    )
+
+    task = asyncio.create_task(toolset.view(context, "/workspace/image.png"))
+    await provider_started.wait()
+
+    assert scope_released.is_set()
+    assert not scope_open
+
+    release_provider.set()
+    result = await task
+    assert result.return_value == "detached analysis"
 
 
 async def test_exact_edits_are_agent_friendly_and_failed_batch_is_not_published(tmp_path: Path) -> None:
@@ -1889,6 +2317,58 @@ async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path
         "has_more": False,
         "truncated_lines": [],
     }
+
+
+async def test_file_toolset_grep_delegates_all_filters_and_context_without_followup_reads() -> None:
+    requests = []
+
+    class SearchFiles:
+        async def search_text(self, request):
+            requests.append(request)
+            return FileTextSearchResult(
+                matches=(
+                    FileTextMatch(
+                        path="/src/value.py",
+                        line=2,
+                        text="needle",
+                        context="before\nneedle\nafter\n",
+                        context_start_line=1,
+                    ),
+                ),
+                offset=request.offset,
+                has_more=False,
+            )
+
+        async def read_text(self, *args, **kwargs):
+            del args, kwargs
+            pytest.fail("grep context must be returned by search_text")
+
+    toolset = FileToolset(cast(Any, SearchFiles()))
+    ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace()))
+
+    result = await toolset.grep(
+        ctx,
+        "needle",
+        root="/",
+        include="**/*.py",
+        include_ignored=False,
+        include_hidden=True,
+        context_lines=1,
+        max_results=7,
+        max_matches_per_file=3,
+        max_files=4,
+    )
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.include == "**/*.py"
+    assert request.ignore_mode == "git"
+    assert request.include_hidden is True
+    assert request.context_lines == 1
+    assert request.max_matches == 7
+    assert request.max_matches_per_file == 3
+    assert request.max_files == 4
+    assert result["matches"]["/src/value.py:2"]["context"] == "before\nneedle\nafter\n"
 
 
 async def test_file_toolset_list_continues_after_a_fully_filtered_raw_page() -> None:

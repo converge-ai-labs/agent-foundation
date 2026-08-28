@@ -15,6 +15,7 @@ nav:
       - Getting Started: agent-harness/getting-started.md
       - Agents and Runs: agent-harness/agents-and-runs.md
       - Capabilities: agent-harness/capabilities.md
+      - Multimedia Understanding: agent-harness/multimedia-understanding.md
       - Environments: agent-harness/environments.md
       - State and Resume: agent-harness/state-and-resume.md
       - Observation: agent-harness/observation.md

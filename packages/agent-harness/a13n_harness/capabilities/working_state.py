@@ -616,14 +616,6 @@ class _WorkingStateRunCapability(WorkingStateCapability):
             notes=self.configuration.notes_enabled,
         )
 
-    def get_instructions(self) -> str:
-        return (
-            "Use tasks only when a visible checklist materially improves multi-step execution or coordination. "
-            "Task references are scope-local labels, not authority. Set a task to in_progress when starting it and "
-            "completed immediately after finishing it; concurrency and ownership checks remain internal. Use notes "
-            "for concise private facts worth retaining; note values are loaded only on demand."
-        )
-
     async def wrap_model_context(
         self,
         ctx: RunContext[AgentContext],

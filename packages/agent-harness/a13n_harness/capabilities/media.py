@@ -180,13 +180,6 @@ class _MediaActiveCapability(MediaCapability):
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
         return MediaToolset(self._bind(ctx), self.configuration).get_toolset()
 
-    def get_instructions(self) -> str:
-        return (
-            "Use read_media for remote image, video, or audio resources that should be attached natively to the "
-            "model request. Prefer focused instructions. If a resource exceeds the inline budget, download it "
-            "through the Web Capability and use an Environment-aware file analysis provider instead."
-        )
-
     def _bind(self, ctx: RunContext[AgentContext]) -> MediaReader:
         if ctx.deps is not self._context:
             raise DefinitionError("Media run replacement cannot cross logical runs.", code="capability_scope_invalid")

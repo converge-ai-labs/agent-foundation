@@ -19,7 +19,7 @@ Only the HTTP profile binds an inbound listener, and that listener exposes only 
 | Concern                                                                                        | Owner                                                                          | Relationship                                        |
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------- |
 | Endpoint, bootstrap credential, and Environment lifecycle configuration                        | Host provider integration                                                      | Supplies trusted carrier configuration              |
-| Daemon startup, local readiness, listener/connector policy, and fatal carrier state            | [Daemon Lifecycle and Configuration](01-daemon-lifecycle-and-configuration.md) | Prepares the carrier without granting EIP authority |
+| Daemon bootstrap, listener/connector policy, process state, and fatal carrier state            | [Daemon Lifecycle and Configuration](01-daemon-lifecycle-and-configuration.md) | Prepares the carrier without granting EIP authority |
 | Stdio framing, HTTP resources/bodies, reverse-WebSocket messages, authentication, and sessions | This document                                                                  | Carries EIP control and file data                   |
 | Initialization, methods, operation replay, transfers, results, and errors                      | [EIP Protocol](02-eip-protocol.md)                                             | Identical on all profiles                           |
 | Method authorization and native enforcement                                                    | `agent-envd` resource owners                                                   | Repeated after carrier authentication               |
@@ -50,7 +50,7 @@ Carrier establishment and EIP message direction are independent:
 - the control service sends every EIP request, including the first `initialize` request;
 - envd sends correlated EIP responses;
 - binary frame direction follows the typed file reader or writer, not the WebSocket dialer;
-- neither peer sends JSON-RPC notifications or server-initiated EIP requests in EIP 1.0.
+- neither peer sends JSON-RPC notifications or server-initiated EIP requests in EIP 0.1.
 
 This fixed role model keeps generated requester stubs on the client/control-service side and generated responder dispatch on the daemon side for stdio, HTTP, and reverse WebSocket.
 
@@ -67,12 +67,17 @@ stateDiagram-v2
     CarrierEstablished --> Closed: framing or attachment authentication fails
     Uninitialized --> Initialized: first request is successful initialize
     Uninitialized --> Closed: initialization fails or times out
-    Initialized --> Closing: session.close, carrier loss, or daemon drain
+    Initialized --> Ready: first environment.readiness returns ready
+    Initialized --> Closing: readiness fails, session.close, carrier loss, or daemon drain
+    Ready --> Ready: later environment.readiness returns ready
+    Ready --> Closing: readiness returns not ready, session.close, carrier loss, or daemon drain
     Closing --> Closed: session transfer cleanup completes
     Closed --> [*]
 ```
 
-An initialized session binds:
+An initialized Session is protocol-bound but remains requester-internal until its first `environment.readiness` operation succeeds. In that interval envd admits only readiness and `session.close`; the requester never publishes the descriptor or dispatches application work. The initial readiness operation proves one correlated request/response round trip through the selected carrier and the operation ledger for the exact Environment and generation. A provider-owned readiness Session performs the same initialize/readiness/close sequence and can return a clean reusable stdio carrier to uninitialized admission.
+
+A requester-ready session binds:
 
 - the trusted carrier peer;
 - the selected EIP protocol version;
@@ -154,7 +159,7 @@ Writer `END_ACK` confirms that envd accepted and sealed the complete uploaded st
 
 When a client sends `RESET` for a live session-owned transfer, envd performs cleanup and can return one `RESET` acknowledgement. Reset handling is finite; a peer that cannot finish transfer teardown loses the carrier. Envd-initiated reset is already terminal. A reset received after writer ownership has handed off to commit cannot demote or cancel that operation.
 
-EIP major 1 selects data-frame profile version 1 after initialization. An incompatible layout requires another EIP major. Later features can reuse the physical frame only with a typed handle, direction, lifecycle, and negotiated EIP contract; the frame does not create a generic byte-stream authority.
+The prerelease EIP 0.1 contract selects data-frame profile version 1 with its fixed major-1 profile tag after initialization. An incompatible layout requires another EIP major. Later features can reuse the physical frame only with a typed handle, direction, lifecycle, and negotiated EIP contract; the frame does not create a generic byte-stream authority.
 
 ## Trusted Stdio Profile
 
@@ -278,12 +283,11 @@ A generation-fatal attachment failure stops carrier admission, triggers bounded 
 
 ## Readiness
 
-Daemon-local readiness and initialized-carrier readiness are distinct:
+Readiness is a correlated EIP observation rather than a transport-specific endpoint or launch marker. Envd starts its selected carrier only after configuration, generation-private stores, mounts, execution backend, and required isolation are usable. A requester then establishes Session readiness through `initialize` followed immediately by `environment.readiness` with a fresh operation ID and finite timeout.
 
-- **local readiness** means configuration, generation-private stores, mounts, execution backend, and required isolation probe succeeded and the reverse-WebSocket connector can start;
-- **carrier readiness** means one current WebSocket is authenticated, upgraded with the required subprotocol, and initialized for the configured Environment and generation.
+The successful readiness response proves the current authenticated or private carrier can complete request admission, operation-ledger tracking, response publication, and exact Environment/generation correlation. It does not grant authority beyond the descriptor or predict success for another operation. A later readiness call is an independent point-in-time observation and uses a new operation ID.
 
-Envd never binds a health endpoint. The provider observes process state and typed connector state through its trusted launch/control channel. A consumer must not dispatch EIP work until carrier readiness is established. Loss of carrier readiness does not make local daemon state, processes, or accepted operation evidence disappear.
+Envd never binds a separate health or readiness endpoint. Stdio providers observe the child process concurrently with the readiness Session; HTTP and reverse-WebSocket providers combine their authenticated carrier establishment with the same EIP sequence. Process exit, authentication failure, initialization failure, a false readiness observation, readiness timeout, or carrier loss prevents binding publication. Loss of Session readiness does not erase generation-owned operations, processes, receipts, or command output.
 
 ## Control-Service and Browser Boundary
 
@@ -293,23 +297,23 @@ Origin checks are not an envd concern because envd is the non-browser WebSocket 
 
 ## Failure Semantics
 
-| Failure boundary                                                       | Observable result                                                 | Dispatch meaning                                             |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------ |
-| Stdio framing, HTTP authentication/framing, or WebSocket upgrade fails | Carrier/request failure; no initialized session                   | No method dispatched when rejected before admission          |
-| Attachment authentication fails                                        | Upgrade rejected; daemon generation drains and exits nonzero      | No EIP method dispatched                                     |
-| Initialization identity, version, or required-method check fails       | Typed error when correlatable, then close                         | No resource method dispatched                                |
-| Message or HTTP body exceeds a carrier ceiling                         | Framing failure, bounded HTTP error, or WebSocket close           | No method dispatched when rejected before envelope admission |
-| Carrier loss before operation acceptance                               | Transport failure with proven pre-dispatch evidence               | Same operation may be retried                                |
-| Carrier loss after possible acceptance                                 | Transport failure and potentially unknown outcome                 | Reconcile by operation ID before mutation retry              |
-| Binary reset or premature carrier EOF                                  | Transfer fails; reader is unaccepted or pre-handoff writer aborts | No reader success or target commit implied                   |
-| Ping/pong or liveness failure                                          | Current session closes                                            | Generation-owned resources remain                            |
-| Missing/rejected token or invalid TLS/subprotocol                      | Daemon generation drains and exits nonzero                        | No unauthenticated retry or insecure fallback                |
+| Failure boundary                                                                    | Observable result                                                 | Dispatch meaning                                             |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------ |
+| Stdio framing, HTTP authentication/framing, or WebSocket upgrade fails              | Carrier/request failure; no initialized session                   | No method dispatched when rejected before admission          |
+| Attachment authentication fails                                                     | Upgrade rejected; daemon generation drains and exits nonzero      | No EIP method dispatched                                     |
+| Initialization identity, version, required-method, or initial readiness check fails | Typed error/false observation when correlatable, then close       | No application resource method dispatched                    |
+| Message or HTTP body exceeds a carrier ceiling                                      | Framing failure, bounded HTTP error, or WebSocket close           | No method dispatched when rejected before envelope admission |
+| Carrier loss before operation acceptance                                            | Transport failure with proven pre-dispatch evidence               | Same operation may be retried                                |
+| Carrier loss after possible acceptance                                              | Transport failure and potentially unknown outcome                 | Reconcile by operation ID before mutation retry              |
+| Binary reset or premature carrier EOF                                               | Transfer fails; reader is unaccepted or pre-handoff writer aborts | No reader success or target commit implied                   |
+| Ping/pong or liveness failure                                                       | Current session closes                                            | Generation-owned resources remain                            |
+| Missing/rejected token or invalid TLS/subprotocol                                   | Daemon generation drains and exits nonzero                        | No unauthenticated retry or insecure fallback                |
 
 ## Compatibility
 
 Transport compatibility is bound to the selected EIP version:
 
-- EIP major 1 selects data-frame profile version 1 for stdio/reverse WebSocket and reverse-WebSocket subprotocol `eip.v1`;
+- The prerelease EIP 0.1 contract selects data-frame profile version 1 with its fixed major-1 profile tag for stdio/reverse WebSocket and reverse-WebSocket subprotocol `eip.v1`;
 - changing stdio outer framing, HTTP session/header/body mapping, first-request initialization, binary frame layout, requester/responder roles, reader acceptance, or credential location is incompatible;
 - adding another carrier profile does not change existing EIP method semantics;
 - making envd the EIP requester or adding an inbound WebSocket, browser, or generic HTTP API is an architecture change rather than a deployment option;
@@ -324,11 +328,12 @@ A provider selects stdio, HTTP, or reverse WebSocket before session establishmen
 03. Only the HTTP profile binds an inbound EIP listener; envd exposes no inbound WebSocket, browser, generic HTTP, arbitrary download/upload, health, or readiness API.
 04. Public or provider-routed HTTP uses validated HTTPS; plaintext HTTP is limited to an explicitly trusted loopback or private provider link. Reverse WebSocket retains its defined `ws`/validated `wss` endpoint policy, token, redirect, and `eip.v1` rules.
 05. Every carrier requires its defined bootstrap authentication except trusted private stdio, and credentials/session selectors never enter URLs, cookies, EIP payloads, model state, or ordinary observability.
-06. The requester's first EIP request is `initialize`, and every successful carrier or HTTP initialization creates a fresh session; one daemon admits at most one active initialized session and supports fresh sequential sessions, including cleanly rearmed sessions over one generation-owned stdio carrier.
-07. Carrier or request loss removes affected session transfer delivery but does not erase generation-owned operations, processes, receipts, or command output.
-08. Reconnect or stdio rearming never automatically replays a request or resumes a file transfer.
-09. Every transfer has one session, direction, attachment, exact byte sequence, finite bounds, and typed completion.
-10. Reader acceptance occurs only through successful `file.close_reader`; a writer upload acknowledgement precedes commit on every carrier.
-11. Stdio stdout contains only framed EIP traffic and stderr contains only logs.
-12. Missing/rejected reverse-WebSocket tokens and invalid TLS/subprotocol are generation-fatal; transient reverse connectivity uses capped exponential backoff with full jitter.
-13. Closing a carrier or HTTP request never proves cancellation, non-dispatch, successful file EOF, or mutation failure.
+06. The requester's first EIP request is `initialize`, and its first post-initialization operation is `environment.readiness`; no application method is dispatched or binding published before readiness succeeds.
+07. Every successful carrier or HTTP initialization creates a fresh Session; one daemon admits at most one active initialized Session and supports fresh sequential Sessions, including provider-owned readiness Sessions and cleanly rearmed Sessions over one generation-owned stdio carrier.
+08. Carrier or request loss removes affected Session transfer delivery but does not erase generation-owned operations, processes, receipts, or command output.
+09. Reconnect or stdio rearming never automatically replays a request or resumes a file transfer.
+10. Every transfer has one session, direction, attachment, exact byte sequence, finite bounds, and typed completion.
+11. Reader acceptance occurs only through successful `file.close_reader`; a writer upload acknowledgement precedes commit on every carrier.
+12. Stdio stdout contains only framed EIP traffic and stderr contains only logs.
+13. Missing/rejected reverse-WebSocket tokens and invalid TLS/subprotocol are generation-fatal; transient reverse connectivity uses capped exponential backoff with full jitter.
+14. Closing a carrier or HTTP request never proves cancellation, non-dispatch, successful file EOF, or mutation failure.

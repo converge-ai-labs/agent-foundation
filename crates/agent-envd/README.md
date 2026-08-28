@@ -4,7 +4,7 @@
 
 ## Current runtime profile
 
-The daemon implements the canonical EIP 1.0 protocol over trusted stdio, a dedicated authenticated HTTP(S) listener, and outbound reverse WebSocket. Its current surface includes:
+The daemon implements the canonical EIP 0.1 protocol over trusted stdio, a dedicated authenticated HTTP(S) listener, and outbound reverse WebSocket. Its current surface includes:
 
 - initialization, environment description, session close, cancellation, operation receipts, and local port observation;
 - trusted configured mounts for text reads, metadata, listing, bounded find and search, and binary streaming reads;

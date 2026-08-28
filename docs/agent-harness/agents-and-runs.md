@@ -58,6 +58,23 @@ An `AgentDefinition` fixes:
 
 The output contract cannot change per run. Pass a Python output type or Pydantic AI `OutputSpec` through `output_type`, or use `AgentSpec.output_schema`; do not set both.
 
+### Refine a loaded preset
+
+Use `with_updates()` to create a validated local variant without mutating the loaded preset:
+
+```python
+preset = AgentSpec.from_file("research-agent.yaml")
+local = preset.with_updates(
+    model="anthropic:claude-sonnet-4-6",
+    model_settings={"temperature": 0.1, "max_tokens": 8_000},
+    toolset_instructions=False,
+)
+```
+
+The optional positional mapping supports dynamic fields and serialization aliases such as `model_config` or `$schema`. Keyword overrides support the ordinary Python field names. Unknown fields, duplicate alias/name updates, and invalid values fail immediately. Updates replace complete top-level fields and do not recursively merge nested provider settings, metadata, schemas, or Capability arguments; construct an explicitly merged field when that behavior is intended.
+
+This happens before `HarnessBuilder.build()` and returns an independent deep copy. It is not the temporary run-scoped context manager exposed by Pydantic AI's built Agent.
+
 ### System prompt and instructions
 
 Use the Harness `AgentSpec.system_prompt` field for definition-owned static system-prompt content. A string creates one block, a list preserves ordered blocks, and `None` or an empty list supplies no block:
@@ -74,6 +91,24 @@ spec = AgentSpec(
 The prompt is fixed for one built definition. When a later definition resumes non-empty `HarnessState`, the Harness removes historical `SystemPromptPart` values and places the current ordered blocks at the beginning of the first request. Removing the prompt from the new definition removes those historical parts. A provider-suspended response remains an in-progress native request and is not rewritten; resume it with a compatible definition.
 
 `AgentSpec.instructions` remains the native Pydantic AI instruction plane. Static and dynamic instructions keep their per-request lifecycle and are not merged into or replaced by `system_prompt` reconciliation. Capability- and Toolset-owned guidance also remains instructions.
+
+Toolsets contribute usage guidance only for tools active in their current surface. Harness `AgentSpec.toolset_instructions` defaults to `True`; set it to `False` to suppress Toolset-owned instruction blocks for every run of that definition:
+
+```python
+spec = AgentSpec(
+    instructions="Follow the application policy.",
+    toolset_instructions=False,
+)
+```
+
+Override that default for one logical run with `RunBindings.toolset_instructions`:
+
+```python
+bindings = RunBindings.embedded(toolset_instructions=True)
+result = await executable.run("Inspect the workspace", bindings=bindings)
+```
+
+`None` inherits the Agent default. This switch does not suppress explicit `AgentSpec.instructions`, Capability-owned feature guidance, tool schemas, or tool availability.
 
 ### Model selection
 
@@ -195,7 +230,7 @@ Within each resolver, aliases apply in declaration order and concrete overrides 
 
 ### Model configuration
 
-The `model_config` construction and serialization key holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Python code reads the value through `spec.model_configuration` because `model_config` is reserved by Pydantic for class configuration. Today it defines the context window plus proactive summarize and compaction ratios:
+The `model_config` construction and serialization key holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Python code reads the value through `spec.model_configuration` because `model_config` is reserved by Pydantic for class configuration. It defines explicit Harness model capabilities together with the context window and proactive summarize and compaction ratios:
 
 ```python
 spec = AgentSpec(

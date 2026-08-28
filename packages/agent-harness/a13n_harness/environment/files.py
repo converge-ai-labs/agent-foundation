@@ -11,6 +11,7 @@ from .models import EnvironmentOperationReceipt
 
 type FileWriteMode = Literal["create", "replace", "upsert", "append"]
 type FileKind = Literal["file", "directory", "symlink", "other"]
+type FileIgnoreMode = Literal["none", "git"]
 
 
 class FileTextResult(BaseModel):
@@ -72,6 +73,7 @@ class FileQueryRequest(BaseModel):
     pattern: str
     recursive: bool = True
     include_hidden: bool = False
+    ignore_mode: FileIgnoreMode = "none"
     kinds: frozenset[FileKind] | None = None
     offset: int = Field(default=0, ge=0)
     max_results: int = Field(gt=0)
@@ -84,6 +86,8 @@ class FileTextMatch(BaseModel):
     line: int = Field(ge=1)
     text: str
     text_truncated: bool = False
+    context: str = ""
+    context_start_line: int = Field(default=1, ge=1)
 
 
 class FileTextSearchRequest(BaseModel):
@@ -93,9 +97,15 @@ class FileTextSearchRequest(BaseModel):
     pattern: str
     regex: bool = False
     case_sensitive: bool = True
+    include: str = "**/*"
     include_hidden: bool = False
+    ignore_mode: FileIgnoreMode = "none"
+    context_lines: int = Field(default=0, ge=0, le=20)
     offset: int = Field(default=0, ge=0)
     max_matches: int = Field(gt=0)
+    max_matches_per_file: int | None = Field(default=None, gt=0)
+    max_files: int | None = Field(default=None, gt=0)
+    max_file_bytes: int = Field(default=64 * 1024 * 1024, gt=0)
     max_line_length: int = Field(default=2_000, gt=0)
 
 

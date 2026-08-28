@@ -5,6 +5,20 @@ from .codeact import CodeActPolicyToolset, CodeActToolPolicy
 from .context import HandoffToolset
 from .delegation import DelegateResult, DelegationToolset
 from .documents import DocumentsToolset
+from .file_media import (
+    AUDIO_UNDERSTANDING_MODEL_ENV,
+    AUDIO_UNDERSTANDING_MODEL_SETTINGS_ENV,
+    IMAGE_UNDERSTANDING_MODEL_ENV,
+    IMAGE_UNDERSTANDING_MODEL_SETTINGS_ENV,
+    VIDEO_UNDERSTANDING_MODEL_ENV,
+    VIDEO_UNDERSTANDING_MODEL_SETTINGS_ENV,
+    AgentMediaUnderstandingProvider,
+    MediaUnderstandingError,
+    MediaUnderstandingProvider,
+    MediaUnderstandingRequest,
+    MediaUnderstandingResult,
+    NativeInputMediaKind,
+)
 from .files import FILE_VIEW_RULES, FileToolset, FileViewRule
 from .interaction import UserInteractionToolset
 from .media import MediaToolset
@@ -31,10 +45,17 @@ from .web import WebToolset
 from .working_state import WorkingStateToolset
 
 __all__ = [
+    "AUDIO_UNDERSTANDING_MODEL_ENV",
+    "AUDIO_UNDERSTANDING_MODEL_SETTINGS_ENV",
     "DEFAULT_TOOL_OUTPUT_CHARS",
     "FILE_VIEW_RULES",
     "FINAL_TOOL_OUTPUT_HARD_CHARS",
+    "IMAGE_UNDERSTANDING_MODEL_ENV",
+    "IMAGE_UNDERSTANDING_MODEL_SETTINGS_ENV",
     "MAX_TOOL_OUTPUT_SPILL_BYTES",
+    "VIDEO_UNDERSTANDING_MODEL_ENV",
+    "VIDEO_UNDERSTANDING_MODEL_SETTINGS_ENV",
+    "AgentMediaUnderstandingProvider",
     "ClientToolsToolset",
     "CodeActPolicyToolset",
     "CodeActToolPolicy",
@@ -45,7 +66,12 @@ __all__ = [
     "FileViewRule",
     "HandoffToolset",
     "MediaToolset",
+    "MediaUnderstandingError",
+    "MediaUnderstandingProvider",
+    "MediaUnderstandingRequest",
+    "MediaUnderstandingResult",
     "MonitoredProcessToolset",
+    "NativeInputMediaKind",
     "ShellToolset",
     "ToolOutputDisclosure",
     "UserInteractionToolset",

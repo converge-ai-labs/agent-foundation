@@ -109,7 +109,9 @@ from a13n_harness.context import (
 )
 from a13n_harness.environment.dynamic import (
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
+    FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
     DynamicEnvironmentCapability,
+    FileMediaUnderstandingRunCapability,
 )
 from a13n_harness.environment.models import EnvironmentError, EnvironmentTopologyChange
 from a13n_harness.environment.providers import (
@@ -464,6 +466,12 @@ def _normalize_system_prompt(agent: AgentSpec) -> tuple[str, ...]:
     if isinstance(agent.system_prompt, str):
         return (agent.system_prompt,)
     return tuple(agent.system_prompt)
+
+
+def _normalize_toolset_instructions(agent: AgentSpec) -> bool:
+    if isinstance(agent, HarnessAgentSpec):
+        return agent.toolset_instructions
+    return True
 
 
 def _reconcile_system_prompt(
@@ -1211,6 +1219,17 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 state=context_state,
                 environment=environment,
                 model_resolver=self._bindings.model_resolver,
+                model_configuration=(
+                    self._executable.definition.agent.model_configuration
+                    if isinstance(self._executable.definition.agent, HarnessAgentSpec)
+                    else None
+                ),
+                toolset_instructions=(
+                    self._bindings.toolset_instructions
+                    if self._bindings.toolset_instructions is not None
+                    else _normalize_toolset_instructions(self._executable.definition.agent)
+                ),
+                _toolset_instructions_override=self._bindings.toolset_instructions,
                 model_context=self._bindings.model_context,
                 _inherited_model_cost=self._bindings._inherited_model_cost,
                 plugins=plugin_context,
@@ -2452,6 +2471,7 @@ def _validate_built_capability_tree(
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
+        FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
@@ -2722,6 +2742,7 @@ def _validate_capability_source(
         SkillSelectionRunCapability,
         MediaRunCapability,
         DocumentsRunCapability,
+        FileMediaUnderstandingRunCapability,
         WebRunCapability,
         TaskStateRunCapability,
         DelegationRunCapability,
@@ -2773,6 +2794,7 @@ def _validate_capability_source(
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
+        FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
@@ -2853,6 +2875,7 @@ def _validate_capability_source(
             | SkillSelectionRunCapability
             | MediaCapability
             | MediaRunCapability
+            | FileMediaUnderstandingRunCapability
             | DocumentsCapability
             | DocumentsRunCapability
             | WebCapability

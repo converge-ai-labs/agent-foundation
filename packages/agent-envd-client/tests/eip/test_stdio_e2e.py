@@ -31,6 +31,7 @@ from a13n_envd_client.eip.v1 import (
     EncodedBytes,
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
+    EnvironmentReadinessParams,
     ErrorType,
     ExecutableName,
     FileFindParams,
@@ -146,7 +147,7 @@ async def initialize_direct(process: asyncio.subprocess.Process) -> tuple[Reques
     client = EIPClient(requester)
     result = await client.initialize(
         InitializeParams(
-            supported_protocol_versions=("1.0",),
+            supported_protocol_versions=("0.1",),
             client=EIPClientInfo(name="e2e", version="1"),
             expected_environment_id="env-e2e",
         )
@@ -158,6 +159,17 @@ async def initialize_direct(process: asyncio.subprocess.Process) -> tuple[Reques
         max_transfer_frame_bytes=result.descriptor.limits.max_transfer_frame_bytes,
         max_concurrent_file_transfers=result.descriptor.limits.max_concurrent_file_transfers,
     )
+    readiness = await client.environment_readiness(
+        EnvironmentReadinessParams(
+            context=EIPCallContext(
+                operation_id="readiness-e2e",
+                timeout_ms=2_000,
+            )
+        )
+    )
+    assert readiness.ready
+    assert readiness.environment_id == result.descriptor.environment_id
+    assert readiness.generation == result.descriptor.generation
     return requester, client
 
 
@@ -175,6 +187,7 @@ def test_real_daemon_session_round_trip_and_fresh_generations() -> None:
         assert descriptor.root_mount_id is None
         assert descriptor.available_methods == (
             "environment.describe",
+            "environment.readiness",
             "operation.cancel",
             "port.inspect",
             "port.wait",
@@ -1530,6 +1543,47 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         assert [(match.path, match.line_number) for match in searched.matches] == [(text_path, 2)]
         assert searched.offset == 0
         assert searched.has_more is False
+
+        (native / "src").mkdir()
+        (native / "ignored").mkdir()
+        (native / ".gitignore").write_text("ignored/\n")
+        (native / "src" / "match.py").write_text("before\nneedle one\nafter\nneedle two\n")
+        (native / "src" / "other.txt").write_text("needle\n")
+        (native / "ignored" / "hidden.py").write_text("needle\n")
+        filtered_find = await session.client.file_find(
+            FileFindParams(
+                context=EIPCallContext(operation_id="filtered-find-e2e"),
+                root=EIPPath(mount_id="workspace", path="/"),
+                pattern="*.py",
+                kinds=(FileKind.FILE,),
+                respect_git_ignore=True,
+            )
+        )
+        assert [entry.relative_path for entry in filtered_find.entries] == ["src/match.py"]
+        filtered_search = await session.client.file_search(
+            FileSearchParams(
+                context=EIPCallContext(operation_id="filtered-search-e2e"),
+                root=EIPPath(mount_id="workspace", path="/"),
+                query="needle",
+                mode=SearchMode.LITERAL,
+                include_pattern="**/*.py",
+                respect_git_ignore=True,
+                context_lines=1,
+                max_matches_per_file=1,
+                max_files=10,
+                max_file_bytes=4_096,
+                max_line_length=80,
+            )
+        )
+        assert len(filtered_search.matches) == 1
+        filtered_match = filtered_search.matches[0]
+        assert filtered_match.path == EIPPath(mount_id="workspace", path="/src/match.py")
+        assert filtered_match.line_number == 2
+        assert filtered_match.preview == "needle one"
+        assert filtered_match.context == "before\nneedle one\nafter\n"
+        assert filtered_match.context_start_line == 1
+        assert filtered_search.has_more is False
+
         receipt = await session.client.receipt_get(
             ReceiptGetParams(
                 context=EIPCallContext(operation_id="receipt-e2e"),
@@ -1608,7 +1662,7 @@ def test_preinitialize_and_repeated_initialize_errors() -> None:
         with pytest.raises(EIPMethodError) as captured:
             await client.initialize(
                 InitializeParams(
-                    supported_protocol_versions=("1.0",),
+                    supported_protocol_versions=("0.1",),
                     client=EIPClientInfo(name="e2e", version="1"),
                     expected_environment_id="env-e2e",
                 )
@@ -1764,7 +1818,7 @@ def test_unknown_method_is_rejected_as_unavailable() -> None:
             name="future.unknown",
             kind="request_response",
             replay_class="active_only",
-            introduced="1.0",
+            introduced="0.1",
             error_family="common",
             params_type=EnvironmentDescribeParams,
             result_type=EnvironmentDescribeResult,
@@ -1848,7 +1902,7 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
                 "id": 1,
                 "method": "initialize",
                 "params": {
-                    "supported_protocol_versions": ["1.0"],
+                    "supported_protocol_versions": ["0.1"],
                     "client": {"name": "backpressure", "version": "1"},
                     "expected_environment_id": "env-e2e",
                 },

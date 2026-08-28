@@ -90,14 +90,6 @@ class _DocumentsActiveCapability(DocumentsCapability):
             file_scopes=environment,
         ).get_toolset()
 
-    def get_instructions(self) -> str:
-        return (
-            "Use pdf_convert for PDFs and select focused page ranges for large files. Use office_to_markdown for "
-            "Word, PowerPoint, Excel, and EPUB sources. Conversion output is published beside the source; PDF "
-            "page ranges use distinct export_<stem>_pages_<start>_<end> directories so multiple ranges can coexist. "
-            "Inspect the returned Markdown through ordinary Environment tools."
-        )
-
     def _bind(self, ctx: RunContext[AgentContext]) -> DocumentConverter:
         if ctx.deps is not self._context:
             raise DefinitionError(

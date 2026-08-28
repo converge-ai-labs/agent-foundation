@@ -6,20 +6,32 @@ from dataclasses import dataclass, field
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.native_tools import WebSearchTool
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.toolsets.web import (
+    WEB_SCRAPE_BACKEND_ENV,
+    WEB_SCRAPE_BACKEND_PRIORITY_ENV,
+    WEB_SCRAPE_MODE_ENV,
+    WEB_SEARCH_BACKEND_ENV,
+    WEB_SEARCH_BACKEND_PRIORITY_ENV,
+    WEB_SEARCH_CONTEXT_SIZE_ENV,
+    WEB_SEARCH_MODE_ENV,
     WebClient,
     WebConfiguration,
     WebPolicy,
     WebProviderError,
     WebRequest,
     WebResponse,
+    WebScrapeBackendBinding,
+    WebScrapeConfiguration,
     WebScrapeProvider,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchBackendBinding,
+    WebSearchConfiguration,
     WebSearchProvider,
     WebSearchRequest,
     WebSearchResponse,
@@ -41,6 +53,8 @@ class WebRunCapability(AbstractCapability[AgentContext]):
     policy: WebPolicy = field()
     search_provider: WebSearchProvider | None = None
     scrape_provider: WebScrapeProvider | None = None
+    search_backends: tuple[WebSearchBackendBinding, ...] = ()
+    scrape_backends: tuple[WebScrapeBackendBinding, ...] = ()
 
     def __post_init__(self) -> None:
         if self.id != WEB_RUN_CAPABILITY_ID:
@@ -53,6 +67,24 @@ class WebRunCapability(AbstractCapability[AgentContext]):
             raise TypeError("search_provider must implement WebSearchProvider")
         if self.scrape_provider is not None and not isinstance(self.scrape_provider, WebScrapeProvider):
             raise TypeError("scrape_provider must implement WebScrapeProvider")
+        if self.search_provider is not None and self.search_backends:
+            raise ValueError("search_provider and search_backends are mutually exclusive")
+        if self.scrape_provider is not None and self.scrape_backends:
+            raise ValueError("scrape_provider and scrape_backends are mutually exclusive")
+        if not all(isinstance(item, WebSearchBackendBinding) for item in self.search_backends):
+            raise TypeError("search_backends must contain WebSearchBackendBinding values")
+        if not all(isinstance(item, WebScrapeBackendBinding) for item in self.scrape_backends):
+            raise TypeError("scrape_backends must contain WebScrapeBackendBinding values")
+        self.search_backends = tuple(self.search_backends) or (
+            (WebSearchBackendBinding("default", self.search_provider),) if self.search_provider is not None else ()
+        )
+        self.scrape_backends = tuple(self.scrape_backends) or (
+            (WebScrapeBackendBinding("default", self.scrape_provider),) if self.scrape_provider is not None else ()
+        )
+        if len({item.backend_id for item in self.search_backends}) != len(self.search_backends):
+            raise ValueError("search backend IDs must be unique")
+        if len({item.backend_id for item in self.scrape_backends}) != len(self.scrape_backends):
+            raise ValueError("scrape backend IDs must be unique")
 
 
 @dataclass(init=False)
@@ -62,7 +94,14 @@ class WebCapability(AbstractCapability[AgentContext]):
     id = WEB_CAPABILITY_ID
 
     def __init__(self, configuration: WebConfiguration | None = None) -> None:
-        self.configuration = (configuration or WebConfiguration()).model_copy(deep=True)
+        resolved = WebConfiguration.from_environment() if configuration is None else configuration
+        self.configuration = resolved.model_copy(deep=True)
+
+    def get_native_tools(self) -> list[WebSearchTool]:
+        search = self.configuration.search
+        if search.mode not in {"native", "auto"}:
+            return []
+        return [WebSearchTool(search_context_size=search.search_context_size)]
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(WEB_CAPABILITY_ID)
@@ -85,7 +124,7 @@ class _WebActiveCapability(WebCapability):
         super().__init__(configuration)
         self._context = context
         self._attachment: WebRunCapability | None = None
-        self._collaborators: tuple[object, object, object | None, object | None] | None = None
+        self._collaborators: tuple[object, ...] | None = None
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps is not self._context:
@@ -101,18 +140,11 @@ class _WebActiveCapability(WebCapability):
             client=attachment.client,
             policy=attachment.policy,
             configuration=self.configuration,
-            search_provider=attachment.search_provider,
-            scrape_provider=attachment.scrape_provider,
+            search_backends=attachment.search_backends,
+            scrape_backends=attachment.scrape_backends,
             files=ctx.deps.environment.files,
             file_scopes=ctx.deps.environment,
         ).get_toolset()
-
-    def get_instructions(self) -> str:
-        return (
-            "Use search for discovery, scrape for bounded Markdown extraction, fetch for direct resource reads or "
-            "HEAD metadata, and download when exact bytes must be retained in the Environment. Network policy, DNS "
-            "resolution, redirects, deadlines, and response limits remain enforced by the Host-selected Web binding."
-        )
 
     def _bind(self, ctx: RunContext[AgentContext]) -> WebRunCapability:
         if ctx.deps is not self._context:
@@ -132,6 +164,8 @@ class _WebActiveCapability(WebCapability):
             attachment.policy,
             attachment.search_provider,
             attachment.scrape_provider,
+            attachment.search_backends,
+            attachment.scrape_backends,
         )
         if self._attachment is None:
             self._attachment = attachment
@@ -148,6 +182,13 @@ class _WebActiveCapability(WebCapability):
 
 
 __all__ = [
+    "WEB_SCRAPE_BACKEND_ENV",
+    "WEB_SCRAPE_BACKEND_PRIORITY_ENV",
+    "WEB_SCRAPE_MODE_ENV",
+    "WEB_SEARCH_BACKEND_ENV",
+    "WEB_SEARCH_BACKEND_PRIORITY_ENV",
+    "WEB_SEARCH_CONTEXT_SIZE_ENV",
+    "WEB_SEARCH_MODE_ENV",
     "WebCapability",
     "WebClient",
     "WebConfiguration",
@@ -156,9 +197,13 @@ __all__ = [
     "WebRequest",
     "WebResponse",
     "WebRunCapability",
+    "WebScrapeBackendBinding",
+    "WebScrapeConfiguration",
     "WebScrapeProvider",
     "WebScrapeRequest",
     "WebScrapeResult",
+    "WebSearchBackendBinding",
+    "WebSearchConfiguration",
     "WebSearchProvider",
     "WebSearchRequest",
     "WebSearchResponse",

@@ -10,6 +10,8 @@ It is a Python code library, not a hosted service or a second Agent framework.
 pip install a13n-harness
 ```
 
+The base installation includes the full Pydantic AI distribution and client dependencies for common direct model Providers, including Anthropic, OpenAI, Google, Bedrock, Cohere, Groq, Hugging Face, Mistral, OpenRouter, and xAI. Provider credentials, endpoints, and model selection remain explicit application configuration.
+
 The smallest application follows one path:
 
 ```text
@@ -28,6 +30,7 @@ Pydantic AI remains responsible for the Agent loop, Models, Toolsets, Capabiliti
 - mandatory tool-result, message-integrity, model-context, lifecycle-event, and usage boundaries;
 - trusted outer middleware plugins;
 - provider-neutral Environment operations and live topology coordination;
+- first-party multimedia understanding with AgentSpec-native capability declarations and environment-configured image, video, and audio Agents;
 - optional first-party Capabilities for context, files, shell, processes, Skills, working state, interaction, media, documents, Web, delegation, and CodeAct;
 - one canonical event/result stream;
 - portable `HarnessState`, deferred resume, and bounded model recovery;
@@ -74,24 +77,26 @@ The Host reconstructs current authority and optionally persists selected state. 
 
 ## Documentation Map
 
-| Goal                                                   | Guide                                               |
-| ------------------------------------------------------ | --------------------------------------------------- |
-| Run the smallest offline application                   | [Getting Started](getting-started.md)               |
-| Build definitions, run, stream, and handle results     | [Agents and Runs](agents-and-runs.md)               |
-| Select first-party behavior and fresh collaborators    | [Capabilities](capabilities.md)                     |
-| Expose files, shell, processes, output, or ports       | [Environments](environments.md)                     |
-| Continue, fork, checkpoint, suspend, and resume        | [State and Resume](state-and-resume.md)             |
-| Use blocking child Agents or restricted Python         | [Delegation and CodeAct](delegation-and-codeact.md) |
-| Discover and select Skill packages                     | [Skills](skills.md)                                 |
-| Add trusted outer middleware or Environment extensions | [Plugins and Extensions](plugins.md)                |
-| Add Host persistence, fencing, and durable lifecycle   | [Embedding in a Host](hosting.md)                   |
+| Goal                                                   | Guide                                                   |
+| ------------------------------------------------------ | ------------------------------------------------------- |
+| Run the smallest offline application                   | [Getting Started](getting-started.md)                   |
+| Build definitions, run, stream, and handle results     | [Agents and Runs](agents-and-runs.md)                   |
+| Select first-party behavior and fresh collaborators    | [Capabilities](capabilities.md)                         |
+| Understand image, video, and audio files               | [Multimedia Understanding](multimedia-understanding.md) |
+| Expose files, shell, processes, output, or ports       | [Environments](environments.md)                         |
+| Continue, fork, checkpoint, suspend, and resume        | [State and Resume](state-and-resume.md)                 |
+| Use blocking child Agents or restricted Python         | [Delegation and CodeAct](delegation-and-codeact.md)     |
+| Discover and select Skill packages                     | [Skills](skills.md)                                     |
+| Add trusted outer middleware or Environment extensions | [Plugins and Extensions](plugins.md)                    |
+| Add Host persistence, fencing, and durable lifecycle   | [Embedding in a Host](hosting.md)                       |
 
 ## Documented Boundary
 
 These guides cover the process-local Harness surface and its tested integration boundaries:
 
 - Direct Local and EIP-backed Environment **operations** enter through fresh run bindings and attachments.
-- Media, document, Web, monitoring, model, and policy integrations are typed seams; applications supply their live implementations at the owning build or run boundary.
+- Multimedia file understanding has built-in Pydantic AI Agents configured directly through process environment variables, with a typed run-level replacement seam for advanced integrations.
+- General media URL reading, document conversion, Web, monitoring, model, and policy integrations remain typed seams supplied at their owning build or run boundary.
 - Model-cost valuation is default-on at build time through the packaged pricing catalog and can be replaced once or explicitly disabled by the application.
 - Inline delegation waits for a child result; durable or background child scheduling remains a Host concern.
 - `HarnessState` is continuation data; it is not a durable Execution record or restored authority.

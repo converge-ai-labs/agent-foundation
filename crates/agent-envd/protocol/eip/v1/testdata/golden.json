@@ -6,7 +6,21 @@
         "client": {"name": "fixture-client", "version": "1.2.3"},
         "expected_environment_id": "env-fixture",
         "required_methods": ["file.search"],
-        "supported_protocol_versions": ["1.0"]
+        "supported_protocol_versions": ["0.1"]
+      }
+    },
+    {
+      "type": "EnvironmentReadinessParams",
+      "value": {
+        "context": {"operation_id": "op-readiness", "timeout_ms": 1000}
+      }
+    },
+    {
+      "type": "EnvironmentReadinessResult",
+      "value": {
+        "environment_id": "env-fixture",
+        "generation": 7,
+        "ready": true
       }
     },
     {
@@ -34,6 +48,55 @@
         "kinds": ["file"],
         "pattern": "**/*.py",
         "root": {"mount_id": "workspace", "path": "/src"}
+      }
+    },
+    {
+      "type": "FileSearchParams",
+      "value": {
+        "case_sensitive": false,
+        "context": {"operation_id": "op-search"},
+        "context_lines": 2,
+        "include_hidden": true,
+        "include_pattern": "**/*.py",
+        "max_file_bytes": 4096,
+        "max_files": 50,
+        "max_line_length": 120,
+        "max_matches_per_file": 3,
+        "max_results": 25,
+        "mode": "regex",
+        "offset": 2,
+        "query": "needle",
+        "respect_git_ignore": true,
+        "root": {"mount_id": "workspace", "path": "/src"}
+      }
+    },
+    {
+      "type": "FileSearchMatch",
+      "value": {
+        "context": "before\nneedle\nafter\n",
+        "context_start_line": 6,
+        "line_number": 7,
+        "path": {"mount_id": "workspace", "path": "/src/app.py"},
+        "preview": "needle",
+        "preview_truncated": false
+      }
+    },
+    {
+      "type": "FileSearchResult",
+      "value": {
+        "has_more": true,
+        "matches": [
+          {
+            "context": "before\nneedle\nafter\n",
+            "context_start_line": 6,
+            "line_number": 7,
+            "path": {"mount_id": "workspace", "path": "/src/app.py"},
+            "preview": "needle",
+            "preview_truncated": false
+          }
+        ],
+        "offset": 2,
+        "omitted_unrepresentable_entries": 0
       }
     },
     {

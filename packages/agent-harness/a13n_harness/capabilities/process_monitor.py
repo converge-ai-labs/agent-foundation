@@ -387,13 +387,6 @@ class _MonitoredProcessActiveCapability(MonitoredProcessCapability):
             configuration=self.configuration,
         ).get_toolset()
 
-    def get_instructions(self) -> str:
-        return (
-            "Use environment_process_monitor for long-running commands whose output or completion should wake "
-            "the Host. Use ordinary process start and explicit wait for short work. Monitored process references "
-            "remain valid only in this logical run."
-        )
-
     async def wrap_model_request(
         self,
         ctx: RunContext[AgentContext],

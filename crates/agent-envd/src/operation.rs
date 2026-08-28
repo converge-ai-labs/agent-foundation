@@ -338,6 +338,24 @@ impl OperationLedger {
         context: &EIPCallContext,
         params: &P,
     ) -> Result<BeginOutcome, LedgerError> {
+        self.begin_with_drain_snapshot(method, context, params)
+            .map(|(outcome, _)| outcome)
+    }
+
+    pub(crate) fn begin_readiness<P: Serialize>(
+        &self,
+        context: &EIPCallContext,
+        params: &P,
+    ) -> Result<(BeginOutcome, bool), LedgerError> {
+        self.begin_with_drain_snapshot("environment.readiness", context, params)
+    }
+
+    fn begin_with_drain_snapshot<P: Serialize>(
+        &self,
+        method: &str,
+        context: &EIPCallContext,
+        params: &P,
+    ) -> Result<(BeginOutcome, bool), LedgerError> {
         let replay_class = replay_class(method)?;
         let reconciliation = is_reconciliation_method(method);
         let request_digest = canonical_request_digest(method, params)?;
@@ -368,12 +386,13 @@ impl OperationLedger {
                     }
                 }
             };
+            let ready = !state.draining;
             let admitted = outcome.is_ok() && state.mark_pending_admitted(&context.operation_id);
             drop(state);
             if admitted {
                 self.inner.pending_changed.notify_waiters();
             }
-            return outcome;
+            return outcome.map(|outcome| (outcome, ready));
         }
         let total_capacity = self
             .inner
@@ -431,18 +450,22 @@ impl OperationLedger {
                 owned: false,
             },
         );
+        let ready = !state.draining;
         let admitted = state.mark_pending_admitted(&context.operation_id);
         drop(state);
         if admitted {
             self.inner.pending_changed.notify_waiters();
         }
-        Ok(BeginOutcome::New(OperationLease {
-            ledger: self.clone(),
-            operation_id: context.operation_id.clone(),
-            replay_class,
-            failure_on_drop: None,
-            finished: false,
-        }))
+        Ok((
+            BeginOutcome::New(OperationLease {
+                ledger: self.clone(),
+                operation_id: context.operation_id.clone(),
+                replay_class,
+                failure_on_drop: None,
+                finished: false,
+            }),
+            ready,
+        ))
     }
 
     pub(crate) fn cancel(&self, target_operation_id: &str) -> OperationCancelStatus {

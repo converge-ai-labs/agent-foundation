@@ -62,7 +62,7 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          use serde::{Deserialize, Serialize};\n\n",
     );
     output.push_str(&format!(
-        "pub const EIP_PROTOCOL_VERSION: &str = \"1.0\";\n\
+        "pub const EIP_PROTOCOL_VERSION: &str = \"0.1\";\n\
          pub const EIP_PROTO_PACKAGE: &str = \"{PACKAGE}\";\n\n"
     ));
     render_data_frame(&mut output, pool, &extensions)?;
@@ -105,7 +105,12 @@ pub fn render(pool: &DescriptorPool) -> Result<String, String> {
          }\n\n\
          fn validate_protocol_version(value: &str) -> bool {\n\
          \x20   let Some((major, minor)) = value.split_once('.') else { return false; };\n\
-         \x20   !major.starts_with('0') && major.parse::<u64>().is_ok() && minor.parse::<u64>().is_ok()\n\
+         \x20   let Ok(minor) = minor.parse::<u64>() else { return false; };\n\
+         \x20   if major == \"0\" {\n\
+         \x20       minor > 0\n\
+         \x20   } else {\n\
+         \x20       !major.starts_with('0') && major.parse::<u64>().is_ok()\n\
+         \x20   }\n\
          }\n\n\
          fn validate_base64_unpadded(value: &str) -> bool {\n\
          \x20   use base64::Engine as _;\n\
@@ -1215,7 +1220,7 @@ fn method_records(
         }
         if record.kind != "request_response" {
             return Err(format!(
-                "EIP 1.0 method {} must use correlated request-response",
+                "EIP 0.1 method {} must use correlated request-response",
                 record.jsonrpc_method
             ));
         }
@@ -1225,7 +1230,7 @@ fn method_records(
                 record.jsonrpc_method
             ));
         }
-        if record.introduced.starts_with("0.") {
+        if record.introduced == "0.0" {
             return Err(format!(
                 "EIP method {} has invalid introduced version",
                 record.jsonrpc_method

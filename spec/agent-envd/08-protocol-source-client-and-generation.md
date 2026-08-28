@@ -47,7 +47,7 @@ The client package is lower-level than both the provider package and the Harness
 
 ## Canonical IDL Profile
 
-Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. Data-frame profile version 1 is bound to EIP major 1 and is selected by successful EIP initialization before any binary attachment; an incompatible layout requires another EIP major rather than an independently drifting profile. EIP-specific method options declare at least:
+Every canonical IDL file uses the Protobuf package `a13n.agent_envd.eip.v1`. Each request-response method is one Protobuf service method with named request and result messages. Descriptor-interpreted file options also declare the fixed data-frame magic, profile version, header widths, and numeric frame/reset enums owned by the transport specification; generators consume those options rather than maintaining language-local constants. The prerelease EIP 0.1 contract selects data-frame profile version 1, whose fixed descriptor retains its major-1 compatibility tag; successful initialization selects that profile before any binary attachment, and an incompatible layout requires a new profile identity rather than an independently drifting layout. EIP-specific method options declare at least:
 
 - exact JSON-RPC method name;
 - whether the method opens, closes, commits, or aborts a typed file transfer and the permitted direction;
@@ -123,12 +123,14 @@ The handwritten client runtime owns behavior that IDL cannot safely decide:
 - authenticated HTTP session creation, protected session-selector headers, concurrent bounded control POSTs, streaming transfer bodies, and request/response teardown;
 - requester-side accepted reverse-WebSocket carrier integration, required subprotocol, first-message initialization, text control, binary transfer frames, ping/pong, and close mapping;
 - carrier and message size enforcement before generated payload decode;
-- initialization state, exact required/available methods, configured mounts/root mount, selected protocol minor, descriptor refresh, and prior-generation selector fencing;
+- initialization state, mandatory initial readiness observation, later explicit readiness checks, exact required/available methods, configured mounts/root mount, selected protocol minor, descriptor refresh, and prior-generation selector fencing;
 - relative call/transfer timeout narrowing without treating a carrier timeout as operation failure;
 - operation-ID replay and receipt reconciliation without automatic ambiguous mutation retry;
 - secret redaction and lifecycle cleanup.
 
-A common async carrier protocol presents correlated control requests plus typed transfer attachments to the generated client core. Trusted stdio, Host-dialed HTTP, and a reverse-WebSocket connection accepted by the requester/control-service boundary satisfy that protocol without changing generated signatures, reader/writer behavior, or EIP results. HTTP maps an attachment to one authenticated bounded streaming request or response body rather than EIP binary frames. The client never falls back to another carrier or repeats a possibly dispatched mutation.
+A common async carrier protocol presents correlated control requests plus typed transfer attachments to the generated client core. Trusted stdio, Host-dialed HTTP, and a reverse-WebSocket connection accepted by the requester/control-service boundary satisfy that protocol without changing generated signatures, reader/writer behavior, readiness semantics, or EIP results. HTTP maps an attachment to one authenticated bounded streaming request or response body rather than EIP binary frames. The client never falls back to another carrier or repeats a possibly dispatched mutation.
+
+Session initialization always adds `environment.readiness` to compatibility requirements and performs one fresh bounded readiness operation before returning the `EIPSession`. A false observation, descriptor identity/generation mismatch, or readiness failure prevents Session publication and closes or fences the carrier. The generated client also exposes `environment.readiness` for later point-in-time checks; every check uses a fresh operation ID unless an advanced caller explicitly supplies the logical operation context.
 
 The public low-level convenience surface creates one fresh operation ID per logical operation and hides transfer handles, attachment frames, offsets, reset retirement, and digest bookkeeping:
 

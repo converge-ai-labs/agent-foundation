@@ -11,7 +11,7 @@ The package owns:
 - single-entry `EnvironmentResource` scopes and fresh runtime attachments;
 - typed provider errors with bounded safe projections;
 - the working `a13n.direct-local` and `a13n.local-envd` built-ins;
-- EIP attachment and reusable stdio-carrier values shared with managed sandbox providers.
+- EIP attachment and reusable stdio-carrier values that publish only initialization- and readiness-confirmed Sessions and are shared with managed sandbox providers.
 
 The source type passed to Agent Harness defines ownership:
 
@@ -27,7 +27,7 @@ async with resource:
 
 The package does not own durable storage, Host authorization or scheduling, Harness runs, model-facing tools, or provider-neutral Environment operations. A Host explicitly manages reusable resources and persists current provider state. The Harness owns a Provider input only through the bounded ephemeral lifecycle.
 
-Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd launches one compatible Host-selected `agent-envd` process per entered Resource and uses reusable sequential EIP sessions over its private stdio carrier. Docker and E2B remain deferred to their planned provider phases. The catalog contains no placeholder factories or fallback provider selection.
+Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd launches one compatible Host-selected `agent-envd` process per entered Resource, validates startup through a provider-owned short-lived EIP readiness Session, and then uses readiness-confirmed sequential EIP Sessions over its private reusable stdio carrier. It uses no filesystem readiness marker or separate health probe. Docker and E2B remain deferred to their planned provider phases. The catalog contains no placeholder factories or fallback provider selection.
 
 ## Local Envd development
 
@@ -52,7 +52,7 @@ runtime = LocalEnvdProviderRuntime(
 )
 ```
 
-Repository developers can optionally copy `.env.example` to `.env` and set `A13N_AGENT_ENVD_EXECUTABLE`. The focused target builds the source-tree daemon, loads `.env` only inside the target shell, defaults the variable to `target/debug/agent-envd`, and runs the real Local Envd tests:
+Repository developers can optionally copy the `A13N_AGENT_ENVD_EXECUTABLE` entry from `.env.harness.example` into the root `.env`. The focused target builds the source-tree daemon, loads `.env` only inside the target shell, defaults the variable to `target/debug/agent-envd`, and runs the real Local Envd tests:
 
 ```bash
 make local-envd-test

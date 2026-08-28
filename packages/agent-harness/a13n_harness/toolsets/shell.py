@@ -50,6 +50,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolFailure
 from .output import (
     DEFAULT_TOOL_OUTPUT_CHARS,
@@ -82,6 +83,12 @@ _MAX_MODEL_RESULTS = 1_000
 _PROCESS_RESULT_ENVELOPE_CHARS = 128
 _MAX_REFERENCE_ENTRIES = 100_000
 _REFERENCE_PATTERN = re.compile(r"^process-([1-9][0-9]*)$")
+
+_SHELL_INSTRUCTION = tool_instruction("environment-shell")
+
+_PROCESS_INSTRUCTION = tool_instruction("environment-processes")
+
+_PORT_INSTRUCTION = tool_instruction("environment-ports")
 
 _PositiveTextBytes = Annotated[int, Field(gt=0, le=_MAX_MODEL_TEXT_BYTES)]
 _PositiveOutputBytes = Annotated[int, Field(gt=0, le=_MAX_MODEL_OUTPUT_BYTES)]
@@ -343,6 +350,7 @@ class ShellToolset:
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools: list[HarnessTool] = []
+        instructions: list[str] = []
         arbitrary_command_effects: set[ToolEffect] = {
             "read",
             "write",
@@ -351,6 +359,7 @@ class ShellToolset:
             "external_communication",
         }
         if self._exec_tools:
+            instructions.append(_SHELL_INSTRUCTION)
             tools.append(
                 self._tool(
                     self.environment_shell_exec,
@@ -360,6 +369,7 @@ class ShellToolset:
                 )
             )
         if self._process_tools:
+            instructions.append(_PROCESS_INSTRUCTION)
             tools.extend(
                 (
                     self._tool(
@@ -425,6 +435,7 @@ class ShellToolset:
                 )
             )
         if self._port_tools:
+            instructions.append(_PORT_INSTRUCTION)
             tools.extend(
                 (
                     self._tool(
@@ -441,7 +452,7 @@ class ShellToolset:
                     ),
                 )
             )
-        return FunctionToolset(tools=tools, id="a13n-shell-tools")
+        return InstructionFunctionToolset(tools=tools, id="a13n-shell-tools", instructions=instructions)
 
     def _tool(
         self,

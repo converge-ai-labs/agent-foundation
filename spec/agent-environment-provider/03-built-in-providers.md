@@ -147,7 +147,7 @@ The package exposes a separate Host convenience `resolve_agent_envd_executable()
 
 Agent UI's managed-runtime selection contract remains independently defined by [Agent UI Runtime, Subagents, and Surfaces](../agent-ui/05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution). Its package-pinned default continues not to search ambient `PATH`; only a Host integration that explicitly selects the generic convenience helper opts into its environment and `which` precedence.
 
-At lifecycle time, the Provider requires the selected executable to report the client release identity through `agent-envd --version` and to pass the production-equivalent `agent-envd isolation probe --json`. These checks establish local runtime availability without creating an EIP session. Successful initialization by the first real attachment independently establishes the launched daemon generation, Environment identity, required methods, and protocol compatibility.
+At lifecycle time, the Provider requires the selected executable to report the client release identity through `agent-envd --version` and to pass the production-equivalent `agent-envd isolation probe --json`. These checks establish executable and isolation compatibility without launching the managed daemon. Resource entry independently establishes the launched daemon generation, Environment identity, required methods, protocol compatibility, and current readiness through a provider-owned EIP readiness Session.
 
 ### Resource state and Provider behavior
 
@@ -172,11 +172,11 @@ class LocalEnvdProviderStateData(BaseModel):
 
 The fingerprint covers the exact normalized schema-version-1 configuration, including canonical Host paths. The state never contains the executable path, PID, process handle, pipes, private runtime path, daemon generation, EIP descriptor, session, or probe output. `resource_correlation` distinguishes independent `MULTIPLE_FROM_SPEC` logical resources even when they use the same specification and workspace.
 
-`create()` validates the configured workspace, executable shape and release, required isolation probe, and operation correlation, then returns a pre-entry Resource with `RUNNING` state. `resume()` accepts valid `RUNNING` or `PAUSED` state, validates its configuration fingerprint, correlation, workspace, executable, release, and isolation probe, normalizes the result to `RUNNING`, and returns a new pre-entry Resource. Accepting `RUNNING` permits ordinary Resource exit and later re-entry without pretending that exit paused the logical resource. Neither method allocates a private runtime, launches envd, nor opens a hidden preflight EIP session.
+`create()` validates the configured workspace, executable shape and release, required isolation probe, and operation correlation, then returns a pre-entry Resource with `RUNNING` state. `resume()` accepts valid `RUNNING` or `PAUSED` state, validates its configuration fingerprint, correlation, workspace, executable, release, and isolation probe, normalizes the result to `RUNNING`, and returns a new pre-entry Resource. Accepting `RUNNING` permits ordinary Resource exit and later re-entry without pretending that exit paused the logical resource. Neither method allocates a private runtime or launches envd.
 
-Resource entry asks the Host allocator for a fresh protected runtime parent, writes one strict private envd configuration file, and launches one stdio daemon generation with `AGENT_ENVD_RUNTIME_DIR` and an absent direct-child `AGENT_ENVD_READY_FILE` set inside that parent. It waits under a finite deadline for the envd-owned private readiness marker while also observing process exit; a fixed startup sleep is not readiness. The first real attachment owns EIP initialization after readiness. Resource exit first fences attachment admission, requires attachment scopes to be closed, terminates the complete daemon process tree, closes its pipes, and releases only that entry's private runtime. Exit does not pause, destroy, or rewrite the logical provider state.
+Resource entry asks the Host allocator for a fresh protected runtime parent, writes one strict private envd configuration file, and launches one stdio daemon generation with `AGENT_ENVD_RUNTIME_DIR` set to that parent. It immediately claims the physical carrier for one provider-owned readiness Session, observes process exit concurrently, completes `initialize` plus the mandatory `environment.readiness` operation under finite deadlines, and cleanly calls `session.close`. Entry succeeds only after envd fully writes the close response and rearms the same carrier for a fresh Session. The Provider uses no sleep, filesystem marker, transport-specific health endpoint, or provider-native operation as readiness evidence. Resource exit first fences attachment admission, requires attachment scopes to be closed, terminates the complete daemon process tree, closes its pipes, and releases only that entry's private runtime. Exit does not pause, destroy, or rewrite the logical provider state.
 
-`acquire_attachment()` returns one fresh `EIPEnvironmentAttachment` whose `StdioEIPSessionSource` carries an exclusive single-use lease over the Resource-owned carrier. Attachment entry performs ordinary EIP initialization before the Harness can publish a binding. After envd cleans session-owned state and fully writes a successful `session.close` response, the source detaches its requester and returns the healthy carrier lease so a later sequential attachment can initialize against the same daemon generation. Initialization failure, a lost or malformed close response, ambiguous request correlation, fatal protocol or framing failure, carrier EOF, or unexpected process exit permanently fences that carrier and makes the Resource unavailable. The Provider never starts a replacement implicitly within the same Resource entry.
+`acquire_attachment()` returns one fresh `EIPEnvironmentAttachment` whose `StdioEIPSessionSource` carries an exclusive single-use lease over the Resource-owned carrier. Attachment entry completes ordinary EIP initialization and its mandatory initial `environment.readiness` operation before the Harness can publish a binding. After envd cleans session-owned state and fully writes a successful `session.close` response, the source detaches its requester and returns the healthy carrier lease so a later sequential attachment can initialize against the same daemon generation. Initialization/readiness failure, a lost or malformed close response, ambiguous request correlation, fatal protocol or framing failure, carrier EOF, or unexpected process exit permanently fences that carrier and makes the Resource unavailable. The Provider never starts a replacement implicitly within the same Resource entry.
 
 Local Envd advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. `pause(mode=FILESYSTEM)` requires the matching entered Resource after attachment scopes close, fences new attachments, stops its complete daemon process tree, releases its private runtime, leaves workspace files untouched, and returns state with `phase=PAUSED`. Resource exit then completes any idempotent local cleanup. `FULL` is unsupported. A later `resume()` returns a new Resource whose next entry starts a fresh private runtime and daemon generation.
 
@@ -184,7 +184,7 @@ Local Envd advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_conc
 
 Local Envd reconciliation is bounded and read-only. Destroy reconciliation returns `ABSENT` after valid state correlation because no provider-owned durable object remains after Resource exit. Pause reconciliation returns validated `PAUSED` state when supplied evidence identifies that completed local transition. Create and resume compatibility requires executing the release and isolation checks, so reconciliation validates only supplied state correlation and static filesystem shape, then returns `UNKNOWN`; the Host retries the side-effect-free lifecycle validation with the same operation identity rather than weakening it inside reconciliation. Inaccessible or ambiguous local evidence also returns `UNKNOWN`. Reconciliation never allocates a runtime, launches a process, mutates the workspace, or substitutes another executable.
 
-A missing executable, release mismatch, failed isolation probe, daemon startup/readiness failure, incompatible EIP initialization, unexpected process exit, or inability to prove cleanup makes Local Envd unavailable. The Provider does not fall back to `a13n.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
+A missing executable, release mismatch, failed isolation probe, daemon startup/readiness-Session failure, incompatible EIP initialization, unexpected process exit, or inability to prove cleanup makes Local Envd unavailable. The Provider does not fall back to `a13n.direct-local`, disable isolation, or reinterpret the Environment as ordinary Host process access.
 
 ## Docker
 
@@ -206,7 +206,7 @@ The provider does not accept arbitrary Docker API objects, callbacks, socket pat
 
 The Docker Provider uses the Docker SDK for Python. Blocking SDK calls run through `anyio.to_thread.run_sync` or an equivalent bounded worker-thread boundary.
 
-`create()` creates and starts one container whose image includes compatible `agent-envd` bootstrap. Before possible visibility loss, it applies bounded labels for the Host operation ID, resource correlation, and provider/configuration fingerprint. `resume()` inspects the exact container ID from provider resource state and starts it when stopped or reconnects when already running. A missing container fails rather than creating another one.
+`create()` creates and starts one container whose image includes compatible `agent-envd` bootstrap. Before possible visibility loss, it applies bounded labels for the Host operation ID, resource correlation, and provider/configuration fingerprint. `resume()` inspects the exact container ID from provider resource state and starts it when stopped or reconnects when already running. A missing container fails rather than creating another one. Resource entry establishes fresh EIP routing and validates the selected daemon through a provider-owned initialize/readiness/close Session before attachment issuance; every attachment later establishes its own fresh readiness-confirmed Session.
 
 Docker advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. Each successful create receives an independent container ID and destroy target. `pause(mode=FILESYSTEM)` stops the container after closing the active attachment; the writable container filesystem or selected volumes remain, but process memory and `agent-envd` generation do not. Resume starts a fresh daemon generation and issues a fresh EIP attachment. `FULL` is unsupported rather than being mapped to Docker's process-freeze operation, because a frozen container is not a portable retained sandbox lifecycle.
 
@@ -241,11 +241,11 @@ E2B advertises `resource_allocation=MULTIPLE_FROM_SPEC` and `attachment_concurre
 
 ### Provider behavior
 
-`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, and provider/configuration fingerprint. It waits for provider running state, resolves the provider-routed HTTPS host for the dedicated EIP port, and makes that fresh routing available through the Resource's HTTP session source. The first acquired attachment initializes EIP and must match the expected Environment identity, protocol, required methods, and limits before the Harness publishes a binding.
+`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, and provider/configuration fingerprint. It waits for provider running state and records the sandbox identity without treating generic provider availability as envd readiness. Resource entry resolves the provider-routed HTTPS host for the dedicated EIP port, completes a provider-owned initialize/readiness/close Session against that fresh routing, and only then issues attachment sources. Every acquired attachment independently initializes EIP, completes its mandatory initial readiness operation, and must match the expected Environment identity, generation, protocol, required methods, and limits before the Harness publishes a binding.
 
-`resume()` uses the sandbox ID from validated provider resource state. E2B's connect operation attaches to a running sandbox or resumes a paused sandbox; it never creates a replacement for a missing or killed sandbox. After connect, the Provider resolves fresh routing and issues only a fresh session source; initialization remains owned by attachment entry.
+`resume()` uses the sandbox ID from validated provider resource state. E2B's connect operation attaches to a running sandbox or resumes a paused sandbox; it never creates a replacement for a missing or killed sandbox. After connect, Resource entry resolves fresh routing and performs the same provider-owned readiness Session before issuing fresh attachment sources.
 
-`pause(mode=FULL)` preserves the sandbox filesystem, memory, and running processes. External network connections still close. On resume, the in-sandbox `agent-envd` process and daemon generation can remain, but the Host obtains a fresh endpoint/session and performs `initialize` again. No HTTP request, transfer, or EIP session survives pause.
+`pause(mode=FULL)` preserves the sandbox filesystem, memory, and running processes. External network connections still close. On resume, the in-sandbox `agent-envd` process and daemon generation can remain, but the Host obtains a fresh endpoint and establishes a fresh readiness-confirmed Session. No HTTP request, transfer, or EIP Session survives pause.
 
 `pause(mode=FILESYSTEM)` preserves the sandbox filesystem while discarding memory and processes. Resume reboots from disk, the template startup contract launches a new `agent-envd` process, and the daemon generation changes. Every previous operation receipt, process handle, output reference, transfer, and session is fenced. The Harness receives a fresh binding revision before operations resume.
 
@@ -281,20 +281,20 @@ It does not export vendor clients, Docker models, E2B SDK objects, raw EIP trans
 
 ## Failure Semantics
 
-| Provider         | Material failure                                 | Outcome                                                               |
-| ---------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
-| Direct Local     | Configured shared root validation fails          | No attachment and no filesystem mutation                              |
-| Local Envd       | Runtime resolution or required isolation fails   | No daemon attachment and no Direct Local fallback                     |
-| Local Envd       | Daemon stop or private-runtime cleanup uncertain | Preserve explicit cleanup failure; never delete the workspace         |
-| Docker           | Container create/start outcome is uncertain      | Reconcile exact container labels/ID before another create             |
-| Docker           | Stopped container resumes                        | New envd generation and fresh binding/session                         |
-| E2B              | Sandbox create response is lost                  | Reconcile provider metadata before another create                     |
-| E2B              | Sandbox is paused                                | Explicit resume/connect, fresh routing, and fresh EIP initialization  |
-| E2B              | Filesystem-only resume fails to start envd       | Resource remains unavailable; no attachment is issued                 |
-| E2B              | Sandbox is killed or expired                     | Resume fails as absent; no implicit replacement                       |
-| Any EIP provider | EIP operation disconnect after possible dispatch | EIP outcome remains unknown under EIP operation-ID reconciliation     |
-| Any provider     | Lifecycle API response is lost                   | Reconcile the exact Host operation/resource before another transition |
-| Any provider     | Lifecycle cleanup fails after a Harness result   | Report cleanup separately and preserve the Harness result candidate   |
+| Provider         | Material failure                                 | Outcome                                                                 |
+| ---------------- | ------------------------------------------------ | ----------------------------------------------------------------------- |
+| Direct Local     | Configured shared root validation fails          | No attachment and no filesystem mutation                                |
+| Local Envd       | Runtime resolution or required isolation fails   | No daemon attachment and no Direct Local fallback                       |
+| Local Envd       | Daemon stop or private-runtime cleanup uncertain | Preserve explicit cleanup failure; never delete the workspace           |
+| Docker           | Container create/start outcome is uncertain      | Reconcile exact container labels/ID before another create               |
+| Docker           | Stopped container resumes                        | New envd generation and fresh binding/session                           |
+| E2B              | Sandbox create response is lost                  | Reconcile provider metadata before another create                       |
+| E2B              | Sandbox is paused                                | Explicit resume/connect, fresh routing, and fresh EIP readiness Session |
+| E2B              | Filesystem-only resume fails to start envd       | Resource remains unavailable; no attachment is issued                   |
+| E2B              | Sandbox is killed or expired                     | Resume fails as absent; no implicit replacement                         |
+| Any EIP provider | EIP operation disconnect after possible dispatch | EIP outcome remains unknown under EIP operation-ID reconciliation       |
+| Any provider     | Lifecycle API response is lost                   | Reconcile the exact Host operation/resource before another transition   |
+| Any provider     | Lifecycle cleanup fails after a Harness result   | Report cleanup separately and preserve the Harness result candidate     |
 
 Raw vendor exceptions remain protected causes. Safe errors expose only bounded provider key, lifecycle action, resource correlation, and stable failure class.
 
@@ -333,6 +333,6 @@ Baking and starting `agent-envd` adds a template/image requirement. It avoids di
 07. Local Envd required isolation never degrades to disabled mode; E2B full pause can preserve the daemon process but never preserves external connections, transfers, or EIP sessions.
 08. A missing, expired, killed, or incompatible resource is never replaced implicitly by `resume()`.
 09. E2B automatic traffic-triggered resume is disabled; the Provider owns explicit resume and readiness validation.
-10. Every resumed EIP-backed resource yields a fresh attachment, Harness binding, and initialized EIP session.
+10. Every resumed EIP-backed resource yields a fresh attachment, Harness binding, and readiness-confirmed EIP Session.
 11. Docker SDK calls and any unavoidable synchronous E2B SDK call never block the async event loop; native E2B async lifecycle operations remain async.
 12. Provider-native filesystem persistence and Harness portable Environment state remain separate mechanisms.

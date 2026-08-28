@@ -242,6 +242,7 @@ class FileFindParams(BaseModel):
     recursive: bool = True
     include_hidden: bool = False
     kinds: tuple[FileKind, ...] = ()
+    respect_git_ignore: bool = False
 
 
 class FileFindResult(BaseModel):
@@ -251,7 +252,7 @@ class FileFindResult(BaseModel):
     omitted_unrepresentable_entries: int
 ```
 
-The glob matches each descendant's `/`-separated path relative to `root`; `root` itself is not a result. A bare pattern without `/`, such as `*.py`, matches the basename at any traversed depth. A pattern containing `/` matches the complete relative path, and a leading `/` explicitly anchors that path at `root`. The supported syntax is `*`, `?`, `**`, and bracket character classes. Within a path pattern, `*`, `?`, and classes do not cross `/`, while `**` matches complete path segments. An empty `kinds` tuple accepts every file kind. `recursive=false` restricts the operation to immediate children. Results share `file.list` ordering and offset semantics.
+The glob matches each descendant's `/`-separated path relative to `root`; `root` itself is not a result. A bare pattern without `/`, such as `*.py`, matches the basename at any traversed depth. A pattern containing `/` matches the complete relative path, and a leading `/` explicitly anchors that path at `root`. The supported syntax is `*`, `?`, `**`, and bracket character classes. Within a path pattern, `*`, `?`, and classes do not cross `/`, while `**` matches complete path segments. An empty `kinds` tuple accepts every file kind. `recursive=false` restricts the operation to immediate children. `respect_git_ignore=true` interprets bounded nested `.gitignore` files from the selected root downward and prunes ignored directories during traversal; hidden-name selection remains independent. Results share `file.list` ordering and offset semantics.
 
 ### `file.search`
 
@@ -268,6 +269,12 @@ class FileSearchParams(BaseModel):
     max_results: int = 100
     include_hidden: bool = False
     max_line_length: int
+    include_pattern: str = "**/*"
+    respect_git_ignore: bool = False
+    context_lines: int = 0
+    max_matches_per_file: int | None = None
+    max_files: int | None = None
+    max_file_bytes: int = 64 * 1024 * 1024
 
 
 class FileSearchMatch(BaseModel):
@@ -275,6 +282,8 @@ class FileSearchMatch(BaseModel):
     line_number: int
     preview: str
     preview_truncated: bool
+    context: str = ""
+    context_start_line: int = 1
 
 
 class FileSearchResult(BaseModel):
@@ -284,11 +293,11 @@ class FileSearchResult(BaseModel):
     omitted_unrepresentable_entries: int
 ```
 
-Search recursively considers regular files under `root`, omitting hidden path components unless requested. A file containing invalid UTF-8 or NUL is skipped deterministically. Literal and regex matching are applied independently to each complete logical line and cannot span LF boundaries. `case_sensitive=false` uses explicit Unicode case-insensitive matching.
+Search recursively considers regular files under `root`, omitting hidden path components unless requested. `include_pattern` applies the same path-glob semantics as `file.find`. `respect_git_ignore=true` applies bounded nested ignore files during traversal and prunes ignored directories. A file containing invalid UTF-8 or NUL is skipped deterministically. Literal and regex matching are applied independently to each complete logical line and cannot span LF boundaries. `case_sensitive=false` uses explicit Unicode case-insensitive matching.
 
-`line_number` is one-based. `preview` is the containing line with only its LF terminator removed and at most `max_line_length` characters; `preview_truncated` reports an omitted suffix. EIP does not expose a raw byte offset or duplicate the same line for several occurrences. Results are ordered by relative path and then line number.
+`line_number` is one-based. `preview` is the containing line with only its LF terminator removed and at most `max_line_length` characters; `preview_truncated` reports an omitted suffix. `context` contains the bounded preview rendering of up to `context_lines` preceding and following lines, preserves available LF terminators, and starts at `context_start_line`. EIP does not expose a raw byte offset or duplicate the same line for several occurrences. Results are ordered by relative path and then line number.
 
-Pattern size, incremental traversal work, bytes scanned per file and operation, result count, preview length, response bytes, and duration are finite. A source file can exceed the mutation candidate limit; search streams bounded chunks and applies its independent scan ceiling. `offset` skips ordered matching lines, `max_results` bounds the page, and `has_more` reports another match in that observation. Implementations page deterministically without retaining a complete traversal/result set merely to return the first page. Unrepresentable path entries are omitted and counted. A response ceiling can narrow result count; if the first selected item cannot fit, the method returns `output_limit_exceeded`. Cancellation and timeout return typed errors rather than partial success.
+Pattern size, incremental traversal work, bytes scanned per file and operation, result count, per-file match count, eligible files searched, source-file bytes, context width, preview length, response bytes, and duration are finite. `max_files` counts included regular files actually opened for search; traversal stops when the ceiling is reached. Files larger than `max_file_bytes` are skipped before that count. A source file can exceed the mutation candidate limit when the explicit search ceiling permits it; search streams bounded lines and applies its independent per-file and operation scan ceilings. `offset` skips ordered matching lines, `max_results` bounds the page, and `has_more` reports another match in that observation. Implementations page deterministically without retaining a complete traversal/result set merely to return the first page. Unrepresentable path entries are omitted and counted. A response ceiling can narrow result count; if the first selected item cannot fit, the method returns `output_limit_exceeded`. Cancellation and timeout return typed errors rather than partial success.
 
 Neither find nor search follows a symlink outside the selected mount or reads special files. Result text remains untrusted caller-visible content.
 

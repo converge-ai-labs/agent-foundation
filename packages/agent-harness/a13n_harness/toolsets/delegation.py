@@ -32,6 +32,8 @@ from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
+
 if TYPE_CHECKING:
     from a13n_harness.capabilities.delegation import (
         DelegationConfiguration,
@@ -102,7 +104,18 @@ class DelegationToolset:
                 "child, or supply a previously returned ID to continue that exact child."
             ),
         )
-        return FunctionToolset(tools=[tool], id="a13n-delegation-tools")
+        children = tuple(self._context.subagents.values())
+        available = (
+            "; ".join(f"{child.declaration.name}: {child.declaration.description[:512]}" for child in children[:64])
+            if children
+            else "none"
+        )
+        instruction = tool_instruction("delegate").format(available_subagents=available)
+        return InstructionFunctionToolset(
+            tools=[tool],
+            id="a13n-delegation-tools",
+            instructions=instruction,
+        )
 
     async def delegate(
         self,
@@ -523,7 +536,15 @@ async def _finalize_child_bindings(
                 code="capability_scope_invalid",
             )
         inherited = selected
-    bindings = replace(bindings, _inherited_model_cost=inherited)
+    bindings = replace(
+        bindings,
+        _inherited_model_cost=inherited,
+        toolset_instructions=(
+            bindings.toolset_instructions
+            if bindings.toolset_instructions is not None
+            else ctx.deps._toolset_instructions_override
+        ),
+    )
     return await _finalize_task_bindings(ctx, child, bindings)
 
 

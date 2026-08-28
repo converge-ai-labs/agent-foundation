@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The Environment Interaction Protocol (EIP) is the transport-neutral wire contract between a trusted requester and `agent-envd`. EIP 1.0 uses JSON-RPC 2.0 for bounded control operations and correlated raw file transfer. One versioned contract owns method names, payloads, transfer lifecycles, operation replay, typed errors, selectors, limits, and side-effect evidence across trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket.
+The Environment Interaction Protocol (EIP) is the transport-neutral wire contract between a trusted requester and `agent-envd`. EIP 0.1 uses JSON-RPC 2.0 for bounded control operations and correlated raw file transfer. One versioned contract owns method names, payloads, transfer lifecycles, operation replay, typed errors, selectors, limits, and side-effect evidence across trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket.
 
 EIP is a semantic Environment protocol rather than a remote syscall interface. Canonical path resolution, bounded search, complete-candidate publication, command-tree control, command-output reads, and local-port observation execute beside the native resources. Client validation improves errors but never replaces envd enforcement.
 
@@ -21,7 +21,7 @@ Carrier headers, stdio pipes, attachment credentials, and WebSocket upgrade fiel
 
 ## Control Envelope
 
-Every control message is one UTF-8 JSON object conforming to JSON-RPC 2.0. EIP 1.0 supports correlated request/response only, not batch arrays or application notifications. Request IDs are strings or signed 64-bit integers; booleans and wider integers are invalid. A response carries the same nullable ID and exactly one of `result` or `error`.
+Every control message is one UTF-8 JSON object conforming to JSON-RPC 2.0. EIP 0.1 supports correlated request/response only, not batch arrays or application notifications. Request IDs are strings or signed 64-bit integers; booleans and wider integers are invalid. A response carries the same nullable ID and exactly one of `result` or `error`.
 
 Raw file bytes are not control messages. They use the bounded data-frame profile after a correlated `file.open_reader` or `file.open_writer` establishes a typed transfer. A binary frame cannot name a path, create authority, commit a mutation, or invoke another method.
 
@@ -125,7 +125,7 @@ class InitializeResult(BaseModel):
     descriptor: EnvironmentDescriptor
 ```
 
-Versions use `<major>.<minor>`. The server selects the highest mutually supported minor in a mutually supported major. Selecting EIP major 1 also selects binary data-frame profile version 1. No binary attachment is legal before initialization.
+Versions use `<major>.<minor>`. The server selects the highest mutually supported minor in a mutually supported major. The prerelease EIP 0.1 contract selects binary data-frame profile version 1; the profile retains its fixed major-1 compatibility tag independently of the prerelease control-contract version. No binary attachment is legal before initialization.
 
 `expected_environment_id` is mandatory trusted binding input. A mismatch fails initialization without publishing a usable descriptor. `required_methods` contains exact JSON-RPC names. Initialization fails if any required name is absent from `available_methods`. The list does not grant a method; it asserts compatibility with the daemon's configured policy and truthful platform support.
 
@@ -137,7 +137,30 @@ The descriptor contains configured logical mounts only. `root_mount_id`, when pr
 
 Only limits a client needs before constructing or dispatching work are serialized. Internal record, staging, transfer, spool, queue, and shutdown capacity remains finite daemon configuration and produces typed runtime outcomes. An absolute `expires_at` in a result is an observation, not a compatibility lease.
 
-Initialization has no `EIPCallContext`, performs no native resource mutation, and cannot repeat within a live session.
+Initialization has no `EIPCallContext`, performs no native resource mutation, and cannot repeat within a live session. Successful initialization establishes protocol identity and a descriptor but does not yet make the Session requester-ready. Until the first successful `environment.readiness` observation, envd admits only that method and `session.close`; every other post-initialization method fails without domain dispatch.
+
+## Readiness Foundation
+
+`environment.readiness` is the mandatory, transport-neutral readiness operation for every EIP Session. It is the first post-initialization operation issued by a conforming requester and remains callable later while the Session is active.
+
+```python
+class EnvironmentReadinessParams(BaseModel):
+    context: EIPCallContext
+
+
+class EnvironmentReadinessResult(BaseModel):
+    ready: bool
+    environment_id: str
+    generation: int
+```
+
+The initial readiness request uses a fresh operation ID and finite timeout. Envd returns `ready=true` only after trusted configuration, generation-private owners, mounts, execution enforcement, selected carrier admission, initialization, and operation-ledger admission are usable for the configured Environment and generation. A drain that wins before the readiness snapshot can return `ready=false`; if the carrier or daemon can no longer publish a response, the requester instead observes the ordinary bounded transport or process failure. Readiness does not probe arbitrary files, commands, network destinations, capacity for a particular future operation, or external dependencies.
+
+A requester validates that `environment_id` and `generation` exactly match the initialization descriptor. A false observation, identity/generation mismatch, timeout, malformed response, or carrier loss prevents initial Session publication and fences that carrier unless its profile proves a clean independent replacement. After a successful initial observation, a later readiness check is an ordinary point-in-time observation: it uses a new operation ID, and `ready=false` stops new application dispatch on that Session without reclassifying already accepted operations.
+
+`environment.readiness` is `active_only`. Its operation ID follows the common active-duplicate, cancellation, timeout, and response-handoff rules and retains no historical result. A caller that wants a new observation always uses a new operation ID. JSON-RPC request correlation remains separate from operation identity.
+
+A Provider or control service can establish readiness without inventing another health API by opening a short-lived EIP Session, completing initialize plus the initial readiness operation, and cleanly calling `session.close`. A normal attachment uses the same sequence before exposing its Session to Harness operations. This readiness Session is a real, bounded protocol Session rather than a filesystem marker, transport-specific probe, or provider-native operation.
 
 ## Common Operation Context and Replay
 
@@ -183,11 +206,11 @@ This single identity replaces a separate idempotency key or receipt selector. Ex
 
 ## Method Availability and Catalog
 
-The canonical IDL defines the EIP 1.0 method set:
+The canonical IDL defines the EIP 0.1 method set:
 
 | Domain                      | Methods                                                                                                                                                  | Replay class        | Owning contract                                                      |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------- |
-| Environment/session         | `environment.describe`, `session.close`                                                                                                                  | `active_only`       | This document and [Transports](03-transports-and-sessions.md)        |
+| Environment/session         | `environment.readiness`, `environment.describe`, `session.close`                                                                                         | `active_only`       | This document and [Transports](03-transports-and-sessions.md)        |
 | Operation evidence          | `operation.cancel`, `receipt.get`                                                                                                                        | `active_only`       | This document                                                        |
 | File observations/transfers | `file.stat`, `file.read_text`, `file.open_reader`, `file.close_reader`, `file.list`, `file.find`, `file.search`, `file.open_writer`, `file.abort_writer` | `active_only`       | [Resource Operations](04-resource-operations.md)                     |
 | File mutations              | `file.write_text`, `file.commit_writer`, `file.mkdir`, `file.patch_text`, `file.copy`, `file.move`, `file.remove`                                        | `terminal_evidence` | [Resource Operations](04-resource-operations.md)                     |
@@ -204,7 +227,7 @@ The catalog contains no provider provisioning, container lifecycle, daemon shutd
 
 ## Descriptor Refresh and Generation
 
-`environment.describe` returns the current session's descriptor. Within one initialized session, runtime policy can only remove `available_methods` and lower numeric `EIPLimits`. Environment identity, generation, mount descriptors and ordering, root mount, shell profiles, isolation posture, and execution-feature support are immutable. A refresh that re-adds a removed method, raises a prior limit, changes topology/posture/features, or contains an unknown method is a terminal protocol violation; a client never replaces its effective descriptor with that observation. A fault that changes those generation-fixed facts drains or terminates the daemon and destroys its sessions.
+`environment.readiness` is mandatory in every EIP 0.1 descriptor and cannot be removed by configured resource policy. `environment.describe` returns the current session's descriptor. Within one initialized session, runtime policy can only remove `available_methods` and lower numeric `EIPLimits`. Environment identity, generation, mount descriptors and ordering, root mount, shell profiles, isolation posture, and execution-feature support are immutable. A refresh that re-adds a removed method, raises a prior limit, changes topology/posture/features, or contains an unknown method is a terminal protocol violation; a client never replaces its effective descriptor with that observation. A fault that changes those generation-fixed facts drains or terminates the daemon and destroys its sessions.
 
 A daemon restart creates a new unpredictable nonzero generation. Operation records, process handles, transfer handles, output references, receipts, and private spool data from the old generation are invalid and never restored or adopted. A selector that safely identifies another generation returns `stale_generation`; otherwise it returns its non-disclosing invalid/not-found error.
 
@@ -416,7 +439,7 @@ A timeout, cancellation race, carrier close, or response loss after possible dis
 
 ## Observation Without Push
 
-EIP 1.0 has no application notifications. Clients observe process and output changes through bounded `process.inspect`, `process.wait`, and `output.read`. Explicit offsets and `next_offset` support non-draining reads; each call remains an independently bounded request. `wait_ms` and `timeout_ms` provide bounded long polling where supported.
+EIP 0.1 has no application notifications. Clients observe process and output changes through bounded `process.inspect`, `process.wait`, and `output.read`. Explicit offsets and `next_offset` support non-draining reads; each call remains an independently bounded request. `wait_ms` and `timeout_ms` provide bounded long polling where supported.
 
 Binary file data is not state notification. It exists only for one session-owned reader or writer and has no subscription, replay, fan-out, or independent authority.
 

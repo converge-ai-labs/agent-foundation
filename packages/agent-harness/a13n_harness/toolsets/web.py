@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
+import os
 import posixpath
 from collections.abc import AsyncIterable, Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Annotated, Literal, NotRequired, Protocol, TypedDict, cast, runtime_checkable
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import BinaryContent, RunContext, ToolReturn
+from pydantic_ai.native_tools import WebSearchTool
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._urls import project_audience_safe_url as _safe_url
@@ -22,10 +25,11 @@ from a13n_harness.context import AgentContext
 from a13n_harness.environment.files import FileOperator
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import FileScopeProvider
-from a13n_harness.errors import RunError
+from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
 from a13n_harness.usage import ProviderUsage
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
 from ._scoped_files import ScopedFileAccess
 from .output import ToolOutputDisclosure, disclose_sequence_field, disclose_text_fields
@@ -37,8 +41,32 @@ _MAX_RESPONSE_HEADER_BYTES = 256 * 1024
 _MAX_RESPONSE_URL_BYTES = 16 * 1024
 _CLOSE_GRACE_SECONDS = 0.05
 
+WEB_SEARCH_MODE_ENV = "A13N_HARNESS_WEB_SEARCH_MODE"
+WEB_SEARCH_BACKEND_ENV = "A13N_HARNESS_WEB_SEARCH_BACKEND"
+WEB_SEARCH_BACKEND_PRIORITY_ENV = "A13N_HARNESS_WEB_SEARCH_BACKEND_PRIORITY"
+WEB_SEARCH_CONTEXT_SIZE_ENV = "A13N_HARNESS_WEB_SEARCH_CONTEXT_SIZE"
+WEB_SCRAPE_MODE_ENV = "A13N_HARNESS_WEB_SCRAPE_MODE"
+WEB_SCRAPE_BACKEND_ENV = "A13N_HARNESS_WEB_SCRAPE_BACKEND"
+WEB_SCRAPE_BACKEND_PRIORITY_ENV = "A13N_HARNESS_WEB_SCRAPE_BACKEND_PRIORITY"
+
+_SEARCH_INSTRUCTION = tool_instruction("search")
+_SCRAPE_INSTRUCTION = tool_instruction("scrape")
+_FETCH_INSTRUCTION = tool_instruction("fetch")
+_DOWNLOAD_INSTRUCTION = tool_instruction("download")
+
+
+def _prefer_native_web_search(
+    _ctx: RunContext[AgentContext],
+    tool_def: ToolDefinition,
+) -> ToolDefinition:
+    return replace(tool_def, unless_native=WebSearchTool.kind)
+
+
 type WebPurpose = Literal["fetch", "download", "scrape"]
 type WebMethod = Literal["GET", "HEAD"]
+type WebSearchMode = Literal["off", "host", "native", "auto"]
+type WebScrapeMode = Literal["off", "host"]
+type WebSearchContextSize = Literal["low", "medium", "high"]
 
 
 class WebRequest(BaseModel):
@@ -223,11 +251,74 @@ class WebScrapeProvider(Protocol):
     async def scrape(self, request: WebScrapeRequest, *, policy: WebPolicy) -> WebScrapeResult: ...
 
 
+class _WebPolicyFailure(Exception):
+    """A policy failure that must escape backend fallback unchanged."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        super().__init__(str(error))
+
+
+@dataclass(frozen=True, slots=True)
+class _FallbackBlockingWebPolicy:
+    policy: WebPolicy
+
+    async def authorize(self, url: str, *, purpose: WebPurpose) -> None:
+        try:
+            await self.policy.authorize(url, purpose=purpose)
+        except Exception as exc:
+            raise _WebPolicyFailure(exc) from exc
+
+
+def _validate_backend_preference(backend: str | None, priority: tuple[str, ...]) -> None:
+    if backend is not None and priority:
+        raise ValueError("backend and backend_priority are mutually exclusive")
+    if len(set(priority)) != len(priority):
+        raise ValueError("backend_priority entries must be unique")
+
+
+class WebSearchConfiguration(BaseModel):
+    """Definition-owned native/Host mode and Host backend preference."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    mode: WebSearchMode = "auto"
+    backend: str | None = Field(default=None, min_length=1)
+    backend_priority: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+    search_context_size: WebSearchContextSize = "medium"
+
+    @model_validator(mode="after")
+    def _validate_backend_selection(self) -> WebSearchConfiguration:
+        _validate_backend_preference(self.backend, self.backend_priority)
+        if self.mode in {"off", "native"} and (self.backend is not None or self.backend_priority):
+            raise ValueError("Host backend preferences require search mode 'host' or 'auto'")
+        return self
+
+
+class WebScrapeConfiguration(BaseModel):
+    """Definition-owned Host scrape mode and backend preference."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
+
+    mode: WebScrapeMode = "host"
+    backend: str | None = Field(default=None, min_length=1)
+    backend_priority: tuple[Annotated[str, Field(min_length=1)], ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_backend_selection(self) -> WebScrapeConfiguration:
+        _validate_backend_preference(self.backend, self.backend_priority)
+        if self.mode == "off" and (self.backend is not None or self.backend_priority):
+            raise ValueError("Host backend preferences require scrape mode 'host'")
+        return self
+
+
 class WebConfiguration(BaseModel):
-    """Definition-owned redirect, deadline, concurrency, and output bounds."""
+    """Definition-owned search selection, redirect, deadline, concurrency, and output bounds."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    search: WebSearchConfiguration = Field(default_factory=WebSearchConfiguration)
+    scrape: WebScrapeConfiguration = Field(default_factory=WebScrapeConfiguration)
     deadline_seconds: float = Field(default=60.0, gt=0, le=600, allow_inf_nan=False)
     max_redirects: int = Field(default=8, ge=0, le=32)
     max_text_bytes: int = Field(default=256 * 1024, gt=0, le=256 * 1024)
@@ -240,6 +331,53 @@ class WebConfiguration(BaseModel):
     stream_chunk_size: int = Field(default=64 * 1024, gt=0, le=1024 * 1024)
     max_response_headers: int = Field(default=128, gt=0, le=_MAX_RESPONSE_HEADERS)
     max_response_header_bytes: int = Field(default=64 * 1024, gt=0, le=_MAX_RESPONSE_HEADER_BYTES)
+
+    @classmethod
+    def from_environment(cls, environ: Mapping[str, str] | None = None) -> WebConfiguration:
+        """Build default search and scrape selection from process environment values."""
+        source = os.environ if environ is None else environ
+        search_backend = _optional_env_value(source, WEB_SEARCH_BACKEND_ENV)
+        scrape_backend = _optional_env_value(source, WEB_SCRAPE_BACKEND_ENV)
+        return cls(
+            search=WebSearchConfiguration.model_validate(
+                {
+                    "mode": _optional_env_value(source, WEB_SEARCH_MODE_ENV) or "auto",
+                    "backend": search_backend,
+                    "backend_priority": (
+                        ()
+                        if search_backend is not None
+                        else _backend_priority_from_environment(source, WEB_SEARCH_BACKEND_PRIORITY_ENV)
+                    ),
+                    "search_context_size": _optional_env_value(source, WEB_SEARCH_CONTEXT_SIZE_ENV) or "medium",
+                }
+            ),
+            scrape=WebScrapeConfiguration.model_validate(
+                {
+                    "mode": _optional_env_value(source, WEB_SCRAPE_MODE_ENV) or "host",
+                    "backend": scrape_backend,
+                    "backend_priority": (
+                        ()
+                        if scrape_backend is not None
+                        else _backend_priority_from_environment(source, WEB_SCRAPE_BACKEND_PRIORITY_ENV)
+                    ),
+                }
+            ),
+        )
+
+
+def _optional_env_value(environ: Mapping[str, str], name: str) -> str | None:
+    value = environ.get(name)
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _backend_priority_from_environment(environ: Mapping[str, str], name: str) -> tuple[str, ...]:
+    value = _optional_env_value(environ, name)
+    if value is None:
+        return ()
+    return tuple(part.strip() for part in value.split(","))
 
 
 class WebSearchItem(TypedDict):
@@ -313,11 +451,106 @@ type WebDownloadToolResult = list[WebDownloadItemResult]
 
 
 @dataclass(frozen=True, slots=True)
+class WebSearchBackendBinding:
+    """One named Host search backend in fallback priority order."""
+
+    backend_id: str
+    provider: WebSearchProvider
+
+    def __post_init__(self) -> None:
+        _validate_backend_id(self.backend_id)
+        if not isinstance(self.provider, WebSearchProvider):
+            raise TypeError("provider must implement WebSearchProvider")
+
+
+@dataclass(frozen=True, slots=True)
+class WebScrapeBackendBinding:
+    """One named Host scrape backend in fallback priority order."""
+
+    backend_id: str
+    provider: WebScrapeProvider
+
+    def __post_init__(self) -> None:
+        _validate_backend_id(self.backend_id)
+        if not isinstance(self.provider, WebScrapeProvider):
+            raise TypeError("provider must implement WebScrapeProvider")
+
+
+@dataclass(frozen=True, slots=True)
 class WebToolBinding:
     client: WebClient
     policy: WebPolicy
-    search_provider: WebSearchProvider | None = None
-    scrape_provider: WebScrapeProvider | None = None
+    search_backends: tuple[WebSearchBackendBinding, ...] = ()
+    scrape_backends: tuple[WebScrapeBackendBinding, ...] = ()
+
+
+def _validate_backend_id(backend_id: str) -> None:
+    if not isinstance(backend_id, str) or backend_id != backend_id.strip() or not backend_id:
+        raise ValueError("backend_id must be a non-blank normalized string")
+
+
+def _validate_search_backend_bindings(
+    backends: Sequence[WebSearchBackendBinding],
+) -> tuple[WebSearchBackendBinding, ...]:
+    values = tuple(backends)
+    if not all(isinstance(item, WebSearchBackendBinding) for item in values):
+        raise TypeError("search_backends must contain WebSearchBackendBinding values")
+    if len({item.backend_id for item in values}) != len(values):
+        raise ValueError("search backend IDs must be unique")
+    return values
+
+
+def _validate_scrape_backend_bindings(
+    backends: Sequence[WebScrapeBackendBinding],
+) -> tuple[WebScrapeBackendBinding, ...]:
+    values = tuple(backends)
+    if not all(isinstance(item, WebScrapeBackendBinding) for item in values):
+        raise TypeError("scrape_backends must contain WebScrapeBackendBinding values")
+    if len({item.backend_id for item in values}) != len(values):
+        raise ValueError("scrape backend IDs must be unique")
+    return values
+
+
+def _select_search_backend_bindings(
+    backends: tuple[WebSearchBackendBinding, ...],
+    configuration: WebSearchConfiguration,
+) -> tuple[WebSearchBackendBinding, ...]:
+    if configuration.mode not in {"host", "auto"}:
+        return ()
+    if configuration.backend is not None:
+        for backend in backends:
+            if backend.backend_id == configuration.backend:
+                return (backend,)
+        raise DefinitionError(
+            "The selected Web search backend is not bound for this run.",
+            code="web_search_backend_missing",
+            details={"backend_id": configuration.backend},
+        )
+    by_id = {backend.backend_id: backend for backend in backends}
+    prioritized = [by_id[backend_id] for backend_id in configuration.backend_priority if backend_id in by_id]
+    selected = {backend.backend_id for backend in prioritized}
+    return (*prioritized, *(backend for backend in backends if backend.backend_id not in selected))
+
+
+def _select_scrape_backend_bindings(
+    backends: tuple[WebScrapeBackendBinding, ...],
+    configuration: WebScrapeConfiguration,
+) -> tuple[WebScrapeBackendBinding, ...]:
+    if configuration.mode == "off":
+        return ()
+    if configuration.backend is not None:
+        for backend in backends:
+            if backend.backend_id == configuration.backend:
+                return (backend,)
+        raise DefinitionError(
+            "The selected Web scrape backend is not bound for this run.",
+            code="web_scrape_backend_missing",
+            details={"backend_id": configuration.backend},
+        )
+    by_id = {backend.backend_id: backend for backend in backends}
+    prioritized = [by_id[backend_id] for backend_id in configuration.backend_priority if backend_id in by_id]
+    selected = {backend.backend_id for backend in prioritized}
+    return (*prioritized, *(backend for backend in backends if backend.backend_id not in selected))
 
 
 class WebToolset:
@@ -331,25 +564,52 @@ class WebToolset:
         configuration: WebConfiguration | None = None,
         search_provider: WebSearchProvider | None = None,
         scrape_provider: WebScrapeProvider | None = None,
+        search_backends: Sequence[WebSearchBackendBinding] = (),
+        scrape_backends: Sequence[WebScrapeBackendBinding] = (),
         files: FileOperator,
         file_scopes: FileScopeProvider | None = None,
     ) -> None:
         self.configuration = (configuration or WebConfiguration()).model_copy(deep=True)
-        self._binding = WebToolBinding(client, policy, search_provider, scrape_provider)
+        if search_provider is not None and search_backends:
+            raise ValueError("search_provider and search_backends are mutually exclusive")
+        if scrape_provider is not None and scrape_backends:
+            raise ValueError("scrape_provider and scrape_backends are mutually exclusive")
+        effective_search_backends = tuple(search_backends) or (
+            (WebSearchBackendBinding("default", search_provider),) if search_provider is not None else ()
+        )
+        effective_scrape_backends = tuple(scrape_backends) or (
+            (WebScrapeBackendBinding("default", scrape_provider),) if scrape_provider is not None else ()
+        )
+        validated_search_backends = _validate_search_backend_bindings(effective_search_backends)
+        validated_scrape_backends = _validate_scrape_backend_bindings(effective_scrape_backends)
+        self._binding = WebToolBinding(
+            client,
+            policy,
+            _select_search_backend_bindings(validated_search_backends, self.configuration.search),
+            _select_scrape_backend_bindings(validated_scrape_backends, self.configuration.scrape),
+        )
         self._file_access = ScopedFileAccess(files, file_scopes)
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tools: list[HarnessTool] = []
-        if self._binding.search_provider is not None:
+        instructions: list[str] = []
+        search_mode = self.configuration.search.mode
+        host_search = search_mode in {"host", "auto"} and bool(self._binding.search_backends)
+        search_enabled = host_search or search_mode in {"native", "auto"}
+        if search_enabled:
+            instructions.append(_SEARCH_INSTRUCTION)
+        if host_search:
             tools.append(
                 self._tool(
                     self.search,
                     tool_id="web.search",
                     name="search",
                     effects=frozenset({"read", "external_communication"}),
+                    prepare=_prefer_native_web_search if search_mode == "auto" else None,
                 )
             )
-        if self._binding.scrape_provider is not None:
+        if self.configuration.scrape.mode == "host" and self._binding.scrape_backends:
+            instructions.append(_SCRAPE_INSTRUCTION)
             tools.append(
                 self._tool(
                     self.scrape,
@@ -374,9 +634,22 @@ class WebToolset:
                 ),
             )
         )
-        return FunctionToolset(tools=tools, id="a13n-web-tool-functions")
+        instructions.extend((_FETCH_INSTRUCTION, _DOWNLOAD_INSTRUCTION))
+        return InstructionFunctionToolset(
+            tools=tools,
+            id="a13n-web-tool-functions",
+            instructions=instructions,
+        )
 
-    def _tool(self, function, *, tool_id: str, name: str, effects: frozenset[ToolEffect]) -> HarnessTool:
+    def _tool(
+        self,
+        function,
+        *,
+        tool_id: str,
+        name: str,
+        effects: frozenset[ToolEffect],
+        prepare: Callable[[RunContext[AgentContext], ToolDefinition], ToolDefinition] | None = None,
+    ) -> HarnessTool:
         return HarnessTool(
             function,
             harness_metadata=HarnessToolMetadata(
@@ -393,7 +666,70 @@ class WebToolset:
                 resource_resolver=(self._file_access.resource_resolver("save_dir") if name == "download" else None),
             ),
             name=name,
+            prepare=prepare,
         )
+
+    async def _search_with_backends(
+        self,
+        request: WebSearchRequest,
+        *,
+        deadline: float,
+    ) -> WebSearchResponse:
+        last_error = "web_search_failed"
+        for backend in self._binding.search_backends:
+            try:
+                async with asyncio.timeout(_remaining_seconds(deadline)):
+                    raw = await backend.provider.search(request)
+                if isinstance(raw, WebSearchResponse):
+                    response = WebSearchResponse.model_validate(raw)
+                else:
+                    if not isinstance(raw, Sequence) or len(raw) > request.limit:
+                        raise WebProviderError("web_search_response_invalid")
+                    response = WebSearchResponse(results=tuple(raw))
+                if len(response.results) > request.limit:
+                    raise WebProviderError("web_search_response_invalid")
+                return response
+            except TimeoutError:
+                raise
+            except RunError:
+                raise
+            except WebProviderError as exc:
+                last_error = exc.code
+            except (TypeError, ValueError):
+                last_error = "web_search_response_invalid"
+            except Exception:
+                last_error = "web_search_failed"
+        raise WebProviderError(last_error)
+
+    async def _scrape_with_backends(
+        self,
+        request: WebScrapeRequest,
+        *,
+        deadline: float,
+    ) -> WebScrapeResult:
+        last_error = "web_scrape_failed"
+        policy = _FallbackBlockingWebPolicy(self._binding.policy)
+        for backend in self._binding.scrape_backends:
+            try:
+                async with asyncio.timeout(_remaining_seconds(deadline)):
+                    raw = await backend.provider.scrape(request, policy=policy)
+                result = WebScrapeResult.model_validate(raw)
+                if len(result.markdown.encode("utf-8")) > request.max_markdown_bytes:
+                    raise WebProviderError("web_body_too_large")
+                return result
+            except _WebPolicyFailure as exc:
+                raise exc.error from exc
+            except TimeoutError:
+                raise
+            except RunError:
+                raise
+            except WebProviderError as exc:
+                last_error = exc.code
+            except (TypeError, ValueError):
+                last_error = "web_scrape_response_invalid"
+            except Exception:
+                last_error = "web_scrape_failed"
+        raise WebProviderError(last_error)
 
     async def search(
         self,
@@ -401,22 +737,16 @@ class WebToolset:
         query: Annotated[str, Field(description="Search query")],
         num: Annotated[int | None, Field(default=None, ge=1, le=100)] = None,
     ) -> WebSearchToolResult:
-        attachment = self._binding
-        provider = attachment.search_provider
-        if provider is None:
+        if not self._binding.search_backends:
             return _web_error("web_search_unavailable")
         limit = num or self.configuration.max_search_results
         limit = min(limit, self.configuration.max_search_results)
         try:
             deadline = _operation_deadline(self.configuration.deadline_seconds)
-            async with asyncio.timeout(_remaining_seconds(deadline)):
-                raw = await provider.search(WebSearchRequest(query=query, limit=limit))
-            if isinstance(raw, WebSearchResponse):
-                response = WebSearchResponse.model_validate(raw)
-            else:
-                if not isinstance(raw, Sequence) or len(raw) > limit:
-                    raise WebProviderError("web_search_response_invalid")
-                response = WebSearchResponse(results=tuple(raw))
+            response = await self._search_with_backends(
+                WebSearchRequest(query=query, limit=limit),
+                deadline=deadline,
+            )
             for usage in response.usage:
                 await ctx.deps.record_provider_usage(
                     usage,
@@ -424,8 +754,6 @@ class WebToolset:
                     tool_id="web.search",
                     tool_call_id=ctx.tool_call_id,
                 )
-            if len(response.results) > limit:
-                raise WebProviderError("web_search_response_invalid")
             results = [WebSearchResult.model_validate(item) for item in response.results]
             projected: dict[str, JsonValue] = {
                 "ok": True,
@@ -468,8 +796,7 @@ class WebToolset:
         url: Annotated[str, Field(description="HTTP or HTTPS page URL")],
     ) -> WebScrapeToolResult:
         attachment = self._binding
-        provider = attachment.scrape_provider
-        if provider is None:
+        if not attachment.scrape_backends:
             return _web_error("web_scrape_unavailable")
         try:
             deadline = _operation_deadline(self.configuration.deadline_seconds)
@@ -481,9 +808,7 @@ class WebToolset:
                 deadline_seconds=_remaining_seconds(deadline),
                 max_redirects=self.configuration.max_redirects,
             )
-            async with asyncio.timeout(_remaining_seconds(deadline)):
-                raw = await provider.scrape(request, policy=attachment.policy)
-            result = WebScrapeResult.model_validate(raw)
+            result = await self._scrape_with_backends(request, deadline=deadline)
             for usage in result.usage:
                 await ctx.deps.record_provider_usage(
                     usage,
@@ -917,6 +1242,13 @@ def _web_error(
 
 
 __all__ = [
+    "WEB_SCRAPE_BACKEND_ENV",
+    "WEB_SCRAPE_BACKEND_PRIORITY_ENV",
+    "WEB_SCRAPE_MODE_ENV",
+    "WEB_SEARCH_BACKEND_ENV",
+    "WEB_SEARCH_BACKEND_PRIORITY_ENV",
+    "WEB_SEARCH_CONTEXT_SIZE_ENV",
+    "WEB_SEARCH_MODE_ENV",
     "WebClient",
     "WebConfiguration",
     "WebDownloadItemResult",
@@ -926,10 +1258,14 @@ __all__ = [
     "WebProviderError",
     "WebRequest",
     "WebResponse",
+    "WebScrapeBackendBinding",
+    "WebScrapeConfiguration",
     "WebScrapeProvider",
     "WebScrapeRequest",
     "WebScrapeResult",
     "WebScrapeToolResult",
+    "WebSearchBackendBinding",
+    "WebSearchConfiguration",
     "WebSearchProvider",
     "WebSearchRequest",
     "WebSearchResponse",

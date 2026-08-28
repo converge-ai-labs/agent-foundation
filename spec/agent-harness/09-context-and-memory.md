@@ -6,7 +6,7 @@ Pydantic AI assembles the stable model prefix from Agent, Capability, and Toolse
 
 The mandatory `ModelContextCoordinatorCapability` is the only Harness Capability that commits a `ModelContextProjection` to `ModelRequestContext` as a request overlay. Before ordinary history hooks run, it removes prior Harness-owned overlays from the active view. At the final model-request wrapper boundary, after those hooks and content filters, it recognizes an eligible request kind, evaluates one middleware chain, validates the result, and places the resulting blocks. The terminal source is `AgentContext.project_model_context()`, which combines the default Agent runtime/conversation projection with `BoundEnvironment.project_model_context()`. A fresh Host binding is semantically outermost; selected or plugin-contributed `AbstractModelContextCapability` instances compose between the Host and terminal source in Pydantic's already-finalized Capability order.
 
-Working state, file context, skills, memory, and other Agent-loop behavior remain ordinary `AbstractCapability[AgentContext]` implementations. A feature that augments dynamic context implements the narrow model-context subtype rather than independently appending `UserPromptPart` values. `DynamicEnvironmentCapability` still owns the optional model tools, stable Environment guidance, and topology-change enqueue behavior; the Environment resource owns its provider-neutral current-topology projection and no Capability owns Environment lifecycle or authority. Query-dependent retrieval that must transform the complete semantic run input remains a Harness plugin concern, and that plugin may also contribute an ordinary model-context Capability.
+Working state, file context, skills, memory, and other Agent-loop behavior remain ordinary `AbstractCapability[AgentContext]` implementations. A feature that augments dynamic context implements the narrow model-context subtype rather than independently appending `UserPromptPart` values. `DynamicEnvironmentCapability` owns optional Toolset composition, feature lifecycle, and topology-change enqueue behavior; `FileToolset` and `ShellToolset` own the stable usage guidance for the tools they actually contribute. The Environment resource owns its provider-neutral current-topology projection, and no Capability owns Environment lifecycle or authority. Query-dependent retrieval that must transform the complete semantic run input remains a Harness plugin concern, and that plugin may also contribute an ordinary model-context Capability.
 
 ## Context Layers
 
@@ -30,13 +30,19 @@ flowchart TB
 | ------------------------ | ------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | Authored Agent behavior  | `AgentSpec`                                                                     | Pydantic instructions                                    |
 | Feature guidance         | Owning Capability                                                               | Capability instructions                                  |
-| Tool usage guidance      | Owning Toolset or Capability                                                    | Toolset or Capability instructions                       |
+| Tool usage guidance      | Owning Toolset                                                                  | Toolset instructions                                     |
 | Interaction continuation | Pydantic AI                                                                     | `ModelMessage` history                                   |
 | Trusted follow-up input  | Harness/Host through Pydantic                                                   | Native enqueue input                                     |
 | Dynamic request overlay  | Harness coordinator, Host, AgentContext, Environment, and owning Capabilities   | Typed `ModelContextProjection` committed as user content |
 | Provider compatibility   | Native `ModelProfile` and adapter; scoped Capability only for residual behavior | Profile rendering or bounded public-hook transformation  |
 
 Instruction and context-middleware ordering both inherit Pydantic AI's finalized Capability composition. `CapabilityOrdering.wraps` and `wrapped_by` determine nesting, while `requires` only guarantees presence. The Harness does not introduce a context-specific priority, registration order, or second topological sort.
+
+### Toolset instruction enablement
+
+Harness `AgentSpec.toolset_instructions` is the definition-level default and defaults to `True`. `RunBindings.toolset_instructions` is an optional single-run override: `None` inherits the definition default, while `True` or `False` explicitly enables or suppresses Toolset-owned instructions for that logical run. The resolved non-optional value is published as `AgentContext.toolset_instructions` and remains fixed across internal `ModelAttempt` values.
+
+This switch applies only at the Toolset instruction boundary. It does not suppress explicit `AgentSpec.instructions`, Capability-owned feature instructions, tool descriptions or schemas, dynamic model-context projection, or tool availability. A bare native Pydantic `AgentSpec` has the compatibility default `True`. For inline delegation, only an explicit runtime override propagates to the child binding; when the parent has no runtime override, each child uses its own definition-level default.
 
 ## Request Preparation
 
@@ -153,7 +159,7 @@ Pydantic's ordinary text request shape does not reliably distinguish user input 
 
 Model-facing data has three cache classes:
 
-- build-static behavior, including tool purpose, generic routing syntax, safety constraints, and provider-independent usage guidance, remains in the stable instruction and tool prefix;
+- build-static behavior, including feature purpose, remains in Capability instructions, while tool purpose, generic routing syntax, safety constraints, and provider-independent usage guidance remain in the owning Toolset's stable instruction and tool prefix;
 - run-frozen model surface, such as an Environment-backed skill catalog required for the first request, is materialized once by the owning Capability's `for_run()` after scoped readiness, deterministically ordered, and immutable for that Harness run;
 - request-dynamic context, including current Environment aliases, mounts, availability, runtime and working state, file references, background results, and topology changes, enters only through the typed overlay or native enqueue input after the stable prefix.
 
@@ -264,7 +270,26 @@ Loaded skill identities enter versioned Capability state only when continuation 
 
 Media, document conversion, and web acquisition are separate optional Capabilities, each composing a reusable feature Toolset rather than contributing a catch-all Toolset. The Toolset owns model-visible schemas and per-call semantics directly over its natural provider ports; the Capability selects and binds fresh run collaborators, preserves provenance, and owns only Agent-loop lifecycle or hooks. Media inputs preserve supported native Pydantic content where possible. Document conversion produces bounded text and explicitly owned extracted assets. Unavoidable blocking parsers run outside the event loop, and every temporary asset has one cleanup owner.
 
-Web search is backed by an explicitly selected provider. The Web Toolset applies an explicitly selected async network client and live policy with finite redirects, deadlines, and byte limits. Every redirect is re-evaluated under current policy, and credentials remain audience-bound. A download reaches the workspace only through `BoundEnvironment` streaming operations and current Environment authorization; a URL never becomes Environment authority.
+`WebCapability` owns definition-selected search and scrape policy in `WebConfiguration`. `WebSearchConfiguration.mode` is `off`, `host`, `native`, or `auto`, and defaults to `auto`. `search_context_size` is the only portable native-search request setting. The search modes compose as follows:
+
+| Mode     | Native `WebSearchTool` | Host search function tool | Unsupported native search |
+| -------- | ---------------------- | ------------------------- | ------------------------- |
+| `off`    | absent                 | absent                    | not applicable            |
+| `host`   | absent                 | present only when bound   | not applicable            |
+| `native` | present                | absent                    | fails before dispatch     |
+| `auto`   | preferred              | local fallback when bound | uses fallback or fails    |
+
+`auto` contributes both candidates and marks only the Host `search` definition as the fallback for native `web_search`. Pydantic AI resolves the effective Model profile: when that profile supports native Web search, it retains the native tool and removes the Host fallback; otherwise it removes the native candidate and retains the bound Host function tool. If neither path is usable, request preparation fails explicitly before provider dispatch. Fetch, scrape, and download are independent and are never suppressed by this selection. The Harness does not maintain a model-name or provider compatibility matrix.
+
+Native search executes under the selected Model provider's account, credentials, messages, usage, and billing. It does not consume Host search backends, infer a separate search credential from the environment, or pass through Host `WebPolicy`. A definition using `native` or `auto` therefore deliberately accepts the Model provider's native-search authority boundary. The complete Web feature still requires one fresh `WebRunCapability` because fetch, scrape, and download retain their current client and policy collaborators.
+
+Host search and scrape use independent ordered backend bindings. Each binding has a normalized `backend_id` and a fresh provider object; provider credentials and availability remain in `WebRunCapability`, never definition configuration or model arguments. Binding order is the default fallback priority. `WebSearchConfiguration` and `WebScrapeConfiguration` may either select one exact `backend` or provide a partial `backend_priority`; exact selection disables fallback and fails preparation when that backend is absent, while a partial priority moves available named backends first and retains all remaining bound backends in Host order. Search and scrape never share a registry merely because one service can implement both provider protocols.
+
+Omitting the `WebCapability` configuration constructs `WebConfiguration` from the documented `A13N_HARNESS_WEB_*` process environment variables. Environment values may select search mode, native search context size, scrape mode, one exact backend, or a comma-separated partial backend priority; they never identify provider objects or carry credentials. An exact `*_BACKEND` takes precedence over the corresponding `*_BACKEND_PRIORITY`. Passing an explicit `WebConfiguration`, including one loaded from a preset, is authoritative and performs no ambient environment merge.
+
+The Toolset attempts ordered Host backends under one operation deadline. A provider error, invalid provider response, or provider exception advances to the next backend; timeout, cancellation, Harness `RunError`, policy denial, and post-result authorization failure do not. An empty valid search result or valid scrape result is success and does not trigger fallback. Host calls retain provider-neutral result projection and record successful provider receipts through `AgentContext.record_provider_usage()`.
+
+The Web Toolset applies the explicitly selected async network client and live policy with finite redirects, deadlines, and byte limits. Every redirect is re-evaluated under current policy, and credentials remain audience-bound. A download reaches the workspace only through `BoundEnvironment` streaming operations and current Environment authorization; a URL never becomes Environment authority.
 
 Remote content, converted text, metadata, and skill resources retain provenance and remain untrusted model context. Raw credentials, provider clients, temporary native paths, and live response objects never enter model results or `HarnessState`. Optional providers and conversion dependencies are inert until a Host selects the corresponding Capability.
 

@@ -3,6 +3,7 @@
 FOUNDATION_SERVICE_IMAGE ?= agent-foundation-service:local
 SANDBOX_IMAGE ?= agent-foundation-sandbox:local
 EXAMPLE_DIRS := examples/agent-app examples/plugins
+LANGFUSE_COMPOSE := docker compose $(if $(wildcard .env),--env-file .env,) -f dev/langfuse.compose.yaml
 
 .PHONY: install
 install: ## Install locked dependencies and Git hooks
@@ -82,6 +83,43 @@ dev: setup foundation-web-sync ## Upgrade the schema and run Foundation Service 
 .PHONY: dev-down
 dev-down: ## Stop local infrastructure and remove its data volumes
 	@docker compose -f dev/compose.yaml down --volumes --remove-orphans
+
+.PHONY: langfuse-up
+langfuse-up: ## Start the local Langfuse trace backend
+	@set -e; \
+	$(LANGFUSE_COMPOSE) up -d --wait; \
+	web_address="$$( $(LANGFUSE_COMPOSE) port langfuse-web 3000 )"; \
+	worker_address="$$( $(LANGFUSE_COMPOSE) port langfuse-worker 3030 )"; \
+	web_port="$${web_address##*:}"; \
+	worker_port="$${worker_address##*:}"; \
+	deadline=$$(( $$(date +%s) + 120 )); \
+	check_url() { \
+		remaining=$$(( deadline - $$(date +%s) )); \
+		[ "$$remaining" -gt 0 ] || return 1; \
+		max_time=$$remaining; \
+		[ "$$max_time" -le 5 ] || max_time=5; \
+		curl --fail --silent --show-error --connect-timeout 2 --max-time "$$max_time" "$$1" >/dev/null 2>&1; \
+	}; \
+	until check_url "http://127.0.0.1:$$web_port/api/public/health?failIfDatabaseUnavailable=true" \
+		&& check_url "http://127.0.0.1:$$web_port/api/public/ready" \
+		&& check_url "http://127.0.0.1:$$worker_port/api/health"; do \
+		if [ "$$(date +%s)" -ge "$$deadline" ]; then \
+			echo "Langfuse web and worker did not become ready within 120 seconds." >&2; \
+			$(LANGFUSE_COMPOSE) ps >&2; \
+			$(LANGFUSE_COMPOSE) logs --tail=100 langfuse-web langfuse-worker >&2; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done; \
+	echo "Langfuse: http://127.0.0.1:$$web_port"
+
+.PHONY: langfuse-down
+langfuse-down: ## Stop local Langfuse while preserving its data
+	@$(LANGFUSE_COMPOSE) down --remove-orphans
+
+.PHONY: langfuse-reset
+langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
+	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
 .PHONY: agent-ui tui
 agent-ui: sync ## Run Agent UI (default WebUI; append `tui` for terminal UI)

@@ -155,7 +155,7 @@ def data_frame_profile(index: SchemaIndex, options: OptionReader) -> DataFramePr
     if profile.magic != b"EIPD" or len(profile.magic) != profile.magic_bytes:
         raise ValueError("EIP data-frame magic must be four-byte ASCII EIPD")
     if profile.profile_version != 1 or profile.eip_major != 1:
-        raise ValueError("EIP major 1 must select data-frame profile 1")
+        raise ValueError("EIP data-frame profile 1 must retain its major-1 wire identity")
     if widths != (4, 1, 1, 2, 2, 2, 8, 4) or sum(widths) != profile.header_bytes:
         raise ValueError("EIP data-frame profile has an incompatible header layout")
     if profile.kinds != {

@@ -47,9 +47,7 @@ from .runtime import LocalEnvdProviderRuntime
 _PROVIDER_KEY = "a13n.local-envd"
 _STATE_VERSION = "1"
 _STARTUP_TIMEOUT_SECONDS = 10.0
-_STARTUP_POLL_SECONDS = 0.01
-_STARTUP_STABILITY_SECONDS = 0.1
-_READY_MARKER_CONTENT = b"agent-envd-ready-v1\n"
+_PROCESS_POLL_SECONDS = 0.01
 _SUBPROCESS_TIMEOUT_SECONDS = 30.0
 _TERMINATE_GRACE_SECONDS = 5.0
 _DAEMON_MAX_REQUEST_BYTES = 16 * 1024 * 1024
@@ -334,7 +332,7 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
             root = await allocation.__aenter__()
             self._allocation_entered = True
             self._allocation_root = await asyncio.to_thread(_prepare_allocation_root, root)
-            runtime_dir, config_path, stderr_path, ready_path = await asyncio.to_thread(
+            runtime_dir, config_path, stderr_path = await asyncio.to_thread(
                 _write_private_bootstrap,
                 self._allocation_root,
                 self._configuration,
@@ -343,7 +341,6 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
             process_environment = _daemon_environment(
                 environment_id=self._configuration.environment_id,
                 runtime_dir=runtime_dir,
-                ready_file=ready_path,
             )
             subprocess_options: dict[str, Any] = {}
             if os.name == "posix":
@@ -366,7 +363,11 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
                 max_response_bytes=_DAEMON_MAX_RESPONSE_BYTES,
                 max_transfer_frame_bytes=_DAEMON_MAX_TRANSFER_FRAME_BYTES,
             )
-            await _wait_for_daemon_readiness(self._process, ready_path, stderr_path)
+            await _establish_daemon_readiness(
+                self._carrier,
+                expected_environment_id=self._configuration.environment_id,
+                stderr_path=stderr_path,
+            )
             async with self._lock:
                 self._admitting = True
         except BaseException as entry_error:
@@ -802,12 +803,11 @@ def _decode_state(state: EnvironmentProviderResourceState) -> LocalEnvdProviderS
 def _write_private_bootstrap(
     allocation_root: Path,
     configuration: LocalEnvdProviderConfiguration,
-) -> tuple[Path, Path, Path, Path]:
+) -> tuple[Path, Path, Path]:
     runtime_dir = allocation_root / "envd-runtime"
     runtime_dir.mkdir(mode=0o700)
     config_path = allocation_root / "agent-envd.json"
     stderr_path = allocation_root / "agent-envd.stderr.log"
-    ready_path = runtime_dir / ".agent-envd.ready"
     command_enabled = bool(configuration.trusted_executable_roots or configuration.shell_profiles)
     allowed_operations: list[str] = list(_READ_OPERATIONS)
     if not configuration.workspace.read_only:
@@ -860,7 +860,7 @@ def _write_private_bootstrap(
         stream.write(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
         stream.flush()
         os.fsync(stream.fileno())
-    return runtime_dir, config_path, stderr_path, ready_path
+    return runtime_dir, config_path, stderr_path
 
 
 def _prepare_allocation_root(value: object) -> Path:
@@ -888,13 +888,12 @@ def _client_release_identity() -> str:
     return release if rc is None else f"{release}-rc.{rc}"
 
 
-def _daemon_environment(*, environment_id: str, runtime_dir: Path, ready_file: Path) -> dict[str, str]:
+def _daemon_environment(*, environment_id: str, runtime_dir: Path) -> dict[str, str]:
     environment = {name: value for name, value in os.environ.items() if not name.startswith("AGENT_ENVD_")}
     environment.update(
         {
             "AGENT_ENVD_ENVIRONMENT_ID": environment_id,
             "AGENT_ENVD_RUNTIME_DIR": str(runtime_dir),
-            "AGENT_ENVD_READY_FILE": str(ready_file),
             "AGENT_ENVD_TRANSPORT": "stdio",
         }
     )
@@ -926,51 +925,66 @@ async def _await_resource_cleanup(
         return cleanup_error
 
 
-async def _wait_for_daemon_readiness(
-    process: asyncio.subprocess.Process,
-    ready_path: Path,
+async def _establish_daemon_readiness(
+    carrier: StdioEIPCarrier,
+    *,
+    expected_environment_id: str,
     stderr_path: Path,
 ) -> None:
     try:
-        async with asyncio.timeout(_STARTUP_TIMEOUT_SECONDS):
-            while True:
-                if process.returncode is not None:
-                    detail = await asyncio.to_thread(_read_startup_error, stderr_path)
-                    raise _runtime_failure(
-                        f"Local Envd daemon exited during startup with code {process.returncode}: {detail}"
-                    )
-                if await asyncio.to_thread(_has_ready_marker, ready_path):
-                    try:
-                        return_code = await asyncio.wait_for(
-                            process.wait(),
-                            timeout=_STARTUP_STABILITY_SECONDS,
-                        )
-                    except TimeoutError:
-                        return
-                    detail = await asyncio.to_thread(_read_startup_error, stderr_path)
-                    raise _runtime_failure(
-                        f"Local Envd daemon exited after reporting readiness with code {return_code}: {detail}"
-                    )
-                await asyncio.sleep(_STARTUP_POLL_SECONDS)
-    except TimeoutError as error:
-        detail = await asyncio.to_thread(_read_startup_error, stderr_path)
-        raise _runtime_failure(
-            f"Local Envd daemon did not become ready before its launch deadline: {detail}"
-        ) from error
-
-
-def _has_ready_marker(path: Path) -> bool:
-    try:
-        metadata = path.lstat()
-        return (
-            stat.S_ISREG(metadata.st_mode)
-            and not stat.S_ISLNK(metadata.st_mode)
-            and path.read_bytes() == _READY_MARKER_CONTENT
+        source = carrier.lease(
+            initialization_timeout=_STARTUP_TIMEOUT_SECONDS,
+            request_timeout=_STARTUP_TIMEOUT_SECONDS,
         )
-    except (FileNotFoundError, NotADirectoryError):
-        return False
-    except OSError as error:
-        raise _runtime_failure("Local Envd readiness marker could not be inspected.") from error
+    except BaseException as error:
+        detail = await asyncio.to_thread(_read_startup_error, stderr_path)
+        failure = _runtime_failure(f"Local Envd daemon could not start EIP readiness validation: {detail}")
+        failure.add_note(repr(error))
+        raise failure from error
+
+    async def validate() -> None:
+        async with source.open_session(
+            expected_environment_id=expected_environment_id,
+            required_methods=frozenset({"environment.readiness", "session.close"}),
+        ):
+            pass
+
+    readiness_task = asyncio.create_task(validate(), name="local-envd-readiness-session")
+    exit_task = asyncio.create_task(carrier.process.wait(), name="local-envd-readiness-process-exit")
+    try:
+        completed, _pending = await asyncio.wait(
+            {readiness_task, exit_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if exit_task in completed:
+            return_code = exit_task.result()
+            detail = await asyncio.to_thread(_read_startup_error, stderr_path)
+            raise _runtime_failure(
+                f"Local Envd daemon exited during EIP readiness validation with code {return_code}: {detail}"
+            )
+        await readiness_task
+        if exit_task.done():
+            return_code = exit_task.result()
+            detail = await asyncio.to_thread(_read_startup_error, stderr_path)
+            raise _runtime_failure(
+                f"Local Envd daemon exited after EIP readiness validation with code {return_code}: {detail}"
+            )
+    except asyncio.CancelledError:
+        raise
+    except EnvironmentProviderError:
+        raise
+    except BaseException as error:
+        detail = await asyncio.to_thread(_read_startup_error, stderr_path)
+        failure = _runtime_failure(
+            f"Local Envd daemon did not establish EIP readiness before attachment admission: {detail}"
+        )
+        failure.add_note(repr(error))
+        raise failure from error
+    finally:
+        for task in (readiness_task, exit_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(readiness_task, exit_task, return_exceptions=True)
 
 
 async def _terminate_process_tree(process: asyncio.subprocess.Process) -> None:
@@ -1004,7 +1018,7 @@ async def _terminate_posix_process_group(process_group: int) -> None:
     try:
         async with asyncio.timeout(_TERMINATE_GRACE_SECONDS):
             while _posix_process_group_exists(process_group):
-                await asyncio.sleep(_STARTUP_POLL_SECONDS)
+                await asyncio.sleep(_PROCESS_POLL_SECONDS)
             return
     except TimeoutError:
         pass
@@ -1014,7 +1028,7 @@ async def _terminate_posix_process_group(process_group: int) -> None:
         return
     async with asyncio.timeout(_TERMINATE_GRACE_SECONDS):
         while _posix_process_group_exists(process_group):
-            await asyncio.sleep(_STARTUP_POLL_SECONDS)
+            await asyncio.sleep(_PROCESS_POLL_SECONDS)
 
 
 def _posix_process_group_exists(process_group: int) -> bool:

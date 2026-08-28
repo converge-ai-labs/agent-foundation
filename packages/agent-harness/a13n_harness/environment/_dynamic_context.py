@@ -27,16 +27,6 @@ from a13n_harness.toolsets.files import FilePathPair
 from .configuration import DynamicEnvironmentConfiguration
 from .providers import BoundEnvironment
 
-_DYNAMIC_ENVIRONMENT_INSTRUCTIONS = """Environment tools operate on the live run Environment.
-Use relative paths or /workspace for the current default binding. Use /environment/{alias} for another binding.
-Aliases are ordinary strings because topology can change without changing tool schemas.
-Values named process-N are opaque references valid only in this logical run.
-Never invent, alter, or persist a reference.
-Environment tool results are bounded semantic JSON. A result with ok=false is a terminal operation result; adapt the
-request instead of repeating it blindly. Prefer view before edit, exact replacements for partial changes, multi_edit
-for multiple changes to one file, glob for path discovery, and grep for content search. Shell and process wall-time
-limits are owned by the Environment provider. The Harness does not impose an additional Agent-wide tool timeout."""
-
 
 @dataclass(frozen=True, slots=True)
 class _BindingFence:
@@ -369,4 +359,4 @@ def _consume_task_result(task: asyncio.Task[None]) -> None:
         return
 
 
-__all__ = ["_DYNAMIC_ENVIRONMENT_INSTRUCTIONS", "_DynamicEnvironmentContext"]
+__all__ = ["_DynamicEnvironmentContext"]

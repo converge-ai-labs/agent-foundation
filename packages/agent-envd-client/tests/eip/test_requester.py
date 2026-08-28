@@ -28,11 +28,14 @@ from a13n_envd_client.eip.v1 import (
     EIPError,
     EIPErrorData,
     EIPLimits,
+    EIPServerInfo,
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
     EnvironmentDescriptor,
+    EnvironmentReadinessResult,
     ErrorType,
     ExecutionFeatures,
+    InitializeResult,
     IsolationBackend,
     IsolationCleanupGuarantee,
     IsolationMode,
@@ -98,7 +101,7 @@ def descriptor(generation: int) -> EnvironmentDescriptor:
     return EnvironmentDescriptor(
         environment_id="env-test",
         generation=generation,
-        available_methods=("environment.describe", "session.close"),
+        available_methods=("environment.describe", "environment.readiness", "session.close"),
         limits=EIPLimits(
             max_request_bytes=1024,
             max_response_bytes=1024,
@@ -146,6 +149,46 @@ def success_response(
     )
 
 
+def initialize_response(
+    request_id: str | int,
+    generation: int,
+    descriptor_value: EnvironmentDescriptor | None = None,
+) -> bytes:
+    result = InitializeResult(
+        protocol_version="0.1",
+        server=EIPServerInfo(name="agent-envd", version="1.0.0"),
+        descriptor=descriptor_value or descriptor(generation),
+    )
+    return encode_model(
+        JsonRpcSuccessResponse(
+            jsonrpc="2.0",
+            id=request_id,
+            result=json.loads(encode_model(result)),
+        )
+    )
+
+
+def readiness_response(
+    request_id: str | int,
+    *,
+    ready: bool,
+    environment_id: str = "env-test",
+    generation: int = 1,
+) -> bytes:
+    result = EnvironmentReadinessResult(
+        ready=ready,
+        environment_id=environment_id,
+        generation=generation,
+    )
+    return encode_model(
+        JsonRpcSuccessResponse(
+            jsonrpc="2.0",
+            id=request_id,
+            result=json.loads(encode_model(result)),
+        )
+    )
+
+
 def close_response(request_id: str | int) -> bytes:
     result = SessionCloseResult(closed=True)
     return encode_model(
@@ -155,6 +198,129 @@ def close_response(request_id: str | int) -> bytes:
             result=json.loads(encode_model(result)),
         )
     )
+
+
+def test_session_initialize_requires_and_confirms_readiness_before_returning() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        task = asyncio.create_task(
+            EIPSession.initialize(
+                transport,
+                expected_environment_id="env-test",
+                required_methods=("environment.describe",),
+                initialization_timeout=1,
+            )
+        )
+
+        initialize_request = decode_sent_request(await transport.sent.get())
+        assert initialize_request.method == "initialize"
+        assert initialize_request.params["required_methods"] == [
+            "environment.describe",
+            "environment.readiness",
+        ]
+        await transport.responses.put(initialize_response(initialize_request.id, 1))
+
+        readiness_request = decode_sent_request(await transport.sent.get())
+        assert readiness_request.method == "environment.readiness"
+        assert readiness_request.params["context"]["operation_id"].startswith("op-")
+        assert 1 <= readiness_request.params["context"]["timeout_ms"] <= 1000
+        await transport.responses.put(readiness_response(readiness_request.id, ready=True))
+
+        session = await task
+        assert session.generation == 1
+        await session.abort()
+
+    asyncio.run(scenario())
+
+
+def test_session_initialize_rejects_false_or_mismatched_readiness() -> None:
+    async def scenario(*, ready: bool, environment_id: str, generation: int) -> None:
+        transport = FakeTransport()
+        task = asyncio.create_task(
+            EIPSession.initialize(
+                transport,
+                expected_environment_id="env-test",
+                initialization_timeout=1,
+            )
+        )
+        initialize_request = decode_sent_request(await transport.sent.get())
+        await transport.responses.put(initialize_response(initialize_request.id, 1))
+        readiness_request = decode_sent_request(await transport.sent.get())
+        await transport.responses.put(
+            readiness_response(
+                readiness_request.id,
+                ready=ready,
+                environment_id=environment_id,
+                generation=generation,
+            )
+        )
+        expected_error = EIPSessionStateError if not ready else EIPProtocolError
+        with pytest.raises(expected_error):
+            await task
+        assert transport.closed
+
+    asyncio.run(scenario(ready=False, environment_id="env-test", generation=1))
+    asyncio.run(scenario(ready=True, environment_id="env-other", generation=1))
+    asyncio.run(scenario(ready=True, environment_id="env-test", generation=2))
+
+
+def test_session_later_readiness_uses_fresh_operations_and_fences_on_false() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        requester = RequestCoordinator(transport, request_timeout=1)
+        session = EIPSession(requester, descriptor(1))
+
+        first_task = asyncio.create_task(session.readiness(timeout=1))
+        first_request = decode_sent_request(await transport.sent.get())
+        await transport.responses.put(readiness_response(first_request.id, ready=True))
+        assert (await first_task).ready
+
+        second_task = asyncio.create_task(session.readiness(timeout=1))
+        second_request = decode_sent_request(await transport.sent.get())
+        assert second_request.params["context"]["operation_id"] != first_request.params["context"]["operation_id"]
+        await transport.responses.put(readiness_response(second_request.id, ready=False))
+        assert not (await second_task).ready
+        assert transport.closed
+        with pytest.raises(EIPSessionStateError):
+            _ = session.client
+
+    asyncio.run(scenario())
+
+
+def test_session_later_readiness_enforces_local_timeout_and_fences_session() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        requester = RequestCoordinator(transport, request_timeout=None)
+        session = EIPSession(requester, descriptor(1))
+
+        task = asyncio.create_task(session.readiness(timeout=0.01))
+        request = decode_sent_request(await transport.sent.get())
+        assert request.params["context"]["timeout_ms"] == 10
+        with pytest.raises(TimeoutError):
+            await task
+        assert transport.closed
+        with pytest.raises(EIPSessionStateError):
+            _ = session.client
+
+    asyncio.run(scenario())
+
+
+def test_session_later_readiness_cancellation_fences_ambiguous_session_state() -> None:
+    async def scenario() -> None:
+        transport = FakeTransport()
+        requester = RequestCoordinator(transport, request_timeout=None)
+        session = EIPSession(requester, descriptor(1))
+
+        task = asyncio.create_task(session.readiness(timeout=1))
+        await transport.sent.get()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert transport.closed
+        with pytest.raises(EIPSessionStateError):
+            _ = session.client
+
+    asyncio.run(scenario())
 
 
 def test_session_concurrent_close_shares_cleanup_and_survives_waiter_cancellation() -> None:

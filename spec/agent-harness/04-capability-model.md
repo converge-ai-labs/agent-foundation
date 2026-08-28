@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Reusable behavior inside the Pydantic Agent loop uses native `AbstractCapability[AgentContext]`. Capability is the only top-level feature-behavior composition plane in `AgentDefinition`: each feature Capability owns configuration, definition/run binding, lifecycle, instructions, hooks, native ordering, and Toolset composition as one coherent unit. Its owned Toolset owns model-visible tool schemas and concrete per-call execution, including provider-port calls and model-safe result or error projection. A Capability does not retain a parallel operations object or callback that delegates complete model-tool execution back out of the Toolset. The Harness does not define a second Capability base, lifecycle, or ordering graph. Fresh run attachment Capabilities enter `RunBindings` under a separate source policy.
+Reusable behavior inside the Pydantic Agent loop uses native `AbstractCapability[AgentContext]`. Capability is the only top-level feature-behavior composition plane in `AgentDefinition`: each feature Capability owns configuration, definition/run binding, lifecycle, feature-level instructions, hooks, native ordering, and Toolset composition as one coherent unit. Its owned Toolset owns model-visible tool schemas, guidance for using those tools, and concrete per-call execution, including provider-port calls and model-safe result or error projection. Tool guidance is contributed only with the Toolset and the exact tools it describes; a Capability does not publish unconditional guidance for an optional or superseded tool surface. A Capability does not retain a parallel operations object or callback that delegates complete model-tool execution back out of the Toolset. The Harness does not define a second Capability base, lifecycle, or ordering graph. Fresh run attachment Capabilities enter `RunBindings` under a separate source policy.
 
-Environment itself is not a Capability. It is a Harness-entered run lifecycle resource exposed through the fixed `AgentContext.environment` field. The optional `DynamicEnvironmentCapability` consumes that field to contribute model tools, stable guidance, dynamic context, and notices; its presence cannot create, activate, replace, authorize, or close an Environment binding.
+Environment itself is not a Capability. It is a Harness-entered run lifecycle resource exposed through the fixed `AgentContext.environment` field. The optional `DynamicEnvironmentCapability` consumes that field to compose file and shell Toolsets, contribute dynamic context and notices, and own their feature lifecycle; the composed Toolsets own their respective stable tool guidance. Capability presence cannot create, activate, replace, authorize, or close an Environment binding.
 
 Harness plugins govern only the outer semantic-input-to-complete-result boundary and may contribute ordinary Pydantic Capabilities. A plugin that needs dynamic request context contributes the explicit `AbstractModelContextCapability`; it receives no peer plugin-only context hook.
 
@@ -18,7 +18,7 @@ Harness plugins govern only the outer semantic-input-to-complete-result boundary
 | `RunContext[AgentContext]`         | Messages, usage, limits, tools, run-bound peers, and deps   |
 | Agent/run Capability binding       | Native reentrant and fresh invocation composition           |
 
-Pydantic AI owns `for_agent()`, `for_run()`, Toolset composition, lifecycle hooks, node hooks, and cleanup. Capability authors do not inspect private Agent graph state. A direct function tool is authored inside native `Capability(tools=[...])`; an external or custom Toolset is composed by a native Toolset Capability or another feature Capability. For a reusable Harness feature, the Toolset directly owns the callable schema and per-call behavior over narrow run-bound ports, while its Capability resolves those ports and owns Agent-loop lifecycle. `AgentDefinition` and `HarnessBuilder.build()` expose no peer `tools` or `toolsets` parameters.
+Pydantic AI owns `for_agent()`, `for_run()`, Toolset composition, lifecycle hooks, node hooks, and cleanup. Capability authors do not inspect private Agent graph state. A direct function tool is authored inside native `Capability(tools=[...])`; an external or custom Toolset is composed by a native Toolset Capability or another feature Capability. For a reusable Harness feature, the Toolset directly owns the callable schema and per-call behavior over narrow run-bound ports, while its Capability resolves those ports and owns Agent-loop lifecycle. A feature may contribute a provider-native tool and a local function fallback through the same Capability; the effective Model profile and Pydantic's native fallback semantics select exactly the usable surface rather than a Harness-maintained provider matrix. [Context and Memory](09-context-and-memory.md#media-documents-and-web-resources) owns the Web search instance of this contract. `AgentDefinition` and `HarnessBuilder.build()` expose no peer `tools` or `toolsets` parameters.
 
 Pydantic's finalized Capability map and ToolManager remain authoritative. Harness stable IDs support uniqueness, lookup, and source provenance only. `CapabilityOrdering.wraps` and `wrapped_by` use concrete Capability types or instances, and `requires` uses concrete types; IDs are not ordering references, and the Harness adds no second Capability sorter. The same finalized order governs the narrow model-context middleware subtype described in [Context and Memory](09-context-and-memory.md#model-context-projection-contract); `ModelContextCoordinatorCapability` is the sole mandatory infrastructure owner of message placement and does not create another ordering graph.
 
@@ -126,6 +126,7 @@ class AgentContext:
     state: AgentContextState
     environment: Environment
     model_resolver: RunModelResolver | None
+    toolset_instructions: bool
     events: HarnessEventEmitter
     usage_attribution: RunUsageLedger
     plugins: BoundPluginContext
@@ -164,6 +165,7 @@ One fresh context is created for every logical Harness run and reused by that ru
 - `state` coordinates detached Capability namespaces;
 - `environment` is the entered Harness lifecycle facade, independent of Capability composition;
 - `model_resolver` is the optional fresh logical-model resolver;
+- `toolset_instructions` is the effective per-run switch for Toolset-owned model guidance;
 - `events` emits bounded Harness-owned observations into the one canonical run stream;
 - `usage_attribution` retains mixed-source immutable records and reports them at model-request boundaries;
 - `plugins` indexes the complete fresh run-bound plugin graph after binding;
@@ -184,7 +186,8 @@ One fresh context is created for every logical Harness run and reused by that ru
 | Produce input after Environment entry | `RunInputFactory`                                      |
 | Transform semantic input/result       | Harness plugin `wrap_run()`                            |
 | Bind a fresh Agent-loop feature       | Capability `for_run()`                                 |
-| Contribute instructions or tools      | Native Capability/Toolset                              |
+| Contribute feature instructions       | Native Capability                                      |
+| Contribute tools and their guidance   | Owning Toolset                                         |
 | Augment dynamic model context         | `AbstractModelContextCapability`                       |
 | Override one run's context projection | Fresh `ModelContextMiddleware`                         |
 | Publish passive run facts for tools   | `skill_paths` or an owner-defined `ToolMetadataKey[T]` |

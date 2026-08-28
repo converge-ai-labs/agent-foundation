@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic_ai import RunContext
@@ -18,17 +18,36 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
 )
 from a13n_harness.tools.metadata import ToolResourceResolver
+from a13n_harness.toolsets.file_media import (
+    AgentMediaUnderstandingProvider,
+    MediaUnderstandingProvider,
+    NativeInputMediaKind,
+)
 from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.shell import ShellProcessProjector, ShellToolset
 
-from ._dynamic_context import (
-    _DYNAMIC_ENVIRONMENT_INSTRUCTIONS,
-    _DynamicEnvironmentContext,
-)
+from ._dynamic_context import _DynamicEnvironmentContext
 from .configuration import DynamicEnvironmentConfiguration
 from .providers import BoundEnvironment
 
 DYNAMIC_ENVIRONMENT_CAPABILITY_ID = "a13n.dynamic-environment"
+FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID = "a13n.dynamic-environment.file-media-understanding.run"
+
+
+@dataclass(kw_only=True)
+class FileMediaUnderstandingRunCapability(AbstractCapability[AgentContext]):
+    """Fresh run attachment carrying file media-understanding authority."""
+
+    id: str | None = FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID
+    provider: MediaUnderstandingProvider = field()
+
+    def __post_init__(self) -> None:
+        if self.id != FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID:
+            raise ValueError(
+                f"FileMediaUnderstandingRunCapability.id must be {FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID!r}"
+            )
+        if not isinstance(self.provider, MediaUnderstandingProvider):
+            raise TypeError("provider must implement MediaUnderstandingProvider")
 
 
 @dataclass(init=False)
@@ -58,19 +77,6 @@ class DynamicEnvironmentCapability(AbstractModelContextCapability):
         )
         ctx.deps._record_run_capability(DYNAMIC_ENVIRONMENT_CAPABILITY_ID, replacement)
         return replacement
-
-    def get_instructions(self) -> str:
-        surfaces = [
-            name
-            for name, enabled in (
-                ("files", self.configuration.file_tools),
-                ("shell", self.configuration.shell_tools),
-                ("processes", self.configuration.process_tools),
-                ("ports", self.configuration.port_tools),
-            )
-            if enabled
-        ]
-        return f"{_DYNAMIC_ENVIRONMENT_INSTRUCTIONS}\nEnabled tool surfaces: {', '.join(surfaces)}."
 
 
 @dataclass(init=False)
@@ -109,11 +115,12 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
             resource_resolver=self._dynamic_context._resource_resolver,
             execution_guard=self._dynamic_context._assert_authorized_fence,
             file_scopes=environment,
+            media_understanding=_resolve_file_media_understanding,
         )
 
         toolsets: list[AbstractToolset[AgentContext]] = []
         if configuration.file_tools:
-            toolsets.append(self._file_toolset.get_toolset())
+            toolsets.append(self._file_toolset.get_toolset(shell_active=configuration.shell_tools))
         if configuration.shell_tools or configuration.process_tools or configuration.port_tools:
             toolsets.append(self._shell_toolset.get_toolset())
         self._toolset = CombinedToolset(toolsets)
@@ -148,6 +155,26 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         self._dynamic_context._assert_authorized_fence()
 
 
+def _resolve_file_media_understanding(
+    ctx: RunContext[AgentContext],
+    kind: NativeInputMediaKind,
+) -> MediaUnderstandingProvider | None:
+    attachment = ctx.capabilities.get(FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID)
+    if attachment is None:
+        return AgentMediaUnderstandingProvider.from_environment(kind=kind)
+    if type(attachment) is not FileMediaUnderstandingRunCapability:
+        raise DefinitionError(
+            "File media understanding has an incompatible run attachment.",
+            code="capability_type_mismatch",
+        )
+    if FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
+        raise DefinitionError(
+            "FileMediaUnderstandingRunCapability must originate from RunBindings.",
+            code="capability_scope_invalid",
+        )
+    return attachment.provider
+
+
 def _resolve_dynamic_environment_process_projector(
     ctx: RunContext[AgentContext],
 ) -> ShellProcessProjector | None:
@@ -162,4 +189,8 @@ def _resolve_dynamic_environment_process_projector(
     return value._shell_toolset
 
 
-__all__ = ["DynamicEnvironmentCapability", "DynamicEnvironmentConfiguration"]
+__all__ = [
+    "DynamicEnvironmentCapability",
+    "DynamicEnvironmentConfiguration",
+    "FileMediaUnderstandingRunCapability",
+]

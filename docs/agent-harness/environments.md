@@ -229,6 +229,14 @@ Three decisions remain separate:
 
 Provider denial always narrows a Harness allow decision. Provider availability never grants authorization.
 
+With `file_tools=True`, the file Toolset includes `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, and `grep`. When `shell_tools=True`, the prepared shell command supersedes exactly `move`, `copy`, and `delete`; those three tools and their Toolset instruction blocks are omitted, while `mkdir` remains available. Disable shell tools when the dedicated file mutation tools are required.
+
+`glob` and `grep` send their include pattern, repository-ignore and hidden-name policy, context width, and scan/result ceilings to the selected `FileOperator` in one call. Direct Local performs one worker-thread scan; EIP performs one `file.find` or `file.search` request. Set `include_ignored=True` only when ignored repository paths should be searched.
+
+For supported image, audio, and video files, `view` either attaches native `BinaryContent` or invokes a dedicated understanding Agent. The `model_config` construction value on the active Harness `AgentSpec` is the sole native-input authority; Harness never infers support from a model name or Pydantic AI `Model.profile`. Dedicated defaults read ordinary process environment variables, and a fresh run Capability can override them.
+
+See [Multimedia Understanding](multimedia-understanding.md) for capability declarations, environment configuration, default prompt behavior, run-scoped providers, usage attribution, and ordinary tool-result failures.
+
 ## Manage a durable provider lifecycle explicitly
 
 Use explicit provider operations when a resource must outlive one Harness run. The Host generates stable operation identities, persists the latest `EnvironmentProviderResourceState`, and reconciles an exact operation after an unknown outcome.

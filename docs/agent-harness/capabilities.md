@@ -31,7 +31,7 @@ Capability presence does not itself authorize external work. Tools that cross a 
 | `RuntimeContextCapability`     | Bounded current time, elapsed time, usage, context-window, and selected metadata projection | No                                                             |
 | `WorkspaceOutlineCapability`   | Bounded metadata-only file outline from the current Environment                             | Environment file facet                                         |
 | `FileContextCapability`        | Run-frozen `AGENTS.md` and explicit file contents                                           | Environment file facet                                         |
-| `DynamicEnvironmentCapability` | Stable Environment guidance plus file, shell, process, and optional port tools              | Environment binding; managed calls also need current policy    |
+| `DynamicEnvironmentCapability` | File and shell Toolset composition, dynamic Environment context, and topology notices       | Environment binding; managed calls also need current policy    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
@@ -117,7 +117,76 @@ bindings = RunBindings.embedded(
 )
 ```
 
-The same pattern applies to media and Web. The definition owns what behavior the Agent may request; the run collaborator owns current provider access. Web additionally evaluates a live `WebPolicy` for each request.
+The same pattern applies to the general URL-oriented `MediaCapability` and to Web. The definition owns what behavior the Agent may request; the run collaborator owns current provider access. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_configuration.capabilities` value supplied through the `model_config` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
+
+### Web search and scrape backends
+
+`WebCapability()` defaults search to `mode="auto"`: it uses provider-native Web search when the effective Model profile supports it and otherwise uses the first usable Host search backend. Native search uses the Model provider's account and billing; it does not use Host search credentials or `WebPolicy`.
+
+Bind multiple Host backends in default fallback order, and keep search and scrape ordering independent:
+
+```python
+from a13n_harness import (
+    WebCapability,
+    WebConfiguration,
+    WebRunCapability,
+    WebScrapeBackendBinding,
+    WebScrapeConfiguration,
+    WebSearchBackendBinding,
+    WebSearchConfiguration,
+)
+
+web = WebCapability(
+    WebConfiguration(
+        search=WebSearchConfiguration(
+            mode="auto",
+            backend_priority=("brave", "tavily"),
+            search_context_size="high",
+        ),
+        scrape=WebScrapeConfiguration(
+            backend_priority=("firecrawl", "local"),
+        ),
+    )
+)
+
+bindings = RunBindings.embedded(
+    capabilities=(
+        WebRunCapability(
+            client=web_client,
+            policy=web_policy,
+            search_backends=(
+                WebSearchBackendBinding("google", google_search),
+                WebSearchBackendBinding("brave", brave_search),
+                WebSearchBackendBinding("tavily", tavily_search),
+            ),
+            scrape_backends=(
+                WebScrapeBackendBinding("local", local_scraper),
+                WebScrapeBackendBinding("firecrawl", firecrawl_scraper),
+            ),
+        ),
+    )
+)
+```
+
+With no configured preference, tuple order is the default priority. `backend_priority` moves available named backends first and then retains the remaining bound order. Set `backend="tavily"` to require exactly one Host backend with no fallback. A selected backend that is not bound fails before model dispatch. Use `search.mode="host"` to forbid native search, `search.mode="native"` to forbid Host search, and `search.mode="off"` when the Web capability is used only for fetch, scrape, or download. Scrape supports `mode="host"` and `mode="off"` and has its own exact selection or priority.
+
+One search or scrape call shares a single operation deadline across its ordered backends. A provider error, invalid response, or provider exception advances to the next backend. A timeout, cancellation, Harness `RunError`, policy failure, or post-result authorization failure ends the operation without fallback. A valid empty search result is successful and also stops fallback.
+
+The singular `search_provider=` and `scrape_provider=` run bindings remain convenience forms for one backend named `default`; do not combine them with the corresponding backend tuple.
+
+When `WebCapability()` is constructed without an explicit configuration, these environment variables select its defaults:
+
+| Variable                                   | Values                             | Default       |
+| ------------------------------------------ | ---------------------------------- | ------------- |
+| `A13N_HARNESS_WEB_SEARCH_MODE`             | `off`, `host`, `native`, or `auto` | `auto`        |
+| `A13N_HARNESS_WEB_SEARCH_BACKEND`          | One exact bound backend ID         | unset         |
+| `A13N_HARNESS_WEB_SEARCH_BACKEND_PRIORITY` | Comma-separated backend IDs        | binding order |
+| `A13N_HARNESS_WEB_SEARCH_CONTEXT_SIZE`     | `low`, `medium`, or `high`         | `medium`      |
+| `A13N_HARNESS_WEB_SCRAPE_MODE`             | `off` or `host`                    | `host`        |
+| `A13N_HARNESS_WEB_SCRAPE_BACKEND`          | One exact bound backend ID         | unset         |
+| `A13N_HARNESS_WEB_SCRAPE_BACKEND_PRIORITY` | Comma-separated backend IDs        | binding order |
+
+An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebRunCapability`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
 
 ## Monitored Processes
 

@@ -1,44 +1,4 @@
-use std::{
-    error::Error,
-    fs::{self, OpenOptions},
-    io::Write as _,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
-
-const READY_MARKER_CONTENT: &[u8] = b"agent-envd-ready-v1\n";
-
-struct ReadyMarker(PathBuf);
-
-impl Drop for ReadyMarker {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
-}
-
-fn create_ready_marker(
-    path: Option<&Path>,
-) -> Result<Option<ReadyMarker>, Box<dyn Error + Send + Sync>> {
-    let Some(path) = path else {
-        return Ok(None);
-    };
-    let result = (|| {
-        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        }
-        file.write_all(READY_MARKER_CONTENT)?;
-        file.sync_all()?;
-        Ok::<(), std::io::Error>(())
-    })();
-    if let Err(error) = result {
-        let _ = fs::remove_file(path);
-        return Err(format!("cannot create readiness marker: {error}").into());
-    }
-    Ok(Some(ReadyMarker(path.to_owned())))
-}
+use std::{error::Error, sync::Arc};
 
 mod config;
 mod daemon;
@@ -101,7 +61,6 @@ pub async fn run_internal_supervisor() -> Result<(), Box<dyn Error + Send + Sync
 pub async fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
     let config = config::Config::from_environment()?;
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
-    let _ready_marker = create_ready_marker(config.ready_file.as_deref())?;
     if config.execution.isolation == config::ExecutionIsolationMode::Disabled {
         let warning = serde_json::json!({
             "level": "warning",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import secrets
 from enum import Enum
 from importlib.metadata import PackageNotFoundError, version
@@ -16,6 +17,8 @@ from a13n_envd_client.eip.v1 import (
     EIPPath,
     EnvironmentDescribeParams,
     EnvironmentDescriptor,
+    EnvironmentReadinessParams,
+    EnvironmentReadinessResult,
     FileByteRange,
     FileWriteMode,
     InitializeParams,
@@ -39,7 +42,7 @@ class _SessionCloseState(Enum):
 
 
 class EIPSession:
-    """One initialized EIP session over a low-level transport."""
+    """One initialized and readiness-confirmed EIP session."""
 
     def __init__(
         self,
@@ -52,6 +55,7 @@ class EIPSession:
         self._client = EIPClient(requester)
         self._descriptor = descriptor
         self._reuse_transport = reuse_transport
+        self._readiness_lock = asyncio.Lock()
         self._describe_lock = asyncio.Lock()
         self._close_state = _SessionCloseState.OPEN
         self._close_task: asyncio.Task[None] | None = None
@@ -71,8 +75,10 @@ class EIPSession:
         max_in_flight: int = 32,
         reuse_transport: bool = False,
     ) -> EIPSession:
-        if initialization_timeout <= 0:
-            raise ValueError("initialization_timeout must be positive")
+        initialization_timeout_ms = _finite_timeout_ms(
+            initialization_timeout,
+            name="initialization_timeout",
+        )
         if not isinstance(max_in_flight, int) or isinstance(max_in_flight, bool) or max_in_flight < 1:
             raise ValueError("max_in_flight must be a positive integer")
         if not isinstance(reuse_transport, bool):
@@ -85,6 +91,7 @@ class EIPSession:
             request_timeout=request_timeout,
         )
         client = EIPClient(requester)
+        effective_required_methods = tuple(dict.fromkeys((*required_methods, "environment.readiness")))
         params = InitializeParams(
             supported_protocol_versions=(EIP_PROTOCOL_VERSION,),
             client=EIPClientInfo(
@@ -92,27 +99,44 @@ class EIPSession:
                 version=client_version or _distribution_version(),
             ),
             expected_environment_id=expected_environment_id,
-            required_methods=required_methods,
+            required_methods=effective_required_methods,
         )
         try:
+            loop = asyncio.get_running_loop()
+            initialization_deadline = loop.time() + initialization_timeout
             async with asyncio.timeout(initialization_timeout):
                 result = await client.initialize(params)
-            if result.protocol_version != EIP_PROTOCOL_VERSION:
-                raise EIPProtocolError("server selected an unoffered EIP protocol version")
-            descriptor = result.descriptor
-            _validate_descriptor_structure(descriptor)
-            if descriptor.environment_id != expected_environment_id:
-                raise EIPProtocolError("server returned a different Environment identity")
-            missing = sorted(set(required_methods) - set(descriptor.available_methods))
-            if missing:
-                raise EIPProtocolError(f"server omitted required method: {missing[0]}")
-            requester.configure_limits(
-                max_in_flight=min(max_in_flight, descriptor.limits.max_concurrent_operations),
-                max_request_bytes=descriptor.limits.max_request_bytes,
-                max_response_bytes=descriptor.limits.max_response_bytes,
-                max_transfer_frame_bytes=descriptor.limits.max_transfer_frame_bytes,
-                max_concurrent_file_transfers=descriptor.limits.max_concurrent_file_transfers,
-            )
+                if result.protocol_version != EIP_PROTOCOL_VERSION:
+                    raise EIPProtocolError("server selected an unoffered EIP protocol version")
+                descriptor = result.descriptor
+                _validate_descriptor_structure(descriptor)
+                if descriptor.environment_id != expected_environment_id:
+                    raise EIPProtocolError("server returned a different Environment identity")
+                missing = sorted(set(effective_required_methods) - set(descriptor.available_methods))
+                if missing:
+                    raise EIPProtocolError(f"server omitted required method: {missing[0]}")
+                requester.configure_limits(
+                    max_in_flight=min(max_in_flight, descriptor.limits.max_concurrent_operations),
+                    max_request_bytes=descriptor.limits.max_request_bytes,
+                    max_response_bytes=descriptor.limits.max_response_bytes,
+                    max_transfer_frame_bytes=descriptor.limits.max_transfer_frame_bytes,
+                    max_concurrent_file_transfers=descriptor.limits.max_concurrent_file_transfers,
+                )
+                remaining_timeout_ms = min(
+                    initialization_timeout_ms,
+                    max(1, math.ceil((initialization_deadline - loop.time()) * 1000)),
+                )
+                readiness = await client.environment_readiness(
+                    EnvironmentReadinessParams(
+                        context=EIPCallContext(
+                            operation_id=_operation_id(),
+                            timeout_ms=remaining_timeout_ms,
+                        )
+                    )
+                )
+                _validate_readiness(descriptor, readiness)
+                if not readiness.ready:
+                    raise EIPSessionStateError("EIP environment is not ready")
             return cls(requester, descriptor, reuse_transport=reuse_transport)
         except BaseException:
             await requester.close()
@@ -120,7 +144,7 @@ class EIPSession:
 
     @property
     def client(self) -> EIPClient:
-        """The generated typed client bound to this initialized session."""
+        """The generated typed client bound to this ready session."""
         self._ensure_open()
         return self._client
 
@@ -187,6 +211,33 @@ class EIPSession:
             start_offset=start_offset,
             observed=observed,
         )
+
+    async def readiness(self, *, timeout: float = 10.0) -> EnvironmentReadinessResult:
+        """Observe current Session readiness with a fresh bounded operation."""
+        timeout_ms = _finite_timeout_ms(timeout, name="timeout")
+        self._ensure_open()
+        async with self._readiness_lock:
+            self._ensure_open()
+            try:
+                async with asyncio.timeout(timeout):
+                    result = await self._client.environment_readiness(
+                        EnvironmentReadinessParams(
+                            context=EIPCallContext(
+                                operation_id=_operation_id(),
+                                timeout_ms=timeout_ms,
+                            )
+                        )
+                    )
+            except BaseException:
+                await self._terminate()
+                raise
+            try:
+                _validate_readiness(self._descriptor, result)
+            except EIPProtocolError as error:
+                await self._terminate_protocol_error(error)
+            if not result.ready:
+                await self._terminate()
+            return result
 
     async def describe(self) -> EnvironmentDescriptor:
         self._ensure_open()
@@ -265,11 +316,14 @@ class EIPSession:
         except BaseException:
             pass
 
-    async def _terminate_protocol_error(self, error: EIPProtocolError) -> Never:
+    async def _terminate(self) -> None:
         self._close_state = _SessionCloseState.TERMINAL
         if self._abort_task is None:
-            self._abort_task = asyncio.create_task(self._requester.close(), name="eip-session-protocol-close")
+            self._abort_task = asyncio.create_task(self._requester.close(), name="eip-session-terminal-close")
         await asyncio.shield(self._abort_task)
+
+    async def _terminate_protocol_error(self, error: EIPProtocolError) -> Never:
+        await self._terminate()
         raise error
 
     def _ensure_open(self) -> None:
@@ -279,6 +333,27 @@ class EIPSession:
     def _require_method(self, method: str) -> None:
         if method not in self._descriptor.available_methods:
             raise EIPSessionStateError(f"EIP method is not available: {method}")
+
+
+def _validate_readiness(
+    descriptor: EnvironmentDescriptor,
+    result: EnvironmentReadinessResult,
+) -> None:
+    if result.environment_id != descriptor.environment_id:
+        raise EIPProtocolError("readiness returned a different Environment identity")
+    if result.generation != descriptor.generation:
+        raise EIPProtocolError("readiness returned a different Environment generation")
+
+
+def _finite_timeout_ms(timeout: float, *, name: str) -> int:
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        raise TypeError(f"{name} must be a number")
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError(f"{name} must be positive and finite")
+    timeout_ms = max(1, math.ceil(timeout * 1000))
+    if timeout_ms > 2**64 - 1:
+        raise ValueError(f"{name} is too large")
+    return timeout_ms
 
 
 def _validate_descriptor_structure(descriptor: EnvironmentDescriptor) -> None:

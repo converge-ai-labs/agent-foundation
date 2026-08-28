@@ -22,6 +22,10 @@ from a13n_harness.events import (
 )
 from a13n_harness.observation import observe_operation
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
+
+_HANDOFF_INSTRUCTION = tool_instruction("summarize")
+
 if TYPE_CHECKING:
     from a13n_harness.capabilities.context import _HandoffState
 
@@ -46,7 +50,11 @@ class HandoffToolset:
         return self._state.model_copy(deep=True)
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
-        return FunctionToolset(tools=[self.summarize], id="a13n-handoff-tools")
+        return InstructionFunctionToolset(
+            tools=[self.summarize],
+            id="a13n-handoff-tools",
+            instructions=_HANDOFF_INSTRUCTION,
+        )
 
     async def replace_state(self, state: _HandoffState) -> None:
         from a13n_harness.capabilities.context import (

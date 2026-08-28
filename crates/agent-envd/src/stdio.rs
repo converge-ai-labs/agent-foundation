@@ -1074,7 +1074,7 @@ mod tests {
                 "id": session * 2 + 1,
                 "method": "initialize",
                 "params": {
-                    "supported_protocol_versions": ["1.0"],
+                    "supported_protocol_versions": ["0.1"],
                     "client": {"name": "stdio-test", "version": "1"},
                     "expected_environment_id": "env-test",
                     "required_methods": []
@@ -1180,10 +1180,14 @@ mod tests {
                 "id": 1,
                 "method": "initialize",
                 "params": {
-                    "supported_protocol_versions": ["1.0"],
+                    "supported_protocol_versions": ["0.1"],
                     "client": {"name": "stdio-test", "version": "1"},
                     "expected_environment_id": "env-test",
-                    "required_methods": ["file.open_reader", "session.close"]
+                    "required_methods": [
+                        "environment.readiness",
+                        "file.open_reader",
+                        "session.close"
+                    ]
                 }
             }),
         )
@@ -1193,6 +1197,32 @@ mod tests {
             .expect("initialize response is valid")
             .expect("initialize response is present");
         assert!(matches!(initialized, InboundFrame::Control(_)));
+
+        write_json_frame(
+            &mut input_client,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 20,
+                "method": "environment.readiness",
+                "params": {
+                    "context": {
+                        "operation_id": "readiness-old-session",
+                        "timeout_ms": 2_000
+                    }
+                }
+            }),
+        )
+        .await;
+        let readiness = read_frame(&mut output_client, 64 * 1024, 4 * 1024 * 1024)
+            .await
+            .expect("readiness response is valid")
+            .expect("readiness response is present");
+        let InboundFrame::Control(readiness) = readiness else {
+            panic!("readiness response is control JSON");
+        };
+        let readiness: serde_json::Value =
+            serde_json::from_slice(&readiness).expect("readiness response is JSON");
+        assert_eq!(readiness["result"]["ready"], true);
 
         write_json_frame(
             &mut input_client,
@@ -1275,7 +1305,7 @@ mod tests {
                 "id": 4,
                 "method": "initialize",
                 "params": {
-                    "supported_protocol_versions": ["1.0"],
+                    "supported_protocol_versions": ["0.1"],
                     "client": {"name": "stdio-test", "version": "1"},
                     "expected_environment_id": "env-test",
                     "required_methods": ["session.close"]
@@ -1341,7 +1371,7 @@ mod tests {
             "id": 1,
             "method": "initialize",
             "params": {
-                "supported_protocol_versions": ["1.0"],
+                "supported_protocol_versions": ["0.1"],
                 "client": {"name": "stdio-test", "version": "1"},
                 "expected_environment_id": "env-test",
                 "required_methods": []

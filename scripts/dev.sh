@@ -27,7 +27,19 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
 
-uv run --locked foundation-service serve &
+uv_run=(uv run --locked)
+if [[ -f ".env" ]]; then
+  uv_run+=(--env-file ".env")
+fi
+
+"${uv_run[@]}" bash -c '
+  backend_command=(foundation-service serve)
+  if [[ -z "${LOGFIRE_TOKEN:-}" ]] &&
+    [[ "${A13N_HARNESS_TRACE_LEVEL:-off}" != "off" || "${A13N_HARNESS_METRICS:-off}" != "off" ]]; then
+    backend_command=(opentelemetry-instrument foundation-service serve)
+  fi
+  exec "${backend_command[@]}"
+' &
 backend_pid=$!
 
 npm --prefix apps/foundation-web run dev &

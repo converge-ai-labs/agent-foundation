@@ -8,7 +8,7 @@ from contextvars import ContextVar
 
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.files import FileCopyResult, FileMutationResult, FileOperator
-from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import FileScopeProvider, FileScopeSelection
 from a13n_harness.environment.virtual_files import VirtualFileOperator
 from a13n_harness.tools.metadata import CanonicalResource, ToolResourceResolver
@@ -128,6 +128,16 @@ class ScopedFileAccess:
             )
         async with scopes.open_files(source_selection) as source_files:
             return await source_files.copy(source, destination, replace=replace)
+
+    def resolved_path(self, path: str) -> EnvironmentPath | None:
+        """Return the current revision-pinned Environment path when scopes are available."""
+        if self._scopes is None:
+            return None
+        selection = self._selection.get()
+        if selection is None or selection.logical_path != path:
+            selection = self._scopes.select_files(path)
+            self._selection.set(selection)
+        return selection.resolved_path
 
     def guard(self, path: str) -> None:
         selection = self._selection.get()

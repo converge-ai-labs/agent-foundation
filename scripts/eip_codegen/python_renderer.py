@@ -316,7 +316,7 @@ def render_models(index: SchemaIndex, options: OptionReader) -> str:
         "    Field(json_schema_extra={'format': 'eip-base64-unpadded'}),",
         "    AfterValidator(_validate_base64_unpadded),",
         "]",
-        "ProtocolVersion = Annotated[StrictStr, Field(pattern=r'^[1-9][0-9]*\\.[0-9]+$')]",
+        "ProtocolVersion = Annotated[StrictStr, Field(pattern=r'^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$')]",
         "Sha256Digest = Annotated[StrictStr, Field(pattern=r'^[0-9a-f]{64}$')]",
         "EIPTimestamp = Annotated[",
         "    StrictStr,",
@@ -502,12 +502,12 @@ def method_records(index: SchemaIndex, options: OptionReader) -> list[dict[str, 
             raise ValueError(f"duplicate EIP JSON-RPC method: {name}")
         names.add(name)
         if record["kind"] != "request_response":
-            raise ValueError(f"EIP 1.0 method {name} must use correlated request-response")
+            raise ValueError(f"EIP 0.1 method {name} must use correlated request-response")
         if record["replay_class"] == "unspecified":
             raise ValueError(f"EIP method {name} has unspecified replay class")
         if record["error_family"] == "unspecified":
             raise ValueError(f"EIP method {name} has unspecified error family")
-        if record["introduced"].startswith("0."):
+        if record["introduced"] == "0.0":
             raise ValueError(f"EIP method {name} has invalid introduced version")
         if record["result_type"] is None:
             raise ValueError(f"EIP request-response method {name} must have a result message")
@@ -817,9 +817,9 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_v
 
 from .models import EIPError
 
-EIP_PROTOCOL_VERSION: Final = "1.0"
-EIP_PROTOCOL_MAJOR: Final = 1
-EIP_PROTOCOL_MINOR: Final = 0
+EIP_PROTOCOL_VERSION: Final = "0.1"
+EIP_PROTOCOL_MAJOR: Final = 0
+EIP_PROTOCOL_MINOR: Final = 1
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
 EIP_DESCRIPTOR_SHA256: Final = "__DESCRIPTOR_SHA256__"
 

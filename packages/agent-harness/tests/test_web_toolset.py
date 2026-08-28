@@ -19,6 +19,7 @@ from a13n_harness.toolsets.web import (
     WebResponse,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResult,
     WebToolset,
@@ -32,6 +33,7 @@ pytestmark = pytest.mark.anyio
 class _Context:
     def __init__(self) -> None:
         self.spills: list[bytes] = []
+        self.toolset_instructions = True
 
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
         assert suffix == ".json"
@@ -105,6 +107,35 @@ def _toolset(**kwargs: Any) -> WebToolset:
         files=cast(Any, SimpleNamespace()),
         **kwargs,
     )
+
+
+async def test_web_instructions_follow_provider_activation() -> None:
+    ctx, _ = _run_context()
+
+    base_parts = (
+        await _toolset(configuration=WebConfiguration(search=WebSearchConfiguration(mode="off")))
+        .get_toolset()
+        .get_instructions(ctx)
+    )
+    assert base_parts is not None
+    base = "\n".join(part.content for part in base_parts)
+    assert '<tool-instruction name="fetch">' in base
+    assert '<tool-instruction name="download">' in base
+    assert '<tool-instruction name="search">' not in base
+    assert '<tool-instruction name="scrape">' not in base
+
+    provider_parts = (
+        await _toolset(
+            search_provider=_SearchProvider(),
+            scrape_provider=_ScrapeProvider(),
+        )
+        .get_toolset()
+        .get_instructions(ctx)
+    )
+    assert provider_parts is not None
+    provider = "\n".join(part.content for part in provider_parts)
+    assert '<tool-instruction name="search">' in provider
+    assert '<tool-instruction name="scrape">' in provider
 
 
 def test_tool_output_size_uses_serialized_characters_not_utf8_bytes() -> None:

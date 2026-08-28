@@ -570,13 +570,6 @@ class HandoffCapability(AbstractModelContextCapability):
             )
         return owner._toolset.get_toolset()
 
-    def get_instructions(self) -> str:
-        return (
-            "Use `summarize` when a long or completed phase should continue from a fresh context. "
-            "Preserve current intent, completed work, decisions, unresolved work, relevant past interactions, "
-            "and the immediate next step. File arguments are inspection reminders only; their contents are not loaded."
-        )
-
     async def wrap_model_context(
         self,
         ctx: RunContext[AgentContext],

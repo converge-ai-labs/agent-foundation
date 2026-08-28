@@ -39,6 +39,46 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize(
+    ("tasks_enabled", "notes_enabled"),
+    [(True, False), (False, True), (False, False)],
+)
+async def test_working_state_instructions_follow_enabled_tool_groups(
+    tasks_enabled: bool,
+    notes_enabled: bool,
+) -> None:
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            WorkingStateCapability(
+                WorkingStateConfiguration(
+                    tasks_enabled=tasks_enabled,
+                    notes_enabled=notes_enabled,
+                )
+            ),
+        ),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    assert len(captured) == 1
+    names = {tool.name for tool in captured[0].function_tools}
+    instructions = captured[0].instructions or ""
+    assert ({"task_create", "task_get", "task_list", "task_update"} <= names) is tasks_enabled
+    assert ({"note", "note_get"} <= names) is notes_enabled
+    assert ('<tool-instruction name="task-manager">' in instructions) is tasks_enabled
+    assert ('<tool-instruction name="note">' in instructions) is notes_enabled
+
+
 async def test_embedded_task_cell_linearizes_claims_dependencies_and_allocator() -> None:
     changed = []
 

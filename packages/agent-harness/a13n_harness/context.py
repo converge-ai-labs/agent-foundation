@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from a13n_harness.models import RunModelResolver
     from a13n_harness.plugins import BoundPluginContext
     from a13n_harness.pricing import AbstractModelCostCapability
+    from a13n_harness.spec import ModelConfiguration
     from a13n_harness.tools.deferred import DeferredToolResume
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord, RunUsageLedger, UsageRecord
 
@@ -120,6 +121,7 @@ class RunBindings:
     instance: AgentInstanceContext
     environment: EnvironmentRunBinding | None = None
     model_resolver: RunModelResolver | None = None
+    toolset_instructions: bool | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
@@ -130,6 +132,8 @@ class RunBindings:
     )
 
     def __post_init__(self) -> None:
+        if self.toolset_instructions is not None and not isinstance(self.toolset_instructions, bool):
+            raise TypeError("toolset_instructions must be a boolean or None")
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "metadata", MappingProxyType(deepcopy(dict(self.metadata))))
 
@@ -140,6 +144,7 @@ class RunBindings:
         identity: AgentIdentityRef | None = None,
         environment: EnvironmentRunBinding | None = None,
         model_resolver: RunModelResolver | None = None,
+        toolset_instructions: bool | None = None,
         model_context: ModelContextMiddleware | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         metadata: Mapping[str, JsonValue] | None = None,
@@ -153,6 +158,7 @@ class RunBindings:
             ),
             environment=environment,
             model_resolver=model_resolver,
+            toolset_instructions=toolset_instructions,
             model_context=model_context,
             capabilities=tuple(capabilities),
             metadata=metadata or {},
@@ -262,6 +268,9 @@ class AgentContext:
     state: AgentContextState
     environment: Environment
     model_resolver: RunModelResolver | None
+    model_configuration: ModelConfiguration | None
+    toolset_instructions: bool
+    _toolset_instructions_override: bool | None = field(repr=False, compare=False)
     plugins: BoundPluginContext
     subagents: SubagentCollection
     events: HarnessEventEmitter

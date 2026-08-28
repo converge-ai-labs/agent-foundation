@@ -13,7 +13,10 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import RunError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolError, ToolFailure
+
+_MEDIA_INSTRUCTION = tool_instruction("read_media")
 
 if TYPE_CHECKING:
     from a13n_harness.capabilities.media import (
@@ -67,7 +70,11 @@ class MediaToolset:
                 "Use instructions for focused analysis."
             ),
         )
-        return FunctionToolset(tools=[tool], id="a13n-media-tool-functions")
+        return InstructionFunctionToolset(
+            tools=[tool],
+            id="a13n-media-tool-functions",
+            instructions=_MEDIA_INSTRUCTION,
+        )
 
     async def read_media(
         self,

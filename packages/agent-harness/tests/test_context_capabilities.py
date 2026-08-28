@@ -25,6 +25,7 @@ from a13n_harness import (
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessState,
+    ModelCapability,
     ModelConfiguration,
     RunBindings,
     RuntimeContextCapability,
@@ -93,6 +94,13 @@ def _local_binding(root: Path, *, default_working_directory: str = "/"):
 def test_agent_spec_model_config_derives_context_capability_thresholds() -> None:
     spec = HarnessAgentSpec(
         model_config=ModelConfiguration(
+            capabilities=frozenset(
+                {
+                    ModelCapability.IMAGE_UNDERSTANDING,
+                    ModelCapability.VIDEO_UNDERSTANDING,
+                    ModelCapability.AUDIO_UNDERSTANDING,
+                }
+            ),
             context_window=200_000,
             proactive_context_management_threshold=0.65,
             compact_threshold=0.90,
@@ -110,8 +118,20 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
     compaction = next(capability for capability in leaves if isinstance(capability, CompactionCapability))
 
     assert spec.model_configuration is not None
-    assert spec.model_dump(mode="json", by_alias=True)["model_config"]["context_window"] == 200_000
-    assert "model_config" in HarnessAgentSpec.model_json_schema_with_capabilities()["properties"]
+    dumped_configuration = spec.model_dump(mode="json", by_alias=True)["model_config"]
+    assert dumped_configuration["context_window"] == 200_000
+    assert set(dumped_configuration["capabilities"]) == {
+        "image_understanding",
+        "video_understanding",
+        "audio_understanding",
+    }
+    schema = HarnessAgentSpec.model_json_schema_with_capabilities()
+    assert "model_config" in schema["properties"]
+    assert set(schema["$defs"]["ModelCapability"]["enum"]) == {
+        "image_understanding",
+        "video_understanding",
+        "audio_understanding",
+    }
     assert handoff.configuration.include_summary_reminder
     assert handoff.configuration.summary_reminder_tokens == 130_000
     assert compaction.policy == CompactionPolicy(trigger_tokens=180_000)

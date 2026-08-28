@@ -59,6 +59,9 @@ Use the Makefile as the stable development interface:
 | `make setup`                | Start local PostgreSQL and Redis                                  |
 | `make dev`                  | Upgrade the schema and run Foundation Service with Foundation Web |
 | `make dev-down`             | Stop local infrastructure and remove its data volumes             |
+| `make langfuse-up`          | Start the isolated local Langfuse trace backend                   |
+| `make langfuse-down`        | Stop local Langfuse while preserving its data                     |
+| `make langfuse-reset`       | Stop local Langfuse and remove its data volumes                   |
 | `make format`               | Apply repository formatting hooks                                 |
 | `make lint`                 | Run non-mutating repository lint checks                           |
 | `make deps-check`           | Check each Python package's dependency declarations with deptry   |

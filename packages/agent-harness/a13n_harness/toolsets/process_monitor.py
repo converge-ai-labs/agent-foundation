@@ -29,6 +29,7 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
 )
 
+from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import ToolFailure
 from .shell import ShellProcessProjector
 from .shell_results import ProcessProjection
@@ -85,7 +86,11 @@ class MonitoredProcessToolset:
                 resource_resolver=self._projector.process_start_resource_resolver(),
             ),
         )
-        return FunctionToolset(tools=[tool], id="a13n-monitored-process-tools")
+        return InstructionFunctionToolset(
+            tools=[tool],
+            id="a13n-monitored-process-tools",
+            instructions=tool_instruction("process_monitor"),
+        )
 
     async def environment_process_monitor(
         self,

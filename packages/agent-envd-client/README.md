@@ -6,12 +6,12 @@
 
 The package currently provides:
 
-- generated EIP 1.0 Pydantic wire models, canonical codecs, method metadata, and typed `EIPClient` methods for the complete protocol surface;
+- generated EIP 0.1 Pydantic wire models, canonical codecs, method metadata, and typed `EIPClient` methods for the complete protocol surface;
 - `RequestCoordinator` for bounded request IDs, concurrent response correlation, data-frame routing, typed errors, and no automatic ambiguous retry;
 - `StdioTransport` for multiplexed content-length control and binary data frames over trusted parent-supplied asyncio process pipes;
 - `HttpTransport` for authenticated Host-dialed control requests and raw streaming transfer bodies over HTTP(S);
 - `AcceptedWebSocketTransport` for EIP framing over an already-authenticated reverse-WebSocket `ServerConnection` accepted by the Host;
-- `EIPSession` for initialization, exact required-method/generation/descriptor validation, monotonic method-and-limit refresh that rejects topology/posture/feature changes or widening, and session close;
+- `EIPSession` for initialization, mandatory initial readiness validation, fresh bounded readiness observations, exact required-method/generation/descriptor validation, monotonic method-and-limit refresh that rejects topology/posture/feature changes or widening, and session close;
 - high-level `EIPFileReader` and `EIPFileWriter` async context managers, exposed by `EIPSession.open_reader()` and `EIPSession.open_writer()`, for bounded streaming file transfer.
 
 Configured daemons can expose resource reads, atomic mutations, find, search, receipts, and port observation through the generated client. Trusted stdio, Host-dialed HTTP(S), and Host-accepted reverse WebSocket carry the same EIP method/session contract. Provider process creation, HTTP credential issuance, reverse-WebSocket listener authentication, and lifecycle policy remain outside this package.
@@ -43,8 +43,10 @@ async def main() -> None:
     session = await EIPSession.initialize(
         StdioTransport.from_process(process),
         expected_environment_id="env-provider-owned-id",
-        required_methods=("environment.describe", "session.close"),
+        required_methods=("environment.describe", "environment.readiness", "session.close"),
     )
+    readiness = await session.readiness()
+    assert readiness.ready
     descriptor = await session.describe()
     print(descriptor.generation)
     await session.close()

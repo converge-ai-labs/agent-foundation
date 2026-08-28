@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -12,7 +13,9 @@ from a13n_harness.environment import (
     CommandRequest,
     EnvironmentError,
     EnvironmentOutputPolicy,
+    FileTextSearchRequest,
 )
+from a13n_harness.environment.eip.binding import _BoundEIPProvider
 from a13n_harness.environment.eip.files import EIPFileOperator
 from a13n_harness.environment.eip.output import EIPOutputRegistry
 from a13n_harness.environment.eip.processes import (
@@ -73,6 +76,170 @@ def encoded(value: bytes) -> eip.EncodedBytes:
         encoding="base64",
         data=base64.b64encode(value).decode().rstrip("="),
     )
+
+
+def test_eip_bound_provider_rechecks_live_readiness_on_every_request() -> None:
+    async def scenario() -> None:
+        descriptor = eip.EnvironmentDescriptor(
+            environment_id="env-one",
+            generation=1,
+            available_methods=("environment.describe", "environment.readiness", "session.close"),
+            limits=eip.EIPLimits(
+                max_request_bytes=1024,
+                max_response_bytes=1024,
+                max_concurrent_operations=4,
+                max_processes=1,
+                max_operation_duration_ms=1000,
+                max_output_preview_bytes=1,
+                max_output_bytes_per_stream=1,
+                max_transfer_frame_bytes=1024,
+                max_concurrent_file_transfers=1,
+                max_file_transfer_bytes=1,
+            ),
+            isolation=eip.IsolationPosture(
+                mode=eip.IsolationMode.DISABLED,
+                backend=eip.IsolationBackend.OUTER_HOST,
+                filesystem_containment=False,
+                process_containment=False,
+                network_containment=False,
+                network_policy=eip.IsolationNetworkPolicy.HOST,
+                cleanup_guarantee=eip.IsolationCleanupGuarantee.OUTER_HOST,
+            ),
+            execution_features=eip.ExecutionFeatures(
+                process_count_limit=False,
+                memory_bytes_limit=False,
+                cpu_time_limit=False,
+                per_command_network_deny=False,
+                signal_interrupt=False,
+                signal_terminate=False,
+            ),
+        )
+
+        class ReadinessSession:
+            def __init__(self) -> None:
+                self.descriptor = descriptor
+                self.calls = 0
+
+            async def readiness(self) -> eip.EnvironmentReadinessResult:
+                self.calls += 1
+                return eip.EnvironmentReadinessResult(
+                    ready=self.calls == 1,
+                    environment_id=descriptor.environment_id,
+                    generation=descriptor.generation,
+                )
+
+        session = ReadinessSession()
+        provider = _BoundEIPProvider(
+            session=cast(Any, session),
+            environment_id="env-one",
+            binding_id="binding-one",
+            binding_revision=1,
+        )
+
+        await provider.ensure_ready(frozenset())
+        assert session.calls == 1
+        with pytest.raises(EnvironmentError) as exc_info:
+            await provider.ensure_ready(frozenset())
+        assert exc_info.value.code == "environment_unavailable"
+        assert provider.availability.status == "unavailable"
+        assert session.calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_eip_file_search_pushes_down_the_complete_request_and_maps_inline_context() -> None:
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[eip.FileSearchParams] = []
+
+        async def file_search(self, params: eip.FileSearchParams) -> eip.FileSearchResult:
+            self.calls.append(params)
+            return eip.FileSearchResult(
+                matches=(
+                    eip.FileSearchMatch(
+                        path=eip.EIPPath(mount_id="workspace", path="/src/app.py"),
+                        line_number=3,
+                        preview="needle",
+                        preview_truncated=True,
+                        context="before\nneedle\nafter\n",
+                        context_start_line=2,
+                    ),
+                ),
+                offset=4,
+                has_more=True,
+                omitted_unrepresentable_entries=0,
+            )
+
+    client = FakeClient()
+    session = SimpleNamespace(
+        client=client,
+        protocol_version="1.1",
+        descriptor=SimpleNamespace(
+            mounts=(
+                SimpleNamespace(
+                    mount_id="workspace",
+                    logical_root="/workspace",
+                    writable=True,
+                ),
+            )
+        ),
+    )
+    operator = EIPFileOperator(
+        session=cast(Any, session),
+        environment_id="env-one",
+        binding_id="binding-one",
+        binding_revision=1,
+        generation="1",
+    )
+    request = FileTextSearchRequest(
+        root="/workspace/src",
+        pattern=r"need.le",
+        regex=True,
+        case_sensitive=False,
+        include="**/*.py",
+        include_hidden=True,
+        ignore_mode="git",
+        context_lines=1,
+        offset=4,
+        max_matches=7,
+        max_matches_per_file=2,
+        max_files=11,
+        max_file_bytes=4_096,
+        max_line_length=80,
+    )
+
+    result = asyncio.run(operator.search_text(request))
+
+    assert len(client.calls) == 1
+    sent = client.calls[0]
+    assert sent.root == eip.EIPPath(mount_id="workspace", path="/src")
+    assert sent.query == request.pattern
+    assert sent.mode is eip.SearchMode.REGEX
+    assert sent.case_sensitive is False
+    assert sent.include_pattern == "**/*.py"
+    assert sent.include_hidden is True
+    assert sent.respect_git_ignore is True
+    assert sent.context_lines == 1
+    assert sent.offset == 4
+    assert sent.max_results == 7
+    assert sent.max_matches_per_file == 2
+    assert sent.max_files == 11
+    assert sent.max_file_bytes == 4_096
+    assert sent.max_line_length == 80
+    assert result.model_dump() == {
+        "matches": (
+            {
+                "path": "/workspace/src/app.py",
+                "line": 3,
+                "text": "needle",
+                "text_truncated": True,
+                "context": "before\nneedle\nafter\n",
+                "context_start_line": 2,
+            },
+        ),
+        "offset": 4,
+        "has_more": True,
+    }
 
 
 def test_eip_command_conversion_never_serializes_harness_output_policy() -> None:

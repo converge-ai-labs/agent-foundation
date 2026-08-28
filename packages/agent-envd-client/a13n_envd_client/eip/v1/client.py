@@ -5,6 +5,7 @@ from typing import Protocol
 
 from .methods import (
     ENVIRONMENT_DESCRIBE,
+    ENVIRONMENT_READINESS,
     FILE_ABORT_WRITER,
     FILE_CLOSE_READER,
     FILE_COMMIT_WRITER,
@@ -43,6 +44,8 @@ from .methods import (
 from .models import (
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
+    EnvironmentReadinessParams,
+    EnvironmentReadinessResult,
     FileCopyParams,
     FileCopyResult,
     FileFindParams,
@@ -122,6 +125,9 @@ class EIPClient:
 
     async def environment_describe(self, params: EnvironmentDescribeParams) -> EnvironmentDescribeResult:
         return await self._requester.request(ENVIRONMENT_DESCRIBE, params)
+
+    async def environment_readiness(self, params: EnvironmentReadinessParams) -> EnvironmentReadinessResult:
+        return await self._requester.request(ENVIRONMENT_READINESS, params)
 
     async def file_abort_writer(self, params: FileWriterAbortParams) -> FileWriterAbortResult:
         return await self._requester.request(FILE_ABORT_WRITER, params)
