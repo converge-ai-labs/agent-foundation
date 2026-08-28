@@ -18,8 +18,9 @@ AgentRevision field.
 Runtime loading is additive. A Worker can import a previously unloaded plugin,
 but it never unloads, reloads, or replaces an already imported plugin key,
 distribution, or top-level package. Work requiring a conflicting revision is
-left unclaimed for another Worker or for capacity created by ordinary Worker
-replacement. Existing executables and active Runs retain their constructed
+classified as a retryable preparation failure on the already claimed Attempt;
+another Worker or fresh capacity can claim a later generation within the same
+Turn budget. Existing executables and active Runs retain their constructed
 plugin graphs.
 
 ## Boundaries
@@ -31,7 +32,7 @@ plugin graphs.
 | Process-local materialization, import, and conflict checks | This document                                                             | Loads exact revisions on demand and never treats process memory as durable authority                     |
 | Relational and object capabilities                         | [Foundation storage](03-storage.md)                                       | Supplies metadata authority and immutable artifact bytes                                                 |
 | Agent plugin configuration and dependency locks            | [Agent revisions](12-agent-revisions-and-reconstruction.md)               | Freezes the exact package revision and digest for every enabled managed plugin                           |
-| Turn claim, lease, and recovery                            | [Scheduling](16-scheduling-workers-and-recovery.md)                       | Lets a Worker decline incompatible work before claim and preserves durable eligibility                   |
+| Turn claim, lease, and recovery                            | [Scheduling](16-scheduling-workers-and-recovery.md)                       | Creates the Attempt first, then applies plugin loading as a fenced preparation check                     |
 | Worker process replacement and replica count               | Deployment                                                                | Supplies fresh interpreters when loaded revisions conflict; it does not become plugin lifecycle state    |
 | Foundation distribution capabilities and schema            | [Distribution composition](02-distribution-composition-and-extensions.md) | Remains fixed by the service artifact; a plugin cannot add Foundation routes, tables, or role components |
 
@@ -281,10 +282,10 @@ artifact, AgentRevision, Turn, or execution authority.
 
 ## Worker On-Demand Loading
 
-A Worker does not choose a plugin set at startup. When a dispatch signal names
-an eligible Turn, the Worker reads the exact AgentRevision and managed-plugin
-locks in bounded relational sessions, closes those sessions, and ensures that
-each required revision can be loaded before claiming the Turn.
+A Worker does not choose a plugin set at startup. After it transactionally
+claims a TurnAttempt, it reads the exact AgentRevision and managed-plugin locks
+in bounded relational sessions, closes those sessions, and verifies or loads
+each required revision as part of that Attempt's preparation.
 
 The process-local registry is conceptually a mapping from `plugin_key` to this
 immutable loaded provenance:
@@ -310,8 +311,9 @@ a lock that serializes import-path publication and factory discovery:
 1. compare the exact package revision ID and SHA-256 digest with the
    process-local loaded-plugin registry;
 2. reuse the loaded factory provenance when the exact revision already matches;
-3. decline the Turn without claiming it when the same plugin key, distribution,
-   or top-level package is already pinned to another revision;
+3. classify the claimed Attempt's preparation as retryable-incompatible when
+   the same plugin key, distribution, or top-level package is already pinned to
+   another revision, without changing the process-local registry;
 4. otherwise materialize the exact wheel into a content-addressed local cache,
    revalidate its digest and package shape, and publish its extracted package
    and metadata root atomically to the Worker's dedicated import search path;
@@ -326,13 +328,11 @@ The Worker derives the import target only from the verified wheel entry point.
 It never calls an arbitrary `module:object` value obtained from an Agent, API
 request, queue message, or database execution field.
 
-After exact plugin preflight succeeds, the Worker claims the Turn under the
-ordinary lease and fence contract. Agent-specific plugin construction occurs
-after claim: Foundation supplies the locked Harness plugin document through an
-explicit `HarnessBuildContext`, and a new `HarnessBuilder` constructs fresh
-plugin instances for that Agent definition. Reusing a loaded distribution and
-its verified factory provenance never shares a concrete plugin instance between
-Agent definitions.
+After exact plugin preparation succeeds, Foundation supplies the locked Harness
+plugin document through an explicit `HarnessBuildContext`, and a new
+`HarnessBuilder` constructs fresh plugin instances for that Agent definition.
+Reusing a loaded distribution and its verified factory provenance never shares
+a concrete plugin instance between Agent definitions.
 
 The loaded-plugin registry is process-local and monotonic. It is cleared by
 process exit, is not restored from telemetry, and is not written to PostgreSQL,
@@ -343,8 +343,8 @@ execution authority.
 If target import or factory validation fails after the import path is published,
 the Worker fails readiness and terminates after bounded cleanup. It does not
 continue serving from an interpreter that may contain a partially imported
-module. Because preflight precedes claim, the Turn remains durable and
-unclaimed.
+module. It commits a safe preparation failure when it still can; otherwise its
+claimed Attempt lease expires and an ordinary Worker takeover replaces it.
 
 ## Worker Cache and Version Conflicts
 
@@ -363,8 +363,9 @@ One Worker can accumulate distinct plugin keys over time. It cannot serve two
 revisions that share a plugin key, distribution name, or top-level package.
 Workers in separate interpreters may pin different revisions concurrently; no
 durable runtime generation groups them. If all current Workers conflict with an
-eligible Turn, the Turn remains eligible while the deployment starts or
-recycles capacity. The scheduler never substitutes another plugin revision.
+eligible Turn, each claimed Attempt follows the bounded preparation-failure
+policy while the deployment starts or recycles compatible capacity. The Worker
+claim path never substitutes another plugin revision.
 
 ## Agent Selection and Execution
 
@@ -389,19 +390,19 @@ interpreter actually imported.
 
 ## Failure Semantics
 
-| Failure                                                              | Outcome                                                                                                |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Upload exceeds a bound or wheel validation fails                     | No package revision is created; staged bytes are cleaned or reconciled                                 |
-| Object publication succeeds but relational commit is unknown         | Retry or read by digest; never publish another semantic revision blindly                               |
-| Existing package identity conflicts with wheel metadata              | Upload fails; the stable package identity is unchanged                                                 |
-| Same distribution name and version has another digest                | Upload conflicts; the existing revision remains authoritative                                          |
-| Worker already imported a conflicting revision                       | Worker declines the Turn before claim; durable work remains eligible for another or replacement Worker |
-| Pre-import digest, dependency, or metadata mismatches                | Worker does not claim the Turn and discards the unimported cache entry                                 |
-| Plugin target import, factory validation, or loaded provenance fails | Worker becomes unready and terminates; no TurnAttempt is created                                       |
-| Agent-specific plugin construction fails                             | Claimed Turn fails before Harness execution under the reconstruction contract                          |
-| Cache has no evictable capacity                                      | Worker does not claim the Turn; no pinned or durable artifact is deleted                               |
-| Compatible Worker capacity is unavailable                            | Turn remains durable and eligible; no other revision is substituted                                    |
-| Forced shutdown interrupts active work                               | Ordinary TurnAttempt lease-loss and unknown-outcome recovery apply; it is not a plugin reload success  |
+| Failure                                                              | Outcome                                                                                               |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Upload exceeds a bound or wheel validation fails                     | No package revision is created; staged bytes are cleaned or reconciled                                |
+| Object publication succeeds but relational commit is unknown         | Retry or read by digest; never publish another semantic revision blindly                              |
+| Existing package identity conflicts with wheel metadata              | Upload fails; the stable package identity is unchanged                                                |
+| Same distribution name and version has another digest                | Upload conflicts; the existing revision remains authoritative                                         |
+| Worker already imported a conflicting revision                       | Claimed Attempt fails preparation as retryable; a later generation can run on compatible capacity     |
+| Pre-import digest, dependency, or metadata mismatches                | Claimed Attempt and Turn fail closed; the unimported cache entry is discarded                         |
+| Plugin target import, factory validation, or loaded provenance fails | Worker becomes unready and terminates after committing failure when safe or allowing lease takeover   |
+| Agent-specific plugin construction fails                             | Claimed Turn fails before Harness execution under the reconstruction contract                         |
+| Cache has no evictable capacity                                      | Claimed Attempt follows bounded retry policy; no pinned or durable artifact is deleted                |
+| Compatible Worker capacity is unavailable                            | Attempts remain bounded by the Turn budget; no other revision is substituted                          |
+| Forced shutdown interrupts active work                               | Ordinary TurnAttempt lease-loss and unknown-outcome recovery apply; it is not a plugin reload success |
 
 ## Security and Compatibility
 
@@ -445,7 +446,9 @@ environment solver.
 07. A Worker derives the import target from the verified wheel and loads managed plugins only on demand for exact AgentRevision locks.
 08. Loaded-plugin state is process-local, monotonic, and non-durable.
 09. A Worker never unloads, reloads, or replaces an imported plugin key, distribution, or top-level package.
-10. A conflicting Worker declines work before claim; plugin import failure terminates the affected Worker rather than preserving a partially imported interpreter.
+10. Plugin checks occur after Attempt claim. A conflicting Worker fails that
+    Attempt's preparation as retryable; plugin import failure terminates the
+    affected Worker rather than preserving a partially imported interpreter.
 11. Cache eviction never removes an artifact imported by the current process and never changes durable availability.
 12. Internal operator authority is separate from tenant IAM roles and public Foundation clients.
 13. Harness and managed plugins execute in the same Worker process; Foundation introduces no per-plugin execution service or remote-plugin protocol.

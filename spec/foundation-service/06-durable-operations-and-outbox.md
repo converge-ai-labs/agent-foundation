@@ -151,7 +151,7 @@ Before an external effect can occur, the worker commits the owning dispatch boun
 | Publisher crashes before acknowledgement             | Source can be delivered again                                                       | Stable identity deduplicates downstream              |
 | Redis or another sink is unavailable                 | Outbox remains pending; affected runtime is unready when the dependency is required | Restore dependency and resume bounded publication    |
 | Permanent delivery rejection                         | Intent remains durably failed and observable                                        | Correct configuration or use owning repair operation |
-| Stale worker publishes                               | Fenced transaction rejects the mutation and outbox                                  | Current TurnAttempt or reconciler decides outcome    |
+| Stale worker publishes                               | Fenced transaction rejects the mutation and outbox                                  | Current TurnAttempt or owning domain decides outcome |
 
 ## Compatibility
 

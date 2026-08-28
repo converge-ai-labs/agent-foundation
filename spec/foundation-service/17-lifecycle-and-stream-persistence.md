@@ -99,10 +99,10 @@ configured live projection starts `projected` with
 
 The supported event-type registry is finite and additive:
 
-| Entity      | Event types                                                                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Turn        | `turn.accepted`, `turn.running`, `turn.waiting`, `turn.completed`, `turn.failed`, `turn.cancelled`                                            |
-| TurnAttempt | `turn_attempt.leased`, `turn_attempt.running`, `turn_attempt.succeeded`, `turn_attempt.failed`, `turn_attempt.lost`, `turn_attempt.cancelled` |
+| Entity      | Event types                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Turn        | `turn.accepted`, `turn.running`, `turn.waiting`, `turn.completed`, `turn.failed`, `turn.cancelled`                       |
+| TurnAttempt | `turn_attempt.leased`, `turn_attempt.running`, `turn_attempt.succeeded`, `turn_attempt.failed`, `turn_attempt.cancelled` |
 
 Adding an event type requires a schema-versioned payload and an owning state or
 observation rule. Consumers preserve unknown additive event types but never use

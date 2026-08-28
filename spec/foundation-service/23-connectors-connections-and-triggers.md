@@ -600,8 +600,8 @@ create an unbounded catch-up burst.
 Each occurrence creates an independent root Turn through the common Session and
 Thread allocation policy. It does not implicitly continue a prior Trigger Turn
 or share its model history. Trigger does not add parallel, drop, or serialize
-modes; the Agent workload, Workspace admission, and common scheduler own
-concurrency and queueing. A Trigger occurrence is not a separate public
+modes; the Agent workload, Workspace admission, and common Worker claim policy
+own concurrency and queueing. A Trigger occurrence is not a separate public
 TriggerActivation resource, and its Provider source is not a separate public
 EventSubscription.
 

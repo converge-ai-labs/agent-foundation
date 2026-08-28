@@ -28,7 +28,9 @@ Resolving an Agent ID and version returns this exact reference or fails; it neve
 
 - logical Agent instructions and typed input/output declarations;
 - one exact `model_id` plus concrete Harness model configuration and native model settings;
-- Capability, Tool, Skill, Connector, and Environment declarations under their owning Foundation schemas;
+- Capability, Tool, Connector, and Environment declarations under their owning
+  Foundation schemas plus exact managed Skill revision locks and exposure under
+  [Foundation Skill Management](27-skill-management.md#agent-revision-selection);
 - non-secret Secret requirements that bind an exact Workspace-owned Secret reference or declare an invoking-User Secret key under [Secret Management](11-secret-management.md);
 - direct trusted adapter keys and bounded adapter configuration;
 - optional Harness plugin configuration under the Harness-owned document contract;
@@ -43,6 +45,21 @@ the current enabled configuration and freezes its non-secret
 requested output limits, reasoning effort, tool choice, and structured-output
 policy. The ModelConfig owns provider, endpoint, model name, credential
 requirement, and advisory capabilities.
+
+An AgentRevision's Environment declaration follows
+[Environment Management](19-environment-management.md#environment-selection-and-turn-state):
+it stores an ordered set of binding names, model aliases, exact
+`EnvironmentRevisionId` requirements, required status, optional default binding,
+and runtime-selection policy, never a mutable Environment head or inline
+credential value. Turn acceptance can apply a permitted caller topology, then
+writes the resulting multi-entry `EnvironmentExecutionConfig` into the Turn's
+immutable `state.json` envelope independently from the AgentRevision.
+
+An AgentRevision's managed Skill selection stores the complete available revision
+locks, materialization binding, and default exposure. Turn acceptance can apply an
+exact-name invocation override only within that available catalog, then writes the
+resolved `selected_skill_names` into the Turn's immutable `state.json` envelope.
+The override changes neither the AgentRevision nor its dependency locks.
 
 Secret requirements never contain a Secret value. Model credentials are owned
 by the selected ModelConfig. Other Agent-owned requirements store an exact
@@ -63,7 +80,7 @@ dependency lock creates another Agent revision. Editing the referenced
 ModelConfig does not create an Agent revision. Prior Agent revisions selected
 by retained Turns remain addressable for their documented retention period.
 
-The revision and Turn-snapshot boundaries prevent accepted work from changing
+The revision and Turn-state boundaries prevent accepted work from changing
 underneath the worker. For example, a Builder can materialize an
 `AgentRevision` at version `7` from an exact Preset, `model_id`, Tool, Skill,
 Connector, and Environment revisions and then edit either the Agent or the
@@ -94,8 +111,11 @@ Materialization validates resource scope, references, schemas, permission to
 bind each resource, dependency compatibility, and all required locks before
 committing the immutable revision. The revision records identity and
 compatibility, not live authority. Turn acceptance separately validates the
-current ModelConfig. Current credentials, RoleBindings, run grants, Secret
-eligibility, and Environment bindings are resolved freshly for every
+current ModelConfig, resolves the effective managed Skill selection, and writes
+that selection and the exact Environment execution configuration into initial
+Turn state.
+Current credentials, RoleBindings, run grants, Secret eligibility, and runtime
+Environment bindings from that configuration are resolved freshly for every
 `TurnAttempt` and Harness Run.
 
 ## Dependency Locks
@@ -107,6 +127,15 @@ semantics. It includes exact package or content identities, trusted adapter
 keys, selected Connector Provider artifacts, managed Harness plugin package
 revision IDs and wheel digests, relevant schema or codec compatibility, and
 integrity digests when content is externally materialized.
+
+For every available managed Skill, the dependency lock contains the immutable Skill
+revision ID, model-facing name, and normalized content digest. It contains no upload
+receipt, GitHub selector, mutable Skill head, object URL, credential selector, or
+Environment path.
+
+The Turn state stores only the effective ordered Skill names resolved within those
+locks. It does not duplicate revision IDs, digests, package locations, or
+materialization status.
 
 The model-provider adapter and schema lock are selected with current
 ModelConfig and captured in the Turn-owned `ModelExecutionSnapshot`, not in the
@@ -125,32 +154,36 @@ sequenceDiagram
     participant Adapter as Trusted adapter
     participant Harness
 
-    Worker->>Store: read Turn, exact AgentRevision, model snapshot, and locks
+    Worker->>Store: read Turn, state, exact AgentRevision, model snapshot, and locks
     Worker->>Worker: verify scope, locks, loaded-plugin compatibility, and TurnAttempt generation
     Worker->>Adapter: reconstruct native Agent inputs
     Adapter-->>Worker: AgentSpec with concrete settings, Model, Capabilities, plugins, and policies
-    Worker->>Worker: create fresh Identity, policy, credential, model, and provider attachments
+    Worker->>Worker: create fresh Identity, policy, credential, model, and Environment connector attachments
     Worker->>Harness: HarnessBuilder with process-local values
     Harness-->>Worker: ExecutableAgent
 ```
 
 Reconstruction is deterministic with respect to the Agent revision, Turn-owned
-model snapshot, and declared locks, while live authority and provider
-reachability are intentionally fresh. The worker assigns a stable
+model snapshot, effective Skill selection, and declared locks. Live authority
+and provider reachability are intentionally fresh. The worker assigns a stable
 `AgentInstanceRef` to each independently advancing root, delegated child Agent,
 or fork history. A replacement worker preserves that reference for the same
 Thread but uses a new `TurnAttempt`, transient Harness Run correlation, and
 fresh bindings.
 
 The worker validates the complete definition before starting model or tool
-work. It reconstructs Harness `ModelConfiguration` and native `ModelSettings`
-from the revision's concrete behavior settings and the Turn's model snapshot,
-without alias or current-configuration lookup. Before claim, it ensures that
-every managed plugin lock is either absent from the interpreter and loadable on
-demand or exactly matches the process-local loaded-plugin registry. It does not
-partially execute a revision whose output schema, Capability state codec,
-plugin contract, model adapter, Environment provider, or dependency lock is
-incompatible.
+work. It validates the Turn's effective Skill names against the selected
+AgentRevision, verifies the corresponding exact revisions and package objects, then
+uses the [Skill Worker materialization contract](27-skill-management.md#worker-materialization-and-harness-use)
+to populate explicit Environment-backed roots and construct the run override
+before Harness model exposure. It reconstructs Harness `ModelConfiguration` and
+native `ModelSettings` from the revision's concrete behavior settings and the
+Turn's model snapshot, without alias or current-configuration lookup. After
+claim and before Harness entry, it ensures that every managed plugin lock is
+either absent from the interpreter and loadable on demand or exactly matches
+the process-local loaded-plugin registry. It does not partially execute a
+revision whose output schema, Capability state codec, plugin contract, model
+adapter, Environment connector, or dependency lock is incompatible.
 
 ## Continuation Compatibility
 
@@ -164,26 +197,32 @@ Editing an Agent or publishing another revision never mutates an existing Turn, 
 | ------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Missing revision or lock                          | Turn fails before Harness construction                                          |
 | Content digest or package lock mismatch           | Turn fails closed and records bounded incompatibility evidence                  |
-| Worker already pins a conflicting plugin revision | That Worker declines claim; exact work remains eligible for compatible capacity |
+| Managed Skill package or materialization mismatch | Turn fails before Skill instructions or paths reach the model                   |
+| Worker already pins a conflicting plugin revision | The claimed Attempt fails preparation as retryable within the Turn budget       |
 | Unknown adapter or plugin key                     | Revision is not reconstructed; no ambient import fallback occurs                |
 | Required `RunModelResolver` unavailable           | Turn fails before native model inference                                        |
 | Credential or policy unavailable                  | Fresh binding fails; the immutable revision is not rewritten                    |
 | Checkpoint incompatible with revision             | Continuation fails before Harness entry; display history is not substituted     |
-| Worker lost during reconstruction                 | Lease recovery uses a new generation; no process-local object is restored       |
+| Attempt lease expires during reconstruction       | A Worker takeover creates a new generation; no process-local object is restored |
 
 ## Invariants
 
-1. A Turn stores one exact `AgentRevisionId` and one accepted model execution
-   snapshot; the worker resolves neither a mutable Agent head nor current model
-   configuration at claim time.
-2. A revision contains serializable Foundation data and references only, never live Python objects or credentials.
-3. Dependency locks and content digests are verified before Harness construction.
-4. Package presence does not authorize an adapter, plugin, Capability, provider, or import target.
-5. Every TurnAttempt reconstructs fresh authority and bindings without mutating the selected revision.
-6. Replacement workers preserve stable Thread identity and change TurnAttempt generation and transient Harness Run correlation.
-7. A retained checkpoint is used only under explicitly compatible Agent and state contracts.
-8. Connector tool contracts and Provider artifacts are frozen by the Agent
-   revision; model and Connector credentials remain fresh per TurnAttempt.
-9. Managed Harness plugin selection freezes the exact package revision and
-   digest; a Worker loads only that revision and never replaces a conflicting
-   imported module in place.
+01. A Turn stores one exact `AgentRevisionId` and one accepted model execution
+    snapshot, while its immutable state envelope stores the exact Environment
+    execution configuration and effective managed Skill names; the worker resolves
+    neither a mutable Agent head, current model configuration, nor another Skill
+    default at claim time.
+02. A revision contains serializable Foundation data and references only, never live Python objects or credentials.
+03. Dependency locks and content digests are verified before Harness construction.
+04. Package presence does not authorize an adapter, plugin, Capability, provider, or import target.
+05. Every TurnAttempt reconstructs fresh authority and bindings without mutating the selected revision.
+06. Replacement workers preserve stable Thread identity and change TurnAttempt generation and transient Harness Run correlation.
+07. A retained checkpoint is used only under explicitly compatible Agent and state contracts.
+08. Connector tool contracts and Provider artifacts are frozen by the Agent
+    revision; model and Connector credentials remain fresh per TurnAttempt.
+09. Managed Harness plugin selection freezes the exact package revision and
+    digest; a Worker loads only that revision and never replaces a conflicting
+    imported module in place.
+10. AgentRevision freezes the available managed Skill revisions, names, digests,
+    and defaults; Turn state freezes the effective names, and Worker materialization
+    completes and verifies before Harness Skill exposure.

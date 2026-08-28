@@ -2,14 +2,14 @@
 
 ## Design Position
 
-| Dimension               | Core question                              | Foundation choice                                                                                                                                                                                                                                   |
-| ----------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity and boundary   | When are Turn and TurnAttempt created?     | Accepting a new Agent request creates a Turn. Starting or restarting a worker for that same accepted request creates a `TurnAttempt` under the existing Turn; its input, parent, selections, and state key do not change                            |
-| Logical history         | How do Turns form history?                 | `parent_turn_id` forms a Git-like DAG; the independent Thread row selects current and continuation-head Turns, continue preserves Thread identity, and fork creates a new Thread                                                                    |
-| Persistence             | Where is a Turn persisted?                 | Turn metadata lives in the relational database; resumable state and large Turn inputs and outputs live in object storage                                                                                                                            |
-| Stored data             | What does a Turn persist?                  | The Turn row holds metadata and object references; `TurnStateEnvelope` holds Harness and Host continuation state; `TurnPayloadEnvelope` holds large Turn inputs and outputs                                                                         |
-| State advancement       | Which service instance can commit updates? | At most one worker service instance is lease-authorized through the current fenced `TurnAttempt`; only its relational and conditional object writes can commit, while stale or partitioned instances are rejected                                   |
-| Completion and recovery | How do checkpoint, seal, and resume work?  | Checkpoint publication conditionally overwrites the object at the same key; relational sealing selects the exact candidate digest; recovery reads the complete checkpoint from the latest conditionally committed version of that same state object |
+| Dimension               | Core question                              | Foundation choice                                                                                                                                                                                                                                         |
+| ----------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity and boundary   | When are Turn and TurnAttempt created?     | Accepting a new Agent request creates a Turn. Starting or restarting a worker for that same accepted request creates a `TurnAttempt` under the existing Turn; its input, parent, selections, and state key do not change                                  |
+| Logical history         | How do Turns form history?                 | `parent_turn_id` forms a Git-like DAG; the independent Thread row selects current and continuation-head Turns, continue preserves Thread identity, and fork creates a new Thread                                                                          |
+| Persistence             | Where is a Turn persisted?                 | Turn metadata lives in the relational database; resumable state and large Turn inputs and outputs live in object storage                                                                                                                                  |
+| Stored data             | What does a Turn persist?                  | The Turn row holds metadata and object references; `TurnStateEnvelope` holds immutable Environment execution configuration, effective Skill selection, and Harness and Host continuation state; `TurnPayloadEnvelope` holds large Turn inputs and outputs |
+| State advancement       | Which service instance can commit updates? | At most one worker service instance is lease-authorized through the current fenced `TurnAttempt`; only its relational and conditional object writes can commit, while stale or partitioned instances are rejected                                         |
+| Completion and recovery | How do checkpoint, seal, and resume work?  | Checkpoint publication conditionally overwrites the object at the same key; relational sealing selects the exact candidate digest; recovery reads the complete checkpoint from the latest conditionally committed version of that same state object       |
 
 Foundation Service persists each accepted Thread advancement as one relational
 `Turn` row. The Turn is the durable Agent-work, scheduling, recovery, and
@@ -49,22 +49,23 @@ generation, and Foundation defines no generic `Execution` resource.
 
 ## Boundaries
 
-| Concern                                                                      | Owner                                                                              | Contract                                                                                      |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                                      | [Platform Interaction Model](../interaction-model.md)                              | Defines public identity and relationships                                                     |
-| Thread row, Session membership, version, current Turn, and continuation head | [Durable Thread Persistence](24-thread-persistence.md)                             | Serializes accepted advancement and selects the exact resumable history head                  |
-| Portable messages, Capability namespaces, Environment data, and Thread ID    | [Harness State](../agent-harness/10-snapshot-and-resume.md)                        | Supplies detached state without Host authority                                                |
-| Turn row, parent edge, state selection, and outcome                          | Foundation Turn domain                                                             | Forms the authoritative interaction history and Turn-level recovery boundary                  |
-| Connector selections and accepted Trigger source                             | [Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md) | Defines the exact Connector-owned facts frozen at Turn acceptance                             |
-| Scheduling, recovery budget, and current-attempt selection                   | Foundation Turn domain                                                             | Authorizes initial dispatch, bounded recovery, and one sealed outcome                         |
-| Worker generation, lease, and stale-writer fencing                           | [Turn Attempt Persistence](15-turn-attempt-persistence.md)                         | Authorizes one worker generation and preserves its immutable attempt audit                    |
-| Current complete Turn state                                                  | One deterministic Turn state object                                                | Stores the latest conditionally committed Harness and Host state; freezes when the Turn seals |
-| Provider resource launch, reattachment, and non-portable continuation        | Foundation Host state and selected provider integration                            | Reconstructs fresh bindings without becoming Harness state                                    |
-| Object storage operations                                                    | [Object storage](03-storage.md#object-storage)                                     | Supplies atomic whole-object publication and expected-version replacement                     |
-| Lifecycle events, stream messages, and Items                                 | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)         | Stores ordered facts, transports live observations, and retains presentation projections      |
-| Pending calls and approvals                                                  | Waiting Turn plus its frozen Turn state                                            | Stores a bounded relational summary and the complete deferred value without a separate table  |
-| Unresolved Agent tool calls                                                  | `TurnAttempt` dispatch summary plus fresh Host model context                       | Preserves `unknown_outcome` without replaying the call or blocking semantic resume            |
-| Credentials and invocation authority                                         | Foundation Secret and policy boundaries                                            | Resolves fresh authority; plaintext credentials never enter Turn state                        |
+| Concern                                                                      | Owner                                                                                       | Contract                                                                                          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                                      | [Platform Interaction Model](../interaction-model.md)                                       | Defines public identity and relationships                                                         |
+| Thread row, Session membership, version, current Turn, and continuation head | [Durable Thread Persistence](24-thread-persistence.md)                                      | Serializes accepted advancement and selects the exact resumable history head                      |
+| Portable messages, Capability namespaces, Environment data, and Thread ID    | [Harness State](../agent-harness/10-snapshot-and-resume.md)                                 | Supplies detached state without Host authority                                                    |
+| Turn row, parent edge, state selection, and outcome                          | Foundation Turn domain                                                                      | Forms the authoritative interaction history and Turn-level recovery boundary                      |
+| Connector selections and accepted Trigger source                             | [Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)          | Defines the exact Connector-owned facts frozen at Turn acceptance                                 |
+| Environment selection and execution configuration                            | [Environment Management](19-environment-management.md#environment-selection-and-turn-state) | Freezes exact connection targets, connector locks, Secret references, and routing in state        |
+| Effective managed Skill selection                                            | [Foundation Skill Management](27-skill-management.md#agent-revision-selection)              | Resolves an optional invocation override within the AgentRevision catalog and freezes it in state |
+| Scheduling, recovery budget, and current-attempt selection                   | Foundation Turn domain                                                                      | Authorizes initial dispatch, bounded recovery, and one sealed outcome                             |
+| Worker generation, lease, and stale-writer fencing                           | [Turn Attempt Persistence](15-turn-attempt-persistence.md)                                  | Authorizes one worker generation and preserves its immutable attempt audit                        |
+| Current complete Turn state                                                  | One deterministic Turn state object                                                         | Stores the latest conditionally committed Harness and Host state; freezes when the Turn seals     |
+| Object storage operations                                                    | [Object storage](03-storage.md#object-storage)                                              | Supplies atomic whole-object publication and expected-version replacement                         |
+| Lifecycle events, stream messages, and Items                                 | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                  | Stores ordered facts, transports live observations, and retains presentation projections          |
+| Pending calls and approvals                                                  | Waiting Turn plus its frozen Turn state                                                     | Stores a bounded relational summary and the complete deferred value without a separate table      |
+| Unresolved Agent tool calls                                                  | `TurnAttempt` dispatch summary plus fresh Host model context                                | Preserves `unknown_outcome` without replaying the call or blocking semantic resume                |
+| Credentials and invocation authority                                         | Foundation Secret and policy boundaries                                                     | Resolves fresh authority; plaintext credentials never enter Turn state                            |
 
 ## Durable Turn Model
 
@@ -229,19 +230,39 @@ TurnAttempt, and can transition only to null in the sealing transaction. The
 safe observation remains after sealing. Neither value is part of the Harness
 continuation state.
 
+The [Environment Management contract](19-environment-management.md#environment-selection-and-turn-state)
+owns `EnvironmentExecutionConfig`. It is stored in the Turn state envelope,
+not the relational Turn row. It contains ordered entries resolved from exact
+named revisions or Turn-owned inline configurations, connection targets,
+binding and default routing, exact connector locks, and non-secret credential
+references. Every replacement TurnAttempt reuses that complete configuration
+and resolves current eligible credentials.
+
+The [Foundation Skill Management contract](27-skill-management.md#agent-revision-selection)
+owns effective managed Skill selection. Turn acceptance resolves an optional
+`selected_skill_names` invocation override against the exact available locks and
+defaults in the selected AgentRevision. The resulting ordered tuple is stored in
+the Turn state envelope, not the relational Turn row, and every replacement
+TurnAttempt reuses it.
+
 The [Connector contract](23-connectors-connections-and-triggers.md#connection-selection-and-turnattempt-preparation)
 defines `ConnectorTurnSelection` and `AcceptedTriggerSource`. A Turn with no
 Connector declarations stores an empty `connector_selections`; only a Turn
 accepted from a managed Trigger stores `accepted_trigger`, and its
 `trigger_entity_id` equals that accepted Trigger ID.
 
-`sealed_state` is absent while the Turn is active. The sealing transaction
-records the exact digest, size, schema versions, and checkpoint sequence of the
-state object that becomes frozen with the Turn. The deterministic key plus
-these fields identifies the exact terminal bytes without introducing a second
-base or result object. `committed_by_turn_attempt_id` is null only when a
-control-plane failure or cancellation seals a Turn without an attempt-originated
-state change.
+`sealed_state` is absent while the Turn is active. A `waiting` or `completed`
+sealing transaction always records the exact digest, size, schema versions, and
+checkpoint sequence of the state object frozen with the Turn. A `failed` or
+`cancelled` Turn records the latest valid state when one was already selected;
+it may leave `sealed_state` null when the failure itself means no valid state can
+be selected or when a relational fail-closed decision does not require another
+object read. The deterministic key is frozen in either case and is never
+overwritten after sealing. When a sealed state is present, its fields identify
+the exact terminal bytes without introducing a second base or result object.
+`committed_by_turn_attempt_id` is null only when a relational fail-closed
+decision or cancellation seals a Turn without an attempt-originated state
+change.
 
 Every Turn can own zero or more immutable `TurnAttempt` values over its
 lifetime, with at most one current and lease-authorized attempt. The
@@ -250,11 +271,12 @@ owns when those attempts are created.
 
 `RecoveryBudget` is the accepted recovery-policy snapshot. `max_attempts`
 includes the first attempt. `recovery_deadline_at` is a fixed UTC deadline;
-`usage_charged` aggregates every attempt, including known usage from failed or
-lost work. Every counter and limit is non-negative. A null limit is unbounded,
-and missing usage is not treated as zero when the selected provider can
-reconcile it. The Turn row is the sole authority for whether another attempt
-may be created.
+`usage_charged` aggregates every attempt, including known usage from failed
+work. Every counter and limit is non-negative. A null limit is unbounded.
+Missing required usage is never treated as zero; if durable usage evidence is
+insufficient to prove that a configured ceiling remains, no new Attempt is
+admitted. The Turn row is the sole authority for whether another attempt may be
+created.
 
 The exact `AgentRevisionId` is fixed at Turn acceptance. The selected immutable
 Agent revision owns its dependency locks and exact `model_id`; acceptance
@@ -272,8 +294,8 @@ are optional bounded derived projections and never replace exact data or the
 complete message history.
 
 `waiting` is a sealed Turn outcome. It contains a bounded `pending` summary;
-the frozen Turn state contains the authoritative deferred requests, effective
-client-tool surface, and Host provider continuation. Authenticated feedback is
+the frozen Turn state contains the authoritative deferred requests and effective
+client-tool surface. Authenticated feedback is
 the accepted input of a new Turn whose `parent_turn_id` names the waiting Turn
 and whose state is initialized from that waiting state.
 
@@ -285,7 +307,7 @@ stateDiagram-v2
     accepted --> running: TurnAttempt leased and fenced
     accepted --> failed: terminal pre-Run failure
     accepted --> cancelled
-    running --> accepted: recovery admitted and budget available
+    running --> running: attempt replacement or bounded backoff
     running --> waiting: deferred outcome sealed
     running --> completed: state and output sealed
     running --> failed
@@ -297,23 +319,28 @@ stateDiagram-v2
 ```
 
 `accepted` means the complete Turn row, accepted input, exact selections,
-recovery budget, scheduling fields, and initial or resumed state object are
-durable; no attempt is current; and the scheduler may claim the Turn once
-`available_at` is reached. It is both the initial scheduling state and the
-state to which resume-safe work returns. It is not a queued user-input entry,
-and Turn defines no `queued` state.
+recovery budget, scheduling fields, and initial complete state object are
+durable; no attempt is current; and a Worker may claim the Turn once
+`available_at` is reached. It is only the initial pre-claim scheduling state.
+Once the first Attempt is created, that Turn never returns to `accepted`. It is
+not a queued user-input entry, and Turn defines no `queued` state.
 
-`running` means a current `TurnAttempt` is leased and fenced. `started_at`
-records the first Harness Run entry and never changes during recovery.
+`running` means execution of this Turn has begun and the Turn remains active. It
+normally selects one non-terminal `TurnAttempt`; during a retryable backoff it
+may temporarily have no current attempt, and an expired selected lease grants no
+worker authority while awaiting transactional takeover. `started_at` records
+the first Harness Run entry and never changes during recovery.
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed outcomes.
-`sealed_at` and `sealed_state` are selected in the same relational transaction.
-A sealed Turn never changes any column and its state key is never overwritten.
+`sealed_at` and any available `sealed_state` are selected in the same relational
+transaction. A sealed Turn never changes any column and its state key is never
+overwritten.
 
 The Turn remains the budget and lifecycle authority after attempt failure or
-loss. The [Turn Attempt recovery contract](15-turn-attempt-persistence.md#recovery-and-budget-enforcement)
-returns structurally resumable, in-budget work to `accepted` and seals invalid,
-incompatible, non-retryable, or exhausted work as `failed`.
+lease expiry. The [Turn Attempt recovery contract](15-turn-attempt-persistence.md#recovery-and-budget-enforcement)
+keeps structurally resumable, in-budget work `running` across replacement
+attempts and seals invalid, incompatible, non-retryable, or exhausted work as
+`failed`.
 
 ### Key Entity Relationships
 
@@ -340,23 +367,23 @@ The complete identity-allocation decision table is owned by
 The conceptual `Turn` materializes as one row in `turns`; supported relational
 backends preserve the same validation and query semantics.
 
-| Column group         | Columns                                                                                                                                                                                                                                         | Relational shape and contract                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Identity             | `id`, `version`, `tenant_id`                                                                                                                                                                                                                    | Opaque text IDs and a positive integer CAS version; `id` is the primary key                      |
-| Interaction lineage  | `session_id`, `thread_id`, `parent_turn_id`, `lineage_kind`                                                                                                                                                                                     | Immutable after acceptance; parent is null only for a root                                       |
-| Scheduling           | `priority`, `queue_name`, `available_at`, `current_turn_attempt_id`, `next_attempt_fence`                                                                                                                                                       | Durable claim order and the sole current worker generation                                       |
-| Recovery budget      | `recovery_policy_version`, `max_attempts`, `recovery_deadline_at`, `max_usage_json`, `attempts_started`, `usage_charged_json`                                                                                                                   | Accepted finite limits and atomically charged consumption                                        |
-| Idempotency          | `idempotency_key`, `request_fingerprint`                                                                                                                                                                                                        | Optional retry-safe acceptance identity and exact bounded request fingerprint                    |
-| Trigger correlation  | `trigger_type`, `trigger_entity_type`, `trigger_entity_id`, `parent_agent_instance_id`, `delegation_id`, `parent_tool_call_id`                                                                                                                  | Bounded typed correlation; never state-lineage authority                                         |
-| Agent selection      | `agent_revision_id`                                                                                                                                                                                                                             | Exact immutable Agent revision selected at acceptance; it owns Agent dependency locks            |
-| Model selection      | `model_execution_snapshot_json`, `model_execution_observation_json`                                                                                                                                                                             | Active non-secret execution snapshot plus retained safe observation                              |
-| Connector acceptance | `connector_selections_json`, `accepted_trigger_json`                                                                                                                                                                                            | Bounded immutable Connector selections and optional exact Trigger occurrence                     |
-| Lifecycle            | `status`, `wait_reason`, `pending_json`                                                                                                                                                                                                         | Enum-constrained state; bounded pending summary exists exactly for `waiting`                     |
-| Input                | `input_json`, `input_object_key`, `input_object_digest_sha256`, `input_object_size_bytes`, `input_object_content_type`, `input_object_schema_version`, `input_text`                                                                             | Exactly one inline JSON value or immutable object reference; optional text projection            |
-| Output               | `output_json`, `output_object_key`, `output_object_digest_sha256`, `output_object_size_bytes`, `output_object_content_type`, `output_object_schema_version`, `output_text`                                                                      | Exactly one representation for completed Turns; absent otherwise                                 |
-| Failure              | `failure_json`                                                                                                                                                                                                                                  | Bounded safe structured failure only; no raw exception                                           |
-| Sealed state         | `sealed_state_digest_sha256`, `sealed_state_size_bytes`, `sealed_state_content_type`, `sealed_state_envelope_schema_version`, `sealed_state_harness_schema_version`, `sealed_state_checkpoint_seq`, `sealed_state_committed_by_turn_attempt_id` | Exact frozen state identity present only after sealing; object key is derived rather than stored |
-| Time                 | `created_at`, `updated_at`, `started_at`, `waiting_at`, `completed_at`, `sealed_at`                                                                                                                                                             | UTC instants; lifecycle checks govern nullability                                                |
+| Column group         | Columns                                                                                                                                                                                                                                         | Relational shape and contract                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Identity             | `id`, `version`, `tenant_id`                                                                                                                                                                                                                    | Opaque text IDs and a positive integer CAS version; `id` is the primary key                                             |
+| Interaction lineage  | `session_id`, `thread_id`, `parent_turn_id`, `lineage_kind`                                                                                                                                                                                     | Immutable after acceptance; parent is null only for a root                                                              |
+| Scheduling           | `priority`, `queue_name`, `available_at`, `current_turn_attempt_id`, `next_attempt_fence`                                                                                                                                                       | Durable claim order and the sole current worker generation                                                              |
+| Recovery budget      | `recovery_policy_version`, `max_attempts`, `recovery_deadline_at`, `max_usage_json`, `attempts_started`, `usage_charged_json`                                                                                                                   | Accepted finite limits and atomically charged consumption                                                               |
+| Idempotency          | `idempotency_key`, `request_fingerprint`                                                                                                                                                                                                        | Optional retry-safe acceptance identity and exact bounded request fingerprint                                           |
+| Trigger correlation  | `trigger_type`, `trigger_entity_type`, `trigger_entity_id`, `parent_agent_instance_id`, `delegation_id`, `parent_tool_call_id`                                                                                                                  | Bounded typed correlation; never state-lineage authority                                                                |
+| Agent selection      | `agent_revision_id`                                                                                                                                                                                                                             | Exact immutable Agent revision selected at acceptance; it owns Agent dependency locks                                   |
+| Model selection      | `model_execution_snapshot_json`, `model_execution_observation_json`                                                                                                                                                                             | Active non-secret execution snapshot plus retained safe observation                                                     |
+| Connector acceptance | `connector_selections_json`, `accepted_trigger_json`                                                                                                                                                                                            | Bounded immutable Connector selections and optional exact Trigger occurrence                                            |
+| Lifecycle            | `status`, `wait_reason`, `pending_json`                                                                                                                                                                                                         | Enum-constrained state; bounded pending summary exists exactly for `waiting`                                            |
+| Input                | `input_json`, `input_object_key`, `input_object_digest_sha256`, `input_object_size_bytes`, `input_object_content_type`, `input_object_schema_version`, `input_text`                                                                             | Exactly one inline JSON value or immutable object reference; optional text projection                                   |
+| Output               | `output_json`, `output_object_key`, `output_object_digest_sha256`, `output_object_size_bytes`, `output_object_content_type`, `output_object_schema_version`, `output_text`                                                                      | Exactly one representation for completed Turns; absent otherwise                                                        |
+| Failure              | `failure_json`                                                                                                                                                                                                                                  | Bounded safe structured failure only; no raw exception                                                                  |
+| Sealed state         | `sealed_state_digest_sha256`, `sealed_state_size_bytes`, `sealed_state_content_type`, `sealed_state_envelope_schema_version`, `sealed_state_harness_schema_version`, `sealed_state_checkpoint_seq`, `sealed_state_committed_by_turn_attempt_id` | Exact frozen state identity for waiting/completed and valid failure snapshots; object key is derived rather than stored |
+| Time                 | `created_at`, `updated_at`, `started_at`, `waiting_at`, `completed_at`, `sealed_at`                                                                                                                                                             | UTC instants; lifecycle checks govern nullability                                                                       |
 
 Object-reference columns form all-or-none groups. Bounded values are validated
 before relational mutation; object keys and digests grant no authority.
@@ -423,7 +450,6 @@ new Turn from a selected parent. It contains data and correlation, never current
 authority.
 
 ```python
-type ContinuationScope = Literal["same_thread", "portable"]
 type TurnStateCheckpointKind = Literal[
     "initial",
     "progress",
@@ -431,24 +457,6 @@ type TurnStateCheckpointKind = Literal[
     "completed",
 ]
 type TurnInputDisposition = Literal["pending", "applied"]
-
-
-class EntityRevisionRef:
-    entity_type: str
-    entity_id: str
-    version: int
-    digest_sha256: str
-
-
-class ProviderContinuationEntry:
-    resource_kind: str
-    binding_id: str
-    provider_type: str
-    state_version: str
-    continuation_scope: ContinuationScope
-    required: bool
-    observed_generation: str | None
-    payload: JsonValue | None
 
 
 class ProviderPendingRequest:
@@ -468,8 +476,6 @@ class DeferredContinuationState:
 
 class HostContinuationState:
     schema_version: Literal["1"]
-    desired_environment_topology: EntityRevisionRef | None
-    provider_entries: tuple[ProviderContinuationEntry, ...]
     deferred: DeferredContinuationState | None
 
 
@@ -493,6 +499,8 @@ class TurnStateEnvelope:
     last_checkpoint_fence: int
 
     agent_revision_id: AgentRevisionId
+    environment_config: EnvironmentExecutionConfig
+    selected_skill_names: tuple[str, ...]
     harness_schema_version: str
     harness: HarnessState
     host: HostContinuationState
@@ -505,6 +513,19 @@ starts at zero and increases monotonically for each successful semantic state
 replacement. The initial value has `checkpoint_kind=initial`,
 `input_disposition=pending`, no attempt identity, fence zero, and no outcome
 candidate.
+
+`environment_config` is resolved and authorized at Turn acceptance. Its exact
+connection targets, named or inline sources, connector locks, Secret references,
+permission ceilings, topology, and digest remain byte-for-byte equivalent across
+every checkpoint replacement for that Turn. A worker reauthorizes its references
+and resolves fresh Secret values, but cannot rewrite the accepted configuration.
+
+`selected_skill_names` is the complete effective selection resolved at Turn
+acceptance. It is ordered by the selected AgentRevision's available catalog,
+contains no duplicate or unknown name, and remains byte-for-byte equivalent across
+every checkpoint replacement. A worker revalidates it against the exact revision
+locks and current authority but cannot replace it with Agent defaults or another
+invocation value.
 
 The first checkpoint after the accepted Turn input has crossed the Harness
 input boundary sets `input_disposition=applied`. Every later progress or outcome
@@ -520,52 +541,50 @@ has an output representation, no pending summary, and no deferred state. The
 candidate is durable preparation for the relational outcome transaction; it is
 not a sealed Turn outcome by itself.
 
-Each `ProviderContinuationEntry.payload` is bounded provider-owned JSON
-interpreted under `state_version` and stored inline in `TurnStateEnvelope`; it
-is recovery data, not authoritative provider resource state. A required entry
-has a payload; an optional entry can omit it and request fresh materialization.
 `provider_requests` carries only
 Host/provider suspension values not represented by Pydantic deferred requests.
 Its call IDs and those inside `requests` are disjoint, and their union equals
 the waiting pending summary.
 
-The envelope separates two state classes:
+The envelope separates three state classes:
 
-| State class             | Contents                                                                                                                         | Restore rule                                                                                  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Harness portable state  | Thread ID, messages, Capability namespaces, portable Environment binding data                                                    | Validated by Harness and owning codecs after fresh bindings exist                             |
-| Host continuation state | Desired-topology version, provider launch or reattachment data, and optional complete deferred request and client-surface values | Validated and consumed by Foundation and selected integrations before or around Harness entry |
+| State class                  | Contents                                                                           | Restore rule                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Environment execution config | Exact connection targets, connector locks, Secret references, permissions, routing | Immutable for the Turn; reauthorized before fresh attachments are opened                      |
+| Effective Skill selection    | Exact ordered names within the selected AgentRevision's available Skill locks      | Immutable for the Turn; locks and current authority are revalidated before materialization    |
+| Harness portable state       | Thread ID, messages, Capability namespaces, and portable Environment binding data  | Validated by Harness and owning codecs after fresh bindings exist                             |
+| Host continuation state      | Optional complete deferred-request and effective client-surface values             | Validated and consumed by Foundation and selected integrations before or around Harness entry |
 
 The envelope contains data and correlation only; current policy, credentials,
 live resources, and process-local objects are resolved afresh.
 
-`continuation_scope` bounds initialization of a new Turn:
-
-| Scope         | Permitted reuse                                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------- |
-| `same_thread` | A new Turn preserving `thread_id` and naming the exact previous Turn through `parent_turn_id`              |
-| `portable`    | A new Turn in the same Thread or an explicit fork after current authorization and compatibility validation |
-
-Fork drops entries that are not portable. A missing optional entry causes fresh
-provider materialization. A required entry that is unavailable, incompatible,
-malformed, or unauthorized fails before model or tool work.
+Fork portability is determined by Harness state and each owning deferred-value
+contract. Harness portable state contains no external resource identity,
+credentials, connector clients, or live attachment. Each new Turn independently
+freezes its accepted Environment execution configuration.
 
 ### State Initialization Matrix
 
-| Concern                                       | Root Turn                                                   | Continue or waiting-feedback Turn                                                    | Fork Turn                                                                       |
-| --------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| Turn and state identity                       | Allocate a Turn and deterministic Turn-owned state key      | Allocate a new Turn and new key; name the exact sealed parent                        | Allocate a new Turn, new Thread, and new key                                    |
-| Harness state                                 | Create `HarnessState.new()`                                 | Copy the parent's frozen Harness state and preserve `thread_id`                      | Apply `HarnessState.fork()` and use its new `thread_id`                         |
-| Host provider continuation                    | Build from desired topology and current provider selections | Retain eligible entries; waiting feedback retains the exact deferred value initially | Retain only eligible `portable` entries; clear parent outcome and deferred data |
-| Accepted input                                | Store on the Turn; initial state marks it pending           | Store new input on the new Turn; initial state marks it pending                      | Store new input on the new Turn; initial state marks it pending                 |
-| Definition and integration                    | Pin exact Turn selections                                   | Pin exact selections for the new Turn and validate inherited data                    | Pin exact selections for the new Turn and validate portable inherited data      |
-| Policy, Secrets, bindings, tools, and clients | Resolve fresh for the Harness Run                           | Resolve fresh and reauthorize retained selectors                                     | Resolve fresh and reauthorize retained portable selectors                       |
+| Concern                                       | Root Turn                                              | Continue or waiting-feedback Turn                                                                                                                 | Fork Turn                                                                                                    |
+| --------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Turn and state identity                       | Allocate a Turn and deterministic Turn-owned state key | Allocate a new Turn and new key; name the exact sealed parent                                                                                     | Allocate a new Turn, new Thread, and new key                                                                 |
+| Harness state                                 | Create `HarnessState.new()`                            | Copy the parent's frozen Harness state and preserve `thread_id`                                                                                   | Apply `HarnessState.fork()` and use its new `thread_id`                                                      |
+| Host deferred continuation                    | Start empty                                            | Waiting feedback retains the exact deferred value required to apply its response                                                                  | Clear parent outcome and deferred data                                                                       |
+| Accepted input                                | Store on the Turn; initial state marks it pending      | Store new input on the new Turn; initial state marks it pending                                                                                   | Store new input on the new Turn; initial state marks it pending                                              |
+| Environment execution configuration           | Resolve and freeze the accepted topology in state      | Resolve and freeze the new Turn's accepted topology; do not inherit implicitly                                                                    | Resolve and freeze the new Turn's accepted topology; do not inherit implicitly                               |
+| Effective managed Skill selection             | Resolve the request override or AgentRevision default  | Ordinary continue resolves its request or default; waiting feedback preserves the parent's exact tuple; validate inherited Skill Capability state | Resolve the request override or AgentRevision default and validate portable inherited Skill Capability state |
+| Definition and integration                    | Pin exact Turn selections                              | Pin exact selections for the new Turn and validate inherited data                                                                                 | Pin exact selections for the new Turn and validate portable inherited data                                   |
+| Policy, Secrets, bindings, tools, and clients | Resolve fresh for the Harness Run                      | Resolve fresh and reauthorize retained selectors                                                                                                  | Resolve fresh and reauthorize retained portable selectors                                                    |
 
 Initialization of a new Turn always writes a complete Turn-owned envelope with
 `checkpoint_seq=0`. It does not reference the parent state as a base, retain the
 parent's outcome candidate as the new Turn's outcome, or create another state
 field on the new Turn. Parent state is only immutable source data for this
 initialization.
+
+An explicit retry preserves the failed or cancelled source Turn's
+`selected_skill_names` as part of the exact accepted intent and accepts no new
+Skill override.
 
 ### State Key, Conditional Writes, and Fencing
 
@@ -607,7 +626,7 @@ bindings, and process-local handles never enter the object.
 
 After the [Turn Attempt allocation contract](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary)
 authorizes a later attempt for the same Turn, the worker claims the existing
-state key, validates the envelope and provider continuation, reconstructs fresh
+state key, validates the envelope and its owned state codecs, reconstructs fresh
 bindings, and resumes:
 
 - `input_disposition=pending` starts from the initialized state and supplies
@@ -674,8 +693,10 @@ Turn acceptance creates or advances the Thread row together with the Turn row
 and its initial state as one externally indivisible acceptance operation:
 
 1. validate authorization, Thread version, current/head selection, lineage,
-   selections, current enabled ModelConfig, and any parent state, then build
-   the complete Turn-owned initial state and model execution snapshot;
+   selections, the effective managed Skill names, current enabled ModelConfig,
+   and any parent state, then build the complete Turn-owned initial state
+   containing the exact Environment execution configuration and effective Skill
+   selection plus the separate model execution snapshot;
 2. publish object-backed input and `state.json` create-only;
 3. in one short transaction, insert or advance the Thread, insert the `accepted`
    Turn, and commit required lifecycle facts, idempotency evidence, and outbox
@@ -687,7 +708,7 @@ sequenceDiagram
     participant Objects as Object storage
     participant DB as Relational database
 
-    Control->>Control: Validate Thread, parent, policy, and current ModelConfig
+    Control->>Control: Validate Thread, parent, policy, Skill selection, and current ModelConfig
     Control->>Objects: Read frozen parent state when required
     Control->>Control: Build new Turn initial state
     Control->>Objects: Create new Turn state.json and object-backed input
@@ -779,11 +800,14 @@ constraints:
 3. Input has exactly one inline or object-backed representation. Outcome fields
    satisfy their status-specific nullability, and output exists only for
    `completed`.
-4. Every sealed-state digest matches the selected envelope identity, checkpoint,
-   and outcome candidate. Sealed rows reject all updates.
-5. `current_turn_attempt_id` exists exactly for `running`. Active updates require
-   expected Turn version; attempt-originated updates also require the current
-   attempt, fence, and lease.
+4. Every present sealed-state digest matches the selected envelope identity,
+   checkpoint, and outcome candidate. It is required for `waiting` and
+   `completed`; a fail-closed `failed` or `cancelled` Turn can omit it. Sealed
+   rows reject all updates.
+5. `current_turn_attempt_id` is absent for `accepted` and sealed Turns and can
+   exist only for `running`. A `running` Turn may omit it during bounded retry
+   backoff. Active updates require expected Turn version; attempt-originated
+   updates also require the current attempt, fence, and lease.
 6. Continue and fork require a completed parent. Waiting feedback requires the
    exact waiting parent and consumes all pending calls. Failed and cancelled
    Turns are never eligible parents.
@@ -794,7 +818,7 @@ The accepted access paths are:
 
 | Access path                          | Index or uniqueness contract                                                                                                          |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Scheduler claim                      | `(tenant_id, queue_name, status, available_at, priority, created_at, id)` for `accepted`                                              |
+| Worker claim and retry scan          | `(tenant_id, queue_name, status, available_at, priority, created_at, id)` for `accepted` and current-attempt-free `running` Turns     |
 | Idempotent acceptance                | Unique `(tenant_id, idempotency_key)` when the key exists                                                                             |
 | Session activity                     | `(tenant_id, session_id, created_at, id)`                                                                                             |
 | Thread activity and stable paging    | `(tenant_id, thread_id, created_at, id)`                                                                                              |
@@ -806,11 +830,12 @@ The accepted access paths are:
 
 ## Security and Protection
 
-Turn input, output, Harness state, Capability state, Environment state, provider
-continuation, pending summaries, deferred requests, and Turn-scoped audit and
-usage records are sensitive tenant data. Relational and object reads are
-tenant-scoped and reauthorized. Object keys and Turn IDs grant no access by
-possession.
+Turn input, output, Environment execution configuration, effective Skill selection,
+Harness state, Capability state, Environment state, pending summaries, deferred
+requests, and Turn-scoped audit and usage records are sensitive tenant data.
+Relational and object reads are tenant-scoped and reauthorized. External resource
+IDs and private endpoints are protected connection data; object keys and Turn IDs
+grant no access by possession.
 
 State and payload objects use authenticated integrity verification and
 deployment-approved encryption at rest. Plaintext credentials, bearer
@@ -818,10 +843,10 @@ authorization, Secret values, and ephemeral credential leases never enter a
 Turn row, state object, event, Item, error, trace, or ordinary log.
 
 Fork, continuation, and resume re-evaluate current policy, definition
-eligibility, provider availability, Capability composition, tool grants,
-Environment topology, and resource compatibility. Persisted state is data and
-correlation, not authority. Unknown Capability or provider payloads survive
-only under their own forward-compatible rules and are never executed or
+eligibility, provider availability, Capability composition, tool grants, and
+Environment execution configuration compatibility. Persisted state is data and
+correlation, not authority. Unknown Capability or Environment-state payloads
+survive only under their own forward-compatible rules and are never executed or
 attached by generic fallback.
 
 ## Failure and Recovery Semantics
@@ -834,11 +859,12 @@ attached by generic fallback.
 | State write response is lost                                                 | Replacement effect is unknown                                | Reconcile by deterministic key, metadata, and opaque version before retrying                                                                      |
 | Terminal candidate writes but relational seal fails                          | Turn remains active; candidate is a resumable prepared state | Current or later authorized attempt can retry exact sealing after reconciliation                                                                  |
 | Stale `TurnAttempt` writes state, lifecycle, usage, pending data, or outcome | Write is rejected by Turn and object fencing                 | Current attempt continues; stale work is cancelled best-effort                                                                                    |
-| Worker disappears after a committed checkpoint                               | Latest state remains at the same key                         | Later fenced attempt reconstructs fresh bindings and resumes according to `input_disposition`                                                     |
-| Worker disappears after uncheckpointed work                                  | Only the prior checkpoint is recoverable                     | Mark durably dispatched Agent tool calls without recorded results as `unknown_outcome`, then let a later attempt resume within budget             |
+| Worker disappears after a committed checkpoint                               | Latest state remains at the same key                         | After lease expiry, a Worker's transactional takeover creates a later fenced attempt that reconstructs fresh bindings and resumes                 |
+| Worker disappears after uncheckpointed work                                  | Only the prior checkpoint is recoverable                     | The replacement attempt projects unmatched durable Agent tool dispatches as `unknown_outcome` before resuming                                     |
 | Recovery budget is exhausted                                                 | Turn seals as `failed`                                       | The sealed Turn receives no later attempt; see the [allocation boundary](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary) |
-| Required state or provider data is incompatible or unavailable               | No model or tool work starts                                 | Apply an explicit compatible reader or fail the Turn                                                                                              |
-| State object is missing or fails integrity validation                        | Turn remains authoritative but unreadable                    | Fail closed and restore that exact key from protected recovery data; never substitute listing results                                             |
+| Required state, schema, or codec is permanently incompatible                 | No model or tool work starts                                 | Apply an explicit compatible reader or fail the Turn                                                                                              |
+| Frozen artifact or dependency is temporarily unavailable                     | Selected state remains unchanged                             | Apply bounded backoff only when policy classifies the condition retryable and budget remains                                                      |
+| State object is confirmed missing or fails integrity validation              | Turn seals as `failed` without selecting invalid state bytes | Freeze the exact deterministic key, record a bounded failure, and never substitute listing results                                                |
 | Waiting feedback is invalid or mismatches frozen deferred requests           | Waiting Turn remains unchanged                               | Reject input; do not create a new Turn                                                                                                            |
 | Parent is absent, unauthorized, unsealed, ineligible, or advanced            | Turn acceptance fails                                        | Caller re-reads authorized history or requests an explicit fork                                                                                   |
 | Write is attempted after Turn sealing                                        | Frozen state and outcome remain unchanged                    | Reject even if the caller has process-local bytes or a stale object version                                                                       |
@@ -852,18 +878,18 @@ acceptance is reconciled through the API idempotency contract.
 
 The compatibility axes remain independent:
 
-| Version                            | Owner                                    |
-| ---------------------------------- | ---------------------------------------- |
-| Turn domain object version         | Foundation Turn mutation contract        |
-| Relational schema revision         | Foundation Service migration history     |
-| `TurnStateEnvelope.schema_version` | Foundation Turn state contract           |
-| Turn payload object schema version | Foundation Turn payload contract         |
-| `HarnessState.schema_version`      | Agent Harness                            |
-| Capability state version           | Owning Capability                        |
-| Environment state version          | Owning Environment provider              |
-| Host provider continuation version | Selected Foundation provider integration |
-| Agent definition revision          | Foundation immutable Agent domain        |
-| Model execution snapshot schema    | Foundation Model Management domain       |
+| Version                                     | Owner                                |
+| ------------------------------------------- | ------------------------------------ |
+| Turn domain object version                  | Foundation Turn mutation contract    |
+| Relational schema revision                  | Foundation Service migration history |
+| `TurnStateEnvelope.schema_version`          | Foundation Turn state contract       |
+| Turn payload object schema version          | Foundation Turn payload contract     |
+| `HarnessState.schema_version`               | Agent Harness                        |
+| Capability state version                    | Owning Capability                    |
+| `EnvironmentExecutionConfig.schema_version` | Foundation Environment Configuration |
+| Environment state version                   | Owning Environment provider          |
+| Agent definition revision                   | Foundation immutable Agent domain    |
+| Model execution snapshot schema             | Foundation Model Management domain   |
 
 An unknown required state, payload, Harness, Capability, Environment, or
 provider version fails explicitly unless its owner supplies a compatible
@@ -873,8 +899,8 @@ state. An active Turn migration, when supported, is another fenced
 conditional replacement of the same key.
 
 Relational migrations never reinterpret state bytes through current defaults.
-Adding a provider resource kind or trigger kind is additive only when old
-readers preserve it as unknown without attaching, executing, or authorizing it.
+Adding a Trigger kind is additive only when old readers preserve it as unknown
+without executing or authorizing it.
 
 ## Trade-offs
 
@@ -889,23 +915,30 @@ cannot make external effects exactly once; unresolved calls follow the
 
 ## Invariants
 
-1. The Turn is Foundation's durable Agent-work and recovery boundary; each Turn
-   owns one deterministic state key and no base, result, or selectable
-   checkpoint-history object.
-2. Root, continue, and fork initialize a complete Turn-owned state without
-   mutating or aliasing the parent key.
-3. Only the current leased and fenced `TurnAttempt` can conditionally replace
-   active state; `checkpoint_seq` and expected object versions prevent stale
-   overwrite.
-4. `input_disposition` prevents accepted input from being injected twice.
-5. `parent_turn_id` is the sole semantic history edge. Waiting feedback creates
-   another Turn rather than mutating the sealed parent.
-6. Waiting and completed outcomes become authoritative only when relational
-   sealing selects the matching state candidate; the sealed Turn and state are
-   immutable.
-7. Persisted state restores data and correlation, never current authority.
-   Events, Items, streams, accounting records, listings, and worker memory never
-   select state.
-8. Every accepted Turn retains one non-secret model execution snapshot until
-   sealing and one immutable safe model observation for history; a replacement
-   attempt never reads current ModelConfig as a fallback.
+01. The Turn is Foundation's durable Agent-work and recovery boundary; each Turn
+    owns one deterministic state key and no base, result, or selectable
+    checkpoint-history object.
+02. Root, continue, and fork initialize a complete Turn-owned state without
+    mutating or aliasing the parent key.
+03. Only the current leased and fenced `TurnAttempt` can conditionally replace
+    active state; `checkpoint_seq` and expected object versions prevent stale
+    overwrite.
+04. `input_disposition` prevents accepted input from being injected twice.
+05. `parent_turn_id` is the sole semantic history edge. Waiting feedback creates
+    another Turn rather than mutating the sealed parent.
+06. Waiting and completed outcomes become authoritative only when relational
+    sealing selects the matching state candidate; the sealed Turn and state are
+    immutable.
+07. Persisted state restores data and correlation, never current authority.
+    Events, Items, streams, accounting records, listings, and worker memory never
+    select state.
+08. Every accepted Turn retains one non-secret model execution snapshot until
+    sealing and one immutable safe model observation for history; a replacement
+    attempt never reads current ModelConfig as a fallback.
+09. Every accepted Turn stores one exact non-secret Environment execution
+    configuration and one exact effective managed Skill name tuple in `state.json`;
+    checkpoint replacement cannot change either, and no relational snapshot column
+    duplicates them.
+10. `accepted` exists only before the first Attempt. Replacement Attempts and
+    retry backoff keep the same Turn `running`; a `failed` Turn is sealed and
+    never returns to `accepted`.

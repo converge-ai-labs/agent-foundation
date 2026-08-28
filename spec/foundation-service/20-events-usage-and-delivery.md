@@ -53,7 +53,7 @@ Bounded queues and explicit overflow handling prevent a slow client from blockin
 
 ## Lifecycle Publication and External Destinations
 
-Every authoritative Turn and TurnAttempt transition writes the bounded typed lifecycle event required by [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md). Pending actions, child relationships, and Environment operations retain their owning domain records and outbox intents without extending the lifecycle entity registry implicitly. Event publication follows the atomicity, retry, and duplicate-delivery rules in [Durable Operations and Outbox](06-durable-operations-and-outbox.md).
+Every authoritative Turn and TurnAttempt transition writes the bounded typed lifecycle event required by [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md). Pending actions, child relationships, and Connector or Trigger operations retain their owning domain records and outbox intents without extending the lifecycle entity registry implicitly. Event publication follows the atomicity, retry, and duplicate-delivery rules in [Durable Operations and Outbox](06-durable-operations-and-outbox.md).
 
 Lifecycle ordering is monotonic within its owning resource stream, not globally. Duplicate publication preserves one event identity. Event content references owning resources and retained Items rather than copying differently retained payloads. Redis presence, subscriber receipt, and telemetry never manufacture a lifecycle fact.
 

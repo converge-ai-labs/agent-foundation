@@ -58,11 +58,11 @@ The same principal, scope, idempotency key, and canonical request return the ori
 
 ## Turn and TurnAttempt Lifecycle Boundary
 
-A Turn begins as `accepted`. Claiming work creates a new TurnAttempt, selects it as the current generation, and moves the Turn to `running`. A recoverable lost attempt returns the same Turn to `accepted` within its durable recovery budget. A waiting or completed Harness outcome first publishes a complete matching state candidate and then atomically verifies that the Turn remains the Thread's current Turn, seals it, selects it as the Thread head, and increments the Thread version. Failed or cancelled sealing leaves that Turn current and preserves the prior head.
+A Turn begins as `accepted`. A Worker's first successful claim creates a new TurnAttempt, selects it as the current generation, and moves the Turn to `running`. A replacement Worker's short transaction marks an expired prior Attempt `failed`, creates and selects the next generation within budget, and leaves the same Turn `running`. A retryable Attempt failure can temporarily leave that running Turn without a current Attempt until `available_at`. A waiting or completed Harness outcome first publishes a complete matching state candidate and then atomically verifies that the Turn remains the Thread's current Turn, seals it, selects it as the Thread head, and increments the Thread version. Failed or cancelled sealing leaves that Turn current and preserves the prior head.
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed Turn outcomes. They are never returned to `accepted` or `running`. Pending feedback does not reopen a waiting Turn: once the full feedback set is authenticated and accepted, Foundation accepts a new Turn whose `parent_turn_id` names that waiting Turn and leaves the parent unchanged.
 
-A TurnAttempt is an immutable audit record after it reaches `succeeded`, `failed`, `lost`, or `cancelled`. Replacing an attempt creates a new generation with a fresh lease, Harness Run, Environment attachment, controller, clients, credentials, and bindings. It never restores another process's task, socket, database session, live provider handle, controller, or Harness Run.
+A TurnAttempt is an immutable audit record after it reaches `succeeded`, `failed`, or `cancelled`. `failed` is generation-terminal and does not by itself mean the Turn failed; Foundation defines no separate Attempt `lost` state. Replacing an Attempt creates a new generation with a fresh lease, Harness Run, Environment connector scope, attachment, clients, credentials, and bindings. It reconnects the target frozen in Turn state and never restores another process's task, socket, database session, live connector handle, attachment, or Harness Run.
 
 ## State and Checkpoint Boundary
 
@@ -70,35 +70,40 @@ Each Turn owns one deterministic object-storage state key. A checkpoint operatio
 
 The relational Turn record stores the exact digest, size, schema versions, checkpoint sequence, and committing TurnAttempt of a sealed state. State publication alone does not seal the Turn; the generation-fenced relational transition selects the exact published candidate. Partial messages, raw stream deltas, provider history, Items, process memory, and tool fragments are never continuation state.
 
-## Durable Dispatch Boundary
+## Durable Agent Tool Dispatch Boundary
 
-Each TurnAttempt begins with `dispatch_phase="pre_dispatch"`. While pre-dispatch, the worker may read durable inputs, verify locks, reconstruct pure process-local values, and perform work that cannot cause an external effect. Immediately before the first potentially effectful Environment, Harness, model, tool, provider, client, or other boundary, the worker commits `dispatch_phase="effects_possible"` under its generation fence.
+Before dispatching an Agent tool call, Foundation records the invocation identity
+and bounded request summary under the current TurnAttempt fence. A complete
+checkpoint records matching tool results through Harness state. After a
+replacement Attempt owns the lease, its Worker compares those two durable facts
+outside a database transaction: every dispatched invocation absent from the
+latest complete checkpoint becomes bounded `unknown_outcome` context committed
+on that new Attempt before Harness entry.
 
-```mermaid
-stateDiagram-v2
-    [*] --> pre_dispatch: TurnAttempt claimed
-    pre_dispatch --> effects_possible: fenced durable transition
-    effects_possible --> [*]: succeeded, failed, lost, or cancelled
-```
-
-If a worker is lost after `effects_possible`, Foundation resumes only from the latest complete conditionally committed Turn state. Every durably dispatched Agent tool call without a matching result in that state becomes bounded `unknown_outcome` context for the next TurnAttempt. The next Agent may choose a new invocation, but Foundation never automatically replays the prior call and never treats missing receipts or telemetry as proof of failure.
-
-Environment management and other non-Agent provider operations retain their owning idempotency and exact-reconciliation contracts. Their evidence can gate use of the affected resource without converting an unmatched Agent tool call into a generic business-reconciliation state.
+The next Agent may inspect that context and decide whether to issue another
+ordinary invocation. Foundation never automatically replays the prior call and
+never treats missing receipts, logs, heartbeats, or telemetry as proof that the
+call failed or had no effect. Foundation persists no TurnAttempt-wide generic
+dispatch phase; model requests, run-local Environment setup, managed Skill
+materialization, and other Host preparation do not need a phase surrogate.
 
 ## TurnAttempt and Harness Mapping
 
 One TurnAttempt starts at most one logical Harness Run. Before Harness entry,
 the worker resolves exact immutable revisions, reuses the Turn-owned model
 execution snapshot, creates fresh run Capabilities, resolves fresh credentials,
-acquires fresh Environment attachments, and builds fresh `RunBindings`.
+opens fresh Environment connector attachments from the exact configuration in
+Turn state, and builds fresh `RunBindings` through the Harness advanced
+Environment binding API. Each connector keeps the already-running resource alive
+only while that binding is active and closes its process-local clients afterward.
 
 As soon as the Harness supplies its Run identity and before the worker publishes the first live observation, the worker binds `harness_run_id` immutably to the current TurnAttempt under the attempt fence. That durable binding provides provenance and authorization correlation; it does not define the Turn-scoped Redis Stream, whose stable identity and replay contract are owned by [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md).
 
-Provider transport retries and internal Harness recovery remain within the Harness Run and do not allocate another TurnAttempt. Conversely, durable worker replacement always allocates another TurnAttempt and another Harness Run.
+Bounded connector transport retries and internal Harness recovery remain within the Harness Run and do not allocate another TurnAttempt. Conversely, durable worker replacement always allocates another TurnAttempt and another Harness Run.
 
 ## Cancellation and Unknown Outcomes
 
-Cancellation is durable intent followed by cooperative enforcement. A worker checks cancellation before expensive or effectful boundaries and attempts a fenced outcome commit. Cancellation never claims rollback of model, tool, child, Environment, provider, or client effects.
+Cancellation is durable intent followed by cooperative enforcement. A worker checks cancellation before expensive or effectful boundaries and attempts a fenced outcome commit. Cancellation never claims rollback of model, tool, child, external Environment, keep-alive, provider, or client effects.
 
 A stale TurnAttempt cannot publish Turn state, mutate Thread current/head selection, publish pending work, retain Items, commit lifecycle transitions, or select terminal outcomes. Late immutable usage evidence can retain its original attempt attribution under the usage contract, but it cannot mutate Turn lifecycle.
 
@@ -114,10 +119,13 @@ Exactly one legal generation-fenced transition wins a cancellation, waiting, or 
 06. Waiting feedback, continuation, fork, and terminal retry create another Turn rather than reopening a sealed Turn.
 07. Only the current TurnAttempt can conditionally publish state or commit a Turn transition.
 08. The current TurnAttempt durably binds its immutable Harness Run identity before the first live observation is published.
-09. `effects_possible` is committed before any operation that may cause an external effect.
-10. Absence of a receipt, event, or telemetry signal never proves pre-dispatch safety or Agent tool-call failure.
+09. Every Agent tool invocation is recorded durably under the current fence before dispatch.
+10. Absence of a receipt, event, or telemetry signal never proves Agent tool-call failure.
 11. Foundation resumes from complete Turn state, projects unmatched Agent tool calls as `unknown_outcome`, and never automatically replays them.
 12. Terminal Turn and TurnAttempt records are immutable; retry and feedback create explicit successor records.
 13. Cancellation records intent and never implies rollback of external effects.
 14. A new Turn freezes current model configuration once; replacement
     TurnAttempts reuse that snapshot and resolve only fresh credential values.
+15. A replacement TurnAttempt reuses the exact Environment execution
+    configuration in Turn state, opens fresh connector attachments, and creates
+    no Environment connection lease.

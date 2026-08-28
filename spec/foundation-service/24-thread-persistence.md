@@ -185,7 +185,7 @@ The accepted access paths are:
 | Origin traversal                   | `(tenant_id, origin_turn_id, id)` and `(tenant_id, origin_thread_id, id)` |
 | One root Thread per Session        | Partial unique `(tenant_id, session_id)` for root role                    |
 
-Turn-table indexes for scheduler claims, Turn listing, search, and DAG traversal
+Turn-table indexes for Worker claims, Turn listing, search, and DAG traversal
 remain owned by the Turn contract. They do not replace the Thread row or its
 version.
 
@@ -275,16 +275,16 @@ the new state.
 
 ## Failure Semantics
 
-| Failure                                                             | Durable outcome                                                 | Retry or reconciliation                                             |
-| ------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Authorization, origin, parent, or version validation fails          | No Thread or Turn mutation                                      | Caller refreshes authority or resource version                      |
-| Initial state publication fails                                     | No Thread or Turn is accepted                                   | Retry with the same idempotency key                                 |
-| State publishes but relational creation or advancement rolls back   | Existing Thread is unchanged; new objects are non-authoritative | Same-key retry or orphan cleanup after ownership proof              |
-| Response is lost after commit                                       | Thread and Turn may already exist                               | Repeat the same idempotency key and canonical request               |
-| Concurrent advancement wins                                         | Losing request changes nothing                                  | Read the current Thread and decide against its new version and head |
-| Current Turn seals while another command uses an older version      | Sealing wins and increments Thread version                      | Stale command conflicts and rereads the Thread                      |
-| Referenced head or current Turn is missing or mismatched            | Thread fails closed as relational corruption                    | Readiness or repair restores a verified consistent relational state |
-| Stale TurnAttempt tries to seal a non-current Turn or select a head | Mutation is fenced and rejected                                 | Current TurnAttempt or control-plane recovery owns the transition   |
+| Failure                                                             | Durable outcome                                                 | Retry or reconciliation                                                  |
+| ------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Authorization, origin, parent, or version validation fails          | No Thread or Turn mutation                                      | Caller refreshes authority or resource version                           |
+| Initial state publication fails                                     | No Thread or Turn is accepted                                   | Retry with the same idempotency key                                      |
+| State publishes but relational creation or advancement rolls back   | Existing Thread is unchanged; new objects are non-authoritative | Same-key retry or orphan cleanup after ownership proof                   |
+| Response is lost after commit                                       | Thread and Turn may already exist                               | Repeat the same idempotency key and canonical request                    |
+| Concurrent advancement wins                                         | Losing request changes nothing                                  | Read the current Thread and decide against its new version and head      |
+| Current Turn seals while another command uses an older version      | Sealing wins and increments Thread version                      | Stale command conflicts and rereads the Thread                           |
+| Referenced head or current Turn is missing or mismatched            | Thread fails closed as relational corruption                    | Readiness or repair restores a verified consistent relational state      |
+| Stale TurnAttempt tries to seal a non-current Turn or select a head | Mutation is fenced and rejected                                 | Current TurnAttempt or transactional Worker takeover owns the transition |
 
 ## Compatibility
 

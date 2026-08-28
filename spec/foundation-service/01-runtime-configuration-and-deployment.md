@@ -83,9 +83,9 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 | ----------------------------------------- | --------: | -------: | ----: |
 | Product API and browser application       |       Yes |       No |   Yes |
 | Authentication and authorization ingress  |       Yes |       No |   Yes |
-| Scheduling and control reconcilers        |       Yes |       No |   Yes |
+| Domain-owned control reconcilers          |       Yes |       No |   Yes |
 | Outbox publication                        |       Yes |       No |   Yes |
-| Turn claiming and lease renewal           |        No |      Yes |   Yes |
+| Turn scan, claim, takeover, and lease     |        No |      Yes |   Yes |
 | Harness and Environment invocation        |        No |      Yes |   Yes |
 | Operational liveness and readiness probes |       Yes |      Yes |   Yes |
 | Automatic migration when enabled          |       Yes |    Never |   Yes |
@@ -147,21 +147,21 @@ Probe responses expose only bounded status, role, build identity, and safe depen
 
 Drain makes readiness fail before the process stops accepting new work.
 
-A control process rejects new product mutations and streaming connections, then stops ingress, scheduling, reconcilers, and publishers in an order that preserves committed state. A worker stops claiming new Turns, continues active work only until the configured drain deadline, and then commits an authoritative transition or relinquishes ownership for lease recovery. Shutdown never extends a lease indefinitely or reports unfinished work as successful.
+A control process rejects new product mutations and streaming connections, then stops ingress, domain-owned reconcilers, and publishers in an order that preserves committed state. A Worker stops its periodic Turn scan, continues active work only until the configured drain deadline, and then commits an authoritative Attempt decision or stops renewing so another Worker can take over after lease expiry. Shutdown never extends a lease indefinitely or reports unfinished work as successful.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 
 ## Failure Semantics
 
-| Failure                                       | Observable outcome                              | Recovery                                             |
-| --------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------- |
-| Configuration is invalid or unknown           | Process exits before resource construction      | Correct the selected configuration                   |
-| Role and backend profile are incompatible     | Process exits before serving traffic            | Select one supported profile                         |
-| Schema is incompatible                        | Process remains unready and startup fails       | Apply the accepted final distribution history        |
-| Required dependency is unavailable at startup | Process does not become ready                   | Restore the configured dependency                    |
-| Required dependency disconnects after startup | Readiness fails and new dependent work stops    | Bounded reconnect restores readiness when safe       |
-| Critical component exits unexpectedly         | Process becomes unready and terminates          | Deployment replaces the process                      |
-| Drain deadline expires                        | Process stops without inventing successful work | Durable leases and reconciliation determine recovery |
+| Failure                                       | Observable outcome                              | Recovery                                                    |
+| --------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
+| Configuration is invalid or unknown           | Process exits before resource construction      | Correct the selected configuration                          |
+| Role and backend profile are incompatible     | Process exits before serving traffic            | Select one supported profile                                |
+| Schema is incompatible                        | Process remains unready and startup fails       | Apply the accepted final distribution history               |
+| Required dependency is unavailable at startup | Process does not become ready                   | Restore the configured dependency                           |
+| Required dependency disconnects after startup | Readiness fails and new dependent work stops    | Bounded reconnect restores readiness when safe              |
+| Critical component exits unexpectedly         | Process becomes unready and terminates          | Deployment replaces the process                             |
+| Drain deadline expires                        | Process stops without inventing successful work | Durable lease expiry and Worker takeover determine recovery |
 
 No failure causes an implicit switch to a local backend, another distribution, or a weaker role.
 

@@ -358,14 +358,20 @@ An Organization role applies only to a User. The last effective Organization Adm
 
 ### Workspace roles
 
-| Role key  | Permissions                                                                                                                                                                                                     |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `viewer`  | Read safe Workspace metadata, resources, and histories; read Secret metadata but never Secret values                                                                                                            |
-| `runner`  | Viewer permissions; invoke every Agent; cancel active Turns and retry eligible sealed Turns in the Workspace                                                                                                    |
-| `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets                                     |
-| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit |
+| Role key  | Permissions                                                                                                                                                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `viewer`  | Read safe Workspace metadata, resources, managed Skill metadata/content, and histories; read Secret metadata but never Secret values                                                                                           |
+| `runner`  | Viewer permissions; invoke every Agent; cancel active Turns and retry eligible sealed Turns in the Workspace                                                                                                                   |
+| `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration; create, revise, delete, and bind Workspace Skills; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
+| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                |
 
-The role table does not decide whether Tool, Skill, Connector, Environment, or another Agent input is an independent Workspace resource. Its owning product contract defines that resource. Builder has complete Agent-authoring authority but cannot install executable code, expand deployment capability availability, manage identity, or change RoleBindings.
+The role table does not decide whether Tool, Connector, Environment, or another
+Agent input is an independent Workspace resource. The [Skill Management
+contract](27-skill-management.md#authorization-and-audit) defines Skills as
+independent Workspace resources and contributes their exact actions. Other owning
+product contracts define their resources. Builder has complete Agent-authoring and
+managed-Skill authority but cannot install executable code, expand deployment
+capability availability, manage identity, or change RoleBindings.
 
 A Runner can invoke an Agent that uses configured Secrets but cannot inspect a Secret value, change Secret metadata, or change an Agent-to-Secret binding. Secret plaintext is never a role permission.
 

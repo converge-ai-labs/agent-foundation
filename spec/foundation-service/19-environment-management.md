@@ -1,135 +1,431 @@
-# Environment Resource Management
+# Environment Configuration and Runtime Bindings
 
 ## Design Position
 
-Foundation is a complete durable Host of [`a13n-environment-provider`](../agent-environment-provider/README.md). It owns Organization and Workspace Environment resources, desired provider specifications and revisions, lifecycle policy, operation fencing, encrypted provider resource-state persistence, retries, reconciliation, management APIs, and lifecycle events under the shared [durable operation contract](06-durable-operations-and-outbox.md).
+Foundation lets a Workspace describe and reuse a connection to an Environment
+that already exists. It owns:
 
-Foundation does not define another provider framework. Provider configuration, lifecycle effects, exact-operation reconciliation, reusable Resources, and fresh runtime attachments use the canonical `EnvironmentProviderSpec`, `EnvironmentProviderResourceState`, `EnvironmentProvider`, `EnvironmentResource`, and `EnvironmentRuntimeAttachment` contracts.
+- stable `Environment` identity and immutable `EnvironmentRevision`
+  configuration;
+- exact Agent and Turn selection, including inline configuration; and
+- a trusted process-local connector that opens the selected Environment as a
+  canonical Harness runtime attachment.
 
-The Harness owns attachment-to-binding adaptation, run-scoped topology, provider-neutral operations, and portable Environment state. Agent-envd owns EIP daemon behavior. These layers retain distinct identities and lifetimes.
+Foundation does not create, resume, pause, destroy, replace, assign, lease, or
+reconcile a Sandbox or other provider resource. A referenced resource must
+already be running and compatible when a TurnAttempt connects. Failure is
+reported to the caller through the TurnAttempt; it does not trigger lifecycle
+repair.
+
+While a TurnAttempt is actively using an attachment, its connector may perform
+bounded provider-specific keep-alive so that the already-running resource does
+not expire mid-run. This is run-scoped liveness maintenance, not durable
+lifecycle management: it starts only after a successful connection, stops when
+the binding closes or the Attempt loses authority, and never runs as a
+background Foundation workflow.
 
 ## Boundaries
 
-| Concern                                                            | Owner                                     |
-| ------------------------------------------------------------------ | ----------------------------------------- |
-| Workspace authorization and allowed provider configuration         | Foundation authorizer                     |
-| Durable Environment product resource and revision                  | Foundation control plane                  |
-| Provider specification schema and factory                          | Environment Provider package              |
-| Durable operation identity, fencing, retry, and lifecycle decision | Foundation                                |
-| Create, resume, pause, destroy, and exact-operation reconcile      | Selected `EnvironmentProvider`            |
-| Provider-owned resource-state meaning                              | Selected provider                         |
-| Resource-state encryption, retention, and authoritative selection  | Foundation                                |
-| Live provider client and reusable resource scope                   | `EnvironmentResource`                     |
-| Fresh single-use process-local attachment                          | `EnvironmentRuntimeAttachment`            |
-| Attachment-to-binding adaptation and run topology                  | Harness                                   |
-| File, shell, process, output, and port operations                  | Harness over Direct Local or EIP          |
-| Product RoleBindings and browser authentication                    | Foundation or product gateway, never envd |
+| Concern                                                   | Owner                                        | Contract                                                                    |
+| --------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------- |
+| Environment identity and immutable connection revisions   | Foundation                                   | Serializable non-secret connection configuration                            |
+| Agent requirements and Turn execution configuration       | Foundation                                   | Exact topology, connector locks, Secret references, and permission ceilings |
+| External Sandbox or provider-resource lifecycle           | User and external provider                   | Resource exists and is running before Foundation connects                   |
+| Connector schema, connection, keep-alive, and local close | Trusted Foundation Environment connector     | Produces one process-local canonical runtime attachment                     |
+| Connector artifact trust and availability                 | Foundation distribution or operator boundary | Exact code lock; no Workspace authorization                                 |
+| Workspace provider selection                              | Foundation authorization                     | Enables one exact trusted connector lock                                    |
+| Secret storage and current eligibility                    | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Environment data           |
+| Provider-neutral operations, routing, and portable state  | Harness                                      | Uses the supplied attachment and stores portable Environment state          |
+| EIP session and daemon enforcement                        | Agent-envd and its client                    | Daemon generation and bounded Environment operations                        |
 
-Provider discovery and schema validity establish availability only. They do not authorize a Workspace, Agent, Turn, or TurnAttempt to select that provider.
+Provider discovery, package upload, schema validity, or identifier possession
+does not authorize provider use. API input and stored data never supply an
+arbitrary Python import target.
 
-## Durable Foundation State
+## Provider Catalog and Workspace Selection
 
-Foundation persists only Host-owned product and envelope facts:
+Foundation exposes a safe catalog of deployment-trusted Environment providers.
+Each entry contains bounded display metadata, connection JSON Schemas,
+non-secret credential requirements, attachment compatibility, optional
+keep-alive capability, and an exact dependency lock. Reading the catalog
+performs no import, credential, network, or provider-resource I/O.
+Provider detail lists the safe metadata and exact package-revision locks that a
+Workspace can select; it never returns wheel bytes or import targets.
+
+Connector code comes from fixed
+[distribution composition](02-distribution-composition-and-extensions.md) or an
+immutable managed Environment Provider package revision. Managed revisions
+reuse the upload, hashing, immutable object storage, dependency validation,
+content-addressed cache, and conflict handling defined for
+[managed Harness plugin artifacts](26-harness-plugin-artifacts-and-runtime-loading.md),
+but remain a separate extension kind with their own identities, entry point,
+locks, authorization, and runtime contract.
+
+Therefore Foundation reuses the managed-plugin artifact substrate, not the
+`HarnessPluginPackage` product identity or Harness plugin SPI. Unifying those
+identities would couple two different selection scopes and runtime contracts.
+
+A managed package contains exactly one
+`a13n_service.environment_connectors` factory for its provider key. Publication
+validates non-executing metadata without importing code. A Worker loads only the
+exact verified artifact on demand and rejects conflicting provider keys,
+distributions, or top-level packages; a process never reloads a connector.
+
+The deployment-authenticated operator API publishes and reads package
+revisions:
+
+```http
+POST /internal/v1/environment-provider-package-revisions
+GET /internal/v1/environment-provider-package-revisions/{package_revision_id}
+```
+
+These routes are outside `/api/v1`, public OpenAPI, SDKs, tenant RoleBindings,
+and browser sessions. Upload grants trusted in-process code-execution authority.
+Untrusted connectors require a separate out-of-process protocol and security
+boundary.
+
+Workspace users view the safe catalog and enable an exact entry:
 
 ```python
-class EnvironmentResource:
-    id: EnvironmentResourceId
+# Conceptual Foundation domain schema; not a wire or ORM model.
+class WorkspaceEnvironmentProviderSelection:
     organization_id: OrganizationId
     workspace_id: WorkspaceId
+    provider_key: str
+    connector_package_revision_id: EnvironmentProviderPackageRevisionId | None
+    connector_lock: DependencyLock
+    enabled: bool
     version: int
-    provider_spec_revision_ref: EnvironmentProviderSpecRevisionRef
-    desired_phase: EnvironmentDesiredPhase
-    selected_resource_state: EncryptedProviderResourceStateEnvelope | None
-    current_operation_id: EnvironmentOperationId | None
-    created_at: datetime
-    updated_at: datetime
-
-
-class EnvironmentOperation:
-    id: EnvironmentOperationId
-    environment_resource_id: EnvironmentResourceId
-    action: EnvironmentManagementAction
-    generation: int
-    status: EnvironmentOperationStatus
-    provider_operation_context: EnvironmentOperationContext
-    result_state_digest: str | None
 ```
 
-The encrypted state envelope contains the exact provider key, provider state version, ciphertext for one `EnvironmentProviderResourceState`, and Host metadata required for selection and retention. Foundation treats the provider data as sensitive opaque content. It never copies provider state into `HarnessState`, Items, ordinary events, model context, or API responses.
+The versioned Workspace selection is the user-management surface for an
+uploaded connector: users can inspect catalog revisions, enable or disable one
+exact lock, and later bind it from Environment revisions. Selection never
+mutates or deletes the operator-published package revision.
 
-Foundation does not persist a generic incarnation that combines product Environment identity, provider resource identity, Harness binding version, envd generation, or EIP session identity. Those values have different owners and fencing rules. A TurnAttempt-scoped effective-topology projection can record which bindings were successfully published for diagnosis and recovery, but it is an observation rather than provider lifecycle authority.
+Only an enabled selection can create a revision, accept a Turn configuration,
+test a revision, or reconstruct a TurnAttempt. Disabling it does not delete
+retained data, but later use fails closed without substituting another
+connector.
 
-## Management and Run Flow
+The connector receives only the accepted connection specification, bounded
+TurnAttempt context, and resolved credentials. It returns the canonical
+`EnvironmentRuntimeAttachment` consumed by the Harness advanced Environment
+binding API. It receives no unrestricted Secret resolver, database session,
+repository, request, or ambient credential lookup.
 
-```mermaid
-sequenceDiagram
-    participant Control as Foundation control
-    participant DB as Durable store
-    participant Provider as EnvironmentProvider
-    participant Resource as EnvironmentResource
-    participant Worker
-    participant Harness
+Its Foundation-owned service-provider interface is conceptually:
 
-    Control->>DB: authorize and select EnvironmentProviderSpec revision
-    Control->>DB: commit desired lifecycle and operation identity
-    Control->>Provider: create, resume, pause, destroy, or reconcile
-    Provider-->>Control: typed Resource or reconciliation observation
-    Control->>DB: fence and select encrypted provider resource state
-    Worker->>DB: read selected spec and resource state under TurnAttempt fence
-    Worker->>Provider: resume selected Resource with operation context
-    Provider-->>Worker: EnvironmentResource
-    Worker->>Resource: acquire fresh runtime attachment
-    Resource-->>Worker: single-use EnvironmentRuntimeAttachment
-    Worker->>Harness: adapt attachment into fresh EnvironmentRunBinding
-    Worker->>DB: publish TurnAttempt-scoped effective-topology observation
+```python
+class FoundationEnvironmentConnector(Protocol):
+    provider_key: str
+
+    def open(
+        self,
+        connection: EnvironmentConnectionSpec,
+        credentials: Mapping[str, SecretValue],
+        runtime: EnvironmentConnectorRuntime,
+    ) -> AbstractAsyncContextManager[EnvironmentRuntimeAttachment]: ...
 ```
 
-Provider effects and Foundation commits are independent. Every effectful Provider call uses one durable Foundation operation identity and the provider package's `EnvironmentOperationContext`. A successful provider response does not commit Foundation state; a failed database commit does not undo the provider effect.
+Entering the context connects and validates the attachment, then starts any
+configured keep-alive. Exiting stops keep-alive and closes local clients. The
+runtime supplies only the Attempt cancellation signal, clock, and
+deployment-bounded timeout and keep-alive policy. The interface deliberately
+has no create, resume, pause, destroy, assignment, resource-state, or
+reconciliation method.
 
-The worker crosses its durable `effects_possible` boundary before invoking a Provider operation or transferring an attachment. A replacement TurnAttempt uses selected provider state to resume or reconcile through the Provider and acquires a new attachment. It never restores a prior live `EnvironmentResource`, attachment, Harness controller, EIP session, or socket.
+## Environment and Revision Model
 
-## Dynamic Topology
+`Environment` is the stable Workspace resource for naming, authorization,
+archival, and current-revision selection. `EnvironmentRevision` is immutable
+connection configuration.
 
-Foundation stores authorized desired topology separately from provider lifecycle state. During an entered Harness Run, the current worker can materialize an authorized desired change and publish it through the paired `EnvironmentTopologyController`. Desired acceptance, provider resource operation, effective Harness publication, and teardown are separate fenced facts.
+```python
+class EnvironmentConnectionSpec:
+    provider_key: str
+    schema_version: str
+    parameters: JsonObject
 
-The TurnAttempt-scoped effective projection contains safe binding identity, version, availability, and selected Environment-resource references. It cannot replace `EnvironmentProviderResourceState`, grant attachment authority, or prove provider cleanup.
 
-## Reconciliation
+class Environment:
+    id: EnvironmentId
+    organization_id: OrganizationId
+    workspace_id: WorkspaceId
+    name: str
+    description: str | None
+    version: int
+    current_revision_id: EnvironmentRevisionId
+    archived_at: datetime | None
 
-An uncertain create, resume, pause, or destroy operation is reconciled through the Provider package's typed exact-operation boundary. Foundation supplies the original operation identity, action, resource correlation, attempt number, and authoritative selected provider state. The Provider returns running, paused, absent, or still-unknown evidence.
 
-Foundation commits only the transition supported by that evidence. It never creates a private provider-inspection adapter, never infers absence from a missing receipt, and never silently selects a different provider resource. A still-unknown result remains durable and blocks unsafe replay until later evidence or an authorized operator decision resolves it.
+class EnvironmentRevision:
+    id: EnvironmentRevisionId
+    environment_id: EnvironmentId
+    workspace_id: WorkspaceId
+    version: int
+    connection_spec: EnvironmentConnectionSpec
+    connector_package_revision_id: EnvironmentProviderPackageRevisionId | None
+    connector_lock: DependencyLock
+    credential_bindings: tuple[EnvironmentCredentialBinding, ...]
+    permission_ceiling: EnvironmentPermissionSet
+    logical_digest_sha256: str
+```
 
-## agent-envd Boundary
+`parameters` is validated by the connector catalog schema and can contain an
+external resource identifier, endpoint, region, or other non-secret connection
+data. For E2B it normally includes the existing Sandbox ID. The identifier is
+an opaque connection parameter, not a Foundation-managed resource identity.
 
-For Docker, E2B, and compatible EIP-backed providers, the Provider package owns envd bootstrap or attachment construction and the low-level client owns EIP session behavior. Envd authenticates the exact EIP peer and enforces daemon generation, methods, filesystem, process, network, and resource limits.
+Creation atomically creates revision `1`; connection, credential-reference, or
+permission changes create a higher revision. Mutable display metadata changes
+do not. Restoring old configuration copies it into a new revision, and canonical
+semantic no-ops create nothing.
 
-Envd does not query Organization or Workspace RoleBindings, Agent revisions, Turn state, or Foundation tables. EIP operation IDs and receipts are daemon-observed evidence; they do not prove Foundation checkpoint or Turn completion. Browser clients never receive envd attachment credentials or raw transfer handles.
+Revision creation resolves the enabled Workspace selection, validates schemas
+and permissions, and captures the exact connector lock without importing code
+or performing external I/O. A revision contains no Secret value, provider
+resource state, lifecycle policy, attachment, EIP session, Python object,
+import target, or Harness state. A referenced revision cannot be deleted.
+
+## Credential Bindings
+
+Connection parameters contain no credential values. Each declared credential
+requirement is bound to exactly one non-secret source:
+
+```python
+type EnvironmentCredentialSource = (
+    WorkspaceSecretEnvironmentCredential
+    | InvokingUserSecretEnvironmentCredential
+)
+
+
+class WorkspaceSecretEnvironmentCredential:
+    source: Literal["workspace_secret"]
+    secret_id: SecretId
+
+
+class InvokingUserSecretEnvironmentCredential:
+    source: Literal["invoking_user_secret"]
+    secret_key: str
+
+
+class EnvironmentCredentialBinding:
+    requirement_key: str
+    credential: EnvironmentCredentialSource
+```
+
+Every TurnAttempt reauthorizes the Environment, Workspace selection, credential
+source, owning principal, and current Secret eligibility. Foundation decrypts
+values only after closing the authorization transaction and supplies them to
+one process-local connector. Secret rotation therefore affects the next Attempt
+without creating another revision.
+
+Secret values and value-derived data never enter revisions, Turn state, events,
+Items, logs, traces, metric labels, or API responses. Missing or denied
+credentials fail closed.
+
+## Environment Selection and Turn State
+
+An AgentRevision stores an ordered topology of exact Environment requirements
+plus its runtime-selection policy:
+
+```python
+class AgentEnvironmentRequirement:
+    binding_name: str
+    model_alias: str
+    environment_revision_id: EnvironmentRevisionId
+    required: bool
+```
+
+Requirement binding names and aliases are unique. An optional default binding
+names one requirement. Authoring may accept an `EnvironmentId`, but
+materialization stores its current revision. Runtime-selection policy controls
+whether a caller can replace or add entries and the maximum topology and
+permissions it can select.
+
+A permitted Turn topology uses an exact revision, a mutable Environment resolved
+at acceptance, or inline configuration:
+
+```python
+type EnvironmentSourceSelection = (
+    EnvironmentIdSelection
+    | EnvironmentRevisionSelection
+    | InlineEnvironmentSelection
+)
+
+
+class EnvironmentIdSelection:
+    environment_id: EnvironmentId
+
+
+class EnvironmentRevisionSelection:
+    environment_revision_id: EnvironmentRevisionId
+
+
+class InlineEnvironmentSelection:
+    connection_spec: EnvironmentConnectionSpec
+    credential_bindings: tuple[EnvironmentCredentialBinding, ...]
+    permission_ceiling: EnvironmentPermissionSet
+
+
+class EnvironmentSelectionEntry:
+    binding_name: str
+    model_alias: str
+    required: bool
+    source: EnvironmentSourceSelection
+```
+
+Inline entries pass the same selection, schema, credential-reference,
+permission, and authorization validation but create no reusable revision.
+
+Acceptance writes the complete non-secret configuration into the initial
+`state.json`:
+
+```python
+class EnvironmentExecutionEntry:
+    binding_name: str
+    model_alias: str
+    required: bool
+    source_environment_revision_id: EnvironmentRevisionId | None
+    connection_spec: EnvironmentConnectionSpec
+    connector_package_revision_id: EnvironmentProviderPackageRevisionId | None
+    connector_lock: DependencyLock
+    credential_bindings: tuple[EnvironmentCredentialBinding, ...]
+    permission_ceiling: EnvironmentPermissionSet
+    logical_digest_sha256: str
+
+
+class EnvironmentExecutionConfig:
+    schema_version: str
+    entries: tuple[EnvironmentExecutionEntry, ...]
+    default_binding: str | None
+    logical_digest_sha256: str
+```
+
+`EnvironmentExecutionConfig` is one immutable field of the Turn state envelope,
+not a relational Environment snapshot resource or column. Every replacement
+TurnAttempt reuses it while reauthorizing current selection and credentials. It
+never follows newer Environment revisions, connector artifacts, or Workspace
+defaults.
+
+## Management API
+
+The public `/api/v1` surface follows the shared
+[Management API](21-management-api.md):
+
+| Resource                     | Route shape                                                                                                 |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Provider catalog             | `GET /environment-providers`, `GET /environment-providers/{provider_key}`                                   |
+| Workspace provider selection | `GET/PUT /workspaces/{workspace_id}/environment-providers/{provider_key}`                                   |
+| Environments                 | `POST/GET /workspaces/{workspace_id}/environments`, `GET/PATCH /environments/{environment_id}`              |
+| Revisions                    | `POST/GET /environments/{environment_id}/revisions`, `GET /environment-revisions/{environment_revision_id}` |
+| Connection test              | `POST /environment-revisions/{environment_revision_id}/test`                                                |
+
+The synchronous test uses the exact revision and current authorized credentials,
+opens and validates one connection, returns a bounded safe capability/readiness
+result, and closes local clients. It creates no lifecycle state and does not
+start run keep-alive.
+
+An authorized revision-detail read can return its protected non-secret
+connection specification so that the user can manage it; collection and event
+projections contain only safe summaries. No projection exposes Secret values,
+provider-private state, runtime objects, attachments, or import paths.
+Foundation exposes no provider resource, assignment, lease, or
+lifecycle-command API.
+
+## TurnAttempt Runtime Binding
+
+Turn acceptance performs no provider I/O. For each claimed TurnAttempt, the
+Worker:
+
+1. reads the exact `EnvironmentExecutionConfig` from `state.json` and verifies
+   schemas and connector locks;
+2. reauthorizes provider selection, Environment use, permission ceilings,
+   principal eligibility, and every credential source;
+3. resolves fresh Secret values outside the authorization transaction;
+4. asks each exact connector to connect to the already-running resource and
+   validate its attachment and EIP compatibility;
+5. adapts the returned attachments into the Harness advanced Environment run
+   binding; and
+6. while the Harness binding is active, performs connector-defined bounded
+   keep-alive and then closes process-local clients.
+
+Keep-alive may extend a provider timeout only while the current Attempt remains
+authorized to run. It stops promptly on binding close, cancellation, lease loss,
+or Worker shutdown. An extension already accepted by the provider is not rolled
+back or reconciled. Connector and deployment policy bound its interval and
+maximum extension; it never outlives the Turn recovery deadline as an autonomous
+task.
+
+Foundation has no connection lease and does not serialize consumers of the same
+external resource. If the resource or provider rejects another connection, the
+Attempt fails with bounded `environment_connection_conflict` evidence surfaced
+to the user. Foundation does not queue, silently retry, or substitute a resource.
+Connectors may apply bounded transport retries before attachment or keep-alive;
+exhaustion fails the Attempt.
+
+Portable provider-defined data can appear only in
+`HarnessState.environment_state` under the Harness codec contract. It does not
+identify or recreate an external resource. Agent-visible Environment operations
+are ordinary Agent tool calls and use the shared `unknown_outcome` recovery
+contract. Foundation performs no Sandbox inspection or lifecycle reconciliation
+during recovery.
+
+Managed Skill materialization is Host preparation, not an Agent tool call. It is
+content-addressed, writes a completion manifest last, and may be repeated after
+reconnecting without exposing a partial catalog.
+
+## E2B Connector
+
+The E2B connector accepts an existing Sandbox ID and an E2B API key resolved
+from a Secret binding. The Sandbox must already be running and contain a
+compatible agent-envd/EIP endpoint. Connection must not use an SDK path that
+implicitly creates or resumes a Sandbox; a paused, stopped, missing, or
+incompatible Sandbox fails the Attempt.
+
+After successful attachment, the connector may call E2B keep-alive to prevent
+the Sandbox timeout from expiring during the active Harness run. It stops those
+calls when the binding closes and never pauses or destroys the Sandbox.
 
 ## Failure Semantics
 
-| Failure                                       | Durable handling                                                                |
-| --------------------------------------------- | ------------------------------------------------------------------------------- |
-| Provider unavailable before dispatch          | TurnAttempt fails; policy returns the Turn to `accepted` or seals it `failed`   |
-| Provider operation has uncertain outcome      | Environment operation remains reconcilable; Turn cannot assume absence          |
-| Resource succeeds but Foundation commit fails | Same operation identity drives Provider reconciliation                          |
-| TurnAttempt loses fence during provider work  | Result cannot advance Turn; Environment operation evidence remains reconcilable |
-| Attachment acquisition or transfer fails      | Attachment is discarded; reusable resource state remains separately managed     |
-| Envd generation changes                       | Prior EIP handles are stale; a fresh attachment and binding are required        |
-| Harness topology publication fails            | Provider resource and effective publication remain separate facts               |
-| Teardown fails                                | Turn outcome and provider cleanup remain independently reconcilable             |
+| Failure                                                 | Foundation outcome                                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Invalid schema, lock, topology, or permission           | No Environment revision or Turn is accepted                                                |
+| Archived, disabled, denied, or raced selection          | Acceptance or Attempt reconstruction fails closed without substitution                     |
+| Missing, inactive, or denied credential                 | Attempt records a bounded credential failure                                               |
+| Resource is missing, stopped, paused, or incompatible   | Attempt records a bounded connection or EIP compatibility failure                          |
+| Concurrent attachment is rejected                       | Attempt records `environment_connection_conflict`; no Foundation lease or queue is created |
+| Connection or keep-alive exhausts bounded retries       | Attempt fails; normal Turn recovery policy decides whether another Attempt is allocated    |
+| Worker disappears                                       | Keep-alive stops; a replacement Attempt reconnects using the same accepted configuration   |
+| Agent Environment tool result is missing after dispatch | Invocation becomes `unknown_outcome`; Foundation does not replay it automatically          |
 
-## Compatibility
+## Security and Compatibility
 
-Foundation versions its Environment product resource and provider-spec revision references. Provider specification schema, provider resource-state codec, Provider package release, Harness binding contract, EIP version, and Foundation API evolve independently. An incompatible provider state fails before resume and never falls back to another provider or a new resource without an explicit lifecycle decision.
+Connector publication, Workspace selection, Environment authoring, Environment
+use, Secret access, and Agent tool permission are separate authorities. A model
+cannot select connectors, revisions, Secrets, connection targets, or lifecycle
+actions.
+
+Connector code is trusted in-process code with worker-role authority. Exact
+locks and operator-only publication do not sandbox it. Connection parameters,
+including external resource IDs and private endpoints, are protected tenant
+data. Secret values remain process-local.
+
+Environment revisions, connection schemas, connector locks, state configuration,
+Harness attachments, EIP, and Foundation APIs evolve independently. An
+incompatible exact lock or state schema fails before model or tool work and
+never falls back to another revision, connector, or resource.
 
 ## Invariants
 
-1. Foundation hosts the shared Environment Provider contract and does not define a parallel provider lifecycle model.
-2. Provider specification, provider resource state, Provider Resource, runtime attachment, Harness state, binding identity, envd generation, and EIP session remain distinct.
-3. Provider state is encrypted sensitive Host data and never model-visible.
-4. Every effectful management call carries one durable operation identity suitable for exact reconciliation.
-5. Runtime attachments are fresh, single-use, process-local, and never persisted.
-6. Effective topology is a TurnAttempt-scoped Host observation, not provider lifecycle authority.
-7. Envd enforces EIP operations without querying product RoleBindings.
-8. Provider effect, Foundation state commit, Harness publication, Turn completion, and teardown are independent facts.
+1. One EnvironmentRevision describes how to connect to an existing resource and performs no provider I/O.
+2. Foundation never creates, resumes, pauses, destroys, replaces, assigns, leases, or reconciles an external Environment resource.
+3. A Turn's exact `EnvironmentExecutionConfig` is stored only in its immutable `state.json` envelope.
+4. Every TurnAttempt reauthorizes current provider selection and resolves fresh credential values.
+5. Runtime attachments, clients, and credentials are process-local and never persisted.
+6. Keep-alive exists only within an active binding scope and creates no durable lifecycle state.
+7. Foundation creates no connection lease; provider concurrency rejection is surfaced to the user.
+8. Replacement TurnAttempts reconnect to the accepted target and receive no process-local continuity.
+9. Agent Environment tool uncertainty uses the same `unknown_outcome` contract as every other Agent tool.

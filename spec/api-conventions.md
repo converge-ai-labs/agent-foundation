@@ -36,7 +36,14 @@ An asynchronous acceptance never holds an HTTP request open until execution fini
 
 ## JSON Representations
 
-Wire representations are UTF-8 JSON. Object fields and query parameters use `snake_case`; enum values use stable lowercase `snake_case`. First-party SDKs use the idiomatic casing of their language while preserving the same concise domain meaning.
+Resource, mutation, command, and error representations are UTF-8 JSON. An owning
+domain can define an explicit bounded content-transfer endpoint with one exact
+binary media type when encoding the bytes in JSON would defeat streaming or size
+safety. That endpoint returns JSON metadata or a receipt, accepts no ambiguous
+mixed representation, and does not turn storage keys or signed URLs into resource
+authority. Object fields and query parameters use `snake_case`; enum values use
+stable lowercase `snake_case`. First-party SDKs use the idiomatic casing of their
+language while preserving the same concise domain meaning.
 
 Presence has one consistent meaning:
 
@@ -142,7 +149,7 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 
 1. Foundation-owned product HTTP APIs use the `/api` namespace, and current public resource routes share one `/api/v1` JSON contract.
 2. Single-resource responses are direct objects; collection responses use only `items` and `next_cursor` for pagination.
-3. Wire fields use `snake_case`, presence is explicit, timestamps are UTC, and scalar units appear in field names.
+3. JSON wire fields use `snake_case`, presence is explicit, timestamps are UTC, and scalar units appear in field names; an owning binary transfer route declares one exact bounded media type.
 4. Every collection read is bounded, deterministically ordered, and reauthorized; cursors are opaque and non-authoritative.
 5. Clients branch on stable error codes, never message text, and errors disclose no implementation-private or secret data.
 6. Concurrent mutation uses either `version` and `expected_version`, or an

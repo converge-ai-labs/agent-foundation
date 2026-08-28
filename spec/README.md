@@ -29,7 +29,7 @@ flowchart TB
 
     subgraph Service[foundation-service]
         Control[Control plane]
-        Definitions[Agent revisions and ModelConfigs]
+        Definitions[Agent and Skill revisions, ModelConfigs]
         Lifecycle[Durable Turns and TurnAttempts]
         Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
@@ -117,7 +117,7 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 | `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                         |
 | Foundation SDKs              | Language-typed access to the public Foundation Service `/api` contract                                                                                                                                                        | Service internals, product policy, or durable lifecycle authority                                                        |
 | `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                                        | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control             |
-| `foundation-service`         | Managed Secrets, ModelConfigs, Agent/Connector revisions, Presets, managed Harness plugin artifacts, reconstruction locks, durable Turns/TurnAttempts, client tools, APIs, events, usage records, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, provider-native state meaning                     |
+| `foundation-service`         | Managed Secrets, ModelConfigs, Skill/Agent/Connector/Environment revisions, Presets, Harness plugin artifacts, reconstruction locks, durable Turns/TurnAttempts, APIs, events, raw usage records, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, or provider resource lifecycle and state          |
 | Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                                                   | Harness internals and provider implementation                                                                            |
 
 ## Harness Foundation
@@ -147,14 +147,14 @@ The complete local Host design is indexed in [agent-ui/README.md](agent-ui/READM
 
 ## Recovery Boundaries
 
-| Concern                             | Owner                                      |
-| ----------------------------------- | ------------------------------------------ |
-| Provider-suspended continuation     | Pydantic AI                                |
-| Provider transport retry            | Provider/client and Pydantic `RetryConfig` |
-| Exact provider-history repair       | Harness `SelfHealingModel`                 |
-| Interrupted `ModelAttempt` recovery | Harness run coordinator                    |
-| Worker crash and durable recovery   | Host                                       |
-| External side-effect reconciliation | Provider and Host                          |
+| Concern                                  | Owner                                       |
+| ---------------------------------------- | ------------------------------------------- |
+| Provider-suspended continuation          | Pydantic AI                                 |
+| Provider transport retry                 | Provider/client and Pydantic `RetryConfig`  |
+| Exact provider-history repair            | Harness `SelfHealingModel`                  |
+| Interrupted `ModelAttempt` recovery      | Harness run coordinator                     |
+| Worker crash and durable recovery        | Host                                        |
+| Persisted provider-lifecycle uncertainty | The Host that elected to own that lifecycle |
 
 Recovery never converts missing evidence into rollback or exactly-once success. Interrupted tool history records that the operation may have partially or fully completed and directs the next model to inspect state before retrying.
 
@@ -186,28 +186,44 @@ Foundation Service adds durability without changing Harness execution semantics:
 flowchart LR
     Ingress[API or webhook] --> Control[Control plane]
     Control --> Durable[Agent revisions and Turns]
-    Durable --> Queue[Scheduling]
-    Queue --> Worker[Worker]
+    Durable --> Worker[Workers periodically scan and claim]
     Worker --> Reconstruct[Trusted adapters]
     Reconstruct --> Harness[agent-harness]
     Harness --> Candidate[Events, result, state, usage]
     Candidate --> Durable
 ```
 
-Foundation Agent revisions are Host-owned serializable documents, not Harness `AgentDefinition` wire values. A worker verifies their exact dependency and artifact locks, reconstructs native Pydantic/Harness objects, resolves current authorized Connections and operator-approved Environment providers, reads desired topology separately from selected encrypted provider resource state, resumes or reconciles the selected resources, acquires fresh runtime attachments, and publishes fresh run-local Harness binding versions and topology. Foundation can record a TurnAttempt-scoped effective-topology observation, while the worker retains the paired Environment controller only for that active logical run.
+Foundation Agent revisions are Host-owned serializable documents, not Harness
+`AgentDefinition` wire values. A worker verifies their exact dependency and
+artifact locks, reconstructs native Pydantic/Harness objects, resolves current
+authorized Connections, Secrets, permissions, and operator-approved Environment
+providers, and supplies fresh providers from the Turn's exact Environment
+snapshot. Harness owns each provider's bounded ephemeral resource and attachment
+lifecycle for that run. Foundation stores no selected provider resource state
+and does not resume or reconcile a Sandbox from an earlier TurnAttempt.
+
+Workspace Skills are stable authoring resources with immutable ZIP- or
+GitHub-imported revisions in shared object storage. Each Agent revision locks exact
+Skill revisions, names, and content digests. The worker supplies an explicit
+`SkillManager`, exact Host materializer, and fresh selection. After Harness
+enters the fresh Environment and before model exposure, `SkillsCapability`
+materializes only those verified bytes and publishes the Host completion
+manifest last. Upload receipts and GitHub refs never become runtime sources.
 
 Every Foundation Agent invocation selects or creates a Session and Thread and
 accepts one durable Turn. One `TurnAttempt` starts at most one logical Harness
 Run; internal Harness `ModelAttempt` values are not durable worker generations.
-Authorized desired Environment topology can advance during that Run and is
-reconciled through the retained controller with separate effective publication.
-Worker or lease loss terminalizes the attempt as `lost`; after Foundation
-classifies unmatched Agent tool dispatches as `unknown_outcome`, applies each
-non-Agent domain's owning recovery contract, and verifies the Turn-owned budget,
-it creates a new fenced `TurnAttempt`, fresh provider bindings, and a fresh
-Harness Run from the same Turn's latest conditionally committed state. Every Turn owns one deterministic state key; Foundation
-replaces that key at complete checkpoints and exposes no separate base, result,
-or checkpoint-history object.
+Every Worker periodically scans durable Turn state. For an expired lease, one
+short transaction marks the old Attempt `failed` and creates at most one new
+fenced `TurnAttempt`; Foundation defines no separate Scheduler, recovery
+controller, or Attempt `lost` state. The new owner then compares durable Agent
+tool dispatch records with the latest complete checkpoint, projects every
+unmatched call as `unknown_outcome`, and validates the Turn-owned budget, frozen
+dependencies, and current authority outside the claim transaction. It creates
+fresh providers, bindings, and a fresh Harness Run only after a fenced
+preparation decision. It does not inspect or reconcile the prior Sandbox. Every
+Turn owns one deterministic state key; Foundation replaces that key at complete
+checkpoints and exposes no separate base, result, or checkpoint-history object.
 
 Client-side tools use native Pydantic deferred values. Foundation seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. Asynchronous children use independent Threads and Turns rather than Pydantic deferred spawn calls.
 
@@ -309,7 +325,7 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 04. Keep durable Host schemas outside the Harness library.
 05. Bind Identity and current authority freshly at the Host boundary.
 06. Keep process-local continuation separate from durable lifecycle state.
-07. Preserve unknown side effects, never automatically replay Agent tool calls, and retain owning reconciliation contracts for non-Agent operations.
+07. Preserve unknown Agent tool outcomes and never automatically replay them; a Host that separately persists provider lifecycles owns any provider reconciliation it elects to perform.
 08. Use optional typed packages and protocols instead of a universal extension framework.
 09. Use the same Harness API in embedded and hosted modes.
 10. Add enterprise behavior through the same boundaries rather than forks.
@@ -322,6 +338,7 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 | Platform interaction model             | [interaction-model.md](interaction-model.md)                                                                                                         |
 | Platform data conventions              | [data-conventions.md](data-conventions.md)                                                                                                           |
 | Platform API conventions               | [api-conventions.md](api-conventions.md)                                                                                                             |
+| Managed Skill package contract         | [managed-skill-packages.md](managed-skill-packages.md)                                                                                               |
 | Harness catalog                        | [agent-harness/README.md](agent-harness/README.md)                                                                                                   |
 | Environment Provider catalog           | [agent-environment-provider/README.md](agent-environment-provider/README.md)                                                                         |
 | Harness architecture                   | [agent-harness/00-overview.md](agent-harness/00-overview.md)                                                                                         |
@@ -349,3 +366,4 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 | Foundation public API                  | [foundation-service/21-management-api.md](foundation-service/21-management-api.md)                                                                   |
 | Foundation model management            | [foundation-service/25-model-management.md](foundation-service/25-model-management.md)                                                               |
 | Foundation managed Harness plugins     | [foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md](foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md)       |
+| Foundation Skill management            | [foundation-service/27-skill-management.md](foundation-service/27-skill-management.md)                                                               |
