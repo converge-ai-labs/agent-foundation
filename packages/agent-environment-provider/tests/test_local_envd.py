@@ -90,7 +90,7 @@ import os
 import sys
 
 if sys.argv[1:] == ["--version"]:
-    sys.stdout.write("agent-envd {version}\\n")
+    sys.stdout.buffer.write(b"agent-envd {version}\\n")
     raise SystemExit(0)
 if sys.argv[1:] == ["isolation", "probe", "--json"]:
     json.dump({{
