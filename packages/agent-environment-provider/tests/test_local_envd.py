@@ -113,7 +113,7 @@ if len(sys.argv) == 3 and sys.argv[1] == "--config":
             stream.flush()
             os.fsync(stream.fileno())
     if {exit_after_ready!r}:
-        raise SystemExit(0)
+        os._exit(0)
     sys.stdin.buffer.read()
     raise SystemExit(0)
 raise SystemExit(2)

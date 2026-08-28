@@ -48,6 +48,7 @@ _PROVIDER_KEY = "a13n.local-envd"
 _STATE_VERSION = "1"
 _STARTUP_TIMEOUT_SECONDS = 10.0
 _STARTUP_POLL_SECONDS = 0.01
+_STARTUP_STABILITY_SECONDS = 0.1
 _READY_MARKER_CONTENT = b"agent-envd-ready-v1\n"
 _SUBPROCESS_TIMEOUT_SECONDS = 30.0
 _TERMINATE_GRACE_SECONDS = 5.0
@@ -942,7 +943,7 @@ async def _wait_for_daemon_readiness(
                     try:
                         return_code = await asyncio.wait_for(
                             process.wait(),
-                            timeout=_STARTUP_POLL_SECONDS,
+                            timeout=_STARTUP_STABILITY_SECONDS,
                         )
                     except TimeoutError:
                         return
