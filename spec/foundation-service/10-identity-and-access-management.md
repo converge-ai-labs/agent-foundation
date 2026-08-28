@@ -14,7 +14,7 @@ IAM authorizes a caller to inspect, change, invoke, or administer Foundation res
 | Password, browser session, invitation, reset token, and API key | This document                                                          | Defines authentication and credential lifecycle                                  |
 | RoleBinding, built-in roles, and product authorization          | This document                                                          | Defines the only durable product grant model                                     |
 | Managed Secret value protection                                 | [Secret Management](11-secret-management.md)                           | Uses IAM scope and authorization without treating a Secret as a login credential |
-| Agent revision, Turn, and TurnAttempt identity                  | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
+| AgentPreset, AgentPresetVersion, Turn, and TurnAttempt identity | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
 | Model-triggered tool and Environment authority                  | Harness run grants and providers                                       | Narrows an authorized invocation independently from product RBAC                 |
 | OSS, EE, and Cloud capability composition                       | [Distribution boundary](02-distribution-composition-and-extensions.md) | Adds capabilities without edition fields or bypassing common IAM checks          |
 
@@ -25,7 +25,7 @@ flowchart TB
     Deployment[Foundation deployment]
     Organization[Organization]
     Workspace[Workspace]
-    Resource[Agent, Secret, Session, Thread, Turn, TurnAttempt, Environment, or other resource]
+    Resource[AgentPreset, Secret, Session, Thread, Turn, TurnAttempt, Environment, or other resource]
 
     Deployment --> Organization --> Workspace --> Resource
 ```
@@ -59,7 +59,7 @@ Foundation recognizes exactly these OSS Principal kinds:
 - `user` is one platform-wide human identity;
 - `service_account` is one non-human identity owned by a Workspace.
 
-A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. Agent, Agent revision, Session, Thread, Turn, TurnAttempt, credential, and Secret identities are not Principals. Product authorization targets the stable Agent ID, while an accepted Turn selects the exact immutable Agent revision separately.
+A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. AgentPreset, AgentPresetVersion, Session, Thread, Turn, TurnAttempt, credential, and Secret identities are not Principals. Product authorization targets the stable AgentPreset ID, while an accepted Turn selects the exact immutable AgentPresetVersion separately.
 
 The conceptual references are:
 
@@ -231,7 +231,7 @@ Active Service Accounts are unique by `(workspace_id, normalized_name)`. A Servi
 | `workspace_id`       | Target Workspace; null only for an Organization binding |
 | `principal_type`     | `user` or `service_account`                             |
 | `principal_id`       | Exact User or Service Account ID                        |
-| `resource_type`      | `organization`, `workspace`, or `agent`                 |
+| `resource_type`      | `organization`, `workspace`, or `agent_preset`          |
 | `resource_id`        | Exact authorization target ID                           |
 | `role_key`           | Valid built-in role for this target and Principal kind  |
 | `created_by_user_id` | User whose authority created the binding                |
@@ -246,8 +246,8 @@ The service enforces these tenant constraints:
 
 - Organization bindings target a User, have `workspace_id = null`, and use `admin` or `member`;
 - Workspace bindings target a User or same-Workspace Service Account and carry that Workspace ID;
-- Agent bindings carry the owning Agent's Workspace ID;
-- a User must have an Organization binding before receiving a descendant Workspace or Agent binding;
+- AgentPreset bindings carry the owning Preset's Workspace ID;
+- a User must have an Organization binding before receiving a descendant Workspace or AgentPreset binding;
 - a Service Account can bind only within its owning Workspace and can never use an Admin role;
 - inherited Organization Admin authority creates no redundant Workspace rows.
 
@@ -358,28 +358,29 @@ An Organization role applies only to a User. The last effective Organization Adm
 
 ### Workspace roles
 
-| Role key  | Permissions                                                                                                                                                                                                                    |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `viewer`  | Read safe Workspace metadata, resources, managed Skill metadata/content, and histories; read Secret metadata but never Secret values                                                                                           |
-| `runner`  | Viewer permissions; invoke every Agent; cancel active Turns and retry eligible sealed Turns in the Workspace                                                                                                                   |
-| `builder` | Runner permissions; create, update, and delete Agents and all Agent-owned configuration; create, revise, delete, and bind Workspace Skills; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
-| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                |
+| Role key  | Permissions                                                                                                                                                                                                                            |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `viewer`  | Read safe Workspace metadata, resources, managed Skill metadata/content, and histories; read Secret metadata but never Secret values                                                                                                   |
+| `runner`  | Viewer permissions; invoke every AgentPreset; cancel active Turns and retry eligible sealed Turns in the Workspace                                                                                                                     |
+| `builder` | Runner permissions; create, update, and archive AgentPresets and all Preset-owned configuration; create, revise, delete, and bind Workspace Skills; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
+| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                        |
 
 The role table does not decide whether Tool, Connector, Environment, or another
 Agent input is an independent Workspace resource. The [Skill Management
 contract](27-skill-management.md#authorization-and-audit) defines Skills as
 independent Workspace resources and contributes their exact actions. Other owning
-product contracts define their resources. Builder has complete Agent-authoring and
-managed-Skill authority but cannot install executable code, expand deployment
-capability availability, manage identity, or change RoleBindings.
+product contracts define their resources. Builder has complete
+AgentPreset-authoring and managed-Skill authority but cannot install executable
+code, expand deployment capability availability, manage identity, or change
+RoleBindings.
 
-A Runner can invoke an Agent that uses configured Secrets but cannot inspect a Secret value, change Secret metadata, or change an Agent-to-Secret binding. Secret plaintext is never a role permission.
+A Runner can invoke an AgentPreset that uses configured Secrets but cannot inspect a Secret value, change Secret metadata, or change a Preset-to-Secret binding. Secret plaintext is never a role permission.
 
-Direct Agent RoleBindings reuse `viewer`, `runner`, and `builder` as resource-level permission bundles. At Agent scope, Viewer grants Agent and associated Turn and TurnAttempt reads, Runner adds invocation, active-Turn cancellation, and eligible sealed-Turn retry, and Builder adds Agent update, deletion, and Agent-owned configuration management; it grants no Agent creation, Workspace Secret management, or identity management. The common schema accepts these bindings now so later management surfaces can restrict a Principal to selected Agents without introducing another authorization model.
+Direct AgentPreset RoleBindings reuse `viewer`, `runner`, and `builder` as resource-level permission bundles. At AgentPreset scope, Viewer grants Preset, Version, and associated Turn and TurnAttempt reads; Runner adds invocation, active-Turn cancellation, and eligible sealed-Turn retry; Builder adds Preset config, Publish, lifecycle, and Preset-owned configuration management. It grants no AgentPreset creation, Workspace Secret management, executable-code administration, or identity management. The common schema lets management surfaces restrict a Principal to selected Presets without introducing another authorization model.
 
 ## Authorization Contract
 
-Applicable grants form a pure allow union. Foundation defines no deny binding, specificity override, or implicit ownership grant. A direct narrow binding never subtracts a broader grant: Workspace Runner plus Agent Viewer can still invoke the Agent, while Workspace Viewer plus Agent Runner can invoke only that Agent.
+Applicable grants form a pure allow union. Foundation defines no deny binding, specificity override, or implicit ownership grant. A direct narrow binding never subtracts a broader grant: Workspace Runner plus AgentPreset Viewer can still invoke the Preset, while Workspace Viewer plus AgentPreset Runner can invoke only that Preset.
 
 The conceptual decision contract is:
 
@@ -428,7 +429,7 @@ No credential contains a role snapshot. Identifier possession, an earlier allow,
 
 ## Product Authorization and Run Grants
 
-Product RBAC decides whether a User or Service Account may invoke an Agent. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current Agent invocation permission, the immutable Agent revision, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. Every newly claimed TurnAttempt and every accepted child or retry Turn obtains fresh authority instead of retaining a role snapshot.
+Product RBAC decides whether a User or Service Account may invoke an AgentPreset. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current AgentPreset invocation permission, the immutable AgentPresetVersion, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. Every newly claimed TurnAttempt and every accepted child or retry Turn obtains fresh authority instead of retaining a role snapshot.
 
 The [Connector contract](23-connectors-connections-and-triggers.md#management-and-ingress-surfaces) defines Connector, Connection, and Trigger actions. Workspace roles map those actions as specified above. Connector-backed Agent work and Trigger acceptance reauthorize the current Principal, resource eligibility, and required run grants; no role snapshot or role name enters Harness.
 

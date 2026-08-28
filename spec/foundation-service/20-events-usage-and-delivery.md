@@ -90,7 +90,7 @@ The Harness owns native `RunUsage`, the run-local attribution ledger, immutable 
 
 - Organization, Workspace, Session, Thread, and Turn;
 - originating TurnAttempt and Harness Run;
-- Agent revision; and
+- stable AgentPreset, exact AgentPresetVersion, and Runtime lock digest; and
 - accepted `model_id`, provider type, and model name from the TurnAttempt
   observation, plus model/provider identity and measures from the record.
 

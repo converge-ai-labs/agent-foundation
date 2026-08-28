@@ -6,7 +6,17 @@ Foundation Service is the optional modular durable Host for Agent Foundation. It
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Turn` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and uses `TurnAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Turn; Foundation defines no separate durable Execution resource.
 
-The worker embeds the public Harness Python API. It loads exact [managed Harness plugin revisions](26-harness-plugin-artifacts-and-runtime-loading.md) on demand and exact [managed Skill revisions](27-skill-management.md) as inert Environment content from each AgentRevision lock, reconstructs process-local Agent values, and uses an exact trusted Environment connector to attach an already-running external resource. The connector maintains bounded keep-alive only while the current Harness binding is active; Foundation owns no Sandbox lifecycle. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
+The worker embeds the public Harness Python API through the deployment's selected
+[Plugin Runtime profile](26-harness-plugin-artifacts-and-runtime-loading.md).
+Turn acceptance pins an internal Runtime lock. The default on-demand Worker
+preflights exact PluginVersions before claim; the optional runner profile starts
+clean lock-scoped child processes. The selected execution loop reconstructs process-local
+Agent values, materializes exact [managed Skill
+revisions](27-skill-management.md) as inert Environment content, and uses an exact
+trusted Environment connector to attach an already-running external resource.
+The connector maintains bounded keep-alive only while the current Harness
+binding is active; Foundation owns no Sandbox lifecycle. Redis delivery, Harness
+completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -33,8 +43,7 @@ flowchart LR
     LiveBus[Turn-scoped Redis Streams]
 
     subgraph WorkerRole[Worker role]
-        WorkerScan[Periodic Turn scan and takeover]
-        Worker[Fenced worker]
+        Runtime[On-demand loop or Runner]
         Reconstruct[Trusted reconstruction]
         Connector[Environment Connector]
         Observer[HarnessAguiObserver]
@@ -47,16 +56,14 @@ flowchart LR
     Client --> API --> Auth
     Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback
     Authoring & Interaction & Lifecycle & ConnectorControl & Feedback --> Database
-    WorkerScan --> Database
-    WorkerScan --> Worker
-    Worker --> Database
-    Worker --> Reconstruct --> Harness
-    Worker --> Connector --> Harness
+    Runtime -->|scan, preflight, claim, and takeover| Database
+    Runtime --> Reconstruct --> Harness
+    Runtime --> Connector --> Harness
     Connector --> Envd
     Harness --> External
-    Harness --> Observer --> Worker
-    Worker -. live AG-UI .-> LiveBus -. authorized subscription .-> API
-    Worker --> Database & Objects
+    Harness --> Observer --> Runtime
+    Runtime -. live AG-UI .-> LiveBus -. authorized subscription .-> API
+    Runtime --> Database & Objects
     Database --> Publisher --> Client
 ```
 
@@ -64,24 +71,24 @@ PostgreSQL is the distributed authority for accepted resources, Thread version a
 
 ## Component Boundaries
 
-| Concern                                                                    | Owner                                                         | Relationship                                                                               |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Session, Thread, Turn, and Item meaning                                    | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations                              |
-| Runtime configuration, process roles, readiness, and drain                 | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                                      |
-| OSS, EE, and Cloud application composition                                 | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                                |
-| Organization, Workspace, identity, and resource authorization              | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                                     |
-| Durable Agent revisions, managed Skill revisions, and mutable ModelConfigs | Foundation control plane                                      | Selects exact Agent inputs and freezes current model configuration per Turn                |
-| Managed Harness plugin artifacts and Worker compatibility                  | Foundation control plane and Worker runtime                   | Publishes exact trusted wheels and loads them on demand under process-local version checks |
-| Durable Thread resource                                                    | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version              |
-| Turn and TurnAttempt                                                       | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                              |
-| Environment, EnvironmentRevision, and Turn execution configuration         | [Environment Configuration](19-environment-management.md)     | Freezes an exact connection target in Turn state                                           |
-| Process-local Agent composition and loop                                   | Harness                                                       | Built by a trusted Foundation reconstruction adapter                                       |
-| External Environment resource lifecycle                                    | User and external provider                                    | Resource already exists and is running before Foundation connects                          |
-| Runtime Environment connection and keep-alive                              | Trusted Foundation Environment connector                      | Returns a process-local attachment; keep-alive is scoped to the active binding             |
-| Provider-neutral Environment operations and routing                        | Harness                                                       | Uses the supplied attachment without owning external resource lifecycle                    |
-| Harness-to-AG-UI conversion                                                | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery                         |
-| Durable lifecycle events, Items, and usage                                 | Foundation                                                    | Commits product facts independently from process-local observations                        |
-| Client-side effects                                                        | External client                                               | Foundation authenticates feedback but does not claim the effect                            |
+| Concern                                                                     | Owner                                                         | Relationship                                                                   |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Session, Thread, Turn, and Item meaning                                     | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations                  |
+| Runtime configuration, process roles, readiness, and drain                  | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                          |
+| OSS, EE, and Cloud application composition                                  | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                    |
+| Organization, Workspace, identity, and resource authorization               | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                         |
+| AgentPresets, immutable Versions, managed Skill revisions, and ModelConfigs | Foundation control plane                                      | Selects exact Agent inputs and freezes current model configuration per Turn    |
+| Managed Harness plugin artifacts and Runtime locks                          | Foundation control plane and Worker runtime                   | Preflights on demand or stages exact trusted Runner environments               |
+| Durable Thread resource                                                     | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version  |
+| Turn and TurnAttempt                                                        | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                  |
+| Environment, EnvironmentRevision, and Turn execution configuration          | [Environment Configuration](19-environment-management.md)     | Freezes an exact connection target in Turn state                               |
+| Process-local Agent composition and loop                                    | Harness                                                       | Built by a trusted Foundation reconstruction adapter                           |
+| External Environment resource lifecycle                                     | User and external provider                                    | Resource already exists and is running before Foundation connects              |
+| Runtime Environment connection and keep-alive                               | Trusted Foundation Environment connector                      | Returns a process-local attachment; keep-alive is scoped to the active binding |
+| Provider-neutral Environment operations and routing                         | Harness                                                       | Uses the supplied attachment without owning external resource lifecycle        |
+| Harness-to-AG-UI conversion                                                 | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery             |
+| Durable lifecycle events, Items, and usage                                  | Foundation                                                    | Commits product facts independently from process-local observations            |
+| Client-side effects                                                         | External client                                               | Foundation authenticates feedback but does not claim the effect                |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
 
@@ -102,7 +109,7 @@ sequenceDiagram
     participant Caller
     participant Control
     participant DB as Durable store
-    participant Worker
+    participant Worker as Profile-selected Worker loop
     participant Connector
     participant Harness
 
@@ -110,13 +117,14 @@ sequenceDiagram
     Control->>Control: authorize, resolve Agent and Environment revisions, snapshot current ModelConfig
     Control->>DB: publish initial state and commit Thread advancement and Turn
     Control-->>Caller: durable acceptance
-    Worker->>DB: scan and transactionally claim next TurnAttempt generation
+    Worker->>DB: scan and profile-preflight eligible Runtime lock
+    Worker->>DB: transactionally claim next compatible TurnAttempt generation
     Worker->>Worker: validate state, dependencies, and current authority
     Worker->>DB: commit fenced preparation decision
     Worker->>Worker: reconstruct Agent and safe local inputs
     Worker->>Connector: connect existing resource and validate attachment
     Connector-->>Worker: process-local runtime attachment
-    Worker->>Harness: call in-process API with attachment bindings and SkillManager
+    Worker->>Harness: call process-local API with attachment bindings and SkillManager
     Connector->>Connector: bounded keep-alive while binding is active
     Harness->>Harness: SkillsCapability materializes exact packages before Agent work
     Harness-->>Worker: observations, usage records, state, and result candidates
