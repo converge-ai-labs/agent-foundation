@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -118,7 +118,7 @@ class DatabaseMigrator:
         connection.commit()
 
     @contextmanager
-    def _migration_lock(self, connection: Connection, *, enabled: bool) -> Iterator[None]:
+    def _migration_lock(self, connection: Connection, *, enabled: bool) -> Generator[None]:
         if not enabled or connection.dialect.name != "postgresql":
             yield
             return

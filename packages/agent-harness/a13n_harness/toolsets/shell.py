@@ -329,6 +329,7 @@ class ShellToolset:
                     redact=True,
                 ),
                 resource_resolver=(self._resource_resolver(tool_id) if self._resource_resolver is not None else None),
+                shell_review=tool_id == "environment.shell_exec",
             ),
         )
 

@@ -169,7 +169,7 @@ Persist `EnvironmentProviderResourceState` after each successful lifecycle trans
 - `destroy()` detaches the logical Provider resource only;
 - `read_only` restricts operations through the binding but is not an OS sandbox against an allowed local child process.
 
-Use Local Envd, Docker, E2B, or another EIP provider when workloads require isolation from the embedding OS account.
+Use Local Envd or an implemented third-party EIP provider when workloads require isolation from the embedding OS account. Docker, E2B, and other sandbox backends are extension architectures, not current built-in Providers.
 
 ## Local Envd sandbox
 
@@ -277,7 +277,7 @@ A plugin returns only a supported shared attachment type:
 - `DirectLocalEnvironmentAttachment` for the in-process Direct Local backend;
 - `EIPEnvironmentAttachment` for an initialized-session source backed by stdio, authenticated HTTP(S), or an already accepted reverse WebSocket.
 
-Attachments are process-local, single-use, and non-serializable. Docker, E2B, and other sandbox providers use vendor SDKs only for outer lifecycle and bootstrap; all Harness file, shell, process, output, and port operations use EIP.
+Attachments are process-local, single-use, and non-serializable. A third-party Docker, E2B, or other sandbox provider should use its vendor SDK only for outer lifecycle and bootstrap; Harness file, shell, process, output, and port operations then use EIP.
 
 ## Errors and diagnostics
 

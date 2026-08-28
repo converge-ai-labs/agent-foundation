@@ -12,6 +12,8 @@ from pydantic_ai.agent.spec import AgentSpec as PydanticAgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.usage import UsageLimits
 
+from a13n_harness.capability_types import first_party_declarative_capability_types
+
 
 class ModelCapability(StrEnum):
     """Harness-owned capabilities of the active Agent model."""
@@ -102,7 +104,9 @@ class AgentSpec(PydanticAgentSpec):
         custom_capability_types: Sequence[type[AbstractCapability[Any]]] = (),
     ) -> dict[str, Any]:
         """Include Harness model configuration in the native strict AgentSpec schema."""
-        schema = super().model_json_schema_with_capabilities(custom_capability_types)
+        schema = super().model_json_schema_with_capabilities(
+            (*first_party_declarative_capability_types(), *custom_capability_types)
+        )
         definitions = schema.setdefault("$defs", {})
         model_configuration_schema = ModelConfiguration.model_json_schema()
         definitions.update(model_configuration_schema.pop("$defs", {}))

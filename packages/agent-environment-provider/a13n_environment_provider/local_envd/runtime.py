@@ -5,7 +5,7 @@ import os
 import shutil
 import stat
 import tempfile
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,7 +58,7 @@ class TemporaryLocalEnvdRuntimeAllocator:
 
     def __call__(self) -> AbstractAsyncContextManager[Path]:
         @asynccontextmanager
-        async def allocate() -> AsyncIterator[Path]:
+        async def allocate() -> AsyncGenerator[Path]:
             directory = await asyncio.to_thread(
                 tempfile.mkdtemp,
                 prefix=self.prefix,

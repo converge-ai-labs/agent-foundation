@@ -1,6 +1,6 @@
 # Agent Harness Observation Demo
 
-This executable Host writes a deterministic Agent Harness Observation matrix to the repository's local Langfuse v4 stack. It covers four causal paths:
+This executable Host writes deterministic, complete Agent Harness traces to the repository's local Langfuse v4 stack. It covers four causal paths:
 
 - `summary`: `HandoffCapability` invokes the explicit `summarize` tool, restores the continuation, and completes.
 - `compaction`: `CompactionCapability` observes provider-reported usage above its threshold, produces a compact summary with tools disabled, replaces history, and completes.
@@ -9,18 +9,13 @@ This executable Host writes a deterministic Agent Harness Observation matrix to 
 
 All scenarios use deterministic Pydantic AI models and synthetic content. No model-provider credential is required.
 
-## Profiles
+## Trace policy
 
-The matrix runs two distinct trace profiles:
+Every scenario explicitly supplies one Host-owned tracer provider through `HarnessInstrumentation`. A selected tracer provider always enables the complete structure: one root `harness.run`, Pydantic Agent/model/tool descendants, and material `harness.operation` spans. The demo uses the default `standard` content policy. There is no summary or intermediate trace profile.
 
-| Profile   | Harness policy                      | Expected structure                                                                                  |
-| --------- | ----------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `summary` | `summary` trace, `none` content     | One root `harness.run` for each scenario. Pydantic and Harness-operation spans are omitted.         |
-| `verbose` | `verbose` trace, `standard` content | Summary structure plus Pydantic Agent/generation/tool spans and material `harness.operation` spans. |
+Each root run receives a bounded `HarnessObservationContext` with its trace name, one product session, labels, and scalar metadata. A small allowlisted `SpanProcessor` maps those vendor-neutral root fields to documented Langfuse trace fields and copies them to descendants, string-encoding non-string metadata only for Langfuse's flattened metadata attributes. It also marks Harness/Pydantic Agent and tool observations with Langfuse types, and adds only `logfire.msg`/`logfire.tags` display hints that Logfire recognizes. It does not propagate arbitrary identity claims, Host references, or `RunBindings.metadata`, and it creates no separate Host root span.
 
-Each root run receives a bounded `HarnessObservationContext` with its trace name, one profile-specific product session, labels, and scalar metadata. A small allowlisted `SpanProcessor` maps those vendor-neutral root fields to documented Langfuse trace fields and copies them to descendants, string-encoding non-string metadata only for Langfuse's flattened metadata attributes. It also marks Harness/Pydantic Agent and tool observations with Langfuse types, and adds only `logfire.msg`/`logfire.tags` display hints that Logfire recognizes. It does not propagate arbitrary identity claims, Host references, or `RunBindings.metadata`, and it creates no separate Host root span.
-
-Harness-owned spans remain content-safe. Pydantic model and tool input/output appears only in the verbose profile because that profile explicitly selects standard content capture.
+Harness-owned spans remain content-safe. Pydantic model and tool input/output follows the selected `standard` content policy.
 
 ## Run
 
@@ -28,30 +23,23 @@ From the repository root:
 
 ```bash
 make langfuse-up
-dev/observation-demo/run.sh all --profile matrix
+dev/observation-demo/run.sh all
 ```
 
-Run one scenario in one profile:
+Run one scenario:
 
 ```bash
-dev/observation-demo/run.sh summary --profile summary
-dev/observation-demo/run.sh compaction --profile verbose
-dev/observation-demo/run.sh view --profile verbose
-dev/observation-demo/run.sh subagent --profile verbose
+dev/observation-demo/run.sh summary
+dev/observation-demo/run.sh compaction
+dev/observation-demo/run.sh view
+dev/observation-demo/run.sh subagent
 ```
 
-Run all scenarios in one profile:
-
-```bash
-dev/observation-demo/run.sh all --profile summary
-dev/observation-demo/run.sh all --profile verbose
-```
-
-Each scenario prints its profile, trace ID, final output, context-event sequence, usage-record count, and direct local Langfuse URL.
+Each scenario prints its trace ID, final output, context-event sequence, usage-record count, and direct local Langfuse URL.
 
 ## Expected evidence
 
-In verbose generation observations, Pydantic owns native input/output, cache, audio, and reasoning usage. The Harness custom cost Capability enriches the same generation span with:
+In generation observations, Pydantic owns native input/output, cache, audio, and reasoning usage. The Harness custom cost Capability enriches the same generation span with:
 
 - `gen_ai.usage.cost`;
 - `a13n.usage.cost.source`;
@@ -81,6 +69,6 @@ parent harness.run -> parent Agent -> delegate tool -> child harness.run -> chil
 
 The launcher loads the repository root `.env` through `uv run --env-file`; Harness itself continues to read only process environment variables and never opens `.env`. The launcher clears inherited model and telemetry selectors first, checks the local Langfuse readiness endpoint, and assigns `service.name=agent-foundation-observation-demo`.
 
-The profile is supplied explicitly as `HarnessInstrumentation`, so root `.env` Harness detail settings cannot silently change the requested matrix. Summary and verbose traces use separate Langfuse sessions (`observation-summary-2026-08` and `observation-verbose-2026-08`) so the scenario traces are easy to compare. The root `.env` still owns the standard OpenTelemetry OTLP exporter endpoint, authentication header, transport, and batch settings.
+The tracer provider is supplied explicitly through `HarnessInstrumentation`, so root `.env` Harness signal settings cannot silently disable the requested trace. All scenarios use the `observation-demo-2026-08` Langfuse session. The root `.env` still owns the standard OpenTelemetry OTLP exporter endpoint, authentication header, transport, and batch settings.
 
-Do not reuse verbose standard-content capture with sensitive application data without reviewing the telemetry trust boundary.
+Do not reuse standard-content capture with sensitive application data without reviewing the telemetry trust boundary.

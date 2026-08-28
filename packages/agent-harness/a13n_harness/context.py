@@ -275,6 +275,7 @@ class AgentContext:
     environment: Environment
     model_resolver: RunModelResolver | None
     model_configuration: ModelConfiguration | None
+    _model_inference: RunModelResolver = field(repr=False, compare=False)
     toolset_instructions: bool
     _toolset_instructions_override: bool | None = field(repr=False, compare=False)
     plugins: BoundPluginContext

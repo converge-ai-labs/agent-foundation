@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
@@ -54,14 +54,6 @@ _OBSERVATION_METADATA_KEY_PATTERN = r"[a-z][a-z0-9_.-]*"
 
 OperationKind = Literal["recovery", "delegation", "handoff", "compaction"]
 RunOutcome = Literal["completed", "suspended", "failed", "cancelled"]
-
-
-class HarnessTraceLevel(StrEnum):
-    """Structural detail selected for Harness and Pydantic AI traces."""
-
-    SUMMARY = "summary"
-    STANDARD = "standard"
-    VERBOSE = "verbose"
 
 
 class HarnessTraceContent(StrEnum):
@@ -183,8 +175,7 @@ class HarnessInstrumentation:
 
     tracer_provider: TracerProvider | None = None
     meter_provider: MeterProvider | None = None
-    trace_level: HarnessTraceLevel = HarnessTraceLevel.SUMMARY
-    trace_content: HarnessTraceContent = HarnessTraceContent.NONE
+    trace_content: HarnessTraceContent = HarnessTraceContent.STANDARD
 
     def __post_init__(self) -> None:
         if self.tracer_provider is None and self.meter_provider is None:
@@ -204,23 +195,9 @@ class HarnessInstrumentation:
                 code="instrumentation_provider_invalid",
                 details={"provider": "meter"},
             )
-        if not isinstance(self.trace_level, HarnessTraceLevel):
-            raise DefinitionError(
-                "trace_level must be a HarnessTraceLevel value.",
-                code="instrumentation_policy_invalid",
-                details={"field": "trace_level"},
-            )
         if not isinstance(self.trace_content, HarnessTraceContent):
             raise DefinitionError(
                 "trace_content must be a HarnessTraceContent value.",
-                code="instrumentation_policy_invalid",
-                details={"field": "trace_content"},
-            )
-        if self.trace_content is not HarnessTraceContent.NONE and (
-            self.tracer_provider is None or self.trace_level is HarnessTraceLevel.SUMMARY
-        ):
-            raise DefinitionError(
-                "Non-none trace content requires standard or verbose tracing with a tracer provider.",
                 code="instrumentation_policy_invalid",
                 details={"field": "trace_content"},
             )
@@ -234,9 +211,9 @@ class HarnessInstrumentation:
     ) -> Self | None:
         """Resolve Harness policy from environment and selected global OTel providers."""
         level_value = environ.get(HARNESS_TRACE_LEVEL_ENV, "off")
-        content_value = environ.get(HARNESS_TRACE_CONTENT_ENV, HarnessTraceContent.NONE.value)
+        content_value = environ.get(HARNESS_TRACE_CONTENT_ENV, HarnessTraceContent.STANDARD.value)
         metrics_value = environ.get(HARNESS_METRICS_ENV, "off")
-        if level_value not in {"off", *(level.value for level in HarnessTraceLevel)}:
+        if level_value not in {"off", "verbose"}:
             raise DefinitionError(
                 f"{HARNESS_TRACE_LEVEL_ENV} has an unsupported value.",
                 code="instrumentation_environment_invalid",
@@ -255,17 +232,16 @@ class HarnessInstrumentation:
                 details={"field": HARNESS_METRICS_ENV},
             )
         if level_value == "off" and metrics_value == "off":
-            if content_value != HarnessTraceContent.NONE.value:
-                raise DefinitionError(
-                    "Non-none trace content requires standard or verbose tracing.",
-                    code="instrumentation_policy_invalid",
-                    details={"field": HARNESS_TRACE_CONTENT_ENV},
-                )
             return None
+        selected_tracer_provider = None
+        if level_value == "verbose":
+            selected_tracer_provider = tracer_provider if tracer_provider is not None else trace.get_tracer_provider()
+        selected_meter_provider = None
+        if metrics_value == "standard":
+            selected_meter_provider = meter_provider if meter_provider is not None else metrics.get_meter_provider()
         return cls(
-            tracer_provider=(tracer_provider or trace.get_tracer_provider()) if level_value != "off" else None,
-            meter_provider=(meter_provider or metrics.get_meter_provider()) if metrics_value == "standard" else None,
-            trace_level=(HarnessTraceLevel(level_value) if level_value != "off" else HarnessTraceLevel.SUMMARY),
+            tracer_provider=selected_tracer_provider,
+            meter_provider=selected_meter_provider,
             trace_content=HarnessTraceContent(content_value),
         )
 
@@ -470,10 +446,7 @@ class _ObservationRuntime:
                 description="Duration of one independently meaningful Harness operation",
             )
 
-        pydantic_tracing = configuration.tracer_provider is not None and configuration.trace_level in (
-            HarnessTraceLevel.STANDARD,
-            HarnessTraceLevel.VERBOSE,
-        )
+        pydantic_tracing = configuration.tracer_provider is not None
         if pydantic_tracing or configuration.meter_provider is not None:
             tracer_provider = configuration.tracer_provider if pydantic_tracing else NoOpTracerProvider()
             meter_provider = configuration.meter_provider or NoOpMeterProvider()
@@ -613,7 +586,7 @@ class _LogicalRunObservation:
         *,
         capability_id: str | None = None,
         operation_id: str | None = None,
-    ) -> Iterator[None]:
+    ) -> Generator[None]:
         started_at = monotonic()
         attributes: dict[str, str] = {"a13n.operation.kind": kind}
         if capability_id is not None:
@@ -622,11 +595,7 @@ class _LogicalRunObservation:
             attributes["a13n.operation.id"] = operation_id
         span = None
         configuration = self._runtime.configuration
-        if (
-            self._runtime._tracer is not None
-            and configuration is not None
-            and configuration.trace_level is HarnessTraceLevel.VERBOSE
-        ):
+        if self._runtime._tracer is not None and configuration is not None:
             try:
                 span = self._runtime._tracer.start_span("harness.operation", attributes=attributes)
             except Exception:
@@ -660,7 +629,7 @@ def observe_operation(
     *,
     capability_id: str | None = None,
     operation_id: str | None = None,
-) -> Iterator[None]:
+) -> Generator[None]:
     """Observe a bounded Harness operation when an active run selected it."""
     observation = _current_run_observation.get()
     if observation is None:
@@ -690,5 +659,4 @@ __all__ = [
     "HarnessInstrumentation",
     "HarnessObservationContext",
     "HarnessTraceContent",
-    "HarnessTraceLevel",
 ]

@@ -32,6 +32,7 @@ Capability presence does not itself authorize external work. Tools that cross a 
 | `WorkspaceOutlineCapability`   | Bounded metadata-only file outline from the current Environment                             | Environment file facet                                         |
 | `FileContextCapability`        | Run-frozen `AGENTS.md` and explicit file contents                                           | Environment file facet                                         |
 | `DynamicEnvironmentCapability` | File and shell Toolset composition, dynamic Environment context, and topology notices       | Environment binding; managed calls also need current policy    |
+| `ShellReviewCapability`        | Optional model-backed risk review for `environment.shell_exec`                              | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
@@ -73,6 +74,35 @@ capabilities = (
 All three have explicit byte, item, depth, or line bounds. Configure them to match the Environment and target model rather than treating their defaults as universal.
 
 For context lifecycle features, Harness `AgentSpec.model_configuration` can resolve model-relative defaults once at build time; callers supply it through the `model_config` construction key. With a known context window, an otherwise unconfigured `HandoffCapability()` warns at 65% and `CompactionCapability()` compacts at 90%. Explicit token settings override these values, and the Capabilities remain opt-in.
+
+## Shell Command Review
+
+Shell review is off unless the Agent definition includes `ShellReviewCapability`. The declarative form is suitable for an `AgentSpec` loaded from JSON or YAML:
+
+```python
+from a13n_harness import AgentSpec
+
+agent_spec = AgentSpec(
+    capabilities=[
+        {
+            "name": "ShellReviewCapability",
+            "arguments": {
+                "model": "gateway@openai-responses:gpt-5.4-mini",
+                "risk_threshold": "high",
+                "on_flagged": "approval_required",
+                "on_error": "approval_required",
+                "timeout_seconds": 20,
+            },
+        }
+    ]
+)
+```
+
+The review applies only to `environment.shell_exec`; process wait, status, input, signal, and kill calls are not sent to the reviewer. It runs after typed argument validation, resource resolution, and the fresh invocation policy. A policy denial therefore avoids the review model call. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
+
+The default reviewer receives the command, working directory, background flag, timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while a timeout, invalid result, or reviewer failure applies `on_error`. Both policy and review run again after native approval resume, so a fresh denial still wins. The Host still supplies a current `InvocationPolicyCapability` for managed Environment calls.
+
+Code-first definitions can supply a custom `ShellCommandReviewer` to `ShellReviewCapability` when review is implemented by a trusted in-process service rather than the default model-backed reviewer.
 
 ## Working State
 
@@ -425,32 +455,11 @@ Prebuilt clients, transports, in-process servers, scripts, and prebuilt Toolsets
 
 The URL is explicit trusted configuration. Harness requires an HTTP(S) URL for `ContextualMCP` and otherwise leaves URL, transport, authorization, and provider validation to upstream MCP integrations; it does not guess whether URL components contain credentials.
 
-### Agent UI configuration
+### Host-authored configuration
 
-Agent UI exposes the same URL-based path through the curated `a13n.mcp` selection:
+A Host can expose the same URL-based path through its own trusted configuration model. Preserve the `ContextualMCP` fields and exact execution selection rather than inventing a second MCP runtime. Persist only credential-free desired configuration; resolve headers, short-lived credentials, and current routing through process-local factories when constructing the Capability.
 
-```yaml
-capabilities:
-  - key: a13n.mcp
-    schema_version: "1"
-    id: knowledge
-    url: https://mcp.example.com/mcp
-    execution: auto
-    allowed_tools:
-      - search
-    description: Search the current knowledge service.
-    defer_loading: false
-    context_headers:
-      X-Run-ID:
-        source: context.run_id
-      X-User-ID:
-        source: identity.user_id
-      X-Request-Context:
-        source: context.metadata.request_context
-        required: false
-```
-
-`execution` accepts `auto`, `local`, or `native`. An Agent can select multiple MCP servers when each has a unique `id`. Agent UI persists the URL as supplied and does not store a callable factory, static headers, or an out-of-band secret resolver; use code-first `ContextualMCP` when those are required.
+An Agent can select multiple MCP servers when each has a unique `id`. Use code-first `ContextualMCP` when configuration requires callable factories, current identity, static headers, or an out-of-band secret resolver.
 
 ### Result boundary
 

@@ -2,12 +2,12 @@
 
 Agent Harness exposes focused extension points rather than one universal plugin interface. Choose the narrowest boundary that owns the behavior and lifetime you need.
 
-| Extension point                | Use it for                                                                                          | Lifecycle                                                                | Model-visible                                    |
-| ------------------------------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------ |
-| Harness middleware plugin      | Transform semantic input, observe events, wrap errors, or replace a complete result candidate       | Agent-bound at build, then freshly run-bound around each logical run     | Only through an explicit Capability contribution |
-| Pydantic Capability or Toolset | Instructions, request hooks, tools, Agent-loop state, and collaboration with other run Capabilities | Native Pydantic Agent/run lifecycle                                      | Yes                                              |
-| `EnvironmentProviderBinding`   | Implement one already selected provider-neutral Environment operation revision                      | One binding scope inside one `EnvironmentRunBinding`                     | Only through explicit Environment tools/context  |
-| `EnvironmentRunExtension`      | Hold a resource that needs the complete entered Environment aggregate                               | Entered after state restore; reverse-order exit before provider teardown | No                                               |
+| Extension point                | Use it for                                                                                                                       | Lifecycle                                                                | Model-visible                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------ |
+| Harness middleware plugin      | Transform semantic input, observe events, wrap errors, or replace a complete result candidate                                    | Agent-bound at build, then freshly run-bound around each logical run     | Only through an explicit Capability contribution |
+| Pydantic Capability or Toolset | Instructions, request hooks, tools, Agent-loop state, and collaboration with other run Capabilities                              | Native Pydantic Agent/run lifecycle                                      | Yes                                              |
+| `EnvironmentProviderBinding`   | Implement one already selected provider-neutral Environment operation revision                                                   | One binding scope inside one `EnvironmentRunBinding`                     | Only through explicit Environment tools/context  |
+| `EnvironmentRunExtension`      | Hold a resource that needs the complete entered Environment aggregate; use `EnvironmentRunCallbacks` for simple paired callbacks | Entered after state restore; reverse-order exit before provider teardown | No                                               |
 
 Installed entry-point metadata means code is available, not enabled or authorized. Importing `a13n_harness` scans no entry points and activates no extension.
 
@@ -186,6 +186,50 @@ An `EnvironmentProviderBinding` is fresh and single-use. Effectful allocation, a
 
 Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `Environment`, including zero, one, or several provider bindings.
 
+### Callback Composition
+
+For ordinary Host setup and cleanup, register an `EnvironmentRunCallbacks` adapter instead of defining an extension class:
+
+```python
+from a13n_harness import (
+    EnvironmentRunCallbacks,
+    EnvironmentRunExtensionContext,
+)
+
+
+async def prepare_environment(
+    context: EnvironmentRunExtensionContext,
+) -> None:
+    await context.environment.files.write_text(
+        "/workspace/.active-run",
+        f"{context.run_id}\n",
+        mode="create",
+    )
+
+
+async def clean_environment(
+    context: EnvironmentRunExtensionContext,
+) -> None:
+    await context.environment.files.remove(
+        "/workspace/.active-run",
+    )
+
+
+active_run_callbacks = EnvironmentRunCallbacks(
+    extension_id="workspace-marker",
+    on_enter=prepare_environment,
+    on_exit=clean_environment,
+)
+```
+
+`on_enter` runs after portable Environment state restoration and before controller activation. It participates in making the aggregate active; it does not mean every operation family is globally ready. Call `context.environment.ensure_ready()` when setup depends on an exact family. `on_exit` runs during reverse-order Environment teardown while provider-neutral operations remain available. It also runs after failure, cancellation, or rollback following successful entry, so it is cleanup rather than a success notification.
+
+Each adapter is one identified extension. Multiple adapters enter in registration order and exit in reverse order. Callback failures use the same authoritative failure semantics as custom extension setup and cleanup. Catch expected failures inside a callback only when the Host deliberately wants best-effort behavior.
+
+### Custom Resource Scope
+
+Use a custom async context manager when setup and cleanup share local state or need a richer resource scope:
+
 ```python
 from contextlib import asynccontextmanager
 
@@ -225,6 +269,20 @@ environment_binding = create_environment_run_binding(
     topology_limits=topology_limits,
     state_limits=state_limits,
     extensions=(WorkspaceMarkerExtension("workspace-marker"),),
+)
+```
+
+The same `extensions=` sequence accepts callback adapters and custom extension objects together:
+
+```python
+environment_binding = create_environment_run_binding(
+    initial_topology=topology,
+    topology_limits=topology_limits,
+    state_limits=state_limits,
+    extensions=(
+        active_run_callbacks,
+        WorkspaceMarkerExtension("custom-marker"),
+    ),
 )
 ```
 

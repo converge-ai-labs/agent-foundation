@@ -51,12 +51,12 @@ Every `HarnessState` carries the stable `thread_id` of one independently advanci
 
 ## Runnable examples and guides
 
-The [Agent Application example](../../examples/agent-app/README.md) is one repeated conversation with Harness stream output, successful-turn state persistence, recovery after application restart, Harness-owned temporary Providers, Host-owned reusable Resources, and mixed multi-Environment input. The [plugin integration example](../../examples/plugins/README.md) publishes and selects a real Harness plugin distribution.
+The [Agent Application example](../../examples/agent-app/README.md) is one repeated conversation with Harness stream output, successful-turn state persistence, recovery after application restart, and one Harness-owned temporary local Environment per turn. The [plugin integration example](../../examples/plugins/README.md) publishes and selects real Harness and Environment extension distributions.
 
 The [Agent Harness user guide](../../docs/agent-harness/index.md) covers installation, first-party feature families, filters, Environments, results, resume, and usage. The [plugin guide](../../docs/agent-harness/plugins.md) covers packaging, configuration, lifecycle, and discovery from a Host-managed plugin directory without a process restart.
 
 ## Versioning
 
-Agent Harness, `a13n-environment-provider`, and `a13n-stream-protocol` form the Harness release group. A `release/harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently and selects a Harness release explicitly.
+Agent Harness, `a13n-environment-provider`, and `a13n-stream-protocol` form the Harness release group. A `release/harness-v<version>` tag publishes all three distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Harness metadata pins the exact Provider version, and published Stream Protocol metadata pins the exact Harness version.
 
 The accepted architecture and public contract are defined in the [Agent Harness specification](../../spec/agent-harness/README.md).

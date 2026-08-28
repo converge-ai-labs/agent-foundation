@@ -13,12 +13,7 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 
-from a13n_harness import (
-    HarnessBuilder,
-    HarnessInstrumentation,
-    HarnessTraceContent,
-    HarnessTraceLevel,
-)
+from a13n_harness import HarnessBuilder, HarnessInstrumentation, HarnessTraceContent
 
 resource = Resource.create({"service.name": "agent-worker"})
 tracer_provider = TracerProvider(resource=resource)
@@ -30,8 +25,7 @@ builder = HarnessBuilder(
     instrumentation=HarnessInstrumentation(
         tracer_provider=tracer_provider,
         meter_provider=meter_provider,
-        trace_level=HarnessTraceLevel.STANDARD,
-        trace_content=HarnessTraceContent.NONE,
+        trace_content=HarnessTraceContent.STANDARD,
     )
 )
 ```
@@ -47,13 +41,14 @@ The Host must flush and shut down its providers at the process boundary. The Har
 
 ## Select trace structure and content independently
 
-Trace levels select structure:
+Trace structure is intentionally binary:
 
-| Level      | Selected structure                                                                                  |
-| ---------- | --------------------------------------------------------------------------------------------------- |
-| `summary`  | One `harness.run` span for each logical Harness run; it is the root when no Host parent is current. |
-| `standard` | Summary plus Pydantic AI Agent, model, tool, usage, streaming, and cancellation spans.              |
-| `verbose`  | Standard plus independently meaningful `harness.operation` spans.                                   |
+| State   | Selected structure                                                                                                                |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| off     | No Harness-selected spans.                                                                                                        |
+| enabled | `harness.run`, Pydantic AI Agent/model/tool/streaming/cancellation spans, and independently meaningful `harness.operation` spans. |
+
+In the explicit Python API, a tracer provider enables the complete structure. The environment convention uses `off` and `verbose` for these two states. There is no summary or intermediate structural mode.
 
 Content policy applies only to Pydantic AI instrumentation:
 
@@ -63,29 +58,29 @@ Content policy applies only to Pydantic AI instrumentation:
 | `standard` | Included                     | Omitted        | Omitted                             |
 | `full`     | Included                     | Included       | Included                            |
 
-A non-`none` policy requires standard or verbose tracing. The default is summary tracing with `none` content when a tracer provider is supplied.
+The content default is `standard`. While tracing is off, that value is a dormant policy and does not emit data or make metrics-only instrumentation invalid. Supplying a tracer provider enables complete structure with the selected content policy.
 
-`none` means the Host does not opt into ordinary execution payloads. It is not a universal redaction boundary for fields emitted by upstream Pydantic AI instrumentation. Before enabling standard or verbose tracing, treat Agent descriptions, metadata, tool definitions and schema defaults, and upstream exception text as telemetry-visible. `standard` also cannot redact binary values nested inside arbitrary custom models or dataclasses.
+`none` means the Host does not opt into ordinary execution payloads. It is not a universal redaction boundary for fields emitted by upstream Pydantic AI instrumentation. Before enabling tracing, treat Agent descriptions, metadata, tool definitions and schema defaults, and upstream exception text as telemetry-visible. `standard` also cannot redact binary values nested inside arbitrary custom models or dataclasses.
 
 ## Enable observation and select a collector through environment variables
 
 The default builder mode is `instrumentation="environment"`. It reads these Harness policy variables once and obtains the OpenTelemetry global providers already configured by the executable Host:
 
-| Variable                     | Values                                  | Default |
-| ---------------------------- | --------------------------------------- | ------- |
-| `A13N_HARNESS_TRACE_LEVEL`   | `off`, `summary`, `standard`, `verbose` | `off`   |
-| `A13N_HARNESS_TRACE_CONTENT` | `none`, `standard`, `full`              | `none`  |
-| `A13N_HARNESS_METRICS`       | `off`, `standard`                       | `off`   |
+| Variable                     | Values                     | Default    |
+| ---------------------------- | -------------------------- | ---------- |
+| `A13N_HARNESS_TRACE_LEVEL`   | `off`, `verbose`           | `off`      |
+| `A13N_HARNESS_TRACE_CONTENT` | `none`, `standard`, `full` | `standard` |
+| `A13N_HARNESS_METRICS`       | `off`, `standard`          | `off`      |
 
-Invalid values and incompatible content/trace combinations fail during `HarnessBuilder()` construction.
+Invalid values fail during `HarnessBuilder()` construction. The defaults are identical for development and production: trace off, standard content policy, metrics off.
 
 Use the official OpenTelemetry Python distro and OTLP exporter to configure the SDK and collector target. The Harness does not reimplement their environment handling:
 
 ```bash
 python -m pip install 'opentelemetry-distro[otlp]'
 
-export A13N_HARNESS_TRACE_LEVEL=standard
-export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_TRACE_LEVEL=verbose
+export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=standard
 
 export OTEL_SERVICE_NAME=agent-worker
@@ -105,7 +100,7 @@ Use these safe process-environment defaults when no backend is selected:
 
 ```bash
 export A13N_HARNESS_TRACE_LEVEL=off
-export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=off
 export OTEL_TRACES_EXPORTER=none
 export OTEL_METRICS_EXPORTER=none
@@ -138,8 +133,8 @@ python -m pip install logfire
 export LOGFIRE_TOKEN=your-logfire-write-token
 export LOGFIRE_SERVICE_NAME=agent-worker
 export LOGFIRE_SEND_TO_LOGFIRE=if-token-present
-export A13N_HARNESS_TRACE_LEVEL=standard
-export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_TRACE_LEVEL=verbose
+export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=standard
 ```
 
@@ -150,18 +145,22 @@ import os
 
 from opentelemetry import trace
 
-from a13n_harness import HarnessBuilder
+from a13n_harness import AgentSpec, HarnessBuilder
 
 if os.environ.get("LOGFIRE_TOKEN"):
     import logfire
 
     logfire.configure()
 
-builder = HarnessBuilder()
+executable = HarnessBuilder().build(
+    AgentSpec(model="openai-responses:gpt-5"),
+    output_type=str,
+)
 host_tracer = trace.get_tracer("agent-host")
 
-with host_tracer.start_as_current_span("host.work"):
-    result = await executable.run("Complete the task")
+async with executable:
+    with host_tracer.start_as_current_span("host.work"):
+        result = await executable.run("Complete the task")
 ```
 
 Logfire still requires one `logfire.configure()` call; environment variables configure the call rather than replacing it. `LOGFIRE_SERVICE_NAME` supplies the OpenTelemetry `service.name` without a hard-coded Python value, and `OTEL_SERVICE_NAME` is its standard fallback alias. `LOGFIRE_TOKEN` selects the project, while `LOGFIRE_SEND_TO_LOGFIRE=if-token-present` keeps the same bootstrap safe in processes without a token.
@@ -181,8 +180,8 @@ export LANGFUSE_PUBLIC_KEY=lf_pk_...
 export LANGFUSE_SECRET_KEY=lf_sk_...
 export LANGFUSE_BASE_URL=https://cloud.langfuse.com
 
-export A13N_HARNESS_TRACE_LEVEL=standard
-export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_TRACE_LEVEL=verbose
+export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=off
 export OTEL_TRACES_EXPORTER=otlp
 export OTEL_METRICS_EXPORTER=none
@@ -195,7 +194,7 @@ opentelemetry-instrument python -m my_agent_host
 
 Use `https://us.cloud.langfuse.com`, `https://jp.cloud.langfuse.com`, or the selected regional URL when the project is not in the default EU region. The endpoint for the repository's local stack is `http://127.0.0.1:3000/api/public/otel`.
 
-Direct OTLP export sends `harness.run`, Pydantic Agent/model/tool spans, and verbose material `harness.operation` spans to one Langfuse trace. If no Host span is current, `harness.run` is the trace root. If the Host uses the Langfuse Python SDK instead, attach `LangfuseSpanProcessor` to the existing shared provider rather than registering a second provider. Langfuse's default export filter is LLM-focused, so explicitly include the `a13n-harness` and any Host-root instrumentation scopes when filtering; otherwise those structural spans may be omitted.
+Direct OTLP export sends `harness.run`, Pydantic Agent/model/tool spans, and material `harness.operation` spans to one Langfuse trace. If no Host span is current, `harness.run` is the trace root. If the Host uses the Langfuse Python SDK instead, attach `LangfuseSpanProcessor` to the existing shared provider rather than registering a second provider. Langfuse's default export filter is LLM-focused, so explicitly include the `a13n-harness` and any Host-root instrumentation scopes when filtering; otherwise those structural spans may be omitted.
 
 Langfuse v4 requires trace-level grouping fields on every descendant span for reliable filtering and aggregation. A direct-OTLP Host should propagate only an explicit allowlist, using the Langfuse SDK's documented propagation context or OpenTelemetry baggage plus a bounded `SpanProcessor`:
 
@@ -270,8 +269,8 @@ Secret key: lf_sk_agent_foundation_local
 Export this complete trace-only profile before launching an embedded Host. Repository development may place the same values in a root `.env`; `make dev` loads that file only at the Host launcher boundary.
 
 ```bash
-export A13N_HARNESS_TRACE_LEVEL=standard
-export A13N_HARNESS_TRACE_CONTENT=none
+export A13N_HARNESS_TRACE_LEVEL=verbose
+export A13N_HARNESS_TRACE_CONTENT=standard
 export A13N_HARNESS_METRICS=off
 export OTEL_SERVICE_NAME=agent-worker
 export OTEL_TRACES_EXPORTER=otlp
@@ -351,7 +350,7 @@ Pydantic owns model-request usage fields, including input/output tokens, first-c
 - optional `a13n.usage.pricing.revision`;
 - optional `a13n.usage.pricing.rule.id`.
 
-The Harness marks the exact active Pydantic model-request wrapper before applying this enrichment. Disabled Observation and summary tracing have no eligible model span, so pricing fields never leak onto a Host root or `harness.run`. The Harness does not create token aliases, another generation span, another usage metric, or a flattened usage ledger. Spans are telemetry, not billing authority.
+The Harness marks the exact active Pydantic model-request wrapper before applying this enrichment. Disabled Observation and metrics-only instrumentation have no eligible recording model span, so pricing fields never leak onto a Host root. The Harness does not create token aliases, another generation span, another usage metric, or a flattened usage ledger. Spans are telemetry, not billing authority.
 
 Pydantic token categories are inclusive: input contains cache and input-audio tokens, output contains output-audio tokens, and reasoning detail may overlap output. Langfuse v4 splits cache counters but currently adds arbitrary audio/reasoning detail counters when deriving its displayed `usageDetails.total`. Preserve and inspect the individual categories, but do not treat that derived total as Pydantic `input_tokens + output_tokens` or as Harness accounting truth.
 

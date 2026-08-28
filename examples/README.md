@@ -6,7 +6,7 @@ This directory contains runnable, tested examples of public Agent Foundation ext
 
 | Goal                                        | Example                                                                        | What it demonstrates                                                                                              |
 | ------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| Build an Agent application progressively    | [Agent application example](agent-app/README.md)                               | Minimal embedding, local Capabilities and tools, then Host-owned persistence and recovery in one project          |
+| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                               | Offline streaming turns, successful-turn state persistence, restart recovery, and temporary Environment cleanup   |
 | Wrap the complete Harness run               | [Integration package examples](plugins/README.md#harness-plugin)               | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation           |
 | Publish and compose an Environment provider | [Integration package examples](plugins/README.md#environment-provider-factory) | Entry-point and explicit factory modes, Host JSON configuration, provider bindings, and multi-environment routing |
 
@@ -21,9 +21,8 @@ Or enter each project and run its paths directly:
 ```bash
 cd examples/agent-app
 uv sync --locked
-uv run agent-app-example basic
-uv run agent-app-example local
-uv run agent-app-example host
+uv run agent-app-example
+uv run agent-app-example "first turn" "second turn"
 uv run pytest
 
 cd ../plugins

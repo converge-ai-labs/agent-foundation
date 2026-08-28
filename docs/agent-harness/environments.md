@@ -425,4 +425,4 @@ High-level Environment arguments and `RunBindings.environment` are mutually excl
 - `destroy()` detaches the logical provider resource but never deletes the directory;
 - `read_only` constrains binding operations but is not an OS sandbox against an allowed child process.
 
-Use Docker, E2B, or another isolated EIP provider when untrusted code needs a real sandbox boundary.
+Use Local Envd or an implemented third-party isolated EIP provider when untrusted code needs a real sandbox boundary. Docker and E2B are extension architectures, not current built-in Providers.

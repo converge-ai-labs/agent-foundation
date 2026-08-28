@@ -18,6 +18,7 @@ from a13n_harness import (
     EnvironmentError,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
+    EnvironmentRunCallbacks,
     EnvironmentRunExtensionContext,
     EnvironmentState,
     FileMetadata,
@@ -305,6 +306,139 @@ async def test_environment_run_extensions_follow_aggregate_lifecycle_and_remain_
         "exit:first",
     ]
     assert provider.exited == 1
+
+
+async def test_environment_run_callbacks_follow_the_extension_lifecycle() -> None:
+    events: list[str] = []
+    provider = _Binding("callbacks")
+
+    async def enter_first(context: EnvironmentRunExtensionContext) -> None:
+        events.append(f"enter:first:{context.run_id}:{context.environment.restored_state_topology_version}")
+
+    async def exit_first(context: EnvironmentRunExtensionContext) -> None:
+        observation = await context.environment.files.stat("/workspace/callback.txt")
+        events.append(f"exit:first:{observation.path}:{provider.exited}")
+
+    async def enter_second(context: EnvironmentRunExtensionContext) -> None:
+        events.append(f"enter:second:{context.run_id}")
+
+    async def exit_second(context: EnvironmentRunExtensionContext) -> None:
+        events.append(f"exit:second:{context.run_id}")
+
+    binding = create_environment_run_binding(
+        initial_topology=_request(provider),
+        topology_limits=EnvironmentTopologyLimits(),
+        state_limits=EnvironmentStateLimits(),
+        extensions=(
+            EnvironmentRunCallbacks(
+                extension_id="first",
+                on_enter=enter_first,
+                on_exit=exit_first,
+            ),
+            EnvironmentRunCallbacks(
+                extension_id="second",
+                on_enter=enter_second,
+                on_exit=exit_second,
+            ),
+        ),
+    )
+
+    async with binding.bind(run_id="run-callbacks", instance=_instance()) as environment:
+        await environment.restore_state(EnvironmentState(observed_topology_version=7))
+        await environment.activate()
+        assert events == [
+            "enter:first:run-callbacks:7",
+            "enter:second:run-callbacks",
+        ]
+
+    assert events == [
+        "enter:first:run-callbacks:7",
+        "enter:second:run-callbacks",
+        "exit:second:run-callbacks",
+        "exit:first:/workspace/callback.txt:0",
+    ]
+    assert provider.exited == 1
+
+
+async def test_environment_run_callback_entry_failure_only_unwinds_admitted_callbacks() -> None:
+    events: list[str] = []
+
+    async def enter_first(context: EnvironmentRunExtensionContext) -> None:
+        del context
+        events.append("enter:first")
+
+    async def exit_first(context: EnvironmentRunExtensionContext) -> None:
+        del context
+        events.append("exit:first")
+
+    async def enter_failing(context: EnvironmentRunExtensionContext) -> None:
+        del context
+        events.append("enter:failing")
+        raise RuntimeError("secret callback entry failure")
+
+    async def exit_failing(context: EnvironmentRunExtensionContext) -> None:
+        del context
+        events.append("exit:failing")
+
+    binding = create_environment_run_binding(
+        initial_topology=_request(),
+        topology_limits=EnvironmentTopologyLimits(),
+        state_limits=EnvironmentStateLimits(),
+        extensions=(
+            EnvironmentRunCallbacks(
+                extension_id="first",
+                on_enter=enter_first,
+                on_exit=exit_first,
+            ),
+            EnvironmentRunCallbacks(
+                extension_id="failing",
+                on_enter=enter_failing,
+                on_exit=exit_failing,
+            ),
+        ),
+    )
+
+    async with binding.bind(run_id="run-callback-entry-failure", instance=_instance()) as environment:
+        with pytest.raises(EnvironmentError) as exc_info:
+            await environment.activate()
+
+    assert exc_info.value.code == "environment_extension_bind_failed"
+    assert events == ["enter:first", "enter:failing", "exit:first"]
+
+
+async def test_environment_run_callback_cleanup_continues_after_failure() -> None:
+    events: list[str] = []
+
+    async def exit_first(context: EnvironmentRunExtensionContext) -> None:
+        del context
+        events.append("exit:first")
+
+    async def exit_failing(context: EnvironmentRunExtensionContext) -> None:
+        del context
+        events.append("exit:failing")
+        raise RuntimeError("secret callback exit failure")
+
+    binding = create_environment_run_binding(
+        initial_topology=_request(),
+        topology_limits=EnvironmentTopologyLimits(),
+        state_limits=EnvironmentStateLimits(),
+        extensions=(
+            EnvironmentRunCallbacks(extension_id="first", on_exit=exit_first),
+            EnvironmentRunCallbacks(extension_id="failing", on_exit=exit_failing),
+        ),
+    )
+
+    with pytest.raises(BaseExceptionGroup) as exc_info:
+        async with binding.bind(run_id="run-callback-exit-failure", instance=_instance()) as environment:
+            await environment.activate()
+
+    assert "Environment entered-resource cleanup failed" in str(exc_info.value)
+    assert events == ["exit:failing", "exit:first"]
+
+
+def test_environment_run_callbacks_require_at_least_one_callback() -> None:
+    with pytest.raises(ValueError, match="requires on_enter or on_exit"):
+        EnvironmentRunCallbacks(extension_id="empty")
 
 
 async def test_environment_run_extension_entry_failure_unwinds_and_keeps_controller_inactive() -> None:

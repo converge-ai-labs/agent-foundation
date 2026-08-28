@@ -70,6 +70,10 @@ from a13n_harness.capabilities.media import (
     MediaCapability,
     MediaRunCapability,
 )
+from a13n_harness.capabilities.shell_review import (
+    SHELL_REVIEW_CAPABILITY_ID,
+    ShellReviewCapability,
+)
 from a13n_harness.capabilities.skills import (
     SKILL_SELECTION_RUN_CAPABILITY_ID,
     SKILLS_CAPABILITY_ID,
@@ -93,7 +97,10 @@ from a13n_harness.capabilities.working_state import (
     TaskStateRunCapability,
     WorkingStateCapability,
 )
-from a13n_harness.capability_types import CapabilityTypeCatalog
+from a13n_harness.capability_types import (
+    CapabilityTypeCatalog,
+    first_party_declarative_capability_types,
+)
 from a13n_harness.context import (
     AgentContext,
     BuiltSubagent,
@@ -148,7 +155,7 @@ from a13n_harness.model_context import (
     MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
     ModelContextCoordinatorCapability,
 )
-from a13n_harness.models.binding import resolve_run_model
+from a13n_harness.models.binding import RunModelResolver, resolve_run_model
 from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
 from a13n_harness.models.request_headers import (
     MODEL_REQUEST_HEADERS_CAPABILITY_ID,
@@ -776,6 +783,7 @@ class HarnessBuilder:
         subagents = SubagentCollection({child.declaration.name: child for child in built_children})
         configured_plugins = self._create_configured_plugins()
         plugins, plugin_capabilities = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        _validate_capability_source(plugin_capabilities, source="plugin")
         authored_capabilities = _resolve_model_configured_capabilities(
             definition.agent,
             (*definition.capabilities, *plugin_capabilities),
@@ -832,13 +840,17 @@ class HarnessBuilder:
         )
         try:
             construction_spec, business_output, output_adapter = _resolve_business_output(definition)
+            definition_reserved_ids = definition_reserved_ids | _first_party_spec_reserved_ids(construction_spec)
             complete_output = [business_output, DeferredToolRequests]
             system_prompt = _normalize_system_prompt(construction_spec)
             agent = Agent.from_spec(
                 construction_spec,
                 deps_type=AgentContext,
                 system_prompt=system_prompt,
-                custom_capability_types=self._capability_type_catalog.custom_capability_types,
+                custom_capability_types=(
+                    *first_party_declarative_capability_types(),
+                    *self._capability_type_catalog.custom_capability_types,
+                ),
                 model=definition.model,
                 output_type=complete_output,
                 capabilities=capabilities,
@@ -866,6 +878,7 @@ class HarnessBuilder:
             plugins=plugins,
             subagents=subagents,
             definition_reserved_capability_ids=definition_reserved_ids,
+            model_inference=resolve_model,
             observation=self._observation,
         )
 
@@ -905,6 +918,7 @@ class ExecutableAgent[OutputT]:
         plugins: tuple[AbstractHarnessPlugin, ...],
         subagents: SubagentCollection,
         definition_reserved_capability_ids: frozenset[str],
+        model_inference: RunModelResolver,
         observation: _ObservationRuntime,
     ) -> None:
         self.definition = definition
@@ -914,6 +928,7 @@ class ExecutableAgent[OutputT]:
         self._output_adapter = output_adapter
         self._plugins = plugins
         self._definition_reserved_capability_ids = definition_reserved_capability_ids
+        self._model_inference = model_inference
         self._observation = observation
         self._closed = False
 
@@ -1293,6 +1308,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     if isinstance(self._executable.definition.agent, HarnessAgentSpec)
                     else None
                 ),
+                _model_inference=self._executable._model_inference,
                 toolset_instructions=(
                     self._bindings.toolset_instructions
                     if self._bindings.toolset_instructions is not None
@@ -2495,6 +2511,22 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await self._context._close_run_cleanups()
 
 
+def _first_party_spec_reserved_ids(spec: AgentSpec) -> frozenset[str]:
+    """Authorize reserved definition IDs selected by exact first-party wire names."""
+    names = [capability.name for capability in spec.capabilities]
+    shell_review_name = ShellReviewCapability.get_serialization_name()
+    if shell_review_name is None:
+        raise AssertionError("ShellReviewCapability must be serializable")
+    count = names.count(shell_review_name)
+    if count > 1:
+        raise DefinitionError(
+            "AgentSpec contains duplicate ShellReviewCapability declarations.",
+            code="capability_id_duplicate",
+            details={"capability_id": SHELL_REVIEW_CAPABILITY_ID, "source": "definition"},
+        )
+    return frozenset({SHELL_REVIEW_CAPABILITY_ID}) if count else frozenset()
+
+
 def _resolve_business_output[OutputT](
     definition: AgentDefinition[OutputT],
 ) -> tuple[AgentSpec, Any, TypeAdapter[Any]]:
@@ -2555,6 +2587,7 @@ def _validate_built_capability_tree(
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
+        SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
@@ -2694,6 +2727,7 @@ def _validate_built_capability_tree(
                 ClientToolsCapability,
                 CodeActCapability,
                 DynamicEnvironmentCapability,
+                ShellReviewCapability,
                 RuntimeContextCapability,
                 WorkspaceOutlineCapability,
                 FileContextCapability,
@@ -2813,7 +2847,7 @@ def _capture_skill_selection_names(
 def _validate_capability_source(
     capabilities: Sequence[AbstractCapability[AgentContext]],
     *,
-    source: Literal["definition", "run"],
+    source: Literal["definition", "plugin", "run"],
 ) -> frozenset[str]:
     """Flatten Capability trees and preserve ownership of reserved Harness IDs."""
     run_types = (
@@ -2874,6 +2908,7 @@ def _validate_capability_source(
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
+        SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
@@ -2911,6 +2946,7 @@ def _validate_capability_source(
                     ClientToolsCapability,
                     CodeActCapability,
                     DynamicEnvironmentCapability,
+                    ShellReviewCapability,
                     RuntimeContextCapability,
                     WorkspaceOutlineCapability,
                     FileContextCapability,
@@ -2940,6 +2976,7 @@ def _validate_capability_source(
             | ClientToolsRunCapability
             | CodeActCapability
             | DynamicEnvironmentCapability
+            | ShellReviewCapability
             | RuntimeContextCapability
             | WorkspaceOutlineCapability
             | FileContextCapability

@@ -78,6 +78,7 @@ class HarnessToolMetadata:
     output_policy: ToolOutputPolicy
     resource_resolver: ToolResourceResolver | None = None
     superseded_by_tool_ids: frozenset[str] = frozenset()
+    shell_review: bool = False
 
     def __post_init__(self) -> None:
         normalized = _normalize_metadata_fields(
@@ -88,6 +89,7 @@ class HarnessToolMetadata:
             output_policy=self.output_policy,
             resource_resolver=self.resource_resolver,
             superseded_by_tool_ids=self.superseded_by_tool_ids,
+            shell_review=self.shell_review,
         )
         object.__setattr__(self, "tool_id", normalized["tool_id"])
         object.__setattr__(self, "effects", normalized["effects"])
@@ -133,6 +135,7 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
                 output_policy=value.output_policy.model_copy(deep=True),
                 resource_resolver=value.resource_resolver,
                 superseded_by_tool_ids=value.superseded_by_tool_ids,
+                shell_review=value.shell_review,
             )
         if not isinstance(value, Mapping):
             raise TypeError("metadata must be HarnessToolMetadata or a mapping")
@@ -144,9 +147,10 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
             "output_policy",
             "resource_resolver",
             "superseded_by_tool_ids",
+            "shell_review",
         }
         extra = set(value) - expected
-        required = expected - {"resource_resolver", "superseded_by_tool_ids"}
+        required = expected - {"resource_resolver", "superseded_by_tool_ids", "shell_review"}
         missing = required - set(value)
         if extra or missing:
             raise ValueError("metadata fields do not match the managed contract")
@@ -158,6 +162,7 @@ def normalize_harness_tool_metadata(value: object) -> HarnessToolMetadata:
             output_policy=value["output_policy"],
             resource_resolver=value.get("resource_resolver"),
             superseded_by_tool_ids=value.get("superseded_by_tool_ids", ()),
+            shell_review=value.get("shell_review", False),
         )
         return HarnessToolMetadata(**fields)
     except DefinitionError:
@@ -175,6 +180,7 @@ def _normalize_metadata_fields(
     output_policy: object,
     resource_resolver: object,
     superseded_by_tool_ids: object,
+    shell_review: object,
 ) -> dict[str, Any]:
     if not isinstance(tool_id, str) or not tool_id.strip() or len(tool_id.strip()) > MAX_TOOL_ID_LENGTH:
         raise DefinitionError("Managed tool_id is invalid.", code="tool_metadata_invalid")
@@ -213,6 +219,8 @@ def _normalize_metadata_fields(
         raise DefinitionError("Managed output policy is invalid.", code="tool_metadata_invalid") from exc
     if resource_resolver is not None and not callable(resource_resolver):
         raise DefinitionError("Managed resource_resolver must be callable.", code="tool_metadata_invalid")
+    if not isinstance(shell_review, bool):
+        raise DefinitionError("Managed shell_review marker must be a boolean.", code="tool_metadata_invalid")
 
     if isinstance(superseded_by_tool_ids, (str, bytes)):
         raise DefinitionError("Managed supersession targets must be a collection.", code="tool_metadata_invalid")
@@ -246,4 +254,5 @@ def _normalize_metadata_fields(
         "output_policy": policy,
         "resource_resolver": resource_resolver,
         "superseded_by_tool_ids": frozenset(normalized_targets),
+        "shell_review": shell_review,
     }

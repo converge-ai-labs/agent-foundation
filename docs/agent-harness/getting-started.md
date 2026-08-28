@@ -1,19 +1,23 @@
 # Getting Started
 
-This guide builds and runs the smallest useful Agent Harness application. It uses a deterministic Pydantic AI `FunctionModel`, so it needs no API key or network access.
+This guide builds the smallest useful Agent Harness application, explains its ownership boundaries, and then switches from a deterministic test model to a real model provider.
 
 ## Requirements
 
 - Python 3.13 or later
-- `a13n-harness`
+- [uv](https://docs.astral.sh/uv/)
+
+These guides track `main` and target the next Harness release. Until that release is published, clone the repository and synchronize the locked Harness package:
 
 ```bash
-pip install a13n-harness
+git clone https://github.com/converge-ai-labs/agent-foundation.git
+cd agent-foundation
+uv sync --locked --package a13n-harness
 ```
 
-The package includes Pydantic AI's slim runtime and MCP client support. Add the model-provider dependency required by your application separately.
+The Harness workspace package installs Pydantic AI with the provider integrations selected by Agent Foundation. Provider credentials, endpoints, model selection, and any client lifecycle remain application configuration.
 
-## Run an Offline Agent
+## Run an offline Agent
 
 Create `app.py`:
 
@@ -21,8 +25,7 @@ Create `app.py`:
 import asyncio
 from collections.abc import AsyncIterator
 
-from a13n_harness import HarnessBuilder, RunBindings
-from pydantic_ai.agent.spec import AgentSpec
+from a13n_harness import AgentSpec, HarnessBuilder
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -43,10 +46,7 @@ async def main() -> None:
     )
 
     async with executable:
-        result = await executable.run(
-            "Say hello",
-            bindings=RunBindings.embedded(),
-        )
+        result = await executable.run("Say hello")
 
     print(result.output_or_raise())
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
 Run it:
 
 ```bash
-python app.py
+uv run python app.py
 ```
 
 The output is:
@@ -67,54 +67,105 @@ The output is:
 Hello from the Harness
 ```
 
-## What Each Part Owns
+The deterministic `FunctionModel` keeps this path offline and makes it suitable for tests.
+
+## Understand the execution path
 
 ```mermaid
 flowchart LR
     Spec[AgentSpec] --> Builder[HarnessBuilder]
     Model[FunctionModel] --> Builder
     Builder --> Executable[ExecutableAgent]
-    Bindings[Fresh RunBindings] --> Run[Logical run]
-    Executable --> Run
+    Executable --> Run[Logical run]
     Run --> Result[HarnessRunResult]
 ```
 
-- `AgentSpec` is native Pydantic AI configuration.
-- `HarnessBuilder` validates Harness composition and creates one reusable `ExecutableAgent`.
-- `FunctionModel` mocks the model provider. A production application can supply any supported Pydantic AI model or resolve a string selection through a fresh model resolver.
-- `RunBindings` supplies current identity, Environment, model integration, and run-scoped Capabilities. Create fresh bindings for every logical run.
-- `HarnessRunResult` normalizes completion, suspension, failure, cancellation, state, usage, and correlation IDs.
-- `async with executable` closes recursively owned child executables deterministically.
+- `AgentSpec` declares stable Agent configuration.
+- `HarnessBuilder` validates composition and creates a reusable `ExecutableAgent`.
+- `FunctionModel` replaces an external provider in this example.
+- `run()` creates fresh embedded bindings when `bindings` is omitted.
+- `HarnessRunResult` normalizes completion, suspension, failure, cancellation, state, usage, and correlation.
+- `async with executable` closes recursively owned resources deterministically.
 
-This example uses one model source: the concrete `FunctionModel` is trusted process-local build input, so `AgentSpec.model` remains unset. A string selection instead belongs in `AgentSpec.model` and must not be combined with `model=`.
+The concrete model is trusted build input, so `AgentSpec.model` remains unset. Use exactly one model source: either put a model selection in `AgentSpec.model` or pass a concrete Pydantic AI `Model` through `model=`.
 
-## Build Once, Run More Than Once
+### Which `AgentSpec` should I import?
 
-An executable is reusable until it is closed. Each call still receives fresh bindings and produces a new `run_id`:
+The builder accepts both Pydantic AI's native `AgentSpec` and the Harness extension exported as `a13n_harness.AgentSpec`.
+
+Use the Harness import in application code unless you intentionally need a Pydantic-only definition. It preserves the native fields and adds Harness-owned configuration such as `system_prompt`, `toolset_instructions`, definition usage limits, resolved model characteristics, and `with_updates()`.
+
+## Use a real model
+
+Move the model selection into `AgentSpec`:
+
+```python
+from a13n_harness import AgentSpec, HarnessBuilder
+
+executable = HarnessBuilder().build(
+    AgentSpec(
+        model="openai-responses:gpt-5",
+        instructions="Answer clearly and concisely.",
+    ),
+    output_type=str,
+)
+```
+
+Configure the selected provider as documented by [Pydantic AI](https://ai.pydantic.dev/models/). For this OpenAI example, set the provider credential before running the application:
+
+```bash
+export OPENAI_API_KEY=your-api-key
+uv run python app.py
+```
+
+The application owns credentials, provider SDK configuration, HTTP clients, and transport retry policy. For tenant-specific routing or short-lived credentials, resolve the model through fresh `RunBindings` rather than storing current authority in the Agent definition.
+
+## Build once and continue a Thread
+
+An executable is reusable until closed. Each call creates a new `run_id`; passing `previous_state` continues the same Harness Thread:
 
 ```python
 async with executable:
-    first = await executable.run("First turn", bindings=RunBindings.embedded())
+    first = await executable.run("Remember that the release is Friday.")
     second = await executable.run(
-        "Second turn",
-        bindings=RunBindings.embedded(),
+        "When is the release?",
         previous_state=first.state,
     )
 ```
 
-When `previous_state` is supplied, the second run continues the same Thread and therefore preserves `thread_id`. It is still a distinct process-local run with a new `run_id`.
+Persist the complete returned `HarnessState` when continuation must survive a process restart. It is continuation data, not restored credentials, authorization, Environment resources, or durable execution ownership.
 
-## Add Behavior Deliberately
+## Stream public events
 
-The minimal Agent has the mandatory Harness boundaries but no optional tools. Add behavior through definition-selected Capabilities:
+Use an explicitly scoped stream when the application needs incremental output or lifecycle observations:
+
+```python
+from a13n_harness import HarnessRunResultEvent
+
+terminal = None
+async with executable.stream("Write a short greeting") as stream:
+    async for item in stream:
+        await application.handle_harness_event(item)
+        if isinstance(item, HarnessRunResultEvent):
+            terminal = item.result
+
+if terminal is None:
+    raise RuntimeError("Harness stream ended without a terminal result")
+terminal.raise_for_status()
+```
+
+`application.handle_harness_event()` represents application code; it is not a Harness API. Entering the stream scope ensures early consumer exit still closes the logical run and its temporary resources.
+
+## Add behavior deliberately
+
+The minimal Agent has mandatory Harness boundaries but no optional tools. Add stable behavior through definition-selected Capabilities:
 
 ```python
 from a13n_harness import RuntimeContextCapability, WorkingStateCapability
 
 executable = HarnessBuilder().build(
-    AgentSpec(),
+    AgentSpec(model="openai-responses:gpt-5"),
     output_type=str,
-    model=FunctionModel(stream_function=respond),
     capabilities=(
         RuntimeContextCapability(),
         WorkingStateCapability(),
@@ -122,11 +173,12 @@ executable = HarnessBuilder().build(
 )
 ```
 
-Definition Capabilities describe stable Agent behavior. Provider clients, authorization policy, user-specific selection, and other current authority belong in fresh `RunBindings.capabilities` instead.
+Definition Capabilities describe stable Agent behavior. Current credentials, user identity, authorization policy, provider clients, and other run authority belong in fresh bindings or Host-owned integrations.
 
-## Next Steps
+## Next steps
 
-- Run the repository's [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) for a complete repeated conversation with streaming output, persisted Harness state, and restart recovery.
-- Read [Agents and Runs](agents-and-runs.md) for the complete build, stream, result, and cleanup path.
-- Read [Capabilities](capabilities.md) to choose optional first-party behavior.
-- Read [Environments](environments.md) before exposing files, shell commands, processes, or ports.
+- [Test the Agent offline](testing.md) before adding provider or Environment integration.
+- Read [Agents and Runs](agents-and-runs.md) for model routing, streaming, results, cleanup, and usage.
+- Read [Capabilities](capabilities.md) to select optional first-party behavior.
+- Read the [Environment overview](../environments/index.md) before exposing files, commands, processes, or ports.
+- Run the [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) for repeated streaming turns, persisted state, and restart recovery.

@@ -446,6 +446,19 @@ class EnvironmentRunExtensionContext:
     environment: Environment
 
 
+type EnvironmentRunCallback = Callable[
+    [EnvironmentRunExtensionContext],
+    Awaitable[None],
+]
+
+
+@dataclass(frozen=True, slots=True)
+class EnvironmentRunCallbacks:
+    extension_id: str
+    on_enter: EnvironmentRunCallback | None = None
+    on_exit: EnvironmentRunCallback | None = None
+
+
 @runtime_checkable
 class EnvironmentRunExtension(Protocol):
     @property
@@ -555,9 +568,11 @@ A zero-binding aggregate is the no-operation Environment used when a run supplie
 
 An `EnvironmentRunExtension` is trusted process-local code bound to one complete entered `EnvironmentRunBinding`. The aggregate captures the supplied sequence as an immutable tuple during construction, validates every `extension_id` as a bounded non-blank string without surrounding whitespace, and rejects duplicate IDs before any run begins. The ID is stable process-local correlation and diagnostics, not authority or an ordering dependency.
 
-After initial provider entry and optional `EnvironmentState` restoration complete, aggregate activation creates one `EnvironmentRunExtensionContext` containing the public run ID, immutable Agent instance context, and stable `BoundEnvironment`. It enters extension scopes strictly in registration order and activates the topology controller only after every extension has entered successfully. A dynamic `controller.apply()` changes provider revisions within that already entered aggregate and never rebinds an extension. One logical Harness run therefore enters each registered extension at most once, including across inner model-recovery attempts.
+`EnvironmentRunCallbacks` is the frozen direct-code convenience adapter for a Host that needs paired async callbacks without defining an extension class. At least one of `on_enter` and `on_exit` is present. Each non-null value is an `EnvironmentRunCallback`, receives the same `EnvironmentRunExtensionContext`, and is awaited under the ordinary extension scope. One adapter is one identified extension: `on_enter` completes before its scope is admitted, and `on_exit` runs exactly once only after that admission. Several adapters use the existing extension sequence rather than a second callback registry, so entry remains registration ordered and exit remains reverse ordered. A callback failure has the same authoritative setup or cleanup semantics as custom extension code; best-effort behavior catches its own expected failures.
 
-At the terminal fence, extension scopes exit in reverse registration order before the Environment is marked closed, operation leases are drained, or provider scopes are closed. Higher Harness response and run-Capability resources have already stopped using the Environment. Extension cleanup can still use ordinary provider-neutral `BoundEnvironment` operations, but the controller has begun closing and cannot publish new topology. Extension exit is not part of portable state export, and mutations performed during exit are not retroactively included in an earlier `HarnessState` value.
+After initial provider entry and optional `EnvironmentState` restoration complete, aggregate activation creates one `EnvironmentRunExtensionContext` containing the public run ID, immutable Agent instance context, and stable `BoundEnvironment`. It enters extension scopes strictly in registration order and activates the topology controller only after every extension has entered successfully. `EnvironmentRunCallbacks.on_enter` therefore participates in making the aggregate active; it is not a global assertion that every provider operation family is ready. A callback that depends on a family uses `ensure_ready()` for that exact requirement. A dynamic `controller.apply()` changes provider revisions within that already entered aggregate and never rebinds an extension. One logical Harness run therefore enters each registered extension at most once, including across inner model-recovery attempts.
+
+At the terminal fence, extension scopes exit in reverse registration order before the Environment is marked closed, operation leases are drained, or provider scopes are closed. `EnvironmentRunCallbacks.on_exit` runs at this same boundary on normal completion, failure, cancellation, or rollback after its own successful admission; it is not a Harness-result callback and receives no terminal outcome. Higher Harness response and run-Capability resources have already stopped using the Environment. Extension cleanup can still use ordinary provider-neutral `BoundEnvironment` operations, but the controller has begun closing and cannot publish new topology. Extension exit is not part of portable state export, and mutations performed during exit are not retroactively included in an earlier `HarnessState` value.
 
 Extension setup is fail-fast. If one scope fails to enter, every earlier entered extension exits in reverse order, the controller never activates, and normal aggregate teardown still closes all provider resources. Cleanup attempts every entered extension even when one exit fails, then aggregates those failures with provider and controller cleanup without replacing an active primary failure. Aggregate cleanup is cancellation-shielded and waits for extension scopes in strict nesting order. The Harness imposes no generic extension timeout: trusted extension code owns finite entry, exit, and any domain-specific deadline.
 
@@ -737,7 +752,7 @@ The run's Environment event adapter starts at `initial_topology_version`, reads 
 
 `BoundEnvironment.project_model_context()` is the Environment core's provider-neutral terminal projection described by [Context and Memory](09-context-and-memory.md#model-context-projection-contract). For every `INPUT` request it returns one bounded `INPUT_PREAMBLE` block that describes the current topology; for `TOOL_RESULTS` it returns no block. Availability, readiness, permission, generation, mount, alias, or topology changes are therefore reflected at the next eligible input even when the topology version itself is unchanged. It does not edit a model request, observe changes, enqueue notices, or depend on `DynamicEnvironmentCapability`. `AgentContext.project_model_context()` composes this block into the terminal projection, and the mandatory coordinator alone commits it to the eligible request. The optional `WorkspaceOutlineCapability` described by [Context and Memory](09-context-and-memory.md#runtime-context-workspace-outline-file-context-and-handoff) separately scans file metadata through the public revision-pinned file scope; it does not expand this core topology projection or run on `TOOL_RESULTS`.
 
-`DynamicEnvironmentCapability` is the recommended optional model adapter for Environment Toolset composition and change notices. Its public construction contract is one frozen code-first configuration:
+`DynamicEnvironmentCapability` is the recommended optional model adapter for Environment Toolset composition and change notices. Shell-command review is deliberately not part of this configuration: the independent definition-selected `ShellReviewCapability` is consumed by the managed invocation boundary, while `ShellToolset` only marks `environment.shell_exec` as a reviewable command launch. Environment providers, bindings, and the other process-control tools remain unaware of review. Its public construction contract is one frozen code-first configuration:
 
 ```python
 class DynamicEnvironmentConfiguration(BaseModel):
@@ -761,7 +776,7 @@ The finite context and reference limits are mandatory and can be narrowed by Hos
 
 The Capability uses public Pydantic AI surfaces:
 
-- pure `FileToolset` and `ShellToolset` adapters whose schemas accept ordinary alias and path strings and whose instructions describe only their active tools;
+- pure `FileToolset` and `ShellToolset` adapters whose schemas accept ordinary alias and path strings and whose instructions describe only their active tools; `ShellToolset` marks only `environment.shell_exec` for optional boundary review and performs no review itself;
 - `RunContext.enqueue()` for coalesced trusted topology-change and process-completion wake hints when an inner Agent run is active and can accept native enqueue input.
 
 The Capability reads `restored_state_topology_version` for diagnostic continuity and starts its observer cursor at `initial_topology_version`. Every new logical Harness run receives one bounded fresh topology projection at its first eligible ordinary input boundary because the terminal Environment projection is recomputed from the entered binding, even when imported state reports the same topology version as the prior run. This prevents a replacement `ExecutionAttempt` from inheriting a stale rendered descriptor, permission, availability, or routing projection merely because the Host reused a durable desired version.
