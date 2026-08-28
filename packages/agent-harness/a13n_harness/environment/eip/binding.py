@@ -165,6 +165,7 @@ class _BoundEIPProvider:
             session=session,
             files=files,
             outputs=outputs,
+            provider_type=self.provider_type,
             environment_id=environment_id,
             binding_id=binding_id,
             binding_revision=binding_revision,

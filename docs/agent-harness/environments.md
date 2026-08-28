@@ -213,8 +213,6 @@ capabilities = (
         DynamicEnvironmentConfiguration(
             file_tools=True,
             shell_tools=False,
-            process_tools=False,
-            port_tools=False,
             max_reference_entries=64,
         )
     ),
@@ -223,13 +221,91 @@ capabilities = (
 
 Three decisions remain separate:
 
-1. the Agent definition exposes a file, shell, process, or port tool;
+1. the Agent definition exposes a file or shell tool;
 2. current run policy authorizes the invocation for the current identity and arguments;
 3. the selected Environment binding and provider permit the operation.
 
 Provider denial always narrows a Harness allow decision. Provider availability never grants authorization.
 
 With `file_tools=True`, the file Toolset includes `view`, `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, `delete`, `ls`, `glob`, and `grep`. When `shell_tools=True`, the prepared shell command supersedes exactly `move`, `copy`, and `delete`; those three tools and their Toolset instruction blocks are omitted, while `mkdir` remains available. Disable shell tools when the dedicated file mutation tools are required.
+
+The shell Toolset has one compact six-tool surface:
+
+| Tool           | Behavior                                                                                            |
+| -------------- | --------------------------------------------------------------------------------------------------- |
+| `shell_exec`   | Runs a command in the foreground, or starts a real provider process with `background=True`          |
+| `shell_wait`   | Waits for bounded process-tree cleanup and drains the next stdout/stderr page; zero polls once      |
+| `shell_status` | Returns a non-consuming bounded page of managed processes known to the current Thread               |
+| `shell_input`  | Writes UTF-8 stdin and can close stdin in the same call                                             |
+| `shell_signal` | Sends the portable `interrupt` or `terminate` signal                                                |
+| `shell_kill`   | Forces process-tree termination, waits boundedly for cleanup, and drains the next final output page |
+
+A background start returns an opaque `process-N` ID. The Harness stores its portable mapping and independent next-unread stdout/stderr offsets in `AgentContextState`, so the same reference can survive a compatible continuation of the same Thread. Output reads advance offsets only after bytes are delivered to the model; `shell_status` never consumes output. Once a terminal process is tree-cleaned and all retained bytes are delivered, the Harness returns the final output page first, then releases provider resources during the next non-output reconciliation or Toolset close and removes the mapping. This avoids losing a delivered-offset page to cancellation during cleanup; the compact ID then becomes invalid and its suffix is never reused.
+
+`background=True` is available only through the selected Environment provider's real process operations. Portable state stores the exact `(provider_type, environment_id, generation, provider process ID)` plus observations; it stores no live handle, callback, provider cursor, output reference, credential, or authority. A fresh manager lazily rebinds only that exact identity through the current Environment. It never follows an alias, default binding, saved routing hint, or ambient process list. If the matching Environment is not attached, the reference remains unavailable and is preserved. A generation change or an authoritative not-found response for the matching Environment becomes `backend_lost`.
+
+While a root or child Toolset Turn is active, the Harness supervises the provider's real `wait(condition="tree_cleaned")` operation. Completion can enqueue one bounded native hint so the Agent calls `shell_wait`; an observation gap tells it to call `shell_status` or `shell_wait`. Hints never consume output or replace provider status. Ending the Turn cancels only Harness observation and does not terminate a committed background process.
+
+A Host can add event sinks when it wants to record these Turn-scoped hints:
+
+```python
+from a13n_harness import ProcessEvent
+
+
+async def record_process_event(event: ProcessEvent) -> None:
+    await telemetry.record(
+        event.kind,
+        thread_id=event.thread_id,
+        run_id=event.run_id,
+        agent_instance_id=event.agent_instance_id,
+        process_id=event.process_id,
+        identity=event.identity,
+        status=event.status,
+    )
+
+
+capability = DynamicEnvironmentCapability(
+    DynamicEnvironmentConfiguration(
+        file_tools=True,
+        shell_tools=True,
+        max_reference_entries=1_024,
+    ),
+    process_event_hooks=(record_process_event,),
+)
+```
+
+`ProcessEventHook` values receive `completion` or `gap` hints and may bridge them to telemetry or durable scheduling. Hook failure does not fail a committed start or change process state. A hook is not a durable subscription and runs only when the current Harness observation sees an event.
+
+### Host integration ownership
+
+For a process to remain usable across Turns, a Host follows both continuation tracks:
+
+1. persist and later supply the complete `HarnessState`, which contains the `process-N` mapping and unread offsets;
+2. retain or reconstruct provider resource state, keep the real process and output alive, and attach the same `provider_type`, `environment_id`, and `generation` to the continuation Run;
+3. let the fresh `ProcessManager` reauthorize and lazily rebind the exact provider process identity;
+4. use provider-native events or polling to notice completion while no Harness Turn is active, then schedule a normal continuation whose `shell_status` or `shell_wait` reconciles authoritative state.
+
+Do not persist `BoundProcessHandle`, retain a Harness wait task or hook as lifecycle authority, or rebuild a mapping from alias or native PID. `ProcessManager` is public for custom Toolset composition, but a Host should treat each instance as a recreatable operator over current `AgentContextState` and Environment ports rather than retain it across Runs.
+
+The built-in Direct Local binding tears down its process manager at binding close, so it does not preserve managed processes across separate Harness Runs or a Host restart. An EIP-backed resource can preserve one across a new Harness Run, process, or client session only while the same `agent-envd` Environment generation and retained output remain alive. If the provider does not preserve both, the Host must treat the process as lost rather than retarget it.
+
+```mermaid
+sequenceDiagram
+    participant Host
+    participant State as HarnessState
+    participant Manager as Fresh ProcessManager
+    participant Env as Current Environment
+    participant Runtime as Provider process runtime
+
+    Host->>State: persist process-N identity and unread offsets
+    Host->>Runtime: retain provider resource and process
+    Host->>Manager: start later Run with selected HarnessState
+    Host->>Env: attach same provider type, environment ID, and generation
+    Manager->>Env: rebind exact ProcessIdentity
+    Env->>Runtime: inspect exact provider process ID
+    Runtime-->>Manager: authoritative status and retained output
+    Manager-->>Host: native hint or ordinary tool result
+```
 
 `glob` and `grep` send their include pattern, repository-ignore and hidden-name policy, context width, and scan/result ceilings to the selected `FileOperator` in one call. Direct Local performs one worker-thread scan; EIP performs one `file.find` or `file.search` request. Set `include_ignored=True` only when ignored repository paths should be searched.
 

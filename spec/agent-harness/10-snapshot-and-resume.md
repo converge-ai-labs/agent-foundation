@@ -6,7 +6,7 @@
 
 - one stable `thread_id` for the independently advancing message history;
 - detached public Pydantic AI message history;
-- detached JSON state namespaced by stable Capability ID;
+- detached JSON state namespaced by stable Capability ID, including model-facing continuation projections such as managed process references;
 - optional portable Environment backend state under one explicit aggregate field.
 
 It contains no executable definition, plugin object, model, Toolset, provider client, Environment binding, desired topology, provider launch state, current authority, usage ledger, event log, Host execution record, lease, queue, or delivery state. A Host may persist the value or embed it in a larger durable record, but the Harness does not choose or commit a durable checkpoint.
@@ -83,6 +83,8 @@ A read validates the requested namespace, exact entry version, and the owning Py
 The coordinator does not maintain a Capability registry and does not reject an entry merely because no active Capability reads it in the current run. Unknown or transferred namespaces remain opaque and survive snapshotting. This permits trusted plugin handoff, optional Capability removal and reintroduction, and Host-controlled state migration without a second global codec system. A Capability accepts a namespace only by reading it through its own expected ID, version, and model.
 
 Namespace isolation is a composition convention backed by the typed API, not a sandbox against trusted Python. A trusted plugin or Capability can intentionally replace another entry or the complete `HarnessState`; the Harness does not enforce provenance or ownership allowlists.
+
+Dynamic Environment uses one namespace to preserve its bounded `process-N` mapping, exact portable `ProcessIdentity`, independent next-unread stdout and stderr offsets, monotonic allocation sequence, and last observed status. This state is neither an Environment backend snapshot nor process truth. It cannot recreate, enumerate, or authorize a provider process. On a later Run, a fresh `ProcessManager` reauthorizes and lazily rebinds the stored identity through the current Environment; [Environment Integration](08-environment-integration.md#compact-operation-references) owns exact matching, correction, output-drain, observation, and Host continuity semantics.
 
 ## Export
 

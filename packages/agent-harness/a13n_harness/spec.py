@@ -7,9 +7,10 @@ from copy import deepcopy
 from enum import StrEnum
 from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_ai.agent.spec import AgentSpec as PydanticAgentSpec
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.usage import UsageLimits
 
 
 class ModelCapability(StrEnum):
@@ -45,13 +46,18 @@ class ModelConfiguration(BaseModel):
         return max(1, int(self.context_window * self.compact_threshold))
 
 
+def _default_usage_limits() -> UsageLimits:
+    return UsageLimits(request_limit=1000)
+
+
 class AgentSpec(PydanticAgentSpec):
-    """Native AgentSpec plus Harness-owned prompt, Toolset guidance, and model configuration."""
+    """Native AgentSpec plus Harness-owned run and model configuration."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     system_prompt: str | list[str] | None = None
     toolset_instructions: bool = True
+    usage_limits: UsageLimits = Field(default_factory=_default_usage_limits)
     model_configuration: ModelConfiguration | None = Field(default=None, alias="model_config")
 
     def with_updates(
@@ -113,6 +119,12 @@ class AgentSpec(PydanticAgentSpec):
             "type": "boolean",
             "default": True,
         }
+        usage_limits_schema = TypeAdapter(UsageLimits).json_schema()
+        usage_limits_schema["default"] = TypeAdapter(UsageLimits).dump_python(
+            _default_usage_limits(),
+            mode="json",
+        )
+        schema["properties"]["usage_limits"] = usage_limits_schema
         schema["properties"]["model_config"] = {
             "anyOf": [
                 {"$ref": "#/$defs/ModelConfiguration"},

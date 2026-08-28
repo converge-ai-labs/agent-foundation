@@ -179,6 +179,28 @@ One fresh context is created for every logical Harness run and reused by that ru
 
 `identity` is derived from `instance`; no second value can diverge. The context is not a generic service locator and cannot be supplied by plugins or model content. Skill paths and tool metadata contain no callable service, lifecycle hook, ordering edge, dispatch route, authority, or durable state. They are created once with the logical-run context and reused across its internal `ModelAttempt` values.
 
+## MCP Context Headers
+
+`ContextualMCP` resolves outbound headers during Pydantic Capability run binding, before the returned fresh upstream `MCP` exposes either a provider-native `MCPServerTool` or a local `MCPToolset`. A code-first caller supplies any trusted sync or async `MCPHeadersFactory`. `MCPContextHeaders` is the shared declarative implementation backed by `MCPContextHeadersConfig` and exact header bindings.
+
+The declarative resolver supports only these source namespaces:
+
+| Source                                | Value                                               |
+| ------------------------------------- | --------------------------------------------------- |
+| `identity.issuer`, `identity.subject` | Fixed workload principal fields                     |
+| `identity.<claim>`                    | One exact immutable Agent Identity claim            |
+| `instance.agent_instance_id`          | Current Host-owned Agent instance                   |
+| `instance.parent_agent_instance_id`   | Optional parent lineage                             |
+| `instance.delegation_id`              | Optional delegation correlation                     |
+| `instance.actor`                      | Optional actor string                               |
+| `context.run_id`                      | Current logical Harness run                         |
+| `context.thread_id`                   | Current independently advancing Thread              |
+| `context.metadata.<key>`              | One exact top-level key from immutable run metadata |
+
+The text following `context.metadata.` is one exact top-level key; the resolver does not reflect over arbitrary `AgentContext` objects or interpret nested attribute paths. A selected string is used directly. Any selected JSON number, boolean, object, or array is encoded with the Harness canonical compact JSON encoder; `None` and absent optional fields are missing values. A required missing value fails during Capability run binding, while an optional missing value omits that header. This permits a Host to place one deliberate dictionary or list in run metadata and send its canonical JSON string without a template or second encoding language.
+
+Static and resolved header names are compared case-insensitively, and a duplicate fails rather than assigning implicit precedence. `ContextualMCP` otherwise delegates header and transport validation to upstream MCP and its HTTP/provider integrations. Header resolution never forwards all claims or metadata by wildcard, changes Identity, persists data, or makes a selected metadata value authoritative.
+
 ## Lifecycle Integration
 
 | Need                                  | Integration                                            |
@@ -186,6 +208,7 @@ One fresh context is created for every logical Harness run and reused by that ru
 | Produce input after Environment entry | `RunInputFactory`                                      |
 | Transform semantic input/result       | Harness plugin `wrap_run()`                            |
 | Bind a fresh Agent-loop feature       | Capability `for_run()`                                 |
+| Resolve run-scoped MCP headers        | `ContextualMCP` and an `MCPHeadersFactory`             |
 | Contribute feature instructions       | Native Capability                                      |
 | Contribute tools and their guidance   | Owning Toolset                                         |
 | Augment dynamic model context         | `AbstractModelContextCapability`                       |
@@ -238,7 +261,7 @@ The coordinator intentionally has no active-Capability registry. Imported entrie
 
 Trusted Python can intentionally read, replace, migrate, or transfer complete state. Namespace ownership is a composition contract, not a sandbox or cryptographic provenance mechanism.
 
-Pydantic messages and portable Environment state live in separate `HarnessState` fields. Desired topology, Environment provider lifecycle or launch state, readiness, usage accumulators and attribution records, clients, credentials, policy decisions, queues, locks, Host execution state, plugin objects, and provider sessions are not Capability state. A Capability cannot obtain lifecycle authority by copying an Environment selector or observation into its namespace.
+Pydantic messages and portable Environment backend state live in separate `HarnessState` fields. A Capability namespace may contain a portable model-facing projection of Environment-owned work, such as Dynamic Environment's `process-N` to `ProcessIdentity` mapping, next-unread offsets, monotonic sequence, and last observation. Such a projection is a selector and continuation aid only: it contains no live handle, task, callback, provider cursor, output reference, credential, attachment, readiness fact, or operation authority. Desired topology, Environment provider lifecycle or launch state, usage accumulators and attribution records, clients, credentials, policy decisions, queues, locks, Host execution state, plugin objects, and provider sessions are not Capability state. A Capability cannot obtain lifecycle authority by copying an Environment selector or observation into its namespace.
 
 ## State Export
 

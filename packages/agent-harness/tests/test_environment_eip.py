@@ -14,6 +14,7 @@ from a13n_harness.environment import (
     EnvironmentError,
     EnvironmentOutputPolicy,
     FileTextSearchRequest,
+    ProcessIdentity,
 )
 from a13n_harness.environment.eip.binding import _BoundEIPProvider
 from a13n_harness.environment.eip.files import EIPFileOperator
@@ -437,6 +438,7 @@ def test_eip_process_registration_validates_identity_before_local_mutation() -> 
         session=cast(Any, object()),
         files=cast(EIPFileOperator, FakeFiles()),
         outputs=cast(Any, object()),
+        provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-one",
         binding_revision=1,
@@ -450,6 +452,153 @@ def test_eip_process_registration_validates_identity_before_local_mutation() -> 
         )
     assert conversions._records == {}
     assert conversions._raw_tokens == {}
+
+
+def test_eip_process_rebinds_portable_identity_through_a_fresh_adapter() -> None:
+    process = _process_info(content=b"retained")
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.handles: list[eip.ProcessHandle] = []
+
+        async def process_inspect(self, params: eip.ProcessInspectParams) -> eip.ProcessInspectResult:
+            self.handles.append(params.handle)
+            return eip.ProcessInspectResult(process=process)
+
+    session = SimpleNamespace(client=FakeClient())
+    conversions = _ProcessConversions(
+        session=cast(Any, session),
+        files=cast(EIPFileOperator, FakeFiles()),
+        outputs=cast(
+            Any,
+            EIPOutputRegistry(
+                session=cast(Any, session),
+                environment_id="env-one",
+                binding_id="binding-two",
+                binding_revision=2,
+                generation="1",
+            ),
+        ),
+        provider_type="test.eip",
+        environment_id="env-one",
+        binding_id="binding-two",
+        binding_revision=2,
+        generation="1",
+    )
+    operations = EIPProcessOperations(conversions)
+    identity = ProcessIdentity(
+        provider_type="test.eip",
+        environment_id="env-one",
+        generation="1",
+        process_id="process-one",
+    )
+
+    rebound = asyncio.run(
+        operations.rebind(
+            identity,
+            output_policy=EnvironmentOutputPolicy(
+                max_inline_bytes=4,
+                max_output_bytes=16,
+                overflow="retain",
+            ),
+        )
+    )
+
+    assert session.client.handles == [eip.ProcessHandle("process-one")]
+    assert rebound.handle.identity == identity
+    assert rebound.handle.binding_id == "binding-two"
+    assert rebound.handle.binding_revision == 2
+
+
+def test_eip_process_read_materializes_terminal_inline_output_without_a_reference() -> None:
+    process = _process_info(content=b"done")
+
+    class FakeClient:
+        async def process_inspect(self, params: eip.ProcessInspectParams) -> eip.ProcessInspectResult:
+            assert params.handle == process.handle
+            return eip.ProcessInspectResult(process=process)
+
+    session = SimpleNamespace(client=FakeClient())
+    outputs = EIPOutputRegistry(
+        session=cast(Any, session),
+        environment_id="env-one",
+        binding_id="binding-one",
+        binding_revision=1,
+        generation="1",
+    )
+    conversions = _ProcessConversions(
+        session=cast(Any, session),
+        files=cast(EIPFileOperator, FakeFiles()),
+        outputs=outputs,
+        provider_type="test.eip",
+        environment_id="env-one",
+        binding_id="binding-one",
+        binding_revision=1,
+        generation="1",
+    )
+    bound = conversions.register(
+        process,
+        EnvironmentOutputPolicy(max_inline_bytes=8, max_output_bytes=8, overflow="retain"),
+    )
+
+    result = asyncio.run(
+        EIPProcessOperations(conversions).read_output(
+            bound.handle,
+            stdout_start_offset=0,
+            stderr_start_offset=0,
+            policy=EnvironmentOutputPolicy(max_inline_bytes=8, max_output_bytes=8, overflow="truncate"),
+        )
+    )
+
+    assert result.stdout.capture.reference is None
+    assert [(chunk.start_offset, chunk.data) for chunk in result.stdout.chunks] == [(0, b"done")]
+    assert [(chunk.start_offset, chunk.data) for chunk in result.stderr.chunks] == [(0, b"done")]
+
+
+def test_eip_public_output_release_is_retried_during_provider_cleanup() -> None:
+    output = _process_info(content=b"retained").output.stdout
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.failures = 1
+            self.calls = 0
+
+        async def output_release(self, params: eip.OutputReleaseParams) -> eip.OutputReleaseResult:
+            assert params.reference == output.reference
+            self.calls += 1
+            if self.failures:
+                self.failures -= 1
+                raise EIPTransportError("temporary release failure")
+            return eip.OutputReleaseResult(
+                released=True,
+                receipt=_receipt(method="output.release"),
+            )
+
+    session = SimpleNamespace(client=FakeClient())
+    outputs = EIPOutputRegistry(
+        session=cast(Any, session),
+        environment_id="env-one",
+        binding_id="binding-one",
+        binding_revision=1,
+        generation="1",
+    )
+    capture = outputs.capture(
+        output,
+        policy=EnvironmentOutputPolicy(max_inline_bytes=4, max_output_bytes=16, overflow="retain"),
+    )
+    assert capture.reference is not None
+
+    async def scenario() -> None:
+        with pytest.raises(EnvironmentError):
+            await outputs.release(reference=capture.reference)
+        assert output.reference in outputs._pending_cleanup
+
+        await outputs.cleanup_pending()
+
+        assert output.reference not in outputs._pending_cleanup
+        assert session.client.calls == 2
+
+    asyncio.run(scenario())
 
 
 def test_eip_process_release_retries_only_remaining_hidden_output_cleanup() -> None:
@@ -490,6 +639,7 @@ def test_eip_process_release_retries_only_remaining_hidden_output_cleanup() -> N
         session=cast(Any, session),
         files=cast(EIPFileOperator, FakeFiles()),
         outputs=outputs,
+        provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-one",
         binding_revision=1,
@@ -565,6 +715,7 @@ def test_eip_process_start_cleans_up_when_local_projection_fails() -> None:
         session=cast(Any, session),
         files=cast(EIPFileOperator, FakeFiles()),
         outputs=outputs,
+        provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-one",
         binding_revision=1,

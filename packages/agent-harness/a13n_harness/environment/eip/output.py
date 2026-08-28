@@ -172,14 +172,28 @@ class EIPOutputRegistry:
         record = self._records.get(output_token)
         if record is None:
             raise EnvironmentError("Retained output is unavailable", code="environment_not_found")
+        self._pending_cleanup.add(record.reference)
         return await self._release_record(output_token, record)
 
     def defer_cleanup(self, reference: eip.OutputReference) -> None:
         self._pending_cleanup.add(reference)
 
-    async def release_hidden(self, reference: eip.OutputReference) -> EnvironmentOperationReceipt:
+    async def release_hidden(self, reference: eip.OutputReference) -> None:
         self.defer_cleanup(reference)
-        return await self.release_raw(reference)
+        try:
+            await self.release_raw(reference)
+        except EnvironmentError as exc:
+            if exc.code != "environment_not_found":
+                raise
+            self._forget_reference(reference)
+
+    def _forget_reference(self, reference: eip.OutputReference) -> None:
+        output_token = self._raw_tokens.pop(reference, None)
+        self._pending_cleanup.discard(reference)
+        if output_token is None:
+            return
+        self._records.pop(output_token, None)
+        self._cursors = {token: item for token, item in self._cursors.items() if item.output_token != output_token}
 
     async def release_raw(self, reference: eip.OutputReference) -> EnvironmentOperationReceipt:
         output_token = self._raw_tokens.get(reference)

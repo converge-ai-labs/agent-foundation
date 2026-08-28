@@ -18,6 +18,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import RunContext, TextContent, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness._json import (
@@ -128,6 +129,20 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
         return ToolExecutionBoundaryToolset(toolset)
+
+    async def handle_deferred_tool_calls(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        requests: DeferredToolRequests,
+    ) -> DeferredToolResults | None:
+        if ctx.deps.instance.parent_agent_instance_id is None:
+            return None
+        message = "Deferred tool interaction is unavailable in subagent runs."
+        return DeferredToolResults(
+            calls={request.tool_call_id: ToolDenied(message) for request in requests.calls},
+            approvals={request.tool_call_id: ToolDenied(message) for request in requests.approvals},
+        )
 
     async def wrap_run_event_stream(
         self,
@@ -442,12 +457,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         MediaRunCapability,
         _MediaActiveCapability,
     )
-    from a13n_harness.capabilities.process_monitor import (
-        MONITORED_PROCESS_CAPABILITY_ID,
-        MONITORED_PROCESS_RUN_CAPABILITY_ID,
-        MonitoredProcessRunCapability,
-        _MonitoredProcessActiveCapability,
-    )
     from a13n_harness.capabilities.skills import (
         SKILLS_CAPABILITY_ID,
         SkillsCapability,
@@ -544,14 +553,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         COMPACTION_CAPABILITY_ID: (
             (CompactionCapability,),
             provenance.definition_ids,
-        ),
-        MONITORED_PROCESS_CAPABILITY_ID: (
-            (_MonitoredProcessActiveCapability,),
-            provenance.definition_ids,
-        ),
-        MONITORED_PROCESS_RUN_CAPABILITY_ID: (
-            (MonitoredProcessRunCapability,),
-            provenance.run_ids,
         ),
         USER_INTERACTION_CAPABILITY_ID: (
             (UserInteractionCapability,),
@@ -662,19 +663,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
                     "source": "run_finalized",
                 },
             )
-
-    monitored_owner = ctx.capabilities.get(MONITORED_PROCESS_CAPABILITY_ID)
-    monitored_attachment = ctx.capabilities.get(MONITORED_PROCESS_RUN_CAPABILITY_ID)
-    if monitored_attachment is not None and monitored_owner is None:
-        raise DefinitionError(
-            "A monitored-process run attachment requires its definition owner.",
-            code="monitored_process_owner_missing",
-        )
-    if monitored_owner is not None and monitored_attachment is None:
-        raise DefinitionError(
-            "MonitoredProcessCapability requires one fresh run attachment.",
-            code="monitored_process_binding_missing",
-        )
 
     content_pairs = (
         (

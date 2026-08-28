@@ -372,7 +372,7 @@ A business output that directly or transitively includes `DeferredToolRequests` 
 
 The Harness builds one matching process-local output adapter from the effective build-time contract, including return annotations of synchronous, `Awaitable`, and `Coroutine` output functions, and uses it to validate plugin-produced completed output. If Pydantic cannot generate a schema for an otherwise valid arbitrary process-local code-first return type, the adapter permits arbitrary types rather than rejecting the upstream output contract. Declarative output uses the schema-derived `StructuredDict` adapter and therefore accepts only string-keyed JSON-object values under native semantics.
 
-A Pydantic result whose output is `DeferredToolRequests` becomes a suspended Harness result rather than a completed business output. `.calls` and `.approvals` retain their native distinct meanings. The later Host or caller supplies the exact pending requests and matching Pydantic results through `DeferredToolResume` in a new logical run with prior state and fresh bindings.
+For a root invocation, a Pydantic result whose output is `DeferredToolRequests` becomes a suspended Harness result rather than a completed business output. `.calls` and `.approvals` retain their native distinct meanings. The later Host or caller supplies the exact pending requests and matching Pydantic results through `DeferredToolResume` in a new logical run with prior state and fresh bindings. A child invocation resolves dynamic deferral as denied tool results inside the same loop; an unexpected terminal deferred output instead becomes a failed result with `code="subagent_deferred_unsupported"`.
 
 Trusted plugins may replace the complete result candidate, including output, usage, and state. The Harness revalidates field combinations, output type, message suffix, and run correlation. It does not enforce state provenance or require state history to match the result message view.
 
@@ -391,7 +391,8 @@ Trusted plugins may replace the complete result candidate, including output, usa
 | Missing or conflicting build-time output source | `DefinitionError` before Agent construction                   |
 | Invalid declarative object JSON Schema          | `DefinitionError` retaining the native validation cause       |
 | Output validation retries exhausted             | No Harness `ModelAttempt` recovery                            |
-| Native deferred/HITL output                     | Suspended result with native `DeferredToolRequests`           |
+| Root native deferred/HITL output                | Suspended result with native `DeferredToolRequests`           |
+| Unexpected child terminal deferred output       | Failed result with `subagent_deferred_unsupported`            |
 | Invalid plugin-completed output                 | `PluginError(code="plugin_result_invalid")`                   |
 
 ## Boundaries

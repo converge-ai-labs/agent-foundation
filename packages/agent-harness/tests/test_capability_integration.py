@@ -10,7 +10,6 @@ from a13n_environment_provider import (
     DirectLocalRootConfiguration,
 )
 from a13n_harness import (
-    BoundProcessHandle,
     CompactionCapability,
     CompactionPolicy,
     DocumentConversionRequest,
@@ -31,9 +30,6 @@ from a13n_harness import (
     MediaReadRequest,
     MediaResource,
     MediaRunCapability,
-    MonitoredProcessCapability,
-    MonitoredProcessNotification,
-    MonitoredProcessRunCapability,
     RunBindings,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
@@ -53,7 +49,6 @@ from a13n_harness import (
     WorkingStateCapability,
 )
 from a13n_harness.environment.advanced import (
-    BoundEnvironment,
     EnvironmentBindingRequest,
     EnvironmentStateLimits,
     EnvironmentTopologyLimits,
@@ -71,20 +66,12 @@ _EXPECTED_TOOLS = {
     "ask_user_question",
     "download",
     "edit",
-    "environment_port_inspect",
-    "environment_port_wait",
-    "environment_process_close_stdin",
-    "environment_process_inspect",
-    "environment_process_kill",
-    "environment_process_monitor",
-    "environment_process_read_output",
-    "environment_process_release",
-    "environment_process_signal",
-    "environment_process_start",
-    "environment_process_status",
-    "environment_process_wait",
-    "environment_process_write_stdin",
-    "environment_shell_exec",
+    "shell_exec",
+    "shell_input",
+    "shell_kill",
+    "shell_signal",
+    "shell_status",
+    "shell_wait",
     "fetch",
     "glob",
     "grep",
@@ -140,30 +127,6 @@ class _WebScrapeProvider:
         raise AssertionError(f"unexpected Web scrape: {request.url}")
 
 
-class _Monitor:
-    def __init__(self) -> None:
-        self.closed = False
-
-    async def register(
-        self,
-        *,
-        process: BoundProcessHandle,
-        reference: str,
-        environment: BoundEnvironment,
-    ) -> None:
-        del process, reference, environment
-        raise AssertionError("unexpected monitored process registration")
-
-    async def pending(self) -> Sequence[MonitoredProcessNotification]:
-        return ()
-
-    async def acknowledge(self, notification: MonitoredProcessNotification) -> None:
-        del notification
-
-    async def close(self) -> None:
-        self.closed = True
-
-
 def _environment(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
@@ -191,12 +154,11 @@ def _environment(root: Path):
     )
 
 
-def _bindings(root: Path, monitor: _Monitor) -> RunBindings:
+def _bindings(root: Path) -> RunBindings:
     return RunBindings.embedded(
         environment=_environment(root),
         metadata={"tenant": "integration-test"},
         capabilities=(
-            MonitoredProcessRunCapability(monitor=monitor),
             MediaRunCapability(reader=_MediaReader()),
             DocumentsRunCapability(converter=_DocumentConverter()),
             WebRunCapability(
@@ -216,8 +178,6 @@ def _definition_capabilities():
             DynamicEnvironmentConfiguration(
                 file_tools=True,
                 shell_tools=True,
-                process_tools=True,
-                port_tools=True,
                 max_reference_entries=64,
             )
         ),
@@ -228,7 +188,6 @@ def _definition_capabilities():
         SkillsCapability(skill_manager),
         WorkingStateCapability(),
         UserInteractionCapability(),
-        MonitoredProcessCapability(),
         MediaCapability(),
         DocumentsCapability(),
         WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="host"))),
@@ -274,18 +233,14 @@ async def test_core_capabilities_compose_through_run_and_stream(tmp_path: Path) 
         capabilities=_definition_capabilities(),
     )
 
-    run_monitor = _Monitor()
-    run_result = await executable.run("Compose capabilities", bindings=_bindings(tmp_path, run_monitor))
+    run_result = await executable.run("Compose capabilities", bindings=_bindings(tmp_path))
     assert run_result.output_or_raise() == "done"
-    assert run_monitor.closed is True
 
-    stream_monitor = _Monitor()
-    async with executable.stream("Compose capabilities", bindings=_bindings(tmp_path, stream_monitor)) as stream:
+    async with executable.stream("Compose capabilities", bindings=_bindings(tmp_path)) as stream:
         events = [event async for event in stream]
     assert isinstance(events[-1], HarnessRunResultEvent)
     assert events[-1].result.output_or_raise() == "done"
     assert stream.result is events[-1].result
-    assert stream_monitor.closed is True
 
     assert observed_tools == [_EXPECTED_TOOLS, _EXPECTED_TOOLS]
     assert all("<runtime-context" in text for text in observed_request_text)

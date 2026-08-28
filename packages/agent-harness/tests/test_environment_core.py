@@ -38,6 +38,7 @@ from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandRequest,
+    ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
     ProcessStartResult,
@@ -1321,6 +1322,7 @@ class _IdempotentProcessOperations:
         self._handles = handles
         self._next = 0
         self.inspect_result = handles[0]
+        self.inspect_error: str | None = None
 
     @staticmethod
     def _receipt() -> EnvironmentOperationReceipt:
@@ -1358,6 +1360,8 @@ class _IdempotentProcessOperations:
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         del handle
+        if self.inspect_error is not None:
+            raise EnvironmentError("process is unavailable", code=self.inspect_error)
         return self._info(self.inspect_result)
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
@@ -1370,6 +1374,12 @@ def _process_test_binding() -> tuple[Any, _IdempotentProcessOperations, tuple[Bo
         BoundProcessHandle(
             binding_id="binding-1",
             binding_revision=1,
+            identity=ProcessIdentity(
+                provider_type="test.provider",
+                environment_id="environment:processes",
+                generation="generation-processes",
+                process_id=f"provider-process-{index}",
+            ),
             observed_generation="generation-processes",
             handle=OpaqueProcessHandle._from_payload(f"process-{index}"),
         )
@@ -1427,6 +1437,188 @@ def _process_request() -> CommandRequest:
             overflow="truncate",
         ),
     )
+
+
+async def test_process_rebind_selects_environment_instance_identity_instead_of_current_alias() -> None:
+    identity = ProcessIdentity(
+        provider_type="test.provider",
+        environment_id="environment:a",
+        generation="generation-a",
+        process_id="provider-process-a",
+    )
+    handle = BoundProcessHandle(
+        binding_id="binding-a",
+        binding_revision=1,
+        identity=identity,
+        observed_generation="generation-a",
+        handle=OpaqueProcessHandle._from_payload("bound-process-a"),
+    )
+
+    class RebindOperations:
+        def __init__(self, result_handle: BoundProcessHandle) -> None:
+            self.result_handle = result_handle
+            self.identities: list[ProcessIdentity] = []
+
+        async def rebind(
+            self,
+            selected: ProcessIdentity,
+            *,
+            output_policy: EnvironmentOutputPolicy,
+        ) -> ProcessInfo:
+            del output_policy
+            self.identities.append(selected)
+            return _IdempotentProcessOperations._info(self.result_handle)
+
+        async def inspect(self, selected: BoundProcessHandle) -> ProcessInfo:
+            del selected
+            return _IdempotentProcessOperations._info(self.result_handle)
+
+    selected_operations = RebindOperations(handle)
+    retarget_operations = RebindOperations(
+        BoundProcessHandle(
+            binding_id="binding-b",
+            binding_revision=1,
+            identity=ProcessIdentity(
+                provider_type="test.provider",
+                environment_id="environment:b",
+                generation="generation-b",
+                process_id="provider-process-b",
+            ),
+            observed_generation="generation-b",
+            handle=OpaqueProcessHandle._from_payload("bound-process-b"),
+        )
+    )
+    permissions = frozenset({EnvironmentAction.PROCESS_INSPECT})
+    provider_a = _Binding(
+        "a",
+        families=frozenset({"processes"}),
+        operations=EnvironmentProviderOperations(processes=selected_operations),
+        permissions=permissions,
+    )
+    provider_b = _Binding(
+        "b",
+        families=frozenset({"processes"}),
+        operations=EnvironmentProviderOperations(processes=retarget_operations),
+        permissions=permissions,
+    )
+    request = EnvironmentTopologyRequest(
+        topology_version=1,
+        bindings=(
+            EnvironmentBindingRequest(
+                binding_id="binding-a",
+                binding_revision=1,
+                alias="original",
+                permission_ceiling=EnvironmentPermissionSet(operations=permissions),
+                default_working_directory="/",
+                provider_binding=provider_a,
+            ),
+            EnvironmentBindingRequest(
+                binding_id="binding-b",
+                binding_revision=1,
+                alias="target",
+                permission_ceiling=EnvironmentPermissionSet(operations=permissions),
+                default_working_directory="/",
+                provider_binding=provider_b,
+            ),
+        ),
+        default_binding_id="binding-b",
+    )
+    aggregate = create_environment_run_binding(
+        initial_topology=request,
+        topology_limits=EnvironmentTopologyLimits(max_committed_changes=1),
+        state_limits=EnvironmentStateLimits(),
+    )
+
+    async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
+        await environment.activate()
+        rebound = await environment.processes.rebind(
+            identity,
+            output_policy=EnvironmentOutputPolicy(
+                max_inline_bytes=64,
+                max_output_bytes=64,
+                overflow="retain",
+            ),
+        )
+
+    assert rebound.handle.identity == identity
+    assert selected_operations.identities == [identity]
+    assert retarget_operations.identities == []
+
+
+async def test_process_rebind_keeps_unattached_and_changed_generation_failures_distinct() -> None:
+    class ProcessOperations:
+        async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
+            del handle
+            raise AssertionError("identity validation must happen before provider dispatch")
+
+    permissions = frozenset({EnvironmentAction.PROCESS_INSPECT})
+    provider = _Binding(
+        "current",
+        families=frozenset({"processes"}),
+        operations=EnvironmentProviderOperations(processes=ProcessOperations()),
+        permissions=permissions,
+    )
+    request = EnvironmentTopologyRequest(
+        topology_version=1,
+        bindings=(
+            EnvironmentBindingRequest(
+                binding_id="binding-current",
+                binding_revision=1,
+                alias="current",
+                permission_ceiling=EnvironmentPermissionSet(operations=permissions),
+                default_working_directory="/",
+                provider_binding=provider,
+            ),
+        ),
+        default_binding_id="binding-current",
+    )
+    aggregate = create_environment_run_binding(
+        initial_topology=request,
+        topology_limits=EnvironmentTopologyLimits(max_committed_changes=1),
+        state_limits=EnvironmentStateLimits(),
+    )
+    policy = EnvironmentOutputPolicy(max_inline_bytes=64, max_output_bytes=64, overflow="retain")
+
+    async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
+        await environment.activate()
+        with pytest.raises(EnvironmentError) as unattached:
+            await environment.processes.rebind(
+                ProcessIdentity(
+                    provider_type="test.provider",
+                    environment_id="environment:missing",
+                    generation="generation-missing",
+                    process_id="provider-process",
+                ),
+                output_policy=policy,
+            )
+        with pytest.raises(EnvironmentError) as changed_generation:
+            await environment.processes.rebind(
+                ProcessIdentity(
+                    provider_type="test.provider",
+                    environment_id="environment:current",
+                    generation="generation-old",
+                    process_id="provider-process",
+                ),
+                output_policy=policy,
+            )
+
+    assert unattached.value.code == "environment_selection_invalid"
+    assert changed_generation.value.code == "environment_process_generation_mismatch"
+
+
+async def test_authoritative_process_loss_releases_the_topology_handle_fence() -> None:
+    aggregate, operations, _ = _process_test_binding()
+    async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
+        await environment.activate()
+        started = await environment.processes.start(_process_request())
+        operations.inspect_error = "environment_not_found"
+
+        with pytest.raises(EnvironmentError) as missing:
+            await environment.processes.inspect(started.process.handle)
+        assert missing.value.code == "environment_not_found"
+
+        removal = EnvironmentTopologyRequest(topology_version=2, bindings=(), default_binding_id=None)
+        assert (await aggregate.controller.apply(removal)).current_version == 2
 
 
 async def test_duplicate_idempotent_process_release_does_not_underflow_revision_fence() -> None:

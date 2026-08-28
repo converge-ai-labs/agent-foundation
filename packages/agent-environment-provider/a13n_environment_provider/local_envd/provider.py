@@ -11,7 +11,7 @@ import subprocess
 from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from a13n_envd_client import __version__ as envd_client_version
 from pydantic import BaseModel, ValidationError
@@ -43,6 +43,9 @@ from .configuration import (
     LocalEnvdResourcePhase,
 )
 from .runtime import LocalEnvdProviderRuntime
+
+if TYPE_CHECKING:
+    from ._windows_job import WindowsJob
 
 _PROVIDER_KEY = "a13n.local-envd"
 _STATE_VERSION = "1"
@@ -315,6 +318,7 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
         self._allocation_entered = False
         self._allocation_root: Path | None = None
         self._process: asyncio.subprocess.Process | None = None
+        self._windows_job: WindowsJob | None = None
         self._carrier: StdioEIPCarrier | None = None
         self._stderr_file: Any | None = None
         self._cleanup_task: asyncio.Task[BaseException | None] | None = None
@@ -346,7 +350,13 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
             if os.name == "posix":
                 subprocess_options["start_new_session"] = True
             elif os.name == "nt":  # pragma: no cover - exercised on Windows
-                subprocess_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+                from ._windows_job import WindowsJob
+
+                # Preserve native-handle ownership across task cancellation.
+                self._windows_job = WindowsJob.create()
+                subprocess_options["creationflags"] = (
+                    subprocess.CREATE_NEW_PROCESS_GROUP | self._windows_job.creation_flags
+                )
             self._process = await asyncio.create_subprocess_exec(
                 str(self._runtime.executable),
                 "--config",
@@ -357,6 +367,9 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
                 env=process_environment,
                 **subprocess_options,
             )
+            if self._windows_job is not None:
+                # Keep assignment and resume atomic relative to Resource cleanup.
+                self._windows_job.assign_and_resume(self._process.pid)
             self._carrier = StdioEIPCarrier(
                 self._process,
                 max_request_bytes=_DAEMON_MAX_REQUEST_BYTES,
@@ -505,7 +518,7 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
 
     async def _perform_cleanup(self) -> BaseException | None:
         errors: list[BaseException] = []
-        carrier, process = self._carrier, self._process
+        carrier, process, windows_job = self._carrier, self._process, self._windows_job
         if carrier is not None:
             try:
                 await carrier.close()
@@ -516,6 +529,21 @@ class LocalEnvdEnvironmentResource(EnvironmentResource):
                 await _terminate_process_tree(process)
             except BaseException as error:
                 errors.append(error)
+        if windows_job is not None:
+            try:
+                await asyncio.to_thread(
+                    windows_job.terminate_and_wait,
+                    timeout_seconds=_TERMINATE_GRACE_SECONDS,
+                    poll_seconds=_PROCESS_POLL_SECONDS,
+                )
+            except BaseException as error:
+                errors.append(error)
+        if windows_job is not None:
+            try:
+                await asyncio.to_thread(windows_job.close)
+            except BaseException as error:
+                errors.append(error)
+            self._windows_job = None
         if self._stderr_file is not None:
             try:
                 await asyncio.to_thread(self._stderr_file.close)

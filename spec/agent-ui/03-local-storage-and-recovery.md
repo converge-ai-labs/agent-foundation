@@ -6,7 +6,7 @@ Agent UI uses a hybrid local store optimized for durable continuation, indexed p
 
 1. human- and agent-editable files own desired configuration;
 2. one SQLite database owns mutable metadata, control state, references, and query projections;
-3. immutable Zstandard-compressed files own resolved snapshots, managed Skill packages, `HarnessState`, pending deferred requests, provider resource state, and retained AG-UI event data;
+3. immutable Zstandard-compressed files own resolved snapshots, managed Skill packages, `HarnessState`, pending root deferred requests, provider resource state, and retained AG-UI event data;
 4. OpenTelemetry leaves the store through configured exporters and is never persisted in SQLite or Session object files.
 
 The design does not claim a cross-file transaction between SQLite and the filesystem. It establishes publication ordering: an immutable file is completely written, synchronized under the selected durability profile, verified, and atomically published before a SQLite transaction can reference it. SQLite can therefore lag an already published unreferenced object, but a committed metadata row must not intentionally lead a missing object.
@@ -20,7 +20,7 @@ The design does not claim a cross-file transaction between SQLite and the filesy
 | Resolved Agent and Environment snapshots                                     | Compressed immutable object files                  | SQLite and Sessions reference exact content digests                   |
 | Managed Skill package revisions                                              | Compressed immutable Skill-package object files    | Agent snapshots reference exact manifests and payload digests         |
 | Complete root or async-child continuation                                    | Compressed immutable `HarnessState` object files   | SQLite checkpoint/job row selects one existing verified object        |
-| Pending deferred resume authority                                            | Compressed immutable deferred-request object files | SQLite waiting Turn/job selects one exact unconsumed request object   |
+| Pending root deferred resume authority                                       | Compressed immutable deferred-request object files | SQLite waiting root Turn selects one exact unconsumed request object  |
 | Provider resource state                                                      | Compressed immutable provider-state object files   | SQLite owns lifecycle/fencing metadata and selected state reference   |
 | Retained processed AG-UI sequence                                            | Compressed immutable event segments                | SQLite indexes segment ranges, cursors, Items, and search projections |
 | Managed Local Sandbox envd executable cache                                  | Package manifest plus runtime cache                | Replaceable runtime material; no Session or Environment authority     |
@@ -67,16 +67,16 @@ SQLite runs in WAL mode with foreign keys enabled, bounded busy timeout, and sho
 
 Conceptual table groups are:
 
-| Group                         | Representative facts                                                                            | Authority                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Configuration index           | accepted generation, resource IDs/digests, source provenance, diagnostics                       | Generation selection and diagnostics; resource content remains file-backed        |
-| Sessions and Threads          | identity, title, archive/pin/order, lineage, Agent/Environment snapshot refs, control revisions | SQLite-owned                                                                      |
-| Turns and checkpoints         | acceptance, state, base/selected checkpoint refs, Run correlation, terminal outcome             | SQLite-owned lifecycle and selection; state payload file-owned                    |
-| Environment resources         | provider spec ref, lifecycle state, operation fence, provider-state ref, cleanup status         | SQLite-owned lifecycle; provider payload file-owned                               |
-| Async-subagent jobs and input | accepted work, exact child node, process generation, steering/deferred/delivery state           | SQLite-owned lifecycle and selection; child state/deferred payloads file-owned    |
-| Event segment index           | Session sequence ranges, segment digest/path, previous segment, projection watermark            | Rebuildable from verified event headers except mutable cursor/retention selection |
-| Item and search projection    | messages, tools, child observations, previews, bounded searchable text                          | Rebuildable from AG-UI event files                                                |
-| Store maintenance             | schema version, leases, and recovery/quarantine records                                         | SQLite-owned control state                                                        |
+| Group                         | Representative facts                                                                                | Authority                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Configuration index           | accepted generation, resource IDs/digests, source provenance, diagnostics                           | Generation selection and diagnostics; resource content remains file-backed        |
+| Sessions and Threads          | identity, title, archive/pin/order, lineage, Agent/Environment snapshot refs, control revisions     | SQLite-owned                                                                      |
+| Turns and checkpoints         | acceptance, state, base/selected checkpoint refs, Run correlation, terminal outcome                 | SQLite-owned lifecycle and selection; state payload file-owned                    |
+| Environment resources         | provider spec ref, lifecycle state, operation fence, provider-state ref, cleanup status             | SQLite-owned lifecycle; provider payload file-owned                               |
+| Async-subagent jobs and input | accepted work, exact child node, process generation, steering, terminal outcome, and delivery state | SQLite-owned lifecycle and selection; terminal child state payload file-owned     |
+| Event segment index           | Session sequence ranges, segment digest/path, previous segment, projection watermark                | Rebuildable from verified event headers except mutable cursor/retention selection |
+| Item and search projection    | messages, tools, child observations, previews, bounded searchable text                              | Rebuildable from AG-UI event files                                                |
+| Store maintenance             | schema version, leases, and recovery/quarantine records                                             | SQLite-owned control state                                                        |
 
 A single integer does not pretend to serialize every concern. The store uses distinct revisions:
 
@@ -157,13 +157,13 @@ The payload contains the complete exported public `HarnessState`, including its 
 
 Writing a state object does not select it. For a root Turn, the authoritative selected checkpoint is the SQLite checkpoint/Thread transition that references the verified object. Root terminal commit writes the object first, then uses one short SQLite transaction to validate the expected Thread revision, register and select the checkpoint, complete the Turn, and advance the Thread.
 
-For an async child, the authoritative selected checkpoint is the SQLite job transition under `job_revision`. A child boundary writes the object first, then registers and selects it together with the waiting or terminal job outcome. Selecting child state never advances or replaces the root Thread checkpoint.
+For an async child, the authoritative selected checkpoint is the SQLite terminal job transition under `job_revision`. A terminal child boundary writes the object first, then registers and selects it together with the terminal job outcome. Selecting child state never advances or replaces the root Thread checkpoint. Active child jobs retain no resumable intermediate checkpoint or waiting state.
 
 A database failure after file publication leaves the prior root or child checkpoint selected. External model, tool, and Environment effects remain unknown where applicable; the Host never infers rollback from the unselected object.
 
 ## Deferred Request Objects
 
-A suspended Harness result carries complete public `DeferredToolRequests` outside `HarnessState`. Agent UI stores that exact value in a separate compressed immutable object before a root Turn or async-child job can enter `waiting`:
+A suspended root Harness result carries complete public `DeferredToolRequests` outside `HarnessState`. Agent UI stores that exact value in a separate compressed immutable object before a root Turn can enter `waiting`. Harness child invocations never suspend, so async-subagent jobs never own this object kind:
 
 ```python
 class RootTurnDeferredOwner(BaseModel):
@@ -171,19 +171,11 @@ class RootTurnDeferredOwner(BaseModel):
     turn_id: str
 
 
-class AsyncSubagentDeferredOwner(BaseModel):
-    kind: Literal["async_subagent"]
-    subagent_job_id: str
-
-
-type DeferredRequestOwner = RootTurnDeferredOwner | AsyncSubagentDeferredOwner
-
-
 class StoredDeferredRequests(BaseModel):
     object_schema_version: str
     session_id: str
     thread_id: str
-    owner: DeferredRequestOwner
+    owner: RootTurnDeferredOwner
     source_run_id: str
     agent_snapshot_digest: str
     harness_release: str
@@ -196,7 +188,7 @@ class StoredDeferredRequests(BaseModel):
 
 `request_digest` covers the canonical complete request value, including the exact distinction and identities of deferred calls and approvals. `tool_surface_lock` identifies the resolved Agent/tool/plugin/Capability surface required to interpret those requests; it contains no live tool or authority. The object is continuation input but is not itself `HarnessState`, an AG-UI projection, or proof that a response has been authorized.
 
-The SQLite waiting transition atomically selects the verified checkpoint and deferred-request objects, records their digests, and preserves the request as unconsumed. A root transition also advances the Thread revision; a child transition advances only `job_revision`. A response command verifies both objects, exact owner and pending identities, pinned Agent node and snapshots, codec compatibility, and unconsumed status. Before dispatch it records one consuming `run_id` and transitions the owning Turn or job to `running`; process loss after possible dispatch becomes interrupted and never reuses the request automatically. A later suspended result publishes and selects a new complete request object.
+The SQLite root waiting transition atomically selects the verified checkpoint and deferred-request objects, records their digests, preserves the request as unconsumed, and advances the Thread revision. A response command verifies both objects, exact root Turn owner and pending identities, pinned root Agent node and snapshots, codec compatibility, and unconsumed status. Before dispatch it records one consuming `run_id` and transitions the Turn to `running`; process loss after possible dispatch becomes interrupted and never reuses the request automatically. A later suspended root result publishes and selects a new complete request object.
 
 ## Provider State and Resolved Snapshots
 
@@ -281,11 +273,11 @@ Startup recovery proceeds before command acceptance:
 03. validate the latest accepted configuration generation or accept a newer complete file generation;
 04. reconcile staging files and quarantine malformed objects;
 05. remove immutable objects whose file age exceeds the configured orphan-retention period and which have no durable reference;
-06. verify every selected Agent snapshot, managed Skill package, Environment snapshot, provider-state reference needed for lifecycle, selected root/child checkpoint, and pending deferred-request object;
+06. verify every selected Agent snapshot, managed Skill package, Environment snapshot, provider-state reference needed for lifecycle, selected root/terminal-child checkpoint, and pending root deferred-request object;
 07. verify registered AG-UI segment headers, indexes, digests, contiguous ranges, and digest linkage, then repair rebuildable projection lag;
 08. discover complete unregistered event files left by file-first publication and register one only when its first sequence and previous digest directly extend the Session's current durable presentation head; process additional candidates only when each then directly extends the newly selected head;
 09. retain a conflicting, forked, malformed, gapped, or otherwise non-authoritative candidate as unselected evidence and record a bounded path-free recovery diagnostic rather than guessing its authority;
-10. mark prior-process `accepted` or `running` Turns and `accepted`, `queued`, or `running` async jobs interrupted, while preserving a root Turn or child job in `waiting` only when its complete checkpoint and exact deferred correlations validate;
+10. mark prior-process `accepted` or `running` Turns and every prior-process `accepted`, `queued`, or `running` async job interrupted, while preserving a root Turn in `waiting` only when its complete checkpoint and exact deferred correlations validate;
 11. publish the recovered application view.
 
 Registered corruption and an unselected event candidate do not invalidate an otherwise verified selected `HarnessState`. They remain explicit presentation diagnostics, and finite replay fails at an affected retained range rather than skipping it. Startup records bounded path-free diagnostics for each invalid selected authority and marks the affected Session `blocked` or provider resource `unknown` before command acceptance; it does not report either as silently usable. Startup retention cleanup removes an immutable object only when no durable reference retains it and its file age exceeds the configured orphan-retention period. Recent unreferenced publications remain available across interruption, while referenced objects never expire merely because of age. Referenced missing or corrupt objects have type-specific outcomes:
@@ -296,7 +288,7 @@ Registered corruption and an unselected event candidate do not invalidate an oth
 | Pinned Agent or Environment snapshot         | Affected Session fails closed for execution                                                                                        |
 | Referenced managed Skill package             | Affected Agent node fails closed for reconstruction; no current source or similarly named Skill is substituted                     |
 | Selected root or child `HarnessState`        | Affected Thread/job fails closed for continuation; AG-UI history is not promoted                                                   |
-| Selected deferred-request object             | Waiting root Turn or child job fails closed; identifiers or AG-UI cannot reconstruct the request                                   |
+| Selected deferred-request object             | Waiting root Turn fails closed; identifiers or AG-UI cannot reconstruct the request                                                |
 | Unselected checkpoint/deferred object        | Quarantine or remove after reference analysis; selected state is unchanged                                                         |
 | Selected provider resource state             | Provider lifecycle operation fails closed; no replacement resource is silently created                                             |
 | AG-UI segment with valid selected checkpoint | Continuation can remain available; replay exposes an explicit sequence gap                                                         |
@@ -317,9 +309,9 @@ Reclaiming an abandoned lease authorizes recovery inspection. It does not prove 
 
 Archive is SQLite-owned display/control metadata and does not weaken state or event references. Implementations can move compressed event trees for storage management only through a staged move plus SQLite path update and compensation/reconciliation on failure; logical identity uses digest rather than location.
 
-Retention can delete only objects and event segments with no retained Session, Agent-snapshot/Skill-package reference, fork, selected root or child checkpoint, unconsumed pending-deferred reference, provider lifecycle, async-child result/delivery, or export reference. Startup automatically deletes unreferenced immutable objects after the configured orphan-retention period. Business retention first removes the owning reference; the same orphan cleanup later reclaims the file. Because AG-UI segments are compressed and supply complete presentation replay, lossy compaction is explicit: it creates a new retention generation and a complete semantic snapshot plus gap metadata before removing detailed prior segments. It never changes `HarnessState` or claims byte-for-byte replay after compaction.
+Retention can delete only objects and event segments with no retained Session, Agent-snapshot/Skill-package reference, fork, selected root or terminal-child checkpoint, unconsumed root pending-deferred reference, provider lifecycle, async-child result/delivery, or export reference. Startup automatically deletes unreferenced immutable objects after the configured orphan-retention period. Business retention first removes the owning reference; the same orphan cleanup later reclaims the file. Because AG-UI segments are compressed and supply complete presentation replay, lossy compaction is explicit: it creates a new retention generation and a complete semantic snapshot plus gap metadata before removing detailed prior segments. It never changes `HarnessState` or claims byte-for-byte replay after compaction.
 
-Export copies a consistent SQLite projection plus referenced safe Agent/Environment snapshots, every referenced managed Skill package, selected root and child `HarnessState` objects, every selected unconsumed root or child deferred-request object, retained async-child outcomes/delivery ledgers, and AG-UI segments according to export policy. Deferred objects receive the same integrity, codec, Agent/tool-surface lock, and content-protection checks as local resume; omitting one makes a waiting Session export invalid rather than history-only. Provider resource state, credentials, browser capabilities, and live authority are excluded by default. Import validates all envelopes and references and creates new local control records rather than trusting source paths.
+Export copies a consistent SQLite projection plus referenced safe Agent/Environment snapshots, every referenced managed Skill package, selected root and terminal-child `HarnessState` objects, every selected unconsumed root deferred-request object, retained async-child outcomes/delivery ledgers, and AG-UI segments according to export policy. Deferred objects receive the same integrity, codec, Agent/tool-surface lock, and content-protection checks as local resume; omitting one makes a waiting Session export invalid rather than history-only. Provider resource state, credentials, browser capabilities, and live authority are excluded by default. Import validates all envelopes and references and creates new local control records rather than trusting source paths.
 
 Hard delete conflicts with active work, marks deletion intent, performs provider-resource cleanup according to the [Session Environment lifecycle policy](04-sessions-environments-and-state.md), and removes SQLite references. The ordinary orphan-retention cleanup later removes the unreferenced files. Local deletion does not roll back external effects.
 
@@ -359,7 +351,7 @@ None substitutes for another.
 | Checkpoint commit succeeds but AG-UI registration fails    | Thread can continue; presentation repair indexes verified files or reports missing history                                        |
 | SQLite busy timeout expires before dispatch                | Command conflicts/fails before Harness or provider side effects                                                                   |
 | SQLite commit fails after external work                    | Prior selected state remains; effect outcome is unknown and requires reconciliation                                               |
-| Store lease owner disappears                               | Recovery interrupts prior active execution, preserves validated waiting root/child boundaries, and never auto-runs                |
+| Store lease owner disappears                               | Recovery interrupts prior active root/child execution, preserves validated waiting root boundaries, and never auto-runs           |
 | OTel exporter or ordinary logging fails                    | Diagnostic loss only; product lifecycle facts are unchanged                                                                       |
 
 ## Compatibility
@@ -388,7 +380,7 @@ Separating telemetry prevents diagnostic volume or exporter failure from corrupt
 02. Every referenced Skill package, selected state, deferred request, snapshot, provider-state payload, and retained AG-UI segment is an immutable verified Zstandard-compressed file.
 03. A file is completely published before any SQLite transaction can select or index it.
 04. There is no claimed cross-file ACID transaction; orphan files are safe and SQLite references fail closed when payloads are missing.
-05. `HarnessState` remains the only Agent state authority; a waiting root Turn or async-child job additionally requires its exact unconsumed `DeferredToolRequests`, and event/projection data can replace neither.
+05. `HarnessState` remains the only Agent state authority; a waiting root Turn additionally requires its exact unconsumed `DeferredToolRequests`, async-child jobs never own deferred requests, and event/projection data can replace neither.
 06. AG-UI segments own presentation replay; SQLite Item/search tables are rebuildable projections and cannot strengthen execution facts.
 07. SQLite-owned mutable control facts are never guessed from AG-UI or state files after corruption.
 08. OpenTelemetry and ordinary logs remain outside SQLite, state objects, and AG-UI files and never determine product completion.

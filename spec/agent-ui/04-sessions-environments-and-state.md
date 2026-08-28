@@ -453,36 +453,36 @@ The Capability cannot create, select, switch, rename, fork, archive, delete, imp
 
 ## Async Subagent Records
 
-A Session retains bounded async-subagent job metadata, exact child Agent-node identity, parent scope and lineage, process generation, child Thread correlation, accepted steering input, complete child checkpoint references, complete pending `DeferredToolRequests` when waiting, safe terminal results, and a separate completion-delivery ledger. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#async-subagent-job-lifecycle) owns execution and routing.
+A Session retains bounded async-subagent job metadata, exact child Agent-node identity, parent scope and lineage, process generation, child Thread correlation, accepted steering input, terminal child checkpoint references, safe terminal results, and a separate completion-delivery ledger. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#async-subagent-job-lifecycle) owns execution and routing.
 
-A live task, child stream, cancellation scope, Environment attachment, model resolver, credential, native input router, and usage accumulator remain process-local. On recovery, an `accepted`, `queued`, or `running` job from another process generation becomes `interrupted` unless its terminal outcome was already committed. A `waiting` job can remain waiting only when its exact child checkpoint, unconsumed deferred-request object, pinned child definition, and Environment lifecycle references validate; resumption starts a fresh child Harness Run under the same logical job. The process never recreates or reruns unknown active model/tool work automatically.
+A live task, child stream, cancellation scope, Environment attachment, model resolver, credential, native input router, and usage accumulator remain process-local. On recovery, an `accepted`, `queued`, or `running` job from another process generation becomes `interrupted` unless its terminal outcome was already committed. Child jobs never enter `waiting` and never resume a deferred request; `resume_subagent` creates a new linked job only from a compatible terminal result. The process never recreates or reruns unknown active model/tool work automatically.
 
 Terminal completion and parent delivery are independent. A retained result can be delivered idempotently into an eligible active or later root Run, explicitly inspected, used as the basis of a linked `resume_subagent` job, or discarded under retention policy. Child `HarnessState` never becomes the parent Thread checkpoint.
 
 ## Recovery, Retention, and Delete
 
-Recovery validates snapshot and Skill-package references, pinned Skill selections, checkpoint and deferred-request references, Thread identity, Turn transitions, async-job process generations and waiting state, subagent input/delivery ledgers, Environment resource fences, provider-state objects, queue ownership, and AG-UI sequence chains. A selected corrupt Agent snapshot, Environment snapshot, provider state required for lifecycle, or checkpoint fails the affected operation closed. Valid `waiting` Turns remain waiting across process generations; only process-owned active execution observations become interrupted.
+Recovery validates snapshot and Skill-package references, pinned Skill selections, root checkpoint and deferred-request references, terminal child checkpoint references, Thread identity, Turn transitions, async-job process generations and terminal state, subagent input/delivery ledgers, Environment resource fences, provider-state objects, queue ownership, and AG-UI sequence chains. A selected corrupt Agent snapshot, Environment snapshot, provider state required for lifecycle, or checkpoint fails the affected operation closed. Valid `waiting` Turns remain waiting across process generations; only process-owned active execution observations become interrupted.
 
-Retention preserves every selected root or child checkpoint, unconsumed pending-deferred object, pinned snapshot and Skill package, fork reference required by a retained Session, pending Environment cleanup, undelivered async-child result, and queued submission. Deleting presentation detail can create explicit replay gaps but cannot delete continuation or provider lifecycle authority.
+Retention preserves every selected root or terminal-child checkpoint, unconsumed root pending-deferred object, pinned snapshot and Skill package, fork reference required by a retained Session, pending Environment cleanup, undelivered async-child result, and queued submission. Deleting presentation detail can create explicit replay gaps but cannot delete continuation or provider lifecycle authority.
 
 Session delete never claims rollback of model, tool, Environment, or external effects. Unknown provider destroy outcomes remain explicit cleanup records until reconciled or deliberately orphaned by an authorized user action.
 
 ## Failure Semantics
 
-| Failure                                                  | Outcome                                                                                                                            |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Stale control or Thread revision                         | Conflict before affected mutation or Harness dispatch                                                                              |
-| Repeated Session create request                          | Same `creation_request_id` returns the existing provisional or ready Session                                                       |
-| Missing or incompatible Agent snapshot                   | Session cannot start a Run                                                                                                         |
-| Missing or incompatible Environment snapshot/provider    | Session cannot provision or bind the affected topology                                                                             |
-| Corrupt selected checkpoint                              | Thread fails closed; AG-UI history is not promoted                                                                                 |
-| Corrupt selected provider state                          | Resource lifecycle fails closed; no replacement is created                                                                         |
-| Process loss during model, tool, child, or provider work | Prior selected facts remain; active work becomes interrupted/unknown while valid waiting root Turns or child jobs remain resumable |
-| Checkpoint publication/selection failure after work      | Prior checkpoint remains selected; effects require reconciliation                                                                  |
-| Provider operation result loses its fence race           | Stale result is retained only as diagnostic evidence and cannot select state                                                       |
-| AG-UI replay corruption with valid state                 | Continuation can remain available; affected range is an explicit gap                                                               |
-| Queue delivery races Session advancement                 | Revision conflict; submission remains queued or is safely retried under one identity                                               |
-| Retention/delete races active work                       | Operation conflicts and changes nothing                                                                                            |
+| Failure                                                  | Outcome                                                                                                                   |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Stale control or Thread revision                         | Conflict before affected mutation or Harness dispatch                                                                     |
+| Repeated Session create request                          | Same `creation_request_id` returns the existing provisional or ready Session                                              |
+| Missing or incompatible Agent snapshot                   | Session cannot start a Run                                                                                                |
+| Missing or incompatible Environment snapshot/provider    | Session cannot provision or bind the affected topology                                                                    |
+| Corrupt selected checkpoint                              | Thread fails closed; AG-UI history is not promoted                                                                        |
+| Corrupt selected provider state                          | Resource lifecycle fails closed; no replacement is created                                                                |
+| Process loss during model, tool, child, or provider work | Prior selected facts remain; active work becomes interrupted/unknown while only valid waiting root Turns remain resumable |
+| Checkpoint publication/selection failure after work      | Prior checkpoint remains selected; effects require reconciliation                                                         |
+| Provider operation result loses its fence race           | Stale result is retained only as diagnostic evidence and cannot select state                                              |
+| AG-UI replay corruption with valid state                 | Continuation can remain available; affected range is an explicit gap                                                      |
+| Queue delivery races Session advancement                 | Revision conflict; submission remains queued or is safely retried under one identity                                      |
+| Retention/delete races active work                       | Operation conflicts and changes nothing                                                                                   |
 
 ## Compatibility
 
@@ -508,12 +508,12 @@ Serializing each Thread gives deterministic checkpoint selection. Parallel explo
 
 01. One Session pins exactly one resolved Agent snapshot, one resolved Environment snapshot, and one validated root/child Skill-exposure map, including while its durable lifecycle is provisional or blocked.
 02. Agent, Environment, and effective Skill exposure change only through an explicit fork; dynamic configuration reload never mutates a Session.
-03. `HarnessState` is the only stored Agent state authority; a waiting root Turn or async-child job additionally pins the exact complete `DeferredToolRequests`, and AG-UI, identifiers, SQLite Items, transcripts, provider state, or Environment files substitute for neither.
+03. `HarnessState` is the only stored Agent state authority; a waiting root Turn additionally pins the exact complete `DeferredToolRequests`, async-child jobs never own deferred requests, and AG-UI, identifiers, SQLite Items, transcripts, provider state, or Environment files substitute for neither.
 04. One Thread has at most one advancing foreground Turn, enforced in process and by expected SQLite revision.
 05. A checkpoint file is published before a short SQLite transaction can select it.
 06. Provider resources use durable Host fences and selected provider-state objects, while every Harness Run receives fresh single-use attachments and bindings; concurrent sharing or independent allocation requires explicit provider capability.
 07. Closing a Harness binding, exiting a Resource scope, pausing the provider resource, and destroying it are independent facts.
-08. Process loss preserves unknown external effects and never automatically reruns interrupted root or async-child work; only a fully committed waiting boundary can be resumed explicitly.
+08. Process loss preserves unknown external effects and never automatically reruns interrupted root or async-child work; only a fully committed root waiting boundary can be resumed explicitly.
 09. A Session fork creates a new Session, root Thread, Environment assignment, and lineage without mutating its source.
 10. Local identifiers, snapshots, state files, and provider resource IDs grant no current model, Environment, repository, credential, plugin, or execution authority.
 11. No executable Session Environment can expose the Agent UI data root or an ancestor/descendant Host path through a local root or host mount.

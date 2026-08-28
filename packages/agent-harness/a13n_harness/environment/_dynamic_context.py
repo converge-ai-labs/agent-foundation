@@ -11,7 +11,7 @@ from typing import Any
 from pydantic_ai import RunContext
 
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.commands import BoundProcessHandle
+from a13n_harness.environment.commands import ProcessIdentity
 from a13n_harness.environment.models import (
     EnvironmentError,
 )
@@ -51,12 +51,12 @@ class _DynamicEnvironmentContext:
         *,
         run_id: str,
         environment: BoundEnvironment,
-        resolve_process: Callable[[str], BoundProcessHandle],
+        resolve_process_identity: Callable[[str], ProcessIdentity],
     ) -> None:
         self.configuration = configuration.model_copy(deep=True)
         self._run_id = run_id
         self._environment = environment
-        self._resolve_process = resolve_process
+        self._resolve_process_identity = resolve_process_identity
         self._pending_version: int | None = None
         self._notice_pending = False
         self._active_context: RunContext[AgentContext] | None = None
@@ -106,6 +106,7 @@ class _DynamicEnvironmentContext:
                 _AuthorizationFence(
                     topology_version=topology_version,
                     bindings=tuple(dict.fromkeys(fences)),
+                    unresolved=(tool_id.startswith("environment.process_") and tool_id != "environment.process_status"),
                 )
             )
             return resources
@@ -139,7 +140,7 @@ class _DynamicEnvironmentContext:
             return (self._path_resource(context, _string_argument(arguments, "path")),)
         if tool_id in {"filesystem.glob", "filesystem.grep"}:
             return (self._path_resource(context, _optional_string_argument(arguments, "root") or "."),)
-        if tool_id in {"environment.shell_exec", "environment.process_start"}:
+        if tool_id == "environment.shell_exec":
             alias = _optional_string_argument(arguments, "alias")
             cwd = _optional_string_argument(arguments, "cwd")
             if cwd is not None:
@@ -148,13 +149,12 @@ class _DynamicEnvironmentContext:
         if tool_id == "environment.process_status":
             return ()
         if tool_id.startswith("environment.process_"):
-            handle = self._resolve_process(_string_argument(arguments, "process"))
-            self._record_fence(handle.binding_id, handle.binding_revision, handle.observed_generation)
+            identity = self._resolve_process_identity(_string_argument(arguments, "process_id"))
             return (
                 CanonicalResource(
                     namespace="environment",
                     kind="process",
-                    identifier=f"{handle.binding_id}:{handle.binding_revision}:{handle.observed_generation}",
+                    identifier=identity.model_dump_json(),
                 ),
             )
         if tool_id.startswith("environment.port_"):

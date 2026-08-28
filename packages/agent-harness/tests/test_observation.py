@@ -2,18 +2,26 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
+    AbstractModelCostCapability,
+    AgentIdentityRef,
+    AgentInstanceContext,
     DefinitionError,
     HarnessBuilder,
     HarnessInstrumentation,
+    HarnessObservationContext,
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessTraceContent,
     HarnessTraceLevel,
+    ModelCostInput,
+    ModelCostQuote,
     ModelRecoveryPolicy,
     ModelResolutionError,
     PluginRunExchange,
@@ -29,12 +37,16 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
+from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Instrumentation
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.instrumented import InstrumentationSettings, InstrumentedModel
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
@@ -320,6 +332,275 @@ async def test_summary_trace_uses_current_host_parent_and_detaches_at_public_bou
     assert run_span.status.status_code is StatusCode.UNSET
 
 
+def test_observation_context_validates_and_freezes_bounded_values() -> None:
+    metadata: dict[str, str | bool | int | float] = {"scenario": "summary", "synthetic": True}
+    context = HarnessObservationContext(
+        name="observation-summary",
+        session_id="observation-summary-session",
+        labels=("agent-harness", "profile:summary"),
+        metadata=metadata,
+    )
+    metadata["scenario"] = "changed"
+
+    assert context.metadata == {"scenario": "summary", "synthetic": True}
+    with pytest.raises(TypeError):
+        context.metadata["scenario"] = "changed"  # type: ignore[index]
+
+    invalid_values = (
+        {"labels": "profile:summary"},
+        {"labels": {"profile:summary"}},
+        {"labels": ("duplicate", "duplicate")},
+        {"labels": ("x" * 65,)},
+        {"metadata": [("scenario", "summary")]},
+        {"metadata": {"Invalid Key": "value"}},
+        {"metadata": {"nested": {"value": "not-supported"}}},
+        {"metadata": {"not_finite": float("inf")}},
+    )
+    for value in invalid_values:
+        with pytest.raises(DefinitionError) as invalid:
+            HarnessObservationContext(**value)  # type: ignore[arg-type]
+        assert invalid.value.code == "observation_context_invalid"
+
+
+async def test_observation_context_enriches_only_the_logical_run_span() -> None:
+    tracer_provider, exporter, _, _ = _providers()
+    executable = _build(
+        HarnessInstrumentation(
+            tracer_provider=tracer_provider,
+            trace_level=HarnessTraceLevel.STANDARD,
+        )
+    )
+    observation = HarnessObservationContext(
+        name="observation-summary",
+        session_id="observation-summary-session",
+        labels=("agent-harness", "profile:summary"),
+        metadata={"scenario": "summary", "synthetic": True, "sequence": 4},
+    )
+
+    result = await executable.run(
+        "hello",
+        bindings=RunBindings.embedded(observation=observation),
+    )
+    assert result.status == "completed"
+
+    spans = exporter.get_finished_spans()
+    run_span = next(span for span in spans if span.name == "harness.run")
+    assert run_span.parent is None
+    assert run_span.attributes["a13n.observation.name"] == "observation-summary"
+    assert run_span.attributes["a13n.observation.session.id"] == "observation-summary-session"
+    assert run_span.attributes["a13n.observation.labels"] == ("agent-harness", "profile:summary")
+    assert run_span.attributes["a13n.observation.metadata.scenario"] == "summary"
+    assert run_span.attributes["a13n.observation.metadata.synthetic"] is True
+    assert run_span.attributes["a13n.observation.metadata.sequence"] == 4
+    for span in spans:
+        if span is not run_span:
+            assert not any(key.startswith("a13n.observation.") for key in span.attributes)
+
+
+async def test_identity_and_lineage_use_only_the_bounded_attribute_registry() -> None:
+    tracer_provider, exporter, _, _ = _providers()
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(
+            issuer="https://identity.example",
+            subject="workload-subject",
+            agent_id="research-agent",
+            user_id="user-42",
+            tenant_id="must-not-be-projected",
+        ),
+        agent_instance_id="agent-instance-42",
+        parent_agent_instance_id="agent-instance-parent",
+        delegation_id="delegation-42",
+        actor="host.scheduler",
+        host_refs={"request_id": "must-not-be-projected"},
+    )
+    bindings = RunBindings(instance=instance)
+    executable = _build(
+        HarnessInstrumentation(
+            tracer_provider=tracer_provider,
+            trace_level=HarnessTraceLevel.STANDARD,
+        )
+    )
+
+    result = await executable.run("hello", bindings=bindings)
+    assert result.status == "completed"
+
+    spans = exporter.get_finished_spans()
+    run_span = next(span for span in spans if span.name == "harness.run")
+    attempt_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "invoke_agent")
+    identity_attributes = {
+        "a13n.agent.identity.issuer": "https://identity.example",
+        "a13n.agent.identity.subject": "workload-subject",
+        "a13n.agent.id": "research-agent",
+        "a13n.user.id": "user-42",
+        "a13n.agent.instance.id": "agent-instance-42",
+        "a13n.agent.parent_instance.id": "agent-instance-parent",
+        "a13n.delegation.id": "delegation-42",
+        "a13n.actor": "host.scheduler",
+    }
+    assert {key: run_span.attributes[key] for key in identity_attributes} == identity_attributes
+    assert {key: attempt_span.attributes[key] for key in identity_attributes} == identity_attributes
+    assert "tenant_id" not in str(run_span.attributes)
+    assert "must-not-be-projected" not in str(run_span.attributes)
+    assert "tenant_id" not in str(attempt_span.attributes)
+    assert "must-not-be-projected" not in str(attempt_span.attributes)
+
+
+async def test_unsafe_or_oversized_identity_values_are_omitted_without_truncation() -> None:
+    tracer_provider, exporter, _, _ = _providers()
+    oversized = "identity-value-" + ("x" * 1024)
+    bindings = RunBindings(
+        instance=AgentInstanceContext(
+            identity=AgentIdentityRef(
+                issuer="https://identity.example",
+                subject="bounded-subject",
+                agent_id=oversized,
+                user_id="bounded-user",
+            ),
+            agent_instance_id="bounded-instance",
+            parent_agent_instance_id="bounded-parent",
+            delegation_id="bounded-delegation",
+            actor="\ud800",
+        )
+    )
+    executable = _build(HarnessInstrumentation(tracer_provider=tracer_provider))
+
+    result = await executable.run("hello", bindings=bindings)
+    assert result.status == "completed"
+
+    run_span = next(span for span in exporter.get_finished_spans() if span.name == "harness.run")
+    assert run_span.attributes["a13n.agent.identity.issuer"] == "https://identity.example"
+    assert run_span.attributes["a13n.agent.identity.subject"] == "bounded-subject"
+    assert run_span.attributes["a13n.user.id"] == "bounded-user"
+    assert run_span.attributes["a13n.agent.instance.id"] == "bounded-instance"
+    assert run_span.attributes["a13n.agent.parent_instance.id"] == "bounded-parent"
+    assert run_span.attributes["a13n.delegation.id"] == "bounded-delegation"
+    assert "a13n.agent.id" not in run_span.attributes
+    assert "a13n.actor" not in run_span.attributes
+    assert oversized not in str(run_span.attributes)
+
+
+class _ObservedFixedCostCapability(AbstractModelCostCapability):
+    @property
+    def revision(self) -> str:
+        return "pricing-2026-08"
+
+    def quote(self, value: ModelCostInput) -> ModelCostQuote:
+        del value
+        return ModelCostQuote(
+            cost_usd=Decimal("0.125"),
+            source="custom",
+            pricing_revision=self.revision,
+            rule_id="fixed-observation-test",
+        )
+
+
+class _ObservedUsageModel(TestModel):
+    @asynccontextmanager
+    async def request_stream(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+        run_context: RunContext[object] | None = None,
+    ) -> AsyncIterator[StreamedResponse]:
+        async with super().request_stream(
+            messages,
+            model_settings,
+            model_request_parameters,
+            run_context,
+        ) as stream:
+            stream.usage.input_tokens = 100
+            stream.usage.cache_write_tokens = 20
+            stream.usage.cache_read_tokens = 30
+            stream.usage.output_tokens = 40
+            stream.usage.input_audio_tokens = 5
+            stream.usage.cache_audio_read_tokens = 6
+            stream.usage.output_audio_tokens = 7
+            stream.usage.details = {
+                "input_tokens": 100,
+                "output_tokens": 40,
+                "reasoning_tokens": 8,
+            }
+            yield stream
+
+
+async def test_model_span_uses_native_usage_and_bounded_custom_cost_enrichment() -> None:
+    tracer_provider, exporter, _, _ = _providers()
+
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(
+            tracer_provider=tracer_provider,
+            trace_level=HarnessTraceLevel.STANDARD,
+        )
+    ).build(
+        AgentSpec(name="usage-observation-agent"),
+        output_type=str,
+        model=_ObservedUsageModel(custom_output_text="done", model_name="usage-observation-model"),
+        capabilities=(_ObservedFixedCostCapability(),),
+    )
+
+    result = await executable.run("hello", bindings=RunBindings.embedded())
+    assert result.status == "completed"
+
+    request_span = next(
+        span for span in exporter.get_finished_spans() if span.attributes.get("gen_ai.operation.name") == "chat"
+    )
+    assert request_span.attributes["gen_ai.usage.input_tokens"] == 100
+    assert request_span.attributes["gen_ai.usage.output_tokens"] >= 40
+    assert request_span.attributes["gen_ai.usage.cache_creation.input_tokens"] == 20
+    assert request_span.attributes["gen_ai.usage.cache_read.input_tokens"] == 30
+    assert request_span.attributes["gen_ai.usage.details.input_audio_tokens"] == 5
+    assert request_span.attributes["gen_ai.usage.details.cache_audio_read_tokens"] == 6
+    assert request_span.attributes["gen_ai.usage.details.output_audio_tokens"] == 7
+    assert request_span.attributes["gen_ai.usage.details.reasoning_tokens"] == 8
+    assert request_span.attributes["gen_ai.usage.cost"] == 0.125
+    assert request_span.attributes["a13n.usage.cost.source"] == "custom"
+    assert request_span.attributes["a13n.usage.pricing.status"] == "applied"
+    assert request_span.attributes["a13n.usage.pricing.revision"] == "pricing-2026-08"
+    assert request_span.attributes["a13n.usage.pricing.rule.id"] == "fixed-observation-test"
+    assert "gen_ai.usage.details.input_tokens" not in request_span.attributes
+    assert "gen_ai.usage.details.output_tokens" not in request_span.attributes
+    assert "a13n.usage.input_tokens" not in request_span.attributes
+    assert "a13n.usage.output_tokens" not in request_span.attributes
+    attempt_span = next(
+        span for span in exporter.get_finished_spans() if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
+    )
+    assert "gen_ai.usage.cost" not in attempt_span.attributes
+    assert not any(key.startswith("a13n.usage.") for key in attempt_span.attributes)
+
+
+async def test_custom_pricing_does_not_leak_without_a_pydantic_model_span() -> None:
+    tracer_provider, exporter, _, _ = _providers()
+    host_tracer = tracer_provider.get_tracer("test-host")
+    disabled = HarnessBuilder(instrumentation=None).build(
+        AgentSpec(name="disabled-cost-observation-agent"),
+        output_type=str,
+        model=_ObservedUsageModel(custom_output_text="done", model_name="disabled-cost-model"),
+        capabilities=(_ObservedFixedCostCapability(),),
+    )
+
+    with host_tracer.start_as_current_span("host.root"):
+        disabled_result = await disabled.run("hello", bindings=RunBindings.embedded())
+    assert disabled_result.status == "completed"
+    host_span = next(span for span in exporter.get_finished_spans() if span.name == "host.root")
+    assert "gen_ai.usage.cost" not in host_span.attributes
+    assert not any(key.startswith("a13n.usage.") for key in host_span.attributes)
+
+    exporter.clear()
+    summary = HarnessBuilder(instrumentation=HarnessInstrumentation(tracer_provider=tracer_provider)).build(
+        AgentSpec(name="summary-cost-observation-agent"),
+        output_type=str,
+        model=_ObservedUsageModel(custom_output_text="done", model_name="summary-cost-model"),
+        capabilities=(_ObservedFixedCostCapability(),),
+    )
+    summary_result = await summary.run("hello", bindings=RunBindings.embedded())
+    assert summary_result.status == "completed"
+    run_span = next(span for span in exporter.get_finished_spans() if span.name == "harness.run")
+    assert "gen_ai.usage.cost" not in run_span.attributes
+    assert not any(key.startswith("gen_ai.usage.") for key in run_span.attributes)
+    assert not any(key.startswith("a13n.usage.") for key in run_span.attributes)
+
+
 async def test_standard_trace_uses_native_pydantic_spans_and_attempt_correlation() -> None:
     tracer_provider, exporter, _, _ = _providers()
     bindings = RunBindings.embedded()
@@ -346,7 +627,7 @@ async def test_standard_trace_uses_native_pydantic_spans_and_attempt_correlation
     assert "hello" not in str(attempt_span.attributes)
 
 
-async def test_verbose_trace_adds_bounded_harness_operations() -> None:
+async def test_verbose_trace_omits_routine_state_and_plugin_operations() -> None:
     tracer_provider, exporter, _, _ = _providers()
     executable = _build(
         HarnessInstrumentation(
@@ -359,12 +640,7 @@ async def test_verbose_trace_adds_bounded_harness_operations() -> None:
     assert result.status == "completed"
 
     operations = [span for span in exporter.get_finished_spans() if span.name == "harness.operation"]
-    kinds = {span.attributes["a13n.operation.kind"] for span in operations}
-    assert {"context", "state", "plugin_validation"} <= kinds
-    assert all(
-        set(span.attributes) <= {"a13n.operation.kind", "a13n.capability.id", "a13n.operation.id"}
-        for span in operations
-    )
+    assert operations == []
 
 
 async def test_metrics_only_records_exact_low_cardinality_harness_registry() -> None:
@@ -387,14 +663,13 @@ async def test_metrics_only_records_exact_low_cardinality_harness_registry() -> 
         "a13n.harness.run.duration",
         "a13n.harness.run.active",
         "a13n.harness.run.model_attempts",
-        "a13n.harness.operation.duration",
         "gen_ai.client.token.usage",
         "gen_ai.client.operation.time_to_first_chunk",
     } <= set(metrics)
     assert metrics["a13n.harness.run.duration"].unit == "s"
     assert metrics["a13n.harness.run.active"].unit == "{run}"
     assert metrics["a13n.harness.run.model_attempts"].unit == "{attempt}"
-    assert metrics["a13n.harness.operation.duration"].unit == "s"
+    assert "a13n.harness.operation.duration" not in metrics
 
     duration_point = metrics["a13n.harness.run.duration"].data.data_points[0]
     attempts_point = metrics["a13n.harness.run.model_attempts"].data.data_points[0]
@@ -403,8 +678,6 @@ async def test_metrics_only_records_exact_low_cardinality_harness_registry() -> 
     assert dict(attempts_point.attributes) == {"a13n.run.outcome": "completed"}
     assert attempts_point.sum == 1
     assert active_point.value == 0
-    operation_points = metrics["a13n.harness.operation.duration"].data.data_points
-    assert all(set(point.attributes) == {"a13n.operation.kind"} for point in operation_points)
 
 
 async def test_recovery_attempts_share_one_run_and_record_attempt_count() -> None:
@@ -418,8 +691,14 @@ async def test_recovery_attempts_share_one_run_and_record_attempt_count() -> Non
             raise UnexpectedModelBehavior("interrupted")
         yield "recovered"
 
-    _, _, meter_provider, reader = _providers()
-    executable = HarnessBuilder(instrumentation=HarnessInstrumentation(meter_provider=meter_provider)).build(
+    tracer_provider, exporter, meter_provider, reader = _providers()
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+            trace_level=HarnessTraceLevel.VERBOSE,
+        )
+    ).build(
         AgentSpec(name="recovery-agent"),
         output_type=str,
         model=FunctionModel(stream_function=stream),
@@ -442,6 +721,12 @@ async def test_recovery_attempts_share_one_run_and_record_attempt_count() -> Non
         if point.attributes["a13n.operation.kind"] == "recovery"
     ]
     assert recovery_points
+    recovery_spans = [
+        span
+        for span in exporter.get_finished_spans()
+        if span.name == "harness.operation" and span.attributes["a13n.operation.kind"] == "recovery"
+    ]
+    assert recovery_spans
 
 
 class _ShortCircuitPlugin(AbstractHarnessPlugin):

@@ -32,6 +32,13 @@ class AgentDefinition[OutputT]:
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = ModelRecoveryPolicy()
+
+    def with_updates(
+        self,
+        updates: Mapping[str, object] | None = None,
+        /,
+        **overrides: object,
+    ) -> Self: ...
 ```
 
 | Field            | Meaning                                                                                                                    |
@@ -45,13 +52,17 @@ class AgentDefinition[OutputT]:
 | `subagents`      | Named complete process-local child definitions and authored edge ceilings                                                  |
 | `model_recovery` | Optional bounded `ModelAttempt` policy for recoverable model interruption inside one logical Harness Run                   |
 
-Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. String model selection belongs only to `AgentSpec.model`; a concrete process-local Model belongs only to `AgentDefinition.model`. Supplying both is rejected rather than assigning hidden precedence, and a concrete Model requires `AgentSpec.model=None`. Child names are unique within one parent. The finite acyclic child graph and its exact `SubagentDefinition` contract are owned by [Delegation and Subagents](11-delegation-and-subagents.md#child-definitions-and-built-collection). The Harness does not require every trusted Python object to be serializable, hashable, deeply immutable, or reconstructible from metadata. Reentrancy remains the responsibility of native objects and Agent-bound extensions whose instances are shared by concurrent runs.
+Construction deep-copies `AgentSpec` and freezes the collection fields as tuples. `AgentDefinition.with_updates()` returns a new fully validated definition after exact top-level replacement. It accepts one optional field-name mapping plus keyword overrides, rejects unknown fields and fields supplied through both inputs, and runs the ordinary constructor invariants over the complete result. Retained and replacement `AgentSpec` values follow the constructor's deep-copy rule, and collection fields are frozen as tuples; arbitrary Models, Capabilities, plugins, output objects, and other trusted native values retain their identities under the existing reentrancy contract rather than being blanket-deep-copied. The original definition is never mutated.
 
-`AgentSpec` remains the owner of instructions, request settings, output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. The Harness subclass additionally owns ordered static `system_prompt` blocks, the default-on `toolset_instructions` policy, and the construction and serialization key `model_config`, backed by the Python attribute `model_configuration`, for one resolved `ModelConfiguration` describing model characteristics that native provider `ModelProfile` does not own. A system prompt is fixed within one resolved `AgentSpec`; another definition can replace, reorder, or remove it when starting a later model request over retained history. Instructions retain native Pydantic AI static and dynamic semantics and are not a substitute for the definition-owned system prompt. The Toolset switch changes only Harness Toolset-owned guidance and does not suppress explicit Agent or Capability instructions.
+String model selection belongs only to `AgentSpec.model`; a concrete process-local Model belongs only to `AgentDefinition.model`. Supplying both is rejected rather than assigning hidden precedence, and a concrete Model requires `AgentSpec.model=None`. Child names are unique within one parent. The finite acyclic child graph and its exact `SubagentDefinition` contract are owned by [Delegation and Subagents](11-delegation-and-subagents.md#child-definitions-and-built-collection). The Harness does not require every trusted Python object to be serializable, hashable, deeply immutable, or reconstructible from metadata. Reentrancy remains the responsibility of native objects and Agent-bound extensions whose instances are shared by concurrent runs.
+
+`AgentSpec` remains the owner of instructions, request settings, native tool and output retry behavior, declarative Capability specs, optional object `output_schema`, and its own model selection. The Harness subclass additionally owns ordered static `system_prompt` blocks, the default-on `toolset_instructions` policy, one definition-level native `UsageLimits`, and the construction and serialization key `model_config`, backed by the Python attribute `model_configuration`, for one resolved `ModelConfiguration` describing model characteristics that native provider `ModelProfile` does not own. A system prompt is fixed within one resolved `AgentSpec`; another definition can replace, reorder, or remove it when starting a later model request over retained history. Instructions retain native Pydantic AI static and dynamic semantics and are not a substitute for the definition-owned system prompt. The Toolset switch changes only Harness Toolset-owned guidance and does not suppress explicit Agent or Capability instructions.
 
 Exactly one build-time output source is selected: an explicit `AgentDefinition.output_type`, or native `AgentSpec.output_schema` when `output_type is None`. The latter produces `dict[str, JsonValue]`; `None` without a schema and an explicit output together with a schema are rejected. Native `OutputSpec`, Model profiles, Capability-owned tools and Toolsets, and explicit Capability instances retain their upstream Pydantic AI semantics. The Harness does not mirror those types in a second schema.
 
-MCP definition behavior uses Pydantic AI's native `MCP` Capability in `AgentSpec.capabilities`. The Harness accepts and reconstructs that upstream Capability through the same native Capability path and does not add a peer `mcp`, `mcp_servers`, transport schema, or Harness-specific MCP Capability. A serializable native `MCP` Capability owns the upstream URL-based server fields it exposes; trusted process-local code can instead supply any richer native MCP Capability or Toolset composition supported by Pydantic AI. Provider-native MCP and locally executed MCP Toolsets retain their distinct upstream execution paths.
+Ordinary MCP definition behavior uses Pydantic AI's native `MCP` Capability in `AgentSpec.capabilities`. The Harness also provides `ContextualMCP`, a code-first definition Capability that owns only run-scoped header resolution. Its `for_run()` resolves a trusted sync or async header factory against the current `AgentContext`, merges the result with explicit static headers, and returns a fresh upstream `MCP` before Pydantic re-extracts native tools and local Toolsets. The upstream Capability still owns URL handling, authorization-token behavior, server-tool construction, local client construction, filtering, transport, discovery, and lifecycle. The Harness does not add another MCP client, protocol, Toolset, or upstream patch.
+
+`ContextualMCP` supports URL-based upstream local/native composition whose headers are constructed by the returned fresh `MCP`. A preconstructed local client or Toolset that already owns its transport cannot be combined with run-scoped header resolution. Provider-native MCP and locally executed MCP Toolsets retain their distinct upstream execution paths while observing the same resolved header mapping. The definition Capability is immutable and safe for concurrent runs; it never mutates a shared upstream `MCP` or header dictionary.
 
 ```python
 class ModelCapability(StrEnum):
@@ -69,13 +80,36 @@ class ModelConfiguration(BaseModel):
 class AgentSpec(PydanticAgentSpec):
     system_prompt: str | list[str] | None = None
     toolset_instructions: bool = True
+    usage_limits: UsageLimits = UsageLimits(request_limit=1000)
     model_configuration: ModelConfiguration | None = Field(
         default=None,
         alias="model_config",
     )
 ```
 
-`AgentSpec.with_updates()` refines a loaded preset without mutating it. It accepts field names or serialization aliases through one optional mapping plus keyword overrides, rejects unknown fields and duplicate alias/name ownership, deep-copies retained and replacement values, and revalidates the complete resulting `AgentSpec`. Each supplied top-level field is an exact replacement; the method never recursively merges provider-specific settings, metadata, schemas, Capability arguments, or other nested mappings. A caller that wants a nested merge constructs that field explicitly before supplying it. This is definition materialization before build, not the temporary run-scoped behavior of native `Agent.override()`.
+The Harness `AgentSpec.usage_limits` uses Pydantic AI's native `UsageLimits` value directly. Its default sets only `request_limit=1000`; every token, tool-call, and cost ceiling remains disabled unless explicitly authored, and `count_tokens_before_request` remains false. This replaces Pydantic AI's 50-request fallback with a definition-owned long-task default without introducing another limit model. A plain native Pydantic AI `AgentSpec`, which cannot carry this Harness field, receives the same Harness default when executed. `UsageLimits(request_limit=None)` explicitly removes the request-count ceiling. Per-run precedence and delegation narrowing are owned by [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#usage-limits-and-native-retries) and [Delegation and Subagents](11-delegation-and-subagents.md#child-usage-limits).
+
+Native `AgentSpec.retries` passes unchanged to Pydantic AI. `None` retains Pydantic AI's default of one function-tool retry and one output-validation retry; an integer selects both budgets, while an `AgentRetries` mapping can select `tools` and `output` independently. These are retries inside one Pydantic Agent loop. They do not enable Harness `ModelRecoveryPolicy`, retry a `UsageLimitExceeded` failure, or configure provider transport retries.
+
+`AgentSpec.with_updates()` refines a loaded preset without mutating it. It accepts field names or serialization aliases through one optional mapping plus keyword overrides, rejects unknown fields and duplicate alias/name ownership, deep-copies retained and replacement values, and revalidates the complete resulting `AgentSpec`. Each supplied top-level field is an exact replacement; the method never recursively merges provider-specific settings, metadata, schemas, Capability arguments, `UsageLimits`, or other nested mappings. A caller that wants a nested merge constructs that field explicitly before supplying it. This is definition materialization before build, not the temporary run-scoped behavior of native `Agent.override()`.
+
+`AgentDefinition.with_updates()` provides the corresponding complete composition operation across `AgentSpec`, model, output, Capabilities, plugins, child topology, and recovery policy. It has no implicit child-specialization rules: omitted fields are retained exactly, including `definition_id` and `subagents`. A caller materializing a shallow specialized child therefore selects a fresh logical definition ID and explicitly removes inherited child topology, while the ordinary retained fields provide intentional build-time reuse:
+
+```python
+child_spec = parent.agent.with_updates(
+    system_prompt="You are the focused research worker.",
+    model=None,
+    model_config=child_model_configuration,
+)
+child = parent.with_updates(
+    agent=child_spec,
+    definition_id="research-worker",
+    model=child_model,
+    subagents=(),
+)
+```
+
+This example retains the parent's Capabilities and their tools, plugins, output contract, recovery policy, and unchanged `AgentSpec` fields. A caller can replace any of them explicitly. The resulting child is a complete standalone `AgentDefinition`; no parent lookup or inheritance occurs during build or execution.
 
 `system_prompt=None` or an empty list means that the definition supplies no system-prompt block. A string is one block; a list preserves authored order. The builder normalizes this field once, supplies it through Pydantic AI's native `system_prompt` construction argument for an empty history, and retains it on the copied definition for later history reconciliation. A Host convenience API may materialize a system-prompt argument into this field, but no lower layer accepts a competing prompt source or silently merges two owners. `toolset_instructions=True` enables Harness Toolset instruction blocks by default; the single-run override and child inheritance contract belong to [Context and Memory](09-context-and-memory.md#toolset-instruction-enablement).
 

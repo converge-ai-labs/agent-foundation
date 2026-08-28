@@ -40,7 +40,7 @@ flowchart LR
 
 ## Identity and Authority
 
-`AgentInstanceContext` is supplied by the trusted Host before model-controlled work. User input, model output, tool arguments, plugin-transformed input/results, metadata, restored state, and environment variables cannot replace it.
+`AgentInstanceContext` is supplied by the trusted Host before model-controlled work. Its Agent Identity contains fixed workload `issuer` and `subject` values plus immutable Host-selected string claims. `user_id` and `agent_id` are conventional claims, not credentials or grants. User input, model output, tool arguments, plugin-transformed input/results, run metadata, restored state, and environment variables cannot replace Identity or add claims.
 
 `BoundPluginContext` contains only the concrete plugin instances selected at build and freshly bound for the logical run. Plugin ID is lookup correlation, not authority. `HarnessState` cannot add a plugin, Capability, provider, Environment binding, topology entry, controller, or current-run collaborator.
 
@@ -55,7 +55,7 @@ Host policy
 ∩ approval decision
 ```
 
-A native unmanaged tool does not acquire these guarantees merely because it can access `AgentContext`; selecting it is an explicit trusted-code decision.
+A native unmanaged tool does not acquire these guarantees merely because it can access `AgentContext`; selecting it is an explicit trusted-code decision. Identity claims and run metadata remain visible to trusted in-process Capability code but are not automatically placed in model context, observations, state, or outbound requests. An explicit transport projection such as MCP context headers selects each outbound value and retains the source's semantics; mapping run metadata into a header does not turn it into an Identity claim.
 
 ## Code-first Build Trust
 

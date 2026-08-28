@@ -49,11 +49,11 @@ The Host must flush and shut down its providers at the process boundary. The Har
 
 Trace levels select structure:
 
-| Level      | Selected structure                                                                     |
-| ---------- | -------------------------------------------------------------------------------------- |
-| `summary`  | One `harness.run` span for each logical Harness run.                                   |
-| `standard` | Summary plus Pydantic AI Agent, model, tool, usage, streaming, and cancellation spans. |
-| `verbose`  | Standard plus independently meaningful `harness.operation` spans.                      |
+| Level      | Selected structure                                                                                  |
+| ---------- | --------------------------------------------------------------------------------------------------- |
+| `summary`  | One `harness.run` span for each logical Harness run; it is the root when no Host parent is current. |
+| `standard` | Summary plus Pydantic AI Agent, model, tool, usage, streaming, and cancellation spans.              |
+| `verbose`  | Standard plus independently meaningful `harness.operation` spans.                                   |
 
 Content policy applies only to Pydantic AI instrumentation:
 
@@ -195,7 +195,26 @@ opentelemetry-instrument python -m my_agent_host
 
 Use `https://us.cloud.langfuse.com`, `https://jp.cloud.langfuse.com`, or the selected regional URL when the project is not in the default EU region. The endpoint for the repository's local stack is `http://127.0.0.1:3000/api/public/otel`.
 
-Direct OTLP export sends `harness.run`, Pydantic Agent/model/tool spans, and verbose `harness.operation` spans to one Langfuse trace. If the Host uses the Langfuse Python SDK instead, attach `LangfuseSpanProcessor` to the existing shared provider rather than registering a second provider. Langfuse's default export filter is LLM-focused, so explicitly include the `a13n-harness` and Host-root instrumentation scopes when filtering; otherwise those structural spans may be omitted.
+Direct OTLP export sends `harness.run`, Pydantic Agent/model/tool spans, and verbose material `harness.operation` spans to one Langfuse trace. If no Host span is current, `harness.run` is the trace root. If the Host uses the Langfuse Python SDK instead, attach `LangfuseSpanProcessor` to the existing shared provider rather than registering a second provider. Langfuse's default export filter is LLM-focused, so explicitly include the `a13n-harness` and any Host-root instrumentation scopes when filtering; otherwise those structural spans may be omitted.
+
+Langfuse v4 requires trace-level grouping fields on every descendant span for reliable filtering and aggregation. A direct-OTLP Host should propagate only an explicit allowlist, using the Langfuse SDK's documented propagation context or OpenTelemetry baggage plus a bounded `SpanProcessor`:
+
+| Purpose          | OTLP attribute                            |
+| ---------------- | ----------------------------------------- |
+| Trace name       | `langfuse.trace.name`                     |
+| User grouping    | `langfuse.user.id`                        |
+| Product session  | `langfuse.session.id`                     |
+| Tags             | `langfuse.trace.tags`                     |
+| Metadata         | `langfuse.trace.metadata.<approved-key>`  |
+| Version          | `langfuse.version`                        |
+| Release          | `langfuse.release`                        |
+| Environment      | `langfuse.environment`                    |
+| Observation type | `langfuse.observation.type`               |
+| Observation I/O  | `langfuse.observation.input` and `output` |
+
+The Host may copy the trusted conventional `user_id` identity claim to `langfuse.user.id`. Keep `a13n.user.id` as the vendor-neutral Harness field; do not add ambiguous `user.id` aliases in Harness code. `HarnessObservationContext` supplies an explicit trace name, product session, labels, and bounded scalar metadata when `harness.run` should be the root. A Host SpanProcessor can map `a13n.observation.name`, `a13n.observation.session.id`, `a13n.observation.labels`, and `a13n.observation.metadata.*` to the corresponding Langfuse fields and copy those allowlisted trace fields to descendants. Langfuse requires each flattened `langfuse.trace.metadata.*` OTLP attribute to be a string, so encode non-string Harness scalars deterministically without changing their original `a13n.*` values. Never propagate arbitrary baggage, all identity claims, `host_refs`, or `RunBindings.metadata`.
+
+Langfuse v4 derives trace input and output from the root observation. `harness.run` deliberately remains content-safe, so a root Harness span carries no prompt or result. If trace-level input/output is required, create one meaningful Host root and set bounded JSON strings in `langfuse.observation.input` and `langfuse.observation.output`. Do not use deprecated `langfuse.trace.input` or `langfuse.trace.output`, and do not dump all run arguments, state, events, or usage records. Pydantic model/tool input and output continue to follow `HarnessTraceContent`.
 
 For example, one Logfire-owned provider can export the same trace to both backends:
 
@@ -275,9 +294,31 @@ make langfuse-reset
 
 The composition binds the Langfuse UI and media endpoint to loopback and does not reuse the repository's PostgreSQL or Redis services. Its credentials are for local development only. For production and high-availability deployments, follow the official [Langfuse self-hosting documentation](https://langfuse.com/self-hosting) rather than adapting this development composition.
 
+## Add bounded context to the Harness root
+
+Use a fresh `HarnessObservationContext` when `harness.run` should be the root and needs stable grouping fields without an otherwise redundant outer span:
+
+```python
+from a13n_harness import HarnessObservationContext, RunBindings
+
+bindings = RunBindings.embedded(
+    observation=HarnessObservationContext(
+        name="answer-question",
+        session_id="conversation-42",
+        labels=("interactive", "support"),
+        metadata={"channel": "web", "experiment": "control"},
+    )
+)
+result = await executable.run("Complete the task", bindings=bindings)
+```
+
+The logical-run span receives only `a13n.observation.*` fields. Name and session ID are limited to 256 UTF-8 bytes. Labels are unique, limited to 16 entries and 64 UTF-8 bytes each. Metadata is limited to 16 validated keys and scalar string, boolean, signed 64-bit integer, or finite float values; strings are limited to 256 UTF-8 bytes. Invalid context fails before execution. It is not persisted in `HarnessState`, exposed to the model, or copied from `RunBindings.metadata`.
+
+A vendor-specific Host processor may map these existing fields for presentation. For Langfuse, map name/session/labels/metadata to `langfuse.trace.name`, `langfuse.session.id`, `langfuse.trace.tags`, and `langfuse.trace.metadata.*`, and mark `harness.run` and `invoke_agent` as `agent` plus `execute_tool` as `tool`. For Logfire 4.41, map the root name to `logfire.msg` and labels to `logfire.tags`. Do not set `logfire.span_type` for normal spans, synthesize `logfire.level_num`, or write `logfire.metrics`; Logfire already infers normal-span type and error level and owns metric aggregation.
+
 ## Parent Harness runs through current context
 
-The Harness uses only the current OpenTelemetry context. Make a Host span current while entering and consuming the stream:
+The Harness uses only the current OpenTelemetry context. Create a Host span only when the application has a real enclosing work unit or needs Host-owned trace input/output. Make it current while entering and consuming the stream:
 
 ```python
 host_tracer = tracer_provider.get_tracer("agent-host")
@@ -291,6 +332,28 @@ with host_tracer.start_as_current_span("host.work"):
 For streaming, the Harness keeps its logical-run span open through cleanup and consumer backpressure, but detaches it before every public stream item is returned. Consumer-side spans therefore remain children of the Host context rather than becoming children of `harness.run`.
 
 A Thread is correlation, not a trace. A later resume normally starts a new trace unless the Host activates a bounded distributed parent. For durable or independently scheduled work, prefer a new trace with a standard span link.
+
+## Identity, lineage, usage, and cost fields
+
+`harness.run` and its Pydantic Agent-attempt child carry a bounded trusted identity projection:
+
+- `a13n.agent.identity.issuer` and `a13n.agent.identity.subject`;
+- conventional claims `a13n.agent.id` and `a13n.user.id`, when present;
+- `a13n.agent.instance.id` and optional `a13n.agent.parent_instance.id`;
+- optional `a13n.delegation.id` and `a13n.actor`.
+
+Only `agent_id` and `user_id` are projected from `AgentIdentityRef.claims`. Arbitrary claims and `AgentInstanceContext.host_refs` are excluded. Each projected identity or lineage value must be UTF-8 encodable, is limited to 1024 encoded bytes, and may not contain NUL. Unsafe or over-limit values are omitted, not truncated, so telemetry cannot create a false ID collision or change execution.
+
+Pydantic owns model-request usage fields, including input/output tokens, first-class cache counters, audio/reasoning detail counters, native provider or `genai-prices` cost, and model metrics. When the Harness model-cost Capability applies custom pricing, it writes the quote before Pydantic finalizes the active model-request span. The same span then contains numeric `gen_ai.usage.cost` plus bounded provenance:
+
+- `a13n.usage.cost.source`;
+- `a13n.usage.pricing.status`;
+- optional `a13n.usage.pricing.revision`;
+- optional `a13n.usage.pricing.rule.id`.
+
+The Harness marks the exact active Pydantic model-request wrapper before applying this enrichment. Disabled Observation and summary tracing have no eligible model span, so pricing fields never leak onto a Host root or `harness.run`. The Harness does not create token aliases, another generation span, another usage metric, or a flattened usage ledger. Spans are telemetry, not billing authority.
+
+Pydantic token categories are inclusive: input contains cache and input-audio tokens, output contains output-audio tokens, and reasoning detail may overlap output. Langfuse v4 splits cache counters but currently adds arbitrary audio/reasoning detail counters when deriving its displayed `usageDetails.total`. Preserve and inspect the individual categories, but do not treat that derived total as Pydantic `input_tokens + output_tokens` or as Harness accounting truth.
 
 ## Harness metric registry
 
@@ -311,7 +374,7 @@ The Harness is the only Pydantic AI instrumentation owner for Agents it builds. 
 
 Do not call `logfire.instrument_pydantic_ai()` for a Harness-built Agent. Instead, configure Logfire or Langfuse as a Host profile over the same OpenTelemetry providers:
 
-- create exactly one Host root span;
+- let `harness.run` be the root when no real enclosing Host work unit is needed, otherwise create exactly one Host root span;
 - supply the exact selected provider objects to `HarnessInstrumentation`;
 - attach multiple processors or exporters to that shared provider when exporting to multiple backends;
 - include the `a13n-harness` instrumentation scope in backend export filters;

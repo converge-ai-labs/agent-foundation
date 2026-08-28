@@ -83,8 +83,6 @@ capabilities = (
         DynamicEnvironmentConfiguration(
             file_tools=True,
             shell_tools=False,
-            process_tools=False,
-            port_tools=False,
         )
     ),
 )

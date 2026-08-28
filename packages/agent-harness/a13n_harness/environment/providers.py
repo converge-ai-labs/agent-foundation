@@ -14,6 +14,7 @@ from .commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessIdentity,
     ProcessInfo,
     ProcessReadOutputResult,
     ProcessSignalResult,
@@ -96,6 +97,13 @@ class BoundProcessOperations(Protocol):
     """Revision-fenced process operations routed by one BoundEnvironment."""
 
     async def start(self, request: CommandRequest, *, alias: str | None = None) -> ProcessStartResult: ...
+
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo: ...
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo: ...
 

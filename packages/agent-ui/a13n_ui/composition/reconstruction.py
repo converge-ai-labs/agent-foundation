@@ -13,6 +13,7 @@ from uuid import uuid4
 from a13n_harness import (
     AgentDefinition,
     AgentSpec,
+    ContextualMCP,
     DelegationContextPolicy,
     DocumentsCapability,
     DynamicEnvironmentCapability,
@@ -22,12 +23,16 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessPluginFactoryContext,
     HarnessPluginFactoryRegistration,
+    MCPContextHeaderBinding,
+    MCPContextHeaders,
+    MCPContextHeadersConfig,
     MediaCapability,
     ModelRecoveryPolicy,
     SkillManager,
     SkillsCapability,
     SkillsPolicy,
     SubagentDefinition,
+    SubagentIdentityPolicy,
     UserInteractionCapability,
     WebCapability,
     WorkingStateCapability,
@@ -317,6 +322,9 @@ class AgentReconstructor:
                             history=edge.context.history,
                             task_state=edge.context.task_state,
                         ),
+                        identity=SubagentIdentityPolicy(
+                            inherit_agent_id=edge.identity.inherit_agent_id,
+                        ),
                         usage_limits=(
                             UsageLimits(**edge.usage_limits.model_dump()) if edge.usage_limits is not None else None
                         ),
@@ -456,6 +464,34 @@ def _capabilities(node: ResolvedAgentNode) -> tuple[AbstractCapability[Any], ...
             values.append(MediaCapability())
         elif selection.key == "a13n.web":
             values.append(WebCapability())
+        elif selection.key == "a13n.mcp":
+            native, local = {
+                "auto": (True, None),
+                "local": (False, True),
+                "native": (True, False),
+            }[selection.execution]
+            values.append(
+                ContextualMCP(
+                    selection.url,
+                    id=selection.id,
+                    headers_factory=MCPContextHeaders(
+                        MCPContextHeadersConfig(
+                            headers={
+                                name: MCPContextHeaderBinding(
+                                    source=binding.source,
+                                    required=binding.required,
+                                )
+                                for name, binding in selection.context_headers.items()
+                            }
+                        )
+                    ),
+                    native=native,
+                    local=local,
+                    allowed_tools=list(selection.allowed_tools) if selection.allowed_tools is not None else None,
+                    description=selection.description,
+                    defer_loading=selection.defer_loading,
+                )
+            )
         else:
             raise CompositionError(
                 "An Agent snapshot selects an unsupported Capability.",

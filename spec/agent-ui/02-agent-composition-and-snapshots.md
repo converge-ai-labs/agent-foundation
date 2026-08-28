@@ -61,11 +61,16 @@ class SubagentEdge(BaseModel):
     description: str
     agent: ResourceRef
     context: DelegationContextPolicy
+    identity: SubagentIdentitySelection
     usage_limits: UsageLimits | None
     environment: ChildEnvironmentPolicy
     lifetime: Literal["parent_scope", "session"]
     steering: Literal["enabled", "disabled"]
     continuation: Literal["enabled", "disabled"]
+
+
+class SubagentIdentitySelection(BaseModel):
+    inherit_agent_id: bool = False
 
 
 class AgentEnvironmentRequirements(BaseModel):
@@ -99,7 +104,7 @@ class AsyncSubagentConfiguration(BaseModel):
 
 Plugin order is significant. Available Skill revisions form a canonical name-keyed set; source-file ordering is retained for authoring display but does not create different runtime behavior after the same unique final catalog resolves. `default_selection.mode="all"` exposes the complete conflict-resolved available catalog. `mode="exact"` exposes only the unique exact names in `names`; an empty tuple deliberately exposes no Skills. Names select final `SKILL.md` identities rather than resource IDs, source patterns, exclusions, or paths. Resolution rejects an exact name absent from the available imported revisions and rejects ambiguous duplicate final names. `materialization_binding` is absent exactly when `available` is empty; otherwise it names one required Agent Environment binding whose FileOperator operations permit the Agent UI materializer to reconcile and scan its reserved subtree.
 
-Immediate child names are unique. A child edge selects one complete child Agent, authored context and usage ceilings, an explicit Environment resource policy, and narrower Host lifecycle controls. It does not inherit the parent's tools, Capabilities, plugins, model, Prompt, Skill selection, credentials, or live bindings. `parent_scope` requests cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` permits accepted work to outlive that immediate owner until completion, explicit cancellation, Session deletion, or process shutdown. Neither policy makes active execution restart-durable. `max_active_jobs` bounds accepted, queued, and running jobs owned by the Agent node; waiting jobs retain state but consume no live-execution slot. `max_jobs_per_run` bounds new submissions from one root or child Harness Run.
+Immediate child names are unique. A child edge selects one complete child Agent, authored context and usage ceilings, an explicit Identity inheritance policy, an explicit Environment resource policy, and narrower Host lifecycle controls. It does not inherit the parent's tools, Capabilities, plugins, model, Prompt, Skill selection, credentials, or live bindings. Child Identity starts from the parent workload `issuer`, `subject`, and immutable claims. `inherit_agent_id=false` replaces the conventional `agent_id` claim with the resolved child Agent's `agent_id`; `true` preserves the parent's claim when present. All other claims, including `user_id`, are preserved. Each invocation still receives fresh child Identity and instance values, and the trusted Host binder remains authoritative over the complete child `RunBindings`. `parent_scope` requests cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` permits accepted work to outlive that immediate owner until completion, explicit cancellation, Session deletion, or process shutdown. Neither policy makes active execution restart-durable. `max_active_jobs` bounds accepted, queued, and running jobs owned by the Agent node; waiting jobs retain state but consume no live-execution slot. `max_jobs_per_run` bounds new submissions from one root or child Harness Run.
 
 `AgentEnvironmentRequirements` declares the binding names and provider-neutral operation families that must be available when a Session pairs this Agent with an Environment. A node with available Skills includes the list/stat/read/write/create/remove operations required by its `materialization_binding`; an exact empty exposure still performs full source materialization and validation because Harness exact-name selection occurs after discovery. Agent resolution validates syntax and operation keys but cannot prove resource availability because Environment selection is independent. Session creation or fork performs the cross-snapshot compatibility check against the selected Environment topology and permission ceilings.
 
@@ -165,7 +170,29 @@ Skill content is immutable for the executable snapshot. Materialization or selec
 
 `FirstPartyCapabilitySelection` is a discriminated union owned by the Agent UI schema. Each member has an exact key, schema version, and typed configuration. Unknown keys or versions fail resolution. Agent UI adapters construct public Harness/Pydantic Capability values; there is no arbitrary Capability import registry.
 
-The curated catalog includes the dynamic Environment, Working State, user interaction, document/media/web, Session-read, and Agent UI async-subagent behavior supported by the selected Agent UI release. A Capability that requires Host collaboration follows the two-layer pattern:
+The curated catalog includes `a13n.mcp` for URL-based MCP servers:
+
+```python
+class MCPSelection(BaseModel):
+    key: Literal["a13n.mcp"]
+    schema_version: Literal["1"]
+    id: str
+    url: str
+    execution: Literal["auto", "local", "native"] = "auto"
+    allowed_tools: tuple[str, ...] | None = None
+    description: str | None = None
+    defer_loading: bool = False
+    context_headers: Mapping[str, MCPContextHeaderSelection]
+
+
+class MCPContextHeaderSelection(BaseModel):
+    source: str
+    required: bool = True
+```
+
+`context_headers` maps exact outbound header names to Harness selectors. It contains neither callables nor wildcard projections. Agent UI validates and locks this trusted selection, then reconstructs one public Harness `ContextualMCP` with an `MCPContextHeadersConfig`; run binding resolves a fresh upstream MCP value before either local Toolset or provider-native tool construction. `execution="auto"` retains upstream selection, while `local` and `native` select the corresponding upstream execution path. One Agent can select multiple MCP servers; their `id` values are unique within that Agent, while other curated Capability keys remain singleton selections. The URL is explicit persisted configuration: Agent UI requires an HTTP(S) URL but does not guess whether userinfo, query values, parameter names, or fragments carry credentials. Callable factories, preconstructed clients or Toolsets, out-of-band secret resolution, and arbitrary provider extensions remain code-first Host concerns rather than serialized Agent UI values.
+
+The curated catalog also includes the dynamic Environment, Working State, user interaction, document/media/web, Session-read, and Agent UI async-subagent behavior supported by the selected Agent UI release. A Capability that requires Host collaboration follows the two-layer pattern:
 
 - the definition-selected Capability owns stable model-visible behavior;
 - a fresh run Capability supplies current Session, Environment, repository, or async-subagent service authority.
@@ -237,7 +264,9 @@ class ResolvedAgentSnapshot(BaseModel):
     harness_release: str
 ```
 
-The snapshot contains every authority-neutral value needed to repeat trusted reconstruction. It contains no secret, native Model, current credential, Environment specification or resource state, plugin object, live Skill materialization, repository, task, client, or run Capability.
+The snapshot contains every authority-neutral value needed to repeat trusted reconstruction. It contains no Host-resolved credential, native Model, Environment specification or resource state, plugin object, live Skill materialization, repository, task, client, or run Capability. Literal authored content, including an MCP URL, is persisted as supplied and is not classified by Agent UI as secret or non-secret.
+
+For compatibility with schema-version-1 snapshots created before child Identity selection was explicit, an absent resolved-edge `identity` value means `inherit_agent_id=false`. Loading verifies that legacy snapshot's logical digest against the exact legacy projection that omitted the field; a non-default Identity policy is accepted only when covered by the current digest.
 
 ## Session Pinning and Executable Lifetime
 
@@ -249,7 +278,7 @@ A graph with managed Skills produces an executable for one compatibility-validat
 
 Changing any behavior-affecting component creates another logical digest and executable. Changing the Environment digest creates another managed-Skill executable pair, even if the selected alias remains textually equal, so reconstruction never reuses a definition across an unvalidated pair. Agent UI never hot-toggles the system prompt, instructions, plugins, available Skills, default Skill exposure, Capabilities, output, recovery policy, async policy, or child edges inside an active executable. A Session can pin an exact root/child Skill exposure override at creation or fork, but changing that pinned override also requires a fork. Closing the last cache reference closes the complete built child and plugin graph through the ordinary Harness ownership order.
 
-Run-time values vary only through contracts designed for fresh binding: Identity, current model resolver, credentials, exact Skill selection, Environment attachments, policy narrowing, Session-read collaborator, and async-subagent collaborator. Fresh binding realizes the Session-pinned effective Skill selection and can apply current policy narrowing, but it cannot add a Capability, plugin, available Skill, output type, or child edge absent from the snapshot or select a Skill outside that Session policy.
+Run-time values vary only through contracts designed for fresh binding: Identity and its explicitly selected MCP header projection, current model resolver, credentials, exact Skill selection, Environment attachments, policy narrowing, Session-read collaborator, and async-subagent collaborator. Fresh binding realizes the Session-pinned effective Skill selection and can apply current policy narrowing, but it cannot add a Capability, plugin, available Skill, output type, or child edge absent from the snapshot or select a Skill outside that Session policy.
 
 ## Child Definitions and Async-Only Presentation
 

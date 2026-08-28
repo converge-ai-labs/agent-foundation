@@ -5,8 +5,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
+import a13n_harness.tools.invocation as tool_invocation_module
+import a13n_harness.tools.surface as tool_surface_module
 import pytest
 from a13n_harness import (
+    AgentIdentityRef,
+    AgentInstanceContext,
     DeferredToolResume,
     DefinitionError,
     HarnessBuilder,
@@ -14,6 +18,7 @@ from a13n_harness import (
     RunError,
     RuntimeContextCapability,
 )
+from a13n_harness.environment.advanced import NoopEnvironmentRunBinding
 from a13n_harness.tools import (
     ClientToolDefinition,
     ClientToolsCapability,
@@ -27,7 +32,7 @@ from a13n_harness.tools import (
     ToolOutputPolicy,
 )
 from pydantic import ValidationError
-from pydantic_ai import DeferredToolResults, RunContext, ToolReturn
+from pydantic_ai import DeferredToolResults, RunContext, Tool, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
@@ -88,6 +93,18 @@ def _build(spec: ClientToolsSpec, *, tool_name: str, extra_capabilities=()):
     )
 
 
+def _child_bindings() -> RunBindings:
+    return RunBindings(
+        instance=AgentInstanceContext(
+            identity=AgentIdentityRef(issuer="test", subject="child"),
+            agent_instance_id="child-1",
+            parent_agent_instance_id="parent-1",
+            delegation_id="delegation-1",
+        ),
+        environment=NoopEnvironmentRunBinding(),
+    )
+
+
 async def test_default_client_tool_suspends_without_executing_in_process() -> None:
     spec = ClientToolsSpec(default_toolsets=(_toolset("client_action"),))
     executable = _build(spec, tool_name="client_action")
@@ -99,6 +116,84 @@ async def test_default_client_tool_suspends_without_executing_in_process() -> No
     assert result.deferred is not None
     assert [call.tool_name for call in result.deferred.calls] == ["client_action"]
     assert result.deferred.approvals == []
+
+
+async def test_child_surface_removes_external_and_unapproved_tools_but_keeps_functions() -> None:
+    observed_tools: list[dict[str, str]] = []
+    observed_instructions: list[str] = []
+
+    def local_action(value: int) -> int:
+        return value
+
+    def approved_action(value: int) -> int:
+        return value
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        observed_tools.append({tool.name: tool.kind for tool in info.function_tools})
+        observed_instructions.append(info.instructions or "")
+        yield "child-done"
+
+    spec = ClientToolsSpec(
+        default_toolsets=(
+            ClientToolsetDefinition(
+                toolset_id="client",
+                tools=(_tool("client_action", instruction="Ask the user before sending."),),
+            ),
+        )
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            ClientToolsCapability(spec=spec),
+            Capability(
+                tools=[local_action, Tool(approved_action, requires_approval=True)],
+                id="test-functions",
+            ),
+        ),
+    )
+
+    result = await executable.run("go", bindings=_child_bindings())
+
+    assert result.output_or_raise() == "child-done"
+    assert observed_tools == [{"local_action": "function"}]
+    assert "client_action" not in observed_instructions[0]
+    assert "Ask the user before sending." not in observed_instructions[0]
+
+
+async def test_child_deferred_terminal_guard_fails_instead_of_suspending(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_resolver = tool_surface_module.resolve_tool_surface
+
+    def bypass_child_filter(candidates, *, allow_deferred=True):
+        del allow_deferred
+        return original_resolver(candidates, allow_deferred=True)
+
+    monkeypatch.setattr(tool_surface_module, "resolve_tool_surface", bypass_child_filter)
+
+    async def bypass_child_runtime_denial(self, ctx, *, requests):
+        del self, ctx, requests
+        return None
+
+    monkeypatch.setattr(
+        tool_invocation_module.ToolExecutionBoundaryCapability,
+        "handle_deferred_tool_calls",
+        bypass_child_runtime_denial,
+    )
+    spec = ClientToolsSpec(default_toolsets=(_toolset("client_action"),))
+    executable = _build(spec, tool_name="client_action")
+
+    result = await executable.run("go", bindings=_child_bindings())
+
+    assert result.status == "failed"
+    assert result.failure is not None
+    assert result.failure.code == "subagent_deferred_unsupported"
+    assert result.state is not None
+    assert result.deferred is None
+    assert result.suspend_reason is None
+    assert result.all_messages()
+    assert result.usage.requests == 1
 
 
 async def test_client_tool_instructions_are_deterministic_and_run_frozen() -> None:

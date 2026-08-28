@@ -208,6 +208,8 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                     policy=self.configuration.processes,
                     output_policy=self.configuration.outputs,
                     shell_profiles=self.configuration.shell_profiles,
+                    provider_type=self.provider_type,
+                    environment_id=self.configuration.environment_id,
                     binding_id=binding_id,
                     binding_revision=binding_revision,
                     generation=generation,

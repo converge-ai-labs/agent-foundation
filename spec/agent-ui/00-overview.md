@@ -148,7 +148,7 @@ A Session pins one exact Agent snapshot, one exact Environment snapshot, and one
 - Thread commit revisions and complete checkpoint selection;
 - Environment assignments to Host resource records, whose shared operation fences and selected provider-state objects remain Host-owned;
 - foreground Turns and queued submissions;
-- async-subagent job, steering, waiting, result-retention, and parent-delivery records;
+- async-subagent job, steering, terminal result-retention, and parent-delivery records;
 - retained presentation sequence and Item/search projections;
 - fork lineage, title, archive, pin, ordering, and other local control metadata.
 
@@ -201,7 +201,7 @@ Input acceptance, provider operation, Harness start, Harness result, durable AG-
 
 ## Application Lifetime
 
-One process owns one application-service instance and one selected data-root lease. Startup opens and recovers storage, accepts a complete configuration generation, validates selected state and pending-deferred references, rebuilds required projections, marks prior-process active execution interrupted, and preserves validated waiting root Turns and async-child jobs before commands are accepted.
+One process owns one application-service instance and one selected data-root lease. Startup opens and recovers storage, accepts a complete configuration generation, validates selected state and root pending-deferred references, rebuilds required projections, marks prior-process active root Runs and async-child jobs interrupted, and preserves only validated waiting root Turns before commands are accepted.
 
 Only one foreground Turn advances one Thread at a time. Independent Sessions execute concurrently under configured limits. Model, plugin, Skill, provider, and executable caches are process-local and keyed by immutable revision content; they contain no Session authority.
 
@@ -269,7 +269,7 @@ Shared commands, lifecycle, and AG-UI prevent terminal and browser products from
 02. An Agent snapshot, an Environment snapshot, and validated root/child Skill exposure are independent immutable Session selections.
 03. Dynamic configuration reload publishes complete generations and never mutates active or pinned composition.
 04. SQLite owns mutable local metadata/control; compressed immutable files own snapshots, managed Skill packages, state/deferred payloads, provider-state payloads, and AG-UI events.
-05. `HarnessState` is the only Agent state authority; a waiting root Turn or async-child job also requires its exact pending `DeferredToolRequests`, and provider state, AG-UI, identifiers, SQLite Items, or telemetry can replace neither.
+05. `HarnessState` is the only Agent state authority; a waiting root Turn also requires its exact pending `DeferredToolRequests`, async-child jobs never own deferred requests, and provider state, AG-UI, identifiers, SQLite Items, or telemetry can replace neither.
 06. Every root and child invocation receives fresh model, credential, Environment, Identity, exact Skill selection, policy, and Host bindings.
 07. Agent UI uses only Host-owned async subagent jobs over Harness-built children and never enables Harness blocking inline delegation.
 08. TUI runs entirely in process; WebUI is a thin transport over the same application service.

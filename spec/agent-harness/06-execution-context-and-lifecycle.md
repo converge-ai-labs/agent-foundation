@@ -6,7 +6,7 @@ One Harness run is one process-local logical invocation of an `ExecutableAgent`.
 
 A logical Harness Run may contain several sequential `ModelAttempt` values when `ModelRecoveryPolicy` is enabled. A `ModelAttempt` is one Pydantic AI Agent-loop invocation used for bounded semantic recovery. These values are an internal recovery mechanism, not separate Harness runs, Foundation `ExecutionAttempt` values, plugin invocations, contexts, Environments, controller lifetimes, or usage ledgers. Each `ModelAttempt` receives a unique model-attempt ID passed through Pydantic AI's upstream `run_id` parameter, while the public Harness `run_id` remains stable. When [Harness Observation](19-observation-model.md) is enabled, the same invocation passes the State-owned Thread ID as Pydantic `conversation_id`; these fields correlate the native Agent-attempt span without changing lifecycle or provider affinity.
 
-Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval boundaries, output validation retries, messages, and provider-suspended continuation. The Harness owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
+Pydantic AI owns each inner Agent loop, model/tool execution, native deferred and approval values, output validation retries, messages, and provider-suspended continuation. Root invocations retain its native deferred boundary. For any child invocation, the Harness mandatory tool boundary resolves runtime deferral as denied tool results inside the same loop and reserves terminal deferred normalization as a fail-closed error. The Harness otherwise owns outer preparation, plugin middleware, bounded `ModelAttempt` coordination, terminal normalization, and cleanup.
 
 ## Boundary
 
@@ -51,11 +51,19 @@ The trusted caller may supply fresh bindings for a logical run; an embedded call
 11. binds fresh run plugin replacements and freezes `BoundPluginContext`;
 12. creates the outer plugin response.
 
-The same context and entered Environment aggregate are reused by every internal `ModelAttempt`. Current Identity, Environment facade, controller lifetime, plugins, Capability-state coordinator, model resolver, model-context binding, and metadata therefore remain stable across recovery. The Host can apply topology changes during input preparation, an active attempt, tool work, or recovery backoff; publication changes immutable routing snapshots without replacing the facade or context. `RunBindings.capabilities` are passed to every `ModelAttempt` and follow upstream per-run Capability binding semantics.
+The same context and entered Environment aggregate are reused by every internal `ModelAttempt`. Current Identity and its immutable string claims, Environment facade, controller lifetime, plugins, Capability-state coordinator, model resolver, model-context binding, and metadata therefore remain stable across recovery. Pydantic performs fresh Capability run binding for each internal attempt. `ContextualMCP` resolves its factory once and retains one active upstream MCP replacement on that logical-run `AgentContext`; later attempts reuse it, while another logical Harness run receives a fresh replacement. This creates fresh local transport and provider-native values before their first extraction without mutating the shared definition object or rerunning a potentially effectful factory during semantic recovery. The Host can apply topology changes during input preparation, an active attempt, tool work, or recovery backoff; publication changes immutable routing snapshots without replacing the facade or context. `RunBindings.capabilities` are passed to every `ModelAttempt` and follow upstream per-run Capability binding semantics.
 
 The logical Run receives one `run_id`, and each internal `ModelAttempt` receives a transient model-attempt ID, but they do not define the provider model session or prompt-cache scope. All attempts read the same State-owned `AgentContext.thread_id`. A later continuation creates a new Harness run and fresh bindings while restoring that ID from the selected State; a new root or child State and an explicit `HarnessState.fork()` use distinct IDs. No `RunBindings`, metadata, or invocation argument can override it. [Input, Model, and Output Boundaries](16-input-model-and-output.md#thread-affinity) owns the provider mapping contract.
 
 `RunBindings.embedded()` creates a process-local Agent instance and accepts an optional advanced Environment binding, model resolver, model-context middleware, Capabilities, and metadata. When no Environment is supplied through either route, run normalization creates a zero-binding no-operation aggregate. It does not create a model registry or hidden provider configuration.
+
+## Usage Limits and Native Retries
+
+Every logical Run passes one native Pydantic AI `UsageLimits` value to each internal `ModelAttempt`. When `ExecutableAgent.run(..., usage_limits=...)` or `stream(..., usage_limits=...)` receives an explicit value, that value exactly replaces the definition baseline for that invocation; fields are not merged. When the argument is omitted, a Harness `AgentSpec` supplies its definition-owned value, whose default is `UsageLimits(request_limit=1000)`. An accepted plain native Pydantic AI `AgentSpec` receives that same Harness default. The Harness makes a fresh copy for every Run, so concurrent invocations never share the mutable upstream value.
+
+A caller can author or invoke `UsageLimits(request_limit=None)` to disable the request-count ceiling while retaining any other explicitly selected fields. `None` as the run argument means “use the definition baseline,” not “disable limits.” Pydantic AI owns request, tool-call, token, and cost counting and raises `UsageLimitExceeded` at its native check boundary. The shared Run accumulator and child narrowing contract are defined by [Delegation and Subagents](11-delegation-and-subagents.md#child-usage-limits).
+
+Pydantic AI also owns the native `AgentSpec.retries` budgets. The upstream default is one function-tool retry and one output-validation retry; an authored integer or `AgentRetries` mapping changes those budgets. They remain independent of provider/client transport retry, one-shot exact-history repair, Harness `ModelRecoveryPolicy`, and Host durable retries. A retry still consumes and checks the same effective `UsageLimits`; exhaustion and `UsageLimitExceeded` are terminal for the current Harness recovery path rather than reasons to start another `ModelAttempt`.
 
 ## Logical Lifecycle
 
@@ -65,7 +73,7 @@ stateDiagram-v2
     created --> active: Environment entered, state restored, extensions entered, and controller activated
     active --> active: ModelAttempt or topology update
     active --> completed: validated output
-    active --> suspended: native deferred or approval boundary
+    active --> suspended: root native deferred or approval boundary
     active --> failed: handled terminal execution failure
     active --> cancelled: native or requested cancellation
     completed --> [*]
@@ -152,7 +160,7 @@ When the `ModelAttempt` budget is exhausted, the logical run returns `status="fa
 
 ## Native Deferred and Provider Continuation
 
-A Pydantic result whose output is `DeferredToolRequests` ends the logical run with:
+For a root invocation, a Pydantic result whose output is `DeferredToolRequests` ends the logical run with:
 
 - `status="suspended"`;
 - `suspend_reason="deferred"`;
@@ -160,6 +168,8 @@ A Pydantic result whose output is `DeferredToolRequests` ends the logical run wi
 - complete current `HarnessState` and usage.
 
 External calls and approval requests retain their upstream distinct maps. The Harness does not execute them, convert one kind into the other, or start another `ModelAttempt`.
+
+A child invocation never enters `suspended`. Declaratively deferred definitions are absent from its effective surface. Runtime deferred calls and approvals are completely resolved as `ToolDenied` values by the mandatory outer tool boundary so the same Pydantic loop can continue. If an unexpected bypass still returns terminal `DeferredToolRequests`, terminal normalization produces a failed result with `code="subagent_deferred_unsupported"` rather than a suspension.
 
 Provider-suspended continuation remains native Pydantic message behavior. The Harness preserves public message history and does not create a route-pin schema, duplicate provider job state, or reinterpret suspension as stream recovery. A later logical run receives fresh bindings and the Host-selected prior `HarnessState`; the selected model integration is responsible for any provider-specific ability to continue those public messages.
 

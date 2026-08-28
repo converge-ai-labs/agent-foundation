@@ -207,8 +207,6 @@ async def test_file_mutation_candidates_are_visible_without_shell_exec() -> None
                 DynamicEnvironmentConfiguration(
                     file_tools=True,
                     shell_tools=False,
-                    process_tools=False,
-                    port_tools=False,
                     max_reference_entries=64,
                 )
             ),
