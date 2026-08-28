@@ -153,7 +153,7 @@ class ShellToolset:
             return await handler()
 
     async def close(self) -> None:
-        """Cancel this Toolset's Turn-scoped process observation."""
+        """Cancel observation and finalize drained terminal processes."""
         if self._process_manager is not None:
             await self._process_manager.close()
 
@@ -240,7 +240,7 @@ class ShellToolset:
         cursor: _NonNegativeOffset = 0,
         limit: _PositiveResults = 100,
     ) -> ProcessStatusListResult:
-        """Inspect one bounded page of this run's background processes."""
+        """Inspect one metadata-only bounded page of managed Thread processes."""
         try:
             projected = await self._require_process_manager().status(cursor=cursor, limit=limit)
             processes = projected["processes"]

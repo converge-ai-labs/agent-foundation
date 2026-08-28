@@ -286,7 +286,9 @@ def _local_binding(root: Path, *, process_output: bool = False):
             environment_id="dynamic-environment-test",
             root=DirectLocalRootConfiguration(path=root),
             shell_profiles=(
-                (DirectLocalShellProfile(profile_id="default", executable=Path("/bin/sh")),) if process_output else ()
+                (DirectLocalShellProfile(profile_id="default", executable=Path("/bin/sh")),)
+                if process_output and sys.platform != "win32"
+                else ()
             ),
             allowed_executables=(frozenset({_PROCESS_EXECUTABLE}) if process_output else frozenset()),
         )
@@ -2339,6 +2341,8 @@ async def test_background_process_input_status_signal_and_kill(tmp_path: Path) -
             status = await toolset.shell_status(ctx)
             assert status["ok"] is True
             assert status["processes"][0]["process_id"] == process_id
+            assert "stdout" not in status["processes"][0]
+            assert "stderr" not in status["processes"][0]
             accepted = await toolset.shell_input(ctx, process_id, "hello", close_stdin=True)
             assert accepted == {"ok": True, "accepted_bytes": 5, "stdin_open": False}
             waited = await toolset.shell_wait(ctx, process_id, timeout_seconds=5)

@@ -240,6 +240,14 @@ The shell Toolset has one compact six-tool surface:
 | `shell_signal` | Sends the portable `interrupt` or `terminate` signal                                                |
 | `shell_kill`   | Forces process-tree termination, waits boundedly for cleanup, and drains the next final output page |
 
+The shell surface is deliberately context-safe:
+
+- `shell_status` is metadata-only: each item contains compact identity, status, stdin state, and stdout/stderr produced-byte counts, never stream contents;
+- status uses `cursor` and `limit`, then applies the shared serialized-result bound; if even the requested page is too large, it returns a smaller bounded prefix and tells the Agent to retry from the same cursor with a smaller limit;
+- `shell_wait` and `shell_kill` are the only background tools that drain output, and each call returns one bounded incremental page from independent stdout/stderr offsets;
+- foreground overflow can use the shared spill disclosure, while retained background output stays in the provider and is pulled repeatedly instead of being copied into another file;
+- completion enqueue and `ProcessEventHook` values carry status hints only and never inject stdout or stderr into model context.
+
 A background start returns an opaque `process-N` ID. The Harness stores its portable mapping and independent next-unread stdout/stderr offsets in `AgentContextState`, so the same reference can survive a compatible continuation of the same Thread. Output reads advance offsets only after bytes are delivered to the model; `shell_status` never consumes output. Once a terminal process is tree-cleaned and all retained bytes are delivered, the Harness returns the final output page first, then releases provider resources during the next non-output reconciliation or Toolset close and removes the mapping. This avoids losing a delivered-offset page to cancellation during cleanup; the compact ID then becomes invalid and its suffix is never reused.
 
 `background=True` is available only through the selected Environment provider's real process operations. Portable state stores the exact `(provider_type, environment_id, generation, provider process ID)` plus observations; it stores no live handle, callback, provider cursor, output reference, credential, or authority. A fresh manager lazily rebinds only that exact identity through the current Environment. It never follows an alias, default binding, saved routing hint, or ambient process list. If the matching Environment is not attached, the reference remains unavailable and is preserved. A generation change or an authoritative not-found response for the matching Environment becomes `backend_lost`.
