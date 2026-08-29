@@ -235,13 +235,13 @@ class StoredAguiEvent(BaseModel):
 
 `presentation_sequence` is monotonic within one Session across root and exposed child streams. `stream` preserves root/child correlation without deriving authority from presentation identity. Segments cover contiguous non-overlapping ranges and link to the prior retained segment digest. The chain detects gaps and wrong ordering; it is an integrity structure, not a tamper-proof audit log.
 
-The application service accumulates bounded event batches, serializes each batch into an immutable compressed segment, publishes the file, and then registers its range in a short SQLite transaction. Only after registration succeeds does it fan those stored events out to process-local live subscribers. The delivery record identifies durable replay versus live-after-registration origin; either origin carries the same `event_id` and `presentation_sequence`, and neither strengthens Turn or checkpoint completion.
+The Host accumulates bounded event batches, serializes each batch into an immutable compressed segment, publishes the file, and then registers its range in a short SQLite transaction. Only after registration succeeds does it fan those stored events out to process-local live subscribers. The delivery record identifies durable replay versus live-after-registration origin; either origin carries the same `event_id` and `presentation_sequence`, and neither strengthens Turn or checkpoint completion.
 
 A subscription installs its bounded live queue and captures the current durable Session watermark under the same per-Session append lock. The caller first performs a finite replay through that watermark and then consumes live deliveries, so an append cannot fall between replay selection and live registration. Queue overflow or subscription closure terminates that live path rather than silently dropping an interior event; the client resumes finite replay after its last received sequence.
 
 At a terminal Harness result, the coordinator observes the terminal public item and attempts to publish and register its terminal AG-UI batch before publishing the durable terminal Session projection. Event-segment registration and checkpoint selection use independent short SQLite transactions; neither waits inside the other, and no cross-store transaction is claimed. If event publication or registration fails while checkpoint selection succeeds, execution continuation remains valid, the presentation failure remains explicit, and startup recovery indexes a verified directly appendable segment or reports the missing history. It never rolls back or invents the terminal checkpoint from presentation state.
 
-AG-UI files are presentation history, not `HarnessState`, a provider operation journal, OpenTelemetry, or an authorization log. They can reconstruct WebUI/TUI Items and protocol inspection, but cannot resume a pending tool call, recreate an async-subagent task, restore Environment authority, or prove absence of an external side effect.
+AG-UI files are presentation history, not `HarnessState`, a provider operation journal, OpenTelemetry, or an authorization log. They can reconstruct WebUI/CLI Items and protocol inspection, but cannot resume a pending tool call, recreate an async-subagent task, restore Environment authority, or prove absence of an external side effect.
 
 ## Projection and Query
 
@@ -262,7 +262,7 @@ The projector never writes a new checkpoint, changes a Turn outcome, delivers an
 
 Configuration files are readable desired state. Immutable object files are machine-oriented but intentionally use canonical JSON or JSON Lines before standard Zstandard compression, stable envelopes, compact identifiers, and documented codecs. Local tools and Agents with separately authorized filesystem access can inspect them using ordinary decompression and JSON tooling; no SQLite-internal binary encoding is required for large state or event payloads.
 
-This inspectability grants no application command authority. Directly editing an immutable object or SQLite file is corruption, not a supported mutation API. Product mutations flow through configuration reload or the application service.
+This inspectability grants no Host command authority. Directly editing an immutable object or SQLite file is corruption, not a supported mutation API. Product mutations flow through configuration reload or `AgentUiHost`.
 
 ## Recovery
 
@@ -299,7 +299,7 @@ The database and its WAL/SHM sidecars are quarantined together when corruption r
 
 ## Concurrency and Leases
 
-One application-service process owns write coordination for a selected data root. A store lease records an unguessable process generation and heartbeat in SQLite, with platform process-liveness evidence where available. A second WebUI or TUI process either attaches through an explicitly supported local client path or reports the active owner; it does not start another writer silently.
+One stable `AgentUiHost` process owns write coordination for a selected data root. A store lease records an unguessable process generation and heartbeat in SQLite, with platform process-liveness evidence where available. A second CLI or WebUI process either attaches through an explicitly supported local client path or reports the active owner; it does not start another writer silently. Replaceable runtime Runners do not acquire this lease and can overlap during restart.
 
 Within the application process, one Thread has at most one advancing foreground Turn. Expected Thread revisions are verified in SQLite before dispatch and at terminal selection. Independent Sessions can run concurrently subject to Host limits. Filesystem publication can occur concurrently for distinct digests, while SQLite transactions remain short and retry bounded busy conflicts.
 

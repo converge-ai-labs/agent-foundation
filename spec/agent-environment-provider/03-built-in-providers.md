@@ -190,33 +190,197 @@ A missing executable, release mismatch, failed isolation probe, daemon startup/r
 
 ### Configuration
 
-The Docker provider accepts a bounded versioned configuration including:
+`a13n.docker` schema version `1` manages one container on a local Docker Engine and uses authenticated Host-dialed HTTP EIP. It defaults to the repository's stable sandbox `latest` image and can pull the selected image through the Host-configured Docker client before resolving one immutable image ID for container creation. It never builds or mutates an image.
 
-- an exact image reference selected by the Host;
-- the container's logical Environment identity;
-- explicit workspace mounts and read-only flags;
-- finite CPU, memory, process, and lifetime limits supported by the selected Docker deployment;
-- an `agent-envd` bootstrap profile and compatible EIP requirement;
-- either private stdio or Host-dialed HTTP as the EIP session-source profile;
-- explicit cleanup behavior for provider-created writable volumes when the Host selects destroy.
+The exact conceptual public schema is:
 
-The provider does not accept arbitrary Docker API objects, callbacks, socket paths from model input, or a second command-execution configuration. A Host can expose a narrower authoring schema while still resolving to this typed configuration.
+```python
+class DockerImagePullPolicy(StrEnum):
+    IF_MISSING = "if_missing"
+    ALWAYS = "always"
+    NEVER = "never"
 
-### Provider behavior
 
-The Docker Provider uses the Docker SDK for Python. Blocking SDK calls run through `anyio.to_thread.run_sync` or an equivalent bounded worker-thread boundary.
+class DockerBindMountSource(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-`create()` creates and starts one container whose image includes compatible `agent-envd` bootstrap. Before possible visibility loss, it applies bounded labels for the Host operation ID, resource correlation, and provider/configuration fingerprint. `resume()` inspects the exact container ID from provider resource state and starts it when stopped or reconnects when already running. A missing container fails rather than creating another one. Resource entry establishes fresh EIP routing and validates the selected daemon through a provider-owned initialize/readiness/close Session before attachment issuance; every attachment later establishes its own fresh readiness-confirmed Session.
+    kind: Literal["bind"] = "bind"
+    path: Path
 
-Docker advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only. Each successful create receives an independent container ID and destroy target. `pause(mode=FILESYSTEM)` stops the container after closing the active attachment; the writable container filesystem or selected volumes remain, but process memory and `agent-envd` generation do not. Resume starts a fresh daemon generation and issues a fresh EIP attachment. `FULL` is unsupported rather than being mapped to Docker's process-freeze operation, because a frozen container is not a portable retained sandbox lifecycle.
 
-`destroy()` stops and removes the exact container identified by validated provider state and applies the configured cleanup behavior only to provider-created writable volumes. Host-mounted paths and externally supplied volumes are never inferred as destroy targets. A not-found response is successful absence only after the Docker daemon authoritatively reports it.
+class DockerVolumeMountSource(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
-Docker reconciliation performs an exact label/ID inspection scoped to the operation and resource correlation. One matching running or stopped container yields validated `RUNNING` or `PAUSED` state as appropriate; authoritative zero matches yields `ABSENT`; ambiguous duplicates, inaccessible daemon state, or mismatched operation/resource/configuration correlation yields `UNKNOWN`. Reconciliation never starts, stops, or removes the container.
+    kind: Literal["volume"] = "volume"
+    name: str
 
-For stdio, the Provider owns private daemon pipes. For HTTP, it publishes the dedicated EIP port only to loopback or an explicitly trusted private provider link and supplies mandatory EIP bootstrap authentication. Docker port routing does not itself grant Environment authority.
 
-The Docker SDK is used only for container lifecycle, inspection, and envd bootstrap plumbing. Harness operations never fall back to Docker exec, archive, copy, logs, or filesystem APIs.
+DockerMountSource = Annotated[
+    DockerBindMountSource | DockerVolumeMountSource,
+    Field(discriminator="kind"),
+]
+
+
+class DockerMountConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    mount_id: str
+    container_path: PurePosixPath
+    source: DockerMountSource | None = None
+    read_only: bool = False
+    allow_command_execution: bool = True
+
+
+class DockerShellProfile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    profile_id: str
+    executable: PurePosixPath
+    fixed_arguments: tuple[str, ...] = ()
+    allow_login: bool = False
+    max_script_bytes: int = 1024 * 1024
+
+
+class DockerProviderConfiguration(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    environment_id: str
+    image: str = "ghcr.io/converge-ai-labs/agent-foundation-sandbox:latest"
+    pull_policy: DockerImagePullPolicy = DockerImagePullPolicy.IF_MISSING
+    root_mount_id: str = "workspace"
+    mounts: tuple[DockerMountConfiguration, ...] = (
+        DockerMountConfiguration(
+            mount_id="workspace",
+            container_path=PurePosixPath("/workspace"),
+        ),
+    )
+    trusted_executable_roots: tuple[PurePosixPath, ...] = ()
+    shell_profiles: tuple[DockerShellProfile, ...] = (
+        DockerShellProfile(
+            profile_id="bash",
+            executable=PurePosixPath("/bin/bash"),
+            fixed_arguments=("-c",),
+        ),
+    )
+    nano_cpus: int | None = None
+    memory_bytes: int | None = None
+    pids_limit: int | None = None
+    stop_grace_seconds: int = 10
+    max_file_bytes: int = 16 * 1024 * 1024
+    max_output_preview_bytes: int = 64 * 1024
+    max_output_bytes_per_stream: int = 1024 * 1024 * 1024
+    max_spool_bytes: int = 64 * 1024 * 1024 * 1024
+```
+
+With only `environment_id`, the default configuration starts the repository sandbox image, exposes its writable `/workspace` as the root virtual mount, and enables its fixed Bash profile. A mount with `source=None` exposes an existing image path backed by the container writable layer. A bind source is an existing absolute Host path. A volume source names one existing external Docker volume. Schema version 1 never creates or owns a named volume. `mount_id` values and container paths are unique, `root_mount_id` identifies exactly one configured mount, and every container path, trusted executable root, and shell executable is an absolute normalized POSIX path that neither contains nor is contained by the fixed `/run/a13n` bootstrap tree or `/home/sandbox/.local/state/agent-envd` runtime tree. Bind sources are absolute after user expansion. Identities, image references, volume names, paths, and fixed arguments are bounded and contain no control character or NUL. Byte and resource limits are positive when present; the output preview fits one daemon response and the spool ceiling can retain both output streams.
+
+The Provider maps the mount, shell, and byte-limit values to one strict envd configuration. Mount IDs and container paths form the virtual Environment namespace presented through EIP; Host bind paths and Docker volume identities are lifecycle inputs and never become model-facing paths. Every mount permits `stat`, `read_text`, `open_reader`, `list`, `find`, and `search`; a writable mount additionally permits `write_text`, `open_writer`, `remove`, and `move`; a command-enabled mount additionally permits `command_cwd` and `executable_source`. As with Local Envd, schema version 1 does not enable `mkdir`, `patch_text`, or `copy` and does not expose an arbitrary envd operation list. Harness file operations always use this EIP virtual filesystem and never Docker copy or archive APIs.
+
+Docker v1 uses the Engine's ordinary bridge network. The Provider publishes one fixed container EIP port to a Docker-assigned Host port bound only to `127.0.0.1`. It accepts no transport selector, remote-Engine endpoint, private-link route, Docker network mode, arbitrary port publication, container command, entrypoint, environment mapping, user, privileged mode, capability, device, Docker socket, label, raw Docker mount object, or provider-created volume policy. The image runs envd and payload processes under its fixed unprivileged identity. The Host-supplied bootstrap store chooses filesystem ownership and permissions appropriate for that local deployment; the Provider requires only that the fixed container identity can read the mounted bootstrap files and never exposes those files through the EIP mount namespace.
+
+`nano_cpus`, `memory_bytes`, and `pids_limit` are optional Docker-native ceilings. Resource lifetime remains Host lifecycle policy because an ordinary Docker container has no portable durable TTL contract; the Provider owns no expiry scheduler. `stop_grace_seconds` bounds an ordinary graceful stop but is not an execution or Harness operation timeout.
+
+### Runtime and bootstrap boundary
+
+A fresh typed `DockerProviderRuntime` supplies two process-local collaborators:
+
+```python
+@dataclass(frozen=True, slots=True)
+class DockerProviderRuntime(EnvironmentProviderRuntime):
+    engine: DockerEngine
+    bootstrap_store: DockerBootstrapStore
+```
+
+`DockerEngine` is the package-owned typed async boundary for local-topology validation, local image inspection, image pull, image resolution, container create/start/inspect/stop/remove, exact label queries, and Host-loopback route inspection. The main implementation wraps the Docker SDK for Python. Registry credentials, credential helpers, mirrors, proxies, and daemon policy remain ordinary Host Docker-client configuration. The package root exports the runtime and bootstrap-store contracts, not Docker SDK models or an unscoped client escape hatch. Construction is inert. Every blocking SDK call runs off the event loop through a bounded worker-thread boundary and uses finite client timeouts.
+
+The runtime must prove that its Engine is local and that a `127.0.0.1` published port is reachable from the Provider process. An unprovable or remote topology fails before image resolution, bootstrap allocation, or container dispatch. Supporting remote Engines or another trusted route requires another explicit runtime topology contract.
+
+`DockerBootstrapStore` owns protected Host-local material needed to start and reconnect to one container. The Provider derives the bootstrap correlation as `bootstrap-` plus the first 24 lowercase hexadecimal characters of SHA-256 over the UTF-8 create operation ID. The same logical create retry therefore selects the same allocation without making the correlation a credential.
+
+The store supports four bounded async operations:
+
+- `create(correlation, material)` publishes one new complete allocation and returns the existing allocation only when its complete identity and material digest match exactly;
+- `recover(correlation)` returns that exact complete allocation or authoritative absence;
+- `replace(correlation, material)` validates every immutable material field and atomically replaces the current credential for a stopped container while preserving the correlation;
+- `remove(correlation)` removes that exact allocation and treats authoritative prior absence as success.
+
+Bootstrap material contains the Environment identity, configuration fingerprint, complete strict envd configuration, and current HTTP Bearer credential. A process-local returned allocation additionally contains its bounded non-secret correlation and one absolute Host directory accepted as a local-Engine bind source. Store failures never become absence, and conflicting reuse of a correlation fails without modifying the existing allocation.
+
+Creation publishes one complete allocation atomically. Environment identity, configuration fingerprint, and envd configuration are immutable for that allocation, so stopped-container replacement has one mutable commit point: an atomic credential-file swap followed by complete-material verification. The directory is mounted read-only at `/run/a13n/bootstrap`; the image's fixed non-root envd command reads the configuration and credential from fixed paths in that mount and writes generation state only beneath its image-owned runtime directory. The credential never enters provider configuration, provider state, Docker labels, endpoint URLs, logs, traces, or model-visible values. The Host decides whether its local bootstrap store needs process-private permissions, encryption, or only ordinary application-data protection. A store intended for durable Resource reuse retains allocations across Provider process replacement; an ephemeral Host can supply a temporary store with the same contract.
+
+The Provider uses no Docker archive, copy, exec, logs, or filesystem API for bootstrap, repair, readiness, or Harness operations. Missing or incompatible bootstrap evidence never triggers credential rotation or container replacement while a container is running.
+
+### Resource state and identity
+
+Docker state uses `state_version="1"` with this exact provider-owned codec:
+
+```python
+class DockerResourcePhase(StrEnum):
+    RUNNING = "running"
+    PAUSED = "paused"
+
+
+class DockerProviderStateData(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    environment_id: str
+    resource_correlation: str
+    container_id: str
+    image_id: str
+    bootstrap_correlation: str
+    configuration_fingerprint: str
+    create_operation_id: str
+    phase: DockerResourcePhase
+```
+
+The fingerprint covers the normalized schema-version-1 configuration. `container_id` and `image_id` are immutable identities returned by the local Engine, not user references. State contains no endpoint, Host port, bind-source path, credential, Docker client, container object, daemon generation, EIP descriptor, or Session.
+
+Before container creation, the Provider applies these exact bounded labels:
+
+| Label                                | Value                              |
+| ------------------------------------ | ---------------------------------- |
+| `io.a13n.environment-provider`       | `a13n.docker`                      |
+| `io.a13n.environment-provider.state` | `1`                                |
+| `io.a13n.environment-id`             | configured Environment identity    |
+| `io.a13n.resource-correlation`       | Host resource correlation          |
+| `io.a13n.bootstrap-correlation`      | Host bootstrap allocation identity |
+| `io.a13n.configuration-fingerprint`  | normalized configuration digest    |
+| `io.a13n.create-operation-id`        | exact create operation identity    |
+
+The Provider validates container ID, resolved image ID, every label, fixed command and bootstrap mount, resource limits, configured mounts, non-root launch contract, EIP port publication, and bootstrap-store correlation before treating an inspection as its resource. An ID match with incompatible metadata is a conflict, never authority to adopt, start, stop, or remove the container.
+
+### Lifecycle and attachments
+
+Docker advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurrency=SINGLE`, and filesystem pause only.
+
+`create()` validates local topology and mount sources, applies the configured image pull policy, and resolves the selected image to its immutable ID. `IF_MISSING` uses a compatible local image and pulls only after authoritative local absence; `ALWAYS` pulls before resolution; `NEVER` requires a compatible local image. Pull failure occurs before bootstrap or container dispatch and does not require provider-resource reconciliation, even if Docker retains partial image-cache state. The Provider then creates complete bootstrap material and dispatches exactly one labeled container create with all fixed configuration, limits, mounts, the read-only bootstrap mount, and the loopback-only EIP publication present atomically. It starts that exact container and confirms compatible running inspection before returning a pre-entry Resource. It does not open EIP during `create()`. A known failure before container dispatch removes the just-created bootstrap allocation; a failure after create or start may have reached Docker has unknown outcome unless exact follow-up inspection proves a result. A compatible container in Docker's created or exited state is a filesystem-preserved `PAUSED` resource rather than absence; exact create reconciliation can return it for resume.
+
+`resume()` requires valid state for the exact configuration and resource correlation. For a compatible running container it recovers the matching bootstrap allocation and returns a Resource without restarting the container or changing the credential. For a compatible stopped container it atomically replaces the credential under the same bootstrap correlation while preserving exact immutable bootstrap material, starts that exact container, confirms running state, and returns a Resource with `phase=RUNNING`. The new process has a fresh envd generation. Missing state, container, image identity, bootstrap evidence, or compatible metadata fails; resume never creates a replacement container.
+
+Resource entry re-inspects the exact running container, recovers its credential, and resolves only the `127.0.0.1` EIP route from authoritative port inspection. It opens one provider-owned HTTP Session, completes initialization and mandatory readiness under finite deadlines, cleanly closes that Session, and only then admits attachments. Entry failure or a later route, credential, initialization, readiness, or close failure makes that Resource entry unavailable without restarting or replacing the container and without rewriting outer lifecycle state.
+
+Each `acquire_attachment()` returns one fresh single-use `EIPEnvironmentAttachment` with a fresh `HttpEIPSessionSource` for the same running daemon generation. Only one attachment scope can be active. Attachment initialization performs mandatory readiness before the Harness publishes a binding. Resource exit fences admission and requires attachment release but does not stop, pause, destroy, or restart the container.
+
+`pause(mode=FILESYSTEM)` requires the matching entered Resource after attachment release, fences admission, stops only the exact validated container using the configured grace period, confirms stopped inspection, and returns state with `phase=PAUSED`. Its writable layer and external mounts remain. `FULL` and Docker process freeze are unsupported.
+
+`destroy()` runs only after Resource exit. It validates state and current inspection before stopping when necessary and removing only the exact container ID. It never removes bind sources or external named volumes. After authoritative container absence, it removes the exact bootstrap allocation. Container absence with bootstrap cleanup failure is a cleanup failure rather than completed destroy. Repeating destroy is successful only when authoritative inspection and bootstrap-store evidence both prove absence.
+
+### Reconciliation and outcome certainty
+
+Docker reconciliation is bounded, read-only, and action-aware. It inspects the exact container ID from valid state when available and queries the exact provider/resource/create-operation labels needed to recover an uncertain create. It never starts, stops, removes, creates, or repairs a container and never creates, replaces, or removes bootstrap material.
+
+| Evidence                                                                                                  | Result                                 |
+| --------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| One exact compatible running container and complete matching bootstrap allocation                         | `RUNNING` with validated current state |
+| One exact compatible created or exited container and complete matching bootstrap allocation               | `PAUSED` with validated current state  |
+| No matching container and no matching bootstrap allocation                                                | `ABSENT`                               |
+| Create reconciliation finds no matching container and one complete matching reusable bootstrap allocation | `ABSENT`                               |
+| Non-create reconciliation finds container absence while matching bootstrap material remains               | `UNKNOWN`                              |
+| Container present while bootstrap material is missing, stale, inaccessible, or mismatched                 | `UNKNOWN`                              |
+| Container is removing, dead, or otherwise not authoritatively running or filesystem-preserved             | `UNKNOWN`                              |
+| Duplicate label matches, ID/label/image/configuration mismatch, or inaccessible Engine or bootstrap store | `UNKNOWN`                              |
+
+Create reconciliation uses the create operation ID and resource correlation because no returned state may exist. When authoritative Engine inspection proves that no matching container exists, one complete matching bootstrap allocation is reusable only by the same create operation and therefore does not prevent `ABSENT` or one same-operation create retry. Resume, pause, and destroy reconciliation require valid last-known state and preserve its exact container identity. A destroy operation reaches `ABSENT` only when both the container and bootstrap allocation are authoritatively absent. A timeout or cancellation before an SDK effect is dispatched is `NOT_DISPATCHED`; interruption after create, start, stop, or remove may have been dispatched is `UNKNOWN` and requires exact reconciliation before retry. Read-only inspection failures do not turn unknown evidence into absence.
 
 ## E2B
 

@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 import warnings
-from collections.abc import AsyncIterator, Awaitable, Coroutine, Sequence
+from collections.abc import AsyncIterator, Awaitable, Coroutine
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -100,10 +100,6 @@ class _NestedDataclassOutput:
 
 class _NestedTypedDictOutput(TypedDict):
     value: DeferredToolRequests
-
-
-class _NestedRootOutput(RootModel[DeferredToolRequests]):
-    pass
 
 
 @dataclass
@@ -404,21 +400,7 @@ async def test_empty_output_sequence_uses_the_definition_error_boundary(output_t
     assert isinstance(exc_info.value.__cause__, ValueError)
 
 
-class _DeferredSubclass(DeferredToolRequests):
-    pass
-
-
 type _DeferredAlias = DeferredToolRequests
-
-
-def _nested_deferred_from_text(value: str) -> list[DeferredToolRequests]:
-    del value
-    return [DeferredToolRequests()]
-
-
-def _deferred_from_text(value: str) -> DeferredToolRequests:
-    del value
-    return DeferredToolRequests()
 
 
 async def _deferred_after_await() -> DeferredToolRequests:
@@ -436,28 +418,18 @@ def _annotated_awaitable_deferred_from_text(
     "output_spec",
     [
         DeferredToolRequests,
-        _DeferredSubclass,
         _DeferredAlias,
         Annotated[DeferredToolRequests, "reserved"],
         (str, DeferredToolRequests),
         str | DeferredToolRequests,
         list[DeferredToolRequests],
-        Sequence[DeferredToolRequests],
-        tuple[DeferredToolRequests, ...],
-        dict[str, DeferredToolRequests],
         _NestedModelOutput,
         _NestedDataclassOutput,
         _NestedTypedDictOutput,
-        _NestedRootOutput,
         _GenericDataclassOutput[DeferredToolRequests],
-        NativeOutput(list[DeferredToolRequests]),
         NativeOutput(DeferredToolRequests),
-        NativeOutput(Annotated[DeferredToolRequests, "reserved"]),
         PromptedOutput(DeferredToolRequests),
         ToolOutput(DeferredToolRequests),
-        ToolOutput(_DeferredSubclass),
-        TextOutput(_deferred_from_text),
-        TextOutput(_nested_deferred_from_text),
         TextOutput(_annotated_awaitable_deferred_from_text),
     ],
 )

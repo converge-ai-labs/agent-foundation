@@ -142,7 +142,7 @@ A plugin can contribute Capabilities through the Harness lifecycle, but Agent UI
 
 ## Model Reconstruction
 
-The resolved Model revision contributes a logical model ID to `AgentSpec`. Agent UI validates and locks Model adapter provenance, but it does not infer credentials or construct a native Model from ambient process state. The embedding Host supplies one `RunModelResolverFactory` when it opens the application service. For every root or child Harness Run, Agent UI calls that factory with the exact pinned Agent snapshot and requires a fresh callable Harness `RunModelResolver`.
+The resolved Model revision contributes a logical model ID to `AgentSpec`. Agent UI validates and locks Model adapter provenance, but it does not infer credentials or construct a native Model from ambient process state. For every root or child Harness Run, the selected runtime Runner receives the exact pinned Agent snapshot and fresh current credential authority, then constructs a fresh callable Harness `RunModelResolver` before dispatch.
 
 The returned resolver receives the ordinary Harness run context and logical model ID. Within that invocation scope, the Host collaborator:
 

@@ -1,25 +1,34 @@
 # Agent UI
 
-`a13n-ui` is the local single-user Host for Agent Foundation Harness. Its accepted interface selects WebUI by default and also exposes a TUI:
+`a13n-ui` is the local single-user Host for Agent Foundation Harness. Its current executable path is an interactive Codex-style CLI with one-shot runtime commands:
 
 ```console
 a13n-ui
-a13n-ui webui
-a13n-ui tui
+a13n-ui runtime status
 ```
 
-Both surfaces share one application service, local session authority, Harness execution path, and `a13n-stream-protocol` AG-UI projection.
+The CLI opens one stable `AgentUiHost` with local Session authority and runtime Runner supervision. Restart starts a fresh Runner, validates and promotes it, then drains the previous Runner without restarting the Host or terminal frontend. The bundled WebUI remains a peer surface in the accepted architecture, but its product interaction design is not coupled to this CLI foundation.
 
-The repository Make aliases preserve the same default and surface selection:
+The repository Make alias starts the interactive CLI:
 
 ```console
 make agent-ui
-make agent-ui tui
 ```
 
-`make agent-ui` invokes the package-provided `a13n-ui` command with no positional surface, selecting its default WebUI. Appending the `tui` goal forwards that positional argument and invokes `a13n-ui tui` exactly once. Asset preparation remains an independent build concern.
+Asset preparation remains an independent build concern.
 
 The repository directory is `packages/agent-ui`, the Python distribution is `a13n-ui`, and the import package is `a13n_ui`. The private browser source lives in [`apps/harness-ui`](../../apps/harness-ui/README.md).
+
+## YAML Configuration
+
+Agent UI selects one full process-settings YAML from explicit `--config PATH` or `~/.a13n-ui/settings.yaml`. It does not merge profiles, scan the current project, or apply implicit environment overlays. When the default file is absent, built-in defaults select:
+
+```text
+~/.a13n-ui/data
+~/.a13n-ui/definitions/{models,prompts,plugins,skill-sources,skills,agents,environments}
+```
+
+Model, Prompt, Agent, Environment, and other product definitions remain separate strict YAML/JSON files under the configured definition roots. SQLite indexes accepted generations but is not configuration authority.
 
 ## Local Store Development
 

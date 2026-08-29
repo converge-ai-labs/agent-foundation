@@ -51,6 +51,7 @@ version = "0.0.0"
 source = { editable = "packages/agent-environment-provider" }
 dependencies = [
     { name = "a13n-envd-client" },
+    { name = "docker" },
     { name = "pydantic" },
     { name = "websockets" },
 ]
@@ -63,6 +64,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/agent-envd-client" },
+    { name = "docker", specifier = ">=7.2,<8" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "websockets", specifier = ">=15,<16" },
 ]

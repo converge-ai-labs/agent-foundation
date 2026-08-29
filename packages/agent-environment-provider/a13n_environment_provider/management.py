@@ -237,7 +237,10 @@ class EnvironmentProvider(ABC):
                     raise
                 reconciled = await self.reconcile(current, last_known_state=None)
                 _require_reconciliation_identity(current, reconciled)
-                if reconciled.phase is EnvironmentReconciliationPhase.RUNNING:
+                if reconciled.phase in {
+                    EnvironmentReconciliationPhase.RUNNING,
+                    EnvironmentReconciliationPhase.PAUSED,
+                }:
                     assert reconciled.state is not None
                     return await self._resume_ephemeral_resource(
                         reconciled.state,

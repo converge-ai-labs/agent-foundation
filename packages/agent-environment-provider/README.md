@@ -10,7 +10,7 @@ The package owns:
 - sensitive provider-owned `EnvironmentProviderResourceState` envelopes;
 - single-entry `EnvironmentResource` scopes and fresh runtime attachments;
 - typed provider errors with bounded safe projections;
-- the working `a13n.direct-local` and `a13n.local-envd` built-ins;
+- the working `a13n.direct-local`, `a13n.local-envd`, and `a13n.docker` built-ins;
 - EIP attachment and reusable stdio-carrier values that publish only initialization- and readiness-confirmed Sessions and are shared with managed sandbox providers.
 
 The source type passed to Agent Harness defines ownership:
@@ -27,7 +27,32 @@ async with resource:
 
 The package does not own durable storage, Host authorization or scheduling, Harness runs, model-facing tools, or provider-neutral Environment operations. A Host explicitly manages reusable resources and persists current provider state. The Harness owns a Provider input only through the bounded ephemeral lifecycle.
 
-Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd launches one compatible Host-selected `agent-envd` process per entered Resource, validates startup through a provider-owned short-lived EIP readiness Session, and then uses readiness-confirmed sequential EIP Sessions over its private reusable stdio carrier. It uses no filesystem readiness marker or separate health probe. Docker and E2B remain deferred to their planned provider phases. The catalog contains no placeholder factories or fallback provider selection.
+Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd launches one compatible Host-selected `agent-envd` process per entered Resource, validates startup through a provider-owned short-lived EIP readiness Session, and then uses readiness-confirmed sequential EIP Sessions over its private reusable stdio carrier. Docker manages one local container running the repository sandbox image and publishes only authenticated EIP attachments; it never uses Docker exec, archive, copy, or logs for Harness operations. E2B remains deferred to its planned provider phase. The catalog contains no placeholder factories or fallback provider selection.
+
+## Docker development
+
+The default Docker configuration needs only an Environment ID. It uses `ghcr.io/converge-ai-labs/agent-foundation-sandbox:latest`, pulls when the image is missing, exposes the container-backed `/workspace` virtual mount, and enables Bash. Hosts supply a local Engine adapter and a bootstrap store rooted at a Host-selected directory:
+
+```python
+from pathlib import Path
+
+from a13n_environment_provider import (
+    DirectoryDockerBootstrapStore,
+    DockerProviderRuntime,
+    DockerSDKEngine,
+)
+
+runtime = DockerProviderRuntime(
+    engine=DockerSDKEngine.from_env(),
+    bootstrap_store=DirectoryDockerBootstrapStore(Path("/var/lib/my-host/docker-bootstrap")),
+)
+```
+
+The Engine client uses ordinary Host Docker authentication, credential-helper, mirror, and proxy configuration. Bind mounts and existing named volumes are optional Host overrides; named volumes remain externally owned. Run the focused real-image lifecycle test with:
+
+```bash
+make docker-provider-test
+```
 
 ## Local Envd development
 

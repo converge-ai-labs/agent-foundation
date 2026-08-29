@@ -262,13 +262,19 @@ async def test_ephemeral_retries_absent_uncertain_create_with_same_operation_ide
     assert provider.reconcile_operations == [first]
 
 
-async def test_ephemeral_resumes_resource_found_by_create_reconciliation() -> None:
+@pytest.mark.parametrize(
+    "phase",
+    [EnvironmentReconciliationPhase.RUNNING, EnvironmentReconciliationPhase.PAUSED],
+)
+async def test_ephemeral_resumes_resource_found_by_create_reconciliation(
+    phase: EnvironmentReconciliationPhase,
+) -> None:
     provider = _Provider(create_outcomes=["unknown"])
 
     original_create = provider.create
 
     async def create(*, operation: EnvironmentOperationContext) -> EnvironmentResource:
-        provider.reconciliation.append(_result(operation.operation_id, EnvironmentReconciliationPhase.RUNNING))
+        provider.reconciliation.append(_result(operation.operation_id, phase))
         return await original_create(operation=operation)
 
     provider.create = create  # type: ignore[method-assign]

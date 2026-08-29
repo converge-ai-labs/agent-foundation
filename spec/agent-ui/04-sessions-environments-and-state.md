@@ -270,7 +270,7 @@ Before a Run, Agent UI makes every required binding available:
 6. adapt and supply all attachments as one complete Harness Environment topology in fresh `RunBindings`;
 7. keep every acquisition scope open until its Harness binding has closed, then release the scope before pause or resource disconnect.
 
-A `EnvironmentResource` can remain entered across sequential Runs within the same application-service lifetime, subject to provider concurrency and Host policy. `dedicated` concurrent async children use distinct Host resource records only for providers advertising `MULTIPLE_FROM_SPEC`; every record has its own provider state, operation fence, pause/resume, recovery, and cleanup lifecycle. `shared_root` uses the existing root resource record but acquires a distinct attachment only from providers advertising `SHARED`. `serialized_root` keeps the accepted async job queued until root instances have no active attachment and then reuses them sequentially. `none` supplies no child topology. A child never inherits the parent's attachment or credential, even when it intentionally shares the underlying resource.
+A `EnvironmentResource` can remain entered across sequential Runs within the same Host lifetime, subject to provider concurrency and Host policy. `dedicated` concurrent async children use distinct Host resource records only for providers advertising `MULTIPLE_FROM_SPEC`; every record has its own provider state, operation fence, pause/resume, recovery, and cleanup lifecycle. `shared_root` uses the existing root resource record but acquires a distinct attachment only from providers advertising `SHARED`. `serialized_root` keeps the accepted async job queued until root instances have no active attachment and then reuses them sequentially. `none` supplies no child topology. A child never inherits the parent's attachment or credential, even when it intentionally shares the underlying resource.
 
 ### Idle, Restart, and Cleanup
 
@@ -376,21 +376,21 @@ class PendingSubmission(BaseModel):
     created_at: datetime
 ```
 
-A pending submission is not part of Harness history, AG-UI presentation history, or a Turn until the application service selects it after the current Turn reaches an eligible boundary. Selection validates the latest Thread revision, creates a new Turn, and removes the queue row in one SQLite transaction. Cancellation or deletion of a queued submission has no Harness or provider effect.
+A pending submission is not part of Harness history, AG-UI presentation history, or a Turn until the Host selects it after the current Turn reaches an eligible boundary. Selection validates the latest Thread revision, creates a new Turn, and removes the queue row in one SQLite transaction. Cancellation or deletion of a queued submission has no Harness or provider effect.
 
 The queue never silently merges input into a live model request or mutates private Pydantic message history. Explicit steering of a compatible async child follows the separate async-subagent contract.
 
 ## Concurrency
 
-A Thread has at most one foreground Turn in `accepted`, `running`, or `waiting`. The application service holds an in-process guard and verifies the expected Thread commit revision in SQLite before dispatch. Two stale callers cannot both advance one checkpoint.
+A Thread has at most one foreground Turn in `accepted`, `running`, or `waiting`. The Host holds an in-process guard and verifies the expected Thread commit revision in SQLite before dispatch. Two stale callers cannot both advance one checkpoint.
 
 Session metadata edits use `control_revision` and can proceed independently when they do not alter execution selection. Environment lifecycle operations use per-resource fences and conflict with overlapping operations. Fresh attachments can be shared according to provider concurrency, but pause and destroy close lifecycle admission, wait for the active attachment count to reach zero, and then execute exclusively; no normal attachment scope overlaps either operation. Independent Sessions and Threads can execute concurrently subject to Host, model-provider, Environment-provider, and configured resource limits.
 
-A second process cannot steal a live application-store lease. Reclaiming an abandoned process generation permits recovery and interruption marking, not automatic continuation of unknown work.
+A second stable Host process cannot steal a live data-root lease. Runtime Runner processes never acquire that lease. Reclaiming an abandoned process generation permits recovery and interruption marking, not automatic continuation of unknown work.
 
 ## Resume and Selection
 
-The product exposes Codex-style Session operations through the application service:
+The product exposes Codex-style Session operations through `AgentUiHost`:
 
 - create a Session from selected Agent and Environment revisions;
 - list and search current, recent, archived, pinned, and project-associated Sessions;

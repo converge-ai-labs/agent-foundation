@@ -1,4 +1,4 @@
-"""Surface-neutral Agent UI application composition root."""
+"""Stable surface-neutral Agent UI Host composition root."""
 
 from __future__ import annotations
 
@@ -41,9 +41,14 @@ from a13n_ui.environments import (
     EnvironmentService,
     ProviderRuntimeResolver,
 )
-from a13n_ui.errors import ApplicationStateError, SessionError
+from a13n_ui.errors import HostStateError, SessionError
 from a13n_ui.model_adapters import RunModelResolverFactory, unavailable_run_model_resolver_factory
 from a13n_ui.runs import ForegroundRunCoordinator
+from a13n_ui.runtime_generations import (
+    RuntimeGenerationService,
+    RuntimeRestartResult,
+    RuntimeStatus,
+)
 from a13n_ui.sessions import (
     EventSubscription,
     LocalSession,
@@ -60,8 +65,8 @@ from a13n_ui.settings import AgentUiSettings
 from a13n_ui.storage import LocalStore, StoreDiagnostic, open_local_store
 
 
-class ApplicationState(StrEnum):
-    """Observable lifecycle state for one process-local application instance."""
+class HostState(StrEnum):
+    """Observable lifecycle state for one stable Host instance."""
 
     starting = "starting"
     ready = "ready"
@@ -69,17 +74,17 @@ class ApplicationState(StrEnum):
     closed = "closed"
 
 
-class ApplicationStatus(BaseModel):
-    """Detached safe application health projection."""
+class HostStatus(BaseModel):
+    """Detached safe Host health projection."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
-    state: ApplicationState
+    state: HostState
     process_generation: str = Field(min_length=1, max_length=64)
     registered_object_count: int = Field(ge=0)
 
 
-class AgentUiApplication:
+class AgentUiHost:
     """The only product boundary shared by Agent UI presentation surfaces."""
 
     def __init__(
@@ -91,13 +96,9 @@ class AgentUiApplication:
     ) -> None:
         self._settings = settings
         self._store = store
-        self._state = ApplicationState.starting
+        self._state = HostState.starting
         catalog = CatalogRepository(store)
-        self._configuration = ConfigurationService(
-            settings.configuration,
-            catalog,
-            process_settings_path=settings.process_settings_path,
-        )
+        self._configuration = ConfigurationService(settings.configuration, catalog)
         self._composition = CompositionService(store, catalog)
         factories = build_environment_provider_factory_catalog(
             builtin_keys=settings.configuration.builtin_provider_keys,
@@ -122,22 +123,31 @@ class AgentUiApplication:
             events=self._events,
             model_resolver_factory=model_resolver_factory,
         )
+        self._runtime = RuntimeGenerationService(settings.runtime)
         self._operation_lock = Lock()
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
 
     @property
-    def state(self) -> ApplicationState:
+    def state(self) -> HostState:
         return self._state
 
-    async def status(self) -> ApplicationStatus:
+    async def status(self) -> HostStatus:
         async with self._operation():
-            return ApplicationStatus(
+            return HostStatus(
                 state=self._state,
                 process_generation=self._store.process_generation,
                 registered_object_count=await self._store.object_count(),
             )
+
+    async def runtime_status(self) -> RuntimeStatus:
+        async with self._operation():
+            return await self._runtime.status()
+
+    async def restart_runtime(self) -> RuntimeRestartResult:
+        async with self._operation():
+            return await self._runtime.restart()
 
     async def recovery_diagnostics(self, *, limit: int = 100) -> tuple[StoreDiagnostic, ...]:
         async with self._operation():
@@ -563,9 +573,9 @@ class AgentUiApplication:
                     if not self._operation_scopes:
                         self._operations_idle.set()
         if cancelled_by_shutdown:
-            raise ApplicationStateError(
-                "Agent UI operation was cancelled during application shutdown.",
-                code="application_stopping",
+            raise HostStateError(
+                "Agent UI operation was cancelled during Host shutdown.",
+                code="host_stopping",
             )
 
     async def _complete_session_provisioning(self, session: LocalSession) -> LocalSession:
@@ -588,79 +598,143 @@ class AgentUiApplication:
             state=SessionLifecycleState.ready,
         )
 
-    async def _stop(self) -> None:
+    async def _stop(self) -> bool:
         async with self._operation_lock:
-            if self._state is not ApplicationState.ready:
-                return
-            self._state = ApplicationState.stopping
+            if self._state is not HostState.ready:
+                return False
+            self._state = HostState.stopping
             idle = self._operations_idle
 
         await self._runs.cancel_all()
         with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
             await idle.wait()
         if not drain_scope.cancel_called:
-            return
+            return False
 
         async with self._operation_lock:
             scopes = tuple(self._operation_scopes)
             idle = self._operations_idle
         for scope in scopes:
             scope.cancel()
+        # The data-root lease cannot be released while an accepted operation
+        # still holds Host authority. Product operation cleanup is required to
+        # make cancellation bounded; the final ownership fence waits for it.
         await idle.wait()
+        return False
 
     def _require_ready(self) -> None:
-        if self._state is not ApplicationState.ready:
-            raise ApplicationStateError(
-                "Agent UI application is not accepting commands.",
-                code="application_not_ready",
+        if self._state is not HostState.ready:
+            raise HostStateError(
+                "Agent UI Host is not accepting commands.",
+                code="host_not_ready",
                 details={"state": self._state.value},
             )
 
 
 @asynccontextmanager
-async def open_application(
+async def open_agent_ui_host(
     settings: AgentUiSettings,
     *,
     model_resolver_factory: RunModelResolverFactory = unavailable_run_model_resolver_factory,
-) -> AsyncGenerator[AgentUiApplication]:
-    """Start, expose, and close one complete Agent UI application lifetime."""
+) -> AsyncGenerator[AgentUiHost]:
+    """Start, expose, and close one complete stable Agent UI Host lifetime."""
 
-    application: AgentUiApplication | None = None
+    host: AgentUiHost | None = None
     try:
         async with open_local_store(settings.storage) as store:
-            application = AgentUiApplication(
+            host = AgentUiHost(
                 settings,
                 store,
                 model_resolver_factory=model_resolver_factory,
             )
-            await application._configuration.initialize()
-            await application._envd.recover_staging()
-            await application._sessions.initialize()
-            await application._environments.initialize()
-            await application._events.initialize()
+            await host._configuration.initialize()
+            await host._envd.recover_staging()
+            await host._sessions.initialize()
+            await host._environments.initialize()
+            await host._events.initialize()
             await store.cleanup_unreferenced_objects(
-                retention_seconds=application._configuration.settings.orphan_retention_seconds,
+                retention_seconds=host._configuration.settings.orphan_retention_seconds,
             )
-            application._state = ApplicationState.ready
+            await host._runtime.start()
+            host._state = HostState.ready
             async with create_task_group() as tasks:
-                tasks.start_soon(application._configuration.reconcile_periodically)
-                tasks.start_soon(application._configuration.reap_skill_leases_periodically)
+                tasks.start_soon(host._configuration.reconcile_periodically)
+                tasks.start_soon(host._configuration.reap_skill_leases_periodically)
                 try:
-                    yield application
+                    yield host
                 finally:
                     with CancelScope(shield=True):
-                        await application._stop()
+                        operations_timed_out = await host._stop()
                         tasks.cancel_scope.cancel()
+                        cleanup_errors: list[BaseException] = []
+                        if operations_timed_out:
+                            cleanup_errors.append(
+                                HostStateError(
+                                    "Accepted Host operations did not stop within the shutdown bound.",
+                                    code="host_operation_cleanup_timeout",
+                                )
+                            )
+                        with move_on_after(host._settings.shutdown_timeout_seconds) as runs_scope:
+                            try:
+                                await host._runs.close()
+                            except BaseException as exc:
+                                cleanup_errors.append(exc)
+                        if runs_scope.cancel_called:
+                            cleanup_errors.append(
+                                HostStateError(
+                                    "Foreground Run cleanup exceeded its shutdown bound.",
+                                    code="host_run_cleanup_timeout",
+                                )
+                            )
                         try:
-                            with move_on_after(application._settings.shutdown_timeout_seconds):
-                                await application._runs.close()
-                                await application._environments.close()
-                                await application._composition.close()
-                        finally:
-                            await application._configuration.close()
+                            await host._runtime.close()
+                        except BaseException as exc:
+                            cleanup_errors.append(exc)
+                        with move_on_after(host._settings.shutdown_timeout_seconds) as environment_scope:
+                            try:
+                                await host._environments.close()
+                            except BaseException as exc:
+                                cleanup_errors.append(exc)
+                        if environment_scope.cancel_called:
+                            cleanup_errors.append(
+                                HostStateError(
+                                    "Environment cleanup exceeded its shutdown bound.",
+                                    code="host_environment_cleanup_timeout",
+                                )
+                            )
+                        with move_on_after(host._settings.shutdown_timeout_seconds) as composition_scope:
+                            try:
+                                await host._composition.close()
+                            except BaseException as exc:
+                                cleanup_errors.append(exc)
+                        if composition_scope.cancel_called:
+                            cleanup_errors.append(
+                                HostStateError(
+                                    "Composition cleanup exceeded its shutdown bound.",
+                                    code="host_composition_cleanup_timeout",
+                                )
+                            )
+                        with move_on_after(host._settings.shutdown_timeout_seconds) as configuration_scope:
+                            try:
+                                await host._configuration.close()
+                            except BaseException as exc:
+                                cleanup_errors.append(exc)
+                        if configuration_scope.cancel_called:
+                            cleanup_errors.append(
+                                HostStateError(
+                                    "Configuration cleanup exceeded its shutdown bound.",
+                                    code="host_configuration_cleanup_timeout",
+                                )
+                            )
+                        if cleanup_errors:
+                            raise BaseExceptionGroup("Agent UI Host cleanup failed.", cleanup_errors)
     finally:
-        if application is not None:
-            application._state = ApplicationState.closed
+        if host is not None:
+            try:
+                with CancelScope(shield=True):
+                    await host._runtime.close()
+            finally:
+                host._state = HostState.closed
 
 
-__all__ = ["AgentUiApplication", "ApplicationState", "ApplicationStatus", "open_application"]
+__all__ = ["AgentUiHost", "HostState", "HostStatus", "open_agent_ui_host"]

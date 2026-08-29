@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Agent UI configuration is a reloadable, human- and agent-editable file-backed contract. It separates process settings from reusable product definitions and accepts all reloadable sources as one validated configuration generation. External editors, WebUI, and TUI can change the same source documents; the application service publishes a new generation only after the complete resource graph validates.
+Agent UI configuration is a human- and agent-editable file-backed contract. It separates one strict YAML process-settings document from reusable YAML/JSON product definitions and accepts all definition sources as one validated configuration generation. External editors, WebUI, and CLI can change the same definition documents; `AgentUiHost` publishes a new generation only after the complete resource graph validates.
 
 SQLite is not the authority for desired configuration. It records accepted generation metadata, resource indexes, diagnostics, and references from durable Sessions, while immutable resolved snapshots preserve the exact content selected by existing Sessions. A source edit therefore changes the latest catalog without rewriting earlier revisions or active runtime objects.
 
@@ -22,7 +22,24 @@ SQLite is not the authority for desired configuration. It records accepted gener
 
 ## Configuration Sources
 
-Agent UI reads one process-settings document and zero or more ordered definition roots. A definition root contains resources in these namespaces:
+Agent UI reads one process-settings YAML document and zero or more ordered definition roots. An explicit CLI `--config` path selects that document; otherwise the Host selects `~/.a13n-ui/settings.yaml`. There is no working-directory search, parent traversal, profile merge, environment overlay, include directive, or remote settings layer. If the default file does not exist, the Host uses the same strict built-in defaults represented by:
+
+```yaml
+storage:
+  data_root: ~/.a13n-ui/data
+
+configuration:
+  schema_version: "1"
+  definition_roots:
+    - root_id: root-user
+      path: ~/.a13n-ui/definitions
+      writable: true
+  project_root_policy: disabled
+```
+
+The default directories are created only when the selected command needs them. An explicit missing settings path is an error rather than a request to create or merge another source.
+
+A definition root contains resources in these namespaces: A definition root contains resources in these namespaces:
 
 - Models;
 - Prompts;
@@ -32,16 +49,11 @@ Agent UI reads one process-settings document and zero or more ordered definition
 - Agents;
 - Environments.
 
-Structured definitions use strict versioned YAML or its exact JSON equivalent. Prompt bodies and Skill packages can use their native Markdown and directory forms with a strict metadata document. The loader rejects unknown schema fields, duplicate keys, aliases that create non-JSON graphs, non-finite values, traversal outside an authorized source root, and inputs above configured local bounds.
+Models, Prompts, Plugin instances, Skill sources, Skills, Agents, and Environments remain separate namespace files rather than being embedded in the process-settings document. Structured definitions use strict versioned YAML or its exact JSON equivalent. Prompt bodies and Skill packages can use their native Markdown and directory forms with a strict metadata document. The loader rejects unknown schema fields, duplicate keys, aliases that create non-JSON graphs, non-finite values, traversal outside an authorized source root, and inputs above configured local bounds.
 
-Source layers are ordered from lowest to highest precedence. Built-in resources form the lowest layer, followed by configured user roots and then an explicitly selected project root. A higher layer can replace one lower-layer resource only by the same stable resource ID and compatible resource kind. Replacement selects different content in the candidate generation; it does not mutate or delete the lower revision. Two definitions of the same identity at the same precedence are an error.
+Source layers are ordered from lowest to highest precedence. Built-in resources form the lowest layer, followed by explicitly configured user roots and then an explicitly configured project root. Project-root policy is disabled by default, and Agent UI never discovers a project root from the current working directory. A higher layer can replace one lower-layer resource only by the same stable resource ID and compatible resource kind. Replacement selects different content in the candidate generation; it does not mutate or delete the lower revision. Two definitions of the same identity at the same precedence are an error.
 
-The process settings document selects the data root, definition roots, project-root policy, credential backends, provider/plugin allowlists, logging and telemetry exporters, concurrency limits, retention policy, Web transport settings, and an optional advanced Local Sandbox envd executable override. The retention policy includes the positive orphan-retention period used by automatic startup cleanup; age never expires an object that still has a durable reference. Settings are classified as:
-
-- **reloadable**, when a new accepted value can affect later commands without replacing process-owned infrastructure;
-- **restart-bound**, when the value owns already-open infrastructure such as the data root, SQLite location, listener address, TLS mode, or credential-store implementation.
-
-A valid reload containing a changed restart-bound value records the accepted desired value and reports `restart_required`; the running process continues to use its previously activated value. It never applies only part of an infrastructure change or silently starts a second store or listener.
+The process-settings YAML document selects the data root, definition roots, project-root policy, credential backends, provider/plugin allowlists, logging and telemetry exporters, concurrency limits, retention policy, runtime Runner bounds, Web transport settings, and an optional advanced Local Sandbox envd executable override. The retention policy includes the positive orphan-retention period used by automatic startup cleanup; age never expires an object that still has a durable reference. The complete process-settings document is activated once for a Host lifetime. Changes to that document take effect only when a later Host lifetime selects it; the running Host does not partially apply a new data root, source topology, listener, credential-store implementation, runtime bound, or logging setup. Runtime Runner restart refreshes process-local execution code and state but does not reload Host process settings. Definition-file reload remains independent and can publish a later accepted configuration generation without restarting the Host.
 
 ### Local Sandbox Runtime Selection
 
@@ -194,7 +206,7 @@ The scan uses the Harness contract exactly: each declared root can itself contai
 
 No local directory is scanned merely because it exists or because `SkillsCapability` has a default workspace source. Agent UI passes an explicit `SkillManager`, which replaces the Harness default composition. A built-in project `.agents/skills` source can be represented at the lowest precedence, but it participates only when the accepted settings explicitly select it. Enabling, disabling, adding, removing, or reordering a source changes later discovery commands; it does not mutate an already imported Skill revision or a pinned Session.
 
-Source management and discovery are complete application-service operations available to both surfaces: list source status, create or edit a source, reorder the enabled set, scan one source or the composed set, inspect conflicts and package metadata, and select packages for import or refresh. A source path or scan result grants no Agent execution authority.
+Source management and discovery are complete Host operations available to both surfaces: list source status, create or edit a source, reorder the enabled set, scan one source or the composed set, inspect conflicts and package metadata, and select packages for import or refresh. A source path or scan result grants no Agent execution authority.
 
 ### Skills
 
@@ -291,7 +303,7 @@ Package discovery can participate in reload. A newly installed trusted plugin or
 | Plugin/provider installation metadata                                | Available only in a newly accepted catalog; no active module replacement   |
 | Data root, SQLite path, listener, TLS, credential backend            | Accepted as desired process setting and reported restart-bound             |
 | Explicit absolute Local Sandbox envd override                        | Applies only to later Local Sandbox resolution; active resources unchanged |
-| WebUI or TUI presentation preferences                                | Applies to the owning surface without changing Agent or Session semantics  |
+| WebUI or CLI presentation preferences                                | Applies to the owning surface without changing Agent or Session semantics  |
 
 ## Credential Resolution
 
