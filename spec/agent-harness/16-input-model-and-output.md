@@ -72,6 +72,23 @@ type GatewayModelProviderFactory = Callable[[str, str], Provider[Any]]
 type ModelPatch = Callable[[Model], Model]
 
 
+class ModelHttpRetryConfig:
+    attempts: int = 5
+    backoff_multiplier: float = 1.0
+    max_wait_seconds: float = 30.0
+    retry_after_max_wait_seconds: float = 300.0
+    status_codes: frozenset[int] = frozenset({429, 502, 503, 504})
+
+
+def create_model_http_client(
+    *,
+    timeout: int = 600,
+    connect: int = 5,
+    transport: httpx2.AsyncBaseTransport | None = None,
+    retry: ModelHttpRetryConfig | None = DEFAULT_MODEL_HTTP_RETRY_CONFIG,
+) -> httpx2.AsyncClient: ...
+
+
 def infer_model(
     model: Model | str,
     *,
@@ -90,7 +107,13 @@ def infer_model(
 4. Non-empty `common_headers` add an outer `RequestHeadersModel` after patches. It case-insensitively merges those defaults into native `ModelSettings.extra_headers` for both request and streaming request paths; request-specific headers win, including when their casing differs. The wrapper does not mutate caller mappings or the wrapped Model, inspect header meanings, or persist or emit values.
 5. The returned object is always a native `Model` and can be passed directly to `HarnessBuilder.build(model=...)`, an `AgentDefinition`, or a `RunModelResolver`. A caller can bypass this helper completely and provide any self-constructed native Model.
 
-Provider factories and patches are caller-owned synchronous construction collaborators. If either creates a client or another resource, its owner retains and closes that resource under its own explicit lifecycle. `RequestHeadersModel` delegates the native Model async context-manager lifecycle but does not invent a separate close contract. Core `a13n-harness` therefore does not force provider extras merely to expose this API; missing provider dependencies fail through the selected provider integration.
+`create_model_http_client()` is a narrow constructor for Pydantic AI's public `httpx2` provider-client and `AsyncHTTPX2TenacityTransport` surfaces. It requires positive integer timeout values and creates a new caller-owned client whose default connect timeout is `connect` and whose read, write, and pool timeouts are `timeout`. The default frozen `ModelHttpRetryConfig` makes at most five total attempts for explicit `httpx2` timeout, connection, and read errors plus HTTP `429`, `502`, `503`, and `504`. It respects `Retry-After` up to 300 seconds and otherwise uses exponential backoff with multiplier 1 and a 30-second maximum. The supplied `transport` is the wrapped underlying transport; `retry=None` disables automatic retry. Invalid configuration fails during construction.
+
+This retry is Pydantic AI's lowest HTTP layer: the Model never sees intermediate attempts. It does not retry model validation, Tool execution, Harness recovery, provider SDKs that do not accept `httpx2`, non-replayable request bodies, or failures raised while a response stream is consumed after the transport returns. Exhaustion re-raises the final exception. Retries can add latency and duplicate provider cost when a connection fails after request transmission, so Hosts may provide a narrower config or disable retry under a larger end-to-end deadline.
+
+The helper accepts no headers, credentials, endpoint, or provider configuration. Dynamic and common request headers remain `ModelSettings.extra_headers`, and a native request-level `ModelSettings.timeout` overrides client defaults according to the selected Pydantic provider. Integrations needing phase-specific timeout values or a different Tenacity policy may construct any compatible `httpx2.AsyncClient` directly.
+
+Provider factories and patches are caller-owned synchronous construction collaborators. If either creates a client or another resource, its owner retains and closes that resource under its own explicit lifecycle. `RequestHeadersModel` delegates the native Model async context-manager lifecycle but does not invent a separate close contract. The Harness transport helper likewise neither attaches a client to a provider nor writes Pydantic private lifecycle fields. Missing provider dependencies fail through the selected provider integration.
 
 Every built Agent also receives one thin Pydantic `ResolveModelId` Capability. It uses the fresh `AgentContext.model_resolver` only when Pydantic asks to resolve a string model ID.
 

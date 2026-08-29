@@ -26,14 +26,23 @@ from a13n_harness.models.settings import (
     resolve_model_configuration,
     resolve_model_settings,
 )
+from a13n_harness.models.transport import (
+    DEFAULT_MODEL_HTTP_RETRY_CONFIG,
+    DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES,
+    ModelHttpRetryConfig,
+    create_model_http_client,
+)
 
 __all__ = [
+    "DEFAULT_MODEL_HTTP_RETRY_CONFIG",
+    "DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES",
     "MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV",
     "MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV",
     "GatewayModelProviderFactory",
     "ModelConfigurationAlias",
     "ModelConfigurationAliasCatalog",
     "ModelConfigurationTransform",
+    "ModelHttpRetryConfig",
     "ModelPatch",
     "ModelProviderFactory",
     "ModelRecoveryRule",
@@ -44,6 +53,7 @@ __all__ = [
     "RunModelResolver",
     "SelfHealingModel",
     "SelfHealingModelCapability",
+    "create_model_http_client",
     "get_model_configuration_alias_catalog",
     "get_model_settings_alias_catalog",
     "infer_model",

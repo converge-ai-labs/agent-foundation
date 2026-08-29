@@ -38,6 +38,7 @@ from a13n_harness.capabilities.shell_review import (
     ShellReviewError,
     ShellReviewRequest,
 )
+from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
@@ -747,6 +748,12 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
     }
     reserved_types = tuple(capability_type for item in expected.values() for capability_type in item[0])
     for capability_id, capability in ctx.capabilities.items():
+        if capability.id is not None:
+            _validate_capability_id(
+                capability.id,
+                capability_type=type(capability),
+                source="run_finalized",
+            )
         if isinstance(capability, reserved_types) and capability_id not in expected:
             raise DefinitionError(
                 "A protected Harness Capability changed its reserved ID during run binding.",

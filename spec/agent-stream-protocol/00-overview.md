@@ -125,8 +125,11 @@ A text or reasoning part delta or end without a preceding start is normalized in
 
 An observation without a direct standard representation is never silently dropped. It becomes:
 
-- `a13n.harness.<kind>` for `HarnessExtensionEvent`; or
+- `a13n.harness.tool.<name>` for a typed Tool extra extension;
+- `a13n.harness.<kind>` for another `HarnessExtensionEvent`; or
 - `a13n.pydantic_ai.<event_kind>` for another Pydantic AI event.
+
+The Tool specialization makes semantic events such as `a13n.harness.tool.filesystem.changed` directly subscribable without changing the source representation. Its `CUSTOM.value.event` remains the complete `HarnessExtensionEvent`, including Tool call correlation and the namespaced Tool event name.
 
 The `CUSTOM.value` is:
 
@@ -140,7 +143,7 @@ The `CUSTOM.value` is:
 }
 ```
 
-A Harness extension uses `model_dump(mode="json", by_alias=True)`. A Pydantic AI event uses its public `AgentStreamEvent` serializer. The shared Harness/Protocol release defines these source fields; the fallback does not introduce a manual event allowlist, custom schema registry, or independent version negotiation.
+A Harness extension uses `model_dump(mode="json", by_alias=True)`. A Pydantic AI-compatible event uses the concrete runtime value's Pydantic JSON-mode serializer with aliases enabled; the observer does not snapshot the installed `AgentStreamEvent` union or maintain an event-kind registry. Serialization warnings are conversion failures rather than permission to emit a partial representation. A value may satisfy the Harness process-local `AgentStreamEventProtocol` while lacking a Pydantic-compatible JSON serializer; such a value fails conversion atomically, and the observer does not invent a serializer for it. The shared Harness/Protocol release defines these source fields; the fallback does not introduce a manual event allowlist, custom schema registry, or independent version negotiation.
 
 A source item with a direct standard mapping is not duplicated as a second custom event. The processor receives both the source item and each converted event, and a Host can separately retain source records when its product requires them.
 
@@ -162,7 +165,7 @@ The observer's in-memory accumulation and history reconstruction are convenience
 
 ## Failure and Compatibility
 
-An invalid source type, changed Run correlation, conflicting multipart identity, failed AG-UI construction, invalid processor replacement, or processor exception is reported to the caller. A failed `resume()` additionally leaves the observer fresh so the Host can retry with another complete history iterable. Completed output is normalized to JSON before accumulation; when a valid code-first output has no JSON representation, `RUN_FINISHED.result` is omitted and `rawEvent.result_omitted` records that presentation fact while the source Harness result remains available to the Host. The observer does not convert its own failure into a synthetic Harness or AG-UI lifecycle fact.
+An invalid source type, source event without a Pydantic-compatible JSON representation, changed Run correlation, conflicting multipart identity, failed AG-UI construction, invalid processor replacement, or processor exception is reported to the caller. A failed `resume()` additionally leaves the observer fresh so the Host can retry with another complete history iterable. Completed output is normalized to JSON before accumulation; when a valid code-first output has no JSON representation, `RUN_FINISHED.result` is omitted and `rawEvent.result_omitted` records that presentation fact while the source Harness result remains available to the Host. The observer does not convert its own failure into a synthetic Harness or AG-UI lifecycle fact.
 
 Standard AG-UI names and fields retain their upstream meaning. The selected Harness/Protocol release and its pinned AG-UI dependency define conversion and source-history compatibility. A Host pins that release with its renderer and owns migration or retention compatibility for source or projected events it stores. New public Harness event variants remain observable through `CUSTOM` even before a dedicated standard mapping is added.
 
@@ -172,7 +175,7 @@ Standard AG-UI names and fields retain their upstream meaning. The selected Harn
 2. One observer binds to exactly one Harness Thread and Run, including every source item supplied during resumption.
 3. A fresh observer atomically adopts a successfully exhausted finite source history or remains fresh after resumption failure.
 4. Lifecycle facts originate in the Harness source stream; the observer does not infer them from Host or transport behavior.
-5. A direct semantic match uses standard AG-UI meaning, and every other public observation falls back to `CUSTOM`.
+5. A successfully converted direct semantic match uses standard AG-UI meaning, and every other successfully converted public observation falls back to `CUSTOM`.
 6. No converted event is dropped by default; only the replay-stable Host processor can explicitly omit one.
 7. One source item is processed and accumulated atomically, and returned events and snapshots are detached from observer state.
 8. The observer owns no durable identity, history retention or selection, cursor, gap policy, durable replay, fan-out, backpressure, cancellation, or transport behavior.

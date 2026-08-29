@@ -11,6 +11,8 @@ from a13n_harness import (
     CreateTask,
     DefinitionError,
     EmbeddedTaskStateCell,
+    FileChangeProjection,
+    FilesystemChangedValue,
     HandoffCapability,
     HarnessBuilder,
     HarnessEvent,
@@ -20,6 +22,7 @@ from a13n_harness import (
     RunBindings,
     TaskMutation,
     TaskStateRunCapability,
+    ToolExtraEventPayload,
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
@@ -110,6 +113,44 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
         "request_index": 0,
         "error_code": "model_request_failed",
     }
+
+
+def test_tool_extra_event_payload_is_typed_and_bounds_file_changes() -> None:
+    value = FilesystemChangedValue(
+        changes=(FileChangeProjection(path="source.txt", action="moved", destination="target.txt"),)
+    )
+    payload = ToolExtraEventPayload(
+        tool_call_id="call-1",
+        tool_name="move",
+        tool_id="filesystem.move",
+        name="filesystem.changed",
+        value=value.model_dump(mode="json"),
+    )
+
+    assert payload.model_dump(mode="json") == {
+        "type": "tool_extra",
+        "tool_call_id": "call-1",
+        "tool_name": "move",
+        "tool_id": "filesystem.move",
+        "name": "filesystem.changed",
+        "value": {
+            "changes": [
+                {"path": "source.txt", "action": "moved", "destination": "target.txt"},
+            ]
+        },
+    }
+    with pytest.raises(ValidationError):
+        FileChangeProjection(path="source.txt", action="moved")
+    with pytest.raises(ValidationError):
+        FileChangeProjection(path="source.txt", action="modified", destination="target.txt")
+    with pytest.raises(ValidationError):
+        ToolExtraEventPayload(
+            tool_call_id="call-1",
+            tool_name="move",
+            tool_id="filesystem.move",
+            name="Filesystem Changed",
+            value=value.model_dump(mode="json"),
+        )
 
 
 async def test_first_party_payloads_reject_unsafe_error_codes_and_operation_ids() -> None:

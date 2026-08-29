@@ -13,6 +13,24 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 
 
+def _validate_capability_id(
+    capability_id: object,
+    *,
+    capability_type: type[object],
+    source: str,
+) -> str:
+    if not isinstance(capability_id, str) or not capability_id.strip() or ":" in capability_id:
+        raise DefinitionError(
+            "Capability IDs must be non-blank strings without ':' when present.",
+            code="capability_id_invalid",
+            details={
+                "capability_type": capability_type.__name__,
+                "source": source,
+            },
+        )
+    return capability_id
+
+
 def first_party_declarative_capability_types() -> tuple[type[AbstractCapability[AgentContext]], ...]:
     """Return Harness-owned Capability types accepted from AgentSpec."""
     from a13n_harness.capabilities.shell_review import ShellReviewCapability

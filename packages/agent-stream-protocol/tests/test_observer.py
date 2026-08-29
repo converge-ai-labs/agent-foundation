@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 import anyio
 import pytest
 from a13n_harness import (
+    AgentStreamEventProtocol,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -35,12 +37,14 @@ from ag_ui.core.events import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from pydantic import TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
+    EnqueuedMessagesEvent,
     FinalResultEvent,
     FunctionToolResultEvent,
     ModelMessage,
+    ModelRequest,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
@@ -52,12 +56,30 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolCallPartDelta,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage
+from pydantic_core import PydanticSerializationError
 
 _OCCURRED_AT = datetime(2026, 1, 2, 3, 4, 5, 678000, tzinfo=UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class ExtendedAgentStreamEvent:
+    event_kind: str = "capability"
+    kind: str = "user.demo.progress"
+    value: int = 1
+
+
+class AliasedExtendedAgentStreamEvent(BaseModel):
+    event_kind: str = "capability"
+    value: int = Field(default=1, serialization_alias="progressValue")
+
+
+class UnserializableAgentStreamEvent:
+    event_kind = "capability"
 
 
 def _event(
@@ -92,6 +114,88 @@ def _result_event(
 async def _history(*items: HarnessStreamEvent[Any]) -> AsyncIterator[HarnessStreamEvent[Any]]:
     for item in items:
         yield item
+
+
+def test_extended_agent_stream_event_uses_generic_custom_event() -> None:
+    source = ExtendedAgentStreamEvent()
+    assert isinstance(source, AgentStreamEventProtocol)
+
+    events = HarnessAguiObserver().observe(_event(0, source))
+
+    assert len(events) == 1
+    assert isinstance(events[0], CustomEvent)
+    assert events[0].name == "a13n.pydantic_ai.capability"
+    assert events[0].value == {
+        "thread_id": "thread-1",
+        "run_id": "run-1",
+        "sequence": 0,
+        "occurred_at": _OCCURRED_AT.isoformat(),
+        "event": {
+            "event_kind": "capability",
+            "kind": "user.demo.progress",
+            "value": 1,
+        },
+    }
+
+
+def test_extended_agent_stream_event_preserves_serialization_aliases() -> None:
+    event = HarnessAguiObserver().observe(_event(0, AliasedExtendedAgentStreamEvent()))[0]
+
+    assert isinstance(event, CustomEvent)
+    assert event.value["event"] == {
+        "event_kind": "capability",
+        "progressValue": 1,
+    }
+
+
+def test_unserializable_agent_stream_event_fails_atomically() -> None:
+    observer = HarnessAguiObserver()
+
+    with pytest.raises(PydanticSerializationError):
+        observer.observe(_event(0, UnserializableAgentStreamEvent()))
+
+    assert observer.thread_id is None
+    assert observer.run_id is None
+    assert observer.snapshot() == ()
+
+
+def test_tool_extra_event_uses_directly_subscribable_custom_name() -> None:
+    source = HarnessExtensionEvent(
+        kind="tool",
+        payload={
+            "type": "tool_extra",
+            "tool_call_id": "call-1",
+            "tool_name": "move",
+            "tool_id": "filesystem.move",
+            "name": "filesystem.changed",
+            "value": {
+                "changes": [
+                    {"path": "source.txt", "action": "moved", "destination": "target.txt"},
+                ]
+            },
+        },
+    )
+
+    event = HarnessAguiObserver().observe(_event(0, source))[0]
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == "a13n.harness.tool.filesystem.changed"
+    assert event.value["event"] == source.model_dump(mode="json")
+
+
+def test_enqueued_messages_event_preserves_native_steering_observation() -> None:
+    source = EnqueuedMessagesEvent(
+        enqueue_id="enqueue-1",
+        messages=(ModelRequest(parts=[UserPromptPart(content="change direction")]),),
+    )
+
+    event = HarnessAguiObserver().observe(_event(0, source))[0]
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == "a13n.pydantic_ai.enqueued_messages"
+    assert event.value["event"]["enqueue_id"] == "enqueue-1"
+    assert event.value["event"]["event_kind"] == "enqueued_messages"
+    assert event.value["event"]["messages"][0]["parts"][0]["content"] == "change direction"
 
 
 def test_text_lifecycle_uses_harness_request_identity_and_accumulates() -> None:

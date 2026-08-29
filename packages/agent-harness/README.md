@@ -39,7 +39,7 @@ The shell Toolset exposes exactly `shell_exec`, `shell_wait`, `shell_status`, `s
 
 ## Model construction
 
-`a13n_harness.infer_model()` is an optional construction helper that always returns a native Pydantic AI `Model`. It normalizes supported compatibility aliases, accepts caller-owned ordinary or gateway provider factories, applies synchronous Model patches in order, and can wrap the result with case-insensitive common request-header defaults. Request-specific native headers win. Callers can bypass the helper and pass any self-constructed Model to `HarnessBuilder.build(model=...)`; provider credentials, clients, retries, and resource lifecycle remain owned by the caller's integration.
+`a13n_harness.infer_model()` is an optional construction helper that always returns a native Pydantic AI `Model`. It normalizes supported compatibility aliases, accepts caller-owned ordinary or gateway provider factories, applies synchronous Model patches in order, and can wrap the result with case-insensitive common request-header defaults. Request-specific native headers win. `create_model_http_client()` creates a caller-owned `httpx2` provider client with transport timeouts and Pydantic AI's Tenacity retry transport. Its default policy retries transient transport failures and HTTP `429`/`502`/`503`/`504` up to five total attempts, respects `Retry-After`, and can be customized with `ModelHttpRetryConfig` or disabled with `retry=None`; request headers remain native `ModelSettings.extra_headers`. Callers can bypass both helpers and pass any self-constructed Model to `HarnessBuilder.build(model=...)`; provider credentials, clients, retries, and resource lifecycle remain owned by the caller's integration.
 
 ## Execution boundary and filters
 

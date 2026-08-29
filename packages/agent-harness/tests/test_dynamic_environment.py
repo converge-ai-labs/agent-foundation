@@ -504,6 +504,20 @@ async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_
                     tool_call_id="write-2",
                 )
             }
+        elif len(returns) == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="write",
+                    json_args=json.dumps(
+                        {
+                            "file_path": "/workspace/note.txt",
+                            "content": "",
+                            "mode": "a",
+                        }
+                    ),
+                    tool_call_id="write-noop",
+                )
+            }
         else:
             yield "done"
 
@@ -513,19 +527,36 @@ async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
-    result = await executable.run(
+    tool_events: list[HarnessExtensionEvent] = []
+    result: HarnessRunResult[Any] | None = None
+    async with executable.stream(
         "write",
         bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
-    )
+    ) as run:
+        async for item in run:
+            if isinstance(item, HarnessEvent):
+                if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "tool":
+                    tool_events.append(item.event)
+            else:
+                result = item.result
 
+    assert result is not None
     assert result.output_or_raise() == "done"
-    assert model_calls == 3
+    assert [event.payload["tool_call_id"] for event in tool_events] == ["write-1", "write-2"]
+    assert [event.payload["tool_id"] for event in tool_events] == ["filesystem.write", "filesystem.write"]
+    assert [event.payload["value"]["changes"] for event in tool_events] == [
+        [{"path": "note.txt", "action": "written", "destination": None}],
+        [{"path": "/workspace/note.txt", "action": "written", "destination": None}],
+    ]
+    assert model_calls == 4
     assert (tmp_path / "note.txt").read_text() == "two"
     assert tool_results[0]["ok"] is True
     assert tool_results[0]["bytes_written"] == 3
     assert tool_results[1]["bytes_written"] == 3
+    assert tool_results[2]["bytes_written"] == 0
     assert "revision" not in tool_results[0]
     assert "revision" not in tool_results[1]
+    assert "revision" not in tool_results[2]
 
 
 async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None:
@@ -577,17 +608,170 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration(shell_tools=False)),),
     )
-    result = await executable.run(
+    tool_events: list[HarnessExtensionEvent] = []
+    result: HarnessRunResult[Any] | None = None
+    async with executable.stream(
         "mutate files",
         bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
-    )
+    ) as run:
+        async for item in run:
+            if isinstance(item, HarnessEvent):
+                if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "tool":
+                    tool_events.append(item.event)
+            else:
+                result = item.result
 
+    assert result is not None
     assert result.output_or_raise() == "done"
+    assert [event.payload["tool_id"] for event in tool_events] == [
+        "filesystem.mkdir",
+        "filesystem.move",
+        "filesystem.copy",
+        "filesystem.remove",
+    ]
+    assert [event.payload["tool_call_id"] for event in tool_events] == [
+        "mkdir-1",
+        "move-1",
+        "copy-1",
+        "delete-1",
+    ]
+    assert [event.payload["value"]["changes"] for event in tool_events] == [
+        [{"path": "folder", "action": "created", "destination": None}],
+        [{"path": "source.txt", "action": "moved", "destination": "folder/moved.txt"}],
+        [{"path": "folder/moved.txt", "action": "copied", "destination": "copied.txt"}],
+        [{"path": "folder", "action": "deleted", "destination": None}],
+    ]
     assert len(observed_results) == len(calls)
     assert all(item["ok"] is True for item in observed_results)
     assert not (tmp_path / "source.txt").exists()
     assert not (tmp_path / "folder").exists()
     assert (tmp_path / "copied.txt").read_text(encoding="utf-8") == "value"
+
+
+async def test_file_edit_events_keep_called_tool_id_and_skip_content_noop(tmp_path: Path) -> None:
+    (tmp_path / "edit.txt").write_text("value", encoding="utf-8")
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        if not returns:
+            name = "multi_edit"
+            arguments = {
+                "file_path": "edit.txt",
+                "edits": [{"old_string": "value", "new_string": "changed"}],
+            }
+            tool_call_id = "multi-edit-one"
+        elif len(returns) == 1:
+            name = "edit"
+            arguments = {
+                "file_path": "edit.txt",
+                "old_string": "changed",
+                "new_string": "changed",
+            }
+            tool_call_id = "edit-noop"
+        else:
+            yield "done"
+            return
+        yield {
+            0: DeltaToolCall(
+                name=name,
+                json_args=json.dumps(arguments),
+                tool_call_id=tool_call_id,
+            )
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    tool_events: list[HarnessExtensionEvent] = []
+    async with executable.stream(
+        "edit file",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    ) as run:
+        async for item in run:
+            if (
+                isinstance(item, HarnessEvent)
+                and isinstance(item.event, HarnessExtensionEvent)
+                and item.event.kind == "tool"
+            ):
+                tool_events.append(item.event)
+
+    assert (tmp_path / "edit.txt").read_text(encoding="utf-8") == "changed"
+    assert len(tool_events) == 1
+    assert tool_events[0].payload["tool_call_id"] == "multi-edit-one"
+    assert tool_events[0].payload["tool_name"] == "multi_edit"
+    assert tool_events[0].payload["tool_id"] == "filesystem.multi_edit"
+    assert tool_events[0].payload["value"]["changes"] == [
+        {"path": "edit.txt", "action": "modified", "destination": None},
+    ]
+
+
+async def test_file_change_event_keeps_only_confirmed_partial_batch_items(tmp_path: Path) -> None:
+    (tmp_path / "existing.txt").write_text("value", encoding="utf-8")
+    tool_results: list[dict[str, Any]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        tool_results[:] = returns
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="delete",
+                    json_args=json.dumps(
+                        {
+                            "paths": ["existing.txt", "missing.txt"],
+                            "recursive": False,
+                            "force": False,
+                        }
+                    ),
+                    tool_call_id="delete-partial",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration(shell_tools=False)),),
+    )
+    tool_events: list[HarnessExtensionEvent] = []
+    async with executable.stream(
+        "delete files",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    ) as run:
+        async for item in run:
+            if (
+                isinstance(item, HarnessEvent)
+                and isinstance(item.event, HarnessExtensionEvent)
+                and item.event.kind == "tool"
+            ):
+                tool_events.append(item.event)
+
+    assert len(tool_results) == 1
+    assert tool_results[0]["ok"] is False
+    assert [item["ok"] for item in tool_results[0]["results"]] == [True, False]
+    assert len(tool_events) == 1
+    assert tool_events[0].payload["value"]["changes"] == [
+        {"path": "existing.txt", "action": "deleted", "destination": None},
+    ]
 
 
 async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path) -> None:

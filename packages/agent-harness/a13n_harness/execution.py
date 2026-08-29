@@ -99,6 +99,7 @@ from a13n_harness.capabilities.working_state import (
 )
 from a13n_harness.capability_types import (
     CapabilityTypeCatalog,
+    _validate_capability_id,
     first_party_declarative_capability_types,
 )
 from a13n_harness.context import (
@@ -131,6 +132,7 @@ from a13n_harness.errors import (
     StateError,
 )
 from a13n_harness.events import (
+    AgentStreamEventProtocol,
     HarnessEvent,
     HarnessEventEmitter,
     HarnessExtensionEvent,
@@ -221,7 +223,6 @@ from a13n_harness.tools.surface import (
 )
 from a13n_harness.usage import USAGE_CAPABILITY_ID, RunUsageLedger, UsageCapability
 
-_AGENT_EVENT_ADAPTER = TypeAdapter(AgentStreamEvent)
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
 _EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
 
@@ -1700,20 +1701,24 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             )
         if not isinstance(item, HarnessEvent) or item.sequence < 0:
             raise PluginError("Plugin emitted an invalid stream item.", code="plugin_event_invalid")
-        try:
-            event = (
-                _EXTENSION_EVENT_ADAPTER.validate_python(
-                    item.event.model_dump(),
-                    strict=True,
-                )
-                if isinstance(item.event, HarnessExtensionEvent)
-                else _AGENT_EVENT_ADAPTER.validate_python(item.event, strict=True)
-            )
-        except ValidationError as exc:
+        event = item.event
+        if isinstance(event, HarnessExtensionEvent):
+            try:
+                event = _EXTENSION_EVENT_ADAPTER.validate_python(event.model_dump(), strict=True)
+            except ValidationError as exc:
+                raise PluginError(
+                    "Plugin emitted an invalid Harness event.",
+                    code="plugin_event_invalid",
+                ) from exc
+        elif (
+            not isinstance(event, AgentStreamEventProtocol)
+            or not isinstance(event.event_kind, str)
+            or not event.event_kind.strip()
+        ):
             raise PluginError(
                 "Plugin emitted an invalid Harness event.",
                 code="plugin_event_invalid",
-            ) from exc
+            )
         provenance = self._emitter.take_child_provenance(item)
         if provenance is not None and (item.thread_id != provenance.thread_id or item.run_id != provenance.run_id):
             raise PluginError(
@@ -2617,12 +2622,11 @@ def _validate_built_capability_tree(
             )
         capability_id = capability.id
         if capability_id is not None:
-            if not isinstance(capability_id, str) or not capability_id.strip():
-                raise DefinitionError(
-                    "Capability IDs must be non-blank strings when present.",
-                    code="capability_id_invalid",
-                    details={"capability_type": type(capability).__name__},
-                )
+            capability_id = _validate_capability_id(
+                capability_id,
+                capability_type=type(capability),
+                source="built",
+            )
             previous = seen_ids.get(capability_id)
             if previous is not None:
                 raise DefinitionError(
