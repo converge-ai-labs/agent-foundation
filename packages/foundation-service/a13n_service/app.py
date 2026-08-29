@@ -10,6 +10,7 @@ from anyio import fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 
+from a13n_service.connectors import build_connector_provider_catalog
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
 from a13n_service.storage import StorageResources, open_storage, short_session
 from a13n_service.web import mount_web_application
@@ -23,6 +24,7 @@ _CONTROL_PLANE_ROLES = {ServiceRole.all, ServiceRole.control}
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings: ServiceSettings = app.state.settings
+    app.state.connector_providers = build_connector_provider_catalog(settings.connector_providers)
     async with open_storage(settings.storage_settings()) as storage:
         app.state.storage = storage
         # Keep these names for service code that only needs relational access.

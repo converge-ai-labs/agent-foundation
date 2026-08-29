@@ -21,6 +21,8 @@ class Base(DeclarativeBase):
 def service_metadata() -> MetaData:
     """Return the complete, explicitly imported service metadata registry."""
 
-    # Import concrete domain model modules immediately above this return as
-    # they are introduced. Deliberately avoid module scanning or plugin discovery.
+    # Deliberately avoid module scanning or plugin discovery.
+    from a13n_service.connectors import models as connector_models
+
+    del connector_models
     return Base.metadata

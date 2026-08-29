@@ -10,6 +10,7 @@ from a13n_logging import LogFormat
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from a13n_service.connectors.registry import ConnectorProviderTrust
 from a13n_service.database import MigrationConfig
 from a13n_service.storage.config import (
     FilesystemConfig,
@@ -62,6 +63,8 @@ class ServiceSettings(BaseSettings):
     port: int = Field(default=8000, ge=1, le=65535)
     build_version: str = "unknown"
     web_dist_dir: Path | None = None
+    connector_providers: tuple[ConnectorProviderTrust, ...] = ()
+    connector_trigger_min_interval_seconds: int = Field(default=60, ge=1, le=86_400)
 
     database_backend: DatabaseBackend = DatabaseBackend.postgresql
     database_url: SecretStr | None = Field(

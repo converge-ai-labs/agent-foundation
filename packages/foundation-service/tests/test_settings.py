@@ -22,8 +22,25 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
 
     assert settings.role is ServiceRole.all
     assert settings.port == 8000
+    assert settings.connector_providers == ()
     assert settings.database_backend is DatabaseBackend.postgresql
     assert "foundation:foundation" not in repr(settings)
+
+
+def test_connector_provider_trust_is_typed() -> None:
+    settings = ServiceSettings(
+        _env_file=None,
+        connector_providers=[
+            {
+                "provider_key": "github",
+                "distribution_name": "a13n-connector-github",
+                "distribution_version": "1.2.3",
+            }
+        ],
+    )
+
+    assert settings.connector_providers[0].provider_key == "github"
+    assert settings.connector_providers[0].distribution_name == "a13n-connector-github"
 
 
 def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:

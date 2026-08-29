@@ -106,6 +106,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
     async with app.router.lifespan_context(app):
         storage = app.state.storage
+        assert len(app.state.connector_providers) == 0
         assert app.state.db_engine is storage.engine
         assert app.state.db_session_factory is storage.sessions
 
