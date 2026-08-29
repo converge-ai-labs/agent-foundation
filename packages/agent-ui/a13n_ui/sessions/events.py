@@ -124,10 +124,7 @@ class SessionEventStore:
     async def initialize(self) -> int:
         """Verify registered history and recover directly appendable file-first segments."""
 
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             rows = tuple(
                 (
                     await database_session.execute(
@@ -289,10 +286,7 @@ class SessionEventStore:
             raise ValueError("through_sequence cannot precede after_sequence")
         if not 1 <= limit <= _MAX_REPLAY_EVENTS:
             raise ValueError(f"replay limit must be between 1 and {_MAX_REPLAY_EVENTS}")
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             statement = (
                 select(EventSegmentRecord)
                 .where(
@@ -374,10 +368,7 @@ class SessionEventStore:
             await send.aclose()
 
     async def _presentation_head(self, session_id: str) -> tuple[int, str | None]:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             session_row = await database_session.get(SessionRecord, session_id)
             presentation = await database_session.get(SessionPresentationRecord, session_id)
         if session_row is None or presentation is None:
@@ -385,10 +376,7 @@ class SessionEventStore:
         return presentation.next_sequence, presentation.last_segment_digest
 
     async def _register_segment(self, relative_path: str, header: AguiSegmentHeader) -> None:
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             presentation = await database_session.get(SessionPresentationRecord, header.session_id)
             if presentation is None:
                 raise EventStoreError("The selected Session event stream does not exist.", code="event_session_missing")

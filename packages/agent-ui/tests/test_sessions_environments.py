@@ -31,6 +31,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import func, select
+from sqlalchemy.pool.impl import AsyncAdaptedQueuePool
 
 pytestmark = pytest.mark.anyio
 
@@ -426,10 +427,7 @@ async def test_startup_recovers_file_first_event_segment(tmp_path: Path) -> None
         before = await application.session_events(created.session_id)
         session_id = created.session_id
 
-        async with transaction(
-            application._store.database.sessions,
-            cleanup_timeout_seconds=application._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(application._store.database.sessions) as database_session:
             segment = (
                 await database_session.execute(
                     select(EventSegmentRecord)
@@ -639,10 +637,7 @@ async def test_hard_delete_removes_baseline_checkpoint_and_assignments(tmp_path:
             created.session_id,
             expected_revision=created.control_revision,
         )
-        async with transaction(
-            application._store.database.sessions,
-            cleanup_timeout_seconds=application._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(application._store.database.sessions) as database_session:
             checkpoint_count = int(
                 (
                     await database_session.execute(
@@ -913,6 +908,10 @@ async def test_anyio_cancellation_restores_environment_borrow_invariants(tmp_pat
             with fail_after(5):
                 await model_started.wait()
             tasks.cancel_scope.cancel()
+
+        pool = application._store.database.engine.pool
+        assert isinstance(pool, AsyncAdaptedQueuePool)
+        assert pool.checkedout() == 0
 
         availability = await application.session_environment(created.session_id)
         resource_id = availability.resources[0].host_resource_id

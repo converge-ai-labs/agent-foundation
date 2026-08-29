@@ -75,10 +75,7 @@ class SessionRepository:
         now = datetime.now(UTC)
         skills_json = _json([item.model_dump(mode="json") for item in skill_selections])
         fork_json = _json(parent_fork.model_dump(mode="json")) if parent_fork is not None else None
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             existing = (
                 await database_session.execute(
                     select(SessionRecord).where(SessionRecord.creation_request_id == creation_request_id)
@@ -181,10 +178,7 @@ class SessionRepository:
         return await self.get(existing_id)
 
     async def get(self, session_id: str) -> LocalSession:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             session_row = await database_session.get(SessionRecord, session_id)
             if session_row is None or session_row.lifecycle_state == SessionLifecycleState.deleted.value:
                 raise SessionError("The selected Session does not exist.", code="session_missing")
@@ -325,10 +319,7 @@ class SessionRepository:
     async def recovery_session_ids(self) -> tuple[str, ...]:
         """Return every retained Session identity for startup authority validation."""
 
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             return tuple(
                 (
                     await database_session.execute(
@@ -342,10 +333,7 @@ class SessionRepository:
     async def fail_closed(self, session_id: str, *, failure: JsonValue) -> None:
         """Block one retained Session whose selected startup authority is invalid."""
 
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
             if record is None or record.lifecycle_state == SessionLifecycleState.deleted.value:
                 return
@@ -362,10 +350,7 @@ class SessionRepository:
     ) -> tuple[SessionSummary, ...]:
         if not 1 <= limit <= 1000:
             raise ValueError("Session list limit must be between 1 and 1000")
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             statement = (
                 select(SessionRecord, SessionThreadRecord)
                 .join(SessionThreadRecord, SessionRecord.root_thread_id == SessionThreadRecord.thread_id)
@@ -409,10 +394,7 @@ class SessionRepository:
 
     async def update(self, session_id: str, expected_revision: int, update: SessionUpdate) -> LocalSession:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
             self._require_control_revision(record, expected_revision)
             assert record is not None
@@ -447,10 +429,7 @@ class SessionRepository:
         failure: JsonValue | None = None,
     ) -> LocalSession:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
             self._require_control_revision(record, expected_revision)
             assert record is not None
@@ -477,10 +456,7 @@ class SessionRepository:
         input_value: JsonValue,
     ) -> TurnView:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             session_row = await database_session.get(SessionRecord, session_id)
             if session_row is None or session_row.lifecycle_state != SessionLifecycleState.ready.value:
                 raise SessionError(
@@ -527,10 +503,7 @@ class SessionRepository:
         consume_deferred: bool,
     ) -> int:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn = await database_session.get(TurnRecord, turn_id)
             if turn is None:
                 raise SessionError("The selected Turn does not exist.", code="turn_missing")
@@ -600,10 +573,7 @@ class SessionRepository:
         if checkpoint.state_object_digest != state_object.logical_digest:
             raise ValueError("checkpoint and state object digest must agree")
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn, thread = await self._require_running_turn(
                 database_session,
                 turn_id,
@@ -653,10 +623,7 @@ class SessionRepository:
         failure: JsonValue | None,
     ) -> TurnView:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn, thread = await self._require_running_turn(
                 database_session,
                 turn_id,
@@ -695,10 +662,7 @@ class SessionRepository:
         """Close accepted or waiting work that never entered another Harness Run."""
 
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn = await database_session.get(TurnRecord, turn_id)
             if turn is None:
                 raise SessionError("The selected Turn does not exist.", code="turn_missing")
@@ -730,10 +694,7 @@ class SessionRepository:
     async def interrupt_prior_process_turns(self) -> int:
         now = datetime.now(UTC)
         interrupted = 0
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             rows = tuple(
                 (
                     await database_session.execute(
@@ -763,10 +724,7 @@ class SessionRepository:
         return interrupted
 
     async def hard_delete(self, session_id: str, expected_revision: int) -> None:
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
             self._require_control_revision(record, expected_revision)
             assert record is not None
