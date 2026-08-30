@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from a13n_harness import AgentContext, HarnessBuilder, HarnessEvent, RunBindings
+from a13n_harness import (
+    AgentContext,
+    HarnessBuilder,
+    HarnessEvent,
+    RunBindings,
+)
 from a13n_harness.errors import DefinitionError
 from a13n_harness.tools import (
     ClientToolsCapability,

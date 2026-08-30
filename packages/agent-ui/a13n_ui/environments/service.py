@@ -1,15 +1,13 @@
-"""Host-owned lifecycle and Harness runtime service for Session Environments."""
+"""Process-local provider lifecycle and Harness runtime service for Session Environments."""
 
 from __future__ import annotations
 
-import asyncio
 import json
-from collections import Counter
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from uuid import uuid4
 
 from a13n_environment_provider import (
     EnvironmentManagementAction,
@@ -18,40 +16,36 @@ from a13n_environment_provider import (
     EnvironmentProvider,
     EnvironmentProviderError,
     EnvironmentProviderFactoryCatalog,
-    EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderResourceState,
     EnvironmentProviderSpec,
-    EnvironmentReconciliationPhase,
     EnvironmentResource,
     EnvironmentRuntimeAttachment,
 )
-from a13n_harness.environment import (
-    ENVIRONMENT_ACTION_DISPATCH,
-    EnvironmentAction,
-    EnvironmentPermissionSet,
-)
+from a13n_harness.environment import ENVIRONMENT_ACTION_DISPATCH, EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.environment.advanced import (
     EnvironmentRuntime,
     EnvironmentRuntimeMount,
     create_environment_provider_binding,
     create_environment_runtime,
 )
-from anyio import CancelScope, Event, Lock
-from pydantic import ValidationError
+from anyio import Event, Lock
+from pydantic import JsonValue, ValidationError
 
 from a13n_ui.composition import ResolvedEnvironmentMountDefinition, ResolvedEnvironmentSnapshot
-from a13n_ui.errors import AgentUiError, EnvironmentLifecycleError, RuntimeResolutionError, StoreIntegrityError
+from a13n_ui.errors import EnvironmentLifecycleError, StoreIntegrityError
 from a13n_ui.storage.objects import ObjectKind, ObjectRef
 from a13n_ui.storage.runtime import LocalStore
 
 from .models import (
     EnvironmentAvailability,
-    HostEnvironmentResource,
-    HostResourceLifecycleState,
+    EnvironmentResourceStatus,
+    SessionEnvironmentResource,
     StoredProviderState,
 )
 from .repository import EnvironmentRepository
 from .runtime import ProviderRuntimeResolver
+
+_ResourceKey = tuple[str, str]
 
 
 @dataclass(slots=True)
@@ -61,7 +55,7 @@ class _LiveResource:
 
 
 class EnvironmentService:
-    """Fence provider effects and lend fresh single-use Environment runtimes."""
+    """Persist latest provider state and lend fresh runtime attachments."""
 
     def __init__(
         self,
@@ -74,59 +68,23 @@ class EnvironmentService:
         self._repository = EnvironmentRepository(store)
         self._factories = factories
         self._runtimes = runtimes
-        self._resource_locks: dict[str, Lock] = {}
-        self._live: dict[str, _LiveResource] = {}
-        self._borrow_counts: dict[str, int] = {}
-        self._borrow_zero: dict[str, Event] = {}
-        self._lifecycle_pending: set[str] = set()
+        self._locks: dict[_ResourceKey, Lock] = {}
+        self._live: dict[_ResourceKey, _LiveResource] = {}
+        self._borrow_counts: dict[_ResourceKey, int] = {}
+        self._borrow_zero: dict[_ResourceKey, Event] = {}
+        self._lifecycle_pending: set[_ResourceKey] = set()
 
     @property
     def repository(self) -> EnvironmentRepository:
         return self._repository
-
-    async def initialize(self) -> int:
-        """Validate selected authority and reconcile interrupted provider operations."""
-
-        invalid_resources: set[str] = set()
-        state_required = {
-            HostResourceLifecycleState.available,
-            HostResourceLifecycleState.paused,
-            HostResourceLifecycleState.pausing,
-            HostResourceLifecycleState.resuming,
-            HostResourceLifecycleState.destroying,
-        }
-        for resource in await self._repository.all_resources():
-            try:
-                if resource.selected_provider_state_digest is not None:
-                    await self._load_selected_state(resource)
-                elif resource.lifecycle_state in state_required:
-                    raise StoreIntegrityError(
-                        "A retained Environment resource has no selected provider state.",
-                        code="provider_state_missing",
-                    )
-            except AgentUiError as exc:
-                invalid_resources.add(resource.host_resource_id)
-                await self._store.record_recovery_diagnostic(
-                    code="provider_state_invalid",
-                    detail=f"{resource.host_resource_id}:{exc.code}",
-                )
-                await self._repository.fail_closed(
-                    resource.host_resource_id,
-                    failure={
-                        "code": "provider_state_invalid",
-                        "authority_error": exc.code,
-                    },
-                )
-
-        return len(invalid_resources)
 
     async def availability(self, session_id: str) -> EnvironmentAvailability:
         return await self._repository.availability(session_id)
 
     async def provision(self, session_id: str) -> EnvironmentAvailability:
         availability = await self._repository.availability(session_id)
-        for assignment in availability.assignments:
-            await self._ensure_available(assignment.host_resource_id)
+        for resource in availability.resources:
+            await self._ensure_available(resource.session_id, resource.mount_name)
         return await self._repository.availability(session_id)
 
     @asynccontextmanager
@@ -136,200 +94,116 @@ class EnvironmentService:
         session_id: str,
         snapshot: ResolvedEnvironmentSnapshot,
     ) -> AsyncGenerator[EnvironmentRuntime]:
-        """Keep fresh attachment scopes open through complete Harness runtime cleanup."""
-
         availability = await self.provision(session_id)
-        assignment_by_name = {item.mount_name: item for item in availability.assignments}
+        resource_by_name = {item.mount_name: item for item in availability.resources}
         snapshot_by_name = {item.mount_name: item for item in snapshot.mounts}
-        if set(assignment_by_name) != set(snapshot_by_name):
+        if set(resource_by_name) != set(snapshot_by_name):
             raise StoreIntegrityError(
-                "Session Environment assignments differ from the pinned desired mounts.",
-                code="environment_assignment_mismatch",
+                "Session Environment resources differ from the pinned desired mounts.",
+                code="environment_resource_mismatch",
             )
         runtime_mounts: dict[str, EnvironmentRuntimeMount] = {}
         async with AsyncExitStack() as attachments:
             for mount in snapshot.mounts:
-                assignment = assignment_by_name[mount.mount_name]
-                attachment = await attachments.enter_async_context(self._borrow_attachment(assignment.host_resource_id))
-                provider_binding = create_environment_provider_binding(attachment)
+                attachment = await attachments.enter_async_context(
+                    self._borrow_attachment((session_id, mount.mount_name))
+                )
                 runtime_mounts[mount.model_alias] = EnvironmentRuntimeMount(
-                    binding=provider_binding,
+                    binding=create_environment_provider_binding(attachment),
                     permission_ceiling=_permissions(mount),
                     working_directory="/",
                 )
             desired_default = snapshot.definition.default_mount
             default_mount = snapshot_by_name[desired_default].model_alias if desired_default is not None else None
-            environment = create_environment_runtime(
+            yield create_environment_runtime(
                 mounts=runtime_mounts,
                 default_mount=default_mount,
             )
-            yield environment
 
     async def apply_idle_policy(self, session_id: str, snapshot: ResolvedEnvironmentSnapshot) -> None:
-        mode = snapshot.definition.lifecycle.idle
-        if mode == "keep_running":
+        if snapshot.definition.lifecycle.idle == "keep_running":
             return
-        pause_mode = EnvironmentPauseMode.FULL if mode == "pause_full" else EnvironmentPauseMode.FILESYSTEM
-        availability = await self._repository.availability(session_id)
-        for resource in availability.resources:
-            if resource.lifecycle_state is HostResourceLifecycleState.available:
-                await self.pause(resource.host_resource_id, mode=pause_mode)
+        for resource in (await self._repository.availability(session_id)).resources:
+            if resource.status is EnvironmentResourceStatus.available:
+                await self.pause(
+                    resource.session_id,
+                    resource.mount_name,
+                    mode=EnvironmentPauseMode.FULL,
+                )
 
-    async def release_session(self, session_id: str, snapshot: ResolvedEnvironmentSnapshot) -> None:
-        availability = await self._repository.availability(session_id)
-        local_counts = Counter(item.host_resource_id for item in availability.assignments)
-        if snapshot.definition.lifecycle.release == "destroy_when_unreferenced":
-            for resource_id, local_count in local_counts.items():
-                if await self._repository.assignment_count(resource_id) != local_count:
-                    continue
-                current = await self._repository.resource(resource_id)
-                if current.lifecycle_state is HostResourceLifecycleState.unknown:
-                    current = await self.reconcile(resource_id)
-                    if current.lifecycle_state is HostResourceLifecycleState.unknown:
-                        raise EnvironmentLifecycleError(
-                            "Environment cleanup reconciliation has no authoritative outcome.",
-                            code="environment_cleanup_reconciliation_pending",
-                        )
-                await self.destroy(resource_id)
-        await self._repository.detach_session_assignments(session_id)
-
-    async def pause(self, host_resource_id: str, *, mode: EnvironmentPauseMode) -> HostEnvironmentResource:
-        async with self._exclusive_lifecycle(host_resource_id):
-            current = await self._repository.resource(host_resource_id)
-            if current.lifecycle_state is HostResourceLifecycleState.paused:
-                return current
-            live = self._live.get(host_resource_id)
-            if live is None:
-                await self._ensure_available_locked(current)
-                live = self._live.get(host_resource_id)
-            assert live is not None
-            selected, operation = await self._repository.begin_operation(
-                host_resource_id,
-                expected_fence=(await self._repository.resource(host_resource_id)).operation_fence,
-                action=EnvironmentManagementAction.PAUSE,
-                allowed_states=frozenset({HostResourceLifecycleState.available}),
-            )
-            dispatched = False
+    async def release_session(self, session_id: str) -> None:
+        failures: list[BaseException] = []
+        for resource in (await self._repository.availability(session_id)).resources:
             try:
-                dispatched = True
+                await self.destroy(resource.session_id, resource.mount_name)
+            except BaseException as exc:
+                failures.append(exc)
+        if failures:
+            raise BaseExceptionGroup("Environment cleanup failed", failures)
+
+    async def retry(self, session_id: str, mount_name: str) -> SessionEnvironmentResource:
+        return await self._ensure_available(session_id, mount_name)
+
+    async def pause(
+        self,
+        session_id: str,
+        mount_name: str,
+        *,
+        mode: EnvironmentPauseMode,
+    ) -> SessionEnvironmentResource:
+        key = (session_id, mount_name)
+        async with self._exclusive_lifecycle(key):
+            current = await self._repository.resource(*key)
+            if current.status is EnvironmentResourceStatus.paused:
+                return current
+            await self._ensure_available_locked(current)
+            live = self._live[key]
+            operation = _operation(EnvironmentManagementAction.PAUSE, key)
+            try:
                 state = await live.provider.pause(live.resource, operation=operation, mode=mode)
                 await live.resource.__aexit__(None, None, None)
-                self._live.pop(host_resource_id, None)
-                digest = await self._publish_state(selected, operation, state)
-                return await self._repository.complete_state_operation(
-                    host_resource_id,
-                    fence=selected.operation_fence,
-                    operation_id=operation.operation_id,
-                    state=HostResourceLifecycleState.paused,
+                self._live.pop(key, None)
+                digest = await self._publish_state(current, state)
+                return await self._repository.save(
+                    *key,
+                    status=EnvironmentResourceStatus.paused,
                     provider_state_digest=digest,
                 )
             except BaseException as exc:
-                await self._record_failure(selected, operation, exc, dispatched=dispatched)
+                await self._mark_unavailable(current, exc)
                 raise
 
-    async def destroy(self, host_resource_id: str) -> HostEnvironmentResource:
-        async with self._exclusive_lifecycle(host_resource_id):
-            current = await self._repository.resource(host_resource_id)
-            if current.lifecycle_state in {
-                HostResourceLifecycleState.destroyed,
-                HostResourceLifecycleState.unprovisioned,
-            }:
-                return current
-            state = await self._load_selected_state(current)
-            live = self._live.pop(host_resource_id, None)
+    async def destroy(self, session_id: str, mount_name: str) -> SessionEnvironmentResource:
+        key = (session_id, mount_name)
+        async with self._exclusive_lifecycle(key):
+            current = await self._repository.resource(*key)
+            live = self._live.pop(key, None)
             if live is not None:
                 await live.resource.__aexit__(None, None, None)
-            if state is None and current.lifecycle_state is HostResourceLifecycleState.missing:
-                return current
+            state = await self._load_state(current)
             if state is None:
-                raise StoreIntegrityError(
-                    "A destroyable Environment resource has no selected provider state.",
-                    code="provider_state_missing",
+                return await self._repository.save(
+                    *key,
+                    status=EnvironmentResourceStatus.unprovisioned,
+                    provider_state_digest=None,
                 )
-            selected, operation = await self._repository.begin_operation(
-                host_resource_id,
-                expected_fence=current.operation_fence,
-                action=EnvironmentManagementAction.DESTROY,
-                allowed_states=frozenset(
-                    {
-                        HostResourceLifecycleState.available,
-                        HostResourceLifecycleState.paused,
-                        HostResourceLifecycleState.failed,
-                        HostResourceLifecycleState.missing,
-                    }
-                ),
-            )
-            dispatched = False
             try:
-                provider = await self._provider(selected)
-                dispatched = True
-                await provider.destroy(state, operation=operation)
-                return await self._repository.complete_absent_operation(
-                    host_resource_id,
-                    fence=selected.operation_fence,
-                    operation_id=operation.operation_id,
-                    state=HostResourceLifecycleState.destroyed,
+                provider = await self._provider(current)
+                await provider.destroy(state, operation=_operation(EnvironmentManagementAction.DESTROY, key))
+                return await self._repository.save(
+                    *key,
+                    status=EnvironmentResourceStatus.unprovisioned,
+                    provider_state_digest=None,
                 )
             except BaseException as exc:
-                await self._record_failure(selected, operation, exc, dispatched=dispatched)
+                await self._mark_unavailable(current, exc)
                 raise
 
-    async def reconcile(self, host_resource_id: str) -> HostEnvironmentResource:
-        lock = self._lock_for(host_resource_id)
-        async with lock:
-            current = await self._repository.resource(host_resource_id)
-            operation_view = current.last_operation
-            if operation_view is None:
-                raise EnvironmentLifecycleError(
-                    "The Environment resource has no operation to reconcile.",
-                    code="environment_reconciliation_unavailable",
-                )
-            operation = EnvironmentOperationContext(
-                operation_id=operation_view.operation_id,
-                action=EnvironmentManagementAction(operation_view.action),
-                resource_correlation=host_resource_id,
-                attempt=operation_view.attempt,
-            )
-            provider = await self._provider(current)
-            last_state = await self._load_selected_state(current)
-            result = await provider.reconcile(operation, last_known_state=last_state)
-            if result.operation_id != operation.operation_id:
-                raise EnvironmentLifecycleError(
-                    "Provider reconciliation returned another operation identity.",
-                    code="environment_reconciliation_invalid",
-                )
-            if result.phase in {EnvironmentReconciliationPhase.RUNNING, EnvironmentReconciliationPhase.PAUSED}:
-                assert result.state is not None
-                digest = await self._publish_state(current, operation, result.state)
-                target = (
-                    HostResourceLifecycleState.available
-                    if result.phase is EnvironmentReconciliationPhase.RUNNING
-                    else HostResourceLifecycleState.paused
-                )
-                return await self._repository.complete_state_operation(
-                    host_resource_id,
-                    fence=current.operation_fence,
-                    operation_id=operation.operation_id,
-                    state=target,
-                    provider_state_digest=digest,
-                )
-            if result.phase is EnvironmentReconciliationPhase.ABSENT:
-                absent = _absent_state(operation.action)
-                return await self._repository.complete_absent_operation(
-                    host_resource_id,
-                    fence=current.operation_fence,
-                    operation_id=operation.operation_id,
-                    state=absent,
-                )
-            return current
-
     async def close(self) -> None:
-        """Disconnect process-local resources without changing durable provider lifecycle."""
-
-        live = tuple(self._live.items())
+        live = tuple(self._live.values())
         self._live.clear()
         failures: list[BaseException] = []
-        for _resource_id, item in reversed(live):
+        for item in reversed(live):
             try:
                 await item.resource.__aexit__(None, None, None)
             except BaseException as exc:
@@ -337,105 +211,55 @@ class EnvironmentService:
         if failures:
             raise BaseExceptionGroup("Environment resource shutdown failed", failures)
 
-    async def _ensure_available(self, host_resource_id: str) -> HostEnvironmentResource:
-        lock = self._lock_for(host_resource_id)
-        async with lock:
-            current = await self._repository.resource(host_resource_id)
-            return await self._ensure_available_locked(current)
+    async def _ensure_available(self, session_id: str, mount_name: str) -> SessionEnvironmentResource:
+        key = (session_id, mount_name)
+        async with self._lock_for(key):
+            return await self._ensure_available_locked(await self._repository.resource(*key))
 
-    async def _ensure_available_locked(self, current: HostEnvironmentResource) -> HostEnvironmentResource:
-        if current.lifecycle_state is HostResourceLifecycleState.failed:
-            raise EnvironmentLifecycleError(
-                "The Environment resource is failed and requires an explicit absence reset.",
-                code="environment_resource_failed",
-            )
-        if current.lifecycle_state in {
-            HostResourceLifecycleState.creating,
-            HostResourceLifecycleState.resuming,
-            HostResourceLifecycleState.pausing,
-            HostResourceLifecycleState.destroying,
-            HostResourceLifecycleState.unknown,
-        }:
-            raise EnvironmentLifecycleError(
-                "The Environment resource requires reconciliation before use.",
-                code="environment_reconciliation_required",
-            )
-        live = self._live.get(current.host_resource_id)
+    async def _ensure_available_locked(
+        self,
+        current: SessionEnvironmentResource,
+    ) -> SessionEnvironmentResource:
+        key = (current.session_id, current.mount_name)
+        live = self._live.get(key)
         if live is not None and live.resource.is_entered:
-            if current.lifecycle_state is not HostResourceLifecycleState.available:
-                raise StoreIntegrityError(
-                    "An entered Environment resource conflicts with its durable lifecycle state.",
-                    code="environment_resource_state_conflict",
-                )
             return current
-        create = current.lifecycle_state in {
-            HostResourceLifecycleState.unprovisioned,
-            HostResourceLifecycleState.destroyed,
-            HostResourceLifecycleState.missing,
-        }
-        action = EnvironmentManagementAction.CREATE if create else EnvironmentManagementAction.RESUME
-        allowed = (
-            frozenset(
-                {
-                    HostResourceLifecycleState.unprovisioned,
-                    HostResourceLifecycleState.destroyed,
-                    HostResourceLifecycleState.missing,
-                }
-            )
-            if create
-            else frozenset({HostResourceLifecycleState.available, HostResourceLifecycleState.paused})
-        )
-        state = None if create else await self._load_selected_state(current)
-        if not create and state is None:
-            raise StoreIntegrityError(
-                "A resumable Environment resource has no selected provider state.",
-                code="provider_state_missing",
-            )
-        selected, operation = await self._repository.begin_operation(
-            current.host_resource_id,
-            expected_fence=current.operation_fence,
-            action=action,
-            allowed_states=allowed,
+        state = await self._load_state(current)
+        create = state is None
+        operation = _operation(
+            EnvironmentManagementAction.CREATE if create else EnvironmentManagementAction.RESUME,
+            key,
         )
         resource: EnvironmentResource | None = None
-        dispatched = False
         try:
-            provider = await self._provider(selected)
-            dispatched = True
-            if create:
-                resource = await provider.create(operation=operation)
-            else:
-                assert state is not None
-                resource = await provider.resume(state, operation=operation)
+            provider = await self._provider(current)
+            resource = (
+                await provider.create(operation=operation)
+                if create
+                else await provider.resume(state, operation=operation)
+            )
             await resource.__aenter__()
-            digest = await self._publish_state(selected, operation, resource.state)
-            completed = await self._repository.complete_state_operation(
-                current.host_resource_id,
-                fence=selected.operation_fence,
-                operation_id=operation.operation_id,
-                state=HostResourceLifecycleState.available,
+            digest = await self._publish_state(current, resource.state)
+            selected = await self._repository.save(
+                *key,
+                status=EnvironmentResourceStatus.available,
                 provider_state_digest=digest,
             )
-            self._live[current.host_resource_id] = _LiveResource(provider=provider, resource=resource)
-            return completed
+            self._live[key] = _LiveResource(provider=provider, resource=resource)
+            return selected
         except BaseException as exc:
-            with CancelScope(shield=True):
-                if resource is not None and resource.is_entered:
-                    try:
-                        await resource.__aexit__(type(exc), exc, exc.__traceback__)
-                    except BaseException as cleanup_error:
-                        exc.add_note(f"Environment resource cleanup also failed with {type(cleanup_error).__name__}.")
+            if resource is not None and resource.is_entered:
                 try:
-                    await self._record_failure(selected, operation, exc, dispatched=dispatched)
-                except BaseException as record_error:
-                    exc.add_note(
-                        f"Environment lifecycle failure recording also failed with {type(record_error).__name__}."
-                    )
+                    await resource.__aexit__(type(exc), exc, exc.__traceback__)
+                except BaseException:
+                    pass
+            await self._mark_unavailable(current, exc)
             raise
 
-    async def _provider(self, resource: HostEnvironmentResource) -> EnvironmentProvider:
+    async def _provider(self, resource: SessionEnvironmentResource) -> EnvironmentProvider:
         provider_key, schema_version, digest, parameters = await self._repository.provider_spec(
-            resource.host_resource_id
+            resource.session_id,
+            resource.mount_name,
         )
         if provider_key != resource.provider_key or digest != resource.provider_spec_digest:
             raise StoreIntegrityError(
@@ -443,17 +267,18 @@ class EnvironmentService:
                 code="environment_resource_identity_conflict",
             )
         runtime = await self._runtimes.resolve(provider_key)
-        spec = EnvironmentProviderSpec(
-            provider_key=provider_key,
-            schema_version=schema_version,
-            parameters=parameters,
+        return self._factories.create_provider(
+            EnvironmentProviderSpec(
+                provider_key=provider_key,
+                schema_version=schema_version,
+                parameters=parameters,
+            ),
+            runtime=runtime,
         )
-        return self._factories.create_provider(spec, runtime=runtime)
 
     async def _publish_state(
         self,
-        resource: HostEnvironmentResource,
-        operation: EnvironmentOperationContext,
+        resource: SessionEnvironmentResource,
         state: EnvironmentProviderResourceState,
     ) -> str:
         if state.provider_key != resource.provider_key:
@@ -462,10 +287,10 @@ class EnvironmentService:
                 code="provider_state_invalid",
             )
         stored = StoredProviderState(
-            host_resource_id=resource.host_resource_id,
+            session_id=resource.session_id,
+            mount_name=resource.mount_name,
             provider_key=resource.provider_key,
             provider_spec_digest=resource.provider_spec_digest,
-            operation_fence=resource.operation_fence,
             state_version=state.state_version,
             provider_state=state.model_dump(mode="json"),
             exported_at=datetime.now(UTC),
@@ -477,11 +302,11 @@ class EnvironmentService:
         )
         return reference.logical_digest
 
-    async def _load_selected_state(
+    async def _load_state(
         self,
-        resource: HostEnvironmentResource,
+        resource: SessionEnvironmentResource,
     ) -> EnvironmentProviderResourceState | None:
-        digest = resource.selected_provider_state_digest
+        digest = resource.provider_state_digest
         if digest is None:
             return None
         envelope = await self._store.read_object(
@@ -493,17 +318,17 @@ class EnvironmentService:
         )
         try:
             stored = StoredProviderState.model_validate_json(json.dumps(envelope.payload))
-            state = EnvironmentProviderResourceState.model_validate_json(json.dumps(stored.provider_state))
+            state = EnvironmentProviderResourceState.model_validate(stored.provider_state)
         except ValidationError as exc:
             raise StoreIntegrityError(
                 "A selected Environment provider state object is invalid.",
                 code="provider_state_invalid",
             ) from exc
         if (
-            stored.host_resource_id != resource.host_resource_id
+            stored.session_id != resource.session_id
+            or stored.mount_name != resource.mount_name
             or stored.provider_key != resource.provider_key
             or stored.provider_spec_digest != resource.provider_spec_digest
-            or stored.operation_fence > resource.operation_fence
             or state.provider_key != resource.provider_key
             or state.state_version != stored.state_version
         ):
@@ -513,109 +338,91 @@ class EnvironmentService:
             )
         return state
 
-    async def _record_failure(
+    async def _mark_unavailable(
         self,
-        resource: HostEnvironmentResource,
-        operation: EnvironmentOperationContext,
+        resource: SessionEnvironmentResource,
         error: BaseException,
-        *,
-        dispatched: bool,
     ) -> None:
-        unknown = dispatched or isinstance(error, asyncio.CancelledError)
-        failure: object = {"code": "environment_operation_failed"}
+        failure: JsonValue = {"code": "environment_operation_failed"}
         if isinstance(error, EnvironmentProviderError):
-            unknown = error.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN
             failure = error.safe_projection().model_dump(mode="json")
-        elif isinstance(error, RuntimeResolutionError):
-            failure = {"code": error.code}
-        with CancelScope(shield=True):
-            await self._repository.fail_operation(
-                resource.host_resource_id,
-                fence=resource.operation_fence,
-                operation_id=operation.operation_id,
-                unknown=unknown,
-                failure=failure,  # type: ignore[arg-type]
-            )
+        await self._repository.save(
+            resource.session_id,
+            resource.mount_name,
+            status=EnvironmentResourceStatus.unavailable,
+            provider_state_digest=resource.provider_state_digest,
+            failure=failure,
+        )
 
     @asynccontextmanager
     async def _borrow_attachment(
         self,
-        host_resource_id: str,
+        key: _ResourceKey,
     ) -> AsyncGenerator[EnvironmentRuntimeAttachment]:
-        lock = self._lock_for(host_resource_id)
+        lock = self._lock_for(key)
         async with lock:
-            if host_resource_id in self._lifecycle_pending:
+            if key in self._lifecycle_pending:
                 raise EnvironmentLifecycleError(
-                    "The Environment resource is entering an exclusive lifecycle operation.",
+                    "The Environment resource is entering a lifecycle operation.",
                     code="environment_lifecycle_pending",
                 )
-            live = self._live.get(host_resource_id)
+            live = self._live.get(key)
             if live is None or not live.resource.is_entered:
                 raise EnvironmentLifecycleError(
                     "An available Environment resource has no entered provider scope.",
                     code="environment_resource_disconnected",
                 )
-            count = self._borrow_counts.get(host_resource_id, 0)
+            count = self._borrow_counts.get(key, 0)
             if count == 0:
-                self._borrow_zero[host_resource_id] = Event()
-            self._borrow_counts[host_resource_id] = count + 1
+                self._borrow_zero[key] = Event()
+            self._borrow_counts[key] = count + 1
         attachment_context = live.resource.acquire_attachment()
-        entered = False
-        exit_type: type[BaseException] | None = None
-        exit_value: BaseException | None = None
         try:
-            attachment = await attachment_context.__aenter__()
-            entered = True
-            try:
+            async with attachment_context as attachment:
                 yield attachment
-            except BaseException as exc:
-                exit_type = type(exc)
-                exit_value = exc
-                raise
         finally:
-            with CancelScope(shield=True):
-                try:
-                    if entered:
-                        await attachment_context.__aexit__(
-                            exit_type,
-                            exit_value,
-                            exit_value.__traceback__ if exit_value is not None else None,
-                        )
-                finally:
-                    async with lock:
-                        remaining = self._borrow_counts[host_resource_id] - 1
-                        if remaining == 0:
-                            self._borrow_counts.pop(host_resource_id, None)
-                            self._borrow_zero[host_resource_id].set()
-                        else:
-                            self._borrow_counts[host_resource_id] = remaining
+            async with lock:
+                remaining = self._borrow_counts[key] - 1
+                if remaining == 0:
+                    self._borrow_counts.pop(key, None)
+                    self._borrow_zero[key].set()
+                else:
+                    self._borrow_counts[key] = remaining
 
     @asynccontextmanager
-    async def _exclusive_lifecycle(self, host_resource_id: str) -> AsyncGenerator[None]:
-        lock = self._lock_for(host_resource_id)
+    async def _exclusive_lifecycle(self, key: _ResourceKey) -> AsyncGenerator[None]:
+        lock = self._lock_for(key)
         async with lock:
-            if host_resource_id in self._lifecycle_pending:
+            if key in self._lifecycle_pending:
                 raise EnvironmentLifecycleError(
-                    "The Environment resource already has a pending lifecycle operation.",
+                    "The Environment resource already has a lifecycle operation.",
                     code="environment_lifecycle_pending",
                 )
-            self._lifecycle_pending.add(host_resource_id)
-            zero = self._borrow_zero.get(host_resource_id)
-            if zero is None or self._borrow_counts.get(host_resource_id, 0) == 0:
+            self._lifecycle_pending.add(key)
+            zero = self._borrow_zero.get(key)
+            if zero is None or self._borrow_counts.get(key, 0) == 0:
                 zero = Event()
                 zero.set()
-                self._borrow_zero[host_resource_id] = zero
+                self._borrow_zero[key] = zero
         try:
             await zero.wait()
             async with lock:
                 yield
         finally:
-            with CancelScope(shield=True):
-                async with lock:
-                    self._lifecycle_pending.discard(host_resource_id)
+            async with lock:
+                self._lifecycle_pending.discard(key)
 
-    def _lock_for(self, host_resource_id: str) -> Lock:
-        return self._resource_locks.setdefault(host_resource_id, Lock())
+    def _lock_for(self, key: _ResourceKey) -> Lock:
+        return self._locks.setdefault(key, Lock())
+
+
+def _operation(action: EnvironmentManagementAction, key: _ResourceKey) -> EnvironmentOperationContext:
+    return EnvironmentOperationContext(
+        operation_id=f"operation-{uuid4().hex}",
+        action=action,
+        resource_correlation=f"{key[0]}:{key[1]}",
+        attempt=1,
+    )
 
 
 def _permissions(mount: ResolvedEnvironmentMountDefinition) -> EnvironmentPermissionSet:
@@ -635,20 +442,6 @@ def _permissions(mount: ResolvedEnvironmentMountDefinition) -> EnvironmentPermis
                 code="environment_permission_invalid",
             ) from exc
     return EnvironmentPermissionSet(operations=frozenset(operations))
-
-
-def _absent_state(
-    action: EnvironmentManagementAction,
-) -> Literal[
-    HostResourceLifecycleState.unprovisioned,
-    HostResourceLifecycleState.destroyed,
-    HostResourceLifecycleState.missing,
-]:
-    if action is EnvironmentManagementAction.CREATE:
-        return HostResourceLifecycleState.unprovisioned
-    if action is EnvironmentManagementAction.DESTROY:
-        return HostResourceLifecycleState.destroyed
-    return HostResourceLifecycleState.missing
 
 
 __all__ = ["EnvironmentService"]

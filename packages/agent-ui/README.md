@@ -1,14 +1,19 @@
 # Agent UI
 
-`a13n-ui` is the local single-user Host for Agent Foundation Harness. The default command and explicit `tui` command run the same interactive terminal frontend, with one-shot commands alongside it:
+`a13n-ui` is the local single-user Host for Agent Foundation Harness. The default command and explicit `cli` command run the same ordinary append-only terminal frontend, with one-shot and Web commands alongside it:
 
 ```console
 a13n-ui
-a13n-ui tui
+a13n-ui cli
+a13n-ui run "Summarize this repository"
+a13n-ui sessions list
 a13n-ui runtime status
+a13n-ui web
 ```
 
-Every path opens one stable `AgentUiHost` with local Session authority and runtime Runner supervision. Restart starts a fresh Runner, validates and promotes it, then drains the previous Runner without restarting the Host or terminal frontend. The bundled WebUI remains a peer surface in the accepted architecture, but its product interaction design is not coupled to this CLI foundation.
+Every path opens one stable `AgentUiHost` with local Session authority and runtime Runner supervision. A Session stores immutable composition plus its latest complete Harness continuation. Input, active Runs, partial output, live AG-UI events, and async-child tasks remain process-local; after interruption, a later Run starts from the last continuation that saved successfully.
+
+Runner restart starts a fresh child process, activates it, then drains the previous Runner without restarting the Host or terminal frontend. The bundled WebUI is a complete multi-Session peer over the same Host operations. There is no full-screen TUI, durable input queue, Run ledger, or event replay journal.
 
 The repository Make alias starts the interactive CLI:
 
@@ -20,7 +25,8 @@ After publication, the distribution and console entrypoint share the same name, 
 
 ```console
 uvx a13n-ui
-uvx a13n-ui tui
+uvx a13n-ui cli
+uvx a13n-ui web
 ```
 
 Asset preparation remains an independent build concern.
@@ -36,7 +42,7 @@ Agent UI selects one full process-settings YAML from explicit `--config PATH` or
 ~/.a13n-ui/definitions/{models,prompts,plugins,skill-sources,skills,agents,environments}
 ```
 
-Model, Prompt, Agent, Environment, and other product definitions remain separate strict YAML/JSON files under the configured definition roots. SQLite indexes accepted generations but is not configuration authority.
+Model, Prompt, Agent, Environment, and other product definitions remain separate strict YAML/JSON files under the configured definition roots. SQLite indexes accepted generations but is not configuration authority. Local writes use ordinary last-write-wins behavior; Agent UI does not add distributed leases, fences, or stale-writer coordination.
 
 ## Local Store Development
 

@@ -7,9 +7,9 @@ from pathlib import Path
 import a13n_ui.composition.reconstruction as reconstruction_module
 import pytest
 import yaml
-from a13n_harness import ContextualMCP
 from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
 from a13n_harness.environment.local.files import LocalFileOperator
+from a13n_harness.mcp import ContextualMCP
 from a13n_ui.composition.reconstruction import SnapshotSkillMaterializer, _PackageFile
 from a13n_ui.configuration import (
     ConfigurationSettings,
@@ -48,7 +48,6 @@ def _settings(data_root: Path, definitions: Path, workspace: Path) -> AgentUiSet
                 ),
             ),
             model_adapter_keys=("a13n.pydantic-ai",),
-            orphan_retention_seconds=60,
         ),
     )
 
@@ -111,7 +110,6 @@ def _write_composition(definitions: Path, *, system_prompt: str = "Be concise.")
             "lifecycle": {
                 "provision": "on_first_run",
                 "idle": "keep_running",
-                "release": "retain",
             },
         },
     )
@@ -137,7 +135,9 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         )
         await application.validate_agent_executable(agent_reference)
         executable = await application._composition.executable(agent_reference)
+        retained_cache = application._composition._cache
 
+        assert retained_cache._entries
         assert executable.definition.agent.system_prompt == ["Be concise."]
         assert executable.definition.agent.instructions is None
         assert agent.root_agent.resource_id == "agent-main"
@@ -169,10 +169,39 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         )
         assert exact_reference == agent_reference
 
+    assert retained_cache._entries == {}
+
     async with open_agent_ui_host(settings) as restarted:
         assert await restarted.agent_snapshot(agent_reference) == agent
         assert await restarted.environment_snapshot(environment_reference) == environment
         await restarted.validate_agent_executable(agent_reference)
+
+
+async def test_host_shutdown_clears_executable_cache_after_prior_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    retained_cache = None
+
+    async def fail_environment_close() -> None:
+        raise RuntimeError("simulated Environment cleanup failure")
+
+    with pytest.raises(RuntimeError, match="simulated Environment cleanup failure"):
+        async with open_agent_ui_host(settings) as application:
+            agent_reference = await application.resolve_agent_snapshot("agent-main")
+            await application.validate_agent_executable(agent_reference)
+            retained_cache = application._composition._cache
+            assert retained_cache._entries
+            monkeypatch.setattr(application._environments, "close", fail_environment_close)
+
+    assert retained_cache is not None
+    assert retained_cache._entries == {}
 
 
 async def test_reconstruction_rejects_a_changed_model_adapter_lock(
@@ -485,7 +514,7 @@ async def test_reload_rejects_unsupported_environment_lifecycle_and_async_tools(
 
         environment_path = definitions / "environments/environment-main.yaml"
         environment = yaml.safe_load(environment_path.read_text())
-        environment["lifecycle"]["idle"] = "pause_full"
+        environment["lifecycle"]["idle"] = "pause"
         _write_yaml(environment_path, environment)
         with pytest.raises(ConfigurationError) as lifecycle_error:
             await application.reload_configuration()

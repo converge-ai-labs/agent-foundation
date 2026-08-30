@@ -9,11 +9,11 @@ from typing import Literal
 
 from a13n_harness import (
     AgentSpec,
-    CapabilityTypeCatalog,
     ExecutableAgent,
     HarnessBuilder,
     RunBindings,
 )
+from a13n_harness.capability_types import CapabilityTypeCatalog
 from pydantic_ai.agent.spec import CapabilitySpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -95,11 +95,10 @@ async def run_capability_demo(
         instructions=instructions,
         observed_instructions=observed_instructions,
     )
-    async with executable:
-        result = await executable.run(
-            "Report the selected Capability mode.",
-            bindings=RunBindings.embedded(),
-        )
+    result = await executable.run(
+        "Report the selected Capability mode.",
+        bindings=RunBindings.embedded(),
+    )
 
     if len(observed_instructions) != 1 or observed_instructions[0] is None:
         raise RuntimeError("The custom Capability instruction did not reach the Model")

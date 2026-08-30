@@ -8,7 +8,7 @@ from enum import StrEnum
 
 from a13n_environment_provider import build_environment_provider_factory_catalog
 from a13n_harness import RunInputValue
-from anyio import CancelScope, Event, Lock, create_task_group, move_on_after
+from anyio import CancelScope, Event, Lock, move_on_after
 from anyio.streams.memory import MemoryObjectReceiveStream
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
@@ -32,11 +32,10 @@ from a13n_ui.configuration import (
     SkillConflictPreview,
     SkillScanPreview,
     SkillSourceStatus,
-    SourceTransactionManifest,
 )
 from a13n_ui.configuration.catalog import CatalogRepository
 from a13n_ui.environments import EnvironmentAvailability, EnvironmentService, ProviderRuntimeResolver
-from a13n_ui.errors import HostStateError, SessionError
+from a13n_ui.errors import EnvironmentLifecycleError, HostStateError
 from a13n_ui.model_adapters import RunModelResolverFactory, unavailable_run_model_resolver_factory
 from a13n_ui.runs import ForegroundRunCoordinator
 from a13n_ui.runtime_generations import (
@@ -47,17 +46,15 @@ from a13n_ui.runtime_generations import (
 from a13n_ui.sessions import (
     EventSubscription,
     LocalSession,
-    PresentationDelivery,
     SessionAgentSkillSelection,
-    SessionEventStore,
-    SessionLifecycleState,
+    SessionEventHub,
+    SessionRunResult,
     SessionService,
     SessionSummary,
     SessionUpdate,
-    TurnView,
 )
 from a13n_ui.settings import AgentUiSettings
-from a13n_ui.storage import LocalStore, StoreDiagnostic, open_local_store
+from a13n_ui.storage import LocalStore, open_local_store
 
 
 class HostState(StrEnum):
@@ -76,7 +73,7 @@ class HostStatus(BaseModel):
 
     state: HostState
     process_generation: str = Field(min_length=1, max_length=64)
-    registered_object_count: int = Field(ge=0)
+    object_count: int = Field(ge=0)
 
 
 class AgentUiHost:
@@ -105,7 +102,7 @@ class AgentUiHost:
             runtimes=ProviderRuntimeResolver(),
         )
         self._sessions = SessionService(store, self._composition)
-        self._events = SessionEventStore(store)
+        self._events = SessionEventHub()
         self._runs = ForegroundRunCoordinator(
             sessions=self._sessions,
             composition=self._composition,
@@ -128,7 +125,7 @@ class AgentUiHost:
             return HostStatus(
                 state=self._state,
                 process_generation=self._store.process_generation,
-                registered_object_count=await self._store.object_count(),
+                object_count=await self._store.object_count(),
             )
 
     async def runtime_status(self) -> RuntimeStatus:
@@ -138,10 +135,6 @@ class AgentUiHost:
     async def restart_runtime(self) -> RuntimeRestartResult:
         async with self._operation():
             return await self._runtime.restart()
-
-    async def recovery_diagnostics(self, *, limit: int = 100) -> tuple[StoreDiagnostic, ...]:
-        async with self._operation():
-            return await self._store.recovery_diagnostics(limit=limit)
 
     async def current_configuration(self) -> ConfigurationGeneration | None:
         async with self._operation():
@@ -225,7 +218,6 @@ class AgentUiHost:
         *,
         agent_snapshot: SnapshotReference,
         environment_snapshot: SnapshotReference,
-        creation_request_id: str | None = None,
         title: str | None = None,
         skill_selections: tuple[SessionAgentSkillSelection, ...] = (),
     ) -> LocalSession:
@@ -233,34 +225,29 @@ class AgentUiHost:
             session = await self._sessions.create(
                 agent_snapshot=agent_snapshot,
                 environment_snapshot=environment_snapshot,
-                creation_request_id=creation_request_id,
                 title=title,
                 skill_selections=skill_selections,
             )
-            return await self._complete_session_provisioning(session)
+            return await self._provision_eager_environment(session)
 
     async def fork_session(
         self,
         source_session_id: str,
         *,
-        expected_source_version: int,
         agent_snapshot: SnapshotReference | None = None,
         environment_snapshot: SnapshotReference | None = None,
-        creation_request_id: str | None = None,
         title: str | None = None,
         skill_selections: tuple[SessionAgentSkillSelection, ...] | None = None,
     ) -> LocalSession:
         async with self._operation():
             session = await self._sessions.fork(
                 source_session_id,
-                expected_source_version=expected_source_version,
                 agent_snapshot=agent_snapshot,
                 environment_snapshot=environment_snapshot,
-                creation_request_id=creation_request_id,
                 title=title,
                 skill_selections=skill_selections,
             )
-            return await self._complete_session_provisioning(session)
+            return await self._provision_eager_environment(session)
 
     async def session(self, session_id: str) -> LocalSession:
         async with self._operation():
@@ -279,93 +266,40 @@ class AgentUiHost:
         self,
         session_id: str,
         *,
-        expected_version: int,
         update: SessionUpdate,
     ) -> LocalSession:
         async with self._operation():
-            return await self._sessions.update(
-                session_id,
-                expected_version=expected_version,
-                update=update,
-            )
+            return await self._sessions.update(session_id, update=update)
 
     async def session_environment(self, session_id: str) -> EnvironmentAvailability:
         async with self._operation():
             return await self._environments.availability(session_id)
 
-    async def run_session_turn(
+    async def run_session(
         self,
         session_id: str,
         *,
-        thread_id: str,
-        expected_thread_version: int,
         input_value: RunInputValue,
-    ) -> TurnView:
+    ) -> SessionRunResult:
         async with self._operation():
-            return await self._runs.run_turn(
-                session_id=session_id,
-                thread_id=thread_id,
-                expected_thread_version=expected_thread_version,
-                input_value=input_value,
-            )
+            return await self._runs.run(session_id=session_id, input_value=input_value)
 
-    async def resume_session_turn(
+    async def resume_session(
         self,
         session_id: str,
         *,
-        turn_id: str,
-        expected_thread_version: int,
         results: DeferredToolResults,
-    ) -> TurnView:
+    ) -> SessionRunResult:
         async with self._operation():
-            return await self._runs.resume_turn(
-                session_id=session_id,
-                turn_id=turn_id,
-                expected_thread_version=expected_thread_version,
-                results=results,
-            )
+            return await self._runs.resume(session_id=session_id, results=results)
 
-    async def session_deferred_requests(
-        self,
-        session_id: str,
-        *,
-        turn_id: str,
-    ) -> DeferredToolRequests:
+    async def session_deferred_requests(self, session_id: str) -> DeferredToolRequests:
         async with self._operation():
-            return await self._runs.deferred_requests(
-                session_id=session_id,
-                turn_id=turn_id,
-            )
+            return await self._runs.deferred_requests(session_id)
 
-    async def cancel_session_turn(
-        self,
-        session_id: str,
-        *,
-        turn_id: str,
-        expected_thread_version: int,
-    ) -> TurnView:
+    async def cancel_session(self, session_id: str) -> bool:
         async with self._operation():
-            return await self._runs.cancel_turn(
-                session_id=session_id,
-                turn_id=turn_id,
-                expected_thread_version=expected_thread_version,
-            )
-
-    async def session_events(
-        self,
-        session_id: str,
-        *,
-        after_sequence: int = 0,
-        through_sequence: int | None = None,
-        limit: int = 10_000,
-    ) -> tuple[PresentationDelivery, ...]:
-        async with self._operation():
-            return await self._events.replay(
-                session_id,
-                after_sequence=after_sequence,
-                through_sequence=through_sequence,
-                limit=limit,
-            )
+            return await self._runs.cancel(session_id)
 
     @asynccontextmanager
     async def subscribe_session_events(
@@ -378,67 +312,21 @@ class AgentUiHost:
             async with self._events.subscribe(session_id, capacity=capacity) as subscription:
                 yield subscription
 
-    async def retry_session_provisioning(
-        self,
-        session_id: str,
-        *,
-        expected_version: int,
-    ) -> LocalSession:
+    async def delete_session(self, session_id: str) -> None:
         async with self._operation():
-            session = await self._sessions.get(session_id)
-            if session.control_version != expected_version:
-                raise SessionError(
-                    "The Session control version is stale.",
-                    code="session_version_conflict",
-                    details={"current_version": session.control_version},
-                )
-            if session.lifecycle_state is SessionLifecycleState.blocked:
-                await self._sessions.validate_selected_authority(session_id)
-                session = await self._sessions.set_lifecycle(
-                    session_id,
-                    expected_version=expected_version,
-                    state=SessionLifecycleState.provisioning,
-                )
-            return await self._complete_session_provisioning(session)
-
-    async def delete_session(self, session_id: str, *, expected_version: int) -> None:
-        async with self._operation():
-            current = await self._sessions.get(session_id)
-            if current.control_version != expected_version:
-                raise SessionError(
-                    "The Session control version is stale.",
-                    code="session_version_conflict",
-                    details={"current_version": current.control_version},
-                )
-            if current.root.active_turn_id is not None:
-                raise SessionError(
-                    "A Session with active work cannot be deleted.",
-                    code="session_work_active",
-                )
-            session = await self._sessions.set_lifecycle(
-                session_id,
-                expected_version=expected_version,
-                state=SessionLifecycleState.deleting,
-            )
-            snapshot = await self._composition.environment(session.environment_snapshot)
+            await self._sessions.get(session_id)
+            await self._runs.cancel(session_id)
+            cleanup_error: Exception | None = None
             try:
-                await self._environments.release_session(session_id, snapshot)
-            except BaseException:
-                await self._sessions.set_lifecycle(
-                    session_id,
-                    expected_version=session.control_version,
-                    state=SessionLifecycleState.cleanup_pending,
-                )
-                raise
-            await self._sessions.delete(session_id, expected_version=session.control_version)
-
-    async def apply_source_transaction(
-        self,
-        manifest: SourceTransactionManifest,
-        replacements: dict[str, bytes],
-    ) -> ConfigurationGeneration:
-        async with self._operation():
-            return await self._configuration.apply_transaction(manifest, replacements)
+                await self._environments.release_session(session_id)
+            except Exception as exc:
+                cleanup_error = exc
+            await self._sessions.delete(session_id)
+            if cleanup_error is not None:
+                raise EnvironmentLifecycleError(
+                    "The Session was deleted, but one or more Environment resources could not be destroyed.",
+                    code="session_deleted_cleanup_failed",
+                ) from cleanup_error
 
     async def skill_source_statuses(self) -> tuple[SkillSourceStatus, ...]:
         async with self._operation():
@@ -568,25 +456,11 @@ class AgentUiHost:
                 code="host_stopping",
             )
 
-    async def _complete_session_provisioning(self, session: LocalSession) -> LocalSession:
-        if session.lifecycle_state is not SessionLifecycleState.provisioning:
-            return session
+    async def _provision_eager_environment(self, session: LocalSession) -> LocalSession:
         snapshot = await self._composition.environment(session.environment_snapshot)
-        try:
-            if snapshot.definition.lifecycle.provision == "eager":
-                await self._environments.provision(session.session_id)
-        except Exception as exc:
-            return await self._sessions.set_lifecycle(
-                session.session_id,
-                expected_version=session.control_version,
-                state=SessionLifecycleState.blocked,
-                failure={"code": getattr(exc, "code", "environment_provisioning_failed")},
-            )
-        return await self._sessions.set_lifecycle(
-            session.session_id,
-            expected_version=session.control_version,
-            state=SessionLifecycleState.ready,
-        )
+        if snapshot.definition.lifecycle.provision == "eager":
+            await self._environments.provision(session.session_id)
+        return session
 
     async def _stop(self) -> None:
         async with self._operation_lock:
@@ -636,85 +510,25 @@ async def open_agent_ui_host(
                 store,
                 model_resolver_factory=model_resolver_factory,
             )
-            await host._configuration.initialize()
-            await host._sessions.initialize()
-            await host._environments.initialize()
-            await host._events.initialize()
-            await store.cleanup_unreferenced_objects(
-                retention_seconds=host._configuration.settings.orphan_retention_seconds,
-            )
-            await host._runtime.start()
-            host._state = HostState.ready
-            async with create_task_group() as tasks:
-                tasks.start_soon(host._configuration.reconcile_periodically)
-                try:
-                    yield host
-                finally:
-                    with CancelScope(shield=True):
-                        await host._stop()
-                        tasks.cancel_scope.cancel()
-                        cleanup_errors: list[BaseException] = []
-                        with move_on_after(host._settings.shutdown_timeout_seconds) as runs_scope:
-                            try:
-                                await host._runs.close()
-                            except BaseException as exc:
-                                cleanup_errors.append(exc)
-                        if runs_scope.cancel_called:
-                            cleanup_errors.append(
-                                HostStateError(
-                                    "Foreground Run cleanup exceeded its shutdown bound.",
-                                    code="host_run_cleanup_timeout",
-                                )
-                            )
-                        try:
-                            await host._runtime.close()
-                        except BaseException as exc:
-                            cleanup_errors.append(exc)
-                        with move_on_after(host._settings.shutdown_timeout_seconds) as environment_scope:
-                            try:
-                                await host._environments.close()
-                            except BaseException as exc:
-                                cleanup_errors.append(exc)
-                        if environment_scope.cancel_called:
-                            cleanup_errors.append(
-                                HostStateError(
-                                    "Environment cleanup exceeded its shutdown bound.",
-                                    code="host_environment_cleanup_timeout",
-                                )
-                            )
-                        with move_on_after(host._settings.shutdown_timeout_seconds) as composition_scope:
-                            try:
-                                await host._composition.close()
-                            except BaseException as exc:
-                                cleanup_errors.append(exc)
-                        if composition_scope.cancel_called:
-                            cleanup_errors.append(
-                                HostStateError(
-                                    "Composition cleanup exceeded its shutdown bound.",
-                                    code="host_composition_cleanup_timeout",
-                                )
-                            )
-                        with move_on_after(host._settings.shutdown_timeout_seconds) as configuration_scope:
-                            try:
-                                await host._configuration.close()
-                            except BaseException as exc:
-                                cleanup_errors.append(exc)
-                        if configuration_scope.cancel_called:
-                            cleanup_errors.append(
-                                HostStateError(
-                                    "Configuration cleanup exceeded its shutdown bound.",
-                                    code="host_configuration_cleanup_timeout",
-                                )
-                            )
-                        if cleanup_errors:
-                            raise BaseExceptionGroup("Agent UI Host cleanup failed.", cleanup_errors)
+            try:
+                await host._configuration.initialize()
+                await host._runtime.start()
+                host._state = HostState.ready
+                yield host
+            finally:
+                with CancelScope(shield=True):
+                    await host._stop()
+                    try:
+                        await host._runs.close()
+                        await host._runtime.close()
+                        await host._environments.close()
+                    finally:
+                        await host._composition.close()
+                    await host._configuration.close()
+                    host._state = HostState.closed
     finally:
         if host is not None:
-            try:
-                with CancelScope(shield=True):
-                    await host._runtime.close()
-            finally:
-                host._state = HostState.closed
+            host._state = HostState.closed
 
 
 __all__ = ["AgentUiHost", "HostState", "HostStatus", "open_agent_ui_host"]

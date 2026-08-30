@@ -1,53 +1,34 @@
-"""Durable Agent UI Session, Thread, Turn, event, and checkpoint services."""
+"""Continuation-backed Session state and process-local event delivery."""
 
-from .events import (
-    AguiSegmentHeader,
-    EventSubscription,
-    PresentationDelivery,
-    PresentationStreamRef,
-    SessionEventStore,
-    StoredAguiEvent,
-)
+from .events import EventSubscription, LiveAguiEvent, PresentationDelivery, SessionEventHub
 from .models import (
-    CheckpointRef,
+    ContinuationRef,
     LocalSession,
-    PendingDeferredRef,
     SessionAgentSkillSelection,
     SessionForkRef,
-    SessionLifecycleState,
+    SessionRunResult,
+    SessionRunStatus,
     SessionSummary,
     SessionUpdate,
-    StoredDeferredRequests,
-    StoredHarnessState,
-    ThreadView,
-    TurnState,
-    TurnView,
-    WaitingReason,
+    StoredSessionContinuation,
 )
 from .repository import SessionRepository
 from .service import SessionService
 
 __all__ = [
-    "AguiSegmentHeader",
-    "CheckpointRef",
+    "ContinuationRef",
     "EventSubscription",
+    "LiveAguiEvent",
     "LocalSession",
-    "PendingDeferredRef",
     "PresentationDelivery",
-    "PresentationStreamRef",
     "SessionAgentSkillSelection",
-    "SessionEventStore",
+    "SessionEventHub",
     "SessionForkRef",
-    "SessionLifecycleState",
     "SessionRepository",
+    "SessionRunResult",
+    "SessionRunStatus",
     "SessionService",
     "SessionSummary",
     "SessionUpdate",
-    "StoredAguiEvent",
-    "StoredDeferredRequests",
-    "StoredHarnessState",
-    "ThreadView",
-    "TurnState",
-    "TurnView",
-    "WaitingReason",
+    "StoredSessionContinuation",
 ]

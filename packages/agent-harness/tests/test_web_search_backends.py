@@ -6,17 +6,19 @@ from typing import Any, cast
 
 import pytest
 from a13n_harness import (
+    AgentSpec,
+    DefinitionError,
+    HarnessBuilder,
+    RunBindings,
+    RunError,
+)
+from a13n_harness.capabilities import (
     WEB_SCRAPE_BACKEND_PRIORITY_ENV,
     WEB_SCRAPE_MODE_ENV,
     WEB_SEARCH_BACKEND_ENV,
     WEB_SEARCH_BACKEND_PRIORITY_ENV,
     WEB_SEARCH_CONTEXT_SIZE_ENV,
     WEB_SEARCH_MODE_ENV,
-    AgentSpec,
-    DefinitionError,
-    HarnessBuilder,
-    RunBindings,
-    RunError,
     WebCapability,
     WebConfiguration,
     WebProviderError,
@@ -32,9 +34,9 @@ from a13n_harness import (
     WebSearchRequest,
     WebSearchResponse,
     WebSearchResult,
-    WebToolset,
 )
 from a13n_harness.context import AgentContext
+from a13n_harness.toolsets import WebToolset
 from a13n_harness.toolsets.web import _select_scrape_backend_bindings, _select_search_backend_bindings
 from pydantic import ValidationError
 from pydantic_ai import RunContext

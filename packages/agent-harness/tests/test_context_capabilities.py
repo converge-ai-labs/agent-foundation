@@ -13,14 +13,6 @@ from a13n_environment_provider import (
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
-    CompactionCapability,
-    CompactionPolicy,
-    EnvironmentAction,
-    EnvironmentPermissionSet,
-    FileContextCapability,
-    FileContextConfiguration,
-    HandoffCapability,
-    HandoffConfiguration,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -28,12 +20,24 @@ from a13n_harness import (
     HarnessState,
     ModelCapability,
     RunBindings,
+)
+from a13n_harness.capabilities import (
+    CompactionCapability,
+    CompactionPolicy,
+    FileContextCapability,
+    FileContextConfiguration,
+    HandoffCapability,
+    HandoffConfiguration,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
 )
 from a13n_harness.capabilities.context import _requires_exact_history
+from a13n_harness.environment import (
+    EnvironmentAction,
+    EnvironmentPermissionSet,
+)
 from a13n_harness.environment.advanced import (
     EnvironmentRuntimeMount,
     create_environment_runtime,

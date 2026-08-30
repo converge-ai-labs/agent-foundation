@@ -8,7 +8,7 @@ from a13n_ui.settings import StorageSettings
 from a13n_ui.storage.database import open_database, short_session, transaction
 from a13n_ui.storage.metadata import agent_ui_metadata
 from a13n_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
-from a13n_ui.storage.models import RecoveryDiagnosticRecord
+from a13n_ui.storage.models import ConfigurationDiagnosticRecord
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, select, text
@@ -32,23 +32,11 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "configuration_diagnostic",
             "configuration_generation",
             "current_configuration",
-            "event_segment",
             "generation_resource",
-            "host_environment_resource",
-            "immutable_object",
-            "item_projection",
             "local_session",
-            "pending_deferred",
-            "pending_submission",
-            "recovery_diagnostic",
             "resource_revision",
-            "session_environment_assignment",
-            "session_presentation",
-            "session_thread",
+            "session_environment_resource",
             "skill_package_reference",
-            "thread_checkpoint",
-            "thread_turn",
-            "turn_run",
         }
         with engine.connect() as connection:
             context = MigrationContext.configure(
@@ -88,7 +76,7 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
         now = datetime.now(UTC)
         async with transaction(database.sessions) as session:
             session.add(
-                RecoveryDiagnosticRecord(
+                ConfigurationDiagnosticRecord(
                     process_generation="process-test",
                     code="committed",
                     detail="committed transaction",
@@ -99,7 +87,7 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
         with pytest.raises(RuntimeError, match="rollback"):
             async with transaction(database.sessions) as session:
                 session.add(
-                    RecoveryDiagnosticRecord(
+                    ConfigurationDiagnosticRecord(
                         process_generation="process-test",
                         code="rollback",
                         detail="rolled back transaction",
@@ -109,5 +97,5 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
                 raise RuntimeError("rollback")
 
         async with short_session(database.sessions) as session:
-            codes = set((await session.execute(select(RecoveryDiagnosticRecord.code))).scalars())
+            codes = set((await session.execute(select(ConfigurationDiagnosticRecord.code))).scalars())
             assert codes == {"committed"}

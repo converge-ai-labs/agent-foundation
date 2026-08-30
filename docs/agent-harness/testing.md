@@ -10,7 +10,10 @@ Pydantic AI's `FunctionModel` runs the real Agent and Harness paths without an A
 from collections.abc import AsyncIterator
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+)
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -33,8 +36,7 @@ async def test_agent_returns_expected_output() -> None:
         model=model,
     )
 
-    async with executable:
-        result = await executable.run("Complete the task")
+    result = await executable.run("Complete the task")
 
     assert result.output_or_raise() == "expected output"
     assert result.state is not None
@@ -47,12 +49,11 @@ This tests Harness construction, the Pydantic AI loop, terminal normalization, a
 A continued Thread preserves `thread_id` and receives a fresh `run_id`:
 
 ```python
-async with executable:
-    first = await executable.run("First turn")
-    second = await executable.run(
-        "Second turn",
-        previous_state=first.state,
-    )
+first = await executable.run("First turn")
+second = await executable.run(
+    "Second turn",
+    previous_state=first.state,
+)
 
 assert second.thread_id == first.thread_id
 assert second.run_id != first.run_id

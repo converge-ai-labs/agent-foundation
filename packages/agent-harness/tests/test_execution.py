@@ -12,7 +12,6 @@ import pytest
 from a13n_harness import (
     AgentDefinition,
     DefinitionError,
-    EnvironmentState,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -23,9 +22,8 @@ from a13n_harness import (
     RunError,
     SubagentDefinition,
 )
-from a13n_harness import (
-    AgentSpec as HarnessAgentSpec,
-)
+from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness.environment import EnvironmentState
 from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
@@ -564,7 +562,7 @@ async def test_declarative_schema_build_still_supports_native_deferred_suspensio
     assert len(result.deferred.approvals) == 1
 
 
-async def test_builder_recursively_builds_and_owns_authored_subagents() -> None:
+async def test_builder_recursively_builds_reusable_authored_subagents() -> None:
     child_definition = AgentDefinition(
         agent=AgentSpec(name="child-agent"),
         output_type=str,
@@ -605,13 +603,10 @@ async def test_builder_recursively_builds_and_owns_authored_subagents() -> None:
         terminal = [item async for item in stream][-1]
         assert isinstance(terminal, HarnessRunResultEvent)
 
-    child_result = await child.executable.run("child", bindings=RunBindings.embedded())
-    assert child_result.output_or_raise() == "turn-1"
-
-    await executable.close()
-    with pytest.raises(RunError) as exc_info:
-        child.executable.stream("closed", bindings=RunBindings.embedded())
-    assert exc_info.value.code == "executable_closed"
+    first_child_result = await child.executable.run("child", bindings=RunBindings.embedded())
+    second_child_result = await child.executable.run("child again", bindings=RunBindings.embedded())
+    assert first_child_result.output_or_raise() == "turn-1"
+    assert second_child_result.output_or_raise() == "turn-1"
 
 
 async def test_duplicate_subagent_names_fail_before_build() -> None:

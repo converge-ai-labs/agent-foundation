@@ -125,19 +125,12 @@ class ConfigurationSettings(StrictModel):
     extension_provider_keys: tuple[_KEY, ...] = ()
     max_source_files: int = Field(default=4096, gt=0, le=100_000)
     max_source_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024)
-    max_source_transaction_bytes: int = Field(
-        default=128 * 1024 * 1024,
-        ge=1024,
-        le=1024 * 1024 * 1024,
-    )
     max_yaml_nodes: int = Field(default=100_000, gt=0, le=1_000_000)
     max_document_depth: int = Field(default=64, gt=0, le=256)
     stable_read_attempts: int = Field(default=3, gt=0, le=10)
-    orphan_retention_seconds: int = Field(default=7 * 24 * 60 * 60, gt=0, le=365 * 24 * 60 * 60)
     max_skill_package_files: int = Field(default=4096, gt=0, le=100_000)
     max_skill_package_depth: int = Field(default=32, gt=0, le=256)
     max_skill_package_bytes: int = Field(default=64 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
-    reconciliation_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     envd_executable_override: Path | None = None
 
     @field_validator(
@@ -264,40 +257,6 @@ class ConfigurationGeneration(StrictModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("accepted_at must be timezone-aware")
         return value.astimezone(UTC)
-
-
-class SourceTransactionEntry(StrictModel):
-    relative_path: str = Field(min_length=1, max_length=1024)
-    operation: Literal["replace", "delete"]
-    content_digest: _DIGEST | None = None
-
-    @field_validator("relative_path")
-    @classmethod
-    def _relative(cls, value: str) -> str:
-        return _normalize_relative_path(value)
-
-    @model_validator(mode="after")
-    def _operation_shape(self) -> Self:
-        if (self.operation == "replace") != (self.content_digest is not None):
-            raise ValueError("replace requires content_digest and delete forbids it")
-        return self
-
-
-class SourceTransactionManifest(StrictModel):
-    schema_version: Literal["1"]
-    transaction_id: _ID
-    root_id: _ID
-    base_catalog_digest: _DIGEST
-    entries: tuple[SourceTransactionEntry, ...] = Field(min_length=1, max_length=10_000)
-
-    @model_validator(mode="after")
-    def _unique_ordered_entries(self) -> Self:
-        paths = tuple(entry.relative_path for entry in self.entries)
-        if len(paths) != len(set(paths)):
-            raise ValueError("source transaction paths must be unique")
-        if paths != tuple(sorted(paths)):
-            raise ValueError("source transaction entries must be ordered by relative_path")
-        return self
 
 
 class ModelDefinition(StrictModel):
@@ -660,10 +619,9 @@ type FirstPartyCapabilitySelection = Annotated[
 
 class AsyncSubagentConfiguration(StrictModel):
     tools: Literal["standard", "disabled"] = "disabled"
-    max_active_jobs: int = Field(default=8, gt=0, le=1024)
-    max_jobs_per_run: int = Field(default=32, gt=0, le=10_000)
+    max_active_tasks: int = Field(default=8, gt=0, le=1024)
+    max_tasks_per_run: int = Field(default=32, gt=0, le=10_000)
     max_depth: int = Field(default=8, gt=0, le=64)
-    completion_delivery: Literal["active_or_next_run", "manual"] = "active_or_next_run"
 
 
 class AgentOutputSelection(StrictModel):
@@ -743,9 +701,8 @@ class EnvironmentMountDefinition(StrictModel):
 
 
 class SessionEnvironmentLifecyclePolicy(StrictModel):
-    provision: Literal["eager", "on_first_run"]
-    idle: Literal["keep_running", "pause_full", "pause_filesystem"]
-    release: Literal["retain", "destroy_when_unreferenced"]
+    provision: Literal["eager", "on_first_run"] = "on_first_run"
+    idle: Literal["keep_running", "pause"] = "keep_running"
 
 
 class EnvironmentDefinitionDocument(StrictModel):
@@ -1017,8 +974,6 @@ __all__ = [
     "SkillDefinition",
     "SkillImportProvenance",
     "SkillPackageSource",
-    "SourceTransactionEntry",
-    "SourceTransactionManifest",
     "UsageLimitsSelection",
     "canonical_digest",
     "canonical_json_value",

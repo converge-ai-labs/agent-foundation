@@ -43,20 +43,9 @@ class ConversationApplication:
             model=model,
         )
 
-    async def __aenter__(self) -> ConversationApplication:
-        return self
-
-    async def __aexit__(self, *exc_info: object) -> None:
-        await self.close()
-
     @property
     def state_path(self) -> Path:
         return self._state_path
-
-    async def close(self) -> None:
-        """Close the reusable executable owned by this application instance."""
-
-        await self._executable.close()
 
     async def load_state(self) -> HarnessState | None:
         """Load the last completed turn, if this conversation has one."""

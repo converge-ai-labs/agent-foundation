@@ -917,7 +917,6 @@ class ExecutableAgent[OutputT]:
         self._definition_reserved_capability_ids = definition_reserved_capability_ids
         self._model_inference = model_inference
         self._observation = observation
-        self._closed = False
 
     def _fresh_definition_usage_limits(self) -> UsageLimits:
         return _usage_limits_from_spec(self.definition.agent)
@@ -1092,8 +1091,6 @@ class ExecutableAgent[OutputT]:
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> HarnessRunStream[OutputT]:
-        if self._closed:
-            raise RunError("The executable is closed.", code="executable_closed")
         if input is not None and input_factory is not None:
             raise RunError(
                 "input and input_factory are mutually exclusive.",
@@ -1131,22 +1128,6 @@ class ExecutableAgent[OutputT]:
             usage=usage,
             usage_limits=effective_usage_limits,
         )
-
-    async def __aenter__(self) -> ExecutableAgent[OutputT]:
-        if self._closed:
-            raise RunError("The executable is closed.", code="executable_closed")
-        return self
-
-    async def __aexit__(self, *exc_info: object) -> None:
-        await self.close()
-
-    async def close(self) -> None:
-        """Idempotently close recursively owned children and prevent future runs."""
-        if self._closed:
-            return
-        self._closed = True
-        for child in reversed(tuple(self.subagents.values())):
-            await child.executable.close()
 
 
 class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):

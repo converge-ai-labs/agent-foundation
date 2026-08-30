@@ -412,10 +412,7 @@ def _validate_environment_lifecycle(
     idle_policy: str,
     capabilities: ResolvedEnvironmentLifecycleCapabilities,
 ) -> None:
-    required_pause_mode = {
-        "pause_full": "full",
-        "pause_filesystem": "filesystem",
-    }.get(idle_policy)
+    required_pause_mode = "full" if idle_policy == "pause" else None
     if required_pause_mode is not None and required_pause_mode not in capabilities.pause_modes:
         raise CompositionError(
             "An Environment lifecycle policy is unsupported by a selected provider.",

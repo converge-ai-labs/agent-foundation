@@ -11,6 +11,8 @@ import pytest
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+)
+from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,

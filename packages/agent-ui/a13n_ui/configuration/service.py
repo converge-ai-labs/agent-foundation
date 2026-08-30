@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from collections.abc import AsyncGenerator, Mapping, Sequence
@@ -12,13 +11,13 @@ from typing import Literal
 from uuid import uuid4
 
 import yaml
-from anyio import CancelScope, Lock, create_memory_object_stream, sleep, to_thread
+from anyio import Lock, create_memory_object_stream, to_thread
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 from a13n_ui.errors import ConfigurationError
 
 from .catalog import CatalogRepository, ConfigurationDiagnostic
-from .loader import CatalogCandidate, load_catalog_candidate, load_configuration_settings
+from .loader import load_catalog_candidate, load_configuration_settings
 from .models import (
     ConfigurationGeneration,
     ConfigurationSettings,
@@ -28,9 +27,6 @@ from .models import (
     ResourceRef,
     ResourceRevision,
     ResourceRevisionRef,
-    SourceTransactionEntry,
-    SourceTransactionManifest,
-    canonical_digest,
     restart_settings_digest,
 )
 from .skills import (
@@ -40,14 +36,7 @@ from .skills import (
     SkillService,
     SkillSourceStatus,
 )
-from .transactions import (
-    commit_source_transaction,
-    discard_source_transaction,
-    finalize_source_transaction,
-    prepare_source_transaction,
-    rebase_source_transaction,
-    rollback_source_transaction,
-)
+from .source_edits import apply_source_edits
 
 
 class ConfigurationService:
@@ -98,170 +87,39 @@ class ConfigurationService:
 
     async def _reload(self, *, initial: bool = False) -> ConfigurationGeneration:
         async with self._reload_lock:
-            before = await self._repository.current_generation()
-            desired = await load_configuration_settings(
-                self._process_settings_path,
-                self._bootstrap_settings,
-            )
-            candidate = await load_catalog_candidate(desired)
-            self._validate_active_source_transactions(before, candidate)
-            if initial:
-                self._activated_restart_settings_digest = candidate.restart_settings_digest
-            generation = await self._repository.accept(
-                candidate,
-                activated_restart_settings_digest=self._activated_restart_settings_digest,
-            )
-            await self._rebase_active_source_transactions(desired, candidate, generation.catalog_digest)
-            self._settings = desired
-            self.skills.update_settings(desired)
-            if before is None or before.generation_id != generation.generation_id:
-                await self._publish(generation)
-            return generation
+            return await self._reload_locked(initial=initial)
 
-    @staticmethod
-    def _validate_active_source_transactions(
-        current: ConfigurationGeneration | None,
-        candidate: CatalogCandidate,
-    ) -> None:
-        if not candidate.source_transactions:
-            return
-        if current is None:
-            raise ConfigurationError(
-                "Active source transactions require an accepted base generation.",
-                code="source_transaction_stale",
-            )
-        if candidate.catalog_digest == current.catalog_digest:
-            return
-        if any(manifest.base_catalog_digest != current.catalog_digest for manifest in candidate.source_transactions):
-            raise ConfigurationError(
-                "An active source transaction is not based on the accepted generation.",
-                code="source_transaction_stale",
-            )
-
-    @staticmethod
-    async def _rebase_active_source_transactions(
-        settings: ConfigurationSettings,
-        candidate: CatalogCandidate,
-        accepted_catalog_digest: str,
-    ) -> None:
-        roots = {root.root_id: root.path for root in settings.ordered_roots}
-        for manifest in candidate.source_transactions:
-            if manifest.base_catalog_digest == accepted_catalog_digest:
-                continue
-            root = roots.get(manifest.root_id)
-            if root is None:
-                raise ConfigurationError(
-                    "An active source transaction selects an unavailable definition root.",
-                    code="source_transaction_invalid",
-                )
-            await rebase_source_transaction(
-                root,
-                manifest,
-                accepted_catalog_digest=accepted_catalog_digest,
-            )
-
-    async def apply_transaction(
-        self,
-        manifest: SourceTransactionManifest,
-        replacements: Mapping[str, bytes],
-    ) -> ConfigurationGeneration:
-        async with self._reload_lock:
-            try:
-                return await self._apply_transaction_locked(manifest, replacements)
-            except ConfigurationError as exc:
-                await self._repository.record_rejection(exc)
-                raise
-
-    async def _apply_transaction_locked(
-        self,
-        manifest: SourceTransactionManifest,
-        replacements: Mapping[str, bytes],
-    ) -> ConfigurationGeneration:
-        current = await self._repository.current_generation()
-        if current is None:
-            raise ConfigurationError(
-                "Source edits require an accepted configuration generation.",
-                code="configuration_generation_missing",
-            )
-        baseline = await load_catalog_candidate(self._settings)
-        if baseline.catalog_digest != current.catalog_digest:
-            raise ConfigurationError(
-                "The source transaction base changed before it could be prepared.",
-                code="source_transaction_stale",
-            )
-        prepared = await prepare_source_transaction(
-            self._settings,
-            manifest,
-            replacements,
-            current_catalog_digest=current.catalog_digest,
+    async def _reload_locked(self, *, initial: bool = False) -> ConfigurationGeneration:
+        before = await self._repository.current_generation()
+        desired = await load_configuration_settings(
+            self._process_settings_path,
+            self._bootstrap_settings,
         )
-        try:
-            candidate = await load_catalog_candidate(
-                self._settings,
-                source_overlays={manifest.root_id: prepared.overlay},
-            )
-        except BaseException:
-            await discard_source_transaction(prepared)
-            raise
-        try:
-            confirmed_base = await load_catalog_candidate(self._settings)
-            if confirmed_base.catalog_digest != current.catalog_digest:
-                raise ConfigurationError(
-                    "The source transaction base changed during validation.",
-                    code="source_transaction_stale",
-                )
-        except BaseException:
-            await discard_source_transaction(prepared)
-            raise
-        try:
-            await commit_source_transaction(prepared)
-        except BaseException:
-            await discard_source_transaction(prepared)
-            raise
-        try:
-            selected_candidate = await load_catalog_candidate(self._settings)
-            if selected_candidate.catalog_digest != candidate.catalog_digest:
-                raise ConfigurationError(
-                    "The configuration sources changed while the source transaction was selected.",
-                    code="source_transaction_stale",
-                )
-            self._validate_active_source_transactions(current, selected_candidate)
-        except BaseException:
-            with CancelScope(shield=True):
-                await rollback_source_transaction(prepared)
-            raise
+        candidate = await load_catalog_candidate(desired)
+        if initial:
+            self._activated_restart_settings_digest = candidate.restart_settings_digest
         generation = await self._repository.accept(
-            selected_candidate,
+            candidate,
             activated_restart_settings_digest=self._activated_restart_settings_digest,
         )
-        await self._rebase_active_source_transactions(
-            self._settings,
-            selected_candidate,
-            generation.catalog_digest,
-        )
-        await finalize_source_transaction(
-            prepared,
-            accepted_catalog_digest=generation.catalog_digest,
-        )
-        if generation.generation_id != current.generation_id:
+        self._settings = desired
+        self.skills.update_settings(desired)
+        if before is None or before.generation_id != generation.generation_id:
             await self._publish(generation)
         return generation
 
-    async def reconcile_periodically(self) -> None:
-        """Reconcile file-backed desired state without making watcher delivery authoritative."""
-
-        last_rejection: tuple[str, str] | None = None
-        while True:
-            await sleep(self._settings.reconciliation_interval_seconds)
-            try:
-                await self._reload()
-            except ConfigurationError as exc:
-                rejection = (exc.code, str(exc))
-                if rejection != last_rejection:
-                    await self._repository.record_rejection(exc)
-                last_rejection = rejection
-            else:
-                last_rejection = None
+    async def _apply_source_edits_locked(
+        self,
+        root_id: str,
+        edits: Mapping[str, bytes | None],
+    ) -> ConfigurationGeneration:
+        await self._require_generation()
+        await load_catalog_candidate(
+            self._settings,
+            source_overlays={root_id: edits},
+        )
+        await apply_source_edits(self._settings, root_id, edits)
+        return await self._reload_locked()
 
     async def current_generation(self) -> ConfigurationGeneration | None:
         return await self._repository.current_generation()
@@ -289,7 +147,7 @@ class ConfigurationService:
         *,
         target_root_id: str,
     ) -> ConfigurationGeneration:
-        """Create or edit one Skill source through the ordinary source transaction path."""
+        """Create or edit one Skill source through ordinary source-file replacement."""
 
         async with self._reload_lock:
             try:
@@ -317,13 +175,10 @@ class ConfigurationService:
                     allow_unicode=True,
                     sort_keys=True,
                 ).encode("utf-8")
-                manifest = _single_source_transaction(
-                    root_id=target_root_id,
-                    base_catalog_digest=current.catalog_digest,
-                    relative_path=relative_path,
-                    content=content,
+                return await self._apply_source_edits_locked(
+                    target_root_id,
+                    {relative_path: content},
                 )
-                return await self._apply_transaction_locked(manifest, {relative_path: content})
             except ConfigurationError as exc:
                 await self._repository.record_rejection(exc)
                 raise
@@ -353,19 +208,10 @@ class ConfigurationService:
                         code="skill_source_missing",
                     )
                 revision = await self._repository.resource(reference)
-                manifest = SourceTransactionManifest(
-                    schema_version="1",
-                    transaction_id=f"transaction-{uuid4().hex[:16]}",
-                    root_id=revision.source.source_id,
-                    base_catalog_digest=current.catalog_digest,
-                    entries=(
-                        SourceTransactionEntry(
-                            relative_path=revision.source.relative_path,
-                            operation="delete",
-                        ),
-                    ),
+                return await self._apply_source_edits_locked(
+                    revision.source.source_id,
+                    {revision.source.relative_path: None},
                 )
-                return await self._apply_transaction_locked(manifest, {})
             except ConfigurationError as exc:
                 await self._repository.record_rejection(exc)
                 raise
@@ -400,17 +246,6 @@ class ConfigurationService:
                     self._process_settings_path,
                     self._bootstrap_settings,
                 )
-                if canonical_digest(observed) != current.process_settings_digest:
-                    raise ConfigurationError(
-                        "The process settings changed before the Skill source order could be written.",
-                        code="process_settings_stale",
-                    )
-                baseline = await load_catalog_candidate(observed)
-                if baseline.catalog_digest != current.catalog_digest:
-                    raise ConfigurationError(
-                        "The configuration sources changed before the Skill source order could be written.",
-                        code="source_transaction_stale",
-                    )
                 desired = observed.model_copy(
                     update={
                         "skill_discovery": observed.skill_discovery.model_copy(
@@ -426,22 +261,7 @@ class ConfigurationService:
                         )
                     }
                 )
-                candidate = await load_catalog_candidate(desired)
-                confirmed = await load_configuration_settings(
-                    self._process_settings_path,
-                    self._bootstrap_settings,
-                )
-                if canonical_digest(confirmed) != current.process_settings_digest:
-                    raise ConfigurationError(
-                        "The process settings changed while the Skill source order was validated.",
-                        code="process_settings_stale",
-                    )
-                confirmed_baseline = await load_catalog_candidate(confirmed)
-                if confirmed_baseline.catalog_digest != current.catalog_digest:
-                    raise ConfigurationError(
-                        "The configuration sources changed while the Skill source order was validated.",
-                        code="source_transaction_stale",
-                    )
+                await load_catalog_candidate(desired)
                 try:
                     await to_thread.run_sync(
                         _write_process_settings,
@@ -453,15 +273,7 @@ class ConfigurationService:
                         "The process settings document could not be written.",
                         code="process_settings_write_failed",
                     ) from exc
-                generation = await self._repository.accept(
-                    candidate,
-                    activated_restart_settings_digest=self._activated_restart_settings_digest,
-                )
-                self._settings = desired
-                self.skills.update_settings(desired)
-                if generation.generation_id != current.generation_id:
-                    await self._publish(generation)
-                return generation
+                return await self._reload_locked()
             except ConfigurationError as exc:
                 await self._repository.record_rejection(exc)
                 raise
@@ -583,11 +395,11 @@ class ConfigurationService:
     ) -> ConfigurationGeneration:
         async with self._reload_lock:
             try:
-                manifest, replacements = await self.skills.accept_change(
+                root_id, edits = await self.skills.accept_change(
                     change_id,
                     expected_operation=expected_operation,
                 )
-                return await self._apply_transaction_locked(manifest, replacements)
+                return await self._apply_source_edits_locked(root_id, edits)
             except ConfigurationError as exc:
                 await self._repository.record_rejection(exc)
                 raise
@@ -641,28 +453,6 @@ class ConfigurationService:
             await subscriber.aclose()
 
 
-def _single_source_transaction(
-    *,
-    root_id: str,
-    base_catalog_digest: str,
-    relative_path: str,
-    content: bytes,
-) -> SourceTransactionManifest:
-    return SourceTransactionManifest(
-        schema_version="1",
-        transaction_id=f"transaction-{uuid4().hex[:16]}",
-        root_id=root_id,
-        base_catalog_digest=base_catalog_digest,
-        entries=(
-            SourceTransactionEntry(
-                relative_path=relative_path,
-                operation="replace",
-                content_digest=hashlib.sha256(content).hexdigest(),
-            ),
-        ),
-    )
-
-
 def _write_process_settings(path: Path, settings: ConfigurationSettings) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}-{uuid4().hex}.tmp")
@@ -684,18 +474,8 @@ def _write_process_settings(path: Path, settings: ConfigurationSettings) -> None
             sort_keys=True,
         ).encode("utf-8")
     try:
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
+        temporary.write_bytes(content)
         os.replace(temporary, path)
-        if os.name != "nt":
-            descriptor = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
     finally:
         temporary.unlink(missing_ok=True)
 

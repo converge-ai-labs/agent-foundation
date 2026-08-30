@@ -123,7 +123,10 @@ The Resource must already be inside its single-entry async scope when passed to 
 Pass `environments=` to name several sources. One mapping can mix Harness-owned Providers and Host-owned entered Resources:
 
 ```python
-from a13n_harness import EnvironmentAccess, EnvironmentMount
+from a13n_harness import (
+    EnvironmentAccess,
+    EnvironmentMount,
+)
 
 result = await executable.run(
     "Read the source data and write the build output",
@@ -185,7 +188,10 @@ Setup is atomic. The Harness does not publish a partial initial mount set. If a 
 `EnvironmentMount` adds a permission ceiling and default working directory to one source:
 
 ```python
-from a13n_harness import EnvironmentAccess, EnvironmentMount
+from a13n_harness import (
+    EnvironmentAccess,
+    EnvironmentMount,
+)
 
 read_only_docs = EnvironmentMount(
     docs_resource,
@@ -203,7 +209,7 @@ Advanced callers can pass an exact `EnvironmentPermissionSet` instead of a prese
 The Environment can exist without model-facing tools. Add `DynamicEnvironmentCapability` when the model should receive a selected stable tool surface:
 
 ```python
-from a13n_harness import (
+from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
 )
@@ -257,7 +263,7 @@ While a root or child Toolset Turn is active, the Harness supervises the provide
 A Host can add event sinks when it wants to record these Turn-scoped hints:
 
 ```python
-from a13n_harness import ProcessEvent
+from a13n_harness.toolsets import ProcessEvent
 
 
 async def record_process_event(event: ProcessEvent) -> None:
@@ -403,7 +409,8 @@ When `create()`, `resume()`, `pause()`, or `destroy()` reports `EnvironmentProvi
 Most applications should use `environment=` or `environments=`. Hosts that need exact permission sets, live mount mutation, provider-binding adapters, or runtime-wide extensions can use the explicit advanced module:
 
 ```python
-from a13n_harness import EnvironmentPermissionSet, RunBindings
+from a13n_harness import RunBindings
+from a13n_harness.environment import EnvironmentPermissionSet
 from a13n_harness.environment.advanced import (
     EnvironmentRuntimeMount,
     create_environment_provider_binding,

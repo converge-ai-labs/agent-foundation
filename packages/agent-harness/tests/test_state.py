@@ -2,15 +2,19 @@ from typing import Any, cast
 
 import pytest
 from a13n_harness import (
-    AgentContextState,
-    AgentContextStateSnapshot,
-    CapabilityState,
-    EnvironmentMountState,
-    EnvironmentState,
     HarnessRunResult,
     HarnessState,
     SafeFailure,
     StateError,
+)
+from a13n_harness.environment import (
+    EnvironmentMountState,
+    EnvironmentState,
+)
+from a13n_harness.state import (
+    AgentContextState,
+    AgentContextStateSnapshot,
+    CapabilityState,
 )
 from pydantic import BaseModel, ValidationError
 from pydantic_ai.messages import ModelRequest, UserPromptPart

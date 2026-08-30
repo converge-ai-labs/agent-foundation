@@ -102,7 +102,7 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
 async def test_object_read_rejects_corruption_truncation_and_trailing_data(tmp_path: Path) -> None:
     store, layout = _object_store(tmp_path)
     envelope = await store.publish(
-        object_kind=ObjectKind.harness_state,
+        object_kind=ObjectKind.session_continuation,
         object_schema_version="1",
         payload={"step": 1},
     )
@@ -158,27 +158,3 @@ async def test_object_read_checks_declared_size_before_decompression(tmp_path: P
     with pytest.raises(ObjectIntegrityError) as excessive:
         await reader.read(envelope.ref)
     assert excessive.value.code == "object_too_large"
-
-
-async def test_expired_staging_files_are_removed_without_recovery(tmp_path: Path) -> None:
-    store, layout = _object_store(tmp_path)
-    envelope = await store.publish(
-        object_kind=ObjectKind.skill_package,
-        object_schema_version="1",
-        payload={"files": []},
-    )
-    first = layout.staging / "00000000000000000000000000000000.json.zst.tmp"
-    second = layout.staging / "11111111111111111111111111111111.json.zst.tmp"
-    first.write_bytes(b"complete-but-unselected")
-    second.write_bytes(b"malformed")
-    old = datetime(2020, 1, 1, tzinfo=UTC).timestamp()
-    os.utime(first, (old, old))
-    os.utime(second, (old, old))
-
-    removed = await store.remove_expired_unregistered(
-        {envelope.logical_digest},
-        cutoff=datetime.now(UTC),
-    )
-
-    assert removed == 2
-    assert list(layout.staging.iterdir()) == []

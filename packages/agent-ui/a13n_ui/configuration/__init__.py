@@ -29,8 +29,6 @@ from .models import (
     SkillDefinition,
     SkillImportProvenance,
     SkillPackageSource,
-    SourceTransactionEntry,
-    SourceTransactionManifest,
     canonical_digest,
     canonical_json_value,
 )
@@ -84,8 +82,6 @@ __all__ = [
     "SkillPreviewItem",
     "SkillScanPreview",
     "SkillSourceStatus",
-    "SourceTransactionEntry",
-    "SourceTransactionManifest",
     "canonical_digest",
     "canonical_json_value",
     "load_envd_runtime_manifest",

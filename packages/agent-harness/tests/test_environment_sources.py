@@ -13,11 +13,11 @@ from a13n_environment_provider import (
 )
 from a13n_harness import (
     EnvironmentAccess,
-    EnvironmentError,
     EnvironmentMount,
     HarnessBuilder,
     RunBindings,
 )
+from a13n_harness.environment import EnvironmentError
 from a13n_harness.environment.advanced import create_empty_environment_runtime
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage

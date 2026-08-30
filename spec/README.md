@@ -114,7 +114,7 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 | `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                                                                              | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                  |
 | `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                                                                              | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                       |
 | `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                                                            | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                 |
-| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, hybrid Sessions, stable Host authority, replaceable runtime Runners, root execution, async-only subagent jobs, WebUI, and CLI                                                     | Distributed execution, multi-tenant authorization, or another Agent loop                                                 |
+| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, continuation-backed Sessions, stable Host authority, replaceable runtime Runners, process-local root and child execution, WebUI, and CLI                                          | Durable work acceptance, distributed execution, multi-tenant authorization, or another Agent loop                        |
 | `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                                                           | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle |
 | `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                                                         | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                         |
 | Foundation SDKs              | Language-typed access to the public Foundation Service Native `/api` contract, including streams and notifications                                                                                                                                                     | Service internals, standard-protocol replacement, product policy, or durable lifecycle authority                         |
@@ -141,7 +141,7 @@ The complete design is indexed in [agent-harness/README.md](agent-harness/README
 
 ## Local Agent Interaction
 
-Agent UI is a complete local single-user workstation above the Harness. Human- and agent-editable configuration dynamically publishes validated Model, Prompt, Plugin, local Skill source/package, Agent, and Environment catalogs. Each Session pins immutable Agent and Environment snapshots plus validated root/child Skill exposure, references Host-managed Environment Provider resources through explicit assignments, selects complete `HarnessState` checkpoints, and manages Host-coordinated asynchronous child jobs over exact Harness-built subagents. Agent UI never enables the Harness blocking inline Delegation Capability. SQLite owns mutable metadata and control state, while resolved snapshots, provider state, Harness state, and retained AG-UI events live in verified compressed files; OpenTelemetry remains an independent export path. One stable `AgentUiHost` exposes the same product semantics through a bundled WebUI and an interactive or one-shot CLI. The Host retains the data-root lease, durable state, configuration, runtime routing, and commit authority while replaceable child Runners own process-local Harness, plugin, Model, and Provider execution. Neither surface interprets private Harness events, controls a Runner directly, reads storage for authority, operates providers independently, or owns a second Session model.
+Agent UI is a complete local single-user workstation above the Harness. Human- and agent-editable configuration dynamically publishes validated Model, Prompt, Plugin, local Skill source/package, Agent, and Environment catalogs. Each Session pins immutable Agent and Environment snapshots, exact Skill exposure, Environment assignments, and one latest selected continuation. Every Run starts from that continuation with fresh authority. At each complete or suspended Harness result, Agent UI attempts to store and select one `StoredSessionContinuation` containing the complete `HarnessState`, optional exact `DeferredToolRequests`, Harness release, and creation time. It does not persist accepted input, active Runs, partial output, AG-UI history, or async-child work. Process loss therefore resumes from the latest successfully selected continuation. SQLite owns small mutable indexes and last-write-wins references; immutable files own snapshots, managed Skills, continuation bundles, and provider state. One stable `AgentUiHost` exposes the same product semantics through a bundled WebUI and a normal interactive or one-shot CLI while replaceable child Runners own process-local Harness, plugin, Model, and Provider execution. Multiple local processes can open the same data root without turning Agent UI into a distributed system: there are no leases, fences, stale-writer protocols, or workflow recovery. Neither surface interprets private Harness events, controls a Runner directly, reads storage for authority, operates providers independently, or owns a second Session model.
 
 `a13n-harness`, `a13n-environment-provider`, and `a13n-stream-protocol` form the Harness release group. One `release/harness-v<version>` tag assigns the same version to all three distributions. Published Harness metadata pins the exact provider-package version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently through `release/agent-ui-v<version>` and its published artifact pins the reviewed Harness release dependencies. Source checkouts continue to resolve unversioned package dependencies from the shared uv workspace. Each tag version is a stable `X.Y.Z` identity or an RC `X.Y.Z-rc.N` identity as defined by [repository release automation](repository-model.md#release-automation). Source directories omit the distribution prefix (`packages/agent-*`), while Python distribution names use `a13n-` and import packages use `a13n_`.
 
@@ -149,14 +149,15 @@ The complete local Host design is indexed in [agent-ui/README.md](agent-ui/READM
 
 ## Recovery Boundaries
 
-| Concern                                  | Owner                                       |
-| ---------------------------------------- | ------------------------------------------- |
-| Provider-suspended continuation          | Pydantic AI                                 |
-| Provider transport retry                 | Provider/client and Pydantic `RetryConfig`  |
-| Exact provider-history repair            | Harness `SelfHealingModel`                  |
-| Interrupted `ModelAttempt` recovery      | Harness run coordinator                     |
-| Worker crash and durable recovery        | Host                                        |
-| Persisted provider-lifecycle uncertainty | The Host that elected to own that lifecycle |
+| Concern                                   | Owner                                      |
+| ----------------------------------------- | ------------------------------------------ |
+| Provider-suspended continuation           | Pydantic AI                                |
+| Provider transport retry                  | Provider/client and Pydantic `RetryConfig` |
+| Exact provider-history repair             | Harness `SelfHealingModel`                 |
+| Interrupted `ModelAttempt` recovery       | Harness run coordinator                    |
+| Agent UI process loss                     | Resume from the last selected continuation |
+| Service worker crash and durable recovery | Foundation Service                         |
+| Provider-lifecycle uncertainty            | The embedding Host reports or retries it   |
 
 Recovery never converts missing evidence into rollback or exactly-once success. Interrupted tool history records that the operation may have partially or fully completed and directs the next model to inspect state before retrying.
 
@@ -227,7 +228,7 @@ Every Worker periodically scans durable Turn state. For an expired lease, one
 short transaction marks the old Attempt `failed` and creates at most one new
 fenced `TurnAttempt`; Foundation defines no separate Scheduler, recovery
 controller, or Attempt `lost` state. The new owner then compares durable Agent
-tool dispatch records with the latest complete checkpoint, projects every
+tool dispatch records with the latest complete continuation, projects every
 unmatched call as `unknown_outcome`, and validates the Turn-owned budget, frozen
 dependencies, and current authority outside the claim transaction. It creates
 fresh providers, bindings, and a fresh Harness Run only after a fenced
@@ -255,12 +256,12 @@ The hosted service boundary is defined in [Foundation Service](foundation-servic
 
 ## Deployment Profiles
 
-| Profile             | Persistence and coordination                                                                     | Execution                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Embedded            | Application-selected                                                                             | Harness in product process                                                  |
-| Local Agent UI      | Hybrid SQLite metadata and compressed-file package/state/event storage with process coordination | Harness plus Environment Provider resources and Host-owned async child jobs |
-| Minimal service     | SQLite, in-memory Redis, and local objects                                                       | Control and worker together in one process                                  |
-| Distributed service | PostgreSQL, real Redis, and shared object storage                                                | Separately scalable control and worker roles                                |
+| Profile             | Persistence and coordination                                                                                          | Execution                                                                    |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Embedded            | Application-selected                                                                                                  | Harness in product process                                                   |
+| Local Agent UI      | SQLite metadata plus immutable snapshot, continuation, Skill, and provider-state files; last-write-wins local updates | Harness plus Environment Provider resources and process-local async children |
+| Minimal service     | SQLite, in-memory Redis, and local objects                                                                            | Control and worker together in one process                                   |
+| Distributed service | PostgreSQL, real Redis, and shared object storage                                                                     | Separately scalable control and worker roles                                 |
 
 Foundation Service configuration, role ownership, dependency requirements, and readiness are defined by [Runtime Configuration and Deployment](foundation-service/01-runtime-configuration-and-deployment.md). The internal relational, Redis-compatible, object, and mounted-filesystem surfaces are defined by [Foundation Storage Capabilities](foundation-service/03-storage.md). The final distribution's relational metadata and migration authority are defined by the [Relational Schema Lifecycle](foundation-service/04-relational-schema.md).
 

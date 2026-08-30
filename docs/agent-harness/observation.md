@@ -13,7 +13,11 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 
-from a13n_harness import HarnessBuilder, HarnessInstrumentation, HarnessTraceContent
+from a13n_harness import (
+    HarnessBuilder,
+    HarnessInstrumentation,
+    HarnessTraceContent,
+)
 
 resource = Resource.create({"service.name": "agent-worker"})
 tracer_provider = TracerProvider(resource=resource)
@@ -145,7 +149,10 @@ import os
 
 from opentelemetry import trace
 
-from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+)
 
 if os.environ.get("LOGFIRE_TOKEN"):
     import logfire
@@ -158,9 +165,8 @@ executable = HarnessBuilder().build(
 )
 host_tracer = trace.get_tracer("agent-host")
 
-async with executable:
-    with host_tracer.start_as_current_span("host.work"):
-        result = await executable.run("Complete the task")
+with host_tracer.start_as_current_span("host.work"):
+    result = await executable.run("Complete the task")
 ```
 
 Logfire still requires one `logfire.configure()` call; environment variables configure the call rather than replacing it. `LOGFIRE_SERVICE_NAME` supplies the OpenTelemetry `service.name` without a hard-coded Python value, and `OTEL_SERVICE_NAME` is its standard fallback alias. `LOGFIRE_TOKEN` selects the project, while `LOGFIRE_SEND_TO_LOGFIRE=if-token-present` keeps the same bootstrap safe in processes without a token.
@@ -298,7 +304,10 @@ The composition binds the Langfuse UI and media endpoint to loopback and does no
 Use a fresh `HarnessObservationContext` when `harness.run` should be the root and needs stable grouping fields without an otherwise redundant outer span:
 
 ```python
-from a13n_harness import HarnessObservationContext, RunBindings
+from a13n_harness import (
+    HarnessObservationContext,
+    RunBindings,
+)
 
 bindings = RunBindings.embedded(
     observation=HarnessObservationContext(

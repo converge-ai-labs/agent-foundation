@@ -10,27 +10,25 @@ from a13n_environment_provider import (
     DirectLocalRootConfiguration,
 )
 from a13n_harness import (
+    HarnessBuilder,
+    HarnessRunResultEvent,
+    RunBindings,
+)
+from a13n_harness.capabilities import (
     CompactionCapability,
     CompactionPolicy,
     DocumentConversionRequest,
     DocumentConversionResult,
     DocumentsCapability,
     DocumentsRunCapability,
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
-    EnvironmentAction,
-    EnvironmentPermissionSet,
     FileContextCapability,
     FileContextConfiguration,
     FileSkillSource,
     HandoffCapability,
-    HarnessBuilder,
-    HarnessRunResultEvent,
     MediaCapability,
     MediaReadRequest,
     MediaResource,
     MediaRunCapability,
-    RunBindings,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
     SkillManager,
@@ -47,6 +45,12 @@ from a13n_harness import (
     WebSearchRequest,
     WebSearchResponse,
     WorkingStateCapability,
+)
+from a13n_harness.environment import (
+    DynamicEnvironmentCapability,
+    DynamicEnvironmentConfiguration,
+    EnvironmentAction,
+    EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
     EnvironmentRuntimeMount,

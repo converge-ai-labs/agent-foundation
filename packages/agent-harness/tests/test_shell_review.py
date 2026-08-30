@@ -12,14 +12,14 @@ import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
-    AgentShellCommandReviewer,
     AgentSpec,
     DeferredToolResume,
     DefinitionError,
     HarnessBuilder,
-    ProviderUsage,
-    ProviderUsageRecord,
     RunBindings,
+)
+from a13n_harness.capabilities import (
+    AgentShellCommandReviewer,
     ShellReviewAction,
     ShellReviewAssessment,
     ShellReviewCapability,
@@ -27,7 +27,6 @@ from a13n_harness import (
     ShellReviewRequest,
     ShellReviewResult,
     ShellRiskLevel,
-    UsageMeasure,
 )
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
@@ -38,6 +37,11 @@ from a13n_harness.tools import (
     ToolOutputPolicy,
 )
 from a13n_harness.toolsets import ShellToolset
+from a13n_harness.usage import (
+    ProviderUsage,
+    ProviderUsageRecord,
+    UsageMeasure,
+)
 from pydantic_ai import ToolApproved
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart

@@ -46,7 +46,7 @@ def test_module_entrypoint_runs_runtime_status_from_yaml(tmp_path: Path) -> None
     assert payload["generations"][0]["state"] == "active"
 
 
-@pytest.mark.parametrize("subcommand", [(), ("tui",)])
+@pytest.mark.parametrize("subcommand", [(), ("cli",)])
 def test_terminal_frontend_keeps_host_alive_across_runtime_restart(
     tmp_path: Path,
     subcommand: tuple[str, ...],
