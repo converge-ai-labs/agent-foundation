@@ -52,19 +52,26 @@ class ToolSurfaceToolset(WrapperToolset[AgentContext]):
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         candidates = await self.wrapped.get_tools(ctx)
-        return resolve_tool_surface(candidates)
+        return resolve_tool_surface(
+            candidates,
+            allow_deferred=ctx.deps.instance.parent_agent_instance_id is None,
+        )
 
 
 def resolve_tool_surface(
     candidates: Mapping[str, ToolsetTool[AgentContext]],
+    *,
+    allow_deferred: bool = True,
 ) -> dict[str, ToolsetTool[AgentContext]]:
-    """Return the effective surface after exact managed-tool supersession."""
+    """Return the effective surface after child filtering and managed-tool supersession."""
     normalized_tools: dict[str, ToolsetTool[AgentContext]] = {}
     metadata_by_name: dict[str, HarnessToolMetadata] = {}
     name_by_tool_id: dict[str, str] = {}
 
     for name, tool in candidates.items():
         tool_def = tool.tool_def
+        if not allow_deferred and tool_def.defer:
+            continue
         metadata_values = tool_def.metadata or {}
         raw_metadata = metadata_values.get(HARNESS_TOOL_METADATA_KEY)
         if raw_metadata is None:

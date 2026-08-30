@@ -1,31 +1,34 @@
 from __future__ import annotations
 
-from a13n_ui import tui, webui
+import argparse
+
+import a13n_ui.cli as cli_module
 from a13n_ui.cli import main
 
 
-def test_defaults_to_webui(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(webui, "run", lambda: calls.append("webui"))
+def test_defaults_to_interactive_cli(monkeypatch) -> None:
+    calls: list[argparse.Namespace] = []
 
+    async def run(args: argparse.Namespace) -> None:
+        calls.append(args)
+
+    monkeypatch.setattr(cli_module, "_run", run)
     main([])
 
-    assert calls == ["webui"]
+    assert len(calls) == 1
+    assert calls[0].command is None
 
 
-def test_dispatches_explicit_webui(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(webui, "run", lambda: calls.append("webui"))
+def test_dispatches_runtime_status_with_json(monkeypatch) -> None:
+    calls: list[argparse.Namespace] = []
 
-    main(["webui"])
+    async def run(args: argparse.Namespace) -> None:
+        calls.append(args)
 
-    assert calls == ["webui"]
+    monkeypatch.setattr(cli_module, "_run", run)
+    main(["--config", "/tmp/settings.yaml", "runtime", "status", "--json"])
 
-
-def test_dispatches_tui(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(tui, "run", lambda: calls.append("tui"))
-
-    main(["tui"])
-
-    assert calls == ["tui"]
+    assert calls[0].config.as_posix() == "/tmp/settings.yaml"
+    assert calls[0].command == "runtime"
+    assert calls[0].runtime_command == "status"
+    assert calls[0].json is True

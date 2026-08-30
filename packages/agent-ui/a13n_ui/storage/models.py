@@ -237,7 +237,7 @@ class SessionRecord(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    control_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    control_version: Mapped[int] = mapped_column(Integer, nullable=False)
     agent_snapshot_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("composition_snapshot.snapshot_id", ondelete="RESTRICT"),
@@ -269,8 +269,8 @@ class SessionThreadRecord(Base):
         index=True,
     )
     root_ordinal: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    commit_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    queue_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    commit_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    queue_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     selected_checkpoint_id: Mapped[str | None] = mapped_column(
         String(80),
         ForeignKey("thread_checkpoint.checkpoint_id", ondelete="RESTRICT", use_alter=True),

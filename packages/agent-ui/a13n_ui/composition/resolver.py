@@ -169,6 +169,7 @@ class SnapshotResolver:
                             description=edge.description,
                             target_agent=child_ref,
                             context=edge.context,
+                            identity=edge.identity,
                             usage_limits=edge.usage_limits,
                             environment=edge.environment,
                             lifetime=edge.lifetime,

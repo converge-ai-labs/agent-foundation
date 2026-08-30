@@ -4,7 +4,7 @@
 
 Reusable behavior inside the Pydantic Agent loop uses native `AbstractCapability[AgentContext]`. Capability is the only top-level feature-behavior composition plane in `AgentDefinition`: each feature Capability owns configuration, definition/run binding, lifecycle, feature-level instructions, hooks, native ordering, and Toolset composition as one coherent unit. Its owned Toolset owns model-visible tool schemas, guidance for using those tools, and concrete per-call execution, including provider-port calls and model-safe result or error projection. Tool guidance is contributed only with the Toolset and the exact tools it describes; a Capability does not publish unconditional guidance for an optional or superseded tool surface. A Capability does not retain a parallel operations object or callback that delegates complete model-tool execution back out of the Toolset. The Harness does not define a second Capability base, lifecycle, or ordering graph. Fresh run attachment Capabilities enter `RunBindings` under a separate source policy.
 
-Environment itself is not a Capability. It is a Harness-entered run lifecycle resource exposed through the fixed `AgentContext.environment` field. The optional `DynamicEnvironmentCapability` consumes that field to compose file and shell Toolsets, contribute dynamic context and notices, and own their feature lifecycle; the composed Toolsets own their respective stable tool guidance. Capability presence cannot create, activate, replace, authorize, or close an Environment binding.
+Environment itself is not a Capability. It is a Harness-entered run lifecycle resource exposed through the fixed `AgentContext.environment` field. The optional `DynamicEnvironmentCapability` consumes that field to compose file and shell Toolsets, contribute dynamic context and notices, and own their feature lifecycle; the composed Toolsets own their respective stable tool guidance. The independent optional `ShellReviewCapability` can classify marked shell command launches at the managed invocation boundary without becoming part of Environment configuration or provider behavior. Capability presence cannot create, activate, replace, authorize, or close an Environment binding.
 
 Harness plugins govern only the outer semantic-input-to-complete-result boundary and may contribute ordinary Pydantic Capabilities. A plugin that needs dynamic request context contributes the explicit `AbstractModelContextCapability`; it receives no peer plugin-only context hook.
 
@@ -20,7 +20,7 @@ Harness plugins govern only the outer semantic-input-to-complete-result boundary
 
 Pydantic AI owns `for_agent()`, `for_run()`, Toolset composition, lifecycle hooks, node hooks, and cleanup. Capability authors do not inspect private Agent graph state. A direct function tool is authored inside native `Capability(tools=[...])`; an external or custom Toolset is composed by a native Toolset Capability or another feature Capability. For a reusable Harness feature, the Toolset directly owns the callable schema and per-call behavior over narrow run-bound ports, while its Capability resolves those ports and owns Agent-loop lifecycle. A feature may contribute a provider-native tool and a local function fallback through the same Capability; the effective Model profile and Pydantic's native fallback semantics select exactly the usable surface rather than a Harness-maintained provider matrix. [Context and Memory](09-context-and-memory.md#media-documents-and-web-resources) owns the Web search instance of this contract. `AgentDefinition` and `HarnessBuilder.build()` expose no peer `tools` or `toolsets` parameters.
 
-Pydantic's finalized Capability map and ToolManager remain authoritative. Harness stable IDs support uniqueness, lookup, and source provenance only. `CapabilityOrdering.wraps` and `wrapped_by` use concrete Capability types or instances, and `requires` uses concrete types; IDs are not ordering references, and the Harness adds no second Capability sorter. The same finalized order governs the narrow model-context middleware subtype described in [Context and Memory](09-context-and-memory.md#model-context-projection-contract); `ModelContextCoordinatorCapability` is the sole mandatory infrastructure owner of message placement and does not create another ordering graph.
+Pydantic's finalized Capability map and ToolManager remain authoritative. Harness-visible explicit Capability IDs are stable non-blank strings without `:`; they support uniqueness, lookup, and source provenance only. `CapabilityOrdering.wraps` and `wrapped_by` use concrete Capability types or instances, and `requires` uses concrete types; IDs are not ordering references, and the Harness adds no second Capability sorter. The same finalized order governs the narrow model-context middleware subtype described in [Context and Memory](09-context-and-memory.md#model-context-projection-contract); `ModelContextCoordinatorCapability` is the sole mandatory infrastructure owner of message placement and does not create another ordering graph.
 
 ## Capability Sources and Authorization
 
@@ -71,7 +71,7 @@ class CapabilityTypeCatalog(
 
 Every registered class is a direct dataclass-declared `AbstractCapability`, has a non-blank stable serialization name, does not collide with native or Harness names, is authorized for the `AgentSpec` source, and can participate in deterministic native schema construction. The Host owns package discovery, installation trust, artifact locks, and catalog population. Two builders can use different immutable catalogs in one process without global mutation.
 
-Before `Agent.from_spec()`, the Harness validates every visible `CapabilitySpec` name and nested capability-valued spec against the native registry, the closed first-party Harness declarative set, and the exact Host catalog. After construction, it traverses the complete instantiated Capability tree and verifies type/source permission, stable IDs, singleton constraints, and reserved infrastructure provenance before publishing the executable. At each native run boundary it revalidates the finalized Capability mapping so `for_run()` replacement cannot change a protected type, ID, or source. Custom type availability alone grants no Capability; the `AgentSpec` must explicitly select it.
+Before `Agent.from_spec()`, the Harness validates every visible `CapabilitySpec` name and nested capability-valued spec against the native registry, the closed first-party Harness declarative set, and the exact Host catalog. The closed first-party declarative set currently includes `ShellReviewCapability`; it is available without Host catalog registration but remains disabled unless the `AgentSpec` explicitly selects it. After construction, the Harness traverses the complete instantiated Capability tree and verifies type/source permission, stable IDs, singleton constraints, and reserved infrastructure provenance before publishing the executable. At each native run boundary it revalidates the finalized Capability mapping so `for_run()` replacement cannot change a protected type, ID, or source. Custom type availability alone grants no Capability; the `AgentSpec` must explicitly select it.
 
 ## AgentContext
 
@@ -179,6 +179,28 @@ One fresh context is created for every logical Harness run and reused by that ru
 
 `identity` is derived from `instance`; no second value can diverge. The context is not a generic service locator and cannot be supplied by plugins or model content. Skill paths and tool metadata contain no callable service, lifecycle hook, ordering edge, dispatch route, authority, or durable state. They are created once with the logical-run context and reused across its internal `ModelAttempt` values.
 
+## MCP Context Headers
+
+`ContextualMCP` resolves outbound headers during Pydantic Capability run binding, before the returned fresh upstream `MCP` exposes either a provider-native `MCPServerTool` or a local `MCPToolset`. A code-first caller supplies any trusted sync or async `MCPHeadersFactory`. `MCPContextHeaders` is the shared declarative implementation backed by `MCPContextHeadersConfig` and exact header bindings.
+
+The declarative resolver supports only these source namespaces:
+
+| Source                                | Value                                               |
+| ------------------------------------- | --------------------------------------------------- |
+| `identity.issuer`, `identity.subject` | Fixed workload principal fields                     |
+| `identity.<claim>`                    | One exact immutable Agent Identity claim            |
+| `instance.agent_instance_id`          | Current Host-owned Agent instance                   |
+| `instance.parent_agent_instance_id`   | Optional parent lineage                             |
+| `instance.delegation_id`              | Optional delegation correlation                     |
+| `instance.actor`                      | Optional actor string                               |
+| `context.run_id`                      | Current logical Harness run                         |
+| `context.thread_id`                   | Current independently advancing Thread              |
+| `context.metadata.<key>`              | One exact top-level key from immutable run metadata |
+
+The text following `context.metadata.` is one exact top-level key; the resolver does not reflect over arbitrary `AgentContext` objects or interpret nested attribute paths. A selected string is used directly. Any selected JSON number, boolean, object, or array is encoded with the Harness canonical compact JSON encoder; `None` and absent optional fields are missing values. A required missing value fails during Capability run binding, while an optional missing value omits that header. This permits a Host to place one deliberate dictionary or list in run metadata and send its canonical JSON string without a template or second encoding language.
+
+Static and resolved header names are compared case-insensitively, and a duplicate fails rather than assigning implicit precedence. `ContextualMCP` otherwise delegates header and transport validation to upstream MCP and its HTTP/provider integrations. Header resolution never forwards all claims or metadata by wildcard, changes Identity, persists data, or makes a selected metadata value authoritative.
+
 ## Lifecycle Integration
 
 | Need                                  | Integration                                            |
@@ -186,6 +208,7 @@ One fresh context is created for every logical Harness run and reused by that ru
 | Produce input after Environment entry | `RunInputFactory`                                      |
 | Transform semantic input/result       | Harness plugin `wrap_run()`                            |
 | Bind a fresh Agent-loop feature       | Capability `for_run()`                                 |
+| Resolve run-scoped MCP headers        | `ContextualMCP` and an `MCPHeadersFactory`             |
 | Contribute feature instructions       | Native Capability                                      |
 | Contribute tools and their guidance   | Owning Toolset                                         |
 | Augment dynamic model context         | `AbstractModelContextCapability`                       |
@@ -238,7 +261,7 @@ The coordinator intentionally has no active-Capability registry. Imported entrie
 
 Trusted Python can intentionally read, replace, migrate, or transfer complete state. Namespace ownership is a composition contract, not a sandbox or cryptographic provenance mechanism.
 
-Pydantic messages and portable Environment state live in separate `HarnessState` fields. Desired topology, Environment provider lifecycle or launch state, readiness, usage accumulators and attribution records, clients, credentials, policy decisions, queues, locks, Host execution state, plugin objects, and provider sessions are not Capability state. A Capability cannot obtain lifecycle authority by copying an Environment selector or observation into its namespace.
+Pydantic messages and portable Environment backend state live in separate `HarnessState` fields. A Capability namespace may contain a portable model-facing projection of Environment-owned work, such as Dynamic Environment's `process-N` to `ProcessIdentity` mapping, next-unread offsets, monotonic sequence, and last observation. Such a projection is a selector and continuation aid only: it contains no live handle, task, callback, provider cursor, output reference, credential, attachment, readiness fact, or operation authority. Desired topology, Environment provider lifecycle or launch state, usage accumulators and attribution records, clients, credentials, policy decisions, queues, locks, Host execution state, plugin objects, and provider sessions are not Capability state. A Capability cannot obtain lifecycle authority by copying an Environment selector or observation into its namespace.
 
 ## State Export
 

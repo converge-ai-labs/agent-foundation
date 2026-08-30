@@ -240,7 +240,7 @@ class EnvironmentAvailability(BaseModel):
 @dataclass(frozen=True, slots=True)
 class EnvironmentBindingRequest:
     binding_id: str
-    binding_revision: int
+    binding_version: int
     alias: str
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
@@ -248,8 +248,8 @@ class EnvironmentBindingRequest:
 
     def __post_init__(self) -> None:
         _require_identifier(self.binding_id, "binding_id")
-        if self.binding_revision <= 0:
-            raise ValueError("binding_revision must be positive")
+        if self.binding_version <= 0:
+            raise ValueError("binding_version must be positive")
         _require_alias(self.alias)
         if self.default_working_directory is not None and "\x00" in self.default_working_directory:
             raise ValueError("default_working_directory contains NUL")
@@ -262,8 +262,8 @@ class EnvironmentTopologyRequest:
     default_binding_id: str | None
 
     def __post_init__(self) -> None:
-        if self.topology_version < 0:
-            raise ValueError("topology_version must be non-negative")
+        if self.topology_version <= 0:
+            raise ValueError("topology_version must be positive")
         object.__setattr__(self, "bindings", tuple(self.bindings))
         if self.default_binding_id is not None:
             _require_identifier(self.default_binding_id, "default_binding_id")
@@ -273,7 +273,7 @@ class EnvironmentBinding(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     binding_id: str
-    binding_revision: Annotated[int, Field(gt=0)]
+    binding_version: Annotated[int, Field(gt=0)]
     alias: str
     provider_type: str
     descriptor: EnvironmentDescriptor
@@ -301,7 +301,7 @@ class EnvironmentBindingObservation(BaseModel):
 class EnvironmentTopology(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    topology_version: Annotated[int, Field(ge=0)]
+    topology_version: Annotated[int, Field(gt=0)]
     bindings: tuple[EnvironmentBinding, ...]
     default_binding_id: str | None
 
@@ -342,7 +342,7 @@ class EnvironmentBindingState(BaseModel):
 class EnvironmentState(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    observed_topology_version: Annotated[int, Field(ge=0)]
+    observed_topology_version: Annotated[int, Field(gt=0)]
     bindings: Mapping[str, EnvironmentBindingState] = Field(default_factory=dict)
 
     @field_validator("bindings", mode="after")
@@ -365,7 +365,7 @@ class EnvironmentOperationReceipt(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     binding_id: str
-    binding_revision: Annotated[int, Field(gt=0)]
+    binding_version: Annotated[int, Field(gt=0)]
     observed_generation: str
     operation_id: str
     stage: Literal["accepted", "dispatched", "exec_confirmed", "completed", "unknown"]
@@ -376,7 +376,7 @@ class EnvironmentPath(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     binding_id: str
-    binding_revision: Annotated[int, Field(gt=0)]
+    binding_version: Annotated[int, Field(gt=0)]
     path: str
 
     @field_validator("binding_id")
@@ -390,8 +390,8 @@ class EnvironmentTopologyBindingChange(BaseModel):
 
     kind: Literal["added", "removed", "refreshed"]
     binding_id: str
-    previous_revision: int | None
-    current_revision: int | None
+    previous_version: Annotated[int, Field(gt=0)] | None
+    current_version: Annotated[int, Field(gt=0)] | None
     previous_alias: str | None
     current_alias: str | None
 
@@ -399,7 +399,7 @@ class EnvironmentTopologyBindingChange(BaseModel):
 class EnvironmentTopologyChange(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    previous_version: Annotated[int, Field(ge=0)]
-    current_version: Annotated[int, Field(ge=0)]
+    previous_version: Annotated[int, Field(gt=0)]
+    current_version: Annotated[int, Field(gt=0)]
     request_digest: str
     bindings: tuple[EnvironmentTopologyBindingChange, ...]

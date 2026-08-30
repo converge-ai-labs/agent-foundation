@@ -71,10 +71,7 @@ class SnapshotRepository:
         snapshot_kind: Literal["agent", "environment"],
         logical_digest: str,
     ) -> SnapshotReference | None:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             row = (
                 await session.execute(
                     select(CompositionSnapshotRecord).where(
@@ -121,10 +118,7 @@ class SnapshotRepository:
             snapshot.root_agent if isinstance(snapshot, ResolvedAgentSnapshot) else snapshot.environment_revision
         )
         created_at = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with transaction(self._store.database.sessions) as session:
             concurrent = (
                 await session.execute(
                     select(CompositionSnapshotRecord).where(

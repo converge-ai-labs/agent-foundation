@@ -145,6 +145,7 @@ class AgentMediaUnderstandingProvider:
             agent = Agent(
                 model,
                 output_type=str,
+                name=f"{kind}-understanding",
                 system_prompt=_system_prompt(kind),
                 model_settings=settings,
                 retries=2,

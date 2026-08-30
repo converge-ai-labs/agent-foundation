@@ -40,9 +40,11 @@ from a13n_harness.environment.advanced import (
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import Capability
+from pydantic_ai.capabilities import Capability, HandleDeferredToolCalls
+from pydantic_ai.exceptions import CallDeferred
 from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.toolsets import FunctionToolset
 
 pytestmark = pytest.mark.anyio
@@ -95,7 +97,7 @@ def _local_environment(root: Path):
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-1",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="local",
                     permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                     default_working_directory="/",
@@ -176,6 +178,87 @@ async def test_run_code_dispatches_eligible_tools_and_owns_inline_state() -> Non
     assert payload_types.count("codeact_execution_completed") == 4
     assert payload_types.count("codeact_tool_call_started") == 1
     assert payload_types.count("codeact_tool_call_completed") == 1
+
+
+async def test_codeact_nested_deferral_uses_child_denial_and_root_handler() -> None:
+    handler_calls: list[DeferredToolRequests] = []
+
+    def deferred_action(value: int) -> int:
+        raise CallDeferred({"value": value})
+
+    async def handle_deferred(ctx: Any, requests: DeferredToolRequests) -> DeferredToolResults:
+        del ctx
+        handler_calls.append(requests)
+        return DeferredToolResults(
+            calls={request.tool_call_id: "handled by root" for request in requests.calls},
+        )
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        responses = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, RetryPromptPart | ToolReturnPart) and part.tool_name == "run_code"
+        ]
+        if not responses:
+            yield {
+                0: DeltaToolCall(
+                    name="run_code",
+                    json_args=json.dumps({"code": "await deferred_action(value=7)"}),
+                    tool_call_id="code-deferred",
+                )
+            }
+        elif isinstance(responses[-1], RetryPromptPart) or responses[-1].outcome == "failed":
+            yield "child recovered"
+        else:
+            yield str(responses[-1].content)
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            _codeact_tools(deferred_action, allowed=("deferred_action",)),
+            CodeActCapability(),
+            HandleDeferredToolCalls(handler=handle_deferred, id="root-deferred-handler"),
+        ),
+    )
+    child_bindings = RunBindings(
+        instance=AgentInstanceContext(
+            identity=AgentIdentityRef(issuer="test", subject="child"),
+            agent_instance_id="child-1",
+            parent_agent_instance_id="parent-1",
+            delegation_id="delegation-1",
+        ),
+        environment=NoopEnvironmentRunBinding(),
+    )
+
+    child_events: list[HarnessEvent] = []
+    async with executable.stream("run", bindings=child_bindings) as child_stream:
+        async for item in child_stream:
+            if isinstance(item, HarnessEvent):
+                child_events.append(item)
+
+    assert child_stream.result is not None
+    assert child_stream.result.output_or_raise() == "child recovered"
+    assert handler_calls == []
+    nested_results = [
+        item.event.payload
+        for item in child_events
+        if isinstance(item.event, HarnessExtensionEvent)
+        and item.event.kind == "diagnostic"
+        and item.event.payload["type"] == "codeact_tool_call_completed"
+    ]
+    assert len(nested_results) == 1
+    assert nested_results[0]["outcome"] == "deferred"
+    assert nested_results[0]["error_type"] == "ToolDenied"
+
+    root_result = await executable.run("run", bindings=RunBindings.embedded())
+
+    assert len(handler_calls) == 1
+    assert "handled by root" in root_result.output_or_raise()
 
 
 async def test_failed_inline_result_validation_discards_session_state(

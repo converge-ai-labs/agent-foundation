@@ -43,13 +43,13 @@ class EIPOutputRegistry:
         session: EIPSession,
         environment_id: str,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
         generation: str,
     ) -> None:
         self._session = session
         self._environment_id = environment_id
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = generation
         self._records: dict[str, _OutputRecord] = {}
         self._raw_tokens: dict[eip.OutputReference, str] = {}
@@ -138,7 +138,7 @@ class EIPOutputRegistry:
             )
             next_cursor = BoundOutputCursor(
                 binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                binding_version=self._binding_version,
                 observed_generation=self._generation,
                 cursor=OpaqueOutputCursor._from_payload(cursor_token),
             )
@@ -172,14 +172,28 @@ class EIPOutputRegistry:
         record = self._records.get(output_token)
         if record is None:
             raise EnvironmentError("Retained output is unavailable", code="environment_not_found")
+        self._pending_cleanup.add(record.reference)
         return await self._release_record(output_token, record)
 
     def defer_cleanup(self, reference: eip.OutputReference) -> None:
         self._pending_cleanup.add(reference)
 
-    async def release_hidden(self, reference: eip.OutputReference) -> EnvironmentOperationReceipt:
+    async def release_hidden(self, reference: eip.OutputReference) -> None:
         self.defer_cleanup(reference)
-        return await self.release_raw(reference)
+        try:
+            await self.release_raw(reference)
+        except EnvironmentError as exc:
+            if exc.code != "environment_not_found":
+                raise
+            self._forget_reference(reference)
+
+    def _forget_reference(self, reference: eip.OutputReference) -> None:
+        output_token = self._raw_tokens.pop(reference, None)
+        self._pending_cleanup.discard(reference)
+        if output_token is None:
+            return
+        self._records.pop(output_token, None)
+        self._cursors = {token: item for token, item in self._cursors.items() if item.output_token != output_token}
 
     async def release_raw(self, reference: eip.OutputReference) -> EnvironmentOperationReceipt:
         output_token = self._raw_tokens.get(reference)
@@ -228,7 +242,7 @@ class EIPOutputRegistry:
             result.receipt,
             environment_id=self._environment_id,
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             generation=self._generation,
         )
         return result.released, receipt
@@ -261,7 +275,7 @@ class EIPOutputRegistry:
             kind = "retained"
             reference = BoundOutputReference(
                 binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                binding_version=self._binding_version,
                 observed_generation=self._generation,
                 reference=OpaqueOutputReference._from_payload(token),
             )
@@ -286,7 +300,7 @@ class EIPOutputRegistry:
     def _validate_reference(self, reference: BoundOutputReference) -> str:
         self._validate_bound_identity(
             reference.binding_id,
-            reference.binding_revision,
+            reference.binding_version,
             reference.observed_generation,
         )
         return _unwrap_opaque(reference.reference, OpaqueOutputReference)
@@ -294,7 +308,7 @@ class EIPOutputRegistry:
     def _validate_bound_cursor(self, cursor: BoundOutputCursor) -> str:
         self._validate_bound_identity(
             cursor.binding_id,
-            cursor.binding_revision,
+            cursor.binding_version,
             cursor.observed_generation,
         )
         return _unwrap_opaque(cursor.cursor, OpaqueOutputCursor)
@@ -306,12 +320,8 @@ class EIPOutputRegistry:
             raise EnvironmentError("Output cursor is invalid", code="environment_cursor_invalid")
         return record
 
-    def _validate_bound_identity(self, binding_id: str, binding_revision: int, generation: str) -> None:
-        if (
-            binding_id != self._binding_id
-            or binding_revision != self._binding_revision
-            or generation != self._generation
-        ):
+    def _validate_bound_identity(self, binding_id: str, binding_version: int, generation: str) -> None:
+        if binding_id != self._binding_id or binding_version != self._binding_version or generation != self._generation:
             raise EnvironmentError("Output selector is foreign or stale", code="environment_stale_binding")
 
     @staticmethod

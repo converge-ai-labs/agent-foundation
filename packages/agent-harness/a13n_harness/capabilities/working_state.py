@@ -56,7 +56,7 @@ _MAX_NOTES = 10_000
 
 
 class TaskStateError(RunError):
-    """Typed task lookup, eligibility, dependency, or revision failure."""
+    """Typed task lookup, eligibility, dependency, or version failure."""
 
 
 class Task(BaseModel):
@@ -71,7 +71,7 @@ class Task(BaseModel):
     )
 
     id: str = Field(pattern=r"^task-[1-9][0-9]*$", max_length=64)
-    revision: int = Field(ge=1)
+    version: int = Field(ge=1)
     subject: str = Field(min_length=1, max_length=_MAX_TASK_SUBJECT_LENGTH)
     description: str = Field(min_length=1, max_length=_MAX_TASK_DESCRIPTION_LENGTH)
     active_form: str | None = Field(default=None, min_length=1, max_length=_MAX_TASK_ACTIVE_FORM_LENGTH)
@@ -115,7 +115,7 @@ class Task(BaseModel):
     @computed_field
     @property
     def metadata(self) -> dict[str, JsonValue]:
-        """Return detached metadata so mutation cannot bypass a cell revision."""
+        """Return detached metadata so mutation cannot bypass a cell version."""
         if not isinstance(self.metadata_json, bytes):
             raise AssertionError("Task metadata must be normalized to bytes")
         return _JSON_OBJECT_ADAPTER.validate_json(self.metadata_json)
@@ -130,7 +130,7 @@ class TaskState(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always", validate_by_name=True)
 
-    revision: int = Field(default=0, ge=0)
+    version: int = Field(default=1, ge=1)
     next_task_sequence: int = Field(default=1, ge=1)
     tasks_json: bytes | Mapping[str, Task] = Field(
         default=_EMPTY_TASKS_JSON,
@@ -151,13 +151,13 @@ class TaskState(BaseModel):
         return _TASKS_ADAPTER.dump_json(tasks)
 
     @model_validator(mode="after")
-    def _validate_allocator_and_revisions(self) -> TaskState:
+    def _validate_allocator_and_versions(self) -> TaskState:
         tasks = self.tasks
         sequences = [_task_sequence(task_id) for task_id in tasks]
         if sequences and self.next_task_sequence <= max(sequences):
             raise ValueError("next_task_sequence must remain above every allocated task reference")
-        if any(task.revision > self.revision for task in tasks.values()):
-            raise ValueError("task revisions cannot exceed the task-state revision")
+        if any(task.version > self.version for task in tasks.values()):
+            raise ValueError("task versions cannot exceed the task-state version")
         _validate_dependency_graph(tasks)
         return self
 
@@ -177,7 +177,7 @@ class ProviderTaskCursor(BaseModel):
 
     provider_type: str = Field(min_length=1, max_length=256)
     state_version: str = Field(min_length=1, max_length=256)
-    observed_revision: int | None = Field(default=None, ge=0)
+    observed_version: int | None = Field(default=None, ge=1)
 
 
 class WorkingState(BaseModel):
@@ -273,14 +273,14 @@ class TaskStateCell(Protocol):
         self,
         task_id: str,
         mutation: TaskMutation,
-        expected_revision: int | None,
+        expected_version: int | None,
         *,
         claim: bool = False,
     ) -> Task: ...
 
-    async def claim(self, task_id: str, expected_revision: int | None = None) -> Task: ...
+    async def claim(self, task_id: str, expected_version: int | None = None) -> Task: ...
 
-    async def update(self, task_id: str, mutation: TaskMutation, expected_revision: int) -> Task: ...
+    async def update(self, task_id: str, mutation: TaskMutation, expected_version: int) -> Task: ...
 
 
 TaskStateChange = Callable[[TaskState], Awaitable[None]]
@@ -330,10 +330,10 @@ class EmbeddedTaskStateCell:
             tasks = current.tasks
             _require_references(tasks, (*request.blocks, *request.blocked_by))
             task_id = f"task-{current.next_task_sequence}"
-            revision = current.revision + 1
+            version = current.version + 1
             created = Task(
                 id=task_id,
-                revision=revision,
+                version=version,
                 subject=request.subject,
                 description=request.description,
                 active_form=request.active_form,
@@ -345,18 +345,18 @@ class EmbeddedTaskStateCell:
             for other_id in created.blocks:
                 tasks[other_id] = _task_with(
                     tasks[other_id],
-                    revision=revision,
+                    version=version,
                     blocked_by=_add_ref(tasks[other_id].blocked_by, task_id),
                 )
             for other_id in created.blocked_by:
                 tasks[other_id] = _task_with(
                     tasks[other_id],
-                    revision=revision,
+                    version=version,
                     blocks=_add_ref(tasks[other_id].blocks, task_id),
                 )
             _require_valid_dependency_graph(tasks)
             state = TaskState(
-                revision=revision,
+                version=version,
                 next_task_sequence=current.next_task_sequence + 1,
                 tasks=tasks,
             )
@@ -367,11 +367,11 @@ class EmbeddedTaskStateCell:
         self,
         task_id: str,
         mutation: TaskMutation,
-        expected_revision: int | None,
+        expected_version: int | None,
         *,
         claim: bool = False,
     ) -> Task:
-        """Apply an optional implicit claim and mutation in one persisted revision."""
+        """Apply an optional implicit claim and mutation in one persisted version."""
         _require_task_id(task_id)
         try:
             mutation = _validate_model(mutation, TaskMutation)
@@ -383,11 +383,15 @@ class EmbeddedTaskStateCell:
             task = _require_task(tasks, task_id)
             if claim and _mutation_is_empty(mutation) and task.owner == self._owner and task.status == "in_progress":
                 return task
-            if expected_revision is not None and task.revision != expected_revision:
+            if expected_version is not None and task.version != expected_version:
                 raise TaskStateError(
-                    "Task revision does not match the expected revision.",
-                    code="task_revision_conflict",
-                    details={"task_id": task_id, "expected": expected_revision, "actual": task.revision},
+                    "Task version does not match the expected version.",
+                    code="task_version_conflict",
+                    details={
+                        "task_id": task_id,
+                        "expected_version": expected_version,
+                        "actual_version": task.version,
+                    },
                 )
             if task.owner is not None and task.owner != self._owner:
                 raise TaskStateError(
@@ -449,29 +453,29 @@ class EmbeddedTaskStateCell:
             staged = _task_with(staged, **updates)
             if staged == task:
                 return task
-            revision = current.revision + 1
-            tasks[task_id] = _task_with(staged, revision=revision)
+            version = current.version + 1
+            tasks[task_id] = _task_with(staged, version=version)
             _update_reciprocal_dependencies(
                 tasks,
                 task_id=task_id,
                 previous=task,
                 current=tasks[task_id],
-                revision=revision,
+                version=version,
             )
             _require_valid_dependency_graph(tasks)
             state = TaskState(
-                revision=revision,
+                version=version,
                 next_task_sequence=current.next_task_sequence,
                 tasks=tasks,
             )
             await self._commit(state)
             return state.tasks[task_id]
 
-    async def claim(self, task_id: str, expected_revision: int | None = None) -> Task:
-        return await self.mutate(task_id, TaskMutation(), expected_revision, claim=True)
+    async def claim(self, task_id: str, expected_version: int | None = None) -> Task:
+        return await self.mutate(task_id, TaskMutation(), expected_version, claim=True)
 
-    async def update(self, task_id: str, mutation: TaskMutation, expected_revision: int) -> Task:
-        return await self.mutate(task_id, mutation, expected_revision)
+    async def update(self, task_id: str, mutation: TaskMutation, expected_version: int) -> Task:
+        return await self.mutate(task_id, mutation, expected_version)
 
     async def _commit(self, state: TaskState) -> None:
         if self._backend.on_change is not None:
@@ -774,7 +778,7 @@ def _update_reciprocal_dependencies(
     task_id: str,
     previous: Task,
     current: Task,
-    revision: int,
+    version: int,
 ) -> None:
     for other_id in set(previous.blocks) | set(current.blocks):
         other = tasks[other_id]
@@ -784,14 +788,14 @@ def _update_reciprocal_dependencies(
             else _remove_ref(other.blocked_by, task_id)
         )
         if blocked_by != other.blocked_by:
-            tasks[other_id] = _task_with(other, revision=revision, blocked_by=blocked_by)
+            tasks[other_id] = _task_with(other, version=version, blocked_by=blocked_by)
     for other_id in set(previous.blocked_by) | set(current.blocked_by):
         other = tasks[other_id]
         blocks = (
             _add_ref(other.blocks, task_id) if other_id in current.blocked_by else _remove_ref(other.blocks, task_id)
         )
         if blocks != other.blocks:
-            tasks[other_id] = _task_with(other, revision=revision, blocks=blocks)
+            tasks[other_id] = _task_with(other, version=version, blocks=blocks)
 
 
 def _require_valid_dependency_graph(tasks: Mapping[str, Task]) -> None:

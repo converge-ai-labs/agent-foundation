@@ -84,7 +84,7 @@ async with executable.stream("Work", bindings=fresh_bindings()) as stream:
 
 ## Structured Suspension
 
-Native deferred tools and approvals end the logical run with `status="suspended"`. The result includes:
+Native deferred tools and approvals end a root logical run with `status="suspended"`. The result includes:
 
 - `state`, representing the accepted history and Capability data;
 - `deferred`, the exact native pending request envelope;
@@ -124,6 +124,8 @@ Resume validates that:
 
 A prior approval does not bypass current policy.
 
+This resume flow is root-only. Child invocations remove declaratively deferred tools and convert dynamic deferral into `ToolDenied` results while continuing the same run. A Host must not persist or submit `DeferredToolResume` for a child.
+
 ## Safe Failure Candidates
 
 A failed result can include a safe state candidate when the Harness can normalize the interrupted history. For example, it can retain complete visible text and completed thinking while excluding an unfinished thinking part.
@@ -157,6 +159,21 @@ await context.state.write(
 ```
 
 Unknown namespaces can remain opaque across a run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or provider resource state in a namespace.
+
+## Managed Background Processes
+
+Dynamic Environment uses one Capability namespace to preserve model-facing background-process continuation. It stores:
+
+- the `process-N` reference and monotonic next sequence;
+- exact `ProcessIdentity`: provider type, logical Environment ID, generation, and provider process ID;
+- independent next-unread stdout and stderr offsets;
+- last observed status, stdin state, produced-byte counts, and `backend_lost` correction.
+
+It does not store a live `BoundProcessHandle`, task, hook, output reference, provider cursor, credential, attachment, or authority. The Environment/provider remains the source of truth.
+
+When the same `HarnessState` continues in a new Run, a fresh `ProcessManager` loads this namespace and lazily rebinds the exact identity through a current Environment attachment. The current alias, default binding, and saved routing hint cannot retarget it. If no matching attachment exists, the mapping remains available for a later Run. A different generation or authoritative process-not-found result corrects it to `backend_lost`.
+
+Persisting this namespace is necessary but not sufficient for process survival. The Host must separately retain or reconstruct the provider resource and output, attach the same logical Environment generation, and use provider events or polling if completion must schedule work while no Harness Turn is active. The built-in Direct Local binding ends managed processes at binding close and therefore does not continue them across Runs. EIP can continue them only when the same `agent-envd` resource and generation survive. See [Embedding in a Host](hosting.md#background-processes-across-turns-and-restarts).
 
 ## Host Checkpointing
 

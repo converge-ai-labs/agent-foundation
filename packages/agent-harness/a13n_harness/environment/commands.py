@@ -141,13 +141,31 @@ class ProcessOutputSnapshot(BaseModel):
     stderr: EnvironmentOutputCapture
 
 
+class ProcessIdentity(BaseModel):
+    """Portable identity of one provider-owned process in one Environment instance."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    provider_type: str = Field(min_length=1, max_length=256)
+    environment_id: str = Field(min_length=1, max_length=256)
+    generation: str = Field(min_length=1, max_length=256)
+    process_id: str = Field(min_length=1, max_length=1024)
+
+
 class BoundProcessHandle(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     binding_id: str
-    binding_revision: int = Field(gt=0)
+    binding_version: int = Field(gt=0)
+    identity: ProcessIdentity
     handle: OpaqueProcessHandle
     observed_generation: str
+
+    @model_validator(mode="after")
+    def _identity_matches_binding_generation(self) -> BoundProcessHandle:
+        if self.identity.generation != self.observed_generation:
+            raise ValueError("process identity generation must match the bound generation")
+        return self
 
 
 class ProcessInfo(BaseModel):
@@ -235,6 +253,13 @@ class ProviderShellOperations(Protocol):
 
 class ProviderProcessOperations(Protocol):
     async def start(self, request: CommandRequest) -> ProcessStartResult: ...
+
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo: ...
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo: ...
 

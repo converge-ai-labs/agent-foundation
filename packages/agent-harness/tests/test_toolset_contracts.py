@@ -6,7 +6,6 @@ from a13n_harness.toolsets.context import HandoffToolset
 from a13n_harness.toolsets.documents import DocumentsToolset
 from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.media import MediaToolset
-from a13n_harness.toolsets.process_monitor import MonitoredProcessToolset
 from a13n_harness.toolsets.shell import ShellToolset
 from a13n_harness.toolsets.web import WebToolset
 from a13n_harness.toolsets.working_state import WorkingStateToolset
@@ -44,23 +43,15 @@ def test_every_model_facing_function_tool_has_an_explicit_result_contract() -> N
             "grep",
         },
         ShellToolset: {
-            "environment_shell_exec",
-            "environment_process_start",
-            "environment_process_inspect",
-            "environment_process_status",
-            "environment_process_read_output",
-            "environment_process_write_stdin",
-            "environment_process_close_stdin",
-            "environment_process_signal",
-            "environment_process_wait",
-            "environment_process_kill",
-            "environment_process_release",
-            "environment_port_inspect",
-            "environment_port_wait",
+            "shell_exec",
+            "shell_wait",
+            "shell_status",
+            "shell_input",
+            "shell_signal",
+            "shell_kill",
         },
         HandoffToolset: {"summarize"},
         WorkingStateToolset: {"task_create", "task_get", "task_list", "task_update", "note", "note_get"},
-        MonitoredProcessToolset: {"environment_process_monitor"},
         MediaToolset: {"read_media"},
         DocumentsToolset: {"pdf_convert", "office_to_markdown"},
         WebToolset: {"search", "scrape", "fetch", "download"},

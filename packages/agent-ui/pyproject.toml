@@ -1,7 +1,7 @@
 [project]
 name = "a13n-ui"
 version = "0.0.0"
-description = "Local WebUI and TUI Host for Agent Foundation Harness"
+description = "Local WebUI and CLI Host for Agent Foundation Harness"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -18,7 +18,7 @@ dependencies = [
     "filelock>=3.20,<4",
     "httpx2>=2.5,<3",
     "pydantic>=2.12,<3",
-    "pydantic-ai-slim>=2.31.1,<2.32",
+    "pydantic-ai-slim>=2.33,<2.34",
     "pyyaml>=6.0.2,<7",
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "zstandard>=0.25,<0.26",

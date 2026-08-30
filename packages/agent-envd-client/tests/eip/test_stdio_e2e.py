@@ -125,20 +125,26 @@ async def start_daemon(
     return process
 
 
-async def wait_for_exit(process: asyncio.subprocess.Process, expected_code: int = 0) -> bytes:
-    try:
-        returncode = await asyncio.wait_for(process.wait(), timeout=5)
-    except TimeoutError:
-        process.kill()
-        await process.wait()
-        raise
-    assert process.stderr is not None
-    stderr = await process.stderr.read()
+def cleanup_owned_runtime(process: asyncio.subprocess.Process) -> None:
     runtime_directory = _OWNED_RUNTIME_DIRECTORIES.pop(id(process), None)
     if runtime_directory is not None:
         shutil.rmtree(runtime_directory, ignore_errors=True)
-    assert returncode == expected_code, stderr.decode("utf-8", errors="replace")
-    return stderr
+
+
+async def wait_for_exit(process: asyncio.subprocess.Process, expected_code: int = 0) -> bytes:
+    try:
+        try:
+            returncode = await asyncio.wait_for(process.wait(), timeout=5)
+        except TimeoutError:
+            process.kill()
+            await process.wait()
+            raise
+        assert process.stderr is not None
+        stderr = await process.stderr.read()
+        assert returncode == expected_code, stderr.decode("utf-8", errors="replace")
+        return stderr
+    finally:
+        cleanup_owned_runtime(process)
 
 
 async def initialize_direct(process: asyncio.subprocess.Process) -> tuple[RequestCoordinator, EIPClient]:
@@ -1895,28 +1901,32 @@ def test_malformed_or_oversized_frame_fails_transport(header: bytes) -> None:
 def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
     async def scenario() -> None:
         process = await start_daemon(agent_envd_binary())
-        assert process.stdin is not None and process.stdout is not None
-        initialize = json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "supported_protocol_versions": ["0.1"],
-                    "client": {"name": "backpressure", "version": "1"},
-                    "expected_environment_id": "env-e2e",
-                },
-            },
-            separators=(",", ":"),
-        ).encode()
-        process.stdin.write(f"Content-Length: {len(initialize)}\r\n\r\n".encode() + initialize)
-        await process.stdin.drain()
-        assert (await read_raw_frame(process.stdout))["id"] == 1
-
-        stdout_transport = process.stdout._transport
-        assert stdout_transport is not None
-        stdout_transport.pause_reading()
+        stdout_transport = None
+        stdout_paused = False
         try:
+            assert process.stdin is not None and process.stdout is not None
+            initialize = json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "supported_protocol_versions": ["0.1"],
+                        "client": {"name": "backpressure", "version": "1"},
+                        "expected_environment_id": "env-e2e",
+                    },
+                },
+                separators=(",", ":"),
+            ).encode()
+            process.stdin.write(f"Content-Length: {len(initialize)}\r\n\r\n".encode() + initialize)
+            await process.stdin.drain()
+            assert (await read_raw_frame(process.stdout))["id"] == 1
+
+            stdout_transport = process.stdout._transport
+            assert stdout_transport is not None
+            stdout_transport.pause_reading()
+            stdout_paused = True
+
             next_id = 2
             input_backpressured = False
             for _batch in range(256):
@@ -1952,11 +1962,17 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
             # asyncio's subprocess transport does not finish wait() while an
             # unread stdout pipe remains paused with buffered data, even after
             # child exit.
-            stdout_transport.resume_reading()
-            if process.returncode is None:
-                process.kill()
-            await process.stdout.read()
-            await process.wait()
+            if stdout_paused:
+                assert stdout_transport is not None
+                stdout_transport.resume_reading()
+            try:
+                if process.returncode is None:
+                    process.kill()
+                if process.stdout is not None:
+                    await process.stdout.read()
+                await process.wait()
+            finally:
+                cleanup_owned_runtime(process)
 
         assert returncode == 1
         assert process.stderr is not None

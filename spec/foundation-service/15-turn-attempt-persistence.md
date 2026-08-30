@@ -26,7 +26,7 @@ under the same Turn.
 | Resource      | Responsibilities                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Thread`      | Owns Session membership, origin, version, the current Turn (the most recently accepted Turn), and selected continuation head. Current-Turn status determines whether work is active. The Thread serializes whether another Turn can be accepted but does not schedule or execute that Turn.                                                                                                                         |
-| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact AgentRevision selection, accepted model execution snapshot, safe model observation, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                   |
+| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact AgentPresetVersion and Runtime lock selection, accepted model execution snapshot, safe model observation, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                             |
 | `TurnAttempt` | Owns one worker generation's lease, fence, worker and Harness Run correlation, safe model observation, bounded dispatch, usage and failure audit, and generation outcome. It does not own accepted input, lineage, model configuration, state, durable outcome, credentials, live bindings, or presentation data, and it cannot independently authorize a successor. Terminal attempts are immutable audit records. |
 
 ## Boundaries
@@ -41,14 +41,14 @@ under the same Turn.
 ## Turn and TurnAttempt Allocation Boundary
 
 A new `Turn` records acceptance under the [Agent control input and continuation
-contract](28b-agent-control-input-and-continuation.md) of a new input-driven advancement of one
+contract](34-agent-control-input-and-continuation.md) of a new input-driven advancement of one
 Thread. A new `TurnAttempt` records a worker generation authorized to advance
 an already accepted, unsealed Turn. Creating a Turn therefore does not create
 an attempt in the same transaction: the Turn first becomes `accepted`, and a
 later Worker scan and claim creates attempt number one.
 
 A later attempt preserves the Turn ID, Session, Thread, parent edge, accepted
-input, exact AgentRevision selection, model execution snapshot, recovery policy,
+input, exact AgentPresetVersion and Runtime lock selection, model execution snapshot, recovery policy,
 and deterministic state key. It receives a new attempt ID, attempt number,
 fence, lease, worker generation, fresh credentials and bindings, and, after
 entry, a fresh Harness Run. By contrast,
@@ -133,6 +133,7 @@ class TurnAttempt:
     recovery_reason: str | None
     worker_id: str
     worker_generation: str
+    runtime_lock_digest: str
     run_id: str | None
     model_execution_observation: ModelExecutionObservation
 
@@ -228,17 +229,17 @@ to `running`.
 
 Each worker generation is one `turn_attempts` row:
 
-| Column group      | Columns                                                                      | Contract                                                                                               |
-| ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Identity          | `id`, `version`, `tenant_id`, `turn_id`, `attempt_number`, `fence`, `status` | Unique attempt identity, positive CAS version, and monotonically increasing generation within the Turn |
-| Recovery lineage  | `replaces_turn_attempt_id`, `recovery_reason`                                | Names the immediately superseded attempt and bounded recovery reason                                   |
-| Worker and run    | `worker_id`, `worker_generation`, `run_id`                                   | Worker process correlation and at most one Harness Run ID after entry                                  |
-| Model observation | `model_execution_observation_json`                                           | Immutable safe model ID, provider type, and model name copied from the Turn at claim                   |
-| Lease             | `lease_token_digest`, `lease_expires_at`, `heartbeat_at`                     | Opaque lease proof, expiry, and last durable renewal                                                   |
-| Tool dispatch     | `tool_invocations_json`                                                      | Bounded dispatch and result-correlation records; not a provider receipt ledger                         |
-| Recovery context  | `recovery_unknown_outcomes_json`                                             | Bounded unmatched prior Agent tool calls selected during fenced preparation                            |
-| Usage and failure | `usage_json`, `failure_json`                                                 | Attempt-local accounting and safe failure provenance                                                   |
-| Time              | `created_at`, `claimed_at`, `started_at`, `finished_at`, `updated_at`        | UTC lifecycle observations                                                                             |
+| Column group      | Columns                                                                      | Contract                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Identity          | `id`, `version`, `tenant_id`, `turn_id`, `attempt_number`, `fence`, `status` | Unique attempt identity, positive CAS version, and monotonically increasing generation within the Turn    |
+| Recovery lineage  | `replaces_turn_attempt_id`, `recovery_reason`                                | Names the immediately superseded attempt and bounded recovery reason                                      |
+| Worker and run    | `worker_id`, `worker_generation`, `runtime_lock_digest`, `run_id`            | Execution-process correlation, exact Turn-pinned Runtime lock, and at most one Harness Run ID after entry |
+| Model observation | `model_execution_observation_json`                                           | Immutable safe model ID, provider type, and model name copied from the Turn at claim                      |
+| Lease             | `lease_token_digest`, `lease_expires_at`, `heartbeat_at`                     | Opaque lease proof, expiry, and last durable renewal                                                      |
+| Tool dispatch     | `tool_invocations_json`                                                      | Bounded dispatch and result-correlation records; not a provider receipt ledger                            |
+| Recovery context  | `recovery_unknown_outcomes_json`                                             | Bounded unmatched prior Agent tool calls selected during fenced preparation                               |
+| Usage and failure | `usage_json`, `failure_json`                                                 | Attempt-local accounting and safe failure provenance                                                      |
+| Time              | `created_at`, `claimed_at`, `started_at`, `finished_at`, `updated_at`        | UTC lifecycle observations                                                                                |
 
 Once terminal, every attempt column is immutable.
 
@@ -252,7 +253,10 @@ selects that non-terminal attempt and the caller matches its worker generation,
 fence, lease proof, and unexpired lease.
 
 Every Worker periodically scans bounded, deterministically ordered relational
-candidates. A candidate is exactly one of:
+candidates through its configured Plugin Runtime profile. An on-demand Worker
+preflights the exact candidate lock against its process-local registry before
+claim; a runner Supervisor ensures a matching Runner exists and that Runner scans
+only an equal `runtime_lock_digest`. A candidate is exactly one of:
 
 - an `accepted` Turn with no current attempt and `available_at <= now`;
 - a `running` Turn with no current attempt after a retryable failed generation
@@ -336,13 +340,13 @@ history, immutable artifacts, and current authorization outside a database
 transaction. It admits Harness entry only when all of these conditions hold:
 
 - the latest complete state object passes key, tenant, Turn, Thread, digest,
-  size, envelope, checkpoint, Agent revision, and required Harness, Capability,
+  size, envelope, checkpoint, AgentPresetVersion, Runtime lock, and required Harness, Capability,
   Host, and Environment-state codec validation;
 - every prior Agent tool dispatch without a matching result in that exact state
   can be represented within the bounded `recovery_unknown_outcomes` schema;
 - the fixed attempt-count, elapsed-time, and known-usage ceilings still permit
   this already-created attempt after all durable usage charges;
-- the exact Agent revision, structurally decodable model execution snapshot,
+- the exact AgentPresetVersion and Runtime lock, structurally decodable model execution snapshot,
   state-owned Environment execution configuration, managed Harness plugin and Skill artifacts,
   Connector contracts, Environment connector locks, and other frozen dependency
   locks are present, digest-valid, and compatible; and

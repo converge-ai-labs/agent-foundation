@@ -2,10 +2,10 @@
 
 `a13n-harness` keeps Skill discovery reusable outside Agent execution. A Host chooses one of two explicit modes:
 
-| Host situation                                                 | API                                              | Result                         | Consistency owner                                                                          |
-| -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------ |
-| A CLI or embedded process directly controls one `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | The caller keeps the operator's namespace stable                                           |
-| A Host uses an entered `Environment`                           | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | The manager pins binding revisions; the Host checks catalog currency before later path use |
+| Host situation                                                 | API                                              | Result                         | Consistency owner                                                                         |
+| -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------- |
+| A CLI or embedded process directly controls one `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | The caller keeps the operator's namespace stable                                          |
+| A Host uses an entered `Environment`                           | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | The manager pins binding versions; the Host checks catalog currency before later path use |
 
 Both modes use the same `SkillSource`, `SkillMaterializer`, frontmatter parser, limits, conflict policy, and path-containment checks. Neither mode scans a home directory, installed package, or sibling workspace implicitly.
 
@@ -23,7 +23,7 @@ flowchart LR
     Manager --> Catalog[SkillCatalogItem catalog]
 
     Environment[Entered Environment] --> BoundScan[scan_environment]
-    BoundScan --> Scopes[Revision-pinned file scopes]
+    BoundScan --> Scopes[Version-pinned file scopes]
     Scopes --> Manager
     Manager --> BoundCatalog[BoundSkillCatalog]
 
@@ -44,7 +44,7 @@ The design separates four responsibilities:
 The first-version API has no compatibility or discovery fallback:
 
 - `scan(files=...)` uses exactly the supplied FileOperator and never constructs or probes an Environment;
-- `scan_environment(environment=...)` uses only revision-pinned scopes and never retries through the unpinned `environment.files` facade or direct scan mode;
+- `scan_environment(environment=...)` uses only version-pinned scopes and never retries through the unpinned `environment.files` facade or direct scan mode;
 - a source reads only its declared roots and never tries the process working directory, home directory, package locations, or alternate workspace paths;
 - a relevant route change raises `skill_catalog_stale`; it never triggers an automatic rescan or retarget;
 - `FileSkillSource`, `SkillSource.roots`, and `SkillManager.roots` are the only source/root names; there are no legacy aliases.
@@ -108,7 +108,7 @@ async def scan_cli_skills(
     return await manager.scan(files=files)
 ```
 
-This mode intentionally has no Environment topology or binding-revision semantics. Keep the FileOperator's backing namespace stable until every path derived from the returned catalog has been consumed. If another process can replace the backing directory concurrently, provide an operator with the snapshot or locking behavior your Host requires, or use an entered Environment instead.
+This mode intentionally has no Environment topology or binding-version semantics. Keep the FileOperator's backing namespace stable until every path derived from the returned catalog has been consumed. If another process can replace the backing directory concurrently, provide an operator with the snapshot or locking behavior your Host requires, or use an entered Environment instead.
 
 `SkillManager.default()` is designed for Environment-backed runs and contains the canonical `/workspace/.agents/skills` source. A direct FileOperator Host normally constructs an explicit manager with roots in its own namespace.
 
@@ -134,7 +134,7 @@ async def scan_environment_skills(
 `scan_environment()`:
 
 1. captures every configured root with `Environment.select_files()` before awaiting provider I/O;
-2. opens revision-pinned file scopes for those roots;
+2. opens version-pinned file scopes for those roots;
 3. runs materialization, listing, frontmatter reads, and final `SKILL.md` validation through the pinned scopes;
 4. resolves every final item to exact directory and document `EnvironmentPath` values;
 5. verifies that every configured scan route, including empty and conflict-overridden roots, is still current before returning.
@@ -146,7 +146,7 @@ A `BoundSkillCatalogItem` contains:
 - `document`, the exact resolved `SKILL.md` path;
 - `observed_generation`, the provider generation held during scanning.
 
-`BoundSkillCatalog.require_current(environment)` reselects only paths represented by catalog items. Adding or refreshing an unrelated Environment binding does not invalidate the catalog. Changing a relevant binding revision, provider generation, default route, alias route, or resolved provider path raises `DefinitionError` with code `skill_catalog_stale`.
+`BoundSkillCatalog.require_current(environment)` reselects only paths represented by catalog items. Adding or refreshing an unrelated Environment binding does not invalidate the catalog. Changing a relevant binding version, provider generation, default route, alias route, or resolved provider path raises `DefinitionError` with code `skill_catalog_stale`.
 
 Do not persist `EnvironmentPath` values as durable authority. They describe one entered Environment and are useful only while that Environment remains active. A Host that imports Skill packages should copy and validate package content into its own immutable revision format.
 

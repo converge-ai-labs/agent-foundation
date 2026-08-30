@@ -32,10 +32,10 @@ Capability presence does not itself authorize external work. Tools that cross a 
 | `WorkspaceOutlineCapability`   | Bounded metadata-only file outline from the current Environment                             | Environment file facet                                         |
 | `FileContextCapability`        | Run-frozen `AGENTS.md` and explicit file contents                                           | Environment file facet                                         |
 | `DynamicEnvironmentCapability` | File and shell Toolset composition, dynamic Environment context, and topology notices       | Environment binding; managed calls also need current policy    |
+| `ShellReviewCapability`        | Optional model-backed risk review for `environment.shell_exec`                              | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
-| `MonitoredProcessCapability`   | Process-monitoring tools                                                                    | `MonitoredProcessRunCapability`                                |
 | `MediaCapability`              | Media-reading Toolset                                                                       | `MediaRunCapability`                                           |
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `DocumentsRunCapability`                                       |
 | `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebRunCapability` with current client and policy              |
@@ -43,6 +43,7 @@ Capability presence does not itself authorize external work. Tools that cross a 
 | `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
 | `DelegationCapability`         | Blocking inline child delegation                                                            | Declared subagents and `DelegationRunCapability`               |
 | `CodeActCapability`            | Restricted `run_code` and optional `run_program`                                            | Explicit eligible tools and Environment files for programs     |
+| `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical run                       | Current `AgentContext` supplied by the Harness                 |
 
 Provider-backed run Capabilities contain live trusted collaborators. They are not definition state and never enter `HarnessState`.
 
@@ -72,7 +73,36 @@ capabilities = (
 
 All three have explicit byte, item, depth, or line bounds. Configure them to match the Environment and target model rather than treating their defaults as universal.
 
-For context lifecycle features, Harness `AgentSpec.model_configuration` can resolve model-relative defaults once at build time; callers supply it through the `model_config` construction key. With a known context window, an otherwise unconfigured `HandoffCapability()` warns at 65% and `CompactionCapability()` compacts at 90%. Explicit token settings override these values, and the Capabilities remain opt-in.
+For context lifecycle features, Harness `AgentSpec.model_characteristics` can resolve model-relative defaults once at build time; callers supply it through the `model_characteristics` construction key. With a known context window, an otherwise unconfigured `HandoffCapability()` warns at 65% and `CompactionCapability()` compacts at 90%. Explicit token settings override these values, and the Capabilities remain opt-in.
+
+## Shell Command Review
+
+Shell review is off unless the Agent definition includes `ShellReviewCapability`. The declarative form is suitable for an `AgentSpec` loaded from JSON or YAML:
+
+```python
+from a13n_harness import AgentSpec
+
+agent_spec = AgentSpec(
+    capabilities=[
+        {
+            "name": "ShellReviewCapability",
+            "arguments": {
+                "model": "gateway@openai-responses:gpt-5.4-mini",
+                "risk_threshold": "high",
+                "on_flagged": "approval_required",
+                "on_error": "approval_required",
+                "timeout_seconds": 20,
+            },
+        }
+    ]
+)
+```
+
+The review applies only to `environment.shell_exec`; process wait, status, input, signal, and kill calls are not sent to the reviewer. It runs after typed argument validation, resource resolution, and the fresh invocation policy. A policy denial therefore avoids the review model call. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
+
+The default reviewer receives the command, working directory, background flag, timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while a timeout, invalid result, or reviewer failure applies `on_error`. Both policy and review run again after native approval resume, so a fresh denial still wins. The Host still supplies a current `InvocationPolicyCapability` for managed Environment calls.
+
+Code-first definitions can supply a custom `ShellCommandReviewer` to `ShellReviewCapability` when review is implemented by a trusted in-process service rather than the default model-backed reviewer.
 
 ## Working State
 
@@ -90,7 +120,7 @@ Working state is not a distributed workflow engine. Cross-worker ownership, dura
 
 ## Structured User Interaction
 
-`UserInteractionCapability` exposes `ask_user_question`. A call does not block an open Harness run while waiting for a person. It produces a normal `status="suspended"` result with native deferred requests and portable state. The Host later starts a new run with fresh bindings, the previous state, and a correlated `DeferredToolResume`.
+`UserInteractionCapability` exposes `ask_user_question` only to a root invocation. A root call does not block an open Harness run while waiting for a person. It produces a normal `status="suspended"` result with native deferred requests and portable state. The Host later starts a new run with fresh bindings, the previous state, and a correlated `DeferredToolResume`. A child receives neither this tool nor its guidance and cannot suspend for user interaction.
 
 See [State and Resume](state-and-resume.md).
 
@@ -117,7 +147,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-The same pattern applies to the general URL-oriented `MediaCapability` and to Web. The definition owns what behavior the Agent may request; the run collaborator owns current provider access. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_configuration.capabilities` value supplied through the `model_config` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
+The same pattern applies to the general URL-oriented `MediaCapability` and to Web. The definition owns what behavior the Agent may request; the run collaborator owns current provider access. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_characteristics.capabilities` value supplied through the `model_characteristics` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
 
 ### Web search and scrape backends
 
@@ -188,15 +218,50 @@ When `WebCapability()` is constructed without an explicit configuration, these e
 
 An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebRunCapability`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
 
-## Monitored Processes
+## Background Processes
 
-Environment process tools and monitoring have separate responsibilities:
+`DynamicEnvironmentCapability` exposes background process control through the same six-tool shell surface as foreground execution. `shell_exec(background=True)` returns a portable `process-N` reference; `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, and `shell_kill` operate on that reference. The selected Environment provider owns the real process and retained output. The Harness stores only the exact provider process identity, unread output offsets, monotonic reference sequence, and last observation in `AgentContextState`; it does not emulate background execution with a local task or turn processes into a durable scheduler.
 
-- the Environment starts, inspects, signals, waits for, and reads retained output from processes;
-- `MonitoredProcessCapability` adds the model-facing monitoring workflow;
-- a fresh `MonitoredProcessRunCapability` owns wake-up, accepted completion retention, and delivery behavior for the current run.
+During every entered root or child Turn, `ProcessManager` waits on the real provider process and can enqueue a bounded completion hint through native Pydantic AI input. A Host can configure reusable non-authoritative completion and observation-gap hooks directly with the definition-selected Capability when it builds the Agent:
 
-The Harness does not turn monitored processes into a durable background scheduler.
+```python
+from a13n_harness import (
+    DynamicEnvironmentCapability,
+    DynamicEnvironmentConfiguration,
+    ProcessEvent,
+)
+
+
+async def on_process_event(event: ProcessEvent) -> None:
+    await process_events.publish(
+        thread_id=event.thread_id,
+        run_id=event.run_id,
+        agent_instance_id=event.agent_instance_id,
+        process_id=event.process_id,
+        identity=event.identity,
+        kind=event.kind,
+        status=event.status,
+    )
+
+
+environment_capability = DynamicEnvironmentCapability(
+    DynamicEnvironmentConfiguration(
+        file_tools=True,
+        shell_tools=True,
+        max_reference_entries=1_024,
+    ),
+    process_event_hooks=(on_process_event,),
+)
+
+executable = HarnessBuilder().build(
+    agent_spec,
+    output_type=str,
+    model=model,
+    capabilities=(environment_capability,),
+)
+```
+
+`ProcessEvent` includes Thread, Run, and Agent-instance correlation so one definition-level hook can serve many Runs. Definition-level hooks are shared async callbacks and must be concurrency-safe; hook failures are isolated from process state. Ending the Turn cancels only Harness observation and never kills the provider process. Persisting `HarnessState` preserves `process-N` across a compatible Thread continuation, but the Host must retain or reconstruct the same Environment identity and generation. Completion outside an active Turn and process survival across a Host restart remain Host/provider responsibilities.
 
 ## Filters
 
@@ -225,9 +290,11 @@ capabilities = (
 
 Use content filtering only for provider/model multimodal compatibility. Use cold-start filtering only when reducing old, already-consumed tool-result strings materially improves a cold-cache request. Neither is transport retry, semantic recovery, or long-term memory.
 
-## Native MCP
+## MCP
 
-MCP uses Pydantic AI's native `MCP` Capability. Keep it in `AgentSpec.capabilities`; Agent Harness does not define a second MCP server schema or a peer `mcp_servers` field.
+### Native MCP
+
+MCP uses Pydantic AI's native `MCP` Capability. Keep it in `AgentSpec.capabilities`; Agent Harness does not define a second MCP client, protocol, server schema, or peer `mcp_servers` field.
 
 A local URL server can be reconstructed directly from an AgentSpec document:
 
@@ -252,6 +319,149 @@ agent_spec = AgentSpec.from_dict(
 ```
 
 The default `a13n-harness` installation includes Pydantic AI's MCP client runtime, so local URL and stdio transports need no separate Harness extra. For richer process-local inputs such as an in-process server, transport, script path, or prebuilt `MCPToolset`, construct `pydantic_ai.capabilities.MCP` in trusted code and pass it through definition Capability composition. Use `native=True, local=False` when the selected model provider should execute a URL MCP server natively.
+
+### Run-scoped headers with `ContextualMCP`
+
+Use `ContextualMCP` when a URL-based MCP server needs headers derived from the current logical Harness run. The definition stores an inert URL recipe. During Pydantic Capability run binding, it resolves headers and constructs a fresh upstream `MCP` before native tools or a local MCP Toolset are extracted.
+
+For common Identity, lineage, run, and metadata values, use the declarative resolver:
+
+```python
+from a13n_harness import (
+    AgentIdentityRef,
+    ContextualMCP,
+    HarnessBuilder,
+    MCPContextHeaderBinding,
+    MCPContextHeaders,
+    MCPContextHeadersConfig,
+    RunBindings,
+)
+
+mcp = ContextualMCP(
+    "https://mcp.example.com/mcp",
+    id="knowledge",
+    native=True,
+    local=None,
+    headers={"X-Application": "support"},
+    headers_factory=MCPContextHeaders(
+        MCPContextHeadersConfig(
+            headers={
+                "X-Run-ID": MCPContextHeaderBinding("context.run_id"),
+                "X-Thread-ID": MCPContextHeaderBinding("context.thread_id"),
+                "X-User-ID": MCPContextHeaderBinding("identity.user_id"),
+                "X-Request-Context": MCPContextHeaderBinding(
+                    "context.metadata.request_context",
+                    required=False,
+                ),
+            }
+        )
+    ),
+)
+
+executable = HarnessBuilder().build(
+    agent_spec,
+    output_type=str,
+    model=model,
+    capabilities=(mcp,),
+)
+
+bindings = RunBindings.embedded(
+    identity=AgentIdentityRef(
+        issuer="my-host",
+        subject="support-agent",
+        user_id="user-123",
+        agent_id="agent-support",
+    ),
+    metadata={
+        "request_context": {
+            "region": "us-east",
+            "labels": ["interactive", "priority"],
+        }
+    },
+)
+result = await executable.run("Find the account record", bindings=bindings)
+```
+
+`RunBindings.metadata` is the intended place for additional per-run JSON values. Put an exact top-level key there, then select it through `context.metadata.<key>`. Do not attach ad hoc attributes to `AgentContext` or encode a nested reflection path.
+
+The declarative resolver supports these exact source families:
+
+| Source                              | Resolved value                                        |
+| ----------------------------------- | ----------------------------------------------------- |
+| `identity.issuer`                   | Workload Identity issuer                              |
+| `identity.subject`                  | Workload Identity subject                             |
+| `identity.<claim>`                  | One exact Identity claim such as `user_id`            |
+| `instance.agent_instance_id`        | Current Host-owned Agent instance ID                  |
+| `instance.parent_agent_instance_id` | Optional parent Agent instance ID                     |
+| `instance.delegation_id`            | Optional delegation correlation                       |
+| `instance.actor`                    | Optional actor string                                 |
+| `context.run_id`                    | Current logical Harness run ID                        |
+| `context.thread_id`                 | Current independently advancing Thread ID             |
+| `context.metadata.<top-level-key>`  | One exact value from immutable `RunBindings.metadata` |
+
+A selected string is sent unchanged. JSON numbers, booleans, objects, and arrays use finite, sorted-key, compact JSON. For example, `{"region": "us-east", "labels": ["interactive"]}` becomes `{"labels":["interactive"],"region":"us-east"}`. A missing value or `None` fails a required binding and omits an optional binding.
+
+Header names from `headers=` and the resolved factory result must not overlap case-insensitively. `authorization_token`, `allowed_tools`, `description`, and `defer_loading` retain upstream MCP behavior.
+
+### Custom header factories
+
+Use a custom synchronous or asynchronous factory when the curated selectors are not enough. It receives the complete trusted `AgentContext` for the logical run and returns an exact string-to-string mapping:
+
+```python
+from collections.abc import Mapping
+
+from a13n_harness import AgentContext, ContextualMCP
+
+
+def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
+    return {
+        "X-Run-ID": context.run_id,
+        "X-Agent-Instance-ID": context.instance.agent_instance_id,
+        "X-Tenant-ID": context.instance.identity.require_claim("tenant_id"),
+    }
+
+
+mcp = ContextualMCP(
+    "https://mcp.example.com/mcp",
+    id="tenant-tools",
+    headers_factory=resolve_mcp_headers,
+    native=True,
+    local=None,
+)
+```
+
+An async factory has the same input and output contract:
+
+```python
+async def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
+    route = await route_store.resolve(context.instance.identity)
+    return {"X-Route": route}
+```
+
+The factory runs once per logical Harness run. Internal model-recovery attempts reuse the same active upstream MCP and header snapshot; another logical run resolves a fresh snapshot. The factory is trusted Host code, so it may read current run services deliberately, but model content cannot choose selectors or call it directly.
+
+### Local and provider-native execution
+
+`ContextualMCP` accepts URL-based upstream execution only:
+
+| Selection     | Arguments                  | Behavior                                                    |
+| ------------- | -------------------------- | ----------------------------------------------------------- |
+| Local default | `native=False, local=None` | Use upstream URL-based local MCP execution                  |
+| Automatic     | `native=True, local=None`  | Prefer provider-native MCP with the upstream local fallback |
+| Local only    | `native=False, local=True` | Require local URL-based MCP execution                       |
+| Native only   | `native=True, local=False` | Require provider-native MCP execution                       |
+
+Prebuilt clients, transports, in-process servers, scripts, and prebuilt Toolsets already own their connection setup. Use native `MCP` directly for those values rather than combining them with `ContextualMCP`.
+
+The URL is explicit trusted configuration. Harness requires an HTTP(S) URL for `ContextualMCP` and otherwise leaves URL, transport, authorization, and provider validation to upstream MCP integrations; it does not guess whether URL components contain credentials.
+
+### Host-authored configuration
+
+A Host can expose the same URL-based path through its own trusted configuration model. Preserve the `ContextualMCP` fields and exact execution selection rather than inventing a second MCP runtime. Persist only credential-free desired configuration; resolve headers, short-lived credentials, and current routing through process-local factories when constructing the Capability.
+
+An Agent can select multiple MCP servers when each has a unique `id`. Use code-first `ContextualMCP` when configuration requires callable factories, current identity, static headers, or an out-of-band secret resolver.
+
+### Result boundary
 
 Locally executed MCP tools are ordinary dynamically discovered function tools. Their text and JSON returns cross the mandatory Harness result boundary and default to explicit truncation rather than spill when oversized. This bounds the value integrated into model history; it does not impose a transport-body or process-memory limit before the MCP client receives the result. Provider-native MCP execution remains on the provider path and does not cross the local function-tool boundary.
 

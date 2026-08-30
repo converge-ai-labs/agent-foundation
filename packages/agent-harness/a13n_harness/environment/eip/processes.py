@@ -16,6 +16,7 @@ from ..commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
     ProcessReadOutputResult,
@@ -31,6 +32,7 @@ from ..models import EnvironmentError, EnvironmentOperationReceipt
 from ..retention import (
     BoundOutputCursor,
     EnvironmentOutputPolicy,
+    EnvironmentOutputSegment,
     OpaqueProcessHandle,
     _unwrap_opaque,
 )
@@ -111,17 +113,19 @@ class _ProcessConversions:
         session: EIPSession,
         files: EIPFileOperator,
         outputs: EIPOutputRegistry,
+        provider_type: str,
         environment_id: str,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
         generation: str,
     ) -> None:
         self._session = session
         self._files = files
         self._outputs = outputs
+        self._provider_type = provider_type
         self._environment_id = environment_id
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._raw_tokens: dict[eip.ProcessHandle, str] = {}
@@ -134,20 +138,33 @@ class _ProcessConversions:
     def convert_process(self, process: eip.ProcessInfo, policy: EnvironmentOutputPolicy) -> ProcessInfo:
         self._validate_process_identity(process)
         token = self._ensure_record(process, policy)
-        return ProcessInfo(
+        stdout = self._outputs.capture(process.output.stdout, policy=policy)
+        stderr = self._outputs.capture(process.output.stderr, policy=policy)
+        info = ProcessInfo(
             handle=BoundProcessHandle(
                 binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                binding_version=self._binding_version,
+                identity=ProcessIdentity(
+                    provider_type=self._provider_type,
+                    environment_id=self._environment_id,
+                    generation=self._generation,
+                    process_id=str(process.handle.root),
+                ),
                 observed_generation=self._generation,
                 handle=OpaqueProcessHandle._from_payload(token),
             ),
             status=self.convert_status(process.status),
             stdin_open=process.stdin_open,
-            output=ProcessOutputSnapshot(
-                stdout=self._outputs.capture(process.output.stdout, policy=policy),
-                stderr=self._outputs.capture(process.output.stderr, policy=policy),
-            ),
+            output=ProcessOutputSnapshot(stdout=stdout, stderr=stderr),
         )
+        record = self._records[token]
+        for raw, capture in (
+            (process.output.stdout.reference, stdout),
+            (process.output.stderr.reference, stderr),
+        ):
+            if capture.reference is None and raw not in record.pending_output_references:
+                record.pending_output_references.append(raw)
+        return info
 
     def _validate_process_identity(self, process: eip.ProcessInfo) -> None:
         if process.environment_id != self._environment_id or str(process.generation) != self._generation:
@@ -158,20 +175,17 @@ class _ProcessConversions:
         if token is None:
             token = f"process-{secrets.token_urlsafe(12)}"
             self._raw_tokens[process.handle] = token
-            references = []
-            if policy.overflow != "retain":
-                references = [process.output.stdout.reference, process.output.stderr.reference]
             self._records[token] = _ProcessRecord(
                 process.handle,
                 policy.model_copy(deep=True),
-                references,
+                [],
             )
         return token
 
     def resolve(self, handle: BoundProcessHandle) -> tuple[str, _ProcessRecord]:
         if (
             handle.binding_id != self._binding_id
-            or handle.binding_revision != self._binding_revision
+            or handle.binding_version != self._binding_version
             or handle.observed_generation != self._generation
         ):
             raise EnvironmentError("Process handle is foreign or stale", code="environment_stale_binding")
@@ -186,7 +200,7 @@ class _ProcessConversions:
             receipt,
             environment_id=self._environment_id,
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             generation=self._generation,
         )
 
@@ -246,6 +260,7 @@ class _ProcessConversions:
         kill_first: bool = False,
     ) -> EnvironmentOperationReceipt:
         async with record.release_lock:
+            record.cleanup_owned = True
             if kill_first and not record.kill_completed and not record.remote_released:
                 killed = await invoke(
                     self._session.client.process_kill(
@@ -374,6 +389,28 @@ class EIPProcessOperations:
             raise
         return ProcessStartResult(process=process, receipt=receipt)
 
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo:
+        if (
+            identity.provider_type != self._conversions._provider_type
+            or identity.environment_id != self._conversions._environment_id
+            or identity.generation != self._conversions._generation
+        ):
+            raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_binding")
+        raw_handle = eip.ProcessHandle(root=identity.process_id)
+        result = await invoke(
+            self._conversions._session.client.process_inspect(
+                eip.ProcessInspectParams(context=new_context(), handle=raw_handle)
+            )
+        )
+        if result.process.handle != raw_handle:
+            raise EnvironmentError("EIP retargeted a process identity.", code="environment_provider_failure")
+        return self._conversions.register(result.process, output_policy)
+
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         _, record = self._conversions.resolve(handle)
         result = await invoke(
@@ -427,7 +464,18 @@ class EIPProcessOperations:
         policy: EnvironmentOutputPolicy,
     ) -> ProcessStreamRead:
         if capture.reference is None:
-            return ProcessStreamRead(chunks=(), next_cursor=None, capture=capture)
+            data = capture.inline or b""
+            offset = start_offset or 0
+            if offset < capture.available_start or offset > capture.available_end:
+                raise EnvironmentError("Output offset is unavailable", code="environment_output_gap")
+            allowed = min(policy.max_inline_bytes, policy.max_output_bytes)
+            end = min(len(data), offset + allowed)
+            chunks = EnvironmentOutputSegment(start_offset=offset, data=data[offset:end]) if end > offset else None
+            return ProcessStreamRead(
+                chunks=() if chunks is None else (chunks,),
+                next_cursor=None,
+                capture=capture,
+            )
         page = await self._conversions._outputs.read(
             capture.reference,
             cursor=cursor,

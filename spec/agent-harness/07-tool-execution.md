@@ -16,6 +16,7 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 | Optional Harness tool metadata and effective-surface resolution    | Harness                                                  |
 | Managed invocation wrapper and final tool-surface recording        | Harness                                                  |
 | Agent policy and credential decisions for managed tools            | Harness boundary plus fresh `InvocationPolicyCapability` |
+| Optional shell-command risk assessment                             | Definition-selected `ShellReviewCapability`              |
 | Remote operation and side-effect evidence                          | Tool provider                                            |
 | Grant signing and authenticated transport                          | Host security or provider adapter                        |
 | Direct I/O by trusted Python plugins                               | Plugin process trust boundary                            |
@@ -74,9 +75,10 @@ class HarnessToolMetadata:
     output_policy: ToolOutputPolicy
     resource_resolver: ToolResourceResolver | None = None
     superseded_by_tool_ids: frozenset[str] = frozenset()
+    shell_review: bool = False
 ```
 
-`HarnessToolMetadata` is stored under a reserved key in Pydantic AI `ToolDefinition.metadata`; there is no parallel tool binding object. Pydantic fields retain ownership of name, schema, kind, strictness, timeout, sequential execution, deferred loading, and the optional runtime `toolset_id`. `tool_id` is the stable policy identity before model-visible renaming or prefixing. It is unique within one prepared candidate surface: a second function-tool definition with the same ID fails before surface resolution, even when visible names differ. Intentional aliases therefore use distinct policy IDs and can share a host-owned implementation reference outside this contract.
+`HarnessToolMetadata` is stored under a reserved key in Pydantic AI `ToolDefinition.metadata`; there is no parallel tool binding object. Pydantic fields retain ownership of name, schema, kind, strictness, timeout, sequential execution, deferred loading, and the optional runtime `toolset_id`. `tool_id` is the stable policy identity before model-visible renaming or prefixing. It is unique within one prepared candidate surface: a second function-tool definition with the same ID fails before surface resolution, even when visible names differ. Intentional aliases therefore use distinct policy IDs and can share a host-owned implementation reference outside this contract. `shell_review` is a trusted marker for the standard shell-command argument projection; it grants no authority and is valid only when the normalized arguments contain the documented `command`, `cwd`, `environment`, `timeout_seconds`, `background`, and `alias` fields. The first-party `ShellToolset` sets it only on `environment.shell_exec`; process wait, status, input, signal, and kill calls are not new command launches and are not reviewed.
 
 `ToolEffect` is a small conservative policy hint, not an execution result or authorization grant. `read` observes state; `write` creates or changes state; `delete` removes state; `execute` starts code or a process; and `external_communication` sends data or a message outside the selected Environment. A tool declares every applicable value, so a shell command commonly declares `execute` plus `write`, and an HTTP-post tool commonly declares `external_communication` plus `write`. The actual provider receipt remains the evidence of what occurred. The former `create` and `update` distinction is intentionally collapsed because generic policy cannot classify upsert, patch, append, and replacement consistently before provider resolution.
 
@@ -92,12 +94,17 @@ Capability authors assign any required timeout on their owned `Tool`, `FunctionT
 
 Every run-step has a **candidate tool surface** produced after Pydantic prepares all ordinary contributing Toolsets. The Harness-owned `ToolSurfaceCapability` wraps that complete candidate surface exactly once and produces the **effective tool surface** consumed by later wrappers, CodeAct, the final Tool Manager, and model requests. Feature Toolsets contribute candidates declaratively and never coordinate visibility through mutable `AgentContext` state or preparation order.
 
+A child invocation, identified by a non-`None` `AgentInstanceContext.parent_agent_instance_id`, cannot expose a model-visible tool whose prepared Pydantic `ToolDefinition.defer` property is true. Mandatory surface resolution uses that canonical upstream property, rather than a Harness-owned list of kinds, and removes every declaratively external or approval-gated candidate before supersession, CodeAct catalog construction, execution-boundary wrapping, and model-request assembly. Ordinary `function` tools and provider-native tools remain eligible. First-party Toolsets also omit their external-tool or approval guidance for a child, and the first-party User Interaction Capability contributes neither instructions nor tools. These rules are invocation-scoped safeguards over a complete child definition; they do not mutate that definition or change the root invocation surface.
+
+Declarative filtering cannot predict argument-sensitive or policy-sensitive deferral. If a remaining child function, argument validator, Capability hook, custom Toolset, or managed invocation policy raises `CallDeferred` or `ApprovalRequired` at runtime, the mandatory outer `ToolExecutionBoundaryCapability.handle_deferred_tool_calls()` resolves every call and approval with `ToolDenied("Deferred tool interaction is unavailable in subagent runs.")`. Pydantic records ordinary denied tool results and continues its model loop inside the same child Run. The boundary returns `None` for a root invocation, preserving native accumulation dispatch and Host-configured deferred handlers. Because the mandatory boundary is ordered before user Capabilities and completely resolves the child batch, a user `HandleDeferredToolCalls` Capability cannot auto-approve or externally satisfy child deferral. This denial does not permanently hide the function: deferral may depend on arguments or current policy, and repeated model attempts remain bounded by native usage limits.
+
 For a managed function or unapproved tool, `superseded_by_tool_ids` names exact stable managed `tool_id` values whose prepared presence makes the declaring candidate redundant. Resolution performs these steps over one complete prepared candidate mapping:
 
-1. normalize every candidate's reserved managed metadata and reject invalid kinds or duplicate candidate `tool_id` values;
-2. collect the complete set of prepared managed tool IDs without considering authorization outcomes;
-3. validate that no declaration targets its own ID and that present declarations do not form a directed supersession cycle; and
-4. omit each managed candidate whose `superseded_by_tool_ids` intersects the prepared ID set, preserving every other candidate unchanged.
+1. for a child invocation, omit every candidate whose prepared upstream `ToolDefinition.defer` property is true;
+2. normalize every remaining candidate's reserved managed metadata and reject invalid kinds or duplicate candidate `tool_id` values;
+3. collect the complete set of prepared managed tool IDs without considering authorization outcomes;
+4. validate that no declaration targets its own ID and that present declarations do not form a directed supersession cycle; and
+5. omit each managed candidate whose `superseded_by_tool_ids` intersects the prepared ID set, preserving every other candidate unchanged.
 
 A target does not need to be present or known to the current executable; an absent target has no effect. Presence means that the target survived its owning Toolset's normal run-step preparation and appears in the same candidate surface. It does not mean that invocation policy will authorize the target, that an Environment currently has a ready binding, or that the target will succeed. Supersession is therefore a schema and routing simplification, not fallback selection, authorization, capability discovery, name-collision handling, or runtime health checking.
 
@@ -124,6 +131,64 @@ This registry is not Pydantic `ToolDefinition.metadata`, which describes one ass
 The Harness always installs exactly one code-owned `ToolExecutionBoundaryCapability`. Its `get_wrapper_toolset()` contribution is a `ToolExecutionBoundaryToolset` ordered outermost around the effective non-output Toolset after per-step preparation, mandatory surface resolution, and optional CodeAct composition; Host code cannot replace its preparation, dispatch, or textual-result algorithm. It declares `CapabilityOrdering(position="outermost", wraps=(AbstractCapability,))`, so it sorts before AgentSpec, definition, plugin, run, instrumentation, and other same-tier Capabilities regardless of contribution order. An incompatible Capability that attempts to wrap this boundary creates an ordering cycle and fails run setup before tool exposure rather than weakening the boundary. The wrapper therefore sees function, unapproved, and external definitions, branches on `ToolDefinition.kind`, and never intercepts output or provider-native tools. It normalizes managed function metadata, enforces final client-tool names, and delegates ordinary external deferral to Pydantic without calling an external function body.
 
 Current managed authority enters through exactly one fresh `InvocationPolicyCapability` in `RunBindings.capabilities`; feature-specific setup and dispatch require its documented public type and stable Capability ID and reject incompatible values before model exposure. The policy Capability can retain a typed evaluator, approval verifier, credential broker, and invocation-grant broker, but those grant nothing without the current run's Identity and invocation context. When no policy provider is supplied, managed metadata-aware tools are denied while unmanaged native tools retain their ordinary trusted semantics. An embedded caller that enables managed Environment tools supplies the same `InvocationPolicyCapability` with its explicit local evaluator; after that allow decision, the live `BoundEnvironment` independently narrows the call through captured Identity, binding ceilings, readiness, and provider policy. There is no specialized local-policy Capability, class-free role registry, serialized component bundle, or model-authored ID that can create this authority.
+
+### Shell Command Review
+
+`ShellReviewCapability` is an optional definition Capability selected explicitly through `AgentSpec.capabilities` or code-first definition composition. Its absence disables shell review completely. It is independent of `DynamicEnvironmentCapability`, the Environment resource, and provider selection: `ShellToolset` only marks a standard command launch, while the mandatory execution boundary consults the finalized Capability when that marked managed invocation is prepared.
+
+```python
+type ShellRiskLevel = Literal["low", "medium", "high", "extra_high"]
+type ShellReviewAction = Literal["approval_required", "deny"]
+
+
+class ShellReviewRequest(BaseModel):
+    tool_id: str
+    tool_call_id: str
+    command: str
+    cwd: str | None
+    environment_keys: tuple[str, ...]
+    timeout_seconds: float | None
+    background: bool
+    alias: str | None
+
+
+class ShellReviewAssessment(BaseModel):
+    risk: ShellRiskLevel
+    reason: str
+
+
+class ShellReviewResult(BaseModel):
+    assessment: ShellReviewAssessment
+    usage: tuple[ProviderUsage, ...] = ()
+
+
+@runtime_checkable
+class ShellCommandReviewer(Protocol):
+    async def review(
+        self,
+        request: ShellReviewRequest,
+        *,
+        context: AgentContext,
+    ) -> ShellReviewResult: ...
+
+
+@dataclass
+class ShellReviewCapability(AbstractCapability[AgentContext]):
+    model: str
+    model_settings: ModelSettings | None = None
+    risk_threshold: ShellRiskLevel = "high"
+    on_flagged: ShellReviewAction = "approval_required"
+    on_error: ShellReviewAction = "approval_required"
+    timeout_seconds: float = 20.0
+```
+
+The request is projected only from schema-validated, type-converted arguments after canonical resource resolution. It includes environment variable names in deterministic order but never their values. Text and collection fields have finite implementation limits. A malformed marked projection fails closed through `on_error`; it is never silently dispatched or repaired from raw model text.
+
+The default `AgentShellCommandReviewer` owns one tool-free Pydantic AI Agent with a packaged system prompt and structured `ShellReviewAssessment` output. It resolves the definition-selected logical `model` for the current run, merges the optional `model_settings`, makes one bounded model request under `timeout_seconds`, and exposes no function, external, provider-native, or output tools. It does not inspect previous approvals or reviews and cannot lower Host policy. Proven model usage is recorded through `AgentContext.record_provider_usage()` with source `shell.review`, tool ID `environment.shell_exec`, and the current tool-call ID, including usage proven before a timeout or invalid result.
+
+Risk order is `low < medium < high < extra_high`. An assessment at or above `risk_threshold` applies `on_flagged`; a reviewer exception, timeout, invalid result, or invalid marked projection applies `on_error`. The selected action either denies the invocation or requests native Pydantic approval. Review never produces an independent allow grant: an assessment below the threshold means only that shell review adds no restriction.
+
+The execution boundary evaluates the fresh `InvocationPolicyCapability` first. A policy denial skips shell review and its model cost. Otherwise, a marked invocation is reviewed before any credential lease, invocation grant, or provider dispatch. The final result is the strict merge `deny > approval_required > allow`; an already satisfied native approval satisfies the approval-required result, but review and fresh policy evaluation still run again on resume. When approval is first required, the single native `ApprovalRequired` metadata value carries bounded policy metadata and shell assessment metadata under separate reserved keys. A policy verifier receives only its policy-owned metadata. No shell-specific deferred result, stream event, approval protocol, durable review cache, or previous-review learning is introduced.
 
 Pydantic output tools remain part of output validation, not general side-effect dispatch, and provider-native server-side tools remain model/provider configuration. A deployment that needs Harness invocation policy for a provider-native operation exposes a metadata-aware function-tool adapter instead of pretending the function wrapper intercepts provider-internal execution.
 
@@ -178,7 +243,7 @@ The run attachment is trusted Host input for one run, but its descriptions, sche
 
 When the effective list is non-empty, the Client Tools Capability contributes the Client Tools Toolset through native Pydantic composition; the Toolset contributes the resulting `ExternalToolset` values and declaration-owned instruction parts. Every built Harness Agent includes `DeferredToolRequests` beside its fixed business output in the construction-time Pydantic output contract; runs do not widen or override it. Pydantic marks every external definition `kind="external"` and places selected calls in `DeferredToolRequests.calls` without invoking a function body. The Harness does not recreate `CallDeferred`, an external-tool dispatcher, a prompt language, or a client callback protocol. The invocation-policy strict profile applies to function tools; it neither converts an external tool into a managed function tool nor authorizes its external side effect.
 
-The resulting `HarnessRunResult` is suspended with `suspend_reason="deferred"`, complete `DeferredToolRequests`, and `HarnessState`. Ordinary tool-call and deferred events are observations only. The terminal result and any Host-accepted durable record determine whether external execution may proceed.
+For a root invocation, the resulting `HarnessRunResult` is suspended with `suspend_reason="deferred"`, complete `DeferredToolRequests`, and `HarnessState`. Ordinary tool-call and deferred events are observations only. The terminal result and any Host-accepted durable record determine whether external execution may proceed. Child invocations cannot reach this client surface; runtime deferral from an otherwise ordinary child function is denied inline under the mandatory boundary above.
 
 Resume is a new run. The Host supplies the prior state, the exact effective client surface that produced the pending calls, fresh `RunBindings`, and a `DeferredToolResume` containing the authoritative terminal `DeferredToolRequests` plus its `DeferredToolResults`. Before model or tool work, the Harness rejects duplicate or category-overlapping pending IDs, unknown, wrong-kind, already completed, incomplete, or message-mismatched results and verifies that every pending external name is present as an external definition on the current assembled surface. Calling `DeferredToolRequests.build_results(...)` is the normal construction path but does not replace this preflight because native result objects remain directly constructible and partial.
 
@@ -263,7 +328,7 @@ The host security adapter defines claims, signing, authenticated transport, and 
 
 ## Approval and Deferred Calls
 
-Approval uses Pydantic AI `ApprovalRequired`, `DeferredToolRequests.approvals`, `DeferredToolResults.approvals`, `ToolApproved`, and `ToolDenied` directly. Client-side execution uses the separate `DeferredToolRequests.calls` and `DeferredToolResults.calls` collections. A result for one category is invalid for the other.
+Approval uses Pydantic AI `ApprovalRequired`, `DeferredToolRequests.approvals`, `DeferredToolResults.approvals`, `ToolApproved`, and `ToolDenied` directly. Client-side execution uses the separate `DeferredToolRequests.calls` and `DeferredToolResults.calls` collections. A result for one category is invalid for the other. Root invocations preserve those native suspension and handler semantics. Child invocations map every dynamically requested approval or external call to a category-preserving `ToolDenied` result inside the same Run and never ask the Host to resume the child.
 
 The host-owned approval record binds stable tool identity, effective argument digest, any resolved semantic resources, effect classes, approver provenance, scope, expiry, and constraints. Overrides pass through schema validation, optional resource resolution, policy, and credential resolution again.
 
@@ -362,3 +427,4 @@ Stable harness categories cover invalid input, unavailable tool, denied, approva
 15. A Toolset acknowledgement is a process-local Harness type, never a model-authored flag; it bypasses only the ordinary generic inline projection and cannot bypass the final hard ceiling.
 16. Native multimodal tool-return parts cross the tool execution boundary unchanged and are owned by the definition-selected content compatibility filter at model-request time.
 17. The EIP adapter never serializes Harness output policy or metadata into command requests; it enforces finite provider reads over envd's bounded raw output before Toolset-owned semantic projection and final boundary validation.
+18. A child surface excludes every prepared tool definition whose upstream `defer` property is true; any later runtime call or approval deferral is completely denied by the mandatory outer boundary and returned to the child model as ordinary denied tool results, while root deferred behavior remains native.

@@ -130,7 +130,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
         run_id: str,
         instance: AgentInstanceContext,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         if self._used or self._discarded:
             raise EnvironmentError("Environment source binding is single-use.", code="environment_binding_reused")
@@ -143,7 +143,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
                     run_id=run_id,
                     instance=instance,
                     binding_id=binding_id,
-                    binding_revision=binding_revision,
+                    binding_version=binding_version,
                 ) as provider:
                     yield provider
             return
@@ -158,7 +158,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
             run_id=run_id,
             instance=instance,
             binding_id=binding_id,
-            binding_revision=binding_revision,
+            binding_version=binding_version,
         ) as provider:
             yield provider
 
@@ -170,7 +170,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
         run_id: str,
         instance: AgentInstanceContext,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         async with resource.acquire_attachment() as attachment:
             provider_binding = create_environment_provider_binding(attachment)
@@ -180,7 +180,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
                 run_id=run_id,
                 instance=instance,
                 binding_id=binding_id,
-                binding_revision=binding_revision,
+                binding_version=binding_version,
             ) as provider:
                 yield provider
 
@@ -238,7 +238,7 @@ def normalize_environment_inputs(
         requests = tuple(
             EnvironmentBindingRequest(
                 binding_id=_binding_id(alias),
-                binding_revision=1,
+                binding_version=1,
                 alias=alias,
                 permission_ceiling=mount.permissions,
                 default_working_directory=mount.working_directory,

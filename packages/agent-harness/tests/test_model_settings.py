@@ -4,14 +4,14 @@ from typing import Any, cast
 
 import pytest
 from a13n_harness import (
-    ModelConfiguration,
-    ModelConfigurationAlias,
-    ModelConfigurationAliasCatalog,
+    HarnessModelCharacteristics,
+    ModelCharacteristicsAlias,
+    ModelCharacteristicsAliasCatalog,
     ModelSettingsAlias,
     ModelSettingsAliasCatalog,
-    get_model_configuration_alias_catalog,
+    get_model_characteristics_alias_catalog,
     get_model_settings_alias_catalog,
-    resolve_model_configuration,
+    resolve_model_characteristics,
     resolve_model_settings,
 )
 from pydantic_ai.settings import ModelSettings
@@ -22,10 +22,10 @@ def _provider_settings(**values: Any) -> ModelSettings:
 
 
 def test_builtin_alias_catalogs_contain_only_anthropic_choices() -> None:
-    configuration_catalog = get_model_configuration_alias_catalog()
+    characteristics_catalog = get_model_characteristics_alias_catalog()
     settings_catalog = get_model_settings_alias_catalog()
 
-    assert tuple(configuration_catalog) == (
+    assert tuple(characteristics_catalog) == (
         "anthropic:context-200k",
         "anthropic:context-400k",
         "anthropic:context-1m",
@@ -37,18 +37,18 @@ def test_builtin_alias_catalogs_contain_only_anthropic_choices() -> None:
         "anthropic:max-output-128k",
         "anthropic:thinking-disabled",
     )
-    assert all(entry.provider == "anthropic" for entry in configuration_catalog.entries)
+    assert all(entry.provider == "anthropic" for entry in characteristics_catalog.entries)
     assert all(entry.provider == "anthropic" for entry in settings_catalog.entries)
 
 
 def test_context_aliases_compose_and_concrete_fields_override_last() -> None:
-    configuration = resolve_model_configuration(
+    characteristics = resolve_model_characteristics(
         "anthropic:claude-sonnet-5",
         aliases=("anthropic:context-200k", "anthropic:context-1m"),
-        overrides=ModelConfiguration(compact_threshold=0.8),
+        overrides=HarnessModelCharacteristics(compact_threshold=0.8),
     )
 
-    assert configuration == ModelConfiguration(
+    assert characteristics == HarnessModelCharacteristics(
         context_window=1_000_000,
         proactive_context_management_threshold=0.65,
         compact_threshold=0.8,
@@ -56,32 +56,32 @@ def test_context_aliases_compose_and_concrete_fields_override_last() -> None:
 
 
 def test_context_alias_does_not_change_provider_request_settings() -> None:
-    configuration = resolve_model_configuration(
+    characteristics = resolve_model_characteristics(
         "gateway@anthropic:claude-sonnet-5",
         aliases=("anthropic:context-400k",),
     )
     settings = resolve_model_settings("gateway@anthropic:claude-sonnet-5")
 
-    assert configuration is not None
-    assert configuration.context_window == 400_000
+    assert characteristics is not None
+    assert characteristics.context_window == 400_000
     assert settings == {}
 
 
-def test_configuration_resolution_preserves_unknown_and_accepts_concrete_input() -> None:
-    overrides = ModelConfiguration(context_window=123_456)
+def test_characteristics_resolution_preserves_unknown_and_accepts_concrete_input() -> None:
+    overrides = HarnessModelCharacteristics(context_window=123_456)
 
-    assert resolve_model_configuration("logical:primary") is None
-    assert resolve_model_configuration("logical:primary", overrides=overrides) == overrides
+    assert resolve_model_characteristics("logical:primary") is None
+    assert resolve_model_characteristics("logical:primary", overrides=overrides) == overrides
 
 
-def test_custom_configuration_alias_catalog_is_immutable_and_composable() -> None:
-    def compact_earlier(configuration: ModelConfiguration) -> ModelConfiguration:
-        return configuration.model_copy(update={"compact_threshold": 0.75})
+def test_custom_characteristics_alias_catalog_is_immutable_and_composable() -> None:
+    def compact_earlier(characteristics: HarnessModelCharacteristics) -> HarnessModelCharacteristics:
+        return characteristics.model_copy(update={"compact_threshold": 0.75})
 
-    builtin_catalog = get_model_configuration_alias_catalog()
+    builtin_catalog = get_model_characteristics_alias_catalog()
     custom_catalog = builtin_catalog.with_updates(
         {
-            "anthropic:compact-earlier": ModelConfigurationAlias(
+            "anthropic:compact-earlier": ModelCharacteristicsAlias(
                 key="anthropic:compact-earlier",
                 provider="anthropic",
                 transform=compact_earlier,
@@ -89,13 +89,13 @@ def test_custom_configuration_alias_catalog_is_immutable_and_composable() -> Non
         }
     )
 
-    configuration = resolve_model_configuration(
+    characteristics = resolve_model_characteristics(
         "anthropic:claude-sonnet-5",
         aliases=("anthropic:context-200k", "anthropic:compact-earlier"),
         catalog=custom_catalog,
     )
 
-    assert configuration == ModelConfiguration(
+    assert characteristics == HarnessModelCharacteristics(
         context_window=200_000,
         proactive_context_management_threshold=0.65,
         compact_threshold=0.75,
@@ -209,7 +209,7 @@ def test_alias_resolution_requires_a_valid_provider_qualified_model(model: str) 
         )
 
     with pytest.raises(ValueError):
-        resolve_model_configuration(
+        resolve_model_characteristics(
             model,
             aliases=("anthropic:context-200k",),
         )
@@ -236,22 +236,22 @@ def test_alias_resolution_rejects_unknown_or_incompatible_aliases() -> None:
         )
 
 
-def test_configuration_alias_resolution_rejects_unknown_or_incompatible_aliases() -> None:
-    with pytest.raises(ValueError, match="unknown model configuration alias"):
-        resolve_model_configuration(
+def test_characteristics_alias_resolution_rejects_unknown_or_incompatible_aliases() -> None:
+    with pytest.raises(ValueError, match="unknown model characteristics alias"):
+        resolve_model_characteristics(
             "anthropic:claude-sonnet-5",
             aliases=("anthropic:missing",),
         )
 
-    with pytest.raises(ValueError, match="unknown model configuration alias"):
-        resolve_model_configuration(
+    with pytest.raises(ValueError, match="unknown model characteristics alias"):
+        resolve_model_characteristics(
             "anthropic:claude-sonnet-5",
             aliases=("anthropic:context-200k",),
-            catalog=ModelConfigurationAliasCatalog({}),
+            catalog=ModelCharacteristicsAliasCatalog({}),
         )
 
     with pytest.raises(ValueError, match="requires provider 'anthropic'"):
-        resolve_model_configuration(
+        resolve_model_characteristics(
             "openai:gpt-5.5",
             aliases=("anthropic:context-200k",),
         )
@@ -280,14 +280,14 @@ def test_alias_resolution_rejects_invalid_transform_results() -> None:
         )
 
 
-def test_configuration_alias_resolution_rejects_invalid_transform_results() -> None:
-    def invalid(configuration: ModelConfiguration) -> ModelConfiguration:
-        del configuration
-        return cast(ModelConfiguration, object())
+def test_characteristics_alias_resolution_rejects_invalid_transform_results() -> None:
+    def invalid(characteristics: HarnessModelCharacteristics) -> HarnessModelCharacteristics:
+        del characteristics
+        return cast(HarnessModelCharacteristics, object())
 
-    catalog = ModelConfigurationAliasCatalog(
+    catalog = ModelCharacteristicsAliasCatalog(
         {
-            "anthropic:invalid": ModelConfigurationAlias(
+            "anthropic:invalid": ModelCharacteristicsAlias(
                 key="anthropic:invalid",
                 provider="anthropic",
                 transform=invalid,
@@ -295,8 +295,8 @@ def test_configuration_alias_resolution_rejects_invalid_transform_results() -> N
         }
     )
 
-    with pytest.raises(TypeError, match="must return ModelConfiguration"):
-        resolve_model_configuration(
+    with pytest.raises(TypeError, match="must return HarnessModelCharacteristics"):
+        resolve_model_characteristics(
             "anthropic:claude-sonnet-5",
             aliases=("anthropic:invalid",),
             catalog=catalog,
@@ -320,7 +320,7 @@ def test_alias_sequence_rejects_a_bare_string() -> None:
         )
 
     with pytest.raises(TypeError, match="sequence of strings"):
-        resolve_model_configuration(
+        resolve_model_characteristics(
             "anthropic:claude-sonnet-5",
             aliases=cast(Any, "anthropic:context-200k"),
         )

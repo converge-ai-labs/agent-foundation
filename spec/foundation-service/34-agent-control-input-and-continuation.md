@@ -9,7 +9,7 @@ intent are distinct acceptance forms over that same boundary. None reopens or
 mutates a sealed Turn.
 
 This contract owns those acceptance forms, their public command surfaces, and
-deferred-interaction feedback. [Agent Input](28a-agent-input.md) owns the
+deferred-interaction feedback. [Agent Input](33-agent-input.md) owns the
 ordinary semantic input carried by those commands. [Durable Thread
 Persistence](24-thread-persistence.md) owns Thread identity, version,
 current-Turn selection, and continuation-head selection; [Durable Turn
@@ -24,7 +24,7 @@ semantic unit of work and remain outside this contract.
 | Concern                                                     | Owner                                                                                                                                             | Relationship                                                                     |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Session, Thread, Turn, and Item meaning                     | [Platform Interaction Model](../interaction-model.md)                                                                                             | Supplies the shared interaction identities                                       |
-| Ordinary semantic Agent input                               | [Agent Input](28a-agent-input.md)                                                                                                                 | Supplies the versioned `AgentInput` accepted by input-bearing commands           |
+| Ordinary semantic Agent input                               | [Agent Input](33-agent-input.md)                                                                                                                  | Supplies the versioned `AgentInput` accepted by input-bearing commands           |
 | Invocation, continuation, fork, retry, and waiting feedback | This contract                                                                                                                                     | Accepts one new Turn or rejects the operation without advancing the Thread       |
 | Thread version, current Turn, and selected head             | [Durable Thread Persistence](24-thread-persistence.md)                                                                                            | Supplies the exact advancement precondition and commits selected Turn references |
 | Turn state, lineage, input persistence, and outcome         | [Durable Turn State](14-turn-persistence.md)                                                                                                      | Persists the complete accepted input and its deterministic state key             |
@@ -34,13 +34,15 @@ semantic unit of work and remain outside this contract.
 ## Acceptance and Lineage
 
 Turn acceptance authenticates and authorizes the caller or internal principal,
-validates the selected Session and Thread, resolves exact revisions and policy,
-freezes the current enabled ModelConfig as a non-secret execution snapshot under
-[Model Management](25-model-management.md), applies the scoped idempotency
-contract, publishes the initial Turn state, and atomically creates or advances
-the versioned Thread together with the accepted Turn and its lifecycle
-publication intent. The Turn becomes schedulable only after the complete initial
-state object is durably available.
+validates the selected Session and Thread, resolves the stable AgentPreset's
+active AgentPresetVersion and its profile-selected internal Runtime lock or
+preserves an exact source-owned selection where required, resolves other exact
+revisions and policy, freezes the current enabled ModelConfig as a non-secret
+execution snapshot under [Model Management](25-model-management.md), applies the
+scoped idempotency contract, publishes the initial Turn state, and atomically
+creates or advances the versioned Thread together with the accepted Turn and its
+lifecycle publication intent. The Turn becomes schedulable only after the
+complete initial state object is durably available.
 
 The accepted operation chooses exactly one lineage form:
 
@@ -58,8 +60,9 @@ same key or reads authoritative Turn state.
 ## Invocation Options
 
 Root and ordinary continuation requests carry an
-[`AgentInput`](28a-agent-input.md#agent-input-protocol), a selected Agent
-authoring reference when permitted, optional `selected_skill_names`, an optional
+[`AgentInput`](33-agent-input.md#agent-input-protocol), a selected stable
+AgentPreset when permitted, an optional active-Version precondition, optional
+`selected_skill_names`, an optional
 policy-permitted Environment topology selection, and optional policy-supported
 metadata. Root submission additionally carries declared trigger metadata. The
 fields other than `AgentInput` are command options and never enter its content or
@@ -70,7 +73,15 @@ The accepted Environment topology forms, reference resolution, and exact
 Configuration](19-environment-management.md#environment-selection-and-turn-state).
 
 `selected_skill_names` follows the
-[Foundation Skill selection contract](27-skill-management.md#agent-revision-selection).
+[Foundation Skill selection contract](27-skill-management.md#agentpresetversion-selection).
+It is an optional JSON array of at most 512 distinct Skill names; JSON `null` is
+invalid. An absent field uses the selected AgentPresetVersion default, an empty
+array selects no Skills, and a non-empty array selects those exact names within
+the Version's locked available catalog. Acceptance stores the resolved names in
+catalog order in `state.json`. That normalized effective array, rather than
+whether the caller omitted the field or supplied the same names explicitly,
+participates in the canonical request digest.
+
 Only root, ordinary continuation, fork, and equivalent Host-owned initial Turn
 submission can supply `selected_skill_names`. Waiting-action response commands
 and explicit retry accept no Skill override; they preserve the source Turn's
@@ -86,12 +97,15 @@ POST /api/v1/workspaces/{workspace_id}/turns
 Idempotency-Key: opaque-caller-key
 ```
 
-It selects an immutable Agent revision and accepts the supplied `AgentInput`, then
-selects or creates one Session and its root Thread under current policy.
-Acceptance initializes that Thread's root state and atomically commits the
-version `1` Thread row, one root Turn, lifecycle events, idempotency evidence,
-and outbox intents. Foundation exposes no standalone empty-Thread create
-operation.
+The request names one stable `agent_preset_id` and can carry
+`agent_preset_version_id` only as an active-Version precondition. Acceptance
+resolves the Preset's current active Version and internal Runtime lock, validates
+the supplied `AgentInput` and every other selection against that exact Version,
+then selects or creates one Session and its root Thread under current policy.
+It initializes that Thread's root state and atomically commits the version `1`
+Thread row, one root Turn pinned to the exact Preset Version and Runtime lock,
+lifecycle events, idempotency evidence, and outbox intents. Foundation exposes
+no standalone empty-Thread create operation.
 
 Ordinary continuation advances an existing Thread:
 
@@ -100,11 +114,14 @@ POST /api/v1/threads/{thread_id}/turns
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries `expected_thread_version` and an `AgentInput`. Foundation
+The request carries `expected_thread_version`, an `AgentInput`, an optional
+stable `agent_preset_id`, and an optional active-Version precondition. Foundation
 reads the independent Thread row, requires the current Turn not to be `accepted`
 or `running`, selects its exact completed `head_turn_id` as the parent, and never
-infers a parent from Turn timestamps. Acceptance atomically sets
-`current_turn_id` to the new accepted Turn, preserves the head, increments
+infers a parent from Turn timestamps. The selected Preset defaults to the
+parent's stable Preset. Acceptance resolves its current active Version and
+Runtime lock, rejects incompatible parent-state or input migration, atomically
+sets `current_turn_id` to the new accepted Turn, preserves the head, increments
 Thread version, and creates the Turn, first user Item, lifecycle events,
 idempotency evidence, and outbox intents.
 
@@ -126,12 +143,14 @@ Idempotency-Key: opaque-caller-key
 ```
 
 The request carries an `AgentInput`, an optional policy-permitted compatible
-Agent revision selection, optional `selected_skill_names`, and fork metadata.
+stable AgentPreset selection, optional `selected_skill_names`, and fork metadata.
 Foundation authorizes the source Turn and Session, verifies the source's frozen
 state, applies `HarnessState.fork()`, and atomically creates a child-role Thread
 with `origin_kind="fork"` plus its first accepted Turn. The first Turn's
-`parent_turn_id` names the source Turn. The response is the same Session, Thread,
-and Turn acceptance receipt used by root and continuation submission.
+`parent_turn_id` names the source Turn. Acceptance resolves the selected Preset's
+current active Version and Runtime lock; omitting the selection reuses the source
+Turn's exact Preset Version and Runtime lock. The response is the same Session,
+Thread, and Turn acceptance receipt used by root and continuation submission.
 
 Fork idempotency is scoped to the source Turn, principal, and canonical request.
 Repeating the same key returns the original Thread and Turn. A Session fork that
@@ -147,7 +166,8 @@ Idempotency-Key: opaque-caller-key
 
 The target must be the Thread's current failed or cancelled Turn. The command
 carries the expected Thread version and no new `AgentInput`, preserves the source
-Turn's effective Skill selection and exact accepted input or feedback intent,
+Turn's exact AgentPresetVersion, Runtime lock, effective Skill selection, and
+accepted input or feedback intent,
 advances the same Thread with an explicit successor Turn, and never reopens the
 terminal record. It never reacquires a submitted binary source. If the Thread
 has a selected sealed head, retry initializes from that state; if its initial
@@ -248,11 +268,11 @@ identities, selects the new Turn as current, increments Thread version, accepts
 the new Turn, and associates any response Items with it. Its `accepted` status
 makes it the sole active Turn.
 
-The next worker reconstructs the exact Agent revision and tool surface, supplies
-fresh bindings, and passes the authoritative request and complete results
-through native `DeferredToolResume`. Approval and external execution remain
-separate facts: approval does not prove the client effect occurred, and client
-success does not retroactively prove approval.
+The next worker reconstructs the exact AgentPresetVersion and Runtime-locked
+tool surface, supplies fresh bindings, and passes the authoritative request and
+complete results through native `DeferredToolResume`. Approval and external
+execution remain separate facts: approval does not prove the client effect
+occurred, and client success does not retroactively prove approval.
 
 Invalid, incomplete, stale, expired, or unauthorized feedback creates no new
 Turn and leaves the waiting parent unchanged.
@@ -281,3 +301,4 @@ Turn and leaves the waiting parent unchanged.
 08. Pending requests and feedback remain native typed values associated with one exact sealed waiting state.
 09. Every feedback continuation receives a fresh TurnAttempt and Harness Run under the new Turn.
 10. Approval and external client effect are independent facts.
+11. Every accepted Turn pins one exact AgentPresetVersion and compatible Runtime lock; replacement TurnAttempts never re-resolve either selection.

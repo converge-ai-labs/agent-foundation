@@ -62,7 +62,7 @@ Every request and response is bounded. The owning API defines tighter limits for
 Ordinary resource collections use one cursor-based shape:
 
 ```http
-GET /api/v1/agents?limit=50&cursor=opaque-value
+GET /api/v1/workspaces/ws_123/agent-presets?limit=50&cursor=opaque-value
 ```
 
 ```json

@@ -90,10 +90,7 @@ class LocalStore:
             payload_codec_version=payload_codec_version,
         )
         registered_at = datetime.now(UTC)
-        async with transaction(
-            self.database.sessions,
-            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with transaction(self.database.sessions) as session:
             current = await session.get(ImmutableObjectRecord, envelope.logical_digest)
             if current is None:
                 session.add(
@@ -120,10 +117,7 @@ class LocalStore:
     async def read_object(self, reference: ObjectRef) -> ObjectEnvelope:
         """Read an exact registered object without holding SQLite during file I/O."""
 
-        async with short_session(
-            self.database.sessions,
-            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self.database.sessions) as session:
             try:
                 record = await session.get(ImmutableObjectRecord, reference.logical_digest)
             except (TypeError, ValueError, StatementError) as exc:
@@ -157,10 +151,7 @@ class LocalStore:
         return envelope
 
     async def object_count(self) -> int:
-        async with short_session(
-            self.database.sessions,
-            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self.database.sessions) as session:
             return int((await session.execute(select(func.count()).select_from(ImmutableObjectRecord))).scalar_one())
 
     async def cleanup_unreferenced_objects(self, *, retention_seconds: int) -> int:
@@ -169,10 +160,7 @@ class LocalStore:
         if retention_seconds <= 0:
             raise ValueError("object retention must be positive")
         cutoff = datetime.now(UTC) - timedelta(seconds=retention_seconds)
-        async with short_session(
-            self.database.sessions,
-            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self.database.sessions) as session:
             referenced = set((await session.execute(select(ResourceRevisionRecord.object_digest))).scalars())
             referenced.update((await session.execute(select(SkillPackageReferenceRecord.object_digest))).scalars())
             referenced.update((await session.execute(select(CompositionSnapshotRecord.object_digest))).scalars())
@@ -218,10 +206,7 @@ class LocalStore:
             await self.objects.remove(reference)
             removed.append(logical_digest)
         if removed:
-            async with transaction(
-                self.database.sessions,
-                cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
-            ) as session:
+            async with transaction(self.database.sessions) as session:
                 await session.execute(
                     delete(ImmutableObjectRecord).where(ImmutableObjectRecord.logical_digest.in_(removed))
                 )
@@ -236,10 +221,7 @@ class LocalStore:
 
         if not code or len(code) > 64 or not detail:
             raise ValueError("recovery diagnostic fields are invalid")
-        async with transaction(
-            self.database.sessions,
-            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with transaction(self.database.sessions) as session:
             session.add(
                 RecoveryDiagnosticRecord(
                     process_generation=self.process_generation,
@@ -254,10 +236,7 @@ class LocalStore:
 
         if not 1 <= limit <= 1000:
             raise ValueError("diagnostic limit must be between 1 and 1000")
-        async with short_session(
-            self.database.sessions,
-            cleanup_timeout_seconds=self.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self.database.sessions) as session:
             rows = tuple(
                 (
                     await session.execute(
@@ -330,10 +309,7 @@ async def _data_root_lock(path: Path, *, cleanup_timeout_seconds: float) -> Asyn
 
 async def _acquire_lease(database: Database, settings: StorageSettings, process_generation: str) -> None:
     now = datetime.now(UTC)
-    async with transaction(
-        database.sessions,
-        cleanup_timeout_seconds=settings.cleanup_timeout_seconds,
-    ) as session:
+    async with transaction(database.sessions) as session:
         current = await session.get(StoreLeaseRecord, 1)
         if current is not None:
             await session.delete(current)
@@ -350,10 +326,7 @@ async def _acquire_lease(database: Database, settings: StorageSettings, process_
 
 async def _release_lease(database: Database, settings: StorageSettings, process_generation: str) -> None:
     with move_on_after(settings.cleanup_timeout_seconds, shield=True):
-        async with transaction(
-            database.sessions,
-            cleanup_timeout_seconds=settings.cleanup_timeout_seconds,
-        ) as session:
+        async with transaction(database.sessions) as session:
             await session.execute(
                 delete(StoreLeaseRecord).where(StoreLeaseRecord.process_generation == process_generation)
             )
@@ -362,10 +335,7 @@ async def _release_lease(database: Database, settings: StorageSettings, process_
 async def _heartbeat_lease(database: Database, settings: StorageSettings, process_generation: str) -> None:
     while True:
         await sleep(settings.lease_heartbeat_seconds)
-        async with transaction(
-            database.sessions,
-            cleanup_timeout_seconds=settings.cleanup_timeout_seconds,
-        ) as session:
+        async with transaction(database.sessions) as session:
             lease = await session.get(StoreLeaseRecord, 1)
             if lease is None or lease.process_generation != process_generation:
                 raise StoreIntegrityError(
@@ -384,10 +354,7 @@ async def _record_diagnostics(
     if not diagnostics:
         return
     now = datetime.now(UTC)
-    async with transaction(
-        database.sessions,
-        cleanup_timeout_seconds=settings.cleanup_timeout_seconds,
-    ) as session:
+    async with transaction(database.sessions) as session:
         session.add_all(
             RecoveryDiagnosticRecord(
                 process_generation=process_generation,

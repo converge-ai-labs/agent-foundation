@@ -227,7 +227,7 @@ credentials fail closed.
 
 ## Environment Selection and Turn State
 
-An AgentRevision stores an ordered topology of exact Environment requirements
+An AgentPresetVersion stores an ordered topology of exact Environment requirements
 plus its runtime-selection policy:
 
 ```python

@@ -48,6 +48,15 @@ class _HarnessNameCollision(AbstractCapability[AgentContext]):
         return "InvocationPolicyCapability"
 
 
+@dataclass
+class _InvalidRunReplacementId(AbstractCapability[AgentContext]):
+    id: str | None = "valid.id"
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        del ctx
+        return Capability(id="invalid:runtime")
+
+
 def _catalog() -> CapabilityTypeCatalog:
     return CapabilityTypeCatalog(
         (
@@ -97,6 +106,37 @@ async def test_capability_type_catalog_rejects_name_mismatch_and_native_collisio
     with pytest.raises(DefinitionError) as redundant_native:
         CapabilityTypeCatalog.from_types((WebSearch,))
     assert redundant_native.value.code == "capability_type_catalog_invalid"
+
+
+async def test_capability_ids_allow_dots_but_not_colons() -> None:
+    HarnessBuilder().build(
+        AgentSpec(model="logical:test"),
+        output_type=str,
+        capabilities=(Capability(id="valid.id"),),
+    )
+
+    with pytest.raises(DefinitionError) as error:
+        HarnessBuilder().build(
+            AgentSpec(model="logical:test"),
+            output_type=str,
+            capabilities=(Capability(id="invalid:id"),),
+        )
+
+    assert error.value.code == "capability_id_invalid"
+
+
+async def test_run_replacement_capability_ids_must_not_contain_colons() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(lambda messages, info: "done"),
+        capabilities=(_InvalidRunReplacementId(),),
+    )
+
+    with pytest.raises(DefinitionError) as error:
+        await executable.run("test", bindings=RunBindings.embedded())
+
+    assert error.value.code == "capability_id_invalid"
 
 
 async def test_bare_capability_functions_are_rejected_from_definition_and_run_sources() -> None:

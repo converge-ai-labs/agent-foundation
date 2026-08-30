@@ -78,7 +78,7 @@ def _binding_request(
 ) -> EnvironmentBindingRequest:
     return EnvironmentBindingRequest(
         binding_id=binding_id,
-        binding_revision=1,
+        binding_version=1,
         alias=alias,
         permission_ceiling=EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_READ_TEXT})),
         default_working_directory="/",

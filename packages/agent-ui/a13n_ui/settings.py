@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from a13n_ui.configuration.models import ConfigurationSettings
+from a13n_ui.runtime_settings import RuntimeGenerationSettings
 
 
 class DurabilityProfile(StrEnum):
@@ -48,29 +49,17 @@ class EnvdRuntimeSettings(BaseModel):
 
 
 class AgentUiSettings(BaseModel):
-    """Process settings required to construct the surface-neutral application."""
+    """Process settings required to construct the surface-neutral Host."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     storage: StorageSettings
     configuration: ConfigurationSettings = ConfigurationSettings()
     envd_runtime: EnvdRuntimeSettings = EnvdRuntimeSettings()
-    process_settings_path: Path | None = None
+    runtime: RuntimeGenerationSettings = RuntimeGenerationSettings()
     shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=300)
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: str = Field(default="pretty", pattern="^(pretty|json)$")
-
-    @field_validator("process_settings_path")
-    @classmethod
-    def _normalize_process_settings_path(cls, value: Path | None) -> Path | None:
-        if value is None:
-            return None
-        if "\x00" in str(value) or not value.expanduser().is_absolute():
-            raise ValueError("process_settings_path must be an absolute YAML or JSON path")
-        expanded = value.expanduser()
-        if expanded.suffix.lower() not in {".yaml", ".yml", ".json"}:
-            raise ValueError("process_settings_path must use YAML or JSON")
-        return expanded.resolve(strict=False)
 
     @field_validator("log_level")
     @classmethod
@@ -81,4 +70,10 @@ class AgentUiSettings(BaseModel):
         return normalized
 
 
-__all__ = ["AgentUiSettings", "DurabilityProfile", "EnvdRuntimeSettings", "StorageSettings"]
+__all__ = [
+    "AgentUiSettings",
+    "DurabilityProfile",
+    "EnvdRuntimeSettings",
+    "RuntimeGenerationSettings",
+    "StorageSettings",
+]

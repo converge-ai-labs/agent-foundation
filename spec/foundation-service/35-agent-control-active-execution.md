@@ -54,7 +54,7 @@ acceptance follows the Turn lifecycle and freezes the latest valid state but
 does not make the Turn an eligible parent. The sealed cancelled Turn remains the
 Thread's current Turn, preserves the prior continuation head, and cannot return
 to `accepted` or `running`. A later retry follows the
-[terminal-intent retry contract](28b-agent-control-input-and-continuation.md#retry-of-terminal-intent)
+[terminal-intent retry contract](34-agent-control-input-and-continuation.md#retry-of-terminal-intent)
 and creates a successor Turn rather than reopening it.
 
 Exactly one legal generation-fenced transition wins a cancellation, waiting, or

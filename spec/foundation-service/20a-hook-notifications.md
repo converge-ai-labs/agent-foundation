@@ -38,7 +38,7 @@ flowchart LR
 
         subgraph ControlRole[Control role]
             API[Authorized HTTP API]
-            Replay[Replay and stream service]
+            NativeDelivery[Native delivery surfaces]
             OutboxPublisher[Outbox publisher]
         end
 
@@ -56,11 +56,11 @@ flowchart LR
     Domain --> Objects
     LivePublisher --> Redis
     PostgreSQL --> OutboxPublisher
-    Redis --> Replay
-    PostgreSQL --> Replay
-    Objects --> Replay
-    Replay -->|SSE or WebSocket| Caller
-    API -->|cursor replay and resource reads| Caller
+    Redis --> NativeDelivery
+    PostgreSQL --> NativeDelivery
+    Objects --> NativeDelivery
+    NativeDelivery -->|Turn SSE, event reads, or wake-ups| Caller
+    API -->|resource reads and subscription management| Caller
     OutboxPublisher --> Webhook --> Caller
     OutboxPublisher --> Sink
 ```
@@ -74,6 +74,10 @@ retained replay. [Events, Interaction Projection, Usage, and
 Delivery](20-events-usage-and-delivery.md) owns the common delivery envelope and
 source-authority separation. [Durable Operations and
 Outbox](06-durable-operations-and-outbox.md) owns reliable external publication.
+[Native Streaming and Notifications](29-native-streaming-and-notifications.md)
+owns Turn SSE, Workspace lifecycle event reads, and the best-effort Native
+notification WebSocket. Those three surfaces keep their own envelopes, filters,
+cursors, and delivery guarantees.
 
 ## Boundaries and Hook Model
 
@@ -89,9 +93,13 @@ Outbox](06-durable-operations-and-outbox.md) owns reliable external publication.
 | Transport, retry, and destination acknowledgement | Foundation delivery                | Never changes the source fact or Agent outcome                  |
 | Caller business workflow                          | Caller                             | Reacts to notifications and reconciles from authoritative reads |
 
-Every delivered hook uses the common `FoundationDeliveryEnvelope`. This
-contract owns the finite hook-name registry; the delivery contract owns the
-envelope fields and transport meaning. Common correlation includes the
+Every webhook or authorized-sink Hook delivery uses the common
+`FoundationDeliveryEnvelope`. This contract owns the finite hook-name registry;
+the delivery contract owns the durable envelope fields and transport meaning.
+Native Turn SSE uses `TurnStreamEvent`, Workspace lifecycle reads use
+`LifecycleEventResource`, and the notification WebSocket uses
+`NotificationFrame`; none is translated into the durable Hook envelope. Common
+correlation for durable Hook delivery includes the
 Workspace and, when applicable, Session, Thread, Turn, TurnAttempt, Harness Run,
 source, schema version, occurrence time, and delivery identity. A field is
 absent rather than guessed when its source does not own that correlation.
@@ -104,9 +112,10 @@ translated into another Foundation event vocabulary.
 
 ### Durable Hook Subscriptions
 
-SSE, WebSocket, and replay clients select filters per authorized request. An
-external webhook or message sink instead uses a durable Workspace-scoped hook
-subscription. The following schema is conceptual:
+Native delivery clients select resources and filters through their owning
+request or subscription protocol. An external webhook or message sink instead
+uses a durable Workspace-scoped Hook subscription. The following schema is
+conceptual:
 
 ```python
 class HookSubscription:
@@ -148,12 +157,14 @@ outbox intents.
 
 ## Notification Methods
 
-### Live SSE and WebSocket Stream
+### Native Observation and Reconciliation
 
-SSE and WebSocket expose the same authorized Workspace delivery stream and
-filter semantics. SSE is the ordinary unidirectional client surface. WebSocket
-supports clients that need the same envelope on a long-lived bidirectional
-transport; it does not gain execution or cancellation authority.
+Native clients use the three distinct surfaces owned by [Native Streaming and
+Notifications](29-native-streaming-and-notifications.md): detailed observations
+for one Turn use Turn SSE, durable Workspace lifecycle reconciliation uses the
+event collection, and lightweight Thread or Workspace wake-ups use the
+best-effort notification WebSocket. There is no combined Workspace stream, no
+detailed Turn WebSocket, and no shared Hook envelope across those surfaces.
 
 ```mermaid
 sequenceDiagram
@@ -163,14 +174,14 @@ sequenceDiagram
     participant Control
     participant Caller
 
-    Caller->>Control: open authorized stream with filters and cursor
+    Caller->>Control: open authorized Turn SSE with cursor
     Control->>Control: authenticate, authorize, and close the database session
     Control->>Redis: establish replay-to-live subscription
     Harness-->>Worker: public callback or result observation
     Worker->>Worker: AG-UI conversion, visibility policy, and bounded enqueue
     Worker->>Redis: append TurnStreamEvent
     Redis-->>Control: retained or live entry
-    Control-->>Caller: FoundationDeliveryEnvelope over SSE or WebSocket
+    Control-->>Caller: TurnStreamEvent over SSE
     Caller--xControl: disconnect
     Note over Harness,Worker: Agent work continues independently
 ```
@@ -180,6 +191,12 @@ Bounded queues isolate Harness progress from Redis and client speed. Overflow or
 a slow client closes the affected attachment or produces an explicit replay
 gap; it never cancels or seals the Turn. Live-only AG-UI observations do not
 advance the durable lifecycle replay cursor.
+
+The Native notification WebSocket carries only coarse registered wake-up topics
+and no Hook payload. After disconnect, overflow, or a wake-up, the caller reads
+the authorized resource or Workspace lifecycle collection. A Hook name can
+identify the source event that caused a wake-up internally, but it does not
+change the `NotificationFrame` wire contract or create replay.
 
 ### Durable Replay and Polling
 
@@ -260,8 +277,9 @@ processing.
 ### SDK Notification Surface
 
 Foundation SDKs expose idiomatic asynchronous iterators, callbacks, or polling
-helpers over the HTTP stream and replay APIs. These are client conveniences,
-not another delivery method or event schema. An SDK callback runs in the caller
+helpers over Turn SSE, Workspace event reads, Native notification subscriptions,
+and durable Hook-subscription management. These are client conveniences, not
+another delivery method or event schema. An SDK callback runs in the caller
 process and cannot block the Foundation Worker or Harness Run.
 
 ## Hook Sources and Trigger Semantics
@@ -308,9 +326,9 @@ Important `agui.custom` names include:
 | `a13n.harness.diagnostic` | Harness emits safe implementation detail                                                                   | Bounded public diagnostic without lifecycle authority                                                             |
 | `a13n.pydantic_ai.*`      | Another public Pydantic event has no standard AG-UI mapping                                                | Exact public event kind and serialized public source representation                                               |
 
-All Harness-derived hooks use SSE or WebSocket only. A caller that needs a
-reliable business completion notification subscribes to the corresponding
-Foundation `turn.*` hook rather than `agui.run_*`.
+All Harness-derived hooks use Turn SSE only. A caller that needs a reliable
+business completion notification creates a durable subscription for the
+corresponding Foundation `turn.*` hook rather than `agui.run_*`.
 
 ### Foundation Turn Hooks
 
@@ -319,17 +337,17 @@ The transition and required lifecycle event commit in the same short
 transaction. The exact Turn state machine and fields remain owned by [Durable
 Turn State](14-turn-persistence.md#turn-lifecycle).
 
-| Hook name        | Trigger                                                                                | Information                                                                                                                                     |
-| ---------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `turn.accepted`  | A complete Turn, accepted input, selections, scheduling data, and initial state commit | Session, Thread, Turn, parent and lineage correlation, Agent revision, safe trigger correlation, resource version, availability and commit time |
-| `turn.running`   | The first TurnAttempt is leased and fenced and the Turn leaves `accepted`              | Turn version, current TurnAttempt, claim time, safe Agent/model observation                                                                     |
-| `turn.waiting`   | A deferred result and complete waiting state are sealed                                | Wait reason, bounded pending-action summary, sealed time and authorized resource links; no full deferred payload                                |
-| `turn.completed` | Complete state and output are sealed successfully                                      | Output or object reference under content policy, final Item references, usage summary reference, version and sealed time                        |
-| `turn.failed`    | A terminal pre-run or running failure seals the Turn                                   | Bounded `SafeFailure`, final attempt correlation, version and sealed time                                                                       |
-| `turn.cancelled` | Authorized cancellation or normalized run cancellation seals the Turn                  | Cancellation actor or source when safe, reason code, final attempt correlation, version and sealed time                                         |
+| Hook name        | Trigger                                                                                | Information                                                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turn.accepted`  | A complete Turn, accepted input, selections, scheduling data, and initial state commit | Session, Thread, Turn, parent and lineage correlation, AgentPresetVersion and Runtime lock, safe trigger correlation, resource version, availability and commit time |
+| `turn.running`   | The first TurnAttempt is leased and fenced and the Turn leaves `accepted`              | Turn version, current TurnAttempt, claim time, safe Agent/model observation                                                                                          |
+| `turn.waiting`   | A deferred result and complete waiting state are sealed                                | Wait reason, bounded pending-action summary, sealed time and authorized resource links; no full deferred payload                                                     |
+| `turn.completed` | Complete state and output are sealed successfully                                      | Output or object reference under content policy, final Item references, usage summary reference, version and sealed time                                             |
+| `turn.failed`    | A terminal pre-run or running failure seals the Turn                                   | Bounded `SafeFailure`, final attempt correlation, version and sealed time                                                                                            |
+| `turn.cancelled` | Authorized cancellation or normalized run cancellation seals the Turn                  | Cancellation actor or source when safe, reason code, final attempt correlation, version and sealed time                                                              |
 
 Every accepted asynchronous child is an ordinary child Turn. Its `turn.*`
-hooks carry parent Agent instance, delegation, parent tool-call, Session, Thread,
+hooks carry parent AgentPresetVersion, delegation, parent tool-call, Session, Thread,
 and parent-Turn correlation when authorized; Foundation defines no competing
 `child_run.*` lifecycle.
 
@@ -387,7 +405,7 @@ emit these live observations:
 | `environment.keep_alive.failed` | Active-run keep-alive exhausts its bounded retry policy                                        | Correlation, bounded safe failure and terminal Attempt classification                                  |
 | `environment.binding.closed`    | Binding closes after Harness completion, cancellation, lease loss, failure, or Worker shutdown | Correlation and bounded close reason; no claim about external resource state                           |
 
-These hooks are live SSE or WebSocket observations only. Foundation emits no
+These hooks are live Turn SSE observations only. Foundation emits no
 `sandbox.created`, `sandbox.started`, `sandbox.paused`, `sandbox.resumed`,
 `sandbox.stopped`, or `sandbox.deleted` hook because it never owns or performs
 those transitions. A missing, stopped, paused, incompatible, or concurrently
@@ -419,41 +437,41 @@ The following table is the public Foundation hook routing registry.
 Subscription configuration contains exact names supported by the selected API
 version.
 
-| Hook name                        | Source                                | Trigger time                                              | Notification methods                               | Information summary                                                |
-| -------------------------------- | ------------------------------------- | --------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------ |
-| `agui.text_message_start`        | Harness through Agent Stream Protocol | Public assistant text begins                              | SSE, WebSocket                                     | Run/message/part correlation, role, time                           |
-| `agui.text_message_content`      | Harness through Agent Stream Protocol | Public assistant text delta                               | SSE, WebSocket                                     | Correlation and bounded visible delta                              |
-| `agui.text_message_end`          | Harness through Agent Stream Protocol | Public assistant text ends                                | SSE, WebSocket                                     | Correlation and part completion                                    |
-| `agui.reasoning_message_start`   | Harness through Agent Stream Protocol | Public reasoning begins                                   | SSE, WebSocket                                     | Run/message/part correlation and time                              |
-| `agui.reasoning_message_content` | Harness through Agent Stream Protocol | Public reasoning delta                                    | SSE, WebSocket                                     | Correlation and policy-permitted reasoning delta                   |
-| `agui.reasoning_encrypted_value` | Harness through Agent Stream Protocol | Public encrypted reasoning value is observed              | SSE, WebSocket                                     | Correlation and policy-permitted encrypted value                   |
-| `agui.reasoning_message_end`     | Harness through Agent Stream Protocol | Public reasoning ends                                     | SSE, WebSocket                                     | Correlation and reasoning-part completion                          |
-| `agui.tool_call_start`           | Harness through Agent Stream Protocol | Complete requested tool call begins AG-UI projection      | SSE, WebSocket                                     | Tool-call ID and public tool name                                  |
-| `agui.tool_call_args`            | Harness through Agent Stream Protocol | Complete public tool arguments are projected              | SSE, WebSocket                                     | Tool-call ID and policy-permitted arguments                        |
-| `agui.tool_call_end`             | Harness through Agent Stream Protocol | Requested tool call projection closes                     | SSE, WebSocket                                     | Tool-call correlation; not dispatch proof                          |
-| `agui.tool_call_result`          | Harness through Agent Stream Protocol | Successful public tool return is observed                 | SSE, WebSocket                                     | Tool-call correlation and visible result                           |
-| `agui.run_finished`              | Harness through Agent Stream Protocol | Successful terminal Harness result after cleanup          | SSE, WebSocket                                     | Run identity and JSON-safe result when available                   |
-| `agui.run_error`                 | Harness through Agent Stream Protocol | Failed or cancelled terminal Harness result after cleanup | SSE, WebSocket                                     | Run identity and bounded public code                               |
-| `agui.custom`                    | Harness through Agent Stream Protocol | Public observation lacks a standard AG-UI mapping         | SSE, WebSocket                                     | Exact custom name, source correlation, sequence and public payload |
-| `turn.accepted`                  | Foundation Turn domain                | Turn acceptance commits                                   | SSE, WebSocket, replay API, webhook, sink          | Turn lineage, selections, version and scheduling summary           |
-| `turn.running`                   | Foundation Turn domain                | First Attempt is leased and the Turn leaves `accepted`    | SSE, WebSocket, replay API, webhook, sink          | Current Attempt, claim time and safe model observation             |
-| `turn.waiting`                   | Foundation Turn domain                | Deferred outcome and waiting state seal                   | SSE, WebSocket, replay API, webhook, sink          | Wait reason and bounded pending summary                            |
-| `turn.completed`                 | Foundation Turn domain                | Output and final state seal                               | SSE, WebSocket, replay API, webhook, sink          | Output/reference, Items, version and sealed time                   |
-| `turn.failed`                    | Foundation Turn domain                | Terminal failure seals Turn                               | SSE, WebSocket, replay API, webhook, sink          | Safe failure, final Attempt and sealed time                        |
-| `turn.cancelled`                 | Foundation Turn domain                | Cancellation seals Turn                                   | SSE, WebSocket, replay API, webhook, sink          | Safe cancellation, actor/source and sealed time                    |
-| `turn_attempt.leased`            | Foundation TurnAttempt domain         | Worker generation is claimed and fenced                   | SSE, WebSocket, replay API, webhook, sink          | Attempt number, fence, replacement, lease and recovery summary     |
-| `turn_attempt.running`           | Foundation TurnAttempt domain         | Harness Run identity commits                              | SSE, WebSocket, replay API, webhook, sink          | Attempt/Run correlation, model observation and start time          |
-| `turn_attempt.succeeded`         | Foundation TurnAttempt domain         | Attempt commits owning Turn outcome                       | SSE, WebSocket, replay API, webhook, sink          | Usage summary, finish time and Turn correlation                    |
-| `turn_attempt.failed`            | Foundation TurnAttempt domain         | Attempt generation becomes terminal failed                | SSE, WebSocket, replay API, webhook, sink          | Safe failure, recovery and unknown-outcome summary                 |
-| `turn_attempt.cancelled`         | Foundation TurnAttempt domain         | Attempt generation becomes terminal cancelled             | SSE, WebSocket, replay API, webhook, sink          | Safe cancellation and finish time                                  |
-| `item.completed`                 | Foundation Item projection            | Retained semantic Item closes successfully                | SSE, WebSocket; webhook or sink from retained Item | Item identity, kind, parent, cursors and bounded content/reference |
-| `item.failed`                    | Foundation Item projection            | Retained semantic Item closes failed                      | SSE, WebSocket; webhook or sink from retained Item | Item correlation and safe failure projection                       |
-| `item.interrupted`               | Foundation Item projection            | Closed Turn retains an incomplete Item                    | SSE, WebSocket; webhook or sink from retained Item | Item correlation and interruption projection                       |
-| `environment.binding.started`    | Foundation Environment connector      | Exact TurnAttempt connection begins                       | SSE, WebSocket                                     | Environment/revision/provider and Attempt correlation              |
-| `environment.binding.ready`      | Foundation Environment connector      | Compatible attachment is ready                            | SSE, WebSocket                                     | Correlation and safe readiness/capability summary                  |
-| `environment.binding.failed`     | Foundation Environment connector      | Connection or validation fails                            | SSE, WebSocket                                     | Correlation and bounded safe failure                               |
-| `environment.keep_alive.failed`  | Foundation Environment connector      | Bounded keep-alive retries exhaust                        | SSE, WebSocket                                     | Correlation, safe failure and terminal Attempt classification      |
-| `environment.binding.closed`     | Foundation Environment connector      | Active binding scope closes                               | SSE, WebSocket                                     | Correlation and bounded close reason                               |
+| Hook name                        | Source                                | Trigger time                                              | Notification methods                            | Information summary                                                |
+| -------------------------------- | ------------------------------------- | --------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------ |
+| `agui.text_message_start`        | Harness through Agent Stream Protocol | Public assistant text begins                              | Turn SSE                                        | Run/message/part correlation, role, time                           |
+| `agui.text_message_content`      | Harness through Agent Stream Protocol | Public assistant text delta                               | Turn SSE                                        | Correlation and bounded visible delta                              |
+| `agui.text_message_end`          | Harness through Agent Stream Protocol | Public assistant text ends                                | Turn SSE                                        | Correlation and part completion                                    |
+| `agui.reasoning_message_start`   | Harness through Agent Stream Protocol | Public reasoning begins                                   | Turn SSE                                        | Run/message/part correlation and time                              |
+| `agui.reasoning_message_content` | Harness through Agent Stream Protocol | Public reasoning delta                                    | Turn SSE                                        | Correlation and policy-permitted reasoning delta                   |
+| `agui.reasoning_encrypted_value` | Harness through Agent Stream Protocol | Public encrypted reasoning value is observed              | Turn SSE                                        | Correlation and policy-permitted encrypted value                   |
+| `agui.reasoning_message_end`     | Harness through Agent Stream Protocol | Public reasoning ends                                     | Turn SSE                                        | Correlation and reasoning-part completion                          |
+| `agui.tool_call_start`           | Harness through Agent Stream Protocol | Complete requested tool call begins AG-UI projection      | Turn SSE                                        | Tool-call ID and public tool name                                  |
+| `agui.tool_call_args`            | Harness through Agent Stream Protocol | Complete public tool arguments are projected              | Turn SSE                                        | Tool-call ID and policy-permitted arguments                        |
+| `agui.tool_call_end`             | Harness through Agent Stream Protocol | Requested tool call projection closes                     | Turn SSE                                        | Tool-call correlation; not dispatch proof                          |
+| `agui.tool_call_result`          | Harness through Agent Stream Protocol | Successful public tool return is observed                 | Turn SSE                                        | Tool-call correlation and visible result                           |
+| `agui.run_finished`              | Harness through Agent Stream Protocol | Successful terminal Harness result after cleanup          | Turn SSE                                        | Run identity and JSON-safe result when available                   |
+| `agui.run_error`                 | Harness through Agent Stream Protocol | Failed or cancelled terminal Harness result after cleanup | Turn SSE                                        | Run identity and bounded public code                               |
+| `agui.custom`                    | Harness through Agent Stream Protocol | Public observation lacks a standard AG-UI mapping         | Turn SSE                                        | Exact custom name, source correlation, sequence and public payload |
+| `turn.accepted`                  | Foundation Turn domain                | Turn acceptance commits                                   | Workspace events, Native wake-up, webhook, sink | Turn lineage, selections, version and scheduling summary           |
+| `turn.running`                   | Foundation Turn domain                | First Attempt is leased and the Turn leaves `accepted`    | Workspace events, Native wake-up, webhook, sink | Current Attempt, claim time and safe model observation             |
+| `turn.waiting`                   | Foundation Turn domain                | Deferred outcome and waiting state seal                   | Workspace events, Native wake-up, webhook, sink | Wait reason and bounded pending summary                            |
+| `turn.completed`                 | Foundation Turn domain                | Output and final state seal                               | Workspace events, Native wake-up, webhook, sink | Output/reference, Items, version and sealed time                   |
+| `turn.failed`                    | Foundation Turn domain                | Terminal failure seals Turn                               | Workspace events, Native wake-up, webhook, sink | Safe failure, final Attempt and sealed time                        |
+| `turn.cancelled`                 | Foundation Turn domain                | Cancellation seals Turn                                   | Workspace events, Native wake-up, webhook, sink | Safe cancellation, actor/source and sealed time                    |
+| `turn_attempt.leased`            | Foundation TurnAttempt domain         | Worker generation is claimed and fenced                   | Workspace events, Native wake-up, webhook, sink | Attempt number, fence, replacement, lease and recovery summary     |
+| `turn_attempt.running`           | Foundation TurnAttempt domain         | Harness Run identity commits                              | Workspace events, Native wake-up, webhook, sink | Attempt/Run correlation, model observation and start time          |
+| `turn_attempt.succeeded`         | Foundation TurnAttempt domain         | Attempt commits owning Turn outcome                       | Workspace events, Native wake-up, webhook, sink | Usage summary, finish time and Turn correlation                    |
+| `turn_attempt.failed`            | Foundation TurnAttempt domain         | Attempt generation becomes terminal failed                | Workspace events, Native wake-up, webhook, sink | Safe failure, recovery and unknown-outcome summary                 |
+| `turn_attempt.cancelled`         | Foundation TurnAttempt domain         | Attempt generation becomes terminal cancelled             | Workspace events, Native wake-up, webhook, sink | Safe cancellation and finish time                                  |
+| `item.completed`                 | Foundation Item projection            | Retained semantic Item closes successfully                | Turn SSE; webhook or sink from retained Item    | Item identity, kind, parent, cursors and bounded content/reference |
+| `item.failed`                    | Foundation Item projection            | Retained semantic Item closes failed                      | Turn SSE; webhook or sink from retained Item    | Item correlation and safe failure projection                       |
+| `item.interrupted`               | Foundation Item projection            | Closed Turn retains an incomplete Item                    | Turn SSE; webhook or sink from retained Item    | Item correlation and interruption projection                       |
+| `environment.binding.started`    | Foundation Environment connector      | Exact TurnAttempt connection begins                       | Turn SSE                                        | Environment/revision/provider and Attempt correlation              |
+| `environment.binding.ready`      | Foundation Environment connector      | Compatible attachment is ready                            | Turn SSE                                        | Correlation and safe readiness/capability summary                  |
+| `environment.binding.failed`     | Foundation Environment connector      | Connection or validation fails                            | Turn SSE                                        | Correlation and bounded safe failure                               |
+| `environment.keep_alive.failed`  | Foundation Environment connector      | Bounded keep-alive retries exhaust                        | Turn SSE                                        | Correlation, safe failure and terminal Attempt classification      |
+| `environment.binding.closed`     | Foundation Environment connector      | Active binding scope closes                               | Turn SSE                                        | Correlation and bounded close reason                               |
 
 ## Failure Semantics
 

@@ -1,600 +1,535 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
-from collections.abc import AsyncIterator
-from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
-from a13n_environment_provider import (
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-)
-from a13n_harness import (
-    ArgvCommand,
-    CommandLimits,
+from a13n_harness.environment.commands import (
+    BoundProcessHandle,
     CommandRequest,
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
-    EnvironmentAction,
+    ProcessControlResult,
+    ProcessIdentity,
+    ProcessInfo,
+    ProcessOutputSnapshot,
+    ProcessStartResult,
+    ProcessStatus,
+    ShellCommand,
+)
+from a13n_harness.environment.models import EnvironmentError, EnvironmentOperationReceipt
+from a13n_harness.environment.retention import (
+    BoundOutputReference,
+    EnvironmentOutputCapture,
     EnvironmentOutputPolicy,
-    EnvironmentPermissionSet,
-    HarnessBuilder,
-    InProcessMonitoredProcessMonitor,
-    MonitoredProcessCapability,
-    MonitoredProcessNotification,
-    MonitoredProcessRunCapability,
-    RunBindings,
+    EnvironmentOutputSegment,
+    OpaqueOutputReference,
+    OpaqueProcessHandle,
 )
-from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_environment_run_binding,
+from a13n_harness.state import AgentContextState
+from a13n_harness.toolsets.process_manager import (
+    PROCESS_STATE_ID,
+    ProcessEvent,
+    ProcessManager,
+    ProcessManagerState,
 )
-from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
-from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
-from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
-from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 pytestmark = pytest.mark.anyio
-requires_posix_process_groups = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Direct Local process groups require POSIX",
+
+
+class _RunContext:
+    def __init__(self, state: AgentContextState) -> None:
+        self.deps = SimpleNamespace(
+            state=state,
+            thread_id="thread-test",
+            run_id="run-test",
+            instance=SimpleNamespace(agent_instance_id="agent-instance-test"),
+        )
+        self.enqueued: list[tuple[str, str]] = []
+
+    def enqueue(self, value: str, *, priority: str) -> str:
+        self.enqueued.append((value, priority))
+        return f"enqueue-{len(self.enqueued)}"
+
+
+class _Outputs:
+    def __init__(self) -> None:
+        self.release_calls = 0
+
+    async def release(self, **kwargs: Any) -> None:
+        del kwargs
+        self.release_calls += 1
+
+
+class _Processes:
+    def __init__(
+        self,
+        *,
+        binding_version: int = 1,
+        rebind_error: str | None = None,
+        terminal_on_start: bool = False,
+    ) -> None:
+        self.identity = ProcessIdentity(
+            provider_type="test",
+            environment_id="environment-1",
+            generation="generation-1",
+            process_id="provider-process-1",
+        )
+        self.binding_version = binding_version
+        self.handle = self._new_handle()
+        self.rebind_error = rebind_error
+        self.terminal_on_start = terminal_on_start
+        self.completed = terminal_on_start
+        self.completion = asyncio.Event()
+        if terminal_on_start:
+            self.completion.set()
+        self.rebind_identities: list[ProcessIdentity] = []
+        self.kill_calls = 0
+        self.release_calls = 0
+        self.wait_started = asyncio.Event()
+
+    def _new_handle(self) -> BoundProcessHandle:
+        return BoundProcessHandle(
+            binding_id="binding-1",
+            binding_version=self.binding_version,
+            identity=self.identity,
+            handle=OpaqueProcessHandle._from_payload(f"bound-{self.binding_version}"),
+            observed_generation=self.identity.generation,
+        )
+
+    def refresh_binding(self) -> None:
+        self.binding_version += 1
+        self.handle = self._new_handle()
+
+    @staticmethod
+    def _receipt(binding_version: int = 1) -> EnvironmentOperationReceipt:
+        return EnvironmentOperationReceipt(
+            binding_id="binding-1",
+            binding_version=binding_version,
+            observed_generation="generation-1",
+            operation_id="operation-1",
+            stage="completed",
+            outcome="succeeded",
+        )
+
+    def info(self) -> ProcessInfo:
+        data = b"ready\n"
+        terminal = self.completed
+        stdout = EnvironmentOutputCapture(
+            kind="inline",
+            producer_complete=terminal,
+            content_complete=True,
+            produced_bytes=len(data),
+            captured_bytes=len(data),
+            dropped_bytes=0,
+            inline=data,
+            available_end=len(data),
+        )
+        stderr = EnvironmentOutputCapture(
+            kind="empty",
+            producer_complete=terminal,
+            content_complete=True,
+            produced_bytes=0,
+            captured_bytes=0,
+            dropped_bytes=0,
+        )
+        return ProcessInfo(
+            handle=self.handle,
+            status=ProcessStatus(
+                phase="exited" if terminal else "running",
+                termination_reason="exit" if terminal else None,
+                exit_code=0 if terminal else None,
+                cleanup="complete" if terminal else "pending",
+            ),
+            stdin_open=not terminal,
+            output=ProcessOutputSnapshot(stdout=stdout, stderr=stderr),
+        )
+
+    async def start(self, request: CommandRequest, *, alias: str | None = None) -> ProcessStartResult:
+        del request, alias
+        return ProcessStartResult(process=self.info(), receipt=self._receipt(self.binding_version))
+
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo:
+        del output_policy
+        self.rebind_identities.append(identity)
+        if self.rebind_error is not None:
+            raise EnvironmentError("rebind failed", code=self.rebind_error)
+        assert identity == self.identity
+        return self.info()
+
+    async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
+        if handle != self.handle:
+            raise EnvironmentError("stale handle", code="environment_stale_binding")
+        return self.info()
+
+    async def wait(
+        self,
+        handle: BoundProcessHandle,
+        *,
+        condition: str,
+        timeout_seconds: float,
+    ) -> ProcessInfo:
+        del condition, timeout_seconds
+        if handle != self.handle:
+            raise EnvironmentError("stale handle", code="environment_stale_binding")
+        self.wait_started.set()
+        await self.completion.wait()
+        self.completed = True
+        return self.info()
+
+    async def kill(self, handle: BoundProcessHandle) -> ProcessControlResult:
+        assert handle == self.handle
+        self.kill_calls += 1
+        self.completed = True
+        self.completion.set()
+        return ProcessControlResult(process=self.info(), receipt=self._receipt(self.binding_version))
+
+    async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
+        assert handle == self.handle
+        self.release_calls += 1
+        return self._receipt(self.binding_version)
+
+
+class _UnavailableProcesses(_Processes):
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo:
+        del identity, output_policy
+        raise EnvironmentError(
+            "environment is not attached",
+            code="environment_selection_invalid",
+            retry_hint="dependency_change",
+        )
+
+
+def _request() -> CommandRequest:
+    return CommandRequest(
+        command=ShellCommand(profile_id="default", script="sleep 1"),
+        keep_stdin_open=True,
+        output_policy=EnvironmentOutputPolicy(
+            max_inline_bytes=64,
+            max_output_bytes=1024,
+            overflow="retain",
+        ),
+    )
+
+
+def _manager(
+    processes: _Processes,
+    *,
+    outputs: _Outputs | None = None,
+    hooks: tuple[Any, ...] = (),
+) -> ProcessManager:
+    return ProcessManager(
+        processes=cast(Any, processes),
+        outputs=cast(Any, outputs or _Outputs()),
+        max_reference_entries=4,
+        process_event_hooks=hooks,
+    )
+
+
+async def _stored_state(state: AgentContextState) -> ProcessManagerState:
+    snapshot = await state.snapshot()
+    entry = snapshot.entries[PROCESS_STATE_ID]
+    return ProcessManagerState.model_validate(entry.data)
+
+
+async def _seed_running_process(state: AgentContextState) -> tuple[_Processes, ProcessManager]:
+    processes = _Processes()
+    manager = _manager(processes)
+    run = _RunContext(state)
+    async with manager.active_run(cast(Any, run)):
+        started = await manager.start(_request(), alias=None)
+        assert started["process_id"] == "process-1"
+    return processes, manager
+
+
+async def test_process_mapping_and_output_offsets_survive_agent_state_snapshot() -> None:
+    state = AgentContextState()
+    processes, manager = await _seed_running_process(state)
+
+    stored = await _stored_state(state)
+
+    assert stored.next_sequence == 2
+    assert stored.processes["process-1"].identity == processes.identity
+    assert stored.processes["process-1"].stdout_offset == len(b"ready\n")
+    assert stored.processes["process-1"].stderr_offset == 0
+    await manager.close()
+
+
+async def test_restored_process_rebinds_to_a_fresh_binding_without_alias_retargeting() -> None:
+    state = AgentContextState()
+    original, first_manager = await _seed_running_process(state)
+    await first_manager.close()
+    restored = _Processes(binding_version=2)
+    second_manager = _manager(restored)
+    run = _RunContext(state)
+
+    async with second_manager.active_run(cast(Any, run)):
+        result = await second_manager.status(cursor=0, limit=10)
+
+    assert result["processes"][0]["ok"] is True
+    assert restored.rebind_identities
+    assert all(identity == original.identity for identity in restored.rebind_identities)
+    stored = await _stored_state(state)
+    assert stored.processes["process-1"].binding_id == "binding-1"
+    assert stored.processes["process-1"].backend_lost is False
+    await second_manager.close()
+
+
+async def test_unattached_environment_is_unavailable_without_deleting_process_state() -> None:
+    state = AgentContextState()
+    _, first_manager = await _seed_running_process(state)
+    await first_manager.close()
+    second_manager = _manager(_UnavailableProcesses())
+    run = _RunContext(state)
+
+    async with second_manager.active_run(cast(Any, run)):
+        result = await second_manager.status(cursor=0, limit=10)
+
+    assert result["processes"][0] == {
+        "process_id": "process-1",
+        "ok": False,
+        "error": {"code": "environment_selection_invalid", "retry_hint": "dependency_change"},
+    }
+    stored = await _stored_state(state)
+    assert stored.processes["process-1"].backend_lost is False
+    await second_manager.close()
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    ["environment_not_found", "environment_process_generation_mismatch"],
 )
-_PROCESS_EXECUTABLE = Path(sys.executable).resolve()
+async def test_missing_process_or_changed_generation_is_lazy_corrected_to_backend_lost(
+    error_code: str,
+) -> None:
+    state = AgentContextState()
+    _, first_manager = await _seed_running_process(state)
+    await first_manager.close()
+    second_manager = _manager(_Processes(rebind_error=error_code))
+    run = _RunContext(state)
+
+    async with second_manager.active_run(cast(Any, run)):
+        result = await second_manager.status(cursor=0, limit=10)
+
+    process = result["processes"][0]
+    assert process["ok"] is True
+    assert process["status"]["phase"] == "failed"
+    assert process["status"]["termination_reason"] == "backend_lost"
+    stored = await _stored_state(state)
+    assert stored.processes["process-1"].backend_lost is True
+    await second_manager.close()
 
 
-def _configuration(*, max_reference_entries: int = 64) -> DynamicEnvironmentConfiguration:
-    return DynamicEnvironmentConfiguration(
-        max_reference_entries=max_reference_entries,
-    )
+async def test_rebind_topology_race_preserves_process_state_for_retry() -> None:
+    state = AgentContextState()
+    _, first_manager = await _seed_running_process(state)
+    await first_manager.close()
+    second_manager = _manager(_Processes(rebind_error="environment_stale_binding"))
+    run = _RunContext(state)
+
+    async with second_manager.active_run(cast(Any, run)):
+        result = await second_manager.status(cursor=0, limit=10)
+
+    assert result["processes"][0] == {
+        "process_id": "process-1",
+        "ok": False,
+        "error": {"code": "environment_stale_binding", "retry_hint": "none"},
+    }
+    stored = await _stored_state(state)
+    assert stored.processes["process-1"].backend_lost is False
+    await second_manager.close()
 
 
-def _local_binding(root: Path):
-    provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="monitored-process-test",
-            root=DirectLocalRootConfiguration(path=root),
-            allowed_executables=frozenset({_PROCESS_EXECUTABLE}),
+async def test_turn_observer_waits_on_real_process_and_enqueues_completion_and_host_hook() -> None:
+    state = AgentContextState()
+    processes = _Processes()
+    hook_events: list[ProcessEvent] = []
+    hook_called = asyncio.Event()
+
+    async def hook(event: ProcessEvent) -> None:
+        hook_events.append(event)
+        hook_called.set()
+
+    manager = _manager(processes, hooks=(hook,))
+    run = _RunContext(state)
+    async with manager.active_run(cast(Any, run)):
+        await manager.start(_request(), alias=None)
+        await asyncio.wait_for(processes.wait_started.wait(), timeout=1)
+        processes.completed = True
+        processes.completion.set()
+        await asyncio.wait_for(hook_called.wait(), timeout=1)
+
+    assert hook_events == [
+        ProcessEvent(
+            kind="completion",
+            thread_id="thread-test",
+            run_id="run-test",
+            agent_instance_id="agent-instance-test",
+            process_id="process-1",
+            identity=processes.identity,
+            status=processes.info().status,
         )
-    )
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-1",
-                    binding_revision=1,
-                    alias="local",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
-                    provider_binding=provider,
-                ),
-            ),
-            default_binding_id="binding-1",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
-        state_limits=EnvironmentStateLimits(),
-    )
+    ]
+    assert len(run.enqueued) == 1
+    assert "process-1 completed" in run.enqueued[0][0]
+    assert run.enqueued[0][1] == "asap"
+    await manager.close()
 
 
-class _Allow:
-    async def __call__(self, invocation, metadata, *, context):
-        del invocation, metadata, context
-        return InvocationPolicyDecision.allow()
+async def test_close_cancels_turn_observation_without_killing_provider_process() -> None:
+    state = AgentContextState()
+    processes = _Processes()
+    manager = _manager(processes)
+    run = _RunContext(state)
+
+    async with manager.active_run(cast(Any, run)):
+        await manager.start(_request(), alias=None)
+        await asyncio.wait_for(processes.wait_started.wait(), timeout=1)
+        await manager.close()
+        await manager.close()
+
+    assert processes.kill_calls == 0
+    assert processes.release_calls == 0
 
 
-class _BlockingMonitor:
-    def __init__(self) -> None:
-        self.started = asyncio.Event()
-        self.process: Any = None
-        self.environment: Any = None
-        self.closed = False
-        self.phase_at_close: str | None = None
+async def test_turn_exit_cancels_observation_until_the_next_turn() -> None:
+    state = AgentContextState()
+    processes = _Processes()
+    hook_events: list[ProcessEvent] = []
 
-    async def register(self, *, process, reference, environment) -> None:
-        del reference
-        self.process = process
-        self.environment = environment
-        self.started.set()
-        await asyncio.Future()
+    async def hook(event: ProcessEvent) -> None:
+        hook_events.append(event)
 
-    async def pending(self):
-        return ()
+    manager = _manager(processes, hooks=(hook,))
+    run = _RunContext(state)
+    async with manager.active_run(cast(Any, run)):
+        await manager.start(_request(), alias=None)
+        await asyncio.wait_for(processes.wait_started.wait(), timeout=1)
 
-    async def acknowledge(self, notification) -> None:
-        del notification
+    processes.completed = True
+    processes.completion.set()
+    await asyncio.sleep(0)
+    assert hook_events == []
+    assert run.enqueued == []
 
-    async def close(self) -> None:
-        self.closed = True
-        if self.process is not None:
-            info = await self.environment.processes.inspect(self.process)
-            self.phase_at_close = info.status.phase
-
-
-class _ImmediateMonitor:
-    def __init__(self) -> None:
-        self.notifications: list[MonitoredProcessNotification] = []
-        self.registered: list[str] = []
-        self.acknowledged: list[str] = []
-        self.closed = False
-        self.environment: Any = None
-
-    async def register(self, *, process, reference, environment) -> None:
-        del process
-        self.environment = environment
-        self.registered.append(reference)
-        self.notifications.append(
-            MonitoredProcessNotification(
-                notification_id="notification-1",
-                kind="output",
-                process=reference,
-                phase="running",
-                produced_bytes=1,
-            )
-        )
-
-    async def pending(self):
-        return tuple(self.notifications)
-
-    async def acknowledge(self, notification) -> None:
-        if notification in self.notifications:
-            self.notifications.remove(notification)
-            self.acknowledged.append(notification.notification_id)
-
-    async def close(self) -> None:
-        # Cleanup must run before the Environment lifecycle exits.
-        assert self.environment is not None
-        assert self.environment.topology.topology_version == 1
-        self.closed = True
-
-
-@requires_posix_process_groups
-async def test_monitored_process_shares_process_reference_status_and_accepted_delivery(tmp_path: Path) -> None:
-    monitor = _ImmediateMonitor()
-    calls: list[list[ModelMessage]] = []
-    process_reference: str | None = None
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        nonlocal process_reference
-        calls.append(messages)
-        returns = [
-            part.content
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
-        ]
-        if not returns:
-            assert "environment_process_monitor" in {tool.name for tool in info.function_tools}
-            yield {
-                0: DeltaToolCall(
-                    name="environment_process_monitor",
-                    json_args=json.dumps(
-                        {
-                            "command": {
-                                "kind": "argv",
-                                "executable": str(_PROCESS_EXECUTABLE),
-                                "arguments": ["-c", "print('ready')"],
-                            }
-                        }
-                    ),
-                    tool_call_id="monitor-1",
-                )
-            }
-        elif len(returns) == 1:
-            process_reference = returns[0]["process"]
-            assert process_reference == "process-1"
-            assert "monitored-process-notifications" in _user_text(messages)
-            assert "process-1 has new buffered output" in _user_text(messages)
-            yield {
-                0: DeltaToolCall(
-                    name="environment_process_status",
-                    json_args="{}",
-                    tool_call_id="status-1",
-                )
-            }
-        else:
-            status_result = returns[-1]
-            statuses = status_result["processes"]
-            assert statuses[0]["process"] == process_reference
-            assert "stdout" not in statuses[0]
-            assert "produced_bytes" in statuses[0]
-            assert status_result["next_cursor"] is None
-            assert status_result["truncated"] is False
-            yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(
-            DynamicEnvironmentCapability(_configuration()),
-            MonitoredProcessCapability(),
-        ),
-    )
-    result = await executable.run(
-        "start",
-        bindings=RunBindings.embedded(
-            environment=_local_binding(tmp_path),
-            capabilities=(
-                InvocationPolicyCapability(evaluator=_Allow(), max_dispatch_retries=0),
-                MonitoredProcessRunCapability(monitor=monitor),
-            ),
-        ),
-    )
-
-    assert result.output_or_raise() == "done"
-    assert process_reference == "process-1"
-    assert monitor.registered == ["process-1"]
-    assert monitor.acknowledged == ["notification-1"]
-    assert monitor.closed is True
-    assert len(calls) == 3
-
-
-async def test_monitored_process_requires_fresh_host_attachment_before_model_request() -> None:
-    model_called = False
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal model_called
-        del messages, info
-        model_called = True
-        yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()), MonitoredProcessCapability()),
-    )
-    with pytest.raises(Exception) as exc_info:
-        await executable.run("start", bindings=RunBindings.embedded())
-
-    assert getattr(exc_info.value, "code", None) == "monitored_process_binding_missing"
-    assert model_called is False
-
-
-@requires_posix_process_groups
-async def test_in_process_monitor_detects_fast_completion_without_losing_record(tmp_path: Path) -> None:
-    binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.embedded(environment=binding)
-    ready = asyncio.Event()
-    observed: list[MonitoredProcessNotification] = []
-
-    def on_ready(notification: MonitoredProcessNotification) -> None:
-        observed.append(notification)
-        if notification.kind == "completion":
-            ready.set()
-
-    monitor = InProcessMonitoredProcessMonitor(
-        poll_interval_seconds=0.01,
-        on_ready=on_ready,
-    )
-    async with binding.bind(run_id="run-monitor", instance=run_bindings.instance) as environment:
-        await environment.activate()
-        started = await environment.processes.start(
-            CommandRequest(
-                command=ArgvCommand(
-                    executable=str(_PROCESS_EXECUTABLE),
-                    arguments=("-c", "print('done')"),
-                ),
-                limits=CommandLimits(wall_time_seconds=5),
-                output_policy=EnvironmentOutputPolicy(
-                    max_inline_bytes=1024,
-                    max_output_bytes=4096,
-                    overflow="retain",
-                ),
-            )
-        )
-        await monitor.register(
-            process=started.process.handle,
-            reference="process-1",
-            environment=environment,
-        )
-        await asyncio.wait_for(ready.wait(), timeout=2)
-        pending = await monitor.pending()
-        assert len(pending) == 1
-        assert pending[0].kind == "completion"
-        assert pending[0].process == "process-1"
-        await monitor.close()
-
-    # The bounded record remains available for Host transfer after live observation closes.
-    pending_after_close = await monitor.pending()
-    assert len(pending_after_close) == 1
-    assert pending_after_close[0].kind == "completion"
-    assert pending_after_close[0].process is None
-    assert "previous logical run" in (pending_after_close[0].message or "")
-    assert any(item.kind == "completion" for item in observed)
-
-
-@requires_posix_process_groups
-async def test_in_process_monitor_retires_acknowledged_terminal_records(tmp_path: Path) -> None:
-    binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.embedded(environment=binding)
-    monitor = InProcessMonitoredProcessMonitor(
-        poll_interval_seconds=0.01,
-        max_pending=1,
-        max_monitored=1,
-    )
-
-    async with binding.bind(run_id="run-monitor-retire", instance=run_bindings.instance) as environment:
-        await environment.activate()
-        for sequence in (1, 2):
-            started = await environment.processes.start(
-                CommandRequest(
-                    command=ArgvCommand(
-                        executable=str(_PROCESS_EXECUTABLE),
-                        arguments=("-c", f"print({sequence})"),
-                    ),
-                    limits=CommandLimits(wall_time_seconds=5),
-                    output_policy=EnvironmentOutputPolicy(
-                        max_inline_bytes=1024,
-                        max_output_bytes=4096,
-                        overflow="retain",
-                    ),
-                )
-            )
-            await monitor.register(
-                process=started.process.handle,
-                reference=f"process-{sequence}",
-                environment=environment,
-            )
-            for _ in range(200):
-                pending = await monitor.pending()
-                if pending and pending[0].kind == "completion":
-                    break
-                await asyncio.sleep(0.01)
-            else:
-                pytest.fail("completion was not retained")
-            await monitor.acknowledge(pending[0])
-            assert await monitor.pending() == ()
-
-        await monitor.close()
-
-    assert await monitor.pending() == ()
-
-
-@requires_posix_process_groups
-async def test_in_process_monitor_backpressures_before_pending_completion_can_be_lost(tmp_path: Path) -> None:
-    binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.embedded(environment=binding)
-    monitor = InProcessMonitoredProcessMonitor(
-        poll_interval_seconds=0.01,
-        max_pending=1,
-        max_monitored=2,
-    )
-
-    async with binding.bind(run_id="run-monitor-capacity", instance=run_bindings.instance) as environment:
-        await environment.activate()
-        first = await environment.processes.start(
-            CommandRequest(
-                command=ArgvCommand(
-                    executable=str(_PROCESS_EXECUTABLE),
-                    arguments=("-c", "print('first')"),
-                ),
-                limits=CommandLimits(wall_time_seconds=5),
-                output_policy=EnvironmentOutputPolicy(
-                    max_inline_bytes=1024,
-                    max_output_bytes=4096,
-                    overflow="retain",
-                ),
-            )
-        )
-        second = await environment.processes.start(
-            CommandRequest(
-                command=ArgvCommand(
-                    executable=str(_PROCESS_EXECUTABLE),
-                    arguments=("-c", "print('second')"),
-                ),
-                limits=CommandLimits(wall_time_seconds=5),
-                output_policy=EnvironmentOutputPolicy(
-                    max_inline_bytes=1024,
-                    max_output_bytes=4096,
-                    overflow="retain",
-                ),
-            )
-        )
-        await monitor.register(
-            process=first.process.handle,
-            reference="process-1",
-            environment=environment,
-        )
-        with pytest.raises(RuntimeError, match="cannot retain"):
-            await monitor.register(
-                process=second.process.handle,
-                reference="process-2",
-                environment=environment,
-            )
-        for _ in range(200):
-            pending = await monitor.pending()
-            if pending and pending[0].kind == "completion":
+    async with manager.active_run(cast(Any, run)):
+        for _ in range(10):
+            if hook_events:
                 break
-            await asyncio.sleep(0.01)
-        else:
-            pytest.fail("first completion was not retained")
+            await asyncio.sleep(0)
 
-        assert len(pending) == 1
-        assert pending[0].process == "process-1"
-        await monitor.close()
+    assert len(hook_events) == 1
+    assert len(run.enqueued) == 1
+    await manager.close()
 
 
-async def test_monitored_process_rejects_orphan_run_attachment_before_model_request() -> None:
-    model_called = False
+async def test_stale_bound_handle_rebinds_before_marking_process_lost() -> None:
+    state = AgentContextState()
+    processes = _Processes()
+    manager = _manager(processes)
+    run = _RunContext(state)
 
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        nonlocal model_called
-        del messages, info
-        model_called = True
-        yield "done"
+    async with manager.active_run(cast(Any, run)):
+        await manager.start(_request(), alias=None)
+        processes.refresh_binding()
+        result = await manager.status(cursor=0, limit=10)
 
-    monitor = _ImmediateMonitor()
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-    )
-
-    with pytest.raises(Exception) as exc_info:
-        await executable.run(
-            "start",
-            bindings=RunBindings.embedded(capabilities=(MonitoredProcessRunCapability(monitor=monitor),)),
-        )
-
-    assert getattr(exc_info.value, "code", None) == "monitored_process_owner_missing"
-    assert model_called is False
+    assert result["processes"][0]["ok"] is True
+    assert processes.rebind_identities
+    stored = await _stored_state(state)
+    assert stored.processes["process-1"].backend_lost is False
+    await manager.close()
 
 
-@requires_posix_process_groups
-async def test_in_process_monitor_close_publishes_gap_for_running_process(tmp_path: Path) -> None:
-    binding = _local_binding(tmp_path)
-    run_bindings = RunBindings.embedded(environment=binding)
-    monitor = InProcessMonitoredProcessMonitor(poll_interval_seconds=1)
+async def test_terminal_start_is_released_only_after_initial_output_is_projected() -> None:
+    state = AgentContextState()
+    processes = _Processes(terminal_on_start=True)
+    manager = _manager(processes)
+    run = _RunContext(state)
 
-    async with binding.bind(run_id="run-monitor-gap", instance=run_bindings.instance) as environment:
-        await environment.activate()
-        started = await environment.processes.start(
-            CommandRequest(
-                command=ArgvCommand(
-                    executable=str(_PROCESS_EXECUTABLE),
-                    arguments=("-c", "import time; time.sleep(10)"),
-                ),
-                limits=CommandLimits(wall_time_seconds=20),
-                output_policy=EnvironmentOutputPolicy(
-                    max_inline_bytes=1024,
-                    max_output_bytes=4096,
-                    overflow="retain",
-                ),
+    async with manager.active_run(cast(Any, run)):
+        started = await manager.start(_request(), alias=None)
+
+    assert started["status"]["phase"] == "exited"
+    assert started["stdout"]["text"] == "ready\n"
+    assert processes.release_calls == 0
+    assert (await _stored_state(state)).processes.keys() == {"process-1"}
+
+    await manager.close()
+
+    assert processes.release_calls == 1
+    assert (await _stored_state(state)).processes == {}
+
+
+async def test_terminal_release_detaches_process_before_output_and_retries_partial_cleanup() -> None:
+    order: list[str] = []
+
+    class RetainedProcesses(_Processes):
+        def info(self) -> ProcessInfo:
+            info = super().info()
+            reference = BoundOutputReference(
+                binding_id="binding-1",
+                binding_version=self.binding_version,
+                observed_generation=self.identity.generation,
+                reference=OpaqueOutputReference._from_payload("stdout-1"),
             )
-        )
-        await monitor.register(
-            process=started.process.handle,
-            reference="process-1",
-            environment=environment,
-        )
-        await monitor.close()
-        pending = await monitor.pending()
+            stdout = info.output.stdout.model_copy(
+                update={
+                    "kind": "retained",
+                    "inline": None,
+                    "preview": (EnvironmentOutputSegment(start_offset=0, data=b"ready\n"),),
+                    "reference": reference,
+                }
+            )
+            return info.model_copy(update={"output": info.output.model_copy(update={"stdout": stdout})})
 
-        assert len(pending) == 1
-        assert pending[0].kind == "gap"
-        assert pending[0].process is None
-        assert pending[0].phase in {"starting", "running"}
-        assert "previous logical run" in (pending[0].message or "")
+        async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
+            assert handle == self.handle
+            order.append("process")
+            self.release_calls += 1
+            if self.release_calls > 1:
+                raise EnvironmentError("already released", code="environment_not_found")
+            return self._receipt(self.binding_version)
 
-
-@requires_posix_process_groups
-async def test_in_process_monitor_surfaces_observer_failure_as_pending_gap() -> None:
-    class _Processes:
+    class RetryOutputs(_Outputs):
         def __init__(self) -> None:
-            self.calls = 0
+            super().__init__()
+            self.failures = 1
 
-        async def inspect(self, process):
-            del process
-            self.calls += 1
-            if self.calls == 1:
-                return initial
-            raise RuntimeError("observer failed")
+        async def release(self, **kwargs: Any) -> None:
+            del kwargs
+            order.append("output")
+            if self.failures:
+                self.failures -= 1
+                raise EnvironmentError("temporary output cleanup failure", code="environment_provider_failure")
+            self.release_calls += 1
 
-    class _Environment:
-        processes = _Processes()
+    state = AgentContextState()
+    processes = RetainedProcesses(terminal_on_start=True)
+    outputs = RetryOutputs()
+    manager = _manager(processes, outputs=outputs)
+    run = _RunContext(state)
 
-    binding = _local_binding(Path.cwd())
-    run_bindings = RunBindings.embedded(environment=binding)
-    async with binding.bind(run_id="run-monitor-failure", instance=run_bindings.instance) as environment:
-        await environment.activate()
-        started = await environment.processes.start(
-            CommandRequest(
-                command=ArgvCommand(
-                    executable=str(_PROCESS_EXECUTABLE),
-                    arguments=("-c", "import time; time.sleep(10)"),
-                ),
-                limits=CommandLimits(wall_time_seconds=20),
-                output_policy=EnvironmentOutputPolicy(
-                    max_inline_bytes=1024,
-                    max_output_bytes=4096,
-                    overflow="retain",
-                ),
-            )
-        )
-        initial = started.process
-        monitor = InProcessMonitoredProcessMonitor(poll_interval_seconds=0.01)
-        await monitor.register(
-            process=initial.handle,
-            reference="process-1",
-            environment=_Environment(),  # type: ignore[arg-type]
-        )
-        for _ in range(100):
-            pending = await monitor.pending()
-            if pending and pending[0].kind == "gap":
-                break
-            await asyncio.sleep(0.01)
-        else:
-            pytest.fail("observer failure was not published")
+    async with manager.active_run(cast(Any, run)):
+        started = await manager.start(_request(), alias=None)
+        assert started["stdout"]["text"] == "ready\n"
+        assert (await _stored_state(state)).processes.keys() == {"process-1"}
 
-        assert "RuntimeError" in (pending[0].message or "")
-        await monitor.close()
+        first_status = await manager.status(cursor=0, limit=10)
+        status = await manager.status(cursor=0, limit=10)
 
-
-@requires_posix_process_groups
-async def test_process_monitor_cancellation_finishes_kill_before_reraising(tmp_path: Path) -> None:
-    monitor = _BlockingMonitor()
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        del messages, info
-        yield {
-            0: DeltaToolCall(
-                name="environment_process_monitor",
-                json_args=json.dumps(
-                    {
-                        "command": {
-                            "kind": "argv",
-                            "executable": str(_PROCESS_EXECUTABLE),
-                            "arguments": ["-c", "import time; time.sleep(10)"],
-                        }
-                    }
-                ),
-                tool_call_id="monitor-cancel-1",
-            )
-        }
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()), MonitoredProcessCapability()),
-    )
-    run_task = asyncio.create_task(
-        executable.run(
-            "start",
-            bindings=RunBindings.embedded(
-                environment=_local_binding(tmp_path),
-                capabilities=(
-                    InvocationPolicyCapability(evaluator=_Allow(), max_dispatch_retries=0),
-                    MonitoredProcessRunCapability(monitor=monitor),
-                ),
-            ),
-        )
-    )
-    await asyncio.wait_for(monitor.started.wait(), timeout=2)
-    run_task.cancel()
-    run_task.cancel()
-
-    with pytest.raises(asyncio.CancelledError):
-        await run_task
-
-    assert monitor.closed is True
-    assert monitor.phase_at_close in {"exited", "signaled", "cancelled", "failed"}
-
-
-def _user_text(messages: list[ModelMessage]) -> str:
-    return "\n".join(
-        part.content
-        for message in messages
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str)
-    )
+    assert first_status["processes"][0]["error"]["code"] == "environment_cleanup_pending"
+    assert status["processes"] == []
+    assert order == ["process", "output", "process", "output"]
+    assert outputs.release_calls == 1
+    assert (await _stored_state(state)).processes == {}
+    await manager.close()

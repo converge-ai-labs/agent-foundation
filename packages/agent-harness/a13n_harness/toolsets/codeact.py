@@ -19,6 +19,7 @@ from pydantic import Field, JsonValue, ValidationError
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UserError
 from pydantic_ai.messages import BinaryContent, InstructionPart, ToolCallPart, UserContent
+from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset, ToolsetTool, WrapperToolset
 from pydantic_ai.usage import RunUsage
 from pydantic_monty import (
@@ -450,10 +451,6 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             await budget.add_bytes(argument_bytes, label="nested arguments")
             call_id = f"{execution_id}:{ordinal}"
             call = ToolCallPart(tool_name=canonical_name, args=kwargs, tool_call_id=call_id)
-            try:
-                validated = await manager.validate_tool_call(call, wrap_validation_errors=False)
-            except ValidationError as exc:
-                raise TypeError(_format_validation_error(exc)) from None
             record = _CallRecord(
                 call_id=call_id,
                 ordinal=ordinal,
@@ -461,26 +458,45 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 sandbox_name=sandbox_name,
                 argument_bytes=argument_bytes,
             )
-            await budget.mark_started(record)
-            await _emit(
-                ctx,
-                CodeActToolCallStartedPayload(
-                    execution_id=execution_id,
-                    nested_tool_call_id=call_id,
-                    ordinal=ordinal,
-                    canonical_tool_name=canonical_name,
-                    sandbox_tool_name=sandbox_name,
-                ),
-            )
-            nested_started = time.monotonic()
+            nested_started: float | None = None
+
+            async def on_validate(args_valid: bool) -> None:
+                nonlocal nested_started
+                if not args_valid:
+                    return
+                await budget.mark_started(record)
+                await _emit(
+                    ctx,
+                    CodeActToolCallStartedPayload(
+                        execution_id=execution_id,
+                        nested_tool_call_id=call_id,
+                        ordinal=ordinal,
+                        canonical_tool_name=canonical_name,
+                        sandbox_tool_name=sandbox_name,
+                    ),
+                )
+                nested_started = time.monotonic()
+
+            denial: ToolDenied | None = None
             try:
-                result = await manager.execute_tool_call(validated, wrap_validation_errors=False)
-                result = await _unwrap_tool_return(result, ordinal=ordinal, budget=budget)
-                result_bytes = _bounded_json_size(result, self.config.max_output_bytes)
-                await budget.add_bytes(result_bytes, label="nested result")
-                record.result_bytes = result_bytes
-                record.outcome = "completed"
-                return result
+                result = await manager.handle_call(
+                    call,
+                    wrap_validation_errors=False,
+                    on_validate=on_validate,
+                )
+                if isinstance(result, ToolDenied):
+                    denial = result
+                    record.outcome = "deferred"
+                    record.error_type = type(result).__name__
+                else:
+                    result = await _unwrap_tool_return(result, ordinal=ordinal, budget=budget)
+                    result_bytes = _bounded_json_size(result, self.config.max_output_bytes)
+                    await budget.add_bytes(result_bytes, label="nested result")
+                    record.result_bytes = result_bytes
+                    record.outcome = "completed"
+                    return result
+            except ValidationError as exc:
+                raise TypeError(_format_validation_error(exc)) from None
             except (ApprovalRequired, CallDeferred) as exc:
                 record.outcome = "deferred"
                 record.error_type = type(exc).__name__
@@ -494,19 +510,23 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 record.error_type = type(exc).__name__
                 raise RuntimeError(f"Nested tool {canonical_name!r} failed with {type(exc).__name__}") from None
             finally:
-                record.duration_ms = max(0, round((time.monotonic() - nested_started) * 1000))
-                await _emit(
-                    ctx,
-                    CodeActToolCallCompletedPayload(
-                        execution_id=execution_id,
-                        nested_tool_call_id=call_id,
-                        outcome=cast(Any, record.outcome),
-                        duration_ms=record.duration_ms,
-                        value_bytes=record.result_bytes,
-                        error_type=record.error_type,
-                        side_effect_uncertain=record.outcome in {"failed", "cancelled", "deferred"},
-                    ),
-                )
+                if nested_started is not None:
+                    record.duration_ms = max(0, round((time.monotonic() - nested_started) * 1000))
+                    await _emit(
+                        ctx,
+                        CodeActToolCallCompletedPayload(
+                            execution_id=execution_id,
+                            nested_tool_call_id=call_id,
+                            outcome=cast(Any, record.outcome),
+                            duration_ms=record.duration_ms,
+                            value_bytes=record.result_bytes,
+                            error_type=record.error_type,
+                            side_effect_uncertain=record.outcome in {"failed", "cancelled", "deferred"},
+                        ),
+                    )
+            if denial is not None:
+                raise RuntimeError(f"Tool {canonical_name!r} was denied: {denial.message}")
+            raise AssertionError("CodeAct nested dispatch produced no result")
 
         sequential_names = {name for name, definition in catalog.definitions.items() if definition.sequential}
         global_sequential = manager.get_parallel_execution_mode() == "sequential"

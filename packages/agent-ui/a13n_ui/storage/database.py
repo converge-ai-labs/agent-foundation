@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 from alembic.util.exc import CommandError
-from anyio import fail_after, move_on_after, to_thread
+from anyio import CancelScope, fail_after, move_on_after, to_thread
+from anyio.lowlevel import checkpoint_if_cancelled
 from sqlalchemy import URL, event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -74,47 +75,23 @@ async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator
 
 
 @asynccontextmanager
-async def short_session(
-    factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5.0
-) -> AsyncGenerator[AsyncSession]:
-    """Yield one session and close it through bounded shielded cleanup."""
+async def short_session(factory: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession]:
+    """Own one short session and return its connection before cancellation propagates."""
 
-    session = factory()
-    active_error: BaseException | None = None
-    try:
-        yield session
-    except BaseException as error:
-        active_error = error
-        raise
-    finally:
-        try:
-            with move_on_after(cleanup_timeout_seconds, shield=True):
-                await session.close()
-        except Exception as close_error:
-            if active_error is None:
-                raise
-            active_error.add_note(f"session close cleanup failed with {type(close_error).__name__}")
+    await checkpoint_if_cancelled()
+    with CancelScope(shield=True):
+        async with factory() as session:
+            yield session
 
 
 @asynccontextmanager
-async def transaction(
-    factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5.0
-) -> AsyncGenerator[AsyncSession]:
-    """Own one short transaction without allowing it to escape the context."""
+async def transaction(factory: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession]:
+    """Own one short transaction and its session through commit or rollback."""
 
-    async with short_session(factory, cleanup_timeout_seconds=cleanup_timeout_seconds) as session:
-        database_transaction = await session.begin()
-        try:
+    await checkpoint_if_cancelled()
+    with CancelScope(shield=True):
+        async with factory.begin() as session:
             yield session
-        except BaseException as error:
-            try:
-                with move_on_after(cleanup_timeout_seconds, shield=True):
-                    await database_transaction.rollback()
-            except Exception as rollback_error:
-                error.add_note(f"rollback cleanup failed with {type(rollback_error).__name__}")
-            raise
-        else:
-            await database_transaction.commit()
 
 
 async def check_database(database: Database, *, timeout_seconds: float = 3.0) -> None:

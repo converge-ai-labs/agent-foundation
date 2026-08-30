@@ -17,7 +17,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
-from a13n_harness.observation import observe_operation
+from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from a13n_harness.models import RunModelResolver
     from a13n_harness.plugins import BoundPluginContext
     from a13n_harness.pricing import AbstractModelCostCapability
-    from a13n_harness.spec import ModelConfiguration
+    from a13n_harness.spec import HarnessModelCharacteristics
     from a13n_harness.tools.deferred import DeferredToolResume
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord, RunUsageLedger, UsageRecord
 
@@ -73,6 +73,7 @@ def _copy_subagent_declaration(declaration: SubagentDefinition) -> SubagentDefin
         description=declaration.description,
         agent=declaration.agent,
         context=declaration.context,
+        identity=declaration.identity,
         usage_limits=declaration.usage_limits,
     )
 
@@ -125,6 +126,7 @@ class RunBindings:
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
+    observation: HarnessObservationContext | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
         repr=False,
@@ -134,6 +136,8 @@ class RunBindings:
     def __post_init__(self) -> None:
         if self.toolset_instructions is not None and not isinstance(self.toolset_instructions, bool):
             raise TypeError("toolset_instructions must be a boolean or None")
+        if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
+            raise TypeError("observation must be a HarnessObservationContext or None")
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "metadata", MappingProxyType(deepcopy(dict(self.metadata))))
 
@@ -148,6 +152,7 @@ class RunBindings:
         model_context: ModelContextMiddleware | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         metadata: Mapping[str, JsonValue] | None = None,
+        observation: HarnessObservationContext | None = None,
     ) -> RunBindings:
         """Create fresh trusted bindings for one embedded run."""
         instance_id = str(uuid4())
@@ -162,6 +167,7 @@ class RunBindings:
             model_context=model_context,
             capabilities=tuple(capabilities),
             metadata=metadata or {},
+            observation=observation,
         )
 
 
@@ -268,7 +274,8 @@ class AgentContext:
     state: AgentContextState
     environment: Environment
     model_resolver: RunModelResolver | None
-    model_configuration: ModelConfiguration | None
+    model_characteristics: HarnessModelCharacteristics | None
+    _model_inference: RunModelResolver = field(repr=False, compare=False)
     toolset_instructions: bool
     _toolset_instructions_override: bool | None = field(repr=False, compare=False)
     plugins: BoundPluginContext
@@ -428,14 +435,13 @@ class AgentContext:
 
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope without persistence side effects."""
-        with observe_operation("state"):
-            return HarnessState(
-                schema_version="1",
-                thread_id=self.thread_id,
-                message_history=tuple(message_history),
-                agent_context_state=await self.state.snapshot(),
-                environment_state=await self.environment.export_state(),
-            )
+        return HarnessState(
+            schema_version="1",
+            thread_id=self.thread_id,
+            message_history=tuple(message_history),
+            agent_context_state=await self.state.snapshot(),
+            environment_state=await self.environment.export_state(),
+        )
 
 
 class _ToolResultSpillStore:

@@ -96,7 +96,7 @@ async def _run_extension_demo(
                 bindings=(
                     EnvironmentBindingRequest(
                         binding_id="workspace-1",
-                        binding_revision=1,
+                        binding_version=1,
                         alias="workspace",
                         permission_ceiling=EnvironmentPermissionSet(
                             operations=frozenset(

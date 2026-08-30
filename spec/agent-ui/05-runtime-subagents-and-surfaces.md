@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Agent UI has one surface-neutral application service, one foreground execution coordinator, and one process-local async-subagent service. The service is the only product boundary for configuration, composition, Environment lifecycle, Sessions, Runs, replay, and cleanup. TUI calls it directly in process. WebUI reaches the same typed commands and queries through a thin loopback HTTP/SSE adapter.
+Agent UI has one stable surface-neutral `AgentUiHost`, replaceable runtime Runners, one foreground execution coordinator, and one async-subagent service. The Host is the only product boundary for configuration, composition, Environment lifecycle, Sessions, Runs, replay, runtime selection, and cleanup. CLI calls it directly in the stable process. WebUI reaches the same typed commands and queries through a thin loopback HTTP/SSE adapter.
 
-The foreground coordinator consumes every root Harness stream exactly once. Agent UI does not enable Harness blocking inline delegation. Its own definition-selected async-subagent Capability reads the immutable `SubagentCollection` built by the Harness, while a fresh run Capability submits exact `BuiltSubagent` values to Host-owned jobs. The async-subagent service consumes every child Harness stream exactly once. Agent Stream Protocol converts every complete root and async-child stream once with distinct correlation.
+The stable Host owns durable acceptance, routing, persistence, and commit semantics. A selected runtime Runner owns process-local Harness, plugin, Model, Environment Provider, and observer behavior. The foreground coordinator consumes every root Runner stream exactly once. Agent UI does not enable Harness blocking inline delegation. Its own definition-selected async-subagent Capability reads the immutable `SubagentCollection` built by the Harness, while a fresh run Capability submits exact `BuiltSubagent` values to Host-owned jobs. The async-subagent service consumes every child Runner stream exactly once. Agent Stream Protocol converts every complete root and async-child stream once with distinct correlation.
 
 ## Boundaries
 
@@ -20,12 +20,15 @@ The foreground coordinator consumes every root Harness stream exactly once. Agen
 | Active Environment topology              | Harness                                                       | Adapts complete fresh attachment set into provider-neutral bindings                                      |
 | AG-UI conversion                         | Agent Stream Protocol                                         | One complete observer per root or async-child Run                                                        |
 | Session/state/event persistence          | Agent UI local store                                          | SQLite control facts and compressed immutable payload files                                              |
-| Web and terminal presentation            | Surface adapters                                              | Submit typed commands and consume safe query/event projections                                           |
+| Runtime process lifecycle                | Agent UI runtime-generation service                           | Starts, validates, promotes, drains, and stops replaceable Runner processes                              |
+| Durable acceptance and commit            | Stable `AgentUiHost`                                          | Owns routing, SQLite/object/event writes, fences, and terminal selection                                 |
+| Process-local execution                  | Selected runtime Runner                                       | Owns Harness/plugin/Model/Provider objects and streams; never owns Agent UI storage                      |
+| Web and terminal presentation            | Surface adapters                                              | Submit typed Host commands and consume safe query/event projections                                      |
 | Distributed durable execution            | Foundation Service                                            | Not emulated by local process tasks or storage                                                           |
 
 ## Application Service
 
-One `AgentUiApplication` owns the supervised lifetime of:
+One `AgentUiHost` owns the supervised stable lifetime of:
 
 - configuration and accepted-generation services;
 - product resource catalogs and editors;
@@ -38,12 +41,13 @@ One `AgentUiApplication` owns the supervised lifetime of:
 - foreground run coordinator;
 - async-subagent job, input, and delivery service;
 - retained/live event subscriptions;
-- Web or terminal surface adapter.
+- runtime-generation routing and Runner supervision;
+- Web or CLI surface adapter.
 
 Its public surface is grouped by semantic services rather than storage tables:
 
 ```python
-class AgentUiApplication(Protocol):
+class AgentUiHost(Protocol):
     configuration: ConfigurationApplicationService
     models: ModelApplicationService
     prompts: PromptApplicationService
@@ -54,41 +58,100 @@ class AgentUiApplication(Protocol):
     sessions: SessionApplicationService
     runs: RunApplicationService
     events: EventApplicationService
+    runtime: RuntimeGenerationApplicationService
 ```
 
-Commands carry stable resource selectors, expected revisions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, `EnvironmentProvider`, Environment attachment, credential, task, lock, or raw `HarnessState`.
+Commands carry stable resource selectors, expected versions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, `EnvironmentProvider`, Environment attachment, credential, task, lock, or raw `HarnessState`.
 
-The embedding Host constructs the application with one process-local `RunModelResolverFactory`, conceptually `Callable[[ResolvedAgentSnapshot], Awaitable[RunModelResolver]]`. Each attempted root or child Run invokes it with the exact pinned Agent snapshot and requires a fresh callable resolver before Harness dispatch. The default factory fails execution explicitly with `model_resolver_unavailable`; an invalid return fails with `model_resolver_invalid`. Configuration, Session, Environment, and replay operations remain available without a resolver, and neither the factory nor any returned resolver is persisted or reconstructed from ambient state.
+The runtime Runner constructs process-local Model resolvers and other execution collaborators from the exact Host-selected snapshot and fresh current authority before every attempted root or child Run. The default execution boundary fails explicitly with `model_resolver_unavailable`; an invalid collaborator fails before Harness dispatch. Configuration, Session, Environment, runtime-management, and replay operations remain available without a Model resolver, and no native resolver or credential is persisted or reconstructed from ambient state.
 
-All mutation and execution paths are available to both TUI and WebUI according to the same local-user policy. A surface cannot acquire extra authority by reading storage or calling runtime packages directly.
+All mutation and execution paths are available to both CLI and WebUI according to the same local-user policy. A surface cannot acquire extra authority by reading storage, calling runtime packages, or controlling the Runner supervisor directly.
 
 ## Application Lifetime
 
 ```mermaid
 sequenceDiagram
     participant CLI
-    participant App as Agent UI application service
+    participant Host as AgentUiHost
     participant Config as Configuration service
     participant Store as Local store
-    participant Surface as TUI or Web adapter
+    participant Runtime as Runtime generation service
+    participant Surface as CLI or Web adapter
 
-    CLI->>App: start(process settings and selected surface)
-    App->>Store: acquire lease, migrate, and recover
-    App->>Config: load and accept complete generation
-    App->>App: build trusted catalogs and start supervisors
-    App->>Surface: attach
-    Surface-->>App: commands, queries, and subscriptions
-    CLI->>App: shutdown
-    App->>Surface: stop accepting commands
-    App->>App: cancel/drain Runs, jobs, resources, and publishers
-    App->>Store: commit interruption/unknown facts and close
+    CLI->>Host: start(process settings and selected surface)
+    Host->>Store: acquire lease, migrate, and recover
+    Host->>Config: load and accept complete generation
+    Host->>Runtime: start and validate initial Runner
+    Host->>Host: build trusted catalogs and start supervisors
+    Host->>Surface: attach
+    Surface-->>Host: commands, queries, and subscriptions
+    CLI->>Host: shutdown
+    Host->>Surface: stop accepting commands
+    Host->>Host: cancel/drain Runs, jobs, resources, and publishers
+    Host->>Runtime: drain and stop Runners
+    Host->>Store: commit interruption/unknown facts and close
 ```
 
-Startup does not accept surface commands until authoritative SQLite metadata, selected state objects, configuration generation, projections required for queries, and prior-process interruption transitions validate. Shutdown stops acceptance, preserves external cancellation across cleanup, drains within configured bounds, closes every entered Harness stream in its entering task, applies Environment lifecycle policy, seals pending AG-UI segments, and commits unknown/interrupted outcomes before releasing the store lease.
+Startup does not accept surface commands until authoritative SQLite metadata, selected state objects, configuration generation, projections required for queries, prior-process interruption transitions, and the initial runtime Runner validate. Shutdown stops acceptance, preserves external cancellation across cleanup, drains within configured bounds, closes every entered Runner stream in its owning task, applies Environment lifecycle policy, seals pending AG-UI segments, stops runtime Runners, and commits unknown/interrupted outcomes before releasing the store lease.
+
+## Runtime Runner Lifecycle
+
+`AgentUiHost` remains alive while runtime Runners restart. The stable process owns the data-root lease, SQLite, immutable-object and event stores, configuration sources, Session and Turn authority, frontend listeners, runtime selection, and all durable commit decisions. A Runner never opens Agent UI storage, edits desired configuration, accepts work durably, selects a checkpoint, or serves a frontend.
+
+A Runner starts in a fresh Python interpreter from an exact argument vector without shell evaluation. Agent UI process control uses a private loopback connection with a versioned bounded message format and an unguessable single-use launch capability. Standard output and standard error remain ordinary diagnostic streams rather than protocol channels. Authentication and generation correlation complete before the launch capability is discarded.
+
+The runtime-generation service serializes startup, restart, and close. One generation follows these observable states:
+
+```mermaid
+stateDiagram-v2
+    [*] --> starting
+    starting --> ready: authenticated process control
+    ready --> preparing: PREPARE
+    preparing --> prepared: PREPARED
+    prepared --> active: COMMIT then ACTIVE
+    active --> draining: DRAIN
+    draining --> exited: DRAINED then SHUTDOWN
+    starting --> exited: failed or aborted
+    ready --> exited: failed or aborted
+    preparing --> exited: failed or aborted
+    prepared --> exited: failed or aborted
+    active --> exited: unexpected loss or forced stop
+```
+
+`ready` proves only that the child control endpoint is authenticated and responsive. The Host separately calls the Agent UI runtime-readiness operation and validates the reported Runner release, protocol version, and loaded provenance before promotion. A passive Runner can satisfy this probe without accepting execution.
+
+Restart uses a prepare/commit barrier:
+
+```mermaid
+sequenceDiagram
+    participant Host as AgentUiHost
+    participant Runtime as Runtime generation service
+    participant Old as Active Runner
+    participant New as Candidate Runner
+
+    Host->>Runtime: restart
+    Runtime->>New: launch and authenticate
+    New-->>Host: runtime readiness
+    Host-->>Runtime: readiness accepted
+    Runtime->>New: PREPARE
+    New-->>Runtime: PREPARED
+    Runtime->>Host: close admission and stage route
+    Host-->>Runtime: promotion prepared
+    Runtime->>New: COMMIT
+    New-->>Runtime: ACTIVE
+    Runtime->>Host: commit staged route and reopen admission
+    Runtime->>Old: DRAIN then SHUTDOWN
+```
+
+A candidate performs no application work before `ACTIVE`. Failure before activation aborts the candidate and leaves the previous active Runner selected. The final Host route commit is infallible under the closed-admission barrier. After activation, only later eligible work selects the new generation. An active Run remains on the Runner that admitted it; work never migrates between interpreters, and Runner memory is never promoted to durable state.
+
+Drain is bounded. Timeout escalates to terminate and then kill, and the resulting observation distinguishes graceful drain, nonzero exit, unexpected loss, forced termination, and forced kill. Process exit alone never proves that model, tool, provider, or Environment effects stopped or completed. Runner loss maps affected accepted work to the existing interrupted or unknown Host outcomes, while generation-fenced late output cannot commit.
+
+Runtime status and restart are typed Host operations. They return detached generation observations and bounded diagnostics; CLI and WebUI never receive the control capability, socket, process handle, or direct supervisor reference.
 
 ## Configuration Editing and Reload
 
-WebUI and TUI resource editors call the same application commands. An edit:
+WebUI and CLI resource editors call the same Host commands. An edit:
 
 1. reads one resource and its source revision from a captured configuration generation;
 2. validates the proposed strict document locally;
@@ -122,7 +185,7 @@ Artifact resolution and probe failure occur before provider or Harness dispatch.
 
 ## Foreground Run Flow
 
-The `SubmitTurn` command names a Session, Thread, expected Thread revision, and bounded input. The coordinator performs one canonical flow:
+The `SubmitTurn` command names a Session, Thread, expected Thread commit version, and bounded input. The coordinator performs one canonical flow:
 
 ```mermaid
 sequenceDiagram
@@ -135,7 +198,7 @@ sequenceDiagram
     participant Observer as AG-UI observer
     participant Files as Compressed object/event files
 
-    Surface->>App: SubmitTurn(session, thread, expected revision, input)
+    Surface->>App: SubmitTurn(session, thread, expected version, input)
     App->>Resolver: preflight pinned snapshots checkpoint executable and fresh Model resolver
     Resolver-->>App: executable and fresh resolver
     App->>DB: accept Turn under short transaction
@@ -168,15 +231,23 @@ The coordinator is the sole `HarnessRunStream` consumer. It routes every item to
 
 Model resolution, credential reads, Host run Capabilities, Plugin run binding, Session-read collaboration, async-subagent collaboration, exact Skill selection, Environment attachments, Identity, usage, and policy are fresh for every root and child Run. The embedding Host supplies the application-lifetime `RunModelResolverFactory`; the coordinator invokes it for each Run with the exact pinned Agent snapshot and passes its fresh resolver through public `RunBindings`. The default boundary is explicitly unavailable rather than ambient or synthetic. Pinned snapshots can narrow current authority but cannot restore it.
 
-Input acceptance, Environment availability, Harness start, event-file registration, live event delivery, Harness terminal result, checkpoint selection, Environment pause, OTel export, and surface rendering are independent facts. Event fan-out follows successful durable registration, but neither delivery fact establishes the Harness or Turn outcome. A surface disconnect does not cancel work. Explicit cancellation requests ordinary Harness cancellation, drains the same entered stream, and records its actual outcome. Accepted or waiting work with no active stream can be cancelled directly under the expected Thread revision; cancellation never selects partial state.
+Input acceptance, Environment availability, Harness start, event-file registration, live event delivery, Harness terminal result, checkpoint selection, Environment pause, OTel export, and surface rendering are independent facts. Event fan-out follows successful durable registration, but neither delivery fact establishes the Harness or Turn outcome. A surface disconnect does not cancel work. Explicit cancellation requests ordinary Harness cancellation, drains the same entered stream, and records its actual outcome. Accepted or waiting work with no active stream can be cancelled directly under the expected Thread commit version; cancellation never selects partial state.
 
 The fresh root bindings include the Agent UI async-subagent run Capability only when the pinned Agent node selects the behavior Capability. It is scoped to the exact Session, parent Thread, Turn, Run, Agent node, process generation, and current policy. Possession of the built child collection, a job ID, or a prior run Capability does not authorize submission.
 
 ## Deferred Input and Approval
 
-A suspended Harness result keeps the same Host Turn in `waiting`. The coordinator publishes the complete selected `HarnessState`, the separate exact public `DeferredToolRequests` object returned by the Harness, and pending event segments, then atomically commits the `waiting` transition, both object references, unconsumed status, and Thread revision in SQLite. A valid waiting Turn survives process restart. Surfaces render the corresponding safe projection and submit one typed response command bound to the Session, Thread, Turn, expected revision, and exact deferred identifiers.
+A suspended Harness result keeps the same Host Turn in `waiting`. The coordinator publishes the complete selected `HarnessState`, the separate exact public `DeferredToolRequests` object returned by the Harness, and pending event segments, then atomically commits the `waiting` transition, both object references, unconsumed status, and Thread commit version in SQLite. A valid waiting Turn survives process restart. Surfaces render the corresponding safe projection and submit one typed response command bound to the Session, Thread, Turn, expected version, and exact deferred identifiers.
 
-The application service loads and validates the complete pending request object, combines the authorized responses with that exact value in `DeferredToolResume`, records one consuming `run_id` before dispatch, creates fresh model/Environment/Host bindings, and appends the Run to the same Turn. AG-UI replay and identifiers alone never reconstruct or satisfy deferred state. Stale, duplicate, mismatched, already-consumed, corrupt, or incompatible responses conflict before another Harness dispatch.
+The Host loads and validates the complete pending request object, combines the authorized responses with that exact value in `DeferredToolResume`, records one consuming `run_id` before dispatch, directs the selected Runner to create fresh Model/Environment/Host bindings, and appends the Run to the same Turn. AG-UI replay and identifiers alone never reconstruct or satisfy deferred state. Stale, duplicate, mismatched, already-consumed, corrupt, or incompatible responses conflict before another Harness dispatch.
+
+## Background Process Observation
+
+The Harness `ShellToolset` and its recreatable `ProcessManager` own all six shell/process tools, the portable `process-N` projection in `AgentContextState`, independent unread output offsets, exact provider-identity rebinding, Turn-scoped completion waits, native enqueue hints, and terminal release. Agent UI does not implement a second process registry and does not replace `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, or `shell_kill`.
+
+Every foreground root or child Run that enters the configured Dynamic Environment Capability receives the same Turn-scoped Harness observation behavior. Completion and observation-gap events are non-authoritative hints; authoritative status and retained output remain in `BoundProcessOperations` and are reconciled through ordinary Harness tools. Agent UI may supply `ProcessEventHook` values to route a hint into telemetry or durable scheduling, but a hook, Harness task, and live bound handle are process-local and never enter a Session checkpoint or SQLite authority.
+
+Agent UI persists the complete selected `HarnessState`, including the managed process projection, with the normal Thread checkpoint. To preserve a background process across a later Turn, it also retains or reconstructs the provider resource and attaches the same `provider_type`, `environment_id`, and `generation`; the fresh manager then lazily rebinds the exact provider process ID. An absent attachment remains unavailable without erasing the reference. A generation change or authoritative not-found result becomes `backend_lost` and never retargets through a current alias. If completion must wake work while no Harness Turn is active, Agent UI uses provider-native events or polling keyed by its durable Environment-resource record, schedules a new Run, and lets status or wait reconcile the result. The built-in Direct Local binding ends managed processes at binding close and cannot preserve them across Agent UI Runs. EIP can do so only while the `agent-envd` resource and retained output survive under the same generation.
 
 ## Environment Operations
 
@@ -192,9 +263,9 @@ Environment application commands provide full local product control:
 - reconcile `unknown` operations with provider-specific evidence;
 - subscribe to safe topology/lifecycle changes.
 
-Every effectful operation commits a fence before calling the `EnvironmentProvider` and commits returned state only under the same fence. The application service never exposes arbitrary vendor API passthrough. Provider credentials enter through fresh runtime collaborators and are absent from commands, SQLite payload columns, AG-UI, model context, and default logs/telemetry.
+Every effectful operation commits a fence before calling the `EnvironmentProvider` and commits returned state only under the same fence. The Host never exposes arbitrary vendor API passthrough. Provider credentials enter through fresh runtime collaborators and are absent from commands, SQLite payload columns, AG-UI, model context, and default logs/telemetry.
 
-When a Run is active, its Harness topology is fixed by the complete fresh attachment set entered for that invocation except where the public Harness topology controller explicitly supports a higher complete revision. Host topology change cannot add a Dynamic Environment Capability or Toolset absent from the Agent snapshot. Environment attachment and provider resource lifecycle remain independent from Agent configuration reload.
+When a Run is active, its Harness topology is fixed by the complete fresh attachment set entered for that invocation except where the public Harness topology controller explicitly supports a higher complete version. Host topology change cannot add a Dynamic Environment Capability or Toolset absent from the Agent snapshot. Environment attachment and provider resource lifecycle remain independent from Agent configuration reload.
 
 ## Async Subagent Capability
 
@@ -231,7 +302,7 @@ The standard model-facing tools are:
 | `resume_subagent` | Create a new linked job from one compatible terminal execution and its selected complete child state            |
 | `subagent_info`   | Page the current scope's configured child roster and safe job projections, or inspect one exact job             |
 | `wait_subagent`   | Perform one bounded wait for an exact job or a snapshot of current nonterminal jobs; timeout never cancels work |
-| `steer_subagent`  | Persist bounded input for one compatible live or waiting job when its edge enables steering                     |
+| `steer_subagent`  | Persist bounded input for one compatible live job when its edge enables steering                                |
 | `cancel_subagent` | Record cancellation intent and request cancellation of one exact nonterminal job                                |
 
 `delegate` and `resume_subagent` have no mode argument: every accepted execution is Host-scheduled and asynchronous. `wait_subagent` can suspend the current tool coroutine while the independently owned job progresses, but it does not convert the child into inline Harness delegation, share the parent usage accumulator, or make parent cancellation the child execution boundary.
@@ -246,14 +317,17 @@ Job acceptance is a short SQLite transaction that validates the owner scope, par
 
 The async-subagent service then prepares fresh child authority:
 
-1. verify the retained exact `BuiltSubagent` against the child node and edge in the Session-pinned Agent snapshot; after restart from a valid waiting boundary, reconstruct the pinned executable graph and select the exact edge again through its parent `SubagentCollection` rather than building or looking up an independent child executable;
+1. verify the retained exact `BuiltSubagent` against the child node and edge in the Session-pinned Agent snapshot; a new linked continuation reconstructs the pinned executable graph and selects the exact edge again through its parent `SubagentCollection` rather than building or looking up an independent child executable;
 2. derive bounded child input under the authored `DelegationContextPolicy` without sharing parent messages or `AgentContext` by alias;
-3. apply edge `usage_limits`, Host budget narrowing, depth, and current policy;
-4. derive the child node's independent pinned Session Skill selection and supply a fresh `SkillSelectionRunCapability` when exact selection applies;
-5. resolve current Model credentials and every child-required Host run Capability;
-6. persist any child Environment assignments and operation fences before provider dispatch;
-7. acquire fresh single-use Environment attachments and construct complete child `RunBindings`;
-8. enter `selected_built_subagent.executable.stream()` in a supervised Host task and consume it once.
+3. derive a fresh child `AgentIdentityRef` from the parent workload identity and the edge's `SubagentIdentityPolicy`: preserve `issuer`, `subject`, and all claims, then replace `agent_id` with the resolved child Agent's `agent_id` unless `inherit_agent_id=true`;
+4. apply edge `usage_limits`, Host budget narrowing, depth, and current policy;
+5. derive the child node's independent pinned Session Skill selection and supply a fresh `SkillSelectionRunCapability` when exact selection applies;
+6. resolve current Model credentials and every child-required Host run Capability;
+7. persist any child Environment assignments and operation fences before provider dispatch;
+8. acquire fresh single-use Environment attachments and construct complete child `RunBindings` through the trusted Agent UI binder;
+9. enter `selected_built_subagent.executable.stream()` in a supervised Host task and consume it once.
+
+The Agent UI binder owns the final complete child bindings and may replace the derived Identity when current Host authorization requires it; Harness does not rewrite Identity after the binder returns. The binder always creates a fresh child instance and lineage context even when `inherit_agent_id=true` preserves the logical Agent claim.
 
 `dedicated` Environment policy allocates independent `MULTIPLE_FROM_SPEC` Host resources. `shared_root` acquires distinct attachments only from `SHARED` resources. `serialized_root` keeps the accepted job in `queued` until every selected root attachment is released, then acquires fresh sequential attachments. `none` supplies an empty topology. A child never receives the parent's attachment, Model resolver, credential, run Capability, plugin run graph, or live scheduler object by inheritance.
 
@@ -261,7 +335,7 @@ A child can expose its own async-subagent Capability over its recursively built 
 
 ## Async Subagent Job Lifecycle
 
-One logical job can span several child Harness Runs only at complete persisted suspension boundaries:
+One logical job owns exactly one non-suspending child Harness Run:
 
 ```mermaid
 stateDiagram-v2
@@ -275,10 +349,6 @@ stateDiagram-v2
     queued --> failed
     queued --> cancelled
     queued --> interrupted
-    running --> waiting
-    waiting --> running
-    waiting --> cancelled
-    waiting --> interrupted
     running --> succeeded
     running --> failed
     running --> cancelled
@@ -290,21 +360,21 @@ stateDiagram-v2
     interrupted --> [*]
 ```
 
-A job record owns stable job/root/parent/child identities, exact child node and edge, process generation, idempotency and lineage, state, child Run IDs, child Thread ID, Environment assignments, safe result/failure, selected child checkpoint, pending deferred reference, cumulative Host accounting, and delivery identity. The selected child `HarnessState` belongs only to the child Thread and never enters parent `HarnessState` or the parent's selected checkpoint.
+A job record owns stable job/root/parent/child identities, exact child node and edge, process generation, idempotency and lineage, state, one child Run ID, child Thread ID, Environment assignments, safe result/failure, terminal child checkpoint, cumulative Host accounting, and delivery identity. The selected child `HarnessState` belongs only to the child Thread and never enters parent `HarnessState` or the parent's selected checkpoint.
 
 For each nonterminal stream item, the service applies the ordinary child AG-UI observer, persists bounded event segments, and publishes safe live detail. At a completed, failed, or cancelled boundary it publishes any complete child state and terminal events before committing the terminal job outcome. A child failure is a real failed job, not synthetic successful text.
 
-When a child Run returns `DeferredToolRequests`, the service publishes the exact complete child state, separate complete deferred-request object, and pending events before atomically transitioning `running -> waiting`. Surfaces can answer or deny the child request through a typed job command. Resumption marks that request consumed by a fresh child `run_id`, reconstructs fresh bindings including a fresh Skill selection, and invokes the ordinary Harness resume contract. A valid waiting child can survive process restart; identifiers or AG-UI history cannot reconstruct its deferred request.
+Harness child invocations deny runtime deferred calls inside the same Run and never return a suspended result. If an unexpected bypass still produces terminal `DeferredToolRequests`, the Harness normalizes it to `status="failed"` with `code="subagent_deferred_unsupported"`; Agent UI commits that ordinary failed terminal job and exposes no answer, approval, denial, or resume action for it.
 
-A prior-process `accepted`, `queued`, or `running` job becomes `interrupted` during recovery. It is never submitted or replayed automatically, even when no child Run ID was recorded. A valid `waiting` job and committed terminal outcome remain. `resume_subagent` is different from deferred resume: it accepts a compatible terminal job with a selected complete child state and creates a new linked job under a new `execution_id`; it never mutates the terminal record or consults the latest child definition. One terminal job can designate at most one delivery-successor continuation. Creating that successor atomically transfers its still-pending immediate-child delivery targets to the new job under the same stable delivery identities; a different continuation attempt conflicts rather than racing or duplicating delivery.
+A prior-process `accepted`, `queued`, or `running` job becomes `interrupted` during recovery. It is never submitted or replayed automatically, even when no child Run ID was recorded. Committed terminal outcomes remain. `resume_subagent` accepts a compatible terminal job with a selected complete child state and creates a new linked job under a new `execution_id`; it never mutates the terminal record, performs deferred resume, or consults the latest child definition. One terminal job can designate at most one delivery-successor continuation. Creating that successor atomically transfers its still-pending immediate-child delivery targets to the new job under the same stable delivery identities; a different continuation attempt conflicts rather than racing or duplicating delivery.
 
 Active task, stream, model, Environment attachment, cancellation scope, native input router, usage accumulator, and authority remain process-local. Durable acceptance, failover, and automatic retry remain Foundation Service responsibilities.
 
-## Steering and Child Deferred Input
+## Steering
 
 Steering uses an owner-scoped input ledger with stable input ID and states `accepted`, `enqueued`, `applied`, and `rejected`. The service commits content and idempotency before signaling a live child router. The router can apply it only at a native supported boundary; acceptance does not claim that a later child model request incorporated it. Terminal, cancelled, fenced, wrong-owner, disabled-edge, or incompatible jobs reject the input without a tool failure that could invite duplicate submission.
 
-A process loss rejects accepted/enqueued steering that cannot be proven applied. Steering never mutates private Pydantic messages, `HarnessState`, or a live `AgentContext`. Deferred approvals and external results use the exact stored `DeferredToolRequests` contract rather than steering text.
+A process loss rejects accepted/enqueued steering that cannot be proven applied. Steering never mutates private Pydantic messages, `HarnessState`, or a live `AgentContext`, and cannot manufacture deferred approval or external-result input for a child.
 
 ## Completion Retention and Parent Delivery
 
@@ -328,17 +398,17 @@ A terminal result first becomes `pending` with a bounded safe outcome and stable
 
 Delivery content names `execution_id`, child name, terminal state, safe bounded output/failure, and continuation availability. It contains no child state or authority. Each delivery attempt has a deterministic target-run input ID under one stable delivery identity. Input-ledger reconciliation makes retries idempotent within an attempt; a rejected target attempt returns the logical delivery to `pending` for a later compatible parent Run. `applied` means native parent input application was observed, not that a model followed or accepted the result. `subagent_info` and `wait_subagent` are observations and do not rewrite execution outcome; repeated delivery or query uses the same job and delivery identities.
 
-Delivery into an active Run, delivery in a later Run, explicit result inspection, linked continuation, and surface notification all refer to the same retained job. None merges child message history or Capability state into the parent. Retention cannot delete a terminal job while delivery, linked continuation, export, child state, deferred state, or Environment cleanup still references it.
+Delivery into an active Run, delivery in a later Run, explicit result inspection, linked continuation, and surface notification all refer to the same retained job. None merges child message history or Capability state into the parent. Retention cannot delete a terminal job while delivery, linked continuation, export, terminal child state, or Environment cleanup still references it.
 
 ## Cancellation and Unknown Outcomes
 
-Foreground cancellation of an active Run is a process-local request to that exact `HarnessRunStream`; the cancellation command returns the current Turn projection, while the sole coordinator drains the same entered stream and commits the observed terminal outcome. An accepted or waiting foreground Turn with no active stream can commit `cancelled` directly under the expected Thread revision. Neither path selects partial state. Async-child cancellation records intent for the exact job before requesting its live coordinator task. Edge `lifetime="parent_scope"` requests child cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` does not couple ordinary parent-scope completion or cancellation to the child. Session deletion fences and cancels every nonterminal child regardless of edge lifetime.
+Foreground cancellation of an active Run is a process-local request to that exact `HarnessRunStream`; the cancellation command returns the current Turn projection, while the sole coordinator drains the same entered stream and commits the observed terminal outcome. An accepted or waiting foreground Turn with no active stream can commit `cancelled` directly under the expected Thread commit version. Neither path selects partial state. Async-child cancellation records intent for the exact job before requesting its live coordinator task. Edge `lifetime="parent_scope"` requests child cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` does not couple ordinary parent-scope completion or cancellation to the child. Session deletion fences and cancels every nonterminal child regardless of edge lifetime.
 
 Cancellation does not roll back provider, tool, Environment, or external effects. If cleanup or external dispatch outcome is uncertain, the Turn/job/resource remains `interrupted` or `unknown` with bounded reconciliation evidence. Repeated cancel of a terminal job returns the same terminal projection. Duplicate event notification, surface reconnect, status query, or completion wake-up never duplicates execution or parent delivery. A stale run Capability cannot submit, steer, cancel, or claim delivery after its Run closes; a later fresh Capability must independently authorize the exact scope.
 
 ## Retained and Live AG-UI
 
-The application service observes each public item of every complete root and async-child Harness Run once, including the terminal result item, applies the Agent UI processor, assigns Session presentation sequence and event identity, stores and registers compressed segments, and only then fans out detached values to subscribers. Every async child has its own Thread, Run, Agent-node, job, and lineage correlation and produces its own real terminal AG-UI outcome. Child presentation never substitutes for the job outcome, child checkpoint, deferred object, or parent-delivery ledger.
+The selected Runner observes each public item of every complete root and async-child Harness Run once, including the terminal result item, and applies the generation-selected Agent UI processor. The Host validates the resulting sequence, assigns Session presentation sequence and event identity, stores and registers compressed segments, and only then fans out detached values to subscribers. Every async child has its own Thread, Run, Agent-node, job, and lineage correlation and produces its own real terminal AG-UI outcome. Child presentation never substitutes for the job outcome, terminal child checkpoint, or parent-delivery ledger.
 
 A subscription consists of:
 
@@ -363,7 +433,7 @@ WebUI is a complete browser product compiled into `a13n-ui`. It exposes pages an
 - Environment definitions, provider resources, lifecycle, and topology;
 - Session list/search/resume/fork/archive/delete;
 - streaming Agent interaction, reasoning, tools, approvals, questions, cancellation, and queued input;
-- async-subagent configuration, job trees, waiting actions, steering, cancellation, retained results, and parent delivery;
+- async-subagent configuration, job trees, live steering, cancellation, retained terminal results, and parent delivery;
 - configuration reload diagnostics and restart-required settings;
 - retained AG-UI protocol inspection and replay gaps.
 
@@ -373,17 +443,17 @@ The browser never becomes a model provider, Environment provider, EIP requester,
 
 ### Loopback Authority
 
-The Web transport binds loopback by default for one local user. Each application lifetime creates an unguessable browser capability presented by every command and stream attachment. The server validates exact `Host`, `Origin`, and capability values, exposes no wildcard credentialed CORS policy, and keeps browser API, static routes, and SSE routes distinct. Unknown API/stream paths never receive the browser shell through history fallback.
+The Web transport binds loopback by default for one local user. Each Host lifetime creates an unguessable browser capability presented by every command and stream attachment. The server validates exact `Host`, `Origin`, and capability values, exposes no wildcard credentialed CORS policy, and keeps browser API, static routes, and SSE routes distinct. Unknown API/stream paths never receive the browser shell through history fallback.
 
 The capability is process-local, absent from configuration, Session storage, model context, URLs intended for sharing, and ordinary logs. Non-loopback exposure requires an adopting wrapper to provide authentication, authorization, TLS, Host, and origin policy; the built-in local capability is not a remote multi-user contract.
 
-## TUI
+## CLI
 
-TUI runs the same application service in the terminal process and performs no HTTP request, starts no FastAPI/Uvicorn server, and listens on no network port. It provides the same semantic configuration, Environment, Session, Run, approval, child, and replay operations as WebUI.
+The interactive and one-shot CLI paths call the same `AgentUiHost` in the stable terminal process. They perform no HTTP request, start no Web server, and listen on no frontend port. The CLI provides the same semantic configuration, Environment, Session, Run, approval, child, runtime-management, and replay operations as WebUI.
 
-TUI renders the same AG-UI schemas and durable query projections. It can collapse token deltas, reasoning, background detail, or completed tools for terminal readability; expansion reads retained AG-UI/Item projections rather than private Harness objects. Terminal resize, key binding, clipboard, color, and pager behavior do not alter command or Session semantics.
+The interactive CLI is a Codex-style single-page terminal experience. One-shot commands expose explicit human-readable or machine-readable output without introducing a second application API. Both consume the same AG-UI schemas and durable query projections. Terminal resize, key binding, clipboard, color, and pager behavior do not alter command or Session semantics.
 
-TUI exit uses the same application shutdown choices as WebUI process exit: continue only when another supported local owner exists, or explicitly cancel/drain current root and async-child work and apply Environment policy. Closing a terminal renderer alone is not an implicit claim that provider work stopped.
+CLI exit follows the Host shutdown contract: stop frontend acceptance, explicitly cancel or drain current root and async-child work according to Host policy, drain runtime Runners, apply Environment policy, and release the data-root lease last. Closing a renderer or abandoning a one-shot wait is not an implicit claim that accepted work or provider effects stopped.
 
 ## Surface Equivalence
 
@@ -395,10 +465,10 @@ Surface equivalence is semantic command and observation parity, not identical la
 - provision, inspect, pause, resume, reset, detach, and destroy authorized Environment resources;
 - submit and queue input, cancel, answer approvals/questions, and inspect terminal outcomes;
 - observe root/child/tool/reasoning/Environment events and replay history;
-- control authorized async children, answer waiting child actions, and inspect or deliver retained outcomes;
+- control authorized live async children and inspect or deliver retained terminal outcomes;
 - inspect safe configuration, storage, and replay diagnostics.
 
-A renderer-only preference can remain surface-specific. Any operation that affects execution, storage, configuration, Environment resources, or authority belongs to the application service and cannot exist only as hidden renderer behavior.
+A renderer-only preference can remain surface-specific. Any operation that affects execution, storage, configuration, runtime selection, Environment resources, or authority belongs to `AgentUiHost` and cannot exist only as hidden renderer behavior.
 
 ## Packaging
 
@@ -423,7 +493,7 @@ Agent UI releases independently and pins one exact compatible Harness release gr
 | Failure                                                                        | Outcome                                                                                                                                       |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Configuration edit or manifest fails validation                                | Application-owned transaction manifest is not selected; prior generation remains active                                                       |
-| Stale command revision                                                         | Conflict before affected dispatch or mutation                                                                                                 |
+| Stale command version                                                          | Conflict before affected dispatch or mutation                                                                                                 |
 | Model or credential resolution fails                                           | Run fails before model use; pinned snapshot remains unchanged                                                                                 |
 | Required Environment cannot become available                                   | Run does not enter Harness; provider lifecycle retains exact failure/unknown state                                                            |
 | Local Sandbox artifact, version, probe, or Provider integration is unavailable | No provider/Harness dispatch and no Direct Local or ambient-executable fallback                                                               |
@@ -438,19 +508,19 @@ Agent UI releases independently and pins one exact compatible Harness release gr
 
 ## Compatibility
 
-Application command/query schemas, configuration generation schema, Agent/Environment snapshots, Skill package and selection schema, Session store, async-subagent Capability/job/input/delivery schemas, selected Harness/Provider/Protocol release, package-owned envd runtime-manifest schema, Web API/SSE transport, and TUI renderer evolve independently. Bundled surfaces are built against the exact Agent UI application contract and selected AG-UI version.
+Host command/query schemas, runtime process-control and business-protocol versions, configuration generation schema, Agent/Environment snapshots, Skill package and selection schema, Session store, async-subagent Capability/job/input/delivery schemas, selected Harness/Provider/Protocol release, package-owned envd runtime-manifest schema, Web API/SSE transport, and CLI renderer evolve independently. Bundled surfaces are built against the exact Agent UI application contract and selected AG-UI version.
 
-A running Run/job retains the executable snapshot, child definition, Environment resource selection, and process generation with which it started. Configuration reload or renderer upgrade cannot mutate it. Unknown custom AG-UI events can remain inspectable even when a renderer does not assign them a specialized widget.
+A running Run/job retains the executable snapshot, child definition, Environment resource selection, Host process generation, and runtime Runner generation with which it started. Configuration reload, Runner restart, or renderer upgrade cannot mutate it. Unknown custom AG-UI events can remain inspectable even when a renderer does not assign them a specialized widget.
 
 ## Trade-offs
 
-### One application service with two complete surfaces
+### One stable Host with two complete surfaces
 
-A shared application core prevents terminal and browser products from diverging in configuration, resume, Environment, child, and event semantics. It requires all product behavior to be expressed as typed commands/queries rather than direct widget-to-runtime shortcuts.
+A shared Host prevents terminal and browser products from diverging in configuration, runtime restart, resume, Environment, child, and event semantics. It requires all product behavior to be expressed as typed commands/queries rather than direct widget-to-runtime shortcuts.
 
 ### Process-local async children with durable boundaries
 
-Local supervised tasks provide parallel Agent work and immediate visibility without introducing distributed execution. Metadata, terminal outcomes, delivery, and complete waiting boundaries survive restart, but active model/tool execution does not. Process loss interrupts accepted, queued, or running jobs, so durable acceptance, retry, and failover remain Foundation responsibilities.
+Local supervised tasks provide parallel Agent work and immediate visibility without introducing distributed execution. Metadata, terminal outcomes, and delivery survive restart, but active model/tool execution does not. Process loss interrupts accepted, queued, or running jobs, so durable acceptance, retry, and failover remain Foundation responsibilities.
 
 ### Stored AG-UI as the presentation contract
 
@@ -458,15 +528,17 @@ Using one processed event sequence makes live delivery, replay, protocol inspect
 
 ## Invariants
 
-01. TUI and WebUI use one application-service contract, one local store, one execution coordinator, one Environment lifecycle path, and one AG-UI sequence.
-02. TUI is completely in process and never starts or calls the Web transport.
+01. CLI and WebUI use one Host contract, one local store, one execution coordinator, one Environment lifecycle path, one runtime-generation service, and one AG-UI sequence.
+02. CLI is completely in the stable Host process and never starts or calls the Web transport.
 03. No surface reads SQLite/object files for authority, constructs Agents, calls `ExecutableAgent.stream()`, manages provider resources, or translates Harness events independently.
 04. Every root and child Run receives fresh model, Environment, credential, policy, and Host collaboration bindings.
 05. Agent UI never enables Harness inline delegation; its async Capability selects exact Harness-built children and executes them only through Host-owned jobs and the ordinary child stream API.
-06. An async spawn completes with ordinary accepted metadata; child start, waiting/terminal outcome, and parent delivery are later independent facts.
+06. An async spawn completes with ordinary accepted metadata; child start, terminal outcome, and parent delivery are later independent facts, and no child waiting/deferred state exists.
 07. Durable event registration precedes live delivery; both remain independent from Harness result, checkpoint selection, Environment lifecycle, OTel export, and rendering.
 08. Dynamic configuration reload can affect new selections but never mutates an active executable, Run, job, pinned Skill selection, or Session composition.
 09. Browser capability, model credential, Environment credential/attachment, and Session selector are separate authority domains.
 10. Work requiring distributed durable acceptance, failover, retry, or remote multi-user policy uses Foundation Service rather than local process state.
 11. Local Sandbox uses only the package-pinned managed envd executable or one explicit validated absolute override; acquisition is lazy and never affects Direct Local, Docker, or E2B.
 12. Agent UI Host resolves and verifies envd artifacts, the Local Envd Provider owns subprocess/private-runtime lifecycle, and the low-level client owns only EIP communication.
+13. A runtime Runner owns no Agent UI data-root lease or durable commit authority, and a restart never migrates an active Run.
+14. Candidate failure before activation leaves the selected Runner unchanged; forced Runner loss preserves only Host-committed facts and maps unresolved work to interrupted or unknown outcomes.

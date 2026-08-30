@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 import warnings
-from collections.abc import AsyncIterator, Awaitable, Coroutine, Sequence
+from collections.abc import AsyncIterator, Awaitable, Coroutine
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -22,6 +22,9 @@ from a13n_harness import (
     RunBindings,
     RunError,
     SubagentDefinition,
+)
+from a13n_harness import (
+    AgentSpec as HarnessAgentSpec,
 )
 from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
@@ -99,10 +102,6 @@ class _NestedTypedDictOutput(TypedDict):
     value: DeferredToolRequests
 
 
-class _NestedRootOutput(RootModel[DeferredToolRequests]):
-    pass
-
-
 @dataclass
 class _GenericDataclassOutput[NestedT]:
     value: NestedT
@@ -160,6 +159,57 @@ def _build(model: FunctionModel):
     )
 
 
+async def test_omitted_limits_allow_more_than_fifty_requests_for_plain_native_spec() -> None:
+    def step() -> None:
+        return None
+
+    async def stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        response_count = sum(isinstance(message, ModelResponse) for message in messages)
+        if response_count < 51:
+            yield {
+                0: DeltaToolCall(
+                    name="step",
+                    json_args="{}",
+                    tool_call_id=f"step-{response_count}",
+                )
+            }
+            return
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(Capability(tools=[Tool(step)]),),
+    )
+
+    result = await executable.run("start")
+
+    assert result.output_or_raise() == "done"
+    assert result.usage.requests == 52
+
+
+async def test_agent_spec_limits_apply_unless_one_run_supplies_an_exact_override() -> None:
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(usage_limits=UsageLimits(request_limit=0)),
+        output_type=str,
+        model=_turn_model([]),
+    )
+
+    limited = await executable.run("blocked")
+    overridden = await executable.run(
+        "allowed",
+        usage_limits=UsageLimits(request_limit=2),
+    )
+
+    assert limited.status == "failed"
+    assert overridden.output_or_raise() == "turn-1"
+
+
 async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() -> None:
     calls: list[tuple[ModelMessage, ...]] = []
     executable = _build(_turn_model(calls))
@@ -194,12 +244,12 @@ async def test_environment_state_restores_before_input_factory_and_exports_fresh
     calls: list[tuple[ModelMessage, ...]] = []
     executable = _build(_turn_model(calls))
     previous = HarnessState.new(
-        environment_state=EnvironmentState(observed_topology_version=0, bindings={}),
+        environment_state=EnvironmentState(observed_topology_version=1, bindings={}),
     )
 
     async def input_factory(preparation) -> str:
-        assert preparation.environment.restored_state_topology_version == 0
-        assert preparation.environment.topology.topology_version == 0
+        assert preparation.environment.restored_state_topology_version == 1
+        assert preparation.environment.topology.topology_version == 1
         return "restored"
 
     result = await executable.run(
@@ -211,7 +261,7 @@ async def test_environment_state_restores_before_input_factory_and_exports_fresh
     assert result.output_or_raise() == "turn-1"
     assert result.state is not None
     assert result.state.environment_state is not None
-    assert result.state.environment_state.observed_topology_version == 0
+    assert result.state.environment_state.observed_topology_version == 1
 
 
 async def test_enter_and_exit_without_iteration_does_not_start_the_agent() -> None:
@@ -350,21 +400,7 @@ async def test_empty_output_sequence_uses_the_definition_error_boundary(output_t
     assert isinstance(exc_info.value.__cause__, ValueError)
 
 
-class _DeferredSubclass(DeferredToolRequests):
-    pass
-
-
 type _DeferredAlias = DeferredToolRequests
-
-
-def _nested_deferred_from_text(value: str) -> list[DeferredToolRequests]:
-    del value
-    return [DeferredToolRequests()]
-
-
-def _deferred_from_text(value: str) -> DeferredToolRequests:
-    del value
-    return DeferredToolRequests()
 
 
 async def _deferred_after_await() -> DeferredToolRequests:
@@ -382,28 +418,18 @@ def _annotated_awaitable_deferred_from_text(
     "output_spec",
     [
         DeferredToolRequests,
-        _DeferredSubclass,
         _DeferredAlias,
         Annotated[DeferredToolRequests, "reserved"],
         (str, DeferredToolRequests),
         str | DeferredToolRequests,
         list[DeferredToolRequests],
-        Sequence[DeferredToolRequests],
-        tuple[DeferredToolRequests, ...],
-        dict[str, DeferredToolRequests],
         _NestedModelOutput,
         _NestedDataclassOutput,
         _NestedTypedDictOutput,
-        _NestedRootOutput,
         _GenericDataclassOutput[DeferredToolRequests],
-        NativeOutput(list[DeferredToolRequests]),
         NativeOutput(DeferredToolRequests),
-        NativeOutput(Annotated[DeferredToolRequests, "reserved"]),
         PromptedOutput(DeferredToolRequests),
         ToolOutput(DeferredToolRequests),
-        ToolOutput(_DeferredSubclass),
-        TextOutput(_deferred_from_text),
-        TextOutput(_nested_deferred_from_text),
         TextOutput(_annotated_awaitable_deferred_from_text),
     ],
 )

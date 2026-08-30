@@ -4,31 +4,30 @@
 
 `AgentInput` is Foundation's versioned wire and accepted-value protocol for one
 unit of ordinary semantic Agent input. Root invocation, continuation, fork,
-managed Trigger acceptance, asynchronous child submission, and active-run
-steering use the same protocol rather than defining operation-specific input
-shapes.
+managed Trigger acceptance, and asynchronous child submission use the same
+protocol rather than defining operation-specific input shapes.
 
 This contract owns content blocks, structured content, binary acquisition and
-delivery, accepted canonicalization, the AgentRevision input declaration, and
-deterministic mapping to the Harness native input boundary. [Agent Control:
-Input and Continuation](28b-agent-control-input-and-continuation.md) owns Turn
+delivery, accepted canonicalization, the AgentPresetVersion input declaration,
+and deterministic mapping to the Harness native input boundary. [Agent Control:
+Input and Continuation](34-agent-control-input-and-continuation.md) owns Turn
 acceptance, lineage, retry, and deferred feedback; [Agent Control: Active
-Execution](28c-agent-control-active-execution.md) owns durable cancellation of
+Execution](35-agent-control-active-execution.md) owns durable cancellation of
 already accepted work. Neither control contract defines another ordinary input
 protocol.
 
 ## Boundaries
 
-| Concern                                                 | Owner                                                                                                                                                       | Relationship                                                                                            |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `AgentInput`, content blocks, sources, and delivery     | This contract                                                                                                                                               | Defines the stable submission and accepted-value protocol                                               |
-| Agent input declaration and adapter contract            | This contract and [Agent Revisions and Reconstruction](12-agent-revisions-and-reconstruction.md)                                                            | This contract defines the declaration; the immutable AgentRevision stores it and its exact adapter lock |
-| Accepted input persistence and binary object references | [Durable Turn State](14-turn-persistence.md)                                                                                                                | Persists the complete accepted value and immutable payload references                                   |
-| Environment binding and path materialization            | [Environment Configuration](19-environment-management.md)                                                                                                   | Supplies authorized bindings and fresh runtime attachments                                              |
-| Native process-local input and steering                 | [Harness Input, Model, and Output](../agent-harness/16-input-model-and-output.md) and [Harness Public API](../agent-harness/14-public-api-and-packaging.md) | Receives native `RunInputValue` after the Foundation adapter resolves durable input                     |
-| Turn acceptance, retry, and waiting feedback            | [Agent Control: Input and Continuation](28b-agent-control-input-and-continuation.md)                                                                        | Determines when input creates a Turn and when correlated feedback is a distinct protocol                |
-| Durable cancellation of already accepted work           | [Agent Control: Active Execution](28c-agent-control-active-execution.md)                                                                                    | Owns cancellation ordering, fencing, and durable outcome independently of input content                 |
-| Idempotency evidence and unknown acceptance             | [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                                                                                        | Owns request evidence and reconciliation around accepted input                                          |
+| Concern                                                 | Owner                                                                                                                                                       | Relationship                                                                                                        |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `AgentInput`, content blocks, sources, and delivery     | This contract                                                                                                                                               | Defines the stable submission and accepted-value protocol                                                           |
+| Agent input declaration and adapter contract            | This contract and [Agent Management](12-agent-management.md)                                                                                                | This contract defines the declaration; AgentPresetConfig stores it and each immutable AgentPresetVersion freezes it |
+| Accepted input persistence and binary object references | [Durable Turn State](14-turn-persistence.md)                                                                                                                | Persists the complete accepted value and immutable payload references                                               |
+| Environment binding and path materialization            | [Environment Configuration](19-environment-management.md)                                                                                                   | Supplies authorized bindings and fresh runtime attachments                                                          |
+| Native process-local input                              | [Harness Input, Model, and Output](../agent-harness/16-input-model-and-output.md) and [Harness Public API](../agent-harness/14-public-api-and-packaging.md) | Receives native `RunInputValue` after the Foundation adapter resolves durable input                                 |
+| Turn acceptance, retry, and waiting feedback            | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                                                                         | Determines when input creates a Turn and when correlated feedback is a distinct protocol                            |
+| Durable cancellation of already accepted work           | [Agent Control: Active Execution](35-agent-control-active-execution.md)                                                                                     | Owns cancellation ordering, fencing, and durable outcome independently of input content                             |
+| Idempotency evidence and unknown acceptance             | [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                                                                                        | Owns request evidence and reconciliation around accepted input                                                      |
 
 ## Agent Input Protocol
 
@@ -156,13 +155,12 @@ it never accepts system, assistant, or tool roles. A `TextContent.text` value is
 non-empty and retains its exact Unicode value and position. `structured_content`
 is the independent Agent-specific machine-readable channel. It is not a JSON
 content block, cannot carry control or authority fields, and enters model context
-only through the selected AgentRevision's locked input adapter.
+only through the selected AgentPresetVersion's locked input adapter.
 
 An input can contain only text, only structured content, only binary content, or
-any combination permitted by the selected AgentRevision. An empty `content`
-together with null `structured_content` is valid only when that revision declares
-`allow_empty=true`. Active-run steering always requires a non-empty effective
-input because the Harness native steering boundary rejects an empty value.
+any combination permitted by the selected AgentPresetVersion. An empty `content`
+together with null `structured_content` is valid only when that Version declares
+`allow_empty=true`.
 
 `filename` is bounded display metadata and is never interpreted as an object key
 or Environment path. A submitted `media_type` is only a hint. Foundation derives
@@ -214,7 +212,7 @@ Delivery forms have these contracts:
 | `environment_path` | Materializes the immutable object under the selected Environment binding and supplies the adapter-defined stable logical path reference; the model uses the Environment's authorized file tools. |
 
 `auto` is a submission preference, not an accepted delivery value. Acceptance
-resolves it to one concrete delivery using the exact AgentRevision declaration,
+resolves it to one concrete delivery using the exact AgentPresetVersion declaration,
 frozen Model execution snapshot, selected Environment configuration, media type,
 size, and current policy. A caller-requested concrete delivery is accepted only
 when those same constraints permit it. A replacement TurnAttempt uses the frozen
@@ -272,7 +270,8 @@ for bounded cleanup.
 
 ## Agent Input Declaration and Harness Mapping
 
-Every immutable AgentRevision stores one declaration governed by this contract:
+Every `AgentPresetConfig` stores one declaration governed by this contract, and
+Publish freezes that declaration in the immutable AgentPresetVersion:
 
 ```python
 class AgentInputDeclaration:
@@ -305,16 +304,24 @@ exceed Foundation hard limits. When `structured_content_schema` is absent,
 validates it using self-contained JSON Schema Draft 2020-12 with no remote
 references, stores the canonical schema digest, and requires it to match.
 `allow_text=false` rejects every `TextContent`; empty media and delivery tuples
-reject every `BinaryContent`. Materializing a revision validates the complete
-declaration. Turn acceptance enforces its exact text, binary, structured-content,
-and aggregate bounds and revalidates the actual structured value against that
-exact schema.
+reject every `BinaryContent`. Publishing an AgentPresetVersion validates the
+complete declaration. Turn acceptance enforces its exact text, binary,
+structured-content, and aggregate bounds and revalidates the actual structured
+value against that exact schema.
 
-The immutable AgentRevision stores the exact trusted adapter key and dependency
-locks owned by [Agent Revisions and Reconstruction](12-agent-revisions-and-reconstruction.md).
-The Worker verifies those locks and maps the complete accepted `AgentInput` to
-the Harness `RunInputValue`. It preserves content-block order and applies these
-delivery semantics:
+The AgentPreset's `ProtocolConfig.input_modes` can only narrow the text and media
+modes admitted by this declaration. When
+`ProtocolConfig.input_data_schema` is present, it is the same normalized schema
+as `structured_content_schema`; Publish rejects a divergent schema or digest.
+The Protocol Gateway therefore projects this input contract without becoming a
+second validation authority.
+
+The immutable AgentPresetVersion stores the exact trusted adapter key and
+configuration. The Turn pins that Version and one compatible Runtime lock as
+defined by [Agent Management](12-agent-management.md). The Worker verifies both
+before mapping the complete accepted `AgentInput` to the Harness
+`RunInputValue`. It preserves content-block order and applies these delivery
+semantics:
 
 - `TextContent` becomes native user text content;
 - `model_content` becomes native Pydantic `BinaryContent` with verified media type;
@@ -323,35 +330,29 @@ delivery semantics:
 - `structured_content` is incorporated only by the locked adapter, never by an implicit generic JSON dump.
 
 The adapter returns `None` only for an accepted empty input. It carries no
-credential or ambient authority and cannot widen the accepted AgentRevision,
+credential or ambient authority and cannot widen the accepted AgentPresetVersion,
 Model, Environment, Skill, Connector, or content policy. A replacement Worker
-uses the same accepted input, exact AgentRevision, and adapter locks; incompatible
-or unavailable adapters fail before model or tool work rather than changing the
-input representation.
+uses the same accepted input, exact AgentPresetVersion, and Runtime lock;
+incompatible or unavailable adapters fail before model or tool work rather than
+changing the input representation.
 
 ## Use by Control Operation
 
-| Operation                         | Ordinary `AgentInput` behavior                                                                                                              |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Root invocation                   | Caller supplies input; acceptance stores its normalized accepted form on the root Turn.                                                     |
-| Ordinary continuation             | Caller supplies input; acceptance stores it on the successor Turn.                                                                          |
-| Fork                              | Caller supplies input; the new Thread's first Turn stores it after validation against the selected compatible AgentRevision.                |
-| Managed Trigger                   | The Trigger constructs the same protocol, placing its schema-validated machine-readable value in `structured_content`.                      |
-| Asynchronous child                | The authorized parent or Host supplies the same protocol for the child Turn.                                                                |
-| Retry                             | Caller supplies no new input; the successor reuses the source Turn's exact accepted input and content references.                           |
-| Active-run steering               | The steering command carries the same protocol and adapter mapping but does not replace the Turn's initial accepted input or create a Turn. |
-| Waiting-action response or result | Uses the [correlated typed feedback protocol](28b-agent-control-input-and-continuation.md#deferred-interaction), not `AgentInput`.          |
-
-This protocol defines the payload accepted by active-run steering, not the
-steering command's durable ordering, fencing, delivery receipt, terminal race,
-or retry semantics. Those active-control facts are independent of content
-acquisition and Harness input mapping.
+| Operation                         | Ordinary `AgentInput` behavior                                                                                                    |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Root invocation                   | Caller supplies input; acceptance stores its normalized accepted form on the root Turn.                                           |
+| Ordinary continuation             | Caller supplies input; acceptance stores it on the successor Turn.                                                                |
+| Fork                              | Caller supplies input; the new Thread's first Turn stores it after validation against the selected compatible AgentPresetVersion. |
+| Managed Trigger                   | The Trigger constructs the same protocol, placing its schema-validated machine-readable value in `structured_content`.            |
+| Asynchronous child                | The authorized parent or Host supplies the same protocol for the child Turn.                                                      |
+| Retry                             | Caller supplies no new input; the successor reuses the source Turn's exact accepted input and content references.                 |
+| Waiting-action response or result | Uses the [correlated typed feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction), not `AgentInput`. |
 
 ## Failure Semantics
 
 | Condition                                                         | Outcome                                                                                |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Invalid input schema, content block, bound, or declaration        | Request is rejected before Turn or steering acceptance                                 |
+| Invalid input schema, content block, bound, or declaration        | Request is rejected before Turn acceptance                                             |
 | Binary source is absent, unauthorized, unsafe, or changes         | Request is rejected without retaining an accepted source or exposing private existence |
 | Binary acquisition succeeds but command acceptance fails          | No command is accepted; unreferenced prepared content is eligible for bounded cleanup  |
 | Requested or resolved delivery is incompatible                    | Request is rejected rather than relying on Worker fallback                             |
@@ -361,7 +362,7 @@ acquisition and Harness input mapping.
 ## Compatibility
 
 `AgentInput.schema_version` versions the complete wire and accepted-value
-contract; public type names do not contain version suffixes. AgentRevision input
+contract; public type names do not contain version suffixes. AgentPresetVersion input
 declarations pin one supported version, accepted values retain that version, and
 Workers never upgrade retained input during reconstruction. A new content block,
 source discriminator, delivery value, required field, canonicalization rule, or
@@ -372,9 +373,9 @@ protocol.
 
 ## Invariants
 
-1. `AgentInput` is the single ordinary semantic-input protocol for root invocation, continuation, fork, managed Trigger input, asynchronous child input, and active-run steering.
+1. `AgentInput` is the single ordinary semantic-input protocol for root invocation, continuation, fork, managed Trigger input, and asynchronous child input.
 2. Input-source acquisition and model delivery are independent; every accepted binary source is immutable and every accepted delivery is concrete.
 3. Accepted binary content retains verified bytes, digest, media type, order, and delivery without retaining inline data, submitted URLs, uploads, or mutable paths as runtime dependencies.
-4. `structured_content` is Agent-specific data validated by the exact AgentRevision and never carries authority or becomes implicit model JSON.
+4. `structured_content` is Agent-specific data validated by the exact AgentPresetVersion and never carries authority or becomes implicit model JSON.
 5. Retry accepts no new `AgentInput` and reuses the exact accepted value.
 6. Waiting-action feedback and client-tool results are correlated typed values, not ordinary `AgentInput`.

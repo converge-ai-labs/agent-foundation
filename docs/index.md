@@ -1,38 +1,72 @@
 # Agent Foundation
 
-Agent Foundation is an open-source foundation for embedding Agents or hosting them as durable services. Its core surfaces are a Pydantic AI-based Agent Harness, a local Agent UI, Environment infrastructure, and the optional Foundation Service.
+Agent Foundation provides reusable, process-local building blocks for applications that run agents. Start with the Agent Harness, then add an Environment or a stream projection only when your product needs those boundaries.
 
-## Agent Packages
+The project builds on [Pydantic AI](https://ai.pydantic.dev/). Pydantic AI owns the Agent loop, models, messages, tools, output validation, and native events. Agent Foundation adds application-facing composition, continuation state, Environment integration, observation, and hosting contracts without taking ownership of your product lifecycle.
 
-The local Agent stack consists of:
+## Choose your path
 
-- `a13n-harness`, the process-local Agent runtime;
-- `a13n-stream-protocol`, the shared Harness-to-AG-UI projection and validation package;
-- `a13n-ui`, the local single-user Host with a bundled browser application and terminal UI.
+| If you want to...                                                        | Read...                                                                                                  |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Build and run an Agent inside a Python application                       | [Agent Harness overview](agent-harness/index.md) and [Getting Started](agent-harness/getting-started.md) |
+| Integrate the Harness into a Host with persistence and current authority | [Embedding in a Host](agent-harness/hosting.md)                                                          |
+| Give an Agent access to files, commands, processes, or ports             | [Environment overview](environments/index.md)                                                            |
+| Run local Environment operations through native isolation                | [`agent-envd`](agent-envd/index.md)                                                                      |
+| Implement or operate an Environment provider                             | [Environment Provider](agent-environment-provider/index.md)                                              |
+| Convert Harness observations into AG-UI events                           | [Agent Stream Protocol](agent-stream-protocol/index.md)                                                  |
 
-The source directories omit the distribution prefix: `packages/agent-harness`, `packages/agent-stream-protocol`, and `packages/agent-ui`. Python imports use normalized underscore names: `a13n_harness`, `a13n_stream_protocol`, and `a13n_ui`.
+## The main execution path
 
-Start with the [Agent Harness guide](agent-harness/index.md) to embed, build, run, extend, and resume a process-local Agent. See the [Agent Stream Protocol guide](agent-stream-protocol/index.md) for Harness-to-AG-UI observation, Host processors, snapshots, and reconstruction from source history.
-
-Harness and Stream Protocol form one release group. A `release/harness-v<version>` tag publishes both at exactly the same version, and published Protocol metadata pins that Harness version. Agent UI advances independently through `release/agent-ui-v<version>` and pins both libraries to one reviewed Harness release. `<version>` is stable `X.Y.Z` or release-candidate `X.Y.Z-rc.N`; PyPI represents an RC as the equivalent PEP 440 version `X.Y.ZrcN`. The private `apps/harness-ui` browser source is compiled into the `a13n-ui` sdist and wheel; it is not published to npm and has no independent version or release workflow.
-
-`a13n-ui` selects WebUI by default:
-
-```console
-a13n-ui
-a13n-ui webui
-a13n-ui tui
+```mermaid
+flowchart LR
+    App[Application or Host] --> Harness[Agent Harness]
+    Harness --> PAI[Pydantic AI]
+    Harness --> Provider[Environment Provider]
+    Provider --> Direct[Direct Local]
+    Provider --> Envd[agent-envd via EIP]
+    Harness --> Stream[Agent Stream Protocol]
+    Stream --> Consumer[AG-UI consumer]
 ```
 
-From a repository checkout, use the matching Make aliases:
+These components stay separate deliberately:
 
-```console
-make agent-ui
-make agent-ui tui
-```
+- the **application or Host** owns identity, authorization, persistence, delivery, and product policy;
+- the **Agent Harness** owns one process-local definition and logical run;
+- **Pydantic AI** owns the inner Agent loop;
+- an **Environment Provider** owns resource lifecycle and fresh runtime attachments;
+- **`agent-envd`** serves one configured Environment generation over EIP;
+- **Agent Stream Protocol** projects public observations but does not run or resume an Agent.
 
-The Make targets forward to the package-provided command: the default form invokes `a13n-ui`, while the `tui` form invokes `a13n-ui tui`. Browser asset preparation remains part of the build pipeline. WebUI and TUI use the same application service, local session authority, Harness execution path, and Agent Stream Protocol AG-UI projection. A presentation surface does not own a separate Agent loop or continuation state.
+## Agent Harness
 
-## Architecture and Contribution
+Use `a13n-harness` when you want a reusable execution boundary around Pydantic AI. It provides:
 
-Read the [platform specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/README.md) for accepted architecture and subsystem boundaries. Read the [repository README](https://github.com/converge-ai-labs/agent-foundation/blob/main/README.md) for components and release channels, and [CONTRIBUTING.md](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) before making changes.
+- code-first Agent definitions and a reusable `ExecutableAgent`;
+- definition-selected Capabilities and fresh run collaborators;
+- provider-neutral Environment tools;
+- normalized streams, results, usage, and correlation;
+- portable `HarnessState`, resume, and deferred interaction;
+- Skills, inline delegation, restricted CodeAct, and trusted plugins;
+- OpenTelemetry-native observation boundaries.
+
+[Run the offline quickstart](agent-harness/getting-started.md) or [choose a Harness guide](agent-harness/index.md#choose-a-guide).
+
+## Environments
+
+An Environment is the boundary through which an Agent can work with files, commands, processes, retained output, and ports. The Environment Provider contract separates those operations from provider resource lifecycle.
+
+Use Direct Local for trusted work against a Host-selected directory. Use Local Envd or another EIP-backed provider when the workload needs an isolation or remote-execution boundary.
+
+[Choose an Environment backend](environments/index.md) or [operate `agent-envd`](agent-envd/index.md).
+
+## Streaming
+
+`a13n-stream-protocol` converts public Harness stream items into typed AG-UI events. It is useful when a browser, terminal, event store, or another AG-UI consumer needs one stable projection. Persistence, replay IDs, transport, and rendering remain Host responsibilities.
+
+[Read the Agent Stream Protocol guide](agent-stream-protocol/index.md).
+
+## Project status
+
+Agent Foundation is under active 0.x development. These pages track implemented and tested public API surfaces on `main` and currently target the next Harness release; the latest published packages predate some documented APIs. Use the source setup in [Getting Started](agent-harness/getting-started.md) until the documentation-aligned release is available.
+
+Compatibility may still change between releases. Normative architecture and compatibility contracts live in the repository's [accepted specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec).

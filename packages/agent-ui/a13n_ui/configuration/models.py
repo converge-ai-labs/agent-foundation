@@ -490,10 +490,16 @@ class DelegationContextSelection(StrictModel):
     task_state: Literal["shared", "isolated"] = "shared"
 
 
+class SubagentIdentitySelection(StrictModel):
+    """Portable child Identity inheritance mapped to the Harness public contract."""
+
+    inherit_agent_id: bool = False
+
+
 class UsageLimitsSelection(StrictModel):
     """Serializable subset of Pydantic AI usage ceilings supported by Agent UI."""
 
-    request_limit: int | None = Field(default=50, ge=1)
+    request_limit: int | None = Field(default=None, ge=1)
     tool_calls_limit: int | None = Field(default=None, ge=1)
     input_tokens_limit: int | None = Field(default=None, ge=1)
     output_tokens_limit: int | None = Field(default=None, ge=1)
@@ -519,6 +525,7 @@ class SubagentEdge(StrictModel):
     description: str = Field(min_length=1, max_length=16 * 1024)
     agent: ResourceRef
     context: DelegationContextSelection = DelegationContextSelection()
+    identity: SubagentIdentitySelection = SubagentIdentitySelection()
     usage_limits: UsageLimitsSelection | None = None
     environment: ChildEnvironmentPolicy = ChildEnvironmentPolicy()
     lifetime: Literal["parent_scope", "session"] = "parent_scope"
@@ -535,8 +542,6 @@ class SubagentEdge(StrictModel):
 class DynamicEnvironmentCapabilityConfiguration(StrictModel):
     file_tools: bool = True
     shell_tools: bool = True
-    process_tools: bool = True
-    port_tools: bool = False
     max_reference_entries: int = Field(default=1024, gt=0, le=100_000)
 
 
@@ -581,13 +586,81 @@ class WebCapabilitySelection(StrictModel):
     schema_version: Literal["1"] = "1"
 
 
+class MCPContextHeaderSelection(StrictModel):
+    source: str = Field(min_length=1, max_length=1024)
+    required: bool = True
+
+    @field_validator("source")
+    @classmethod
+    def _supported_source(cls, value: str) -> str:
+        if value in {
+            "identity.issuer",
+            "identity.subject",
+            "instance.agent_instance_id",
+            "instance.parent_agent_instance_id",
+            "instance.delegation_id",
+            "instance.actor",
+            "context.run_id",
+            "context.thread_id",
+        }:
+            return value
+        if value.startswith("identity.") and value.removeprefix("identity."):
+            return value
+        if value.startswith("context.metadata.") and value.removeprefix("context.metadata."):
+            return value
+        raise ValueError("unsupported MCP context header source")
+
+
+class MCPSelection(StrictModel):
+    key: Literal["a13n.mcp"]
+    schema_version: Literal["1"] = "1"
+    id: _ID
+    url: str = Field(min_length=1, max_length=2048)
+    execution: Literal["auto", "local", "native"] = "auto"
+    allowed_tools: tuple[str, ...] | None = None
+    description: str | None = Field(default=None, max_length=16 * 1024)
+    defer_loading: bool = False
+    context_headers: dict[str, MCPContextHeaderSelection]
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("MCP url must be an HTTP(S) URL")
+        return value
+
+    @field_validator("allowed_tools")
+    @classmethod
+    def _valid_allowed_tools(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is None:
+            return None
+        if any(not item.strip() for item in value) or len(value) != len(set(value)):
+            raise ValueError("MCP allowed_tools must contain unique non-blank names")
+        return value
+
+    @field_validator("context_headers")
+    @classmethod
+    def _valid_context_headers(
+        cls,
+        value: dict[str, MCPContextHeaderSelection],
+    ) -> dict[str, MCPContextHeaderSelection]:
+        if any(not name.strip() for name in value):
+            raise ValueError("MCP context header names must be non-blank")
+        folded = [name.casefold() for name in value]
+        if len(folded) != len(set(folded)):
+            raise ValueError("MCP context header names must be unique case-insensitively")
+        return value
+
+
 type FirstPartyCapabilitySelection = Annotated[
     DynamicEnvironmentCapabilitySelection
     | WorkingStateCapabilitySelection
     | UserInteractionCapabilitySelection
     | DocumentsCapabilitySelection
     | MediaCapabilitySelection
-    | WebCapabilitySelection,
+    | WebCapabilitySelection
+    | MCPSelection,
     Field(discriminator="key"),
 ]
 
@@ -652,9 +725,12 @@ class AgentDefinitionDocument(StrictModel):
         child_names = [item.name for item in self.subagents]
         if len(child_names) != len(set(child_names)):
             raise ValueError("subagent edge names must be unique")
-        capability_keys = [item.key for item in self.capabilities]
-        if len(capability_keys) != len(set(capability_keys)):
-            raise ValueError("Agent Capability selections must be unique")
+        singleton_keys = [item.key for item in self.capabilities if not isinstance(item, MCPSelection)]
+        if len(singleton_keys) != len(set(singleton_keys)):
+            raise ValueError("Singleton Agent Capability selections must be unique")
+        mcp_ids = [item.id for item in self.capabilities if isinstance(item, MCPSelection)]
+        if len(mcp_ids) != len(set(mcp_ids)):
+            raise ValueError("MCP Capability IDs must be unique within one Agent")
         return self
 
 

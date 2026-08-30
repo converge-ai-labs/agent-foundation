@@ -9,13 +9,13 @@ The calling model does not choose the path, and the Harness never guesses suppor
 
 ## Declare native model capabilities
 
-Native media support is Harness-owned `AgentSpec` configuration. Callers use the `model_config` construction key; Python reads the resolved value through `spec.model_configuration`:
+Native media support is Harness-owned `AgentSpec` configuration. Callers use the `model_characteristics` construction key; Python reads the resolved value through `spec.model_characteristics`:
 
 ```python
-from a13n_harness import AgentSpec, ModelCapability, ModelConfiguration
+from a13n_harness import AgentSpec, ModelCapability, HarnessModelCharacteristics
 
 agent_spec = AgentSpec(
-    model_config=ModelConfiguration(
+    model_characteristics=HarnessModelCharacteristics(
         capabilities=frozenset(
             {
                 ModelCapability.IMAGE_UNDERSTANDING,
@@ -83,8 +83,6 @@ capabilities = (
         DynamicEnvironmentConfiguration(
             file_tools=True,
             shell_tools=False,
-            process_tools=False,
-            port_tools=False,
         )
     ),
 )

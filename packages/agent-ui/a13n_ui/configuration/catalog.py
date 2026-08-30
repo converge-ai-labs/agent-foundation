@@ -52,10 +52,7 @@ class CatalogRepository:
         self._store = store
 
     async def current_generation(self) -> ConfigurationGeneration | None:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             selected = await session.get(CurrentConfigurationRecord, 1)
             if selected is None:
                 return None
@@ -99,10 +96,7 @@ class CatalogRepository:
     async def generation_settings(self, generation_id: str) -> ConfigurationSettings:
         """Recover the exact accepted process settings associated with one generation."""
 
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             record = await session.get(ConfigurationGenerationRecord, generation_id)
         if record is None:
             raise StoreIntegrityError(
@@ -147,10 +141,7 @@ class CatalogRepository:
     async def retained_generations(self, *, limit: int = 100) -> tuple[ConfigurationGeneration, ...]:
         if not 1 <= limit <= 1000:
             raise ValueError("generation limit must be between 1 and 1000")
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             ids = tuple(
                 (
                     await session.execute(
@@ -167,10 +158,7 @@ class CatalogRepository:
         return tuple(generations)
 
     async def resource(self, reference: ResourceRevisionRef) -> ResourceRevision:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             record = (
                 await session.execute(
                     select(ResourceRevisionRecord).where(
@@ -213,10 +201,7 @@ class CatalogRepository:
     async def skill_package_reference(self, reference: ResourceRevisionRef) -> ObjectRef:
         if reference.kind is not ResourceKind.skill:
             raise ValueError("skill package lookup requires a Skill resource revision")
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             row = (
                 await session.execute(
                     select(SkillPackageReferenceRecord).where(
@@ -290,10 +275,7 @@ class CatalogRepository:
             )
 
         accepted_at = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with transaction(self._store.database.sessions) as session:
             sequence = (
                 int(
                     (
@@ -385,10 +367,7 @@ class CatalogRepository:
 
     async def record_rejection(self, error: ConfigurationError) -> None:
         detail = str(error).strip()[:255] or "Configuration candidate rejected."
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with transaction(self._store.database.sessions) as session:
             session.add(
                 ConfigurationDiagnosticRecord(
                     process_generation=self._store.process_generation,
@@ -401,10 +380,7 @@ class CatalogRepository:
     async def diagnostics(self, *, limit: int = 100) -> tuple[ConfigurationDiagnostic, ...]:
         if not 1 <= limit <= 1000:
             raise ValueError("diagnostic limit must be between 1 and 1000")
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             rows = tuple(
                 (
                     await session.execute(
@@ -425,10 +401,7 @@ class CatalogRepository:
         )
 
     async def _generation(self, generation_id: str) -> ConfigurationGeneration:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             record = await session.get(ConfigurationGenerationRecord, generation_id)
             if record is None:
                 raise StoreIntegrityError(
@@ -464,10 +437,7 @@ class CatalogRepository:
         keys = {_revision_key(item.ref) for item in candidate.revisions}
         if not keys:
             return {}
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             rows = tuple((await session.execute(select(ResourceRevisionRecord))).scalars())
         return {
             (row.resource_kind, row.resource_id, row.content_digest): row.object_digest
@@ -479,10 +449,7 @@ class CatalogRepository:
         keys = {_revision_key(item.revision) for item in candidate.skill_packages}
         if not keys:
             return {}
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as session:
+        async with short_session(self._store.database.sessions) as session:
             rows = tuple((await session.execute(select(SkillPackageReferenceRecord))).scalars())
         return {
             (row.resource_kind, row.resource_id, row.content_digest): row.object_digest

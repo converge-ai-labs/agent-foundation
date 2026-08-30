@@ -11,7 +11,7 @@ from typing import Any
 from pydantic_ai import RunContext
 
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.commands import BoundProcessHandle
+from a13n_harness.environment.commands import ProcessIdentity
 from a13n_harness.environment.models import (
     EnvironmentError,
 )
@@ -31,7 +31,7 @@ from .providers import BoundEnvironment
 @dataclass(frozen=True, slots=True)
 class _BindingFence:
     binding_id: str
-    binding_revision: int
+    binding_version: int
     observed_generation: str
 
 
@@ -51,12 +51,12 @@ class _DynamicEnvironmentContext:
         *,
         run_id: str,
         environment: BoundEnvironment,
-        resolve_process: Callable[[str], BoundProcessHandle],
+        resolve_process_identity: Callable[[str], ProcessIdentity],
     ) -> None:
         self.configuration = configuration.model_copy(deep=True)
         self._run_id = run_id
         self._environment = environment
-        self._resolve_process = resolve_process
+        self._resolve_process_identity = resolve_process_identity
         self._pending_version: int | None = None
         self._notice_pending = False
         self._active_context: RunContext[AgentContext] | None = None
@@ -106,6 +106,7 @@ class _DynamicEnvironmentContext:
                 _AuthorizationFence(
                     topology_version=topology_version,
                     bindings=tuple(dict.fromkeys(fences)),
+                    unresolved=(tool_id.startswith("environment.process_") and tool_id != "environment.process_status"),
                 )
             )
             return resources
@@ -139,7 +140,7 @@ class _DynamicEnvironmentContext:
             return (self._path_resource(context, _string_argument(arguments, "path")),)
         if tool_id in {"filesystem.glob", "filesystem.grep"}:
             return (self._path_resource(context, _optional_string_argument(arguments, "root") or "."),)
-        if tool_id in {"environment.shell_exec", "environment.process_start"}:
+        if tool_id == "environment.shell_exec":
             alias = _optional_string_argument(arguments, "alias")
             cwd = _optional_string_argument(arguments, "cwd")
             if cwd is not None:
@@ -148,13 +149,12 @@ class _DynamicEnvironmentContext:
         if tool_id == "environment.process_status":
             return ()
         if tool_id.startswith("environment.process_"):
-            handle = self._resolve_process(_string_argument(arguments, "process"))
-            self._record_fence(handle.binding_id, handle.binding_revision, handle.observed_generation)
+            identity = self._resolve_process_identity(_string_argument(arguments, "process_id"))
             return (
                 CanonicalResource(
                     namespace="environment",
                     kind="process",
-                    identifier=f"{handle.binding_id}:{handle.binding_revision}:{handle.observed_generation}",
+                    identifier=identity.model_dump_json(),
                 ),
             )
         if tool_id.startswith("environment.port_"):
@@ -177,12 +177,12 @@ class _DynamicEnvironmentContext:
     ) -> CanonicalResource:
         selected = context.environment.resolve_path(path, alias=alias)
         binding = next(item for item in context.environment.topology.bindings if item.binding_id == selected.binding_id)
-        self._record_fence(binding.binding_id, binding.binding_revision, binding.descriptor.generation)
+        self._record_fence(binding.binding_id, binding.binding_version, binding.descriptor.generation)
         return CanonicalResource(
             namespace="environment",
             kind="file",
             identifier=(
-                f"{selected.binding_id}:{selected.binding_revision}:{binding.descriptor.generation}:{selected.path}"
+                f"{selected.binding_id}:{selected.binding_version}:{binding.descriptor.generation}:{selected.path}"
             ),
         )
 
@@ -200,17 +200,17 @@ class _DynamicEnvironmentContext:
                 "The selected Environment binding is unavailable.",
                 code="environment_selection_invalid",
             )
-        self._record_fence(binding.binding_id, binding.binding_revision, binding.descriptor.generation)
+        self._record_fence(binding.binding_id, binding.binding_version, binding.descriptor.generation)
         return CanonicalResource(
             namespace="environment",
             kind="binding",
-            identifier=f"{binding.binding_id}:{binding.binding_revision}:{binding.descriptor.generation}",
+            identifier=f"{binding.binding_id}:{binding.binding_version}:{binding.descriptor.generation}",
         )
 
-    def _record_fence(self, binding_id: str, binding_revision: int, generation: str) -> None:
+    def _record_fence(self, binding_id: str, binding_version: int, generation: str) -> None:
         builder = self._fence_builder.get()
         if builder is not None:
-            builder.append(_BindingFence(binding_id, binding_revision, generation))
+            builder.append(_BindingFence(binding_id, binding_version, generation))
 
     def _assert_authorized_fence(self) -> None:
         fence = self._authorization_fence.get()
@@ -229,7 +229,7 @@ class _DynamicEnvironmentContext:
             binding = current.get(expected.binding_id)
             if (
                 binding is None
-                or binding.binding_revision != expected.binding_revision
+                or binding.binding_version != expected.binding_version
                 or binding.descriptor.generation != expected.observed_generation
             ):
                 raise EnvironmentError(

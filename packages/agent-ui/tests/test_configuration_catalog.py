@@ -9,7 +9,6 @@ from pathlib import Path
 import a13n_ui.configuration.service as configuration_service_module
 import pytest
 import yaml
-from a13n_ui.application import open_application
 from a13n_ui.configuration import (
     AgentDefinitionDocument,
     ConfigurationSettings,
@@ -17,7 +16,6 @@ from a13n_ui.configuration import (
     EnvironmentBindingDefinition,
     LocalDirectorySettings,
     LocalSkillDiscoverySettings,
-    LocalSkillSourceDefinition,
     ModelDefinition,
     PluginInstanceDefinition,
     ResourceKind,
@@ -28,6 +26,7 @@ from a13n_ui.configuration import (
 )
 from a13n_ui.configuration.loader import load_catalog_candidate
 from a13n_ui.errors import ConfigurationError
+from a13n_ui.host import open_agent_ui_host
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
 from a13n_ui.storage.database import transaction
@@ -161,7 +160,7 @@ async def test_catalog_accepts_restarts_rejects_invalid_and_applies_batch(tmp_pa
     source = _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         generation_one = await application.current_configuration()
         assert generation_one is not None, await application.configuration_diagnostics()
         assert generation_one.generation_id == "config-1"
@@ -204,7 +203,7 @@ async def test_catalog_accepts_restarts_rejects_invalid_and_applies_batch(tmp_pa
         assert generation_two.generation_id == "config-2"
         assert generation_two.catalog_digest != generation_one.catalog_digest
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         current = await restarted.current_configuration()
         assert current is not None
         assert current.generation_id == "config-2"
@@ -242,7 +241,7 @@ async def test_skill_scan_import_survives_source_removal_and_restart(tmp_path: P
         max_skills=32,
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         preview = await application.scan_skills(discovery_settings)
         assert [(item.name, item.description) for item in preview.items] == [("example", "Example imported workflow")]
         change = await application.preview_skill_import(
@@ -266,7 +265,7 @@ async def test_skill_scan_import_survives_source_removal_and_restart(tmp_path: P
         else:
             path.rmdir()
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         generation = await restarted.current_configuration()
         assert generation is not None
         skill_ref = next(item for item in generation.resources if item.resource_id == "skill-example")
@@ -304,7 +303,7 @@ async def test_skill_import_rejects_a_stale_bound_catalog(
         max_skills=32,
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         preview = await application.scan_skills(selected)
         lease = application._configuration.skills._scans[preview.scan_id]
         original_select = lease.environment.select_files
@@ -337,7 +336,7 @@ async def test_startup_removes_only_expired_unreferenced_objects(tmp_path: Path)
     _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         recent = await application._store.publish_object(
             object_kind=ObjectKind.provider_state,
             object_schema_version="1",
@@ -360,7 +359,7 @@ async def test_startup_removes_only_expired_unreferenced_objects(tmp_path: Path)
             expired_record.registered_at = old
             package_record.registered_at = old
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         assert (await restarted._store.read_object(recent)).payload == {"orphan": "recent"}
         assert (await restarted._store.read_object(package)).object_kind is ObjectKind.skill_package
         async with transaction(restarted._store.database.sessions) as session:
@@ -390,7 +389,7 @@ async def test_invalid_source_transaction_does_not_select_its_overlay(tmp_path: 
             ),
         ),
     )
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         generation = await application.current_configuration()
         assert generation is not None
         manifest = manifest.model_copy(update={"base_catalog_digest": generation.catalog_digest})
@@ -412,7 +411,7 @@ async def test_skill_package_content_changes_skill_revision(tmp_path: Path) -> N
     _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         first = await application.current_configuration()
         assert first is not None
         first_skill = next(item for item in first.resources if item.kind is ResourceKind.skill)
@@ -428,85 +427,6 @@ async def test_skill_package_content_changes_skill_revision(tmp_path: Path) -> N
         assert second.generation_id == "config-2"
         assert second_skill.content_digest != first_skill.content_digest
         assert second_package.logical_digest != first_package.logical_digest
-
-
-async def test_startup_lkg_recovers_its_accepted_process_settings(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    discovery.mkdir()
-    _write_complete_tree(definitions)
-    configured = _full_settings(tmp_path / "data", definitions, discovery)
-    accepted_configuration = configured.configuration.model_copy(
-        update={
-            "skill_discovery": LocalSkillDiscoverySettings(
-                ordered_sources=(
-                    ResourceRef(
-                        kind=ResourceKind.skill_source,
-                        resource_id="skill-source-local",
-                    ),
-                )
-            )
-        }
-    )
-    process_path = tmp_path / "process-settings.yaml"
-    _write_yaml(process_path, accepted_configuration.model_dump(mode="json"))
-    settings = AgentUiSettings(
-        storage=configured.storage,
-        configuration=ConfigurationSettings(),
-        process_settings_path=process_path,
-    )
-
-    async with open_application(settings) as application:
-        accepted = await application.current_configuration()
-        assert accepted is not None
-        assert (await application.skill_source_statuses())[0].selected_ordinal == 0
-
-    process_path.write_text("schema_version: [invalid\n")
-    async with open_application(settings) as restarted:
-        assert await restarted.current_configuration() == accepted
-        assert restarted._configuration.settings == accepted_configuration
-        status = (await restarted.skill_source_statuses())[0]
-        assert status.selected_ordinal == 0
-        assert status.directory_status == "available"
-
-
-async def test_file_backed_process_settings_report_restart_requirement(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    discovery.mkdir()
-    _write_complete_tree(definitions)
-    configured = _full_settings(tmp_path / "data", definitions, discovery)
-    process_path = tmp_path / "process-settings.yaml"
-    desired = configured.configuration.model_dump(mode="json")
-    _write_yaml(process_path, desired)
-    settings = AgentUiSettings(
-        storage=configured.storage,
-        configuration=ConfigurationSettings(),
-        process_settings_path=process_path,
-    )
-
-    async with open_application(settings) as application:
-        first = await application.current_configuration()
-        assert first is not None
-        assert first.restart_required is False
-
-        desired["credential_backends"] = ["a13n.keyring"]
-        _write_yaml(process_path, desired)
-        second = await application.reload_configuration()
-        assert second.restart_required is True
-        assert second.process_settings_digest != first.process_settings_digest
-
-    async with open_application(settings) as restarted:
-        current = await restarted.current_configuration()
-        assert current is not None
-        assert current.restart_required is False
-
-        desired["envd_executable_override"] = "agent-envd"
-        _write_yaml(process_path, desired)
-        with pytest.raises(ConfigurationError) as invalid:
-            await restarted.reload_configuration()
-        assert invalid.value.code == "process_settings_invalid"
-        assert await restarted.current_configuration() == current
 
 
 def test_literal_credentials_are_rejected_from_generic_resource_configuration() -> None:
@@ -585,7 +505,7 @@ async def test_managed_skill_frontmatter_must_match_definition(tmp_path: Path) -
     _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         current = await application.current_configuration()
         assert current is not None
         (definitions / "managed-skills/skill-demo/SKILL.md").write_text(
@@ -608,7 +528,7 @@ async def test_oversized_resolved_prompt_keeps_last_known_good(tmp_path: Path) -
     (definitions / "prompts/prompt-main.md").write_text("Valid prompt.\n")
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         current = await application.current_configuration()
         assert current is not None
         (definitions / "prompts/prompt-main.md").write_text("x" * (1024 * 1024 + 1))
@@ -625,7 +545,7 @@ async def test_malformed_managed_skill_keeps_last_known_good(tmp_path: Path) -> 
     _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         current = await application.current_configuration()
         assert current is not None
         (definitions / "managed-skills/skill-demo/SKILL.md").write_text("No frontmatter.\n")
@@ -656,7 +576,7 @@ async def test_refresh_requires_recorded_source_and_skill_name(tmp_path: Path) -
         )
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         first = await application.scan_skill_source("skill-source-first")
         imported = await application.preview_skill_import(
             scan_id=first.scan_id,
@@ -701,7 +621,7 @@ async def test_refresh_replaces_removed_skill_package_files(tmp_path: Path) -> N
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         first_scan = await application.scan_skills(selected)
         first_change = await application.preview_skill_import(
             scan_id=first_scan.scan_id,
@@ -753,7 +673,7 @@ async def test_source_transaction_rolls_back_when_sources_race_manifest_selectio
     source = _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         current = await application.current_configuration()
         assert current is not None
         prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
@@ -809,7 +729,7 @@ async def test_source_transaction_rejects_unreconciled_external_edits(tmp_path: 
     source = _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         current = await application.current_configuration()
         assert current is not None
         model = yaml.safe_load(source["models/model-main.yaml"])
@@ -847,7 +767,7 @@ async def test_json_shapes_are_not_guessed_as_resource_references(tmp_path: Path
     source = _write_complete_tree(definitions)
     settings = _full_settings(tmp_path / "data", definitions, discovery)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         model = yaml.safe_load(source["models/model-main.yaml"])
         model["settings"] = {"example": {"kind": "agent", "resource_id": "agent-missing"}}
         _write_yaml(definitions / "models/model-main.yaml", model)
@@ -865,7 +785,7 @@ async def test_startup_removes_expired_unregistered_final_object(tmp_path: Path)
         update={"configuration": settings.configuration.model_copy(update={"orphan_retention_seconds": 1})}
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         envelope = await application._store.objects.publish(
             object_kind=ObjectKind.provider_state,
             object_schema_version="1",
@@ -874,7 +794,7 @@ async def test_startup_removes_expired_unregistered_final_object(tmp_path: Path)
         path = application._store.objects._path_for(envelope.ref)
     os.utime(path, (0, 0))
 
-    async with open_application(settings):
+    async with open_agent_ui_host(settings):
         assert not path.exists()
 
 
@@ -901,7 +821,7 @@ async def test_optional_missing_skill_source_and_scan_lease_bound(tmp_path: Path
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         preview = await application.scan_skills(selected)
         assert preview.items == ()
         await application.discard_skill_scan(preview.scan_id)
@@ -935,7 +855,7 @@ async def test_composed_skill_scan_reports_conflict_metadata(tmp_path: Path) -> 
         conflict="error",
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         conflicts = await application.skill_conflicts(selected)
         assert [item.model_dump(mode="json") for item in conflicts.conflicts] == [
             {
@@ -951,65 +871,6 @@ async def test_composed_skill_scan_reports_conflict_metadata(tmp_path: Path) -> 
             await application.scan_skills(selected)
         assert conflict.value.code == "skill_catalog_ambiguous"
         assert conflict.value.details == {"skill": "example"}
-
-
-async def test_skill_source_commands_manage_documents_and_enabled_order(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    skill = discovery / "example"
-    skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text("---\nname: example\ndescription: Example workflow\n---\n\nFollow it.\n")
-    configured = _full_settings(tmp_path / "data", definitions, discovery)
-    process_path = tmp_path / "process-settings.yaml"
-    _write_yaml(process_path, configured.configuration.model_dump(mode="json"))
-    settings = AgentUiSettings(
-        storage=configured.storage,
-        configuration=ConfigurationSettings(),
-        process_settings_path=process_path,
-    )
-    source = LocalSkillSourceDefinition(
-        schema_version="1",
-        skill_source_id="skill-source-local",
-        display_name="Local Skills",
-        directory_id="directory-skills",
-        roots=("/",),
-        required=True,
-        max_entries_per_root=32,
-    )
-
-    async with open_application(settings) as application:
-        created = await application.upsert_skill_source(source, target_root_id="root-user")
-        assert created.generation_id == "config-2"
-        statuses = await application.skill_source_statuses()
-        assert [(item.source.display_name, item.selected, item.directory_status) for item in statuses] == [
-            ("Local Skills", False, "available")
-        ]
-
-        edited = await application.upsert_skill_source(
-            source.model_copy(update={"display_name": "Edited Skills"}),
-            target_root_id="root-user",
-        )
-        assert edited.generation_id == "config-3"
-
-        ordered = await application.reorder_skill_sources(("skill-source-local",))
-        assert ordered.generation_id == "config-4"
-        selected_status = (await application.skill_source_statuses())[0]
-        assert selected_status.selected is True
-        assert selected_status.selected_ordinal == 0
-        preview = await application.scan_skill_source("skill-source-local")
-        assert [item.name for item in preview.items] == ["example"]
-        await application.discard_skill_scan(preview.scan_id)
-
-        with pytest.raises(ConfigurationError) as selected:
-            await application.delete_skill_source("skill-source-local")
-        assert selected.value.code == "skill_source_selected"
-
-        await application.reorder_skill_sources(())
-        deleted = await application.delete_skill_source("skill-source-local")
-        assert all(item.resource_id != "skill-source-local" for item in deleted.resources)
-
-    async with open_application(settings) as restarted:
-        assert await restarted.skill_source_statuses() == ()
 
 
 async def test_skill_scan_lease_deadline_is_independent_of_reconciliation(tmp_path: Path) -> None:
@@ -1046,7 +907,7 @@ async def test_skill_scan_lease_deadline_is_independent_of_reconciliation(tmp_pa
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         first = await application.scan_skills(selected)
         with fail_after(2):
             while first.scan_id in application._configuration.skills._scans:
@@ -1080,7 +941,7 @@ async def test_skill_package_directory_entries_are_bounded(tmp_path: Path) -> No
         update={"configuration": settings.configuration.model_copy(update={"max_skill_package_files": 2})}
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         scan = await application.scan_skill_source("skill-source-local")
         with pytest.raises(ConfigurationError) as limited:
             await application.preview_skill_import(
@@ -1120,7 +981,7 @@ async def test_prepared_skill_changes_have_an_aggregate_byte_limit(tmp_path: Pat
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         scan = await application.scan_skills(selected)
         with pytest.raises(ConfigurationError) as limited:
             await application.preview_skill_import(
@@ -1161,7 +1022,7 @@ async def test_skill_scan_leases_are_bounded_and_discardable(tmp_path: Path) -> 
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         first = await application.scan_skills(selected)
         with pytest.raises(ConfigurationError) as limited:
             await application.scan_skills(selected)

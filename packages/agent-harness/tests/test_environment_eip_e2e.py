@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import socket
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -12,14 +13,28 @@ import pytest
 from a13n_environment_provider import (
     AcceptedWebSocketEIPSessionSource,
     EIPEnvironmentAttachment,
+    EnvironmentManagementAction,
+    EnvironmentOperationContext,
+    EnvironmentPauseMode,
     HttpEIPSessionSource,
+    LocalEnvdEnvironmentProvider,
+    LocalEnvdProviderConfiguration,
+    LocalEnvdProviderRuntime,
+    LocalEnvdShellProfile,
+    LocalEnvdWorkspaceConfiguration,
     StdioEIPSessionSource,
+    TemporaryLocalEnvdRuntimeAllocator,
 )
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+    CommandRequest,
     EnvironmentAction,
+    EnvironmentError,
+    EnvironmentOutputPolicy,
     EnvironmentPermissionSet,
+    PortTarget,
+    ShellCommand,
 )
 from a13n_harness.environment.advanced import (
     EnvironmentBindingRequest,
@@ -144,7 +159,7 @@ async def exercise_attachment(
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-eip",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="workspace",
                     permission_ceiling=EnvironmentPermissionSet(
                         operations=frozenset(
@@ -184,6 +199,210 @@ async def exercise_attachment(
         assert result.bytes_written == len(expected)
         assert await environment.files.read_bytes("/workspace/payload.bin") == expected
         await search_conformance.assert_operator(environment.files, root="/workspace")
+
+
+def _operation(
+    action: EnvironmentManagementAction,
+    suffix: str,
+) -> EnvironmentOperationContext:
+    return EnvironmentOperationContext(
+        operation_id=f"operation-{suffix}",
+        action=action,
+        resource_correlation="resource-local-envd-e2e",
+        attempt=1,
+    )
+
+
+def _local_envd_run_binding(
+    attachment: EIPEnvironmentAttachment,
+    *,
+    binding_version: int,
+):
+    return create_environment_run_binding(
+        initial_topology=EnvironmentTopologyRequest(
+            topology_version=binding_version,
+            bindings=(
+                EnvironmentBindingRequest(
+                    binding_id="binding-local-envd",
+                    binding_version=binding_version,
+                    alias="workspace",
+                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                    default_working_directory="/",
+                    provider_binding=create_environment_provider_binding(attachment),
+                ),
+            ),
+            default_binding_id="binding-local-envd",
+        ),
+        topology_limits=EnvironmentTopologyLimits(),
+        state_limits=EnvironmentStateLimits(),
+    )
+
+
+def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        workspace = tmp_path / "local-envd-workspace"
+        runtime_parent = tmp_path / "local-envd-runtimes"
+        workspace.mkdir()
+        runtime_parent.mkdir()
+        executable = Path(sys.executable).resolve()
+        provider = LocalEnvdEnvironmentProvider(
+            LocalEnvdProviderConfiguration(
+                environment_id="local-envd-harness-e2e",
+                workspace=LocalEnvdWorkspaceConfiguration(path=workspace),
+                trusted_executable_roots=(executable.parent.parent,),
+                shell_profiles=(
+                    LocalEnvdShellProfile(
+                        profile_id="python",
+                        executable=executable,
+                        fixed_arguments=("-c",),
+                    ),
+                ),
+                max_output_preview_bytes=1024,
+                max_output_bytes_per_stream=1024,
+                max_spool_bytes=2048,
+            ),
+            LocalEnvdProviderRuntime(
+                executable=agent_envd_binary(),
+                allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=runtime_parent),
+            ),
+        )
+        instance = AgentInstanceContext(
+            identity=AgentIdentityRef(issuer="test", subject="agent"),
+            agent_instance_id="agent-local-envd-e2e",
+        )
+        policy = EnvironmentOutputPolicy(
+            max_inline_bytes=4,
+            max_output_bytes=64,
+            overflow="retain",
+        )
+        resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
+        old_handle = None
+        first_generation = None
+
+        async with resource:
+            async with resource.acquire_attachment() as attachment:
+                binding = _local_envd_run_binding(attachment, binding_version=1)
+                async with binding.bind(run_id="run-local-envd-1", instance=instance) as environment:
+                    await environment.activate()
+                    await environment.files.write_text(
+                        "/workspace/message.txt",
+                        "local envd harness",
+                        mode="create",
+                    )
+                    assert (await environment.files.read_text("/workspace/message.txt")).text == "local envd harness"
+
+                    shell_result = await environment.shell.exec(
+                        CommandRequest(
+                            command=ShellCommand(
+                                profile_id="python",
+                                script="import sys; sys.stdout.write('retained-output-value')",
+                            ),
+                            output_policy=policy,
+                        )
+                    )
+                    first_generation = shell_result.receipt.observed_generation
+                    reference = shell_result.output.stdout.reference
+                    assert reference is not None
+                    retained = await environment.outputs.read(reference, policy=policy)
+                    chunks = list(retained.chunks)
+                    while retained.next_cursor is not None:
+                        retained = await environment.outputs.read(
+                            reference,
+                            cursor=retained.next_cursor,
+                            policy=policy,
+                        )
+                        chunks.extend(retained.chunks)
+                    assert b"".join(chunk.data for chunk in chunks) == b"retained-output-value"
+                    await environment.outputs.release(reference=reference)
+
+                    port = reserve_port()
+                    server_script = (
+                        "import socket,time; "
+                        "sock=socket.socket(); "
+                        "sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); "
+                        f"sock.bind(('127.0.0.1',{port})); "
+                        "sock.listen(); time.sleep(30)"
+                    )
+                    started = await environment.processes.start(
+                        CommandRequest(
+                            command=ShellCommand(
+                                profile_id="python",
+                                script=server_script,
+                            ),
+                            output_policy=policy,
+                        )
+                    )
+                    old_handle = started.process.handle
+                    listening = await environment.ports.wait(
+                        PortTarget(port=port),
+                        desired="listening",
+                        timeout_seconds=5,
+                    )
+                    assert listening.status == "listening"
+                    await environment.processes.kill(old_handle)
+                    completed = await environment.processes.wait(
+                        old_handle,
+                        condition="tree_cleaned",
+                        timeout_seconds=5,
+                    )
+                    assert completed.status.cleanup == "complete"
+                    await environment.processes.release(old_handle)
+
+            async with resource.acquire_attachment() as attachment:
+                binding = _local_envd_run_binding(attachment, binding_version=2)
+                async with binding.bind(run_id="run-local-envd-2", instance=instance) as environment:
+                    await environment.activate()
+                    result = await environment.shell.exec(
+                        CommandRequest(
+                            command=ShellCommand(
+                                profile_id="python",
+                                script="print('second attachment')",
+                            ),
+                            output_policy=policy,
+                        )
+                    )
+                    assert result.receipt.observed_generation == first_generation
+
+            paused = await provider.pause(
+                resource,
+                operation=_operation(EnvironmentManagementAction.PAUSE, "pause"),
+                mode=EnvironmentPauseMode.FILESYSTEM,
+            )
+            assert not tuple(runtime_parent.iterdir())
+
+        resumed = await provider.resume(
+            paused,
+            operation=_operation(EnvironmentManagementAction.RESUME, "resume"),
+        )
+        async with resumed:
+            async with resumed.acquire_attachment() as attachment:
+                binding = _local_envd_run_binding(attachment, binding_version=3)
+                async with binding.bind(run_id="run-local-envd-3", instance=instance) as environment:
+                    await environment.activate()
+                    result = await environment.shell.exec(
+                        CommandRequest(
+                            command=ShellCommand(
+                                profile_id="python",
+                                script="print('resumed')",
+                            ),
+                            output_policy=policy,
+                        )
+                    )
+                    assert result.receipt.observed_generation != first_generation
+                    assert old_handle is not None
+                    with pytest.raises(EnvironmentError) as stale:
+                        await environment.processes.inspect(old_handle)
+                    assert stale.value.code == "environment_stale_binding"
+            running = resumed.state
+
+        await provider.destroy(
+            running,
+            operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
+        )
+        assert workspace.joinpath("message.txt").read_text() == "local envd harness"
+        assert not tuple(runtime_parent.iterdir())
+
+    asyncio.run(scenario())
 
 
 def test_harness_attachment_runs_over_stdio_http_and_reverse_websocket(

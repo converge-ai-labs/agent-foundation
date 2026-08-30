@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self, cast
 
 from pydantic import Field, JsonValue, model_validator
 
@@ -22,6 +22,7 @@ from a13n_ui.configuration.models import (
     ResolvedSkillRevisionContent,
     ResourceRevisionRef,
     StrictModel,
+    SubagentIdentitySelection,
     UsageLimitsSelection,
     canonical_digest,
 )
@@ -58,6 +59,7 @@ class ResolvedSubagentEdge(StrictModel):
     description: str = Field(min_length=1, max_length=16 * 1024)
     target_agent: ResourceRevisionRef
     context: DelegationContextSelection
+    identity: SubagentIdentitySelection = SubagentIdentitySelection()
     usage_limits: UsageLimitsSelection | None
     environment: ChildEnvironmentPolicy
     lifetime: Literal["parent_scope", "session"]
@@ -145,7 +147,20 @@ class ResolvedAgentSnapshot(StrictModel):
             )
         )
         if self.logical_agent_digest != expected:
-            raise ValueError("logical Agent digest does not match snapshot content")
+            if any(edge.identity.inherit_agent_id for node in self.resolved_agents for edge in node.subagents):
+                raise ValueError("logical Agent digest does not match snapshot content")
+            legacy_content = cast(
+                dict[str, Any],
+                self.model_dump(
+                    mode="python",
+                    exclude={"logical_agent_digest", "generation_id", "catalog_digest"},
+                ),
+            )
+            for node in cast(tuple[dict[str, Any], ...], legacy_content["resolved_agents"]):
+                for edge in cast(tuple[dict[str, Any], ...], node["subagents"]):
+                    edge.pop("identity")
+            if self.logical_agent_digest != canonical_digest(legacy_content):
+                raise ValueError("logical Agent digest does not match snapshot content")
         return self
 
 

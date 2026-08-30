@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 import pytest
@@ -328,9 +328,16 @@ async def test_outer_failure_retains_the_valid_replacement_from_the_inner_plugin
     assert exc_info.value.outcome.output == "output|inner"
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalPluginEvent:
+    event_kind: str = "external_plugin"
+    value: str = "open"
+
+
 class EventTransformPlugin(AbstractHarnessPlugin):
-    def __init__(self, *, invalid: bool = False, foreign_run: bool = False) -> None:
+    def __init__(self, *, invalid: bool = False, external: bool = False, foreign_run: bool = False) -> None:
         self.invalid = invalid
+        self.external = external
         self.foreign_run = foreign_run
 
     @property
@@ -345,11 +352,16 @@ class EventTransformPlugin(AbstractHarnessPlugin):
         async def iterate():
             async for item in call_next(exchange):
                 if isinstance(item, HarnessEvent):
+                    event = item.event
+                    if self.invalid:
+                        event = cast(Any, object())
+                    elif self.external:
+                        event = ExternalPluginEvent()
                     yield replace(
                         item,
                         run_id="forged-child" if self.foreign_run else item.run_id,
                         sequence=10_000 - item.sequence,
-                        event=cast(Any, object()) if self.invalid else item.event,
+                        event=event,
                     )
                 else:
                     yield item
@@ -372,7 +384,78 @@ async def test_plugin_event_sequences_are_reallocated_at_the_public_boundary() -
     assert [item.sequence for item in items] == list(range(len(items)))
 
 
-async def test_plugin_cannot_emit_a_malformed_pydantic_event() -> None:
+async def test_plugin_can_emit_an_extended_agent_stream_event() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_model([]),
+        plugins=(EventTransformPlugin(external=True),),
+    )
+
+    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
+        items = [item async for item in stream]
+
+    events = [item.event for item in items if isinstance(item, HarnessEvent)]
+    assert events
+    assert all(isinstance(event, ExternalPluginEvent) for event in events)
+
+
+class ExtensionTransformPlugin(AbstractHarnessPlugin):
+    def __init__(self, *, invalid: bool = False) -> None:
+        self.invalid = invalid
+
+    @property
+    def plugin_id(self) -> str:
+        return "extension-transform"
+
+    def wrap_run(
+        self,
+        exchange: PluginRunExchange,
+        call_next: PluginRunNext,
+    ) -> PluginRunResponse:
+        async def iterate():
+            async for item in call_next(exchange):
+                if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent):
+                    payload = {"value": float("inf")} if self.invalid else {"token": "plain-secret"}
+                    item = replace(item, event=item.event.model_copy(update={"payload": payload}))
+                yield item
+
+        return PluginRunResponse(iterate())
+
+
+async def test_plugin_extension_event_is_revalidated_and_redacted() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_model([]),
+        plugins=(ExtensionTransformPlugin(),),
+    )
+
+    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
+        items = [item async for item in stream]
+
+    extensions = [
+        item.event for item in items if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent)
+    ]
+    assert extensions
+    assert all(event.payload == {"token": "[REDACTED]"} for event in extensions)
+
+
+async def test_plugin_cannot_bypass_extension_event_schema() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_model([]),
+        plugins=(ExtensionTransformPlugin(invalid=True),),
+    )
+
+    with pytest.raises(PluginError) as exc_info:
+        await executable.run("hello", bindings=RunBindings.embedded())
+
+    assert exc_info.value.code == "plugin_event_invalid"
+
+
+async def test_plugin_cannot_emit_an_event_without_event_kind() -> None:
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,

@@ -21,6 +21,7 @@ from ..commands import (
     PortObservation,
     PortTarget,
     ProcessControlResult,
+    ProcessIdentity,
     ProcessInfo,
     ProcessOutputSnapshot,
     ProcessReadOutputResult,
@@ -181,8 +182,10 @@ class LocalProcessManager:
         policy: _DirectLocalProcessPolicy,
         output_policy: _DirectLocalOutputPolicy,
         shell_profiles: tuple[DirectLocalShellProfile, ...],
+        provider_type: str,
+        environment_id: str,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
         generation: str,
     ) -> None:
         self._files = files
@@ -196,8 +199,10 @@ class LocalProcessManager:
             for profile in shell_profiles
         }
         self._allowed_executables = {_resolve_configured_executable(path) for path in policy.allowed_executables}
+        self._provider_type = provider_type
+        self._environment_id = environment_id
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._slots = asyncio.Semaphore(policy.max_concurrent_processes)
@@ -292,7 +297,13 @@ class LocalProcessManager:
             token = token_hex(16)
             handle = BoundProcessHandle(
                 binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                binding_version=self._binding_version,
+                identity=ProcessIdentity(
+                    provider_type=self._provider_type,
+                    environment_id=self._environment_id,
+                    generation=self._generation,
+                    process_id=token,
+                ),
                 observed_generation=self._generation,
                 handle=OpaqueProcessHandle._from_payload(token),
             )
@@ -478,6 +489,24 @@ class LocalProcessManager:
         finally:
             self._slots.release()
 
+    async def rebind(
+        self,
+        identity: ProcessIdentity,
+        *,
+        output_policy: EnvironmentOutputPolicy,
+    ) -> ProcessInfo:
+        del output_policy
+        if (
+            identity.provider_type != self._provider_type
+            or identity.environment_id != self._environment_id
+            or identity.generation != self._generation
+        ):
+            raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_binding")
+        record = self._records.get(identity.process_id)
+        if record is None:
+            raise EnvironmentError("Process is unavailable.", code="environment_not_found")
+        return self._info(record)
+
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         return self._info(self._record(handle))
 
@@ -661,7 +690,7 @@ class LocalProcessManager:
     def _record(self, handle: BoundProcessHandle) -> _ProcessRecord:
         if (
             handle.binding_id != self._binding_id
-            or handle.binding_revision != self._binding_revision
+            or handle.binding_version != self._binding_version
             or handle.observed_generation != self._generation
         ):
             raise EnvironmentError("Process handle is foreign or stale.", code="environment_stale_binding")
@@ -709,7 +738,7 @@ class LocalProcessManager:
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

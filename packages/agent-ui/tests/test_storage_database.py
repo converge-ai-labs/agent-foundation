@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from asyncio import CancelledError
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
-from typing import cast
-from unittest.mock import AsyncMock
 
 import pytest
 from a13n_ui.settings import StorageSettings
@@ -16,7 +12,6 @@ from a13n_ui.storage.models import StoreLeaseRecord
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, select, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 pytestmark = pytest.mark.anyio
 
@@ -78,28 +73,6 @@ def test_migration_verification_rejects_an_unknown_database_revision(tmp_path: P
 
     with pytest.raises(DatabaseSchemaError, match="found: unknown"):
         DatabaseMigrator(path).verify_current()
-
-
-async def test_transaction_cleanup_preserves_active_cancellation() -> None:
-    rollback = AsyncMock(side_effect=ValueError("connection closed"))
-    close = AsyncMock(side_effect=ValueError("connection closed"))
-    database_transaction = SimpleNamespace(rollback=rollback, commit=AsyncMock())
-    session = SimpleNamespace(
-        begin=AsyncMock(return_value=database_transaction),
-        close=close,
-    )
-    factory = cast("async_sessionmaker[AsyncSession]", lambda: session)
-
-    with pytest.raises(CancelledError) as cancelled:
-        async with transaction(factory):
-            raise CancelledError
-
-    assert cancelled.value.__notes__ == [
-        "rollback cleanup failed with ValueError",
-        "session close cleanup failed with ValueError",
-    ]
-    rollback.assert_awaited_once_with()
-    close.assert_awaited_once_with()
 
 
 async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path) -> None:

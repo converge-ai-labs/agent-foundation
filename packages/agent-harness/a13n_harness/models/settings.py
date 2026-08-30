@@ -1,4 +1,4 @@
-"""Composable input aliases for concrete model configuration and settings."""
+"""Composable input aliases for concrete model characteristics and settings."""
 
 from __future__ import annotations
 
@@ -11,22 +11,22 @@ from typing import Any, cast
 
 from pydantic_ai.settings import ModelSettings
 
-from a13n_harness.spec import ModelConfiguration
+from a13n_harness.spec import HarnessModelCharacteristics
 
-type ModelConfigurationTransform = Callable[[ModelConfiguration], ModelConfiguration]
+type ModelCharacteristicsTransform = Callable[[HarnessModelCharacteristics], HarnessModelCharacteristics]
 type ModelSettingsTransform = Callable[[ModelSettings], ModelSettings]
 
 
 @dataclass(frozen=True, slots=True)
-class ModelConfigurationAlias:
-    """One provider-scoped input alias that transforms model configuration."""
+class ModelCharacteristicsAlias:
+    """One provider-scoped input alias that transforms model characteristics."""
 
     key: str
     provider: str
-    transform: ModelConfigurationTransform
+    transform: ModelCharacteristicsTransform
 
     def __post_init__(self) -> None:
-        _validate_alias(self.key, self.provider, self.transform, kind="configuration")
+        _validate_alias(self.key, self.provider, self.transform, kind="characteristics")
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,20 +55,22 @@ def _validate_alias(key: str, provider: str, transform: Callable[..., object], *
         raise TypeError(f"model {kind} alias transform must be callable")
 
 
-class ModelConfigurationAliasCatalog(Mapping[str, ModelConfigurationAlias]):
-    """Immutable model-configuration aliases selected before Agent construction."""
+class ModelCharacteristicsAliasCatalog(Mapping[str, ModelCharacteristicsAlias]):
+    """Immutable model-characteristics aliases selected before Agent construction."""
 
-    def __init__(self, entries: Mapping[str, ModelConfigurationAlias]) -> None:
-        copied: dict[str, ModelConfigurationAlias] = {}
+    def __init__(self, entries: Mapping[str, ModelCharacteristicsAlias]) -> None:
+        copied: dict[str, ModelCharacteristicsAlias] = {}
         for key, entry in entries.items():
-            if not isinstance(key, str) or not isinstance(entry, ModelConfigurationAlias):
-                raise TypeError("model configuration alias catalog must map strings to ModelConfigurationAlias values")
+            if not isinstance(key, str) or not isinstance(entry, ModelCharacteristicsAlias):
+                raise TypeError(
+                    "model characteristics alias catalog must map strings to ModelCharacteristicsAlias values"
+                )
             if key != entry.key:
-                raise ValueError("model configuration alias catalog keys must match entry keys")
+                raise ValueError("model characteristics alias catalog keys must match entry keys")
             copied[key] = entry
         self._entries = MappingProxyType(copied)
 
-    def __getitem__(self, key: str) -> ModelConfigurationAlias:
+    def __getitem__(self, key: str) -> ModelCharacteristicsAlias:
         return self._entries[key]
 
     def __iter__(self) -> Iterator[str]:
@@ -78,23 +80,25 @@ class ModelConfigurationAliasCatalog(Mapping[str, ModelConfigurationAlias]):
         return len(self._entries)
 
     @property
-    def entries(self) -> tuple[ModelConfigurationAlias, ...]:
+    def entries(self) -> tuple[ModelCharacteristicsAlias, ...]:
         """Return aliases in canonical key order."""
         return tuple(self._entries[key] for key in sorted(self._entries))
 
     def with_updates(
         self,
-        updates: Mapping[str, ModelConfigurationAlias],
-    ) -> ModelConfigurationAliasCatalog:
+        updates: Mapping[str, ModelCharacteristicsAlias],
+    ) -> ModelCharacteristicsAliasCatalog:
         """Return an immutable catalog after shallow alias replacement."""
         merged = dict(self._entries)
         for key, entry in updates.items():
-            if not isinstance(key, str) or not isinstance(entry, ModelConfigurationAlias):
-                raise TypeError("model configuration alias updates must map strings to ModelConfigurationAlias values")
+            if not isinstance(key, str) or not isinstance(entry, ModelCharacteristicsAlias):
+                raise TypeError(
+                    "model characteristics alias updates must map strings to ModelCharacteristicsAlias values"
+                )
             if key != entry.key:
-                raise ValueError("model configuration alias update key must match its entry")
+                raise ValueError("model characteristics alias update key must match its entry")
             merged[key] = entry
-        return ModelConfigurationAliasCatalog(merged)
+        return ModelCharacteristicsAliasCatalog(merged)
 
 
 class ModelSettingsAliasCatalog(Mapping[str, ModelSettingsAlias]):
@@ -136,9 +140,9 @@ class ModelSettingsAliasCatalog(Mapping[str, ModelSettingsAlias]):
         return ModelSettingsAliasCatalog(merged)
 
 
-def _context_window(tokens: int) -> ModelConfigurationTransform:
-    def transform(configuration: ModelConfiguration) -> ModelConfiguration:
-        return configuration.model_copy(update={"context_window": tokens})
+def _context_window(tokens: int) -> ModelCharacteristicsTransform:
+    def transform(characteristics: HarnessModelCharacteristics) -> HarnessModelCharacteristics:
+        return characteristics.model_copy(update={"context_window": tokens})
 
     return transform
 
@@ -166,26 +170,26 @@ def _anthropic_thinking_disabled(settings: ModelSettings) -> ModelSettings:
 
 
 @lru_cache(maxsize=1)
-def get_model_configuration_alias_catalog() -> ModelConfigurationAliasCatalog:
-    """Return release-pinned built-in model-configuration aliases."""
+def get_model_characteristics_alias_catalog() -> ModelCharacteristicsAliasCatalog:
+    """Return release-pinned built-in model-characteristics aliases."""
     entries = {
-        "anthropic:context-200k": ModelConfigurationAlias(
+        "anthropic:context-200k": ModelCharacteristicsAlias(
             key="anthropic:context-200k",
             provider="anthropic",
             transform=_context_window(200_000),
         ),
-        "anthropic:context-400k": ModelConfigurationAlias(
+        "anthropic:context-400k": ModelCharacteristicsAlias(
             key="anthropic:context-400k",
             provider="anthropic",
             transform=_context_window(400_000),
         ),
-        "anthropic:context-1m": ModelConfigurationAlias(
+        "anthropic:context-1m": ModelCharacteristicsAlias(
             key="anthropic:context-1m",
             provider="anthropic",
             transform=_context_window(1_000_000),
         ),
     }
-    return ModelConfigurationAliasCatalog(entries)
+    return ModelCharacteristicsAliasCatalog(entries)
 
 
 @lru_cache(maxsize=1)
@@ -221,8 +225,8 @@ def get_model_settings_alias_catalog() -> ModelSettingsAliasCatalog:
     return ModelSettingsAliasCatalog(entries)
 
 
-def _copy_configuration(configuration: ModelConfiguration) -> ModelConfiguration:
-    return ModelConfiguration.model_validate(configuration.model_dump())
+def _copy_characteristics(characteristics: HarnessModelCharacteristics) -> HarnessModelCharacteristics:
+    return HarnessModelCharacteristics.model_validate(characteristics.model_dump())
 
 
 def _copy_settings(settings: Mapping[str, Any]) -> ModelSettings:
@@ -264,45 +268,47 @@ def _alias_keys(aliases: Sequence[str], *, kind: str) -> tuple[str, ...]:
     return selected_aliases
 
 
-def resolve_model_configuration(
+def resolve_model_characteristics(
     model: str,
     *,
     aliases: Sequence[str] = (),
-    overrides: ModelConfiguration | None = None,
-    catalog: ModelConfigurationAliasCatalog | None = None,
-) -> ModelConfiguration | None:
-    """Resolve ordered aliases and concrete overrides to model configuration."""
-    selected_aliases = _alias_keys(aliases, kind="configuration")
-    selected_catalog = get_model_configuration_alias_catalog() if catalog is None else catalog
-    if not isinstance(selected_catalog, ModelConfigurationAliasCatalog):
-        raise TypeError("catalog must be a ModelConfigurationAliasCatalog")
+    overrides: HarnessModelCharacteristics | None = None,
+    catalog: ModelCharacteristicsAliasCatalog | None = None,
+) -> HarnessModelCharacteristics | None:
+    """Resolve ordered aliases and concrete overrides to model characteristics."""
+    selected_aliases = _alias_keys(aliases, kind="characteristics")
+    selected_catalog = get_model_characteristics_alias_catalog() if catalog is None else catalog
+    if not isinstance(selected_catalog, ModelCharacteristicsAliasCatalog):
+        raise TypeError("catalog must be a ModelCharacteristicsAliasCatalog")
 
-    resolved: ModelConfiguration | None = None
+    resolved: HarnessModelCharacteristics | None = None
     if selected_aliases:
-        provider = _model_provider(model, kind="configuration")
-        resolved = ModelConfiguration()
+        provider = _model_provider(model, kind="characteristics")
+        resolved = HarnessModelCharacteristics()
         for key in selected_aliases:
             try:
                 entry = selected_catalog[key]
             except KeyError as exc:
-                raise ValueError(f"unknown model configuration alias: {key!r}") from exc
+                raise ValueError(f"unknown model characteristics alias: {key!r}") from exc
             if entry.provider != provider:
                 raise ValueError(
-                    f"model configuration alias {key!r} requires provider {entry.provider!r}, got {provider!r}"
+                    f"model characteristics alias {key!r} requires provider {entry.provider!r}, got {provider!r}"
                 )
-            transformed = entry.transform(_copy_configuration(resolved))
-            if not isinstance(transformed, ModelConfiguration):
-                raise TypeError(f"model configuration alias {key!r} transform must return ModelConfiguration")
-            resolved = _copy_configuration(transformed)
+            transformed = entry.transform(_copy_characteristics(resolved))
+            if not isinstance(transformed, HarnessModelCharacteristics):
+                raise TypeError(
+                    f"model characteristics alias {key!r} transform must return HarnessModelCharacteristics"
+                )
+            resolved = _copy_characteristics(transformed)
 
     if overrides is not None:
-        if not isinstance(overrides, ModelConfiguration):
-            raise TypeError("model configuration overrides must be ModelConfiguration or None")
+        if not isinstance(overrides, HarnessModelCharacteristics):
+            raise TypeError("model characteristics overrides must be HarnessModelCharacteristics or None")
         if resolved is None:
-            return _copy_configuration(overrides)
+            return _copy_characteristics(overrides)
         values = resolved.model_dump()
         values.update(deepcopy(overrides.model_dump(exclude_unset=True)))
-        resolved = ModelConfiguration.model_validate(values)
+        resolved = HarnessModelCharacteristics.model_validate(values)
     return resolved
 
 
@@ -343,14 +349,14 @@ def resolve_model_settings(
 
 
 __all__ = [
-    "ModelConfigurationAlias",
-    "ModelConfigurationAliasCatalog",
-    "ModelConfigurationTransform",
+    "ModelCharacteristicsAlias",
+    "ModelCharacteristicsAliasCatalog",
+    "ModelCharacteristicsTransform",
     "ModelSettingsAlias",
     "ModelSettingsAliasCatalog",
     "ModelSettingsTransform",
-    "get_model_configuration_alias_catalog",
+    "get_model_characteristics_alias_catalog",
     "get_model_settings_alias_catalog",
-    "resolve_model_configuration",
+    "resolve_model_characteristics",
     "resolve_model_settings",
 ]

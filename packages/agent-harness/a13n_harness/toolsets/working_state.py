@@ -214,7 +214,7 @@ class WorkingStateToolset:
             if _mutation_is_empty(mutation) and not claim:
                 task = current
             else:
-                task = await cell.mutate(task_id, mutation, current.revision, claim=claim)
+                task = await cell.mutate(task_id, mutation, current.version, claim=claim)
             committed = await cell.snapshot()
             if committed != snapshot:
                 await self._observe_provider(snapshot)
@@ -446,11 +446,11 @@ class WorkingStateToolset:
                 kind="state",
                 payload=TaskChangedPayload(
                     operation_id=operation_id,
-                    state_revision=after.revision,
+                    task_state_version=after.version,
                     reason=event_reason,
                     task=TaskEventProjection(
                         id=task.id,
-                        revision=task.revision,
+                        version=task.version,
                         subject=task.subject,
                         active_form=task.active_form,
                         status=task.status,
@@ -476,7 +476,7 @@ class WorkingStateToolset:
         cursor = ProviderTaskCursor(
             provider_type=provider.provider_type,
             state_version=provider.state_version,
-            observed_revision=observed.revision,
+            observed_version=observed.version,
         )
         async with self._state_lock:
             current_cursor = self._state.provider_cursor
@@ -484,8 +484,8 @@ class WorkingStateToolset:
                 current_cursor is not None
                 and current_cursor.provider_type == cursor.provider_type
                 and current_cursor.state_version == cursor.state_version
-                and current_cursor.observed_revision is not None
-                and current_cursor.observed_revision >= observed.revision
+                and current_cursor.observed_version is not None
+                and current_cursor.observed_version >= observed.version
             ):
                 return
             state = _working_state_with(self._state, tasks=None, provider_cursor=cursor)
@@ -498,7 +498,7 @@ class WorkingStateToolset:
 
 
 def _project_task(task) -> TaskProjection:
-    """Hide internal CAS revisions while retaining useful coordination state."""
+    """Hide internal CAS versions while retaining useful coordination state."""
     return {
         "id": task.id,
         "subject": task.subject,

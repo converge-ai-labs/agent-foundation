@@ -121,12 +121,9 @@ langfuse-down: ## Stop local Langfuse while preserving its data
 langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
-.PHONY: agent-ui tui
-agent-ui: sync ## Run Agent UI (default WebUI; append `tui` for terminal UI)
-	@uv run --locked a13n-ui $(filter-out agent-ui,$(MAKECMDGOALS))
-
-tui: agent-ui
-	@:
+.PHONY: agent-ui
+agent-ui: sync ## Run the Agent UI interactive CLI
+	@uv run --locked a13n-ui
 
 .PHONY: agent-ui-db-migrate
 agent-ui-db-migrate: sync ## Generate an Agent UI SQLite migration against a disposable database
@@ -220,6 +217,12 @@ local-envd-test: sync ## Build agent-envd and run Local Envd provider tests
 	A13N_AGENT_ENVD_EXECUTABLE="$${A13N_AGENT_ENVD_EXECUTABLE:-$(CURDIR)/target/debug/agent-envd}"; \
 	export A13N_AGENT_ENVD_EXECUTABLE; \
 	uv run --locked python -m pytest packages/agent-environment-provider/tests/test_local_envd.py
+
+.PHONY: docker-provider-test
+docker-provider-test: sync image-sandbox ## Run Docker Provider unit and real Harness EIP tests
+	@A13N_DOCKER_E2E_IMAGE="$(SANDBOX_IMAGE)" uv run --locked python -m pytest \
+		packages/agent-environment-provider/tests/test_docker.py \
+		packages/agent-harness/tests/test_environment_docker_e2e.py
 
 .PHONY: eip-check
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate

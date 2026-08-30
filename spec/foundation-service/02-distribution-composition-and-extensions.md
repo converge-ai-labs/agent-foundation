@@ -20,7 +20,7 @@ A distribution identifies the product release composition, not where or for whom
 
 Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Internal classes, module discovery, installation order, and package naming are not part of the product contract.
 
-Foundation's [managed Harness plugin artifacts](26-harness-plugin-artifacts-and-runtime-loading.md) are a separate Host execution input. They can supply trusted in-process Harness middleware selected by an exact AgentRevision lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
+Foundation's [managed Harness plugin artifacts](26-harness-plugin-artifacts-and-runtime-loading.md) are a separate Host execution input. They can supply trusted Harness middleware selected by a Turn-pinned internal Runtime lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
 
 ## Dependency Direction
 
@@ -72,6 +72,13 @@ Duplicate route method and path pairs, component identities, authorization actio
 
 The OSS distribution includes the common durable Turn/TurnAttempt kernel and the OSS capability set defined by the owning domain specifications. It presents the singleton Organization behavior, local password identity, built-in roles, and other OSS policy without adding an `edition` decision to shared rows or use cases.
 
+The OSS capability set includes the complete
+[Protocol Gateway](28-protocol-gateway.md). Its `control` and `all` roles always
+compose Native and Hosted AG-UI routers. It also contains the A2A adapter; the
+common runtime's single default-on `gateway.a2a_enabled` setting determines
+whether that adapter's routes and components are mounted. This operational
+setting neither installs a capability nor selects a distribution.
+
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
 
 ## EE and Cloud Composition
@@ -92,6 +99,12 @@ A distribution that requires license or operator configuration validates it befo
 The artifact's distribution descriptor finalizes one typed configuration schema before the [runtime](01-runtime-configuration-and-deployment.md) parses values. Common section names and meanings remain stable. A distribution can add its own explicit namespace, but cannot shadow a common field or make an unknown common value valid under a different interpretation.
 
 Secrets supplied for an extension follow the same redaction and process-local handling as common secrets. Configuration never installs code, names an arbitrary import target, or enables a capability absent from the artifact distribution.
+
+A capability already fixed into the distribution can own an explicit
+operational surface setting. Such a setting can suppress that capability's
+routes and role components but cannot replace the distribution descriptor,
+introduce untrusted code, or change common domain meaning. The A2A total switch
+is one such common setting; no per-Agent protocol switch exists.
 
 ## Relational Composition
 

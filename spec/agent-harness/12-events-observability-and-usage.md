@@ -17,13 +17,25 @@ The Harness does not define Host lifecycle events, a broker, SSE, webhook, durab
 ## Event Model
 
 ```python
+@runtime_checkable
+class AgentStreamEventProtocol(Protocol):
+    @property
+    def event_kind(self) -> str: ...
+
+
 class HarnessEvent(BaseModel):
     thread_id: str
     run_id: str
     sequence: int
     occurred_at: datetime
-    event: AgentStreamEvent | HarnessExtensionEvent
+    event: (
+        AgentStreamEvent
+        | AgentStreamEventProtocol
+        | HarnessExtensionEvent
+    )
 ```
+
+`AgentStreamEvent` remains the precise authoring type for the installed Pydantic AI release. `AgentStreamEventProtocol` is the minimal open runtime seam for native events added by later compatible releases and trusted plugin transformations: an event exposes one non-blank string `event_kind`, while its concrete type and payload remain owned by its producer. The Harness does not snapshot or reconstruct Pydantic AI's event union at plugin response boundaries. Process-local acceptance does not assert that an arbitrary payload is serializable by every Host transport. Harness-owned `HarnessExtensionEvent` values remain subject to their complete schema, redaction, finite-JSON, and payload-size validation after plugin unwind.
 
 `thread_id` identifies the independently advancing Thread; `run_id` identifies the process-local Harness Run. Both are present on ordinary and terminal events, including failures that have no returned State. `sequence` is strictly increasing within one Run. The root Run's sequence includes the final `HarnessRunResultEvent`. Resume preserves `thread_id` while starting another `run_id` and sequence domain. Forwarded inline-child events retain the child's run ID and sequence; the Delegation Capability consumes the child's result event internally. Concurrent runs have causal correlation through their `AgentInstanceContext`; timestamps do not establish a total order.
 
@@ -38,6 +50,7 @@ class HarnessExtensionEvent(BaseModel):
         "delegation",
         "usage",
         "lifecycle",
+        "tool",
         "diagnostic",
     ]
     payload: JsonValue
@@ -70,7 +83,7 @@ sequenceDiagram
     Stream-->>Host: final HarnessRunResultEvent with usage snapshots
 ```
 
-Model output and tool events preserve their public Pydantic AI types. This includes native `ThinkingPart`, `TextPart`, function-tool call and result events, `DeferredToolRequestsEvent`, and `DeferredToolResultsEvent`. The Harness observes the public `ModelRequestNode` boundary but does not recreate provider transport, response-delta, thinking, generation, tool, client-call, or run-terminal lifecycle state machines and does not add a second `DEFERRED_TOOLS` control event. A transport can project a convenience client-tools payload, but only the terminal `HarnessRunResult.deferred` and a Host's accepted durable pending record have continuation meaning. High-frequency Pydantic deltas may be coalesced by a consumer without changing complete messages or `HarnessState`.
+Model output and tool events preserve their public Pydantic AI types. This includes native `ThinkingPart`, `TextPart`, function-tool call and result events, `DeferredToolRequestsEvent`, and `DeferredToolResultsEvent`, plus compatible typed event families that Pydantic AI adds to its public stream. For these open Agent events, plugin unwind performs only the shallow `AgentStreamEventProtocol` check; it does not apply a second Pydantic schema validation to events already produced or transformed inside the trusted process. Harness extension events retain their separate Harness-owned validation. The Harness observes the public `ModelRequestNode` boundary but does not recreate provider transport, response-delta, thinking, generation, tool, client-call, or run-terminal lifecycle state machines and does not add a second `DEFERRED_TOOLS` control event. A transport can project a convenience client-tools payload, but only the terminal `HarnessRunResult.deferred` and a Host's accepted durable pending record have continuation meaning. High-frequency Pydantic deltas may be coalesced by a consumer without changing complete messages or `HarnessState`.
 
 ### First-party Event Contracts
 
@@ -89,11 +102,15 @@ Each payload contains one concise kind-prefixed `operation_id`. A normal `summar
 
 `handoff_prepared` is emitted only after the validated summary is durably written to Handoff Capability state and includes only `summary_size` and `files_count`, never summary or file content. `handoff_completed` follows successful restored-history construction and durable pending-state clearing. `compaction_completed` follows successful plain-text nested execution and construction of the replacement history. `*_failed` contains only `failed_phase`, stable `error_code`, and `retryable`; raw exceptions are excluded. Handoff retains or clears pending state according to its retryability contract. Compaction has no pending durable operation: ordinary failure is non-retryable for that boundary, emits `compaction_failed`, and leaves the original history active. Cancellation propagates without being reclassified as failure. Compaction emits only `compaction_*`, never duplicate `handoff_*` observations.
 
-Working State emits bounded revisioned committed deltas rather than snapshots. A `state` payload with `type="task_changed"` contains one `operation_id`, authoritative `state_revision`, reason `created`, `updated`, `claimed`, `completed`, `dependency_updated`, or `provider_observed`, and one task projection containing only `id`, `revision`, `subject`, `active_form`, `status`, `owner`, `blocks`, and `blocked_by`. Description, metadata, notes, and the full task map are excluded. Emission occurs only after authoritative persistence and the run's in-memory view both commit. One mutation that changes reciprocal dependency tasks emits one delta per changed task with the same operation ID and state revision. Failed and semantic no-op mutations emit nothing. A provider without a watch API guarantees observations only at Harness mutation and read boundaries.
+Working State emits bounded versioned committed deltas rather than snapshots. A `state` payload with `type="task_changed"` contains one `operation_id`, authoritative `task_state_version`, reason `created`, `updated`, `claimed`, `completed`, `dependency_updated`, or `provider_observed`, and one task projection containing only `id`, `version`, `subject`, `active_form`, `status`, `owner`, `blocks`, and `blocked_by`. Description, metadata, notes, and the full task map are excluded. Emission occurs only after authoritative persistence and the run's in-memory view both commit. One mutation that changes reciprocal dependency tasks emits one delta per changed task with the same operation ID and task-state version. Failed and semantic no-op mutations emit nothing. A provider without a watch API guarantees observations only at Harness mutation and read boundaries.
 
 Inline delegation emits typed `inline_delegation` payloads with action `started`, `completed`, or `failed`. Every action carries the same invocation ID, compact child instance ID, selected subagent name, bounded status, parent run and Agent-instance correlation, optional originating parent tool-call ID, and the child run ID whenever a child stream was created. `started` is emitted on the child run before child model work so it is forwarded in real time; terminal actions are emitted on the parent run after the complete child result or dispatch failure is classified. Uniform payload correlation, rather than envelope order or subagent-name matching, joins those observations. A pre-stream rejection has no child run ID and never fabricates one.
 
 Each `usage_report` is likewise a typed payload containing its stable report ID, reporting reason, optional trigger record ID, valid chunk position and count, and one non-empty bounded record batch. Record schemas remain owned by the usage subsystem. First-party delegation and usage producers do not assemble free-form payload dictionaries.
+
+A `tool` extension carries one typed `tool_extra` payload with the native `tool_call_id`, declared `tool_name`, stable Harness `tool_id`, namespaced event `name`, and bounded JSON `value`. `emit_tool_event()` derives native call correlation from `RunContext`, accepts a typed Pydantic value, and emits through the run-local canonical event path. Tool extra events describe semantic observations owned by the Toolset; they do not duplicate native call start, arguments, result, authorization, retry, or terminal lifecycle.
+
+The first Tool extra contract is `filesystem.changed`. Its value contains one to 256 confirmed logical-path changes with action `created`, `modified`, `written`, `deleted`, `moved`, or `copied`; move and copy entries include exactly one logical destination. `written` reports a successful provider-neutral upsert or append when the FileOperator result does not distinguish creation from replacement; the Harness does not add a read-before-write race merely to guess a narrower action. A mutating file Tool emits at most one event after successful provider confirmation. Batch events include only successful items, and failed items, rejected calls, semantic no-ops, and forced deletion of an already absent path produce no change entry. Values exclude file contents, replacement strings, diffs, provider-native paths, receipts, and revisions.
 
 Event delivery failure never rolls back committed Capability state. These process-local observations retain the backpressure, middleware, redaction, payload-size, and non-durability rules of the enclosing event stream.
 
@@ -110,6 +127,7 @@ The run-local Environment adapter reads an independent cursor from the bounded n
 | `delegation` | Inline child or Host-managed asynchronous submission observation                                                                            |
 | `usage`      | One bounded mixed-source `usage_report` emitted at a model-request or terminal reporting boundary; not durable billing proof                |
 | `lifecycle`  | Bounded `ModelRequestNode` entry, completion, or safe failure observation; never provider transport or Host lifecycle authority             |
+| `tool`       | Toolset-owned semantic extra observation correlated to one native Tool call; never a duplicate call or result lifecycle                     |
 | `diagnostic` | Safe implementation/provider detail without lifecycle authority                                                                             |
 
 ## Run Stream and Content
