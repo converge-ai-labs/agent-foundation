@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -11,24 +10,15 @@ from a13n_ui.configuration.models import ConfigurationSettings
 from a13n_ui.runtime_settings import RuntimeGenerationSettings
 
 
-class DurabilityProfile(StrEnum):
-    """Local persistence durability selected for one application lifetime."""
-
-    full = "full"
-
-
 class StorageSettings(BaseModel):
     """Restart-bound settings for one Agent UI data root."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     data_root: Path
-    durability_profile: DurabilityProfile = DurabilityProfile.full
     busy_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     cleanup_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
-    lease_heartbeat_seconds: float = Field(default=2.0, gt=0, le=60)
     max_object_bytes: int = Field(default=64 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
-    max_staging_entries: int = Field(default=1024, gt=0, le=100_000)
 
     @field_validator("data_root")
     @classmethod
@@ -72,7 +62,6 @@ class AgentUiSettings(BaseModel):
 
 __all__ = [
     "AgentUiSettings",
-    "DurabilityProfile",
     "EnvdRuntimeSettings",
     "RuntimeGenerationSettings",
     "StorageSettings",

@@ -19,6 +19,19 @@ def test_defaults_to_interactive_cli(monkeypatch) -> None:
     assert calls[0].command is None
 
 
+def test_accepts_explicit_tui_command(monkeypatch) -> None:
+    calls: list[argparse.Namespace] = []
+
+    async def run(args: argparse.Namespace) -> None:
+        calls.append(args)
+
+    monkeypatch.setattr(cli_module, "_run", run)
+    main(["tui"])
+
+    assert len(calls) == 1
+    assert calls[0].command == "tui"
+
+
 def test_dispatches_runtime_status_with_json(monkeypatch) -> None:
     calls: list[argparse.Namespace] = []
 

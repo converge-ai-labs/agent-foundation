@@ -10,10 +10,10 @@ from a13n_environment_provider import EIPSessionSource
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
-    EnvironmentBindingState,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentMountDescriptor,
+    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
 )
@@ -86,21 +86,19 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
         *,
         run_id: str,
         instance,
-        binding_id: str,
-        binding_version: int,
+        mount_id: str,
     ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
         del run_id, instance
         if self._discarded or self._scope_created:
             raise EnvironmentError("EIP provider binding was already consumed", code="environment_conflict")
         self._scope_created = True
-        return self._bind(binding_id=binding_id, binding_version=binding_version)
+        return self._bind(mount_id=mount_id)
 
     @asynccontextmanager
     async def _bind(
         self,
         *,
-        binding_id: str,
-        binding_version: int,
+        mount_id: str,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         self._entry_started = True
         async with self._session_source.open_session(
@@ -110,13 +108,12 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
             if session.descriptor.environment_id != self._environment_id:
                 raise EnvironmentError(
                     "EIP session returned a different environment identity",
-                    code="environment_stale_binding",
+                    code="environment_stale_mount",
                 )
             provider = _BoundEIPProvider(
                 session=session,
                 environment_id=self._environment_id,
-                binding_id=binding_id,
-                binding_version=binding_version,
+                mount_id=mount_id,
             )
             try:
                 yield provider
@@ -136,28 +133,24 @@ class _BoundEIPProvider:
         *,
         session: EIPSession,
         environment_id: str,
-        binding_id: str,
-        binding_version: int,
+        mount_id: str,
     ) -> None:
         self._session = session
         self._environment_id = environment_id
-        self._binding_id = binding_id
-        self._binding_version = binding_version
+        self._mount_id = mount_id
         self._generation = str(session.descriptor.generation)
         self._descriptor = _convert_descriptor(session.descriptor)
         methods = set(session.descriptor.available_methods)
         files = EIPFileOperator(
             session=session,
             environment_id=environment_id,
-            binding_id=binding_id,
-            binding_version=binding_version,
+            mount_id=mount_id,
             generation=self._generation,
         )
         outputs = EIPOutputRegistry(
             session=session,
             environment_id=environment_id,
-            binding_id=binding_id,
-            binding_version=binding_version,
+            mount_id=mount_id,
             generation=self._generation,
         )
         self._outputs = outputs
@@ -167,8 +160,7 @@ class _BoundEIPProvider:
             outputs=outputs,
             provider_type=self.provider_type,
             environment_id=environment_id,
-            binding_id=binding_id,
-            binding_version=binding_version,
+            mount_id=mount_id,
             generation=self._generation,
         )
         processes = EIPProcessOperations(conversions) if "process.start" in methods else None
@@ -235,11 +227,11 @@ class _BoundEIPProvider:
         if first_error is not None:
             raise first_error
 
-    async def export_state(self, *, max_bytes: int) -> EnvironmentBindingState | None:
+    async def export_state(self, *, max_bytes: int) -> EnvironmentMountState | None:
         del max_bytes
         return None
 
-    async def restore_state(self, state: EnvironmentBindingState) -> None:
+    async def restore_state(self, state: EnvironmentMountState) -> None:
         del state
         raise EnvironmentError("EIP provider state restore is unsupported", code="environment_unsupported")
 

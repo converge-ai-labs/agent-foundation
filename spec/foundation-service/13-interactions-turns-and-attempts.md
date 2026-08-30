@@ -55,7 +55,7 @@ A Turn begins as `accepted`. A Worker's first successful claim creates a new Tur
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed Turn outcomes. They are never returned to `accepted` or `running`. Pending feedback does not reopen a waiting Turn: once the full feedback set is authenticated and accepted, Foundation accepts a new Turn whose `parent_turn_id` names that waiting Turn and leaves the parent unchanged.
 
-A TurnAttempt is an immutable audit record after it reaches `succeeded`, `failed`, or `cancelled`. `failed` is generation-terminal and does not by itself mean the Turn failed; Foundation defines no separate Attempt `lost` state. Replacing an Attempt creates a new generation with a fresh lease, Harness Run, Environment connector scope, attachment, clients, credentials, and bindings. It reconnects the target frozen in Turn state and never restores another process's task, socket, database session, live connector handle, attachment, or Harness Run.
+A TurnAttempt is an immutable audit record after it reaches `succeeded`, `failed`, or `cancelled`. `failed` is generation-terminal and does not by itself mean the Turn failed; Foundation defines no separate Attempt `lost` state. Replacing an Attempt creates a new generation with a fresh lease, Harness Run, Environment connector scope, attachments, runtime mounts, Host-retained `EnvironmentRuntime`, clients, credentials, and `RunBindings`. It reconnects the targets frozen in Turn state and never restores another process's task, socket, database session, live connector handle, attachment, Environment runtime, or Harness Run.
 
 ## State and Checkpoint Boundary
 
@@ -85,10 +85,12 @@ materialization, and other Host preparation do not need a phase surrogate.
 One TurnAttempt starts at most one logical Harness Run. Before Harness entry,
 the worker resolves exact immutable revisions, reuses the Turn-owned model
 execution snapshot, creates fresh run Capabilities, resolves fresh credentials,
-opens fresh Environment connector attachments from the exact configuration in
-Turn state, and builds fresh `RunBindings` through the Harness advanced
-Environment binding API. Each connector keeps the already-running resource alive
-only while that binding is active and closes its process-local clients afterward.
+opens fresh Environment connector attachments from the exact desired mount
+configuration in Turn state, adapts them into fresh `EnvironmentRuntimeMount`
+values, constructs and retains one `EnvironmentRuntime`, and supplies it through
+fresh `RunBindings`. Each connector keeps the already-running resource alive only
+while its attachment scope and the Harness run are active and closes its
+process-local clients afterward.
 
 As soon as the Harness supplies its Run identity and before the worker publishes the first live observation, the worker binds `harness_run_id` immutably to the current TurnAttempt under the attempt fence. That durable binding provides provenance and authorization correlation; it does not define the Turn-scoped Redis Stream, whose stable identity and replay contract are owned by [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md).
 
@@ -111,8 +113,9 @@ Bounded connector transport retries and internal Harness recovery remain within 
 13. Cancellation records intent and never implies rollback of external effects.
 14. A new Turn freezes current model configuration once; replacement
     TurnAttempts reuse that snapshot and resolve only fresh credential values.
-15. A replacement TurnAttempt reuses the exact Environment execution
-    configuration in Turn state, opens fresh connector attachments, and creates
+15. A replacement TurnAttempt reuses the exact desired Environment mount
+    configuration in Turn state, opens fresh connector attachments, creates fresh
+    runtime mounts and one Host-retained `EnvironmentRuntime`, and creates
     no Environment connection lease.
 16. Active steering remains inside one running Turn and becomes consumed only
     through a fenced complete-state checkpoint; interrupt seals that Turn as

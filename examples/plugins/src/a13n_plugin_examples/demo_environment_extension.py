@@ -24,12 +24,11 @@ from a13n_harness import (
     discover_environment_run_extension_factory_references,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 
 EXTENSION_KEY = "example.workspace-marker"
@@ -91,13 +90,10 @@ async def _run_extension_demo(
     async with resource:
         async with resource.acquire_attachment() as attachment:
             provider = create_environment_provider_binding(attachment)
-            topology = EnvironmentTopologyRequest(
-                topology_version=1,
-                bindings=(
-                    EnvironmentBindingRequest(
-                        binding_id="workspace-1",
-                        binding_version=1,
-                        alias="workspace",
+            environment_runtime = create_environment_runtime(
+                mounts={
+                    "workspace": EnvironmentRuntimeMount(
+                        binding=provider,
                         permission_ceiling=EnvironmentPermissionSet(
                             operations=frozenset(
                                 {
@@ -107,25 +103,21 @@ async def _run_extension_demo(
                                 }
                             )
                         ),
-                        default_working_directory="/",
-                        provider_binding=provider,
-                    ),
-                ),
-                default_binding_id="workspace-1",
-            )
-            environment_binding = create_environment_run_binding(
-                initial_topology=topology,
-                topology_limits=EnvironmentTopologyLimits(max_bindings=1, max_committed_changes=1),
-                state_limits=EnvironmentStateLimits(max_binding_entries=1),
+                        working_directory="/",
+                    )
+                },
+                default_mount="workspace",
+                runtime_limits=EnvironmentRuntimeLimits(max_mounts=1),
+                state_limits=EnvironmentStateLimits(max_mount_entries=1),
                 extensions=(extension,),
             )
-            run_bindings = RunBindings.embedded(environment=environment_binding)
+            run_bindings = RunBindings.embedded(environment=environment_runtime)
 
-            async with environment_binding.bind(
+            async with environment_runtime.bind(
                 run_id="run-extension-example",
                 instance=run_bindings.instance,
             ) as environment:
-                await environment.activate()
+                await environment_runtime._activate()
                 marker_text = (await environment.files.read_text(marker_path)).text
 
     await manager.destroy(

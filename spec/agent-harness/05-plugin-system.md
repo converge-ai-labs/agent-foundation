@@ -8,7 +8,7 @@ Plugins always become concrete Python objects before Agent composition. A caller
 
 Automatic configuration is disabled by default. Importing the package never reads environment variables or files, scans package metadata, imports a plugin target, or enables middleware. A builder with no explicit `HarnessBuildContext` inspects only the enable environment variable; it performs further loading only when that switch explicitly enables the feature. An explicit context bypasses ambient discovery entirely.
 
-This narrow document is not a serialized Agent definition, general object compiler, arbitrary import mechanism, process-global registry, or Environment configuration language. The separately owned [Environment provider factory catalog](../agent-environment-provider/01-provider-specs-and-catalog.md#built-in-and-extension-catalog) and [Environment run-extension boundary](08-environment-integration.md#environment-run-extensions) remain caller-controlled because provider topology and aggregate resource lifecycle require Host authority. Pydantic Capabilities remain the extension point inside the Agent loop; Harness plugins exist only for the wider semantic-input-to-complete-result boundary.
+This narrow document is not a serialized Agent definition, general object compiler, arbitrary import mechanism, process-global registry, or Environment configuration language. The separately owned [Environment provider factory catalog](../agent-environment-provider/01-provider-specs-and-catalog.md#built-in-and-extension-catalog) and [Environment run-extension boundary](08-environment-integration.md#environment-run-extensions) remain caller-controlled because provider lifecycle and runtime mount composition require Host authority. Pydantic Capabilities remain the extension point inside the Agent loop; Harness plugins exist only for the wider semantic-input-to-complete-result boundary.
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ plugins:
 
 Unknown fields, non-finite numbers, non-JSON data values, duplicate plugin IDs, oversized input, excessive nesting, and unsupported versions fail before package discovery. The complete UTF-8 source and each programmatic data value are bounded to 1 MiB. IDs and keys are bounded to 200 characters. Configuration order is significant and becomes the configured-plugin tie-breaker after direct plugins.
 
-This document deliberately contains no Python import target, artifact URL, credential, Agent definition, Capability, Environment provider topology, or Host lifecycle value. A Host may persist or generate this exact Harness-owned document, but it retains responsibility for artifact installation and trust. Factory-specific configuration schemas remain owned by each plugin package.
+This document deliberately contains no Python import target, artifact URL, credential, Agent definition, Capability, Environment provider mount definition, or Host lifecycle value. A Host may persist or generate this exact Harness-owned document, but it retains responsibility for artifact installation and trust. Factory-specific configuration schemas remain owned by each plugin package.
 
 ## Build Context and Source Resolution
 
@@ -237,7 +237,7 @@ For every root or nested `AgentDefinition` recursively built by the builder:
 
 A factory is therefore selected once per builder but invoked once per enabled entry per definition. Separate definitions never share the same factory-created plugin prototype. Direct plugins precede configured plugins only as the stable topological tie-breaker; explicit ordering constraints still determine the final middleware graph. An ID collision between direct and configured plugins fails through ordinary plugin validation. Any configuration, discovery, factory, or result failure aborts construction before the affected executable is returned.
 
-Automatic configuration is builder-local, not definition-local. The same configured entries apply to root and nested definitions because one builder owns their process-local construction. A caller that needs a different plugin set constructs a different builder or supplies plugins directly. Environment providers are not auto-applied: their bindings remain fresh run inputs with Host-owned topology, lifecycle, authority, and reconciliation.
+Automatic configuration is builder-local, not definition-local. The same configured entries apply to root and nested definitions because one builder owns their process-local construction. A caller that needs a different plugin set constructs a different builder or supplies plugins directly. Environment providers are not auto-applied: runtime mounts remain fresh run inputs with Host-owned desired definitions, lifecycle, authority, and reconciliation.
 
 ## Plugin Contract
 
@@ -435,7 +435,7 @@ Untrusted or separately governed behavior belongs behind a tool, Environment, mo
 | Ordering, binding, middleware, and validation          | Harness                                |
 | Agent-loop hooks and Capability lifecycle              | Pydantic AI                            |
 | Configuration persistence and artifact trust/locks     | Host or embedding deployment           |
-| Environment topology and provider lifecycle            | Host and owning Environment provider   |
+| Desired Environment mounts and provider lifecycle      | Host and owning Environment provider   |
 | Durable completion and checkpoint selection            | Host                                   |
 
 ## Trade-offs

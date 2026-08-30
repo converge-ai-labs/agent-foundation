@@ -13,7 +13,7 @@ from a13n_ui.configuration import (
     AgentDefinitionDocument,
     ConfigurationSettings,
     DefinitionRootSettings,
-    EnvironmentBindingDefinition,
+    EnvironmentMountDefinition,
     LocalDirectorySettings,
     LocalSkillDiscoverySettings,
     ModelDefinition,
@@ -31,7 +31,6 @@ from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
 from a13n_ui.storage.database import transaction
 from a13n_ui.storage.models import ImmutableObjectRecord
-from anyio import fail_after, sleep
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
@@ -120,8 +119,8 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
             "environment_id": "environment-main",
             "display_name": "Empty Environment",
             "description": None,
-            "bindings": [],
-            "default_binding": None,
+            "mounts": [],
+            "default_mount": None,
             "lifecycle": {
                 "provision": "on_first_run",
                 "idle": "keep_running",
@@ -305,8 +304,8 @@ async def test_skill_import_rejects_a_stale_bound_catalog(
 
     async with open_agent_ui_host(settings) as application:
         preview = await application.scan_skills(selected)
-        lease = application._configuration.skills._scans[preview.scan_id]
-        original_select = lease.environment.select_files
+        scan = application._configuration.skills._scans[preview.scan_id]
+        original_select = scan.environment.select_files
 
         def stale_select(path: str):
             selection = original_select(path)
@@ -316,7 +315,7 @@ async def test_skill_import_rejects_a_stale_bound_catalog(
                 observed_generation=f"{selection.observed_generation}-changed",
             )
 
-        monkeypatch.setattr(lease.environment, "select_files", stale_select)
+        monkeypatch.setattr(scan.environment, "select_files", stale_select)
         with pytest.raises(ConfigurationError) as stale:
             await application.preview_skill_import(
                 scan_id=preview.scan_id,
@@ -444,15 +443,14 @@ def test_literal_credentials_are_rejected_from_generic_resource_configuration() 
             strict=True,
         )
     with pytest.raises(ValidationError):
-        EnvironmentBindingDefinition.model_validate(
+        EnvironmentMountDefinition.model_validate(
             {
-                "binding_name": "binding-main",
+                "mount_name": "mount-main",
                 "model_alias": "workspace",
                 "provider_key": "a13n.direct-local",
                 "provider_schema_version": "1",
                 "provider_parameters": {"accessToken": "literal-secret"},
                 "permission_ceiling": [],
-                "required": True,
             },
             strict=True,
         )
@@ -798,7 +796,7 @@ async def test_startup_removes_expired_unregistered_final_object(tmp_path: Path)
         assert not path.exists()
 
 
-async def test_optional_missing_skill_source_and_scan_lease_bound(tmp_path: Path) -> None:
+async def test_optional_missing_skill_source_returns_an_empty_scan(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     discovery = tmp_path / "missing-discovery"
     _write_yaml(
@@ -814,9 +812,6 @@ async def test_optional_missing_skill_source_and_scan_lease_bound(tmp_path: Path
         },
     )
     settings = _full_settings(tmp_path / "data", definitions, discovery)
-    settings = settings.model_copy(
-        update={"configuration": settings.configuration.model_copy(update={"max_skill_scan_leases": 1})}
-    )
     selected = LocalSkillDiscoverySettings(
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
@@ -873,49 +868,6 @@ async def test_composed_skill_scan_reports_conflict_metadata(tmp_path: Path) -> 
         assert conflict.value.details == {"skill": "example"}
 
 
-async def test_skill_scan_lease_deadline_is_independent_of_reconciliation(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    skill = discovery / "example"
-    skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text("---\nname: example\ndescription: Example workflow\n---\n\nFollow it.\n")
-    _write_yaml(
-        definitions / "skill-sources/skill-source-local.yaml",
-        {
-            "schema_version": "1",
-            "skill_source_id": "skill-source-local",
-            "display_name": "Local Skills",
-            "directory_id": "directory-skills",
-            "roots": ["/"],
-            "required": True,
-            "max_entries_per_root": 32,
-        },
-    )
-    settings = _full_settings(tmp_path / "data", definitions, discovery)
-    settings = settings.model_copy(
-        update={
-            "configuration": settings.configuration.model_copy(
-                update={
-                    "max_skill_scan_leases": 1,
-                    "skill_scan_lease_seconds": 0.05,
-                    "reconciliation_interval_seconds": 3600,
-                }
-            )
-        }
-    )
-    selected = LocalSkillDiscoverySettings(
-        ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
-    )
-
-    async with open_agent_ui_host(settings) as application:
-        first = await application.scan_skills(selected)
-        with fail_after(2):
-            while first.scan_id in application._configuration.skills._scans:
-                await sleep(0.01)
-        replacement = await application.scan_skills(selected)
-        await application.discard_skill_scan(replacement.scan_id)
-
-
 async def test_skill_package_directory_entries_are_bounded(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     discovery = tmp_path / "discovery"
@@ -954,7 +906,7 @@ async def test_skill_package_directory_entries_are_bounded(tmp_path: Path) -> No
         assert limited.value.code == "skill_package_limit"
 
 
-async def test_prepared_skill_changes_have_an_aggregate_byte_limit(tmp_path: Path) -> None:
+async def test_prepared_skill_change_is_retained_until_discarded(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     discovery = tmp_path / "discovery"
     skill = discovery / "example"
@@ -974,29 +926,26 @@ async def test_prepared_skill_changes_have_an_aggregate_byte_limit(tmp_path: Pat
         },
     )
     settings = _full_settings(tmp_path / "data", definitions, discovery)
-    settings = settings.model_copy(
-        update={"configuration": settings.configuration.model_copy(update={"max_prepared_skill_bytes": 1024})}
-    )
     selected = LocalSkillDiscoverySettings(
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
 
     async with open_agent_ui_host(settings) as application:
         scan = await application.scan_skills(selected)
-        with pytest.raises(ConfigurationError) as limited:
-            await application.preview_skill_import(
-                scan_id=scan.scan_id,
-                skill_name="example",
-                skill_id="skill-example",
-                display_name="Example Skill",
-                target_root_id="root-user",
-            )
-        assert limited.value.code == "skill_change_limit"
-        replacement = await application.scan_skills(selected)
-        await application.discard_skill_scan(replacement.scan_id)
+        change = await application.preview_skill_import(
+            scan_id=scan.scan_id,
+            skill_name="example",
+            skill_id="skill-example",
+            display_name="Example Skill",
+            target_root_id="root-user",
+        )
+        await application.discard_skill_change(change.change_id)
+        with pytest.raises(ConfigurationError) as discarded:
+            await application.accept_skill_import(change.change_id)
+        assert discarded.value.code == "skill_change_missing"
 
 
-async def test_skill_scan_leases_are_bounded_and_discardable(tmp_path: Path) -> None:
+async def test_multiple_skill_scans_are_explicitly_discardable(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     discovery = tmp_path / "discovery"
     skill = discovery / "example"
@@ -1015,33 +964,24 @@ async def test_skill_scan_leases_are_bounded_and_discardable(tmp_path: Path) -> 
         },
     )
     settings = _full_settings(tmp_path / "data", definitions, discovery)
-    settings = settings.model_copy(
-        update={"configuration": settings.configuration.model_copy(update={"max_skill_scan_leases": 1})}
-    )
     selected = LocalSkillDiscoverySettings(
         ordered_sources=(ResourceRef(kind=ResourceKind.skill_source, resource_id="skill-source-local"),),
     )
 
     async with open_agent_ui_host(settings) as application:
         first = await application.scan_skills(selected)
-        with pytest.raises(ConfigurationError) as limited:
-            await application.scan_skills(selected)
-        assert limited.value.code == "skill_scan_limit"
+        second = await application.scan_skills(selected)
         await application.discard_skill_scan(first.scan_id)
-        replacement = await application.scan_skills(selected)
         change = await application.preview_skill_import(
-            scan_id=replacement.scan_id,
+            scan_id=second.scan_id,
             skill_name="example",
             skill_id="skill-example",
             display_name="Example Skill",
             target_root_id="root-user",
         )
-        with pytest.raises(ConfigurationError) as prepared_limit:
-            await application.scan_skills(selected)
-        assert prepared_limit.value.code == "skill_scan_limit"
+        third = await application.scan_skills(selected)
         await application.discard_skill_change(change.change_id)
-        final = await application.scan_skills(selected)
-        await application.discard_skill_scan(final.scan_id)
+        await application.discard_skill_scan(third.scan_id)
 
 
 def test_runtime_manifest_and_envd_override_are_strict(tmp_path: Path) -> None:

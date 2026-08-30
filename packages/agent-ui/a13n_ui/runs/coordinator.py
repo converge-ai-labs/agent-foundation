@@ -292,7 +292,7 @@ class ForegroundRunCoordinator:
         external_cancellation: asyncio.CancelledError | None = None
         selected: TurnView | None = None
         try:
-            async with self._environments.run_binding(
+            async with self._environments.run_environment(
                 session_id=prepared.session.session_id,
                 snapshot=prepared.environment,
             ) as environment:

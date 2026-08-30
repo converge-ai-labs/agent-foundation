@@ -100,8 +100,7 @@ class EnvironmentOutputPolicy(BaseModel):
 class BoundOutputReference(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    binding_id: str
-    binding_version: int = Field(gt=0)
+    mount_id: str
     observed_generation: str
     reference: OpaqueOutputReference
 
@@ -109,8 +108,7 @@ class BoundOutputReference(BaseModel):
 class BoundOutputCursor(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    binding_id: str
-    binding_version: int = Field(gt=0)
+    mount_id: str
     observed_generation: str
     cursor: OpaqueOutputCursor
 

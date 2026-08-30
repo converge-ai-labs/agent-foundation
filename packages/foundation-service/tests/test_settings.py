@@ -1,3 +1,4 @@
+import base64
 from pathlib import Path
 
 import pytest
@@ -77,3 +78,22 @@ def test_selected_network_backend_requires_its_location(values: dict[str, object
 
     with pytest.raises(ValueError, match=message):
         settings.storage_settings()
+
+
+def test_managed_secret_master_key_is_exact_and_redacted() -> None:
+    settings = ServiceSettings(
+        _env_file=None,
+        secret_master_key_base64=base64.b64encode(b"k" * 32).decode(),
+        secret_encryption_key_id="master-2026-08",
+    )
+
+    assert settings.secret_protector().encryption_key_id == "master-2026-08"
+    assert base64.b64encode(b"k" * 32).decode() not in repr(settings)
+
+    invalid = ServiceSettings(
+        _env_file=None,
+        secret_master_key_base64=base64.b64encode(b"short").decode(),
+        secret_encryption_key_id="master-2026-08",
+    )
+    with pytest.raises(ValueError, match="256 bits"):
+        invalid.secret_protector()

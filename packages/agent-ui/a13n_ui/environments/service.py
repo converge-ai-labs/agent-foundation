@@ -1,4 +1,4 @@
-"""Host-owned lifecycle and Harness binding service for Session Environments."""
+"""Host-owned lifecycle and Harness runtime service for Session Environments."""
 
 from __future__ import annotations
 
@@ -31,18 +31,15 @@ from a13n_harness.environment import (
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
-    EnvironmentRunBinding,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
+    EnvironmentRuntime,
+    EnvironmentRuntimeMount,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from anyio import CancelScope, Event, Lock
 from pydantic import ValidationError
 
-from a13n_ui.composition import ResolvedEnvironmentBinding, ResolvedEnvironmentSnapshot
+from a13n_ui.composition import ResolvedEnvironmentMountDefinition, ResolvedEnvironmentSnapshot
 from a13n_ui.errors import AgentUiError, EnvironmentLifecycleError, RuntimeResolutionError, StoreIntegrityError
 from a13n_ui.storage.objects import ObjectKind, ObjectRef
 from a13n_ui.storage.runtime import LocalStore
@@ -64,7 +61,7 @@ class _LiveResource:
 
 
 class EnvironmentService:
-    """Fence provider effects and lend fresh complete run bindings."""
+    """Fence provider effects and lend fresh single-use Environment runtimes."""
 
     def __init__(
         self,
@@ -77,7 +74,6 @@ class EnvironmentService:
         self._repository = EnvironmentRepository(store)
         self._factories = factories
         self._runtimes = runtimes
-        self._locks_guard = Lock()
         self._resource_locks: dict[str, Lock] = {}
         self._live: dict[str, _LiveResource] = {}
         self._borrow_counts: dict[str, int] = {}
@@ -122,38 +118,7 @@ class EnvironmentService:
                     },
                 )
 
-        resources = await self._repository.resources_in_states(
-            frozenset(
-                {
-                    HostResourceLifecycleState.creating,
-                    HostResourceLifecycleState.resuming,
-                    HostResourceLifecycleState.pausing,
-                    HostResourceLifecycleState.destroying,
-                    HostResourceLifecycleState.unknown,
-                }
-            )
-        )
-        reconciled = 0
-        for resource in resources:
-            if resource.host_resource_id in invalid_resources:
-                continue
-            if resource.lifecycle_state is not HostResourceLifecycleState.unknown:
-                operation = resource.last_operation
-                if operation is None:
-                    continue
-                await self._repository.fail_operation(
-                    resource.host_resource_id,
-                    fence=resource.operation_fence,
-                    operation_id=operation.operation_id,
-                    unknown=True,
-                    failure={"code": "environment_operation_interrupted"},
-                )
-            try:
-                await self.reconcile(resource.host_resource_id)
-            except (EnvironmentLifecycleError, RuntimeResolutionError, EnvironmentProviderError):
-                continue
-            reconciled += 1
-        return reconciled
+        return len(invalid_resources)
 
     async def availability(self, session_id: str) -> EnvironmentAvailability:
         return await self._repository.availability(session_id)
@@ -165,49 +130,40 @@ class EnvironmentService:
         return await self._repository.availability(session_id)
 
     @asynccontextmanager
-    async def run_binding(
+    async def run_environment(
         self,
         *,
         session_id: str,
         snapshot: ResolvedEnvironmentSnapshot,
-    ) -> AsyncGenerator[EnvironmentRunBinding]:
-        """Keep fresh attachment scopes open for the complete Harness run cleanup."""
+    ) -> AsyncGenerator[EnvironmentRuntime]:
+        """Keep fresh attachment scopes open through complete Harness runtime cleanup."""
 
         availability = await self.provision(session_id)
-        assignment_by_name = {item.binding_name: item for item in availability.assignments}
-        snapshot_by_name = {item.binding_name: item for item in snapshot.bindings}
+        assignment_by_name = {item.mount_name: item for item in availability.assignments}
+        snapshot_by_name = {item.mount_name: item for item in snapshot.mounts}
         if set(assignment_by_name) != set(snapshot_by_name):
             raise StoreIntegrityError(
-                "Session Environment assignments differ from the pinned topology.",
+                "Session Environment assignments differ from the pinned desired mounts.",
                 code="environment_assignment_mismatch",
             )
-        requests: list[EnvironmentBindingRequest] = []
+        runtime_mounts: dict[str, EnvironmentRuntimeMount] = {}
         async with AsyncExitStack() as attachments:
-            for binding in snapshot.bindings:
-                assignment = assignment_by_name[binding.binding_name]
+            for mount in snapshot.mounts:
+                assignment = assignment_by_name[mount.mount_name]
                 attachment = await attachments.enter_async_context(self._borrow_attachment(assignment.host_resource_id))
                 provider_binding = create_environment_provider_binding(attachment)
-                requests.append(
-                    EnvironmentBindingRequest(
-                        binding_id=binding.binding_name,
-                        binding_version=1,
-                        alias=binding.model_alias,
-                        permission_ceiling=_permissions(binding),
-                        default_working_directory="/",
-                        provider_binding=provider_binding,
-                    )
+                runtime_mounts[mount.model_alias] = EnvironmentRuntimeMount(
+                    binding=provider_binding,
+                    permission_ceiling=_permissions(mount),
+                    working_directory="/",
                 )
-            default_name = snapshot.definition.default_binding
-            run_binding = create_environment_run_binding(
-                initial_topology=EnvironmentTopologyRequest(
-                    topology_version=1,
-                    bindings=tuple(requests),
-                    default_binding_id=default_name,
-                ),
-                topology_limits=EnvironmentTopologyLimits(max_bindings=max(1, len(requests))),
-                state_limits=EnvironmentStateLimits(),
+            desired_default = snapshot.definition.default_mount
+            default_mount = snapshot_by_name[desired_default].model_alias if desired_default is not None else None
+            environment = create_environment_runtime(
+                mounts=runtime_mounts,
+                default_mount=default_mount,
             )
-            yield run_binding
+            yield environment
 
     async def apply_idle_policy(self, session_id: str, snapshot: ResolvedEnvironmentSnapshot) -> None:
         mode = snapshot.definition.lifecycle.idle
@@ -319,7 +275,7 @@ class EnvironmentService:
                 raise
 
     async def reconcile(self, host_resource_id: str) -> HostEnvironmentResource:
-        lock = await self._lock_for(host_resource_id)
+        lock = self._lock_for(host_resource_id)
         async with lock:
             current = await self._repository.resource(host_resource_id)
             operation_view = current.last_operation
@@ -382,7 +338,7 @@ class EnvironmentService:
             raise BaseExceptionGroup("Environment resource shutdown failed", failures)
 
     async def _ensure_available(self, host_resource_id: str) -> HostEnvironmentResource:
-        lock = await self._lock_for(host_resource_id)
+        lock = self._lock_for(host_resource_id)
         async with lock:
             current = await self._repository.resource(host_resource_id)
             return await self._ensure_available_locked(current)
@@ -586,7 +542,7 @@ class EnvironmentService:
         self,
         host_resource_id: str,
     ) -> AsyncGenerator[EnvironmentRuntimeAttachment]:
-        lock = await self._lock_for(host_resource_id)
+        lock = self._lock_for(host_resource_id)
         async with lock:
             if host_resource_id in self._lifecycle_pending:
                 raise EnvironmentLifecycleError(
@@ -636,7 +592,7 @@ class EnvironmentService:
 
     @asynccontextmanager
     async def _exclusive_lifecycle(self, host_resource_id: str) -> AsyncGenerator[None]:
-        lock = await self._lock_for(host_resource_id)
+        lock = self._lock_for(host_resource_id)
         async with lock:
             if host_resource_id in self._lifecycle_pending:
                 raise EnvironmentLifecycleError(
@@ -658,18 +614,13 @@ class EnvironmentService:
                 async with lock:
                     self._lifecycle_pending.discard(host_resource_id)
 
-    async def _lock_for(self, host_resource_id: str) -> Lock:
-        async with self._locks_guard:
-            lock = self._resource_locks.get(host_resource_id)
-            if lock is None:
-                lock = Lock()
-                self._resource_locks[host_resource_id] = lock
-            return lock
+    def _lock_for(self, host_resource_id: str) -> Lock:
+        return self._resource_locks.setdefault(host_resource_id, Lock())
 
 
-def _permissions(binding: ResolvedEnvironmentBinding) -> EnvironmentPermissionSet:
+def _permissions(mount: ResolvedEnvironmentMountDefinition) -> EnvironmentPermissionSet:
     operations: set[EnvironmentAction] = set()
-    for value in binding.permission_ceiling:
+    for value in mount.permission_ceiling:
         family_matches = {
             action for action, dispatch in ENVIRONMENT_ACTION_DISPATCH.items() if dispatch.family == value
         }

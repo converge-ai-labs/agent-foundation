@@ -29,6 +29,7 @@ class _PreparedFile:
     observed_generation: str
     backend: Any
     validate_result: Callable[[Any], None]
+    virtualize_path: Callable[[str], str]
 
 
 ResolvePath = Callable[[str], EnvironmentPath]
@@ -36,14 +37,12 @@ PrepareFile = Callable[
     [EnvironmentPath, EnvironmentAction],
     AbstractAsyncContextManager[_PreparedFile],
 ]
-VirtualizePath = Callable[[EnvironmentPath, str], str]
 
 
 class VirtualFileOperator:
-    def __init__(self, resolve: ResolvePath, prepare: PrepareFile, virtualize: VirtualizePath) -> None:
+    def __init__(self, resolve: ResolvePath, prepare: PrepareFile) -> None:
         self._resolve = resolve
         self._prepare = prepare
-        self._virtualize = virtualize
 
     async def read_text(self, path: str, **kwargs: Any) -> FileTextResult:
         async with self._prepare(self._resolve(path), EnvironmentAction.FILE_READ_TEXT) as prepared:
@@ -134,8 +133,7 @@ class VirtualFileOperator:
             result = await prepared.backend.list(prepared.selected.path, **kwargs)
             prepared.validate_result(result)
             entries = tuple(
-                entry.model_copy(update={"path": self._virtualize(prepared.selected, entry.path)})
-                for entry in result.entries
+                entry.model_copy(update={"path": prepared.virtualize_path(entry.path)}) for entry in result.entries
             )
             return result.model_copy(update={"entries": entries})
 
@@ -144,8 +142,7 @@ class VirtualFileOperator:
             result = await prepared.backend.query(request.model_copy(update={"root": prepared.selected.path}))
             prepared.validate_result(result)
             entries = tuple(
-                entry.model_copy(update={"path": self._virtualize(prepared.selected, entry.path)})
-                for entry in result.entries
+                entry.model_copy(update={"path": prepared.virtualize_path(entry.path)}) for entry in result.entries
             )
             return result.model_copy(update={"entries": entries})
 
@@ -154,8 +151,7 @@ class VirtualFileOperator:
             result = await prepared.backend.search_text(request.model_copy(update={"root": prepared.selected.path}))
             prepared.validate_result(result)
             matches = tuple(
-                match.model_copy(update={"path": self._virtualize(prepared.selected, match.path)})
-                for match in result.matches
+                match.model_copy(update={"path": prepared.virtualize_path(match.path)}) for match in result.matches
             )
             return result.model_copy(update={"matches": matches})
 
@@ -177,11 +173,11 @@ class VirtualFileOperator:
         async with self._prepare(source_selected, EnvironmentAction.FILE_MOVE) as source_file:
             async with self._prepare(destination_selected, EnvironmentAction.FILE_MOVE) as destination_file:
                 if (
-                    source_file.selected.binding_id != destination_file.selected.binding_id
+                    source_file.selected.mount_id != destination_file.selected.mount_id
                     or source_file.backend is not destination_file.backend
                 ):
                     raise EnvironmentError(
-                        "Cross-binding move must be expressed as copy and separately authorized remove.",
+                        "Cross-mount move must be expressed as copy and separately authorized remove.",
                         code="environment_unsupported",
                     )
                 result = await source_file.backend.move(
@@ -229,7 +225,7 @@ class VirtualFileOperator:
                 EnvironmentAction.FILE_COPY_DESTINATION,
             ) as destination_file:
                 if (
-                    source_file.selected.binding_id == destination_file.selected.binding_id
+                    source_file.selected.mount_id == destination_file.selected.mount_id
                     and source_file.backend is destination_file.backend
                 ):
                     result = await source_file.backend.copy(

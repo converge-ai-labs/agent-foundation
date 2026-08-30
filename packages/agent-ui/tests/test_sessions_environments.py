@@ -4,7 +4,6 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,7 +12,7 @@ from a13n_environment_provider import EnvironmentPauseMode, EnvironmentProviderE
 from a13n_harness import RunModelResolver
 from a13n_ui.composition import ResolvedAgentSnapshot
 from a13n_ui.configuration import ConfigurationSettings, DefinitionRootSettings, LocalDirectorySettings
-from a13n_ui.environments import EnvdExecutableResolver, ProviderRuntimeResolver
+from a13n_ui.environments import ProviderRuntimeResolver
 from a13n_ui.errors import EnvironmentLifecycleError, RuntimeResolutionError, SessionError, StoreIntegrityError
 from a13n_ui.host import open_agent_ui_host
 from a13n_ui.sessions import SessionLifecycleState, SessionUpdate, TurnState
@@ -152,9 +151,9 @@ def _write_composition(
             "schema_version": "1",
             "environment_id": "environment-main",
             "display_name": "Main Environment",
-            "bindings": [
+            "mounts": [
                 {
-                    "binding_name": "binding-main",
+                    "mount_name": "mount-main",
                     "model_alias": "workspace",
                     "provider_key": "a13n.direct-local",
                     "provider_schema_version": "1",
@@ -163,10 +162,9 @@ def _write_composition(
                         "root": {"directory_id": "directory-workspace", "read_only": False},
                     },
                     "permission_ceiling": ["files"],
-                    "required": True,
                 }
             ],
-            "default_binding": "binding-main",
+            "default_mount": "mount-main",
             "lifecycle": {
                 "provision": provision,
                 "idle": "keep_running",
@@ -177,15 +175,12 @@ def _write_composition(
 
 
 async def test_local_envd_upstream_gate_is_explicit_and_never_falls_back() -> None:
-    envd_mock = AsyncMock(spec=EnvdExecutableResolver)
-    envd_mock.resolve.return_value = object()
-    resolver = ProviderRuntimeResolver(cast("EnvdExecutableResolver", envd_mock))
+    resolver = ProviderRuntimeResolver()
 
     with pytest.raises(RuntimeResolutionError) as raised:
         await resolver.resolve("a13n.local-envd")
 
     assert raised.value.code == "local_envd_provider_unavailable"
-    envd_mock.resolve.assert_awaited_once_with()
 
 
 async def test_session_baseline_and_direct_local_environment_survive_restart(tmp_path: Path) -> None:
@@ -210,7 +205,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
         before = await application.session_environment(created.session_id)
         assert before.ready is False
         snapshot = await application.environment_snapshot(environment)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -234,7 +229,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
         availability = await restarted.session_environment(session_id)
         assert availability.ready is True
         snapshot = await restarted.environment_snapshot(retained.environment_snapshot)
-        async with restarted._environments.run_binding(session_id=session_id, snapshot=snapshot):
+        async with restarted._environments.run_environment(session_id=session_id, snapshot=snapshot):
             assert (await restarted.session_environment(session_id)).ready is True
 
 
@@ -403,7 +398,7 @@ async def test_event_subscription_has_gap_free_replay_to_live_cutover(tmp_path: 
         assert len({item.stored.event_id for item in combined}) == len(combined)
 
 
-async def test_startup_recovers_file_first_event_segment(tmp_path: Path) -> None:
+async def test_startup_does_not_claim_an_unregistered_event_segment(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -441,12 +436,17 @@ async def test_startup_recovers_file_first_event_segment(tmp_path: Path) -> None
             presentation.next_sequence = segment.first_sequence
             presentation.last_segment_digest = segment.previous_segment_digest
             await database_session.delete(segment)
+        retained_event_ids = [
+            item.stored.event_id for item in before if item.stored.presentation_sequence < segment.first_sequence
+        ]
+        orphan_path = application._store.layout.sessions / segment.relative_path
 
     async with open_agent_ui_host(settings) as restarted:
-        recovered = await restarted.session_events(session_id)
+        retained = await restarted.session_events(session_id)
         diagnostics = await restarted.recovery_diagnostics()
 
-        assert [item.stored.event_id for item in recovered] == [item.stored.event_id for item in before]
+        assert [item.stored.event_id for item in retained] == retained_event_ids
+        assert orphan_path.is_file()
         assert not any(item.code == "event_segment_unselected" for item in diagnostics)
 
 
@@ -521,7 +521,7 @@ async def test_provider_dispatch_then_host_commit_failure_is_unknown(
         )
 
         with pytest.raises(StoreIntegrityError, match="Synthetic state commit"):
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -530,7 +530,7 @@ async def test_provider_dispatch_then_host_commit_failure_is_unknown(
         availability = await application.session_environment(created.session_id)
         assert availability.resources[0].lifecycle_state.value == "unknown"
         with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -552,7 +552,7 @@ async def test_pause_waits_for_active_environment_attachment(tmp_path: Path, mon
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
         pause_task: asyncio.Task[object]
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -589,7 +589,7 @@ async def test_delete_failure_retains_assignments_for_cleanup_retry(
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -712,7 +712,7 @@ async def test_startup_marks_unreadable_selected_provider_state_unknown(tmp_path
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -843,7 +843,7 @@ async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_p
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -856,7 +856,7 @@ async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_p
         failed = await application.session_environment(created.session_id)
         assert failed.resources[0].lifecycle_state.value == "failed"
         with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -938,7 +938,7 @@ async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):

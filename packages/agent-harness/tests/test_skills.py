@@ -39,12 +39,11 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EnvironmentRuntime,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyController,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import (
     DirectLocalEnvironmentProviderBinding,
@@ -123,15 +122,17 @@ class _ExternalFileViewRulesCapability(AbstractCapability[AgentContext]):
         return self
 
 
-class _TopologyChangingSource:
+class _MountChangingSource:
     def __init__(
         self,
         inner: FileSkillSource,
-        controller: EnvironmentTopologyController,
-        replacement: EnvironmentTopologyRequest,
+        runtime: EnvironmentRuntime,
+        name: str,
+        replacement: EnvironmentRuntimeMount,
     ) -> None:
         self._inner = inner
-        self._controller = controller
+        self._runtime = runtime
+        self._name = name
         self._replacement = replacement
 
     @property
@@ -144,7 +145,7 @@ class _TopologyChangingSource:
 
     async def catalog(self, *, files) -> tuple[SkillCatalogItem, ...]:
         catalog = await self._inner.catalog(files=files)
-        await self._controller.apply(self._replacement)
+        await self._runtime.replace(self._name, self._replacement)
         return catalog
 
 
@@ -163,71 +164,36 @@ class _Materializer:
         )
 
 
-def _binding(root: Path):
-    provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="skills-test",
-            root=DirectLocalRootConfiguration(path=root),
-        )
-    )
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-1",
-                    binding_version=1,
-                    alias="local",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
-                    provider_binding=provider,
-                ),
-            ),
-            default_binding_id="binding-1",
+def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> EnvironmentRuntimeMount:
+    return EnvironmentRuntimeMount(
+        binding=DirectLocalEnvironmentProviderBinding(
+            DirectLocalProviderConfiguration(
+                environment_id=environment_id,
+                root=DirectLocalRootConfiguration(path=root),
+            )
         ),
-        topology_limits=EnvironmentTopologyLimits(),
+        permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+        working_directory="/",
+    )
+
+
+def _binding(root: Path) -> EnvironmentRuntime:
+    return create_environment_runtime(
+        mounts={"local": _runtime_mount(root)},
+        default_mount="local",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
 
-def _multi_binding(default_root: Path, shared_root: Path):
-    default_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="skills-default",
-            root=DirectLocalRootConfiguration(path=default_root),
-        )
-    )
-    shared_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="skills-shared",
-            root=DirectLocalRootConfiguration(path=shared_root),
-        )
-    )
-    permission = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-default",
-                    binding_version=1,
-                    alias="default",
-                    permission_ceiling=permission,
-                    default_working_directory="/",
-                    provider_binding=default_provider,
-                ),
-                EnvironmentBindingRequest(
-                    binding_id="binding-shared",
-                    binding_version=1,
-                    alias="shared",
-                    permission_ceiling=permission,
-                    default_working_directory="/",
-                    provider_binding=shared_provider,
-                ),
-            ),
-            default_binding_id="binding-default",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
+def _multi_binding(default_root: Path, shared_root: Path) -> EnvironmentRuntime:
+    return create_environment_runtime(
+        mounts={
+            "default": _runtime_mount(default_root, environment_id="skills-default"),
+            "shared": _runtime_mount(shared_root, environment_id="skills-shared"),
+        },
+        default_mount="default",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -376,6 +342,7 @@ async def test_host_can_scan_skills_through_entered_environment_file_operator(tm
     async with _binding(tmp_path).bind(run_id="host-skill-scan", instance=instance) as environment:
         catalog = await _DirectScanOverrideManager.default().scan_environment(environment=environment)
         catalog.require_current(environment)
+        expected_mount_id = environment.resolve_path("/workspace").mount_id
 
     assert [
         (
@@ -383,8 +350,7 @@ async def test_host_can_scan_skills_through_entered_environment_file_operator(tm
             item.description,
             item.path,
             item.source_id,
-            item.document.binding_id,
-            item.document.binding_version,
+            item.document.mount_id,
             item.document.path,
         )
         for item in catalog.items
@@ -394,8 +360,7 @@ async def test_host_can_scan_skills_through_entered_environment_file_operator(tm
             "Managed by the Host.",
             "/workspace/.agents/skills/managed",
             "workspace",
-            "binding-1",
-            1,
+            expected_mount_id,
             "/.agents/skills/managed/SKILL.md",
         )
     ]
@@ -412,8 +377,7 @@ async def test_host_can_scan_non_virtual_local_file_operator(tmp_path: Path) -> 
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="cli-files",
-        binding_version=1,
+        mount_id="cli-files",
         generation="generation-1",
     )
     manager = SkillManager((FileSkillSource("local", ("/.agents/skills",)),))
@@ -454,14 +418,19 @@ async def test_environment_scan_pins_roots_across_bindings(tmp_path: Path) -> No
 
     async with binding.bind(run_id="host-multi-scan", instance=instance) as environment:
         catalog = await manager.scan_environment(environment=environment)
+        expected_mounts = {
+            "project": environment.resolve_path("/workspace").mount_id,
+            "shared": environment.resolve_path("/environment/shared").mount_id,
+        }
 
-    assert [(item.name, item.document.binding_id, item.document.path) for item in catalog.items] == [
-        ("project", "binding-default", "/.agents/skills/project/SKILL.md"),
-        ("shared", "binding-shared", "/skills/shared/SKILL.md"),
+    assert [(item.name, item.document.mount_id, item.document.path) for item in catalog.items] == [
+        ("project", expected_mounts["project"], "/.agents/skills/project/SKILL.md"),
+        ("shared", expected_mounts["shared"], "/skills/shared/SKILL.md"),
     ]
+    assert expected_mounts["project"] != expected_mounts["shared"]
 
 
-async def test_bound_catalog_ignores_unrelated_topology_refresh(tmp_path: Path) -> None:
+async def test_bound_catalog_ignores_unrelated_mount_replacement(tmp_path: Path) -> None:
     default_root = tmp_path / "default"
     shared_root = tmp_path / "shared"
     replacement_root = tmp_path / "replacement"
@@ -478,46 +447,18 @@ async def test_bound_catalog_ignores_unrelated_topology_refresh(tmp_path: Path) 
         identity=AgentIdentityRef(issuer="test", subject="skill-manager"),
         agent_instance_id="skill-manager-unrelated-refresh",
     )
-    permission = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
-
     async with binding.bind(run_id="host-unrelated-refresh", instance=instance) as environment:
-        await environment.activate()
+        await binding._activate()
         catalog = await SkillManager.default().scan_environment(environment=environment)
-        replacement = DirectLocalEnvironmentProviderBinding(
-            DirectLocalProviderConfiguration(
-                environment_id="skills-shared",
-                root=DirectLocalRootConfiguration(path=replacement_root),
-            )
-        )
-        await binding.controller.apply(
-            EnvironmentTopologyRequest(
-                topology_version=2,
-                bindings=(
-                    EnvironmentBindingRequest(
-                        binding_id="binding-default",
-                        binding_version=1,
-                        alias="default",
-                        permission_ceiling=permission,
-                        default_working_directory="/",
-                        provider_binding=None,
-                    ),
-                    EnvironmentBindingRequest(
-                        binding_id="binding-shared",
-                        binding_version=2,
-                        alias="shared",
-                        permission_ceiling=permission,
-                        default_working_directory="/",
-                        provider_binding=replacement,
-                    ),
-                ),
-                default_binding_id="binding-default",
-            )
+        await binding.replace(
+            "shared",
+            _runtime_mount(replacement_root, environment_id="skills-shared-replacement"),
         )
 
         catalog.require_current(environment)
 
 
-async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: Path) -> None:
+async def test_skills_capability_rejects_mount_replacement_during_scan(tmp_path: Path) -> None:
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     for root, description in ((first_root, "Revision A metadata."), (second_root, "Revision B metadata.")):
@@ -529,30 +470,11 @@ async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: P
         )
 
     binding = _binding(first_root)
-    replacement_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="skills-test",
-            root=DirectLocalRootConfiguration(path=second_root),
-        )
-    )
-    replacement = EnvironmentTopologyRequest(
-        topology_version=2,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_version=2,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=replacement_provider,
-            ),
-        ),
-        default_binding_id="binding-1",
-    )
-    source = _TopologyChangingSource(
+    source = _MountChangingSource(
         FileSkillSource("workspace", ("/workspace/.agents/skills",)),
-        binding.controller,
-        replacement,
+        binding,
+        "local",
+        _runtime_mount(second_root, environment_id="skills-test-replacement"),
     )
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -564,43 +486,21 @@ async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: P
     with pytest.raises(DefinitionError) as exc_info:
         await executable.run("Review", bindings=RunBindings.embedded(environment=binding))
     assert exc_info.value.code == "skill_catalog_stale"
-    assert exc_info.value.details == {
-        "root": "/workspace/.agents/skills",
-        "binding_id": "binding-1",
-        "binding_version": 1,
-    }
+    assert exc_info.value.details["root"] == "/workspace/.agents/skills"
+    assert isinstance(exc_info.value.details["mount_id"], str)
 
 
-async def test_environment_scan_rejects_empty_root_refresh_during_scan(tmp_path: Path) -> None:
+async def test_environment_scan_rejects_empty_root_replacement_during_scan(tmp_path: Path) -> None:
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     (first_root / ".agents" / "skills").mkdir(parents=True)
     (second_root / ".agents" / "skills").mkdir(parents=True)
     binding = _binding(first_root)
-    replacement_provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="skills-test",
-            root=DirectLocalRootConfiguration(path=second_root),
-        )
-    )
-    replacement = EnvironmentTopologyRequest(
-        topology_version=2,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_version=2,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=replacement_provider,
-            ),
-        ),
-        default_binding_id="binding-1",
-    )
-    source = _TopologyChangingSource(
+    source = _MountChangingSource(
         FileSkillSource("workspace", ("/workspace/.agents/skills",)),
-        binding.controller,
-        replacement,
+        binding,
+        "local",
+        _runtime_mount(second_root, environment_id="skills-test-replacement"),
     )
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -612,11 +512,8 @@ async def test_environment_scan_rejects_empty_root_refresh_during_scan(tmp_path:
     with pytest.raises(DefinitionError) as exc_info:
         await executable.run("Review", bindings=RunBindings.embedded(environment=binding))
     assert exc_info.value.code == "skill_catalog_stale"
-    assert exc_info.value.details == {
-        "root": "/workspace/.agents/skills",
-        "binding_id": "binding-1",
-        "binding_version": 1,
-    }
+    assert exc_info.value.details["root"] == "/workspace/.agents/skills"
+    assert isinstance(exc_info.value.details["mount_id"], str)
 
 
 async def test_default_skills_capability_allows_missing_workspace_root(tmp_path: Path) -> None:

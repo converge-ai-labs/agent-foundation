@@ -69,7 +69,7 @@ The distribution registers one package factory:
 - a complete `WorkspaceEnvironmentProvider` and single-entry Resource;
 - fresh `DirectLocalEnvironmentAttachment` values for Harness transfer.
 
-Specification validation, factory construction, and Provider construction perform no filesystem I/O. `create()` and `resume()` validate the selected existing workspace; neither creates or owns it. Harness binding cleanup, Resource scope cleanup, and explicit Provider destroy remain separate operations.
+Specification validation, factory construction, and Provider construction perform no filesystem I/O. `create()` and `resume()` validate the selected existing workspace; neither creates or owns it. Harness mount and provider-binding cleanup, Resource scope cleanup, and explicit Provider destroy remain separate operations.
 
 ### Installed entry-point mode
 
@@ -87,7 +87,7 @@ uv run plugin-example-environment-entrypoint
 uv run plugin-example-environment-code
 ```
 
-Both paths create two Resources, acquire and transfer two fresh attachments, assemble one advanced Harness topology, enter and activate the aggregate, and verify default and alias-qualified routing. The source Provider then demonstrates explicit durable lifecycle calls: reconcile create as running, resume the exact validated state into a fresh Resource and attachment, reconcile resume as running, destroy, and reconcile authoritative absence. The example Provider advertises no pause mode, so it reports that pause is unsupported rather than silently changing lifecycle semantics:
+Both paths create two Resources, acquire and transfer two fresh attachments, construct one `EnvironmentRuntime` with an atomic initial mount set, enter and activate the runtime, and verify default and explicitly qualified routing. The source Provider then demonstrates explicit durable lifecycle calls: reconcile create as running, resume the exact validated state into a fresh Resource and attachment, reconcile resume as running, destroy, and reconcile authoritative absence. The example Provider advertises no pause mode, so it reports that pause is unsupported rather than silently changing lifecycle semantics:
 
 ```text
 selection mode: entrypoint
@@ -111,9 +111,9 @@ Code mode prints the same result with `selection mode: code`. A provider that ad
 - Return provider-owned state before resource-scope entry and validate it exactly on resume, destroy, and reconciliation.
 - Issue only fresh supported attachments while a single-entry Resource scope is active.
 - Treat `reconcile()` as bounded read-only inspection of one exact prior operation.
-- Keep aliases, permission ceilings, topology, attachment transfer, durable storage, authorization, and scheduling under Host control.
+- Keep mount names, permission ceilings, desired mount definitions, attachment transfer, durable storage, authorization, and scheduling under Host control.
 
-The example uses the public `DirectLocalEnvironmentAttachment` backend to stay focused on provider packaging and lifecycle. A remote sandbox provider issues an `EIPEnvironmentAttachment`; it does not implement another Harness operation binding.
+The example uses the public `DirectLocalEnvironmentAttachment` backend to stay focused on provider packaging and lifecycle. A remote sandbox provider issues an `EIPEnvironmentAttachment`; it does not implement another Harness mount or provider-neutral operation layer.
 
 ## Environment Run Extension
 
@@ -134,7 +134,7 @@ The factory receives an `EnvironmentRunExtensionFactoryContext` with separate `e
 
 ### Installed entry-point mode
 
-[`run_environment_extension_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment_extension.py) discovers metadata, selects only `example.workspace-marker`, creates one configured instance, registers it on `create_environment_run_binding()`, and exercises the complete scope:
+[`run_environment_extension_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment_extension.py) discovers metadata, selects only `example.workspace-marker`, creates one configured instance, registers it on `create_environment_runtime()`, and exercises the complete scope:
 
 ```bash
 uv run plugin-example-environment-extension-entrypoint
@@ -160,7 +160,7 @@ marker removed: True
 
 Code mode reports `selection mode: code` and `extension id: marker-code`.
 
-A run extension spans the complete Environment aggregate, not one provider revision. It enters once in registration order after state restore, does not re-enter for dynamic topology updates, and exits in reverse order while provider-neutral Environment operations are still available. It receives no model, `AgentContext`, Harness plugin context, or topology controller.
+A run extension spans the complete `EnvironmentRuntime`, not one provider resource. It enters once in registration order after state restore, remains entered across mount mutations, and exits in reverse order while provider-neutral Environment operations are still available. It receives no model, `AgentContext`, Harness plugin context, or runtime mutation authority.
 
 ### Real run-extension checklist
 
@@ -170,7 +170,7 @@ A run extension spans the complete Environment aggregate, not one provider revis
 - Acquire all cleanup-producing resources inside `bind()`.
 - Use only provider-neutral `Environment` operations when touching Environment resources.
 - Make exit finite and clean every owned resource even when the run failed.
-- Do not expect dynamic `controller.apply()` to rebind the extension.
+- Do not expect runtime mount mutations to rebind the extension.
 - Use a Harness plugin for input/result middleware and a Capability for Agent-loop behavior instead.
 
 ## Harness Plugin

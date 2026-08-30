@@ -51,8 +51,7 @@ def _skill_path(name: str = "review") -> SkillPath:
         name=name,
         source_id="external-source",
         directory=EnvironmentPath(
-            binding_id="binding-1",
-            binding_version=1,
+            mount_id="mount-1",
             path=f"/.agents/skills/{name}",
         ),
     )

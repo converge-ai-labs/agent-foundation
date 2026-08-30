@@ -30,12 +30,11 @@ from a13n_harness import (
 )
 from a13n_harness.codeact.runtime import CodeActRunState
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EmptyEnvironmentRuntime,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    NoopEnvironmentRunBinding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
@@ -91,22 +90,16 @@ def _local_environment(root: Path):
             root=DirectLocalRootConfiguration(path=root),
         )
     )
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-1",
-                    binding_version=1,
-                    alias="local",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
-                    provider_binding=provider,
-                ),
-            ),
-            default_binding_id="binding-1",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
+    return create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider,
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                working_directory="/",
+            )
+        },
+        default_mount="local",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -232,7 +225,7 @@ async def test_codeact_nested_deferral_uses_child_denial_and_root_handler() -> N
             parent_agent_instance_id="parent-1",
             delegation_id="delegation-1",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
     )
 
     child_events: list[HarnessEvent] = []
@@ -434,7 +427,7 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
                 parent_agent_instance_id="parent-1",
                 delegation_id=child_instance_id,
             ),
-            environment=NoopEnvironmentRunBinding(),
+            environment=EmptyEnvironmentRuntime(),
         )
 
     bindings = RunBindings(
@@ -442,7 +435,7 @@ async def test_inline_delegation_gives_root_and_child_independent_codeact_runtim
             identity=AgentIdentityRef(issuer="test", subject="parent"),
             agent_instance_id="parent-1",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
         capabilities=(
             InvocationPolicyCapability(evaluator=allow),
             DelegationRunCapability(binder=bind_child),

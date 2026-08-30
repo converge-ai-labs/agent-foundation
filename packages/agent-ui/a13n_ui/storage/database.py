@@ -79,9 +79,12 @@ async def short_session(factory: async_sessionmaker[AsyncSession]) -> AsyncGener
     """Own one short session and return its connection before cancellation propagates."""
 
     await checkpoint_if_cancelled()
-    with CancelScope(shield=True):
-        async with factory() as session:
-            yield session
+    session = factory()
+    try:
+        yield session
+    finally:
+        with CancelScope(shield=True):
+            await session.close()
 
 
 @asynccontextmanager
@@ -89,9 +92,21 @@ async def transaction(factory: async_sessionmaker[AsyncSession]) -> AsyncGenerat
     """Own one short transaction and its session through commit or rollback."""
 
     await checkpoint_if_cancelled()
-    with CancelScope(shield=True):
-        async with factory.begin() as session:
+    session = factory()
+    try:
+        await session.execute(text("BEGIN IMMEDIATE"))
+        try:
             yield session
+        except BaseException:
+            with CancelScope(shield=True):
+                await session.rollback()
+            raise
+        else:
+            with CancelScope(shield=True):
+                await session.commit()
+    finally:
+        with CancelScope(shield=True):
+            await session.close()
 
 
 async def check_database(database: Database, *, timeout_seconds: float = 3.0) -> None:

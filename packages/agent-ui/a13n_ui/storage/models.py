@@ -20,18 +20,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .metadata import Base
 
 
-class StoreLeaseRecord(Base):
-    """The process generation currently owning this data root."""
-
-    __tablename__ = "store_lease"
-    __table_args__ = (CheckConstraint("singleton_id = 1", name="singleton"),)
-
-    singleton_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    process_generation: Mapped[str] = mapped_column(String(64), nullable=False)
-    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
 class ImmutableObjectRecord(Base):
     """One verified immutable object known to the metadata store."""
 
@@ -45,7 +33,7 @@ class ImmutableObjectRecord(Base):
 
 
 class RecoveryDiagnosticRecord(Base):
-    """Bounded evidence from local-store recovery and quarantine."""
+    """Bounded evidence from local-store recovery and integrity checks."""
 
     __tablename__ = "recovery_diagnostic"
 
@@ -447,7 +435,7 @@ class HostEnvironmentResourceRecord(Base):
     provider_key: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     provider_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
     provider_spec_digest: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    binding_parameters_json: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_parameters_json: Mapped[str] = mapped_column(Text, nullable=False)
     resource_allocation: Mapped[str] = mapped_column(String(32), nullable=False)
     lifecycle_state: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     operation_fence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -464,10 +452,10 @@ class HostEnvironmentResourceRecord(Base):
 
 
 class SessionEnvironmentAssignmentRecord(Base):
-    """Session root binding assignment to one Host provider resource."""
+    """Session desired-mount assignment to one Host provider resource."""
 
     __tablename__ = "session_environment_assignment"
-    __table_args__ = (UniqueConstraint("session_id", "binding_name", "scope_key", name="scope_binding"),)
+    __table_args__ = (UniqueConstraint("session_id", "mount_name", "scope_key", name="scope_mount"),)
 
     assignment_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     session_id: Mapped[str] = mapped_column(
@@ -476,10 +464,9 @@ class SessionEnvironmentAssignmentRecord(Base):
         nullable=False,
         index=True,
     )
-    binding_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    mount_name: Mapped[str] = mapped_column(String(128), nullable=False)
     model_alias: Mapped[str] = mapped_column(String(63), nullable=False)
     permission_ceiling_json: Mapped[str] = mapped_column(Text, nullable=False)
-    required: Mapped[bool] = mapped_column(Boolean, nullable=False)
     scope_key: Mapped[str] = mapped_column(String(128), nullable=False, default="root")
     host_resource_id: Mapped[str] = mapped_column(
         String(80),
@@ -575,7 +562,6 @@ __all__ = [
     "SessionRecord",
     "SessionThreadRecord",
     "SkillPackageReferenceRecord",
-    "StoreLeaseRecord",
     "ThreadCheckpointRecord",
     "TurnRecord",
     "TurnRunRecord",

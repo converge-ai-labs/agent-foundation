@@ -14,8 +14,8 @@ clean lock-scoped child processes. The selected execution loop reconstructs proc
 Agent values, materializes exact [managed Skill
 revisions](27-skill-management.md) as inert Environment content, and uses an exact
 trusted Environment connector to attach an already-running external resource.
-The connector maintains bounded keep-alive only while the current Harness
-binding is active; Foundation owns no Sandbox lifecycle. Redis delivery, Harness
+The connector maintains bounded keep-alive only while its fresh attachment
+scope and the current Harness run are active; Foundation owns no Sandbox lifecycle. Redis delivery, Harness
 completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
@@ -77,47 +77,48 @@ flowchart LR
 ```
 
 PostgreSQL is the distributed authority for accepted resources, Thread
-advancement and queue versions, head selection, queued submissions, the durable Thread inbox, Turns, current TurnAttempt
-generations, Agent tool dispatch evidence, waiting pending summaries,
-Environment configuration, and terminal outcomes. Each Worker discovers claim,
-takeover, and pending-inbox work directly from that durable state. Redis carries
-domain-owned live data flow, including each Turn's stable bounded-replay message
-stream and each active Thread's expiring control-signal Stream; Redis
-publication or consumer-group progress never proves a relational transition or
-inbox consumption. Shared object storage holds the Turn's complete
-conditionally replaced state, including exact pending requests, consumed inbox
-receipts, immutable replay snapshot, and bounded large content. The detailed
-authorities belong to [Durable Thread Persistence](24-thread-persistence.md),
-[Durable Turn State](14-turn-persistence.md), [Agent Control: Active
+advancement and queue versions, head selection, queued submissions, the durable
+Thread inbox, Turns, current TurnAttempt generations, Agent tool dispatch
+evidence, waiting pending summaries, desired Environment mounts, and terminal
+outcomes. Each Worker discovers claim, takeover, and pending-inbox work directly
+from that durable state. Redis carries domain-owned live data flow, including
+each Turn's stable bounded-replay message stream and each active Thread's
+expiring control-signal Stream; Redis publication or consumer-group progress
+never proves a relational transition or inbox consumption. Shared object
+storage holds the Turn's complete conditionally replaced state, including exact
+pending requests, consumed inbox receipts, immutable replay snapshot, and
+bounded large content. The detailed authorities belong to [Durable Thread
+Persistence](24-thread-persistence.md), [Durable Turn
+State](14-turn-persistence.md), [Agent Control: Active
 Execution](35-agent-control-active-execution.md), [Agent Control: Queued
 Submissions](36-agent-control-queued-submissions.md), [Environment Configuration
-and Runtime Bindings](19-environment-management.md), [Lifecycle and Stream
+and Runtime Mounts](19-environment-management.md), [Lifecycle and Stream
 Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction
 Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
 ## Component Boundaries
 
-| Concern                                                                     | Owner                                                         | Relationship                                                                   |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Session, Thread, Turn, and Item meaning                                     | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations                  |
-| Runtime configuration, process roles, readiness, and drain                  | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                          |
-| OSS, EE, and Cloud application composition                                  | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                    |
-| Organization, Workspace, identity, and resource authorization               | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                         |
-| AgentPresets, immutable Versions, managed Skill revisions, and ModelConfigs | Foundation control plane                                      | Selects exact Agent inputs and freezes current model configuration per Turn    |
-| Managed Harness plugin artifacts and Runtime locks                          | Foundation control plane and Worker runtime                   | Preflights on demand or stages exact trusted Runner environments               |
-| Durable Thread resource                                                     | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version  |
-| Turn and TurnAttempt                                                        | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                  |
-| Queue-if-busy ordinary input                                                | [Queued Submissions](36-agent-control-queued-submissions.md)  | Accepts immediately when eligible or remains editable outside the Turn DAG     |
-| Thread inbox, steer, and interrupt                                          | [Active Execution](35-agent-control-active-execution.md)      | Persists inbound active control and uses Redis only for expiring wakeups       |
-| Environment, EnvironmentRevision, and Turn execution configuration          | [Environment Configuration](19-environment-management.md)     | Freezes an exact connection target in Turn state                               |
-| Process-local Agent composition and loop                                    | Harness                                                       | Built by a trusted Foundation reconstruction adapter                           |
-| External Environment resource lifecycle                                     | User and external provider                                    | Resource already exists and is running before Foundation connects              |
-| Runtime Environment connection and keep-alive                               | Trusted Foundation Environment connector                      | Returns a process-local attachment; keep-alive is scoped to the active binding |
-| Provider-neutral Environment operations and routing                         | Harness                                                       | Uses the supplied attachment without owning external resource lifecycle        |
-| Harness-to-AG-UI conversion                                                 | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery             |
-| Durable lifecycle events, Items, and usage                                  | Foundation                                                    | Commits product facts independently from process-local observations            |
-| Native, Hosted AG-UI, and A2A public protocols                              | [Protocol Gateway](28-protocol-gateway.md)                    | Map distinct wire protocols to the same application and IAM authority          |
-| Client-side effects                                                         | External client                                               | Foundation authenticates feedback but does not claim the effect                |
+| Concern                                                                     | Owner                                                         | Relationship                                                                                  |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                                     | [Platform Interaction Model](../interaction-model.md)         | Foundation persists and authorizes its hosted representations                                 |
+| Runtime configuration, process roles, readiness, and drain                  | [Runtime](01-runtime-configuration-and-deployment.md)         | Starts one validated role composition                                                         |
+| OSS, EE, and Cloud application composition                                  | [Distribution](02-distribution-composition-and-extensions.md) | Selects capabilities without changing common domain meaning                                   |
+| Organization, Workspace, identity, and resource authorization               | [Foundation IAM](10-identity-and-access-management.md)        | Applies to every public and internal product operation                                        |
+| AgentPresets, immutable Versions, managed Skill revisions, and ModelConfigs | Foundation control plane                                      | Selects exact Agent inputs and freezes current model configuration per Turn                   |
+| Managed Harness plugin artifacts and Runtime locks                          | Foundation control plane and Worker runtime                   | Preflights on demand or stages exact trusted Runner environments                              |
+| Durable Thread resource                                                     | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version                 |
+| Turn and TurnAttempt                                                        | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                                 |
+| Queue-if-busy ordinary input                                                | [Queued Submissions](36-agent-control-queued-submissions.md)  | Accepts immediately when eligible or remains editable outside the Turn DAG                    |
+| Thread inbox, steer, and interrupt                                          | [Active Execution](35-agent-control-active-execution.md)      | Persists inbound active control and uses Redis only for expiring wakeups                      |
+| Environment, EnvironmentRevision, and Turn execution configuration          | [Environment Configuration](19-environment-management.md)     | Freezes an exact connection target in Turn state                                              |
+| Process-local Agent composition and loop                                    | Harness                                                       | Built by a trusted Foundation reconstruction adapter                                          |
+| External Environment resource lifecycle                                     | User and external provider                                    | Resource already exists and is running before Foundation connects                             |
+| Runtime Environment connection and keep-alive                               | Trusted Foundation Environment connector                      | Returns a fresh process-local attachment; keep-alive is scoped to its active attachment scope |
+| Current Environment mount set, provider-neutral operations, and routing     | Harness                                                       | Enters fresh runtime mounts without owning external resource lifecycle                        |
+| Harness-to-AG-UI conversion                                                 | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery                            |
+| Durable lifecycle events, Items, and usage                                  | Foundation                                                    | Commits product facts independently from process-local observations                           |
+| Native, Hosted AG-UI, and A2A public protocols                              | [Protocol Gateway](28-protocol-gateway.md)                    | Map distinct wire protocols to the same application and IAM authority                         |
+| Client-side effects                                                         | External client                                               | Foundation authenticates feedback but does not claim the effect                               |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
 
@@ -153,8 +154,9 @@ sequenceDiagram
     Worker->>Worker: reconstruct Agent and safe local inputs
     Worker->>Connector: connect existing resource and validate attachment
     Connector-->>Worker: process-local runtime attachment
-    Worker->>Harness: call process-local API with attachment bindings and SkillManager
-    Connector->>Connector: bounded keep-alive while binding is active
+    Worker->>Worker: adapt attachments into mounts and retain EnvironmentRuntime
+    Worker->>Harness: call in-process API with RunBindings and SkillManager
+    Connector->>Connector: bounded keep-alive while attachment scopes are active
     Harness->>Harness: SkillsCapability materializes exact packages before Agent work
     Harness-->>Worker: observations, usage records, state, and result candidates
     Connector->>Connector: stop keep-alive and close local clients

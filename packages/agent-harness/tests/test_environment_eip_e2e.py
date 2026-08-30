@@ -37,12 +37,11 @@ from a13n_harness import (
     ShellCommand,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
@@ -153,31 +152,25 @@ async def exercise_attachment(
     search_conformance: Any,
 ) -> None:
     provider_binding = create_environment_provider_binding(attachment)
-    run_binding = create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-eip",
-                    binding_version=1,
-                    alias="workspace",
-                    permission_ceiling=EnvironmentPermissionSet(
-                        operations=frozenset(
-                            {
-                                EnvironmentAction.FILE_READ_BYTES,
-                                EnvironmentAction.FILE_WRITE_BYTES,
-                                EnvironmentAction.FILE_QUERY,
-                                EnvironmentAction.FILE_SEARCH_TEXT,
-                            }
-                        )
-                    ),
-                    default_working_directory="/",
-                    provider_binding=provider_binding,
+    run_binding = create_environment_runtime(
+        mounts={
+            "workspace": EnvironmentRuntimeMount(
+                binding=provider_binding,
+                permission_ceiling=EnvironmentPermissionSet(
+                    operations=frozenset(
+                        {
+                            EnvironmentAction.FILE_READ_BYTES,
+                            EnvironmentAction.FILE_WRITE_BYTES,
+                            EnvironmentAction.FILE_QUERY,
+                            EnvironmentAction.FILE_SEARCH_TEXT,
+                        }
+                    )
                 ),
-            ),
-            default_binding_id="binding-eip",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
+                working_directory="/",
+            )
+        },
+        default_mount="workspace",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
     instance = AgentInstanceContext(
@@ -190,7 +183,6 @@ async def exercise_attachment(
         yield expected[137:]
 
     async with run_binding.bind(run_id="run-eip-e2e", instance=instance) as environment:
-        await environment.activate()
         result = await environment.files.write_bytes_stream(
             "/workspace/payload.bin",
             chunks(),
@@ -213,27 +205,17 @@ def _operation(
     )
 
 
-def _local_envd_run_binding(
-    attachment: EIPEnvironmentAttachment,
-    *,
-    binding_version: int,
-):
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=binding_version,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-local-envd",
-                    binding_version=binding_version,
-                    alias="workspace",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
-                    provider_binding=create_environment_provider_binding(attachment),
-                ),
-            ),
-            default_binding_id="binding-local-envd",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
+def _local_envd_run_binding(attachment: EIPEnvironmentAttachment):
+    return create_environment_runtime(
+        mounts={
+            "workspace": EnvironmentRuntimeMount(
+                binding=create_environment_provider_binding(attachment),
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                working_directory="/",
+            )
+        },
+        default_mount="workspace",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -281,9 +263,8 @@ def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None
 
         async with resource:
             async with resource.acquire_attachment() as attachment:
-                binding = _local_envd_run_binding(attachment, binding_version=1)
+                binding = _local_envd_run_binding(attachment)
                 async with binding.bind(run_id="run-local-envd-1", instance=instance) as environment:
-                    await environment.activate()
                     await environment.files.write_text(
                         "/workspace/message.txt",
                         "local envd harness",
@@ -349,9 +330,8 @@ def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None
                     await environment.processes.release(old_handle)
 
             async with resource.acquire_attachment() as attachment:
-                binding = _local_envd_run_binding(attachment, binding_version=2)
+                binding = _local_envd_run_binding(attachment)
                 async with binding.bind(run_id="run-local-envd-2", instance=instance) as environment:
-                    await environment.activate()
                     result = await environment.shell.exec(
                         CommandRequest(
                             command=ShellCommand(
@@ -376,9 +356,8 @@ def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None
         )
         async with resumed:
             async with resumed.acquire_attachment() as attachment:
-                binding = _local_envd_run_binding(attachment, binding_version=3)
+                binding = _local_envd_run_binding(attachment)
                 async with binding.bind(run_id="run-local-envd-3", instance=instance) as environment:
-                    await environment.activate()
                     result = await environment.shell.exec(
                         CommandRequest(
                             command=ShellCommand(
@@ -392,7 +371,7 @@ def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None
                     assert old_handle is not None
                     with pytest.raises(EnvironmentError) as stale:
                         await environment.processes.inspect(old_handle)
-                    assert stale.value.code == "environment_stale_binding"
+                    assert stale.value.code == "environment_stale_mount"
             running = resumed.state
 
         await provider.destroy(

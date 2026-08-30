@@ -249,7 +249,7 @@ Sec-WebSocket-Protocol: eip.v1
 
 The control service must select exactly the offered supported `eip.v<major>` value. Missing or different subprotocol, redirect, invalid TLS, malformed upgrade, or an unexpected extension fails the connection before EIP initialization. Per-message compression is disabled unless a later accepted profile defines bounded decompression explicitly.
 
-The mandatory Bearer token authenticates the envd attachment to the control service. The control service independently resolves that token to the expected Environment binding before accepting the upgrade. Successful HTTP upgrade authenticates the resulting WebSocket, so the token is not repeated after upgrade. The service never forwards browser or product-user credentials as the envd attachment token.
+The mandatory Bearer token authenticates the envd attachment to the control service. The control service independently resolves that token to the expected Environment resource attachment before accepting the upgrade. Successful HTTP upgrade authenticates the resulting WebSocket, so the token is not repeated after upgrade. The service never forwards browser or product-user credentials as the envd attachment token.
 
 ### Initialization and multiplexing
 

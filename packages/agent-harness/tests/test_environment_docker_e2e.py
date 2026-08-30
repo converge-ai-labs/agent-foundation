@@ -29,12 +29,11 @@ from a13n_harness import (
     ShellCommand,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 
 _ENVIRONMENT_ID = "docker-harness-e2e"
@@ -57,23 +56,17 @@ def _operation(action: EnvironmentManagementAction, suffix: str) -> EnvironmentO
     )
 
 
-def _run_binding(attachment: EIPEnvironmentAttachment, *, version: int):
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=version,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-docker",
-                    binding_version=version,
-                    alias="workspace",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
-                    provider_binding=create_environment_provider_binding(attachment),
-                ),
-            ),
-            default_binding_id="binding-docker",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
+def _run_binding(attachment: EIPEnvironmentAttachment):
+    return create_environment_runtime(
+        mounts={
+            "workspace": EnvironmentRuntimeMount(
+                binding=create_environment_provider_binding(attachment),
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                working_directory="/",
+            )
+        },
+        default_mount="workspace",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -110,9 +103,8 @@ def test_docker_provider_runs_harness_eip_lifecycle(tmp_path: Path) -> None:
         try:
             async with resource:
                 async with resource.acquire_attachment() as attachment:
-                    binding = _run_binding(attachment, version=1)
+                    binding = _run_binding(attachment)
                     async with binding.bind(run_id="run-docker-1", instance=instance) as environment:
-                        await environment.activate()
                         await environment.files.write_text(
                             "/workspace/message.txt",
                             "docker harness",
@@ -181,9 +173,8 @@ def test_docker_provider_runs_harness_eip_lifecycle(tmp_path: Path) -> None:
             state = resumed.state
             async with resumed:
                 async with resumed.acquire_attachment() as attachment:
-                    binding = _run_binding(attachment, version=2)
+                    binding = _run_binding(attachment)
                     async with binding.bind(run_id="run-docker-2", instance=instance) as environment:
-                        await environment.activate()
                         message = await environment.files.read_text("/workspace/message.txt")
                         assert message.text == "docker harness"
                         result = await environment.shell.exec(
@@ -196,7 +187,7 @@ def test_docker_provider_runs_harness_eip_lifecycle(tmp_path: Path) -> None:
                         assert old_handle is not None
                         with pytest.raises(EnvironmentError) as stale:
                             await environment.processes.inspect(old_handle)
-                        assert stale.value.code == "environment_stale_binding"
+                        assert stale.value.code == "environment_stale_mount"
                 state = resumed.state
         finally:
             await provider.destroy(

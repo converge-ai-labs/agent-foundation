@@ -12,7 +12,7 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
 )
-from a13n_harness.environment.advanced import NoopEnvironmentRunBinding
+from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from a13n_harness.tools import (
     HarnessTool,
     HarnessToolMetadata,
@@ -42,7 +42,7 @@ def _child_bindings(*, capabilities: tuple[Any, ...] = ()) -> RunBindings:
             parent_agent_instance_id="parent-1",
             delegation_id="delegation-1",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
         capabilities=capabilities,
     )
 

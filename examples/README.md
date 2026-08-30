@@ -4,11 +4,11 @@ This directory contains runnable, tested examples of public Agent Foundation ext
 
 ## Start Here
 
-| Goal                                        | Example                                                                        | What it demonstrates                                                                                              |
-| ------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                               | Offline streaming turns, successful-turn state persistence, restart recovery, and temporary Environment cleanup   |
-| Wrap the complete Harness run               | [Integration package examples](plugins/README.md#harness-plugin)               | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation           |
-| Publish and compose an Environment provider | [Integration package examples](plugins/README.md#environment-provider-factory) | Entry-point and explicit factory modes, Host JSON configuration, provider bindings, and multi-environment routing |
+| Goal                                        | Example                                                                        | What it demonstrates                                                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                               | Offline streaming turns, successful-turn state persistence, restart recovery, and temporary Environment cleanup      |
+| Wrap the complete Harness run               | [Integration package examples](plugins/README.md#harness-plugin)               | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation              |
+| Publish and compose an Environment provider | [Integration package examples](plugins/README.md#environment-provider-factory) | Entry-point and explicit factory modes, Host JSON configuration, fresh provider attachments, and multi-mount routing |
 
 Run every example and its focused checks from the repository root:
 

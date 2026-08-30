@@ -691,38 +691,6 @@ class SessionRepository:
         session = await self.get(turn.session_id)
         return next(item for item in session.root.turns if item.turn_id == turn_id)
 
-    async def interrupt_prior_process_turns(self) -> int:
-        now = datetime.now(UTC)
-        interrupted = 0
-        async with transaction(self._store.database.sessions) as database_session:
-            rows = tuple(
-                (
-                    await database_session.execute(
-                        select(TurnRecord).where(
-                            TurnRecord.state.in_((TurnState.accepted.value, TurnState.running.value)),
-                            TurnRecord.process_generation != self._store.process_generation,
-                        )
-                    )
-                ).scalars()
-            )
-            for turn in rows:
-                turn.state = TurnState.interrupted.value
-                turn.waiting_reason = None
-                turn.failure_json = _json(
-                    {
-                        "code": "run_interrupted",
-                        "message": "The prior Agent UI process ended before a durable Run boundary.",
-                    }
-                )
-                turn.finished_at = now
-                thread = await database_session.get(SessionThreadRecord, turn.thread_id)
-                if thread is not None and thread.active_turn_id == turn.turn_id:
-                    thread.active_turn_id = None
-                    thread.commit_version += 1
-                    thread.updated_at = now
-                interrupted += 1
-        return interrupted
-
     async def hard_delete(self, session_id: str, expected_version: int) -> None:
         async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)

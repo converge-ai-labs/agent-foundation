@@ -76,7 +76,7 @@ class ResolvedAgentNode(StrictModel):
     prompt: ResolvedPrompt
     plugins: tuple[ResolvedPlugin, ...] = ()
     skills: tuple[ResolvedSkill, ...] = ()
-    skill_materialization_binding: _ID | None = None
+    skill_materialization_mount: _ID | None = None
     default_skill_names: tuple[str, ...] | None = None
     capabilities: tuple[FirstPartyCapabilitySelection, ...] = ()
     environment: AgentEnvironmentRequirements
@@ -87,8 +87,8 @@ class ResolvedAgentNode(StrictModel):
 
     @model_validator(mode="after")
     def _consistent_skills(self) -> Self:
-        if bool(self.skills) != (self.skill_materialization_binding is not None):
-            raise ValueError("Skill materialization binding is present exactly when Skills are available")
+        if bool(self.skills) != (self.skill_materialization_mount is not None):
+            raise ValueError("Skill materialization mount is present exactly when Skills are available")
         names = tuple(skill.definition.skill_name for skill in self.skills)
         if len(names) != len(set(names)):
             raise ValueError("resolved Skill names must be unique within one Agent")
@@ -170,14 +170,13 @@ class ResolvedEnvironmentLifecycleCapabilities(StrictModel):
     attachment_concurrency: Literal["single", "shared"]
 
 
-class ResolvedEnvironmentBinding(StrictModel):
-    binding_name: _ID
+class ResolvedEnvironmentMountDefinition(StrictModel):
+    mount_name: _ID
     model_alias: str = Field(min_length=1, max_length=63)
     provider_key: str = Field(min_length=3, max_length=128)
     provider_schema_version: str = Field(min_length=1, max_length=64)
     normalized_parameters: dict[str, JsonValue] = Field(default_factory=dict)
     permission_ceiling: frozenset[str] = frozenset()
-    required: bool = True
     lifecycle_capabilities: ResolvedEnvironmentLifecycleCapabilities
     dependency: DependencyLock
 
@@ -189,22 +188,22 @@ class ResolvedEnvironmentSnapshot(StrictModel):
     environment_revision: ResourceRevisionRef
     logical_environment_digest: _DIGEST
     definition: EnvironmentDefinitionDocument
-    bindings: tuple[ResolvedEnvironmentBinding, ...]
+    mounts: tuple[ResolvedEnvironmentMountDefinition, ...]
     provider_locks: tuple[DependencyLock, ...] = ()
 
     @model_validator(mode="after")
     def _validate_snapshot(self) -> Self:
-        names = tuple(binding.binding_name for binding in self.bindings)
+        names = tuple(mount.mount_name for mount in self.mounts)
         if len(names) != len(set(names)):
-            raise ValueError("resolved Environment binding names must be unique")
-        expected_locks = {_lock_identity(binding.dependency) for binding in self.bindings}
+            raise ValueError("resolved Environment mount names must be unique")
+        expected_locks = {_lock_identity(mount.dependency) for mount in self.mounts}
         actual_locks = tuple(_lock_identity(lock) for lock in self.provider_locks)
         if (
             len(actual_locks) != len(set(actual_locks))
             or set(actual_locks) != expected_locks
             or any(lock.dependency_kind != "environment_provider" for lock in self.provider_locks)
         ):
-            raise ValueError("provider locks must exactly cover resolved Environment bindings")
+            raise ValueError("provider locks must exactly cover resolved Environment mounts")
         expected = canonical_digest(
             self.model_dump(
                 mode="python",
@@ -266,8 +265,8 @@ __all__ = [
     "AgentEnvironmentCompatibility",
     "ResolvedAgentNode",
     "ResolvedAgentSnapshot",
-    "ResolvedEnvironmentBinding",
     "ResolvedEnvironmentLifecycleCapabilities",
+    "ResolvedEnvironmentMountDefinition",
     "ResolvedEnvironmentSnapshot",
     "ResolvedModel",
     "ResolvedPlugin",

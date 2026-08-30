@@ -93,7 +93,7 @@ sequenceDiagram
     Executor->>DB: short fenced preparation-decision CAS
     alt continue
         DB-->>Executor: preparation accepted
-        Executor->>Harness: enter one logical Run with fresh bindings
+        Executor->>Harness: enter one logical Run with fresh RunBindings and EnvironmentRuntime
         loop bounded heartbeat
             Executor->>DB: renew only while this Attempt still owns the lease
         end
@@ -218,10 +218,12 @@ packages named by the effective selection frozen in `state.json` are verified an
 materialized through a fresh `SkillManager` and fresh Environment before model
 exposure.
 
-The execution loop constructs a fresh Environment connector scope from the exact
-configuration in `state.json`. The connector attaches the configured
-already-running resource, supplies a process-local attachment to the Harness,
-and keeps it alive only while that binding and Attempt lease remain active.
+The execution loop constructs fresh Environment connector scopes from the exact desired
+mount configuration in `state.json`. Each connector attaches the configured
+already-running resource and supplies one fresh process-local attachment. The
+Worker adapts those attachments into runtime mounts, constructs and retains one
+`EnvironmentRuntime`, and keeps each resource alive only while its attachment
+scope, the Harness run, and the Attempt lease remain active.
 Foundation does not create, resume, pause, destroy, lease, validate, or reconcile
 the external resource. A fresh connection failure is an Attempt execution
 failure, classified under the ordinary retry and budget rules.
@@ -234,9 +236,10 @@ I/O, provider calls, Harness work, waits, sleeps, event streaming, or cleanup.
 As soon as Harness supplies its Run identity and before the first live
 observation, the execution loop binds that identity immutably to the current Attempt
 under its fence and changes the Attempt from `leased` to `running`. A
-replacement creates a fresh Attempt, Harness Run, connector scope, attachment,
-clients, credentials, and bindings. It never restores another process's task,
-session, socket, attachment, Sandbox, or stream subscriber.
+replacement creates a fresh Attempt, Harness Run, connector scopes, attachments,
+runtime mounts, `EnvironmentRuntime`, clients, credentials, and `RunBindings`.
+It never restores another process's task, session, socket, attachment, runtime,
+Sandbox, or stream subscriber.
 
 ## Thread Inbox and Control Reconciliation
 

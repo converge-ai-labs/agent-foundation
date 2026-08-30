@@ -427,8 +427,9 @@ the newly owned attempt, not recovery admission checks.
 
 One representable `unknown_outcome` alone never blocks recovery and does not
 assert that the operation failed, succeeded, rolled back, or is safe to repeat. A later
-attempt receives a new ID, fence, lease, fresh bindings, and fresh Harness Run,
-then follows the [Turn resume contract](14-turn-persistence.md#resume-semantics)
+attempt receives a new ID, fence, lease, fresh `RunBindings`, Environment attachments,
+runtime mounts, `EnvironmentRuntime`, and Harness Run, then follows the
+[Turn resume contract](14-turn-persistence.md#resume-semantics)
 against the same Turn state key.
 
 For each eligible model request of the recovered Harness Run, Foundation

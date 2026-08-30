@@ -17,8 +17,6 @@ class StorageLayout:
     sessions: Path
     runtimes: Path
     staging: Path
-    quarantine: Path
-    lock_file: Path
 
     @classmethod
     def from_root(cls, root: Path) -> StorageLayout:
@@ -29,14 +27,12 @@ class StorageLayout:
             sessions=root / "sessions",
             runtimes=root / "runtimes",
             staging=root / "staging",
-            quarantine=root / "quarantine",
-            lock_file=root / ".agent-ui.lock",
         )
 
     def prepare(self) -> None:
         """Create private storage directories without creating source configuration."""
 
-        for path in (self.root, self.objects, self.sessions, self.runtimes, self.staging, self.quarantine):
+        for path in (self.root, self.objects, self.sessions, self.runtimes, self.staging):
             path.mkdir(mode=0o700, parents=True, exist_ok=True)
             if os.name != "nt":
                 path.chmod(0o700)

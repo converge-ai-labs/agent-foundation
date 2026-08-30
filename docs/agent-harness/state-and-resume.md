@@ -10,13 +10,13 @@ A state envelope contains:
 - a stable `thread_id`;
 - public Pydantic AI message history;
 - detached, versioned JSON values owned by Capability IDs;
-- optional provider-defined portable Environment state for already selected compatible bindings.
+- optional provider-defined portable Environment state for already selected compatible mounts.
 
 It excludes:
 
 - Models, Toolsets, Capabilities, plugins, callables, or live clients;
 - identity authentication, policy, grants, credentials, or approvals;
-- desired Environment topology, controllers, provider sessions, or launch state;
+- desired Environment mount definitions, runtime mutation authority, provider sessions, or launch state;
 - Host execution records, attempts, leases, queues, or terminal commits;
 - durable asynchronous children, long-term memory, delivery, billing, or accounting state.
 
@@ -42,7 +42,7 @@ second = await executable.run(
 )
 ```
 
-`first.thread_id == second.thread_id`, while `first.run_id != second.run_id`. The new run reconstructs current bindings and creates a fresh context, Environment scope, plugin graph, and usage accumulator.
+`first.thread_id == second.thread_id`, while `first.run_id != second.run_id`. The new run reconstructs current bindings and creates a fresh context, `EnvironmentRuntime`, plugin graph, and usage accumulator.
 
 ## Serialize State
 
@@ -55,7 +55,7 @@ payload = state.model_dump_json()
 restored = HarnessState.model_validate_json(payload)
 ```
 
-Persist the complete validated envelope, not private encoded fields or raw model deltas. A Host should associate it with its own definition revision, provider lifecycle state, checkpoint provenance, and compatibility metadata outside the Harness payload.
+Persist the complete validated envelope, not private encoded fields or raw model deltas. A Host should associate it with its own definition revision, provider lifecycle state, checkpoint provenance, and any Host-owned validation metadata outside the Harness payload.
 
 ## Fork a Thread
 
@@ -171,22 +171,22 @@ Dynamic Environment uses one Capability namespace to preserve model-facing backg
 
 It does not store a live `BoundProcessHandle`, task, hook, output reference, provider cursor, credential, attachment, or authority. The Environment/provider remains the source of truth.
 
-When the same `HarnessState` continues in a new Run, a fresh `ProcessManager` loads this namespace and lazily rebinds the exact identity through a current Environment attachment. The current alias, default binding, and saved routing hint cannot retarget it. If no matching attachment exists, the mapping remains available for a later Run. A different generation or authoritative process-not-found result corrects it to `backend_lost`.
+When the same `HarnessState` continues in a new Run, a fresh `ProcessManager` loads this namespace and lazily rebinds the exact identity through a current Environment attachment. The current mount name, default mount, and saved routing hint cannot retarget it. If no matching attachment exists, the mapping remains available for a later Run. A different generation or authoritative process-not-found result corrects it to `backend_lost`.
 
-Persisting this namespace is necessary but not sufficient for process survival. The Host must separately retain or reconstruct the provider resource and output, attach the same logical Environment generation, and use provider events or polling if completion must schedule work while no Harness Turn is active. The built-in Direct Local binding ends managed processes at binding close and therefore does not continue them across Runs. EIP can continue them only when the same `agent-envd` resource and generation survive. See [Embedding in a Host](hosting.md#background-processes-across-turns-and-restarts).
+Persisting this namespace is necessary but not sufficient for process survival. The Host must separately retain or reconstruct the provider resource and output, attach the same logical Environment generation, and use provider events or polling if completion must schedule work while no Harness Turn is active. The built-in Direct Local entered provider ends managed processes when its scope closes and therefore does not continue them across Runs. EIP can continue them only when the same `agent-envd` resource and generation survive. See [Embedding in a Host](hosting.md#background-processes-across-turns-and-restarts).
 
 ## Host Checkpointing
 
 A durable Host should keep these facts separate:
 
-| Fact                                            | Owner                     |
-| ----------------------------------------------- | ------------------------- |
-| Portable conversation continuation              | `HarnessState` candidate  |
-| Selected checkpoint and provenance              | Host                      |
-| Definition revision and artifact lock           | Host                      |
-| Current identity, policy, and credentials       | Fresh Host reconstruction |
-| Desired topology and provider resource state    | Host/provider integration |
-| Execution attempt, generation, fence, and lease | Host                      |
-| Durable completion and output delivery          | Host/product              |
+| Fact                                                  | Owner                     |
+| ----------------------------------------------------- | ------------------------- |
+| Portable conversation continuation                    | `HarnessState` candidate  |
+| Selected checkpoint and provenance                    | Host                      |
+| Definition revision and artifact lock                 | Host                      |
+| Current identity, policy, and credentials             | Fresh Host reconstruction |
+| Desired mount definitions and provider resource state | Host/provider integration |
+| Execution attempt, generation, fence, and lease       | Host                      |
+| Durable completion and output delivery                | Host/product              |
 
 See [Embedding in a Host](hosting.md) for the full authority boundary. The runnable [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) demonstrates the smaller single-application case: stream a turn, commit its returned state, reconstruct the application, and continue the same Thread.

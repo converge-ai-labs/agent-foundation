@@ -60,7 +60,7 @@ Pydantic AI remains responsible for models, messages, tools, Toolsets, Capabilit
 - fresh typed run context and collaborators for each logical run;
 - one canonical event stream, terminal result, usage record, and correlation model;
 - portable `HarnessState`, continuation, forking, checkpoints, and deferred resume;
-- provider-neutral Environment operations and topology;
+- provider-neutral Environment operations and current mounts;
 - trusted middleware, Skills, inline delegation, and restricted CodeAct;
 - mandatory message-integrity and tool-result boundaries;
 - OpenTelemetry traces and metrics selected at the embedding process boundary.

@@ -35,12 +35,7 @@ from a13n_ui.configuration import (
     SourceTransactionManifest,
 )
 from a13n_ui.configuration.catalog import CatalogRepository
-from a13n_ui.environments import (
-    EnvdExecutableResolver,
-    EnvironmentAvailability,
-    EnvironmentService,
-    ProviderRuntimeResolver,
-)
+from a13n_ui.environments import EnvironmentAvailability, EnvironmentService, ProviderRuntimeResolver
 from a13n_ui.errors import HostStateError, SessionError
 from a13n_ui.model_adapters import RunModelResolverFactory, unavailable_run_model_resolver_factory
 from a13n_ui.runs import ForegroundRunCoordinator
@@ -104,15 +99,10 @@ class AgentUiHost:
             builtin_keys=settings.configuration.builtin_provider_keys,
             extension_keys=settings.configuration.extension_provider_keys,
         )
-        self._envd = EnvdExecutableResolver(
-            layout=store.layout,
-            settings=settings.envd_runtime,
-            executable_override=settings.configuration.envd_executable_override,
-        )
         self._environments = EnvironmentService(
             store=store,
             factories=factories,
-            runtimes=ProviderRuntimeResolver(self._envd),
+            runtimes=ProviderRuntimeResolver(),
         )
         self._sessions = SessionService(store, self._composition)
         self._events = SessionEventStore(store)
@@ -598,10 +588,10 @@ class AgentUiHost:
             state=SessionLifecycleState.ready,
         )
 
-    async def _stop(self) -> bool:
+    async def _stop(self) -> None:
         async with self._operation_lock:
             if self._state is not HostState.ready:
-                return False
+                return
             self._state = HostState.stopping
             idle = self._operations_idle
 
@@ -609,18 +599,17 @@ class AgentUiHost:
         with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
             await idle.wait()
         if not drain_scope.cancel_called:
-            return False
+            return
 
         async with self._operation_lock:
             scopes = tuple(self._operation_scopes)
             idle = self._operations_idle
         for scope in scopes:
             scope.cancel()
-        # The data-root lease cannot be released while an accepted operation
-        # still holds Host authority. Product operation cleanup is required to
-        # make cancellation bounded; the final ownership fence waits for it.
+        # Accepted operations retain process-local collaborators until their
+        # cancellation cleanup completes, so shutdown waits for that ownership
+        # boundary before closing the services they use.
         await idle.wait()
-        return False
 
     def _require_ready(self) -> None:
         if self._state is not HostState.ready:
@@ -648,7 +637,6 @@ async def open_agent_ui_host(
                 model_resolver_factory=model_resolver_factory,
             )
             await host._configuration.initialize()
-            await host._envd.recover_staging()
             await host._sessions.initialize()
             await host._environments.initialize()
             await host._events.initialize()
@@ -659,21 +647,13 @@ async def open_agent_ui_host(
             host._state = HostState.ready
             async with create_task_group() as tasks:
                 tasks.start_soon(host._configuration.reconcile_periodically)
-                tasks.start_soon(host._configuration.reap_skill_leases_periodically)
                 try:
                     yield host
                 finally:
                     with CancelScope(shield=True):
-                        operations_timed_out = await host._stop()
+                        await host._stop()
                         tasks.cancel_scope.cancel()
                         cleanup_errors: list[BaseException] = []
-                        if operations_timed_out:
-                            cleanup_errors.append(
-                                HostStateError(
-                                    "Accepted Host operations did not stop within the shutdown bound.",
-                                    code="host_operation_cleanup_timeout",
-                                )
-                            )
                         with move_on_after(host._settings.shutdown_timeout_seconds) as runs_scope:
                             try:
                                 await host._runs.close()

@@ -94,7 +94,7 @@ result = await executable.run(
 
 Passing a Provider gives the Harness one temporary lifecycle: create, enter, acquire a fresh attachment, release, exit, and destroy. Direct Local does not remove the selected directory when that logical provider resource is destroyed.
 
-Direct Local restrictions apply through the Environment binding. They do not isolate an allowed child process from the Host user account.
+Direct Local restrictions apply through the current Environment mount. They do not isolate an allowed child process from the Host user account.
 
 ## Add Local Envd
 
@@ -155,7 +155,7 @@ A suspended run still closes and destroys a Harness-owned temporary resource. Du
 
 The example enables file tools only. Add shell, process, retained-output, or port operations through `DynamicEnvironmentConfiguration` only when the Agent definition requires them. Keep unnecessary operations disabled.
 
-The [Harness Environment guide](../agent-harness/environments.md) covers complete Capability configuration, single and multiple Environments, portable process references, topology changes, and advanced Host bindings.
+The [Harness Environment guide](../agent-harness/environments.md) covers complete Capability configuration, single and multiple Environments, portable process references, mount changes, and advanced Host runtimes.
 
 ## Next steps
 

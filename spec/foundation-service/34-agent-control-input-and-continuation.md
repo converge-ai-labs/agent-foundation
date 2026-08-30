@@ -283,7 +283,8 @@ Environment-path source description; Retry acceptance reauthorizes that
 description but does not read or copy its file body. Acceptance records the
 source in `retry_of_turn_id`, reauthorizes every retained selector, creates a new
 Turn-owned state from the same eligible state source, and obtains fresh
-credentials, bindings, recovery authority, and model execution snapshot for the
+credentials, `RunBindings`, Environment attachments, runtime mounts,
+`EnvironmentRuntime`, recovery authority, and model execution snapshot for the
 new Turn. Execution treats Retry as a new Turn with zero prior model requests
 and reacquires any binary bytes required by its frozen delivery.
 
@@ -448,8 +449,9 @@ For native Pydantic requests, Foundation constructs one `DeferredToolResults`
 whose `calls` and `approvals` maps exactly cover the authoritative
 `DeferredToolRequests`, then passes both through the Harness
 [`DeferredToolResume`](../agent-harness/16-input-model-and-output.md#input)
-with the prior state and fresh bindings. Defaults are
-therefore explicit results by the time Harness preflight runs. A batch that also
+with the prior state and fresh `RunBindings` containing a freshly constructed
+`EnvironmentRuntime`. Defaults are therefore explicit results by the time
+Harness preflight runs. A batch that also
 contains child-result feedback can supply its Host-owned fresh-run input at the
 same new Harness Run boundary without reinterpreting that result as a native
 deferred call.
@@ -478,7 +480,7 @@ sequenceDiagram
     Durable->>Durable: authorize all calls and expand omitted defaults
     Durable->>Durable: accept complete feedback as a new Turn
     NextWorker->>Durable: claim the new Turn's first TurnAttempt
-    NextWorker->>Harness: prior state, complete DeferredToolResume, optional Host child input
+    NextWorker->>Harness: prior state, complete DeferredToolResume, fresh RunBindings and EnvironmentRuntime
 ```
 
 Suspension first conditionally publishes the complete waiting state candidate at

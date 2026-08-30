@@ -14,7 +14,7 @@ sequenceDiagram
     Caller->>Host: request work
     Host->>Host: select revision and reconstruct trusted Python values
     Host->>Harness: build AgentDefinition
-    Host->>Host: create current identity, policy, model, and Environment sources or bindings
+    Host->>Host: create current identity, policy, model, and Environment runtime or sources
     Host->>Harness: run or stream with current sources, fresh bindings, and optional selected state
     Harness->>PAI: execute native Agent loop
     Harness-->>Host: events and one terminal result candidate
@@ -58,7 +58,7 @@ Close the executable when its owning cache entry or process shuts down. Replacem
 For each logical run, reconstruct:
 
 - authenticated `AgentInstanceContext` when the embedded default is insufficient;
-- one current Environment Provider, entered Resource, or advanced run binding;
+- one current Environment Provider, entered Resource, or single-use `EnvironmentRuntime`;
 - current model resolver and credentials;
 - run Capabilities for invocation policy, approvals, media/documents/Web, monitoring, delegation, or Skill selection;
 - bounded non-authoritative metadata.
@@ -73,7 +73,7 @@ Persist a complete `HarnessState` candidate only as one part of a Host checkpoin
 - Execution and ExecutionAttempt identity;
 - current generation, lease, and opaque fence;
 - selected checkpoint reference and producing provenance;
-- desired Environment topology and provider resource state;
+- desired Environment mount definitions and provider resource state;
 - pending deferred calls, approvals, or external delivery records;
 - durable asynchronous-child state;
 - usage/accounting and terminal output records.
@@ -127,13 +127,13 @@ Environment source type communicates ownership:
 
 - a Provider passed through `environment=` or `environments=` delegates one complete ephemeral Resource lifecycle to the Harness;
 - an already entered Resource is borrowed for one fresh attachment while the Host retains its outer lifecycle;
-- an `EnvironmentRunBinding` in `RunBindings.environment` is the advanced route for exact topology and live controller ownership.
+- an `EnvironmentRuntime` in `RunBindings.environment` is the advanced route for exact mounts and Host-retained mutation authority.
 
 Use Provider input only for a temporary Resource that should be destroyed before terminal result delivery, including a suspended result. Use an entered Resource when the same provider resource must survive sequential runs, deferred continuation, or Host scheduling. A mixed `environments` mapping can contain both forms. With several aliases, set `default_environment` explicitly when `/workspace` should route to one of them; mapping order never grants authority.
 
-The Host remains responsible for provider plugin selection, specification validation, credentials, durable desired topology, and authoritative `EnvironmentProviderResourceState` persistence. It explicitly creates, resumes, pauses, reconciles, and destroys reusable Resources. Each Harness run acquires a fresh attachment and never restores live authority from `HarnessState`.
+The Host remains responsible for provider plugin selection, specification validation, credentials, durable desired mount definitions, and authoritative `EnvironmentProviderResourceState` persistence. It explicitly creates, resumes, pauses, reconciles, and destroys reusable Resources. Each Harness run acquires a fresh attachment and never restores live authority from `HarnessState`.
 
-Advanced attachment and topology assembly lives under `a13n_harness.environment.advanced`. Keep every attachment-acquisition scope open for the complete lifetime of the adapted binding. Never copy provider credentials, Resource objects, attachments, controllers, or provider launch state into `HarnessState` or model context.
+Advanced attachment and runtime-mount assembly lives under `a13n_harness.environment.advanced`. Keep every attachment-acquisition scope open for the complete lifetime of the adapted mount. Never copy provider credentials, Resource objects, attachments, an `EnvironmentRuntime`, or provider launch state into `HarnessState` or model context.
 
 ## Background Processes Across Turns and Restarts
 
@@ -144,7 +144,7 @@ A managed background process spans two independent state domains:
 | Agent continuation | `process-N`, exact portable process identity, unread stdout/stderr offsets, monotonic sequence, last observation | `HarnessState.agent_context_state` |
 | Runtime truth      | Process existence, status, retained output, Environment generation, resource lifecycle                           | Environment provider and Host      |
 
-The portable process identity is `(provider_type, environment_id, generation, provider process ID)`. It is a selector, not a credential. A continuation can use it only after a fresh current binding reauthorizes the operation. The Harness never restores by alias, current default Environment, saved `binding_id`, or process enumeration.
+The portable process identity is `(provider_type, environment_id, generation, provider process ID)`. It is a selector, not a credential. A continuation can use it only after a fresh current mount reauthorizes the operation. The Harness never restores by mount name, current default mount, prior opaque mount ID, or process enumeration.
 
 For every continuation that may access an existing background process, the Host must:
 
@@ -155,11 +155,11 @@ For every continuation that may access an existing background process, the Host 
 5. ensure the provider retains output until the Agent drains it or lifecycle policy explicitly destroys it;
 6. start a fresh Harness Run and let `ProcessManager` lazily rebind and reconcile the exact provider process ID.
 
-No current attachment is a temporary unavailable result and does not erase the Agent mapping. A generation mismatch or authoritative not-found response marks the process `backend_lost`; the Host must not substitute another process. A cached bound handle made stale by a topology refresh is discarded and rebound by portable identity.
+No current attachment is a temporary unavailable result and does not erase the Agent mapping. A generation mismatch or authoritative not-found response marks the process `backend_lost`; the Host must not substitute another process. A cached bound handle made stale by mount replacement is discarded and rebound by portable identity.
 
 Harness observation exists only during an entered shell Toolset Turn. It waits on the real provider process, can enqueue a native completion hint, and can call optional `ProcessEventHook` values. Turn cleanup cancels only these waits and never kills the provider process. To wake a Thread while no Harness Turn is active, the Host uses provider-native events or polling keyed by its durable Environment-resource record and schedules a new continuation. Events are hints and can be lost or duplicated; `shell_status`, `shell_wait`, and lazy rebind remain authoritative.
 
-This contract supports a later Run or Host process restart only when the provider preserves the process and retained output independently. The built-in Direct Local binding ends its managed processes at binding close and does not provide cross-Run continuation. A surviving EIP/`agent-envd` resource can, provided its logical Environment ID and generation remain unchanged. The six shell tools intentionally include no ambient process-list operation, so only process references already stored in the selected `HarnessState` are recoverable.
+This contract supports a later Run or Host process restart only when the provider preserves the process and retained output independently. The built-in Direct Local entered provider ends its managed processes when its scope closes and does not provide cross-Run continuation. A surviving EIP/`agent-envd` resource can, provided its logical Environment ID and generation remain unchanged. The six shell tools intentionally include no ambient process-list operation, so only process references already stored in the selected `HarnessState` are recoverable.
 
 ## Minimal vs. Production Host
 

@@ -90,7 +90,7 @@ A custom Preset is created as `enabled` with no active Version. Its complete con
 - the Harness Plugin Configuration Document and, in `on_demand`, exact PluginVersion bindings; and
 - named subagent edges to stable child Preset IDs with Harness context policy and usage ceilings.
 
-The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, plugin object, client, credential, plaintext Secret, provider attachment, live controller, arbitrary artifact URL, or process-local value. A request cannot carry a broad `config_override`. Per-Turn input, fresh bindings, and typed execution options can narrow execution or satisfy declared requirements, but cannot replace the model, instructions, output schema, tools, Capabilities, plugins, dependency set, Environment provider contract, or security ceiling.
+The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, plugin object, client, credential, plaintext Secret, Environment attachment, runtime mount, `EnvironmentRuntime`, live controller, arbitrary artifact URL, or process-local value. A request cannot carry a broad `config_override`. Per-Turn input, fresh `RunBindings`, and typed execution options can narrow execution or satisfy declared requirements, but cannot replace the model, instructions, output schema, tools, Capabilities, plugins, dependency set, Environment provider contract, or security ceiling.
 
 Saving config performs only request-schema structure, type, size, and bounds validation. Foundation exposes no independent Validate resource, preview state, warning collection, or partially valid config lifecycle. Publish is the sole authoritative resolve-and-build validation path.
 
@@ -257,9 +257,10 @@ Publishing a child later does not change an existing parent Version. The parent 
 The worker recursively reconstructs the exact finite graph into Harness
 `SubagentDefinition` and `SubagentCollection` values. Root and child definitions
 use the same Harness build and plugin contracts. An asynchronous hosted child
-receives its own Thread, Turn, TurnAttempts, fresh bindings, exact child Version,
-and compatible Runtime lock under [Async Subagents](18-async-subagents.md); an
-inline child remains process-local Harness execution.
+receives its own Thread, Turn, TurnAttempts, fresh `RunBindings`, Environment
+attachments, runtime mounts, `EnvironmentRuntime`, exact child Version, and
+compatible Runtime lock under [Async Subagents](18-async-subagents.md); an inline
+child remains process-local Harness execution.
 
 ## Turn Selection and Reconstruction
 
@@ -286,11 +287,11 @@ For each TurnAttempt, the Worker:
 1. reads the exact Preset Version graph selected by the Turn;
 2. verifies and materializes the Turn's exact `runtime_lock_digest` under the [runtime-loading contract](26-harness-plugin-artifacts-and-runtime-loading.md);
 3. records that lock digest, Harness version, and bounded selected Plugin distribution identities on the attempt;
-4. resolves current credentials, RoleBindings, run grants, Secret eligibility, provider availability, and Environment attachments;
-5. reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, Capabilities, plugins, `AgentDefinition` values, and `RunBindings`; and
+4. resolves current credentials, RoleBindings, run grants, Secret eligibility, provider availability, and fresh Environment attachments;
+5. adapts those attachments into runtime mounts, constructs one `EnvironmentRuntime`, and reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, Capabilities, plugins, `AgentDefinition` values, and `RunBindings`; and
 6. enters the Harness only after the current TurnAttempt fence authorizes effects.
 
-Deployment code can change between TurnAttempts, but one accepted Turn never silently changes Plugin code or dependencies. Retry, waiting resume, and worker-loss recovery reconstruct the Runtime lock pinned by that Turn. In `on_demand`, a Worker with a conflicting process-local import set declines the Turn before claim; in `runner`, a matching lock-scoped Runner claims it. Current credentials, authorization, Secret eligibility, provider availability, and live Environment bindings remain fresh per TurnAttempt.
+Deployment code can change between TurnAttempts, but one accepted Turn never silently changes Plugin code or dependencies. Retry, waiting resume, and worker-loss recovery reconstruct the Runtime lock pinned by that Turn. In `on_demand`, a Worker with a conflicting process-local import set declines the Turn before claim; in `runner`, a matching lock-scoped Runner claims it. Current credentials, authorization, Secret eligibility, provider availability, and Environment attachment authority remain fresh per TurnAttempt; each Attempt constructs fresh `RunBindings`, attachments, runtime mounts, and `EnvironmentRuntime`.
 
 ## Harness Plugin Configuration
 
@@ -494,7 +495,7 @@ Wheel and entry-point constraints give deterministic packaging and loading, not 
 03. Every accepted Turn pins one exact Preset Version and never resolves mutable config or `latest` during claim, retry, waiting, or recovery.
 04. Public invocation cannot select a non-active Version; a pinned parent graph may use its exact historical child Versions.
 05. Version content contains only serializable Foundation data and exact references, never Python objects, credentials, Secret values, arbitrary import targets, or Plugin artifacts.
-06. Current credentials, authorization, Secret eligibility, provider availability, and Environment bindings are resolved freshly for every TurnAttempt.
+06. Current credentials, authorization, Secret eligibility, provider availability, `RunBindings`, Environment attachments, runtime mounts, and `EnvironmentRuntime` are resolved or constructed freshly for every TurnAttempt.
 07. Preset lifecycle changes never rewrite Versions or accepted Turns.
 08. Plugin selection is explicit: on-demand Preset Versions bind exact authorized PluginVersions, runner Presets require the active catalog, and package presence alone enables nothing.
 09. Plugin code executes with Worker authority in either the on-demand Worker interpreter or a Runner; every accepted Turn internally pins one exact Runtime lock digest, and every TurnAttempt records the lock it used.

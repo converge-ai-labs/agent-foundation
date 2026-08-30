@@ -48,10 +48,9 @@ class SessionService:
 
         return self._repository
 
-    async def initialize(self) -> int:
-        """Interrupt prior work and fail closed invalid selected Session authority."""
+    async def initialize(self) -> None:
+        """Fail closed invalid selected Session authority."""
 
-        interrupted = await self._repository.interrupt_prior_process_turns()
         for session_id in await self._repository.recovery_session_ids():
             try:
                 await self.validate_selected_authority(session_id)
@@ -67,7 +66,6 @@ class SessionService:
                         "authority_error": exc.code,
                     },
                 )
-        return interrupted
 
     async def validate_selected_authority(self, session_id: str) -> None:
         """Verify exact checkpoint and waiting-deferred authority for one Session."""

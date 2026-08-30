@@ -130,11 +130,6 @@ class ConfigurationSettings(StrictModel):
         ge=1024,
         le=1024 * 1024 * 1024,
     )
-    max_prepared_skill_bytes: int = Field(
-        default=128 * 1024 * 1024,
-        ge=1024,
-        le=1024 * 1024 * 1024,
-    )
     max_yaml_nodes: int = Field(default=100_000, gt=0, le=1_000_000)
     max_document_depth: int = Field(default=64, gt=0, le=256)
     stable_read_attempts: int = Field(default=3, gt=0, le=10)
@@ -142,8 +137,6 @@ class ConfigurationSettings(StrictModel):
     max_skill_package_files: int = Field(default=4096, gt=0, le=100_000)
     max_skill_package_depth: int = Field(default=32, gt=0, le=256)
     max_skill_package_bytes: int = Field(default=64 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
-    max_skill_scan_leases: int = Field(default=16, gt=0, le=1024)
-    skill_scan_lease_seconds: float = Field(default=300.0, gt=0, le=3600)
     reconciliation_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     envd_executable_override: Path | None = None
 
@@ -453,7 +446,7 @@ class SkillNameSelection(StrictModel):
 
 class AgentSkillConfiguration(StrictModel):
     available: tuple[ResourceRef, ...] = ()
-    materialization_binding: _ID | None = None
+    materialization_mount: _ID | None = None
     default_selection: SkillNameSelection = SkillNameSelection()
 
     @model_validator(mode="after")
@@ -466,19 +459,19 @@ class AgentSkillConfiguration(StrictModel):
         return self
 
 
-class EnvironmentBindingRequirement(StrictModel):
-    binding_name: _ID
+class EnvironmentMountRequirement(StrictModel):
+    mount_name: _ID
     required_operations: frozenset[str] = frozenset()
 
 
 class AgentEnvironmentRequirements(StrictModel):
-    bindings: tuple[EnvironmentBindingRequirement, ...] = ()
+    mounts: tuple[EnvironmentMountRequirement, ...] = ()
 
     @model_validator(mode="after")
-    def _unique_bindings(self) -> Self:
-        names = [item.binding_name for item in self.bindings]
+    def _unique_mounts(self) -> Self:
+        names = [item.mount_name for item in self.mounts]
         if len(names) != len(set(names)):
-            raise ValueError("Agent Environment binding requirements must be unique")
+            raise ValueError("Agent Environment mount requirements must be unique")
         return self
 
 
@@ -510,13 +503,13 @@ class UsageLimitsSelection(StrictModel):
 
 class ChildEnvironmentPolicy(StrictModel):
     mode: Literal["none", "dedicated", "shared_root", "serialized_root"] = "none"
-    bindings: tuple[_ID, ...] | None = None
+    mounts: tuple[_ID, ...] | None = None
 
-    @field_validator("bindings")
+    @field_validator("mounts")
     @classmethod
-    def _unique_bindings(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+    def _unique_mounts(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
         if value is not None and len(value) != len(set(value)):
-            raise ValueError("child Environment binding selections must be unique")
+            raise ValueError("child Environment mount selections must be unique")
         return value
 
 
@@ -734,14 +727,13 @@ class AgentDefinitionDocument(StrictModel):
         return self
 
 
-class EnvironmentBindingDefinition(StrictModel):
-    binding_name: _ID
+class EnvironmentMountDefinition(StrictModel):
+    mount_name: _ID
     model_alias: Annotated[str, Field(min_length=1, max_length=63, pattern=r"^[a-z][a-z0-9-]{0,62}$")]
     provider_key: _KEY
     provider_schema_version: _SCHEMA_VERSION
     provider_parameters: dict[str, JsonValue] = Field(default_factory=dict)
     permission_ceiling: frozenset[str] = frozenset()
-    required: bool = True
 
     @model_validator(mode="after")
     def _credential_free(self) -> Self:
@@ -761,20 +753,20 @@ class EnvironmentDefinitionDocument(StrictModel):
     environment_id: _ID
     display_name: _NAME
     description: str | None = Field(default=None, max_length=16 * 1024)
-    bindings: tuple[EnvironmentBindingDefinition, ...] = Field(max_length=1024)
-    default_binding: _ID | None = None
+    mounts: tuple[EnvironmentMountDefinition, ...] = Field(max_length=1024)
+    default_mount: _ID | None = None
     lifecycle: SessionEnvironmentLifecyclePolicy
 
     @model_validator(mode="after")
-    def _topology_consistency(self) -> Self:
-        names = [item.binding_name for item in self.bindings]
-        aliases = [item.model_alias for item in self.bindings]
+    def _mount_consistency(self) -> Self:
+        names = [item.mount_name for item in self.mounts]
+        aliases = [item.model_alias for item in self.mounts]
         if len(names) != len(set(names)) or len(aliases) != len(set(aliases)):
-            raise ValueError("environment binding names and aliases must be unique")
-        if (not self.bindings) != (self.default_binding is None):
-            raise ValueError("default_binding is absent exactly for an empty topology")
-        if self.default_binding is not None and self.default_binding not in names:
-            raise ValueError("default_binding must name one binding")
+            raise ValueError("Environment mount names and model aliases must be unique")
+        if (not self.mounts) != (self.default_mount is None):
+            raise ValueError("default_mount is absent exactly when mounts is empty")
+        if self.default_mount is not None and self.default_mount not in names:
+            raise ValueError("default_mount must name one desired mount")
         return self
 
 
@@ -1001,8 +993,8 @@ __all__ = [
     "DependencyLock",
     "EnvdRuntimeAsset",
     "EnvdRuntimeManifest",
-    "EnvironmentBindingDefinition",
     "EnvironmentDefinitionDocument",
+    "EnvironmentMountDefinition",
     "FirstPartyCapabilitySelection",
     "LocalDirectorySettings",
     "LocalSkillDiscoverySettings",

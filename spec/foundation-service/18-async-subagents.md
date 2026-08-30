@@ -2,7 +2,7 @@
 
 ## Design Position
 
-An asynchronous subagent is an independent child Turn in its own child Thread under the same Session. It has its own TurnAttempts, Harness Runs, state key, cancellation, Environment attachments, usage, retained replay, and result delivery through the parent Thread inbox. The Harness continues to own native Pydantic deferred values and blocking inline delegation; Foundation does not encode pending authority in `HarnessState` or reinterpret asynchronous submission as an unfinished Pydantic tool call.
+An asynchronous subagent is an independent child Turn in its own child Thread under the same Session. It has its own TurnAttempts, Harness Runs, state key, cancellation, fresh `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, usage, retained replay, and result delivery through the parent Thread inbox. The Harness continues to own native Pydantic deferred values and blocking inline delegation; Foundation does not encode pending authority in `HarnessState` or reinterpret asynchronous submission as an unfinished Pydantic tool call.
 
 [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md#deferred-interaction)
 owns approval, client-tool execution, structured user input, and the common

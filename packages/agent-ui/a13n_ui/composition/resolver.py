@@ -38,8 +38,8 @@ from .models import (
     AgentEnvironmentCompatibility,
     ResolvedAgentNode,
     ResolvedAgentSnapshot,
-    ResolvedEnvironmentBinding,
     ResolvedEnvironmentLifecycleCapabilities,
+    ResolvedEnvironmentMountDefinition,
     ResolvedEnvironmentSnapshot,
     ResolvedModel,
     ResolvedPlugin,
@@ -127,16 +127,16 @@ class SnapshotResolver:
                         code="agent_skill_ambiguous",
                         details={"agent_id": document.agent_id},
                     )
-                if skills and document.skills.materialization_binding is None:
+                if skills and document.skills.materialization_mount is None:
                     raise CompositionError(
-                        "An Agent with available Skills requires a materialization binding.",
-                        code="agent_skill_binding_missing",
+                        "An Agent with available Skills requires a materialization mount.",
+                        code="agent_skill_mount_missing",
                         details={"agent_id": document.agent_id},
                     )
-                if not skills and document.skills.materialization_binding is not None:
+                if not skills and document.skills.materialization_mount is not None:
                     raise CompositionError(
-                        "An Agent without available Skills cannot select a materialization binding.",
-                        code="agent_skill_binding_invalid",
+                        "An Agent without available Skills cannot select a materialization mount.",
+                        code="agent_skill_mount_invalid",
                         details={"agent_id": document.agent_id},
                     )
                 default_names: tuple[str, ...] | None
@@ -190,7 +190,7 @@ class SnapshotResolver:
                     prompt=ResolvedPrompt(revision=prompt_revision.ref, definition=prompt),
                     plugins=tuple(plugins),
                     skills=tuple(sorted(skills, key=lambda item: item.definition.skill_name)),
-                    skill_materialization_binding=document.skills.materialization_binding,
+                    skill_materialization_mount=document.skills.materialization_mount,
                     default_skill_names=default_names,
                     capabilities=document.capabilities,
                     environment=document.environment,
@@ -252,33 +252,33 @@ class SnapshotResolver:
             ) from exc
 
         registrations = {item.provider_key: item for item in factories.registrations}
-        bindings: list[ResolvedEnvironmentBinding] = []
-        for binding in document.bindings:
+        mounts: list[ResolvedEnvironmentMountDefinition] = []
+        for mount in document.mounts:
             lock = _one_lock(
                 revision,
                 dependency_kind="environment_provider",
-                key=binding.provider_key,
+                key=mount.provider_key,
             )
-            registration = registrations.get(binding.provider_key)
+            registration = registrations.get(mount.provider_key)
             if registration is None or not _provider_registration_matches(lock, registration):
                 raise CompositionError(
                     "A locked Environment provider factory changed after generation acceptance.",
                     code="provider_factory_lock_mismatch",
-                    details={"provider_key": binding.provider_key},
+                    details={"provider_key": mount.provider_key},
                 )
-            parameters = _provider_parameters(binding.provider_key, binding.provider_parameters, settings)
+            parameters = _provider_parameters(mount.provider_key, mount.provider_parameters, settings)
             spec = EnvironmentProviderSpec(
-                provider_key=binding.provider_key,
-                schema_version=binding.provider_schema_version,
+                provider_key=mount.provider_key,
+                schema_version=mount.provider_schema_version,
                 parameters=parameters,
             )
             try:
                 resolved = factories.resolve_spec(spec)
             except EnvironmentProviderError as exc:
                 raise CompositionError(
-                    "An Environment binding selects an invalid provider specification.",
+                    "An Environment mount selects an invalid provider specification.",
                     code=exc.code,
-                    details={"binding_name": binding.binding_name},
+                    details={"mount_name": mount.mount_name},
                 ) from exc
             normalized = cast(
                 dict[str, JsonValue],
@@ -291,25 +291,24 @@ class SnapshotResolver:
                 attachment_concurrency=resolved.lifecycle_capabilities.attachment_concurrency.value,
             )
             _validate_environment_lifecycle(document.lifecycle.idle, lifecycle_capabilities)
-            bindings.append(
-                ResolvedEnvironmentBinding(
-                    binding_name=binding.binding_name,
-                    model_alias=binding.model_alias,
-                    provider_key=binding.provider_key,
-                    provider_schema_version=binding.provider_schema_version,
+            mounts.append(
+                ResolvedEnvironmentMountDefinition(
+                    mount_name=mount.mount_name,
+                    model_alias=mount.model_alias,
+                    provider_key=mount.provider_key,
+                    provider_schema_version=mount.provider_schema_version,
                     normalized_parameters=normalized,
-                    permission_ceiling=binding.permission_ceiling,
-                    required=binding.required,
+                    permission_ceiling=mount.permission_ceiling,
                     lifecycle_capabilities=lifecycle_capabilities,
                     dependency=lock,
                 )
             )
-        locks = _unique_locks(binding.dependency for binding in bindings)
+        locks = _unique_locks(mount.dependency for mount in mounts)
         behavior = {
             "snapshot_schema_version": "1",
             "environment_revision": revision.ref,
             "definition": document,
-            "bindings": tuple(bindings),
+            "mounts": tuple(mounts),
             "provider_locks": locks,
         }
         return ResolvedEnvironmentSnapshot(
@@ -317,7 +316,7 @@ class SnapshotResolver:
             catalog_digest=generation.catalog_digest,
             environment_revision=revision.ref,
             definition=document,
-            bindings=tuple(bindings),
+            mounts=tuple(mounts),
             provider_locks=locks,
             logical_environment_digest=canonical_digest(behavior),
         )
@@ -337,44 +336,44 @@ def validate_compatibility(
     agent: ResolvedAgentSnapshot,
     environment: ResolvedEnvironmentSnapshot,
 ) -> AgentEnvironmentCompatibility:
-    bindings = {binding.binding_name: binding for binding in environment.bindings}
+    mounts = {mount.mount_name: mount for mount in environment.mounts}
     nodes = {node.agent_revision: node for node in agent.resolved_agents}
     for node in agent.resolved_agents:
-        requirements = {item.binding_name: item for item in node.environment.bindings}
-        if node.skill_materialization_binding is not None:
-            requirement = requirements.get(node.skill_materialization_binding)
+        requirements = {item.mount_name: item for item in node.environment.mounts}
+        if node.skill_materialization_mount is not None:
+            requirement = requirements.get(node.skill_materialization_mount)
             if requirement is None or "files" not in requirement.required_operations:
                 raise CompositionError(
-                    "A Skill materialization binding must require the files operation family.",
+                    "A Skill materialization mount must require the files operation family.",
                     code="agent_environment_incompatible",
                     details={"agent_id": node.agent_id},
                 )
         for requirement in requirements.values():
-            binding = bindings.get(requirement.binding_name)
-            if binding is None:
+            mount = mounts.get(requirement.mount_name)
+            if mount is None:
                 raise CompositionError(
-                    "The Environment omits a required Agent binding.",
+                    "The Environment omits a required Agent mount.",
                     code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "binding_name": requirement.binding_name},
+                    details={"agent_id": node.agent_id, "mount_name": requirement.mount_name},
                 )
-            available = _permission_families(binding.permission_ceiling)
+            available = _permission_families(mount.permission_ceiling)
             if not requirement.required_operations.issubset(available):
                 raise CompositionError(
-                    "An Environment binding permission ceiling does not satisfy the Agent.",
+                    "An Environment mount permission ceiling does not satisfy the Agent.",
                     code="agent_environment_incompatible",
-                    details={"agent_id": node.agent_id, "binding_name": requirement.binding_name},
+                    details={"agent_id": node.agent_id, "mount_name": requirement.mount_name},
                 )
         for edge in node.subagents:
             child = nodes[edge.target_agent]
-            selected = set(bindings if edge.environment.bindings is None else edge.environment.bindings)
-            if not selected.issubset(bindings):
+            selected = set(mounts if edge.environment.mounts is None else edge.environment.mounts)
+            if not selected.issubset(mounts):
                 raise CompositionError(
-                    "A child Environment policy selects an unknown binding.",
+                    "A child Environment policy selects an unknown mount.",
                     code="agent_environment_incompatible",
                     details={"agent_id": node.agent_id, "child_name": edge.name},
                 )
-            child_required = {requirement.binding_name for requirement in child.environment.bindings}
-            if edge.environment.mode == "none" and (child_required or child.skill_materialization_binding is not None):
+            child_required = {requirement.mount_name for requirement in child.environment.mounts}
+            if edge.environment.mode == "none" and (child_required or child.skill_materialization_mount is not None):
                 raise CompositionError(
                     "A child with Environment requirements cannot use the none policy.",
                     code="agent_environment_incompatible",
@@ -382,14 +381,13 @@ def validate_compatibility(
                 )
             if edge.environment.mode != "none" and not child_required.issubset(selected):
                 raise CompositionError(
-                    "A child Environment policy omits a required binding.",
+                    "A child Environment policy omits a required mount.",
                     code="agent_environment_incompatible",
                     details={"agent_id": node.agent_id, "child_name": edge.name},
                 )
-            selected_bindings = tuple(bindings[name] for name in sorted(selected))
+            selected_mounts = tuple(mounts[name] for name in sorted(selected))
             if edge.environment.mode == "dedicated" and any(
-                binding.lifecycle_capabilities.resource_allocation != "multiple_from_spec"
-                for binding in selected_bindings
+                mount.lifecycle_capabilities.resource_allocation != "multiple_from_spec" for mount in selected_mounts
             ):
                 raise CompositionError(
                     "A dedicated child requires providers that allocate multiple resources from one specification.",
@@ -397,7 +395,7 @@ def validate_compatibility(
                     details={"agent_id": node.agent_id, "child_name": edge.name},
                 )
             if edge.environment.mode == "shared_root" and any(
-                binding.lifecycle_capabilities.attachment_concurrency != "shared" for binding in selected_bindings
+                mount.lifecycle_capabilities.attachment_concurrency != "shared" for mount in selected_mounts
             ):
                 raise CompositionError(
                     "A shared-root child requires providers with shared attachment concurrency.",
@@ -426,7 +424,7 @@ def _validate_environment_lifecycle(
 
 
 def _validate_requirements(document: AgentDefinitionDocument) -> None:
-    for requirement in document.environment.bindings:
+    for requirement in document.environment.mounts:
         unsupported = sorted(set(requirement.required_operations) - _OPERATION_FAMILIES)
         if unsupported:
             raise CompositionError(

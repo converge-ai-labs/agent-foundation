@@ -340,14 +340,14 @@ bindings = RunBindings.embedded(
 )
 ```
 
-`RunBindings.embedded()` supplies an embedded identity and optional advanced integrations. Use it when an embedded application needs run Capabilities, a model resolver, model-context middleware, metadata, or an advanced Environment binding. Ordinary `run()` and `stream()` calls can omit `bindings`; run normalization creates fresh embedded bindings and a zero-binding Environment when no Environment input is supplied. A Host can construct `RunBindings` directly with an exact `AgentInstanceContext`.
+`RunBindings.embedded()` supplies an embedded identity and optional advanced integrations. Use it when an embedded application needs run Capabilities, a model resolver, model-context middleware, metadata, or an advanced `EnvironmentRuntime`. Ordinary `run()` and `stream()` calls can omit `bindings`; run normalization creates fresh embedded bindings and an empty Environment runtime when no Environment input is supplied. A Host can construct `RunBindings` directly with an exact `AgentInstanceContext`.
 
 Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state.
 
 | Stable definition input     | Fresh run input                                            |
 | --------------------------- | ---------------------------------------------------------- |
 | `AgentSpec`                 | Identity and Agent instance context                        |
-| Output contract             | Environment binding                                        |
+| Output contract             | Environment runtime                                        |
 | Agent behavior Capabilities | Model resolver and model-context binding                   |
 | Direct plugins              | Policy and provider collaborators                          |
 | Child topology              | Run-specific Capability selection                          |

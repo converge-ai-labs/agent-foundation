@@ -32,7 +32,7 @@ the selected continuation head, and optimistic concurrency for accepted
 advancement; Turn rows remain the durable work and state DAG. Whether the
 current Turn is active derives from its status.
 
-A non-terminal Turn can span several process-local Harness Runs when Worker takeover creates another TurnAttempt. Under [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md), a waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and, when claimed, its own TurnAttempt, bindings, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
+A non-terminal Turn can span several process-local Harness Runs when Worker takeover creates another TurnAttempt. Under [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md), a waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and, when claimed, its own TurnAttempt, fresh `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
 
 ## Specification Catalog
 
@@ -54,7 +54,7 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [16 Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md)                         | Worker scans, claims, expired-lease takeover, post-claim checks, stale-worker rejection, retry, and shutdown                                |
 | [17 Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                         | Lifecycle-event persistence, stable Turn presentation Stream, control-Stream separation, bounded live replay, Items, and replay snapshots   |
 | [18 Async Subagents](18-async-subagents.md)                                                           | Independent child Threads and Turns, durable relationships, result delivery, and cancellation policy                                        |
-| [19 Environment Configuration and Runtime Bindings](19-environment-management.md)                     | Connection revisions, state-owned Turn configuration, connector selection, active-run keep-alive, and envd boundary                         |
+| [19 Environment Configuration and Runtime Mounts](19-environment-management.md)                       | Connection revisions, state-owned desired mounts, fresh attachments, Host-retained runtime, active-run keep-alive, and envd boundary        |
 | [20 Events, Usage, and Delivery](20-events-usage-and-delivery.md)                                     | Harness observation, AG-UI and Item projection, lifecycle events, delivery, raw usage, large content, and telemetry                         |
 | [20a Hook Notifications](20a-hook-notifications.md)                                                   | Hook registry, durable subscriptions, Webhook delivery, channel eligibility, and blocking semantics                                         |
 | [21 Management API](21-management-api.md)                                                             | Public resource catalog, common command boundaries, read models, replay, and compatibility                                                  |
@@ -136,7 +136,7 @@ These roots are boundaries, not a requirement that every capability become a sub
   consumption transaction accepts its Turn. Queue rows own no Worker lease,
   retry, or outcome state.
 - The artifact's distribution descriptor explicitly composes the complete configuration, routers, role components, authorization contributions, metadata, and migration graph; installed packages never change the service implicitly.
-- Foundation records contain only Foundation-owned serializable data. They contain no Python class, plugin instance, native Model, Toolset, Capability, callable, client, credential, provider attachment, or live controller.
+- Foundation records contain only Foundation-owned serializable data. They contain no Python class, plugin instance, native Model, Toolset, Capability, callable, client, credential, Environment attachment, runtime mount, opaque `mount_id`, or live `EnvironmentRuntime`.
 - The worker verifies exact locks and uses trusted installed adapters to reconstruct a process-local Harness `AgentDefinition` and fresh `RunBindings`.
 - In the default on-demand profile, AgentPresetVersion binds exact PluginVersions
   and Workers load them before claim. In runner mode, a PluginVersion becomes
