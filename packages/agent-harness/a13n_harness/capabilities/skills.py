@@ -90,7 +90,7 @@ class BoundSkillCatalog(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    topology_version: int = Field(ge=0)
+    topology_version: int = Field(gt=0)
     items: tuple[BoundSkillCatalogItem, ...]
 
     @model_validator(mode="after")

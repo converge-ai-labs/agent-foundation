@@ -865,12 +865,12 @@ async def test_state_provider_type_is_rejected_before_provider_readiness() -> No
 
 async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None:
     aggregate = create_noop_environment_run_binding(
-        topology_version=0,
+        topology_version=1,
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=3),
     )
     provider = _Binding("dynamic")
     request = EnvironmentTopologyRequest(
-        topology_version=1,
+        topology_version=2,
         bindings=(
             _binding_request(
                 provider,
@@ -884,18 +884,18 @@ async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None
     observer = None
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         observer = environment.topology_observer
-        waiter = asyncio.create_task(observer.read(after_version=0, wait=True))
+        waiter = asyncio.create_task(observer.read(after_version=1, wait=True))
         await environment.activate()
         await aggregate.controller.wait_until_active()
         change = await aggregate.controller.apply(request)
-        assert change.previous_version == 0
-        assert change.current_version == 1
+        assert change.previous_version == 1
+        assert change.current_version == 2
         assert [item.kind for item in change.bindings] == ["added"]
         assert environment.topology.default_binding_id == "binding-dynamic"
         assert (await waiter) == (change,)
 
         replay = EnvironmentTopologyRequest(
-            topology_version=1,
+            topology_version=2,
             bindings=(
                 _binding_request(
                     None,
@@ -909,7 +909,7 @@ async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None
         assert await aggregate.controller.apply(replay) == change
 
         conflict = EnvironmentTopologyRequest(
-            topology_version=1,
+            topology_version=2,
             bindings=(
                 _binding_request(
                     None,
@@ -926,7 +926,7 @@ async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None
 
         with pytest.raises(EnvironmentError) as stale:
             await aggregate.controller.apply(
-                EnvironmentTopologyRequest(topology_version=0, bindings=(), default_binding_id=None)
+                EnvironmentTopologyRequest(topology_version=1, bindings=(), default_binding_id=None)
             )
         assert stale.value.code == "topology_stale"
         with pytest.raises(EnvironmentError) as invalid_cursor:
@@ -935,7 +935,7 @@ async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None
 
     assert observer is not None
     with pytest.raises(EnvironmentError) as closed:
-        await observer.read(after_version=1, wait=True)
+        await observer.read(after_version=2, wait=True)
     assert closed.value.code == "environment_closed"
     assert provider.exited == 1
 
@@ -1115,7 +1115,7 @@ async def test_cancelled_queued_apply_discards_its_transferred_candidates() -> N
         first = asyncio.create_task(
             aggregate.controller.apply(
                 EnvironmentTopologyRequest(
-                    topology_version=1,
+                    topology_version=2,
                     bindings=(_binding_request(slow, binding_id="binding-slow", version=1, alias="slow"),),
                     default_binding_id="binding-slow",
                 )
@@ -1125,7 +1125,7 @@ async def test_cancelled_queued_apply_discards_its_transferred_candidates() -> N
         second = asyncio.create_task(
             aggregate.controller.apply(
                 EnvironmentTopologyRequest(
-                    topology_version=2,
+                    topology_version=3,
                     bindings=(_binding_request(queued, binding_id="binding-queued", version=1, alias="queued"),),
                     default_binding_id="binding-queued",
                 )
@@ -1138,7 +1138,7 @@ async def test_cancelled_queued_apply_discards_its_transferred_candidates() -> N
         assert queued.entered == 0
         assert queued.discarded == 1
         release_entry.set()
-        assert (await first).current_version == 1
+        assert (await first).current_version == 2
 
 
 async def test_controller_is_terminal_after_aggregate_close() -> None:
@@ -1147,7 +1147,7 @@ async def test_controller_is_terminal_after_aggregate_close() -> None:
         await environment.activate()
     with pytest.raises(EnvironmentError) as closed:
         await aggregate.controller.apply(
-            EnvironmentTopologyRequest(topology_version=1, bindings=(), default_binding_id=None)
+            EnvironmentTopologyRequest(topology_version=2, bindings=(), default_binding_id=None)
         )
     assert closed.value.code == "environment_closed"
 
@@ -1304,7 +1304,7 @@ async def test_reused_candidate_rejection_discards_fresh_peers_without_identity_
         await environment.activate()
         await aggregate.controller.apply(
             EnvironmentTopologyRequest(
-                topology_version=1,
+                topology_version=2,
                 bindings=(_binding_request(active, binding_id="binding-active", version=1, alias="active"),),
                 default_binding_id="binding-active",
             )
@@ -1312,7 +1312,7 @@ async def test_reused_candidate_rejection_discards_fresh_peers_without_identity_
         with pytest.raises(EnvironmentError) as reused:
             await aggregate.controller.apply(
                 EnvironmentTopologyRequest(
-                    topology_version=2,
+                    topology_version=3,
                     bindings=(
                         _binding_request(active, binding_id="binding-active", version=1, alias="active"),
                         _binding_request(fresh, binding_id="binding-fresh", version=1, alias="fresh"),
@@ -1353,7 +1353,7 @@ async def test_candidate_discard_deadline_is_hard_and_does_not_block_later_candi
         with pytest.raises(BaseExceptionGroup):
             await aggregate.controller.apply(
                 EnvironmentTopologyRequest(
-                    topology_version=1,
+                    topology_version=2,
                     bindings=(
                         _binding_request(stubborn, binding_id="binding-a", version=1, alias="duplicate"),
                         _binding_request(later, binding_id="binding-b", version=1, alias="duplicate"),
@@ -1435,7 +1435,7 @@ async def test_dynamic_validation_and_scope_cleanup_errors_are_both_preserved() 
         with pytest.raises(BaseExceptionGroup) as raised:
             await aggregate.controller.apply(
                 EnvironmentTopologyRequest(
-                    topology_version=1,
+                    topology_version=2,
                     bindings=(_binding_request(candidate, binding_id="binding-1", version=1, alias="invalid"),),
                     default_binding_id="binding-1",
                 )

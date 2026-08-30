@@ -262,8 +262,8 @@ class EnvironmentTopologyRequest:
     default_binding_id: str | None
 
     def __post_init__(self) -> None:
-        if self.topology_version < 0:
-            raise ValueError("topology_version must be non-negative")
+        if self.topology_version <= 0:
+            raise ValueError("topology_version must be positive")
         object.__setattr__(self, "bindings", tuple(self.bindings))
         if self.default_binding_id is not None:
             _require_identifier(self.default_binding_id, "default_binding_id")
@@ -301,7 +301,7 @@ class EnvironmentBindingObservation(BaseModel):
 class EnvironmentTopology(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    topology_version: Annotated[int, Field(ge=0)]
+    topology_version: Annotated[int, Field(gt=0)]
     bindings: tuple[EnvironmentBinding, ...]
     default_binding_id: str | None
 
@@ -342,7 +342,7 @@ class EnvironmentBindingState(BaseModel):
 class EnvironmentState(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    observed_topology_version: Annotated[int, Field(ge=0)]
+    observed_topology_version: Annotated[int, Field(gt=0)]
     bindings: Mapping[str, EnvironmentBindingState] = Field(default_factory=dict)
 
     @field_validator("bindings", mode="after")
@@ -390,8 +390,8 @@ class EnvironmentTopologyBindingChange(BaseModel):
 
     kind: Literal["added", "removed", "refreshed"]
     binding_id: str
-    previous_version: int | None
-    current_version: int | None
+    previous_version: Annotated[int, Field(gt=0)] | None
+    current_version: Annotated[int, Field(gt=0)] | None
     previous_alias: str | None
     current_alias: str | None
 
@@ -399,7 +399,7 @@ class EnvironmentTopologyBindingChange(BaseModel):
 class EnvironmentTopologyChange(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    previous_version: Annotated[int, Field(ge=0)]
-    current_version: Annotated[int, Field(ge=0)]
+    previous_version: Annotated[int, Field(gt=0)]
+    current_version: Annotated[int, Field(gt=0)]
     request_digest: str
     bindings: tuple[EnvironmentTopologyBindingChange, ...]

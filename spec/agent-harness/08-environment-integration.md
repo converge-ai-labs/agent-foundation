@@ -538,7 +538,7 @@ def create_environment_run_binding(
 
 def create_noop_environment_run_binding(
     *,
-    topology_version: int = 0,
+    topology_version: int = 1,
     topology_limits: EnvironmentTopologyLimits | None = None,
     state_limits: EnvironmentStateLimits | None = None,
 ) -> EnvironmentRunBinding: ...

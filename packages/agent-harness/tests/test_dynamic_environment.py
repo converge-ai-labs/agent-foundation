@@ -364,7 +364,7 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         yield "done"
 
     aggregate = create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(topology_version=0, bindings=(), default_binding_id=None),
+        initial_topology=EnvironmentTopologyRequest(topology_version=1, bindings=(), default_binding_id=None),
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2),
         state_limits=EnvironmentStateLimits(),
     )
@@ -380,7 +380,7 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         )
     )
     request = EnvironmentTopologyRequest(
-        topology_version=1,
+        topology_version=2,
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
@@ -406,7 +406,7 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
             and item.event.payload.get("type") == "environment_topology_changed"
         ):
             item = await asyncio.wait_for(run.__anext__(), timeout=2)
-        assert item.event.payload["current_version"] == 1
+        assert item.event.payload["current_version"] == 2
         finish.set()
         terminal = [event async for event in run][-1]
         assert terminal.result.output_or_raise() == "done"
@@ -2003,7 +2003,7 @@ def _dynamic_local_request(root: Path) -> EnvironmentTopologyRequest:
         )
     )
     return EnvironmentTopologyRequest(
-        topology_version=1,
+        topology_version=2,
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
@@ -2195,7 +2195,7 @@ class _ApplyTopologyBurstAfterResultPlugin(AbstractHarnessPlugin):
         async def iterate():
             async for item in call_next(exchange):
                 if isinstance(item, HarnessRunResult):
-                    for version in range(1, self._count + 1):
+                    for version in range(2, self._count + 2):
                         await self._controller.apply(
                             EnvironmentTopologyRequest(
                                 topology_version=version,

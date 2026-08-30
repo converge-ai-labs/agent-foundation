@@ -244,12 +244,12 @@ async def test_environment_state_restores_before_input_factory_and_exports_fresh
     calls: list[tuple[ModelMessage, ...]] = []
     executable = _build(_turn_model(calls))
     previous = HarnessState.new(
-        environment_state=EnvironmentState(observed_topology_version=0, bindings={}),
+        environment_state=EnvironmentState(observed_topology_version=1, bindings={}),
     )
 
     async def input_factory(preparation) -> str:
-        assert preparation.environment.restored_state_topology_version == 0
-        assert preparation.environment.topology.topology_version == 0
+        assert preparation.environment.restored_state_topology_version == 1
+        assert preparation.environment.topology.topology_version == 1
         return "restored"
 
     result = await executable.run(
@@ -261,7 +261,7 @@ async def test_environment_state_restores_before_input_factory_and_exports_fresh
     assert result.output_or_raise() == "turn-1"
     assert result.state is not None
     assert result.state.environment_state is not None
-    assert result.state.environment_state.observed_topology_version == 0
+    assert result.state.environment_state.observed_topology_version == 1
 
 
 async def test_enter_and_exit_without_iteration_does_not_start_the_agent() -> None:
