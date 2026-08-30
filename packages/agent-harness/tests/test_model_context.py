@@ -182,7 +182,7 @@ async def test_host_wraps_plugin_capability_and_terminal_projection() -> None:
     request = seen[0][-1]
     assert isinstance(request, ModelRequest)
     text = [part.content for part in request.parts if isinstance(part, UserPromptPart)]
-    assert text[0].startswith("Current Environment topology")
+    assert text[0].startswith("Current Environment mounts")
     assert text[1] == "hello"
     assert text[-2:] == ["plugin context", "host epilogue"]
     assert any(isinstance(value, str) and value.startswith('<agent-context source="a13n-harness">') for value in text)

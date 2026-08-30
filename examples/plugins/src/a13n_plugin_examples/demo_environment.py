@@ -1,4 +1,4 @@
-"""Run packaged and explicit Environment provider factories through real bindings."""
+"""Run packaged and explicit Environment provider factories through a real runtime."""
 
 from __future__ import annotations
 
@@ -22,13 +22,10 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
     EnvironmentProviderBinding,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
+    EnvironmentRuntimeMount,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from pydantic import JsonValue
 
@@ -70,19 +67,11 @@ def _operation(action: EnvironmentManagementAction, environment_id: str) -> Envi
     )
 
 
-def _binding_request(
-    *,
-    binding_id: str,
-    alias: str,
-    provider_binding: EnvironmentProviderBinding,
-) -> EnvironmentBindingRequest:
-    return EnvironmentBindingRequest(
-        binding_id=binding_id,
-        binding_revision=1,
-        alias=alias,
+def _runtime_mount(provider_binding: EnvironmentProviderBinding) -> EnvironmentRuntimeMount:
+    return EnvironmentRuntimeMount(
+        binding=provider_binding,
         permission_ceiling=EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_READ_TEXT})),
-        default_working_directory="/",
-        provider_binding=provider_binding,
+        working_directory="/",
     )
 
 
@@ -117,30 +106,24 @@ async def _run_environment_demo(
         ):
             source = create_environment_provider_binding(source_attachment)
             docs = create_environment_provider_binding(docs_attachment)
-            topology = EnvironmentTopologyRequest(
-                topology_version=1,
-                bindings=(
-                    _binding_request(binding_id="workspace-1", alias="source", provider_binding=source),
-                    _binding_request(binding_id="docs-1", alias="docs", provider_binding=docs),
-                ),
-                default_binding_id="workspace-1",
+            environment_runtime = create_environment_runtime(
+                mounts={
+                    "source": _runtime_mount(source),
+                    "docs": _runtime_mount(docs),
+                },
+                default_mount="source",
             )
-            environment_binding = create_environment_run_binding(
-                initial_topology=topology,
-                topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=1),
-                state_limits=EnvironmentStateLimits(max_binding_entries=2),
-            )
-            run_bindings = RunBindings.embedded(environment=environment_binding)
+            run_bindings = RunBindings.embedded(environment=environment_runtime)
 
-            # HarnessRunStream performs this same aggregate bind/activate lifecycle.
-            async with environment_binding.bind(
+            # HarnessRunStream performs this same runtime bind/activate lifecycle.
+            async with environment_runtime.bind(
                 run_id="run-example",
                 instance=run_bindings.instance,
             ) as environment:
-                await environment.activate()
+                await environment_runtime._activate()
                 default_page = await environment.files.read_text("/workspace/message.txt")
                 docs_page = await environment.files.read_text("/environment/docs/message.txt")
-                aliases = tuple(binding.alias for binding in environment.topology.bindings)
+                aliases = tuple(mount.name for mount in environment.snapshot.mounts)
 
     created = await source_provider.reconcile(source_create, last_known_state=source_state)
     source_resume = _operation(EnvironmentManagementAction.RESUME, "workspace-source")

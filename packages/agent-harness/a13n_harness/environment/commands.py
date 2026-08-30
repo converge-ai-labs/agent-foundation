@@ -155,8 +155,7 @@ class ProcessIdentity(BaseModel):
 class BoundProcessHandle(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    binding_id: str
-    binding_revision: int = Field(gt=0)
+    mount_id: str
     identity: ProcessIdentity
     handle: OpaqueProcessHandle
     observed_generation: str

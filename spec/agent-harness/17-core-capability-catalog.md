@@ -43,7 +43,7 @@ Model self-healing remains optional. `SelfHealingModelCapability` installs the `
 | Client-side external tools       | Capability-selected declarations composed into a schema-owning Toolset and native deferred values                                                            | [Tool Execution](07-tool-execution.md)                      |
 | Dynamic Environment adapter      | Optional model-context Capability composing guidance-owning `FileToolset` and `ShellToolset` over `BoundEnvironment`, with optional Host process observation | [Environment Integration](08-environment-integration.md)    |
 | Runtime context                  | Bounded request epilogue with run timing, configured context window, and usage facts                                                                         | [Context and Memory](09-context-and-memory.md)              |
-| Workspace outline                | Bounded revision-pinned Environment file-metadata projection on input requests                                                                               | [Context and Memory](09-context-and-memory.md)              |
+| Workspace outline                | Bounded version-pinned Environment file-metadata projection on input requests                                                                                | [Context and Memory](09-context-and-memory.md)              |
 | File context                     | Run-frozen conventional and explicit Environment file contents on input requests                                                                             | [Context and Memory](09-context-and-memory.md)              |
 | Compaction and handoff           | Same-Agent plain-text history compaction, plus an independent explicit handoff tool and reminder                                                             | [Context and Memory](09-context-and-memory.md)              |
 | Skills and discovery             | Run-frozen selected catalog and bounded resource Toolset                                                                                                     | [Context and Memory](09-context-and-memory.md)              |
@@ -59,7 +59,7 @@ Model self-healing remains optional. `SelfHealingModelCapability` installs the `
 | Model self-healing               | Innermost request wrapper installing one exact `SelfHealingModel` around the effective Model                                                                 | [Input, Model, and Output](16-input-model-and-output.md)    |
 | Provider-specific Agent behavior | Capability public hooks only when profile/adapter is insufficient                                                                                            | [Input, Model, and Output](16-input-model-and-output.md)    |
 
-Native function tools and Toolsets remain valid code-first Pydantic inputs only inside a Capability. A small native `Capability(tools=[...])` or Toolset Capability is the ordinary one-to-one adapter; it does not require a Harness-specific subclass. The Capability owns feature activation, lifecycle, and Toolset composition; each Toolset owns guidance that describes its model-visible tools. The owning Capability also owns any tool timeout and stable Capability/Toolset identity because top-level `AgentSpec.tool_timeout` does not implicitly configure Capability-owned Toolsets. `DynamicEnvironmentCapability` is richer because it combines stable Toolsets with native topology and process-completion notices, participates in the model-context chain, and owns a portable model-facing process projection in `AgentContextState`. Current-topology projection and authoritative process and output state remain owned by the Environment resource, which still enters through the fixed `RunBindings.environment` field.
+Native function tools and Toolsets remain valid code-first Pydantic inputs only inside a Capability. A small native `Capability(tools=[...])` or Toolset Capability is the ordinary one-to-one adapter; it does not require a Harness-specific subclass. The Capability owns feature activation, lifecycle, and Toolset composition; each Toolset owns guidance that describes its model-visible tools. The owning Capability also owns any tool timeout and stable Capability/Toolset identity because top-level `AgentSpec.tool_timeout` does not implicitly configure Capability-owned Toolsets. `DynamicEnvironmentCapability` is richer because it combines stable Toolsets with current-mount and process-completion notices, participates in the model-context chain, and owns a portable model-facing process projection in `AgentContextState`. Current-mount projection and authoritative process and output state remain owned by the Environment runtime, which still enters through the fixed `RunBindings.environment` field.
 
 ## Composition
 
@@ -95,7 +95,7 @@ A trusted plugin can also transform the complete `HarnessState` at the result bo
 
 ## Authority
 
-Capability presence does not itself grant external authority. Current Identity and Environment enter through typed `RunBindings`; credentials, policy decisions, invocation grants, durable checkpoints, provider launch state, controllers, and provider sessions remain with their owning Host, Harness resource, or provider binding. `DynamicEnvironmentCapability` can project only the current facade and cannot mount, refresh, remove, or restore a resource.
+Capability presence does not itself grant external authority. Current Identity and Environment enter through typed `RunBindings`; credentials, policy decisions, invocation grants, durable checkpoints, provider launch state, runtime mutation authority, and provider sessions remain with their owning Host, Harness runtime, or provider binding. `DynamicEnvironmentCapability` can project only the current facade and cannot mount, replace, unmount, set a default, or restore a provider resource.
 
 A Host that requires a particular run Capability constructs and retains the typed instance it trusts. The Harness does not validate class-free role names against a private catalog. Feature-specific code performs any exact type, ID, policy, or collaborator checks required before side effects.
 
@@ -112,7 +112,7 @@ A Capability is appropriate only for actual Agent/run behavior exposed through p
 | Capability lifecycle and order    | Pydantic AI                                  |
 | Code-first contribution seams     | Harness                                      |
 | One Capability's behavior/state   | Owning Capability package                    |
-| Environment lifecycle/topology    | Harness core and trusted Host controller     |
+| Environment lifecycle and mounts  | Harness core and Host-retained runtime       |
 | Plugin middleware                 | [Harness Plugin System](05-plugin-system.md) |
 | External authority                | Host or provider                             |
 | Durable package and revision lock | Host                                         |

@@ -67,10 +67,9 @@ class HostEnvironmentResource(StrictModel):
 class SessionEnvironmentAssignment(StrictModel):
     assignment_id: _ASSIGNMENT_ID
     session_id: str = Field(min_length=1, max_length=80)
-    binding_name: str = Field(min_length=1, max_length=128)
+    mount_name: str = Field(min_length=1, max_length=128)
     model_alias: str = Field(min_length=1, max_length=63)
     permission_ceiling: frozenset[str]
-    required: bool
     scope_key: str = Field(min_length=1, max_length=128)
     host_resource_id: _RESOURCE_ID
     created_at: datetime

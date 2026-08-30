@@ -44,7 +44,7 @@ Then choose a path from the repository root:
 | Path               | Command                                   | Continue with                                                      |
 | ------------------ | ----------------------------------------- | ------------------------------------------------------------------ |
 | Agent Harness      | `uv sync --locked --package a13n-harness` | [Getting Started](docs/agent-harness/getting-started.md)           |
-| Agent UI           | `make agent-ui`                           | [Agent UI guide](packages/agent-ui/README.md)                      |
+| Agent UI           | `make a13n-ui`                            | [Agent UI guide](packages/agent-ui/README.md)                      |
 | Foundation Service | `make dev`                                | [Service development guide](packages/foundation-service/README.md) |
 | Runnable examples  | `make examples-check-all`                 | [Examples](examples/README.md)                                     |
 

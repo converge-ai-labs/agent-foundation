@@ -117,12 +117,11 @@ class SessionEventStore:
 
     def __init__(self, store: LocalStore) -> None:
         self._store = store
-        self._locks_guard = Lock()
         self._locks: dict[str, Lock] = {}
         self._subscribers: dict[str, set[MemoryObjectSendStream[PresentationDelivery]]] = {}
 
-    async def initialize(self) -> int:
-        """Verify registered history and recover directly appendable file-first segments."""
+    async def initialize(self) -> None:
+        """Verify registered event history before accepting commands."""
 
         async with short_session(self._store.database.sessions) as database_session:
             rows = tuple(
@@ -135,7 +134,6 @@ class SessionEventStore:
                     )
                 ).scalars()
             )
-        registered_paths = {row.relative_path for row in rows}
         previous_by_session: dict[str, EventSegmentRecord] = {}
         for row in rows:
             try:
@@ -156,56 +154,6 @@ class SessionEventStore:
                     code=exc.code,
                     detail=f"segment-{row.logical_digest[:16]}",
                 )
-
-        def discover() -> tuple[str, ...]:
-            root = self._store.layout.sessions
-            return tuple(
-                sorted(
-                    path.relative_to(root).as_posix()
-                    for path in root.rglob("*.jsonl.zst")
-                    if path.is_file() and not path.is_symlink()
-                )
-            )
-
-        discovered = await to_thread.run_sync(discover)
-        candidates: list[tuple[AguiSegmentHeader, str]] = []
-        for relative_path in discovered:
-            if relative_path in registered_paths:
-                continue
-            try:
-                header, _events = await self._read_file(relative_path)
-            except (EventStoreError, StoreIntegrityError) as exc:
-                await self._store.record_recovery_diagnostic(
-                    code=exc.code,
-                    detail=PurePosixPath(relative_path).name[:255],
-                )
-                continue
-            candidates.append((header, relative_path))
-
-        recovered = 0
-        for header, relative_path in sorted(
-            candidates,
-            key=lambda item: (item[0].session_id, item[0].first_sequence),
-        ):
-            lock = await self._lock_for(header.session_id)
-            async with lock:
-                try:
-                    next_sequence, previous_digest = await self._presentation_head(header.session_id)
-                    if header.first_sequence != next_sequence or header.previous_segment_digest != previous_digest:
-                        await self._store.record_recovery_diagnostic(
-                            code="event_segment_unselected",
-                            detail=f"segment-{header.logical_digest[:16]}",
-                        )
-                        continue
-                    await self._register_segment(relative_path, header)
-                except (EventStoreError, StoreIntegrityError) as exc:
-                    await self._store.record_recovery_diagnostic(
-                        code=exc.code,
-                        detail=f"segment-{header.logical_digest[:16]}",
-                    )
-                    continue
-                recovered += 1
-        return recovered
 
     async def append(
         self,
@@ -229,7 +177,7 @@ class SessionEventStore:
             except ValidationError as exc:
                 raise EventStoreError("An AG-UI event is invalid.", code="agui_event_invalid") from exc
 
-        lock = await self._lock_for(session_id)
+        lock = self._lock_for(session_id)
         async with lock:
             next_sequence, previous_digest = await self._presentation_head(session_id)
             now = datetime.now(UTC)
@@ -344,7 +292,7 @@ class SessionEventStore:
 
         if not 1 <= capacity <= 100_000:
             raise ValueError("subscription capacity must be between 1 and 100000")
-        lock = await self._lock_for(session_id)
+        lock = self._lock_for(session_id)
         send, receive = create_memory_object_stream[PresentationDelivery](capacity)
         async with lock:
             next_sequence, _digest = await self._presentation_head(session_id)
@@ -508,9 +456,8 @@ class SessionEventStore:
         if not subscribers:
             self._subscribers.pop(session_id, None)
 
-    async def _lock_for(self, session_id: str) -> Lock:
-        async with self._locks_guard:
-            return self._locks.setdefault(session_id, Lock())
+    def _lock_for(self, session_id: str) -> Lock:
+        return self._locks.setdefault(session_id, Lock())
 
 
 def _segment_digest(

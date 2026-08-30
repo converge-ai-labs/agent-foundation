@@ -55,11 +55,6 @@ class EnvdExecutableResolver:
         self._lock = Lock()
         self._resolved: ResolvedEnvdExecutable | None = None
 
-    async def recover_staging(self) -> int:
-        """Remove only interrupted envd staging entries under the owned data root."""
-
-        return await to_thread.run_sync(self._recover_staging)
-
     async def resolve(self) -> ResolvedEnvdExecutable:
         async with self._lock:
             if self._resolved is not None:
@@ -290,33 +285,14 @@ class EnvdExecutableResolver:
             )
         return stdout
 
-    def _recover_staging(self) -> int:
-        removed = 0
-        for entry in self._layout.staging.glob("envd-*"):
-            if not entry.is_dir() or entry.is_symlink():
-                continue
-            for child in entry.iterdir():
-                if child.is_file() and not child.is_symlink():
-                    child.unlink()
-            try:
-                entry.rmdir()
-            except OSError:
-                continue
-            removed += 1
-        return removed
-
 
 class ProviderRuntimeResolver:
     """Construct fresh provider-owned runtime collaborators without fallback."""
-
-    def __init__(self, envd: EnvdExecutableResolver) -> None:
-        self._envd = envd
 
     async def resolve(self, provider_key: str) -> EnvironmentProviderRuntime:
         if provider_key == "a13n.direct-local":
             return DirectLocalProviderRuntime()
         if provider_key == "a13n.local-envd":
-            await self._envd.resolve()
             raise RuntimeResolutionError(
                 "The installed Environment Provider release does not implement a13n.local-envd.",
                 code="local_envd_provider_unavailable",

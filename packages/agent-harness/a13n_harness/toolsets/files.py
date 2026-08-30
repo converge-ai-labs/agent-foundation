@@ -269,7 +269,7 @@ class FileToolset:
                     {"read", "write"},
                     "none",
                     name="copy",
-                    description="Copy files, including streaming copies across Environment bindings.",
+                    description="Copy files, including streaming copies across Environment mounts.",
                     superseded_by_tool_ids={"environment.shell_exec"},
                 ),
                 self._tool(
@@ -592,7 +592,7 @@ class FileToolset:
         ],
         overwrite: Annotated[bool, Field(description="Replace existing destinations")] = False,
     ) -> FileMoveResult:
-        """Move a bounded batch of files or directories within their bindings."""
+        """Move a bounded batch of files or directories within their mounts."""
         results: list[FilePathPairItem] = []
         async with self._mutation_lock:
             for pair in pairs:
@@ -630,7 +630,7 @@ class FileToolset:
         ],
         overwrite: Annotated[bool, Field(description="Replace existing destinations")] = False,
     ) -> FileCopyToolResult:
-        """Copy a bounded batch of files, including across Environment bindings."""
+        """Copy a bounded batch of files, including across Environment mounts."""
         results: list[FileCopyItem] = []
         async with self._mutation_lock:
             for pair in pairs:
@@ -1046,7 +1046,7 @@ def _model_supports_native_media(
     ctx: RunContext[AgentContext],
     kind: NativeInputMediaKind,
 ) -> bool:
-    configuration = ctx.deps.model_configuration
+    configuration = ctx.deps.model_characteristics
     if configuration is None:
         return False
     capability = ModelCapability(f"{kind}_understanding")
@@ -1167,7 +1167,7 @@ def _file_view_profile(context: AgentContext, file_path: str) -> _FileViewProfil
 
 
 def _is_within_environment_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:
-    if candidate.binding_id != root.binding_id or candidate.binding_revision != root.binding_revision:
+    if candidate.mount_id != root.mount_id:
         return False
     normalized_root = root.path.rstrip("/")
     prefix = f"{normalized_root}/" if normalized_root else "/"

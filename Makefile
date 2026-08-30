@@ -51,6 +51,8 @@ examples-test: examples-sync ## Run focused example tests
 
 .PHONY: examples-smoke
 examples-smoke: examples-sync ## Run every offline example path
+	@(cd examples/plugins && uv run --locked plugin-example-capability-agent-spec)
+	@(cd examples/plugins && uv run --locked plugin-example-capability-code)
 	@(cd examples/plugins && uv run --locked plugin-example-environment-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-environment-code)
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-entrypoint)
@@ -121,8 +123,8 @@ langfuse-down: ## Stop local Langfuse while preserving its data
 langfuse-reset: ## Stop local Langfuse and remove all local Langfuse data
 	@$(LANGFUSE_COMPOSE) down --volumes --remove-orphans
 
-.PHONY: agent-ui
-agent-ui: sync ## Run the Agent UI interactive CLI
+.PHONY: a13n-ui
+a13n-ui: sync ## Run the Agent UI interactive CLI
 	@uv run --locked a13n-ui
 
 .PHONY: agent-ui-db-migrate

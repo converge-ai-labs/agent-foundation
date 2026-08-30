@@ -3,21 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from functools import partial
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from anyio import create_task_group, move_on_after, sleep, to_thread
-from filelock import FileLock, Timeout
+from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import StatementError
 
 from a13n_ui import __version__
-from a13n_ui.errors import StoreIntegrityError, StoreLeaseConflict
+from a13n_ui.errors import StoreIntegrityError
 
 from .database import Database, open_database, short_session, transaction
 from .layout import StorageLayout
@@ -29,10 +26,9 @@ from .models import (
     RecoveryDiagnosticRecord,
     ResourceRevisionRecord,
     SkillPackageReferenceRecord,
-    StoreLeaseRecord,
     ThreadCheckpointRecord,
 )
-from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef, RecoveryDiagnostic
+from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
 
 if TYPE_CHECKING:
     from a13n_ui.settings import StorageSettings
@@ -260,109 +256,18 @@ class LocalStore:
 
 @asynccontextmanager
 async def open_local_store(settings: StorageSettings) -> AsyncGenerator[LocalStore]:
-    """Acquire, migrate, recover, and supervise one Agent UI data root."""
+    """Open one Agent UI data root for this Host process."""
 
     layout = StorageLayout.from_root(settings.data_root)
     await to_thread.run_sync(layout.prepare)
     process_generation = f"process-{uuid4().hex}"
-    async with AsyncExitStack() as stack:
-        await stack.enter_async_context(
-            _data_root_lock(layout.lock_file, cleanup_timeout_seconds=settings.cleanup_timeout_seconds)
-        )
-        database = await stack.enter_async_context(open_database(layout.database, settings))
-        objects = ImmutableObjectStore(layout, settings, producer_release=__version__)
-        await _acquire_lease(database, settings, process_generation)
-        stack.push_async_callback(_release_lease, database, settings, process_generation)
-        diagnostics = await objects.recover_staging()
-        await _record_diagnostics(database, settings, process_generation, diagnostics)
-        store = LocalStore(
+    async with open_database(layout.database, settings) as database:
+        yield LocalStore(
             settings=settings,
             layout=layout,
             database=database,
-            objects=objects,
+            objects=ImmutableObjectStore(layout, settings, producer_release=__version__),
             process_generation=process_generation,
-        )
-        async with create_task_group() as tasks:
-            tasks.start_soon(_heartbeat_lease, database, settings, process_generation)
-            try:
-                yield store
-            finally:
-                tasks.cancel_scope.cancel()
-
-
-@asynccontextmanager
-async def _data_root_lock(path: Path, *, cleanup_timeout_seconds: float) -> AsyncGenerator[None]:
-    lock = FileLock(path, timeout=0, thread_local=False)
-    try:
-        await to_thread.run_sync(partial(lock.acquire, timeout=0))
-    except Timeout as exc:
-        raise StoreLeaseConflict(
-            "Another Agent UI process owns the selected data root.",
-            code="store_lease_conflict",
-        ) from exc
-    try:
-        yield
-    finally:
-        with move_on_after(cleanup_timeout_seconds, shield=True):
-            await to_thread.run_sync(lock.release)
-
-
-async def _acquire_lease(database: Database, settings: StorageSettings, process_generation: str) -> None:
-    now = datetime.now(UTC)
-    async with transaction(database.sessions) as session:
-        current = await session.get(StoreLeaseRecord, 1)
-        if current is not None:
-            await session.delete(current)
-            await session.flush()
-        session.add(
-            StoreLeaseRecord(
-                singleton_id=1,
-                process_generation=process_generation,
-                acquired_at=now,
-                heartbeat_at=now,
-            )
-        )
-
-
-async def _release_lease(database: Database, settings: StorageSettings, process_generation: str) -> None:
-    with move_on_after(settings.cleanup_timeout_seconds, shield=True):
-        async with transaction(database.sessions) as session:
-            await session.execute(
-                delete(StoreLeaseRecord).where(StoreLeaseRecord.process_generation == process_generation)
-            )
-
-
-async def _heartbeat_lease(database: Database, settings: StorageSettings, process_generation: str) -> None:
-    while True:
-        await sleep(settings.lease_heartbeat_seconds)
-        async with transaction(database.sessions) as session:
-            lease = await session.get(StoreLeaseRecord, 1)
-            if lease is None or lease.process_generation != process_generation:
-                raise StoreIntegrityError(
-                    "Agent UI lost its selected data-root lease.",
-                    code="store_lease_lost",
-                )
-            lease.heartbeat_at = datetime.now(UTC)
-
-
-async def _record_diagnostics(
-    database: Database,
-    settings: StorageSettings,
-    process_generation: str,
-    diagnostics: tuple[RecoveryDiagnostic, ...],
-) -> None:
-    if not diagnostics:
-        return
-    now = datetime.now(UTC)
-    async with transaction(database.sessions) as session:
-        session.add_all(
-            RecoveryDiagnosticRecord(
-                process_generation=process_generation,
-                code=diagnostic.code,
-                detail=diagnostic.entry_name,
-                recorded_at=now,
-            )
-            for diagnostic in diagnostics
         )
 
 

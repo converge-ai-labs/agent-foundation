@@ -2,22 +2,32 @@
 
 ## Design Position
 
-Foundation Service exposes one HTTP ingress for product APIs, the optional browser application, streaming delivery, and operational probes. This contract owns process-role exposure, request context, proxy and browser trust, authentication boundaries, uniform error enforcement, streaming resource safety, and drain behavior.
+Foundation Service exposes one HTTP ingress for Native product APIs, Hosted
+AG-UI, A2A, the optional browser application, streaming delivery, and
+operational probes. This contract owns process-role exposure, request context,
+proxy and browser trust, authentication boundaries, protocol-aware error
+enforcement, streaming resource safety, and drain behavior.
 
 Resource routes, fields, commands, and authorization actions remain owned by their domains. Shared JSON, status, pagination, error-envelope, version, and idempotency wire semantics remain owned by [Platform API Conventions](../api-conventions.md). HTTP middleware carries transport context; it does not become a database transaction, resource authorizer, or business workflow engine.
 
 ## Role Surfaces
 
-| Surface                                        | `control` | `worker` | `all` |
-| ---------------------------------------------- | --------: | -------: | ----: |
-| `/api/v1` product routes                       |       Yes |       No |   Yes |
-| OpenAPI and interactive API documentation      |       Yes |       No |   Yes |
-| Browser application and static assets          |       Yes |       No |   Yes |
-| Authorized SSE or WebSocket delivery           |       Yes |       No |   Yes |
-| `/internal/v1` operator routes when configured |       Yes |       No |   Yes |
-| `/healthz` and `/readyz`                       |       Yes |      Yes |   Yes |
+| Surface                                          | `control` | `worker` | `all` |
+| ------------------------------------------------ | --------: | -------: | ----: |
+| `/api/v1` product routes                         |       Yes |       No |   Yes |
+| `/ag-ui/v1` Hosted AG-UI routes                  |       Yes |       No |   Yes |
+| A2A routes and well-known discovery when enabled |       Yes |       No |   Yes |
+| OpenAPI and interactive API documentation        |       Yes |       No |   Yes |
+| Browser application and static assets            |       Yes |       No |   Yes |
+| Authorized SSE or WebSocket delivery             |       Yes |       No |   Yes |
+| `/internal/v1` operator routes when configured   |       Yes |       No |   Yes |
+| `/healthz` and `/readyz`                         |       Yes |      Yes |   Yes |
 
-A worker-only process returns no product route, product OpenAPI document, browser fallback, static application, or authenticated product stream. Unknown `/api` paths remain JSON API failures and are never rewritten to browser HTML. Operational paths are outside `/api`, unversioned, bounded, and excluded from product OpenAPI.
+A worker-only process returns no product route, product OpenAPI document,
+browser fallback, static application, or authenticated product stream. Unknown
+`/api`, `/ag-ui`, `/a2a`, and well-known protocol paths are never rewritten to
+browser HTML. Operational paths are outside the product namespaces,
+unversioned, bounded, and excluded from product OpenAPI.
 
 The internal operator surface is excluded from the public product OpenAPI, SDKs, browser application, and tenant IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
 
@@ -59,7 +69,13 @@ Authentication establishment routes such as login, invitation acceptance, and pa
 
 ## Errors and Diagnostics
 
-Every product API failure, including framework validation, unknown API routes, authentication failures, domain errors, dependency failures, and unexpected exceptions, uses the shared bounded error envelope from Platform API Conventions. Framework-native `detail` responses never escape the `/api` boundary.
+Every Native `/api` failure, including framework validation, unknown API routes,
+authentication failures, domain errors, dependency failures, and unexpected
+exceptions, uses the shared bounded error envelope from Platform API
+Conventions. Framework-native `detail` responses never escape the `/api`
+boundary. Hosted AG-UI and A2A failures use the bounded error representation
+owned by their selected protocol contracts while preserving the same request ID
+and non-disclosure rules.
 
 The stable error code and safe details come from the owning boundary. Unexpected failures use a generic code and message, retain the request ID, and log the exception once at the boundary that handles it. Responses and diagnostics never contain traceback text, SQL, credentials, authorization headers, cookies, private paths, raw prompts, model output, tool payloads, or provider-native secret data.
 
@@ -69,7 +85,7 @@ Operational probe failures use a smaller bounded operational representation and 
 
 SSE and WebSocket routes authenticate, authorize, and complete initial database reads in closed short sessions before constructing the streaming response. The stream receives immutable detached values and process-wide factories, never a yielded database session through its dependency graph.
 
-Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never cancels a Turn unless the client separately submits an authorized cancellation command.
+Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never interrupts a Turn unless the client separately submits the authorized interrupt command.
 
 When the process begins draining, it rejects new streams, signals or closes existing streams according to their owning reconnect contract, and releases subscriptions within the drain deadline. A reconnect uses the owning durable cursor or reports an explicit replay gap; it does not treat a transport connection as execution authority.
 
@@ -105,7 +121,9 @@ A new common ingress check can be added when it rejects only requests outside th
 03. Untrusted forwarded headers never change client, host, or scheme identity.
 04. Production browser access is same-origin unless an exact cross-origin policy is selected.
 05. Middleware carries transport context and never owns resource authorization or a long-lived database session.
-06. Every `/api` error uses the shared bounded error envelope; framework-native error bodies do not escape.
+06. Every `/api` error uses the shared bounded error envelope; Hosted AG-UI and
+    A2A use their owning bounded protocol errors, and framework-native error
+    bodies do not escape any product boundary.
 07. Streaming responses receive no yielded database session.
 08. Client disconnect and transport delivery never define Turn cancellation or completion.
 09. Drain rejects new work before closing streams and ingress.

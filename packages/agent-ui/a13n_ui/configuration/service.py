@@ -263,9 +263,6 @@ class ConfigurationService:
             else:
                 last_rejection = None
 
-    async def reap_skill_leases_periodically(self) -> None:
-        await self.skills.reap_periodically()
-
     async def current_generation(self) -> ConfigurationGeneration | None:
         return await self._repository.current_generation()
 

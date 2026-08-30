@@ -24,9 +24,9 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    HarnessModelCharacteristics,
     HarnessState,
     ModelCapability,
-    ModelConfiguration,
     RunBindings,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
@@ -35,11 +35,8 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities.context import _requires_exact_history
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_environment_run_binding,
+    EnvironmentRuntimeMount,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
@@ -71,29 +68,21 @@ def _local_binding(root: Path, *, default_working_directory: str = "/"):
             max_value_bytes=128 * 1024,
         )
     )
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-1",
-                    binding_revision=1,
-                    alias="local",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory=default_working_directory,
-                    provider_binding=provider,
-                ),
-            ),
-            default_binding_id="binding-1",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
-        state_limits=EnvironmentStateLimits(),
+    return create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider,
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                working_directory=default_working_directory,
+            )
+        },
+        default_mount="local",
     )
 
 
 def test_agent_spec_model_config_derives_context_capability_thresholds() -> None:
     spec = HarnessAgentSpec(
-        model_config=ModelConfiguration(
+        model_characteristics=HarnessModelCharacteristics(
             capabilities=frozenset(
                 {
                     ModelCapability.IMAGE_UNDERSTANDING,
@@ -117,8 +106,8 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
     handoff = next(capability for capability in leaves if isinstance(capability, HandoffCapability))
     compaction = next(capability for capability in leaves if isinstance(capability, CompactionCapability))
 
-    assert spec.model_configuration is not None
-    dumped_configuration = spec.model_dump(mode="json", by_alias=True)["model_config"]
+    assert spec.model_characteristics is not None
+    dumped_configuration = spec.model_dump(mode="json", by_alias=True)["model_characteristics"]
     assert dumped_configuration["context_window"] == 200_000
     assert set(dumped_configuration["capabilities"]) == {
         "image_understanding",
@@ -126,7 +115,7 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
         "audio_understanding",
     }
     schema = HarnessAgentSpec.model_json_schema_with_capabilities()
-    assert "model_config" in schema["properties"]
+    assert "model_characteristics" in schema["properties"]
     assert set(schema["$defs"]["ModelCapability"]["enum"]) == {
         "image_understanding",
         "video_understanding",
@@ -139,9 +128,9 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
 
 def test_handoff_model_config_distinguishes_unknown_context_from_disabled_reminder() -> None:
     cases = (
-        (ModelConfiguration(), True, 0),
+        (HarnessModelCharacteristics(), True, 0),
         (
-            ModelConfiguration(
+            HarnessModelCharacteristics(
                 context_window=200_000,
                 proactive_context_management_threshold=None,
             ),
@@ -149,9 +138,9 @@ def test_handoff_model_config_distinguishes_unknown_context_from_disabled_remind
             0,
         ),
     )
-    for model_configuration, expected_enabled, expected_tokens in cases:
+    for model_characteristics, expected_enabled, expected_tokens in cases:
         executable = HarnessBuilder().build(
-            HarnessAgentSpec(model_config=model_configuration),
+            HarnessAgentSpec(model_characteristics=model_characteristics),
             output_type=str,
             model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("done")])),
             capabilities=(HandoffCapability(),),
@@ -166,7 +155,7 @@ def test_handoff_model_config_distinguishes_unknown_context_from_disabled_remind
 
 def test_explicit_context_capability_thresholds_override_agent_model_config() -> None:
     spec = HarnessAgentSpec(
-        model_config=ModelConfiguration(context_window=200_000),
+        model_characteristics=HarnessModelCharacteristics(context_window=200_000),
     )
     executable = HarnessBuilder().build(
         spec,

@@ -18,7 +18,7 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
 )
-from a13n_harness.environment.advanced import create_noop_environment_run_binding
+from a13n_harness.environment.advanced import create_empty_environment_runtime
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -88,18 +88,18 @@ def _operation(action: EnvironmentManagementAction, suffix: str) -> EnvironmentO
     )
 
 
-async def test_run_needs_no_bindings_or_environment_for_ordinary_embedded_use() -> None:
-    topologies = []
+async def test_run_needs_no_mounts_or_environment_for_ordinary_embedded_use() -> None:
+    snapshots = []
 
     async def prepare(context) -> str:
-        topologies.append(context.environment.topology)
+        snapshots.append(context.environment.snapshot)
         return "hello"
 
     result = await _executable().run(input_factory=prepare)
 
     assert result.output_or_raise() == "ok"
-    assert topologies[0].bindings == ()
-    assert topologies[0].default_binding_id is None
+    assert snapshots[0].mounts == ()
+    assert snapshots[0].default_mount is None
 
 
 async def test_provider_input_is_harness_owned_and_available_as_workspace(tmp_path: Path) -> None:
@@ -107,11 +107,10 @@ async def test_provider_input_is_harness_owned_and_available_as_workspace(tmp_pa
     observed = []
 
     async def prepare(context) -> str:
-        topology = context.environment.topology
-        observed.append(topology)
-        assert topology.default_binding_id == "environment-workspace"
-        assert topology.bindings[0].binding_id == "environment-workspace"
-        assert topology.bindings[0].alias == "workspace"
+        snapshot = context.environment.snapshot
+        observed.append(snapshot)
+        assert snapshot.default_mount == "workspace"
+        assert [mount.name for mount in snapshot.mounts] == ["workspace"]
         await context.environment.files.write_text("/workspace/value.txt", "created", mode="create")
         return "use environment"
 
@@ -165,12 +164,9 @@ async def test_multiple_sources_support_mixed_ownership_access_and_explicit_defa
     async with data_resource:
 
         async def prepare(context) -> str:
-            topology = context.environment.topology
-            assert topology.default_binding_id == "environment-build"
-            assert [(item.binding_id, item.alias) for item in topology.bindings] == [
-                ("environment-build", "build"),
-                ("environment-data", "data"),
-            ]
+            snapshot = context.environment.snapshot
+            assert snapshot.default_mount == "build"
+            assert [mount.name for mount in snapshot.mounts] == ["build", "data"]
             await context.environment.files.write_text("/workspace/output.txt", "result", mode="create")
             source = await context.environment.files.read_text("/environment/data/input.txt")
             assert source.text == "source"
@@ -205,12 +201,13 @@ async def test_multiple_sources_never_select_default_from_mapping_order(tmp_path
     second_root.mkdir()
 
     async def prepare(context) -> str:
-        assert context.environment.topology.default_binding_id is None
+        assert context.environment.snapshot.default_mount is None
         with pytest.raises(EnvironmentError) as exc_info:
             context.environment.resolve_path("/workspace/value.txt")
         assert exc_info.value.code == "environment_selection_invalid"
         resolved = context.environment.resolve_path("/environment/second/value.txt")
-        assert resolved.binding_id == "environment-second"
+        assert resolved.mount_id
+        assert resolved.path == "/value.txt"
         return "no default"
 
     result = await _executable().run(
@@ -252,7 +249,7 @@ def test_environment_mount_rejects_noncanonical_working_directory(
 
 
 def test_high_level_sources_conflict_with_advanced_run_binding(tmp_path: Path) -> None:
-    bindings = RunBindings.embedded(environment=create_noop_environment_run_binding())
+    bindings = RunBindings.embedded(environment=create_empty_environment_runtime())
 
     with pytest.raises(EnvironmentError) as exc_info:
         _executable().stream(

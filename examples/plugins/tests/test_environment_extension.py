@@ -2,15 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from a13n_environment_provider import (
+    EnvironmentOperationContext,
+    EnvironmentProviderResourceState,
+)
 from a13n_harness import (
     EnvironmentError,
     EnvironmentRunExtensionFactoryContext,
+    RunError,
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from a13n_plugin_examples.demo_environment_extension import (
     EXTENSION_KEY,
@@ -79,7 +87,7 @@ def test_environment_extension_entrypoint_demo_runs_complete_scope(tmp_path: Pat
     assert result.selection_mode == "entrypoint"
     assert result.extension_key == EXTENSION_KEY
     assert result.extension_id == "marker-entrypoint"
-    assert result.marker_text == "entrypoint:run-extension-example\n"
+    assert result.marker_text == f"entrypoint:{result.run_id}\n"
     assert result.marker_removed is True
 
 
@@ -89,5 +97,47 @@ def test_environment_extension_code_demo_runs_complete_scope(tmp_path: Path) -> 
     assert result.selection_mode == "code"
     assert result.extension_key == EXTENSION_KEY
     assert result.extension_id == "marker-code"
-    assert result.marker_text == "code:run-extension-example\n"
+    assert result.marker_text == f"code:{result.run_id}\n"
     assert result.marker_removed is True
+
+
+def test_environment_extension_demo_destroys_resource_after_run_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
+
+    destroyed: list[EnvironmentProviderResourceState] = []
+    original_destroy = WorkspaceEnvironmentProvider.destroy
+
+    async def record_destroy(
+        self: WorkspaceEnvironmentProvider,
+        state: EnvironmentProviderResourceState,
+        *,
+        operation: EnvironmentOperationContext,
+    ) -> None:
+        destroyed.append(state)
+        await original_destroy(self, state, operation=operation)
+
+    def failing_model() -> FunctionModel:
+        async def stream(
+            messages: list[ModelMessage],
+            info: AgentInfo,
+        ) -> AsyncIterator[str]:
+            del messages, info
+            raise RuntimeError("expected model failure")
+            yield "unreachable"
+
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(WorkspaceEnvironmentProvider, "destroy", record_destroy)
+    monkeypatch.setattr(
+        "a13n_plugin_examples.demo_environment_extension._offline_model",
+        failing_model,
+    )
+
+    with pytest.raises(RunError):
+        asyncio.run(run_environment_extension_code_demo(workspace_root=tmp_path))
+
+    assert len(destroyed) == 1
+    assert not (tmp_path / ".example-run").exists()

@@ -2,8 +2,11 @@
 
 ## Design Position
 
-Every Foundation Worker owns the same periodic Turn scan, claim, lease-renewal,
-and expired-lease takeover loop. PostgreSQL remains authoritative for Turn
+Every Foundation Worker runs the same periodic Turn scan, claim, lease-renewal,
+and expired-lease takeover contract through its configured Plugin Runtime
+profile. An `on_demand` Worker preflights each candidate against its process-local
+loaded registry. A `runner` Supervisor discovers required Runtime locks and each
+matching Runner scans only that lock. PostgreSQL remains authoritative for Turn
 eligibility, Attempt generations, leases, fences, recovery budget, and outcomes.
 Foundation has no separate Turn Scheduler, recovery controller, or Redis
 dispatch queue.
@@ -11,8 +14,16 @@ dispatch queue.
 Adding Worker processes or replicas adds competing consumers of the same
 relational contract. Row locking or equivalent compare-and-swap plus monotonic
 Attempt numbers and fences allows only one Worker to create the next generation.
-Redis remains available for domain-owned live data flow such as the Turn stream,
-but no Redis value discovers, creates, transfers, or completes a TurnAttempt.
+Redis remains available for domain-owned live data flow such as the Turn stream
+and Thread control wakeups, but no Redis value discovers, creates, transfers, or
+completes a TurnAttempt or consumes a Thread inbox entry.
+
+Workers are container-role loops, not durable product owners. Under the [Plugin
+Runtime contract](26-harness-plugin-artifacts-and-runtime-loading.md), the
+default profile executes in the Worker interpreter and the optional runner
+profile uses a stable Supervisor plus lock-scoped children. A deployment scales
+the `worker` role by adding replicas whose selected execution loops compete
+through the same relational claim contract.
 
 [Durable Thread Persistence](24-thread-persistence.md) owns current-Turn and
 continuation-head selection; [Durable Turn State](14-turn-persistence.md) owns
@@ -22,8 +33,12 @@ lease, fence, preparation-decision, and Attempt outcome transactions.
 
 ## Worker Scan and Claim Contract
 
-Each non-draining Worker periodically performs a bounded, deterministic database
-scan. It can select:
+Each non-draining on-demand Worker performs a bounded, deterministic scan across
+eligible candidates, then completes exact Plugin compatibility preflight before
+claim. Each runner Supervisor instead discovers the bounded set of referenced
+Runtime lock digests, ensures matching Runners exist, and lets each Runner scan
+only its exact lock. Discovery and preflight grant no Attempt ownership. The
+selected execution loop can consider:
 
 - an initial `accepted` Turn whose `available_at` has arrived and which has no
   current Attempt;
@@ -32,7 +47,7 @@ scan. It can select:
 - a `running` Turn whose selected `leased` or `running` Attempt has an expired
   lease.
 
-The scan is only candidate discovery. The Worker must revalidate the exact Turn,
+The scan is only candidate discovery. The execution loop must revalidate the exact Turn,
 Thread selection, current Attempt, lease condition, and budget in the short
 claim transaction. For an expired lease, that transaction marks the old Attempt
 `failed`, disables its lease, charges known usage, and either creates and selects
@@ -57,40 +72,48 @@ delay scans. They never form another ownership authority.
 
 ```mermaid
 sequenceDiagram
-    participant Worker
+    participant Executor as Worker loop or lock-scoped Runner
     participant DB as PostgreSQL
     participant Objects as State and artifacts
     participant Harness
 
     loop bounded periodic scan
-        Worker->>DB: find accepted, backoff-ready, or lease-expired Turn
-        Worker->>DB: short claim or takeover transaction
+        Executor->>DB: find compatible accepted, backoff-ready, or lease-expired Turn
+        Executor->>DB: short claim or takeover transaction
         alt transaction wins and budget permits
-            DB-->>Worker: new leased Attempt, fence, and exact Turn metadata
+            DB-->>Executor: new leased Attempt, fence, and exact Turn metadata
         else candidate changed or another Worker won
-            DB-->>Worker: no claim
+            DB-->>Executor: no claim
         else budget exhausted
-            DB-->>Worker: old Attempt failed when present; Turn failed; no new Attempt
+            DB-->>Executor: old Attempt failed when present; Turn failed; no new Attempt
         end
     end
-    Worker->>Objects: outside transaction, read exact state and frozen artifacts
-    Worker->>Worker: validate state, dependencies, authority, and unknown outcomes
-    Worker->>DB: short fenced preparation-decision CAS
+    Executor->>Objects: outside transaction, read exact state and frozen artifacts
+    Executor->>Executor: validate state, dependencies, authority, and unknown outcomes
+    Executor->>DB: short fenced preparation-decision CAS
     alt continue
-        DB-->>Worker: preparation accepted
-        Worker->>Harness: enter one logical Run with fresh bindings
+        DB-->>Executor: preparation accepted
+        Executor->>Harness: enter one logical Run with fresh RunBindings and EnvironmentRuntime
         loop bounded heartbeat
-            Worker->>DB: renew only while this Attempt still owns the lease
+            Executor->>DB: renew only while this Attempt still owns the lease
         end
-        Worker->>DB: fenced state, usage, and Turn outcome writes
+        Executor->>DB: fenced state, usage, and Turn outcome writes
     else retry later
-        DB-->>Worker: Attempt failed; Turn remains running with available_at
+        DB-->>Executor: Attempt failed; Turn remains running with available_at
     else fail Turn
-        DB-->>Worker: Attempt failed; Turn sealed failed
+        DB-->>Executor: Attempt failed; Turn sealed failed
     end
 ```
 
-The winning Worker closes the claim transaction before every state or artifact
+Before claim, an on-demand Worker verifies that every required PluginVersion is
+either exactly loaded or additively compatible; a conflict leaves the Turn
+unclaimed. In runner mode, the Supervisor ensures that a Runner exists for every
+lock it serves, and each Runner filters to an equal `runtime_lock_digest`.
+Missing compatible capacity or artifacts does not change durable eligibility and
+never causes another lock to be substituted. On-demand artifact reads and import
+preflight occur outside every relational session and transaction.
+
+The winning execution loop closes the claim transaction before every state or artifact
 read. It renews the lease while preparing. If ownership changes before its
 preparation decision, the fenced compare-and-swap fails and all local values are
 discarded.
@@ -107,7 +130,7 @@ Fencing applies to:
 - Attempt preparation, state, heartbeat, and outcome;
 - Turn state-object conditional replacement and sealing;
 - lifecycle events and retained Item publication;
-- pending-action acceptance;
+- waiting-state sealing and feedback incorporation;
 - child acceptance and result incorporation; and
 - terminal Turn outcomes and their atomic Thread current/head update.
 
@@ -152,13 +175,13 @@ The newly created Attempt already owns the lease before recovery checks begin.
 Its Worker performs all object, artifact, and authority reads outside database
 transactions and then commits one short fenced preparation decision.
 
-| Check                       | What must be true                                                                                                                                                                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| State                       | The deterministic `state.json` exists and its key metadata, tenant, Turn, Thread, digest, size, checkpoint sequence, outer schema, Agent revision, and required Harness, Host, Capability, and Environment-state codecs validate exactly.                                 |
-| Unknown Agent tool outcomes | Every durable prior Agent tool dispatch absent from that exact complete state can be represented as bounded `unknown_outcome` context. The check reads no provider business state and never automatically replays a call.                                                 |
-| Budget                      | The already-created Attempt remains within `max_attempts`, the fixed `recovery_deadline_at`, and every configured aggregate usage ceiling after all durable known usage charges. Unknown required usage cannot be assumed to be zero.                                     |
-| Frozen compatibility        | The exact Agent revision, model execution snapshot, managed Harness plugin and Skill artifacts, Connector contracts, Environment connector locks, state-owned Environment configuration, and all other frozen dependency locks are present, digest-valid, and compatible. |
-| Current authority           | Current Workspace and principal policy, RoleBindings, Connection eligibility, Environment provider selection, required Secret metadata, and intended credential uses still authorize reconstruction. Persisted references grant no authority by themselves.               |
+| Check                       | What must be true                                                                                                                                                                                                                                                    |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State                       | The deterministic `state.json` exists and its key metadata, tenant, Turn, Thread, digest, size, checkpoint sequence, outer schema, AgentPresetVersion, Runtime lock, and required Harness, Host, Capability, and Environment-state codecs validate exactly.          |
+| Unknown Agent tool outcomes | Every durable prior Agent tool dispatch absent from that exact complete state can be represented as bounded `unknown_outcome` context. The check reads no provider business state and never automatically replays a call.                                            |
+| Budget                      | The already-created Attempt remains within `max_attempts`, the fixed `recovery_deadline_at`, and every configured aggregate usage ceiling after all durable known usage charges. Unknown required usage cannot be assumed to be zero.                                |
+| Frozen compatibility        | The exact AgentPresetVersion, Runtime lock, model execution snapshot, managed Skill artifacts, Connector contracts, Environment connector locks, state-owned Environment configuration, and all other frozen dependencies are present, digest-valid, and compatible. |
+| Current authority           | Current Workspace and principal policy, RoleBindings, Connection eligibility, Environment provider selection, required Secret metadata, and intended credential uses still authorize reconstruction. Persisted references grant no authority by themselves.          |
 
 The decision is complete:
 
@@ -186,33 +209,59 @@ ordinary outcomes of the newly owned Attempt.
 
 ## Worker Run Boundary
 
-After preparation succeeds, the Worker reconstructs safe process-local Agent
-values from exact immutable inputs, fresh authorized credentials, and the
-Turn-owned model execution snapshot. It never re-resolves current ModelConfig.
+After preparation succeeds, the owning Worker execution loop reconstructs safe process-local Agent
+values from the exact AgentPresetVersion, Turn-pinned Runtime lock, fresh
+authorized credentials, and Turn-owned model execution snapshot. It never
+re-resolves current ModelConfig or the active Runtime lock.
 Managed plugin factories create fresh Agent-specific instances. Managed Skill
 packages named by the effective selection frozen in `state.json` are verified and
 materialized through a fresh `SkillManager` and fresh Environment before model
 exposure.
 
-The Worker constructs a fresh Environment connector scope from the exact
-configuration in `state.json`. The connector attaches the configured
-already-running resource, supplies a process-local attachment to the Harness,
-and keeps it alive only while that binding and Attempt lease remain active.
+The execution loop constructs fresh Environment connector scopes from the exact desired
+mount configuration in `state.json`. Each connector attaches the configured
+already-running resource and supplies one fresh process-local attachment. The
+Worker adapts those attachments into runtime mounts, constructs and retains one
+`EnvironmentRuntime`, and keeps each resource alive only while its attachment
+scope, the Harness run, and the Attempt lease remain active.
 Foundation does not create, resume, pause, destroy, lease, validate, or reconcile
 the external resource. A fresh connection failure is an Attempt execution
 failure, classified under the ordinary retry and budget rules.
 
-The Worker imports the Harness Python package and calls its public process-local
-API. It is the sole consumer of the `HarnessRunStream` and owning
+The execution loop calls the public process-local Harness Python API from its
+verified Runtime. It is the sole consumer of the `HarnessRunStream` and owning
 `HarnessAguiObserver`. Database sessions and locks never span reconstruction
 I/O, provider calls, Harness work, waits, sleeps, event streaming, or cleanup.
 
 As soon as Harness supplies its Run identity and before the first live
-observation, the Worker binds that identity immutably to the current Attempt
+observation, the execution loop binds that identity immutably to the current Attempt
 under its fence and changes the Attempt from `leased` to `running`. A
-replacement creates a fresh Attempt, Harness Run, connector scope, attachment,
-clients, credentials, and bindings. It never restores another process's task,
-session, socket, attachment, Sandbox, or stream subscriber.
+replacement creates a fresh Attempt, Harness Run, connector scopes, attachments,
+runtime mounts, `EnvironmentRuntime`, clients, credentials, and `RunBindings`.
+It never restores another process's task, session, socket, attachment, runtime,
+Sandbox, or stream subscriber.
+
+## Thread Inbox and Control Reconciliation
+
+The execution loop owns one process-local control dispatcher for every active
+TurnAttempt. It registers the current `(turn_attempt_id, fence)` with the live
+`HarnessRunStream` and joins the owning Thread's Redis control Stream consumer
+group under its Worker identity and generation. Claim, takeover, Redis wakeup,
+and every mandatory execution boundary invoke the complete
+[steer-consumption and reconciliation
+contract](35-agent-control-active-execution.md#steer-consumption-and-state-commitment);
+this scheduling contract does not define another inbox ordering, delivery, or
+completion flow.
+
+A claim or takeover reconciles PostgreSQL before relying on the Redis group and
+can then reclaim deliveries from a prior Worker generation. Every signal means
+only that the dispatcher must re-read the Thread's durable state. Missing,
+trimmed, expired, duplicated, stale, or already acknowledged signals never
+change the decision made from PostgreSQL.
+
+Worker shutdown unregisters process-local run controls and stops group
+consumption. Redis acknowledgement, consumer replacement, and dispatcher
+cleanup do not advance an inbox or Turn domain status.
 
 ## Retry Semantics
 
@@ -222,6 +271,9 @@ Retries remain owned by the layer that knows the failed boundary:
   connector;
 - Harness semantic recovery creates another ModelAttempt inside one Harness
   Run;
+- a pending steer that can no longer enter the current native Run follows the
+  [active-control recovery
+  rule](35-agent-control-active-execution.md#steer-consumption-and-state-commitment);
 - Foundation creates another TurnAttempt only after the prior Attempt has
   failed or its lease has expired, and only under the same Turn budget;
 - retrying sealed terminal intent creates a successor Turn rather than reopening
@@ -238,11 +290,13 @@ Harness ModelAttempts and Connector retries.
 ## Shutdown and Drain
 
 A control process stops accepting product mutations and streaming connections
-before stopping its publishers and other domain-owned control work. A Worker
-stops its periodic scan first, then continues active Attempts only until the
-configured drain deadline. It either commits an authoritative outcome or failed
-Attempt decision, or stops renewing so a later Worker can take over after lease
-expiry. Complete role behavior is owned by [Runtime Configuration and
+before stopping its publishers and other domain-owned control work. An
+on-demand Worker stops its scan; a runner Supervisor gates every child scan. The
+selected execution loop continues active Attempts only until the configured
+drain deadline. It either observes an
+authoritative outcome or failed-Attempt decision, or stops renewal so a later
+Worker can take over after lease expiry. Plugin activation itself adds no short
+drain deadline; complete role behavior is owned by [Runtime Configuration and
 Deployment](01-runtime-configuration-and-deployment.md#drain-and-shutdown).
 
 Shutdown never extends a lease indefinitely or marks unfinished work successful.
@@ -254,6 +308,7 @@ through leases, fencing, and transactional claims.
 | Failure                                                          | Durable outcome                                                                                                     |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | Concurrent Workers scan the same Turn                            | Exactly one claim or takeover transaction creates the next Attempt; losers create nothing.                          |
+| No compatible execution loop can serve the Turn's Runtime lock   | Turn remains eligible or the claimed Attempt follows bounded preparation failure; no Runtime is substituted.        |
 | Worker crashes before claim commit                               | The transaction commits no partial Attempt ownership.                                                               |
 | Worker crashes after claim or during preparation                 | Its lease expires; a later Worker's takeover marks it `failed` and creates at most one successor within budget.     |
 | Worker crashes after uncheckpointed Agent tool dispatch          | The successor compares durable dispatch records with exact state and projects unmatched calls as `unknown_outcome`. |
@@ -261,15 +316,16 @@ through leases, fencing, and transactional claims.
 | Preparation finds a retryable dependency outage                  | The claimed Attempt fails; the Turn remains `running` with bounded `available_at` while budget remains.             |
 | Preparation finds permanent incompatibility or revoked authority | The claimed Attempt and Turn fail; no Harness model or tool work starts.                                            |
 | Managed Skill materialization stops                              | No partial catalog reaches Harness; the Attempt follows ordinary retry and budget rules.                            |
-| Redis live data flow is unavailable                              | Relational ownership remains intact; no Redis delivery can replace or repair a claim.                               |
+| Redis live data flow is unavailable                              | Relational ownership and Thread inbox remain intact; safe-point reconciliation replaces no claim or domain fact.    |
 
 ## Invariants
 
-01. Every Worker owns the same bounded periodic Turn scan and transactional
-    claim/takeover loop; Foundation has no separate Turn Scheduler or recovery
-    controller.
+01. Every Worker runs the same bounded periodic Turn scan and transactional
+    claim/takeover contract through its configured Runtime profile; Foundation
+    has no separate Turn Scheduler or recovery controller.
 02. PostgreSQL owns Turn eligibility and TurnAttempt state; Redis never creates,
-    completes, or transfers a TurnAttempt.
+    completes, or transfers a TurnAttempt and never consumes a Thread inbox
+    entry.
 03. At most one selected Attempt exists for a Turn, and only its unexpired
     matching lease authorizes Worker mutation.
 04. Expired-lease takeover atomically fails the old Attempt and creates at most
@@ -292,3 +348,8 @@ through leases, fencing, and transactional claims.
     Turn.
 13. Terminal Turn sealing atomically updates the owning Thread under the same
     fence, and late immutable usage cannot mutate Turn lifecycle.
+14. An on-demand Worker claims only after exact additive compatibility preflight,
+    and a Runner claims only an equal lock digest; no preparation or recovery
+    path substitutes another Runtime.
+15. Every Attempt owner follows the active-control reconciliation contract;
+    Redis consumer-group progress is only a wakeup optimization.

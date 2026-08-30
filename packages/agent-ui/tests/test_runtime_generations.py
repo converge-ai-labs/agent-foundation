@@ -167,7 +167,7 @@ async def test_drain_timeout_escalates_without_losing_new_active_runner() -> Non
         await service.close()
 
 
-async def test_cancelled_candidate_is_aborted_without_changing_active_runner(
+async def test_cancelled_candidate_is_stopped_without_changing_active_runner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async with _service() as service:
@@ -178,7 +178,7 @@ async def test_cancelled_candidate_is_aborted_without_changing_active_runner(
             candidate_ready.set()
             await asyncio.sleep(60)
 
-        monkeypatch.setattr(service, "_prepare_and_activate", wait_for_cancellation)
+        monkeypatch.setattr(service, "_activate", wait_for_cancellation)
         restart = asyncio.create_task(service.restart())
         await candidate_ready.wait()
         restart.cancel()
@@ -191,7 +191,7 @@ async def test_cancelled_candidate_is_aborted_without_changing_active_runner(
         assert any(
             item.generation_id != first.generation_id
             and item.state is RuntimeGenerationState.exited
-            and item.exit_reason is RuntimeExitReason.aborted
+            and item.exit_reason is RuntimeExitReason.startup_failed
             for item in status.generations
         )
 

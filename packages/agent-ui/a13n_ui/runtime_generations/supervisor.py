@@ -42,7 +42,6 @@ class _RunnerGeneration:
     channel: ControlChannel
     observation: RuntimeGenerationObservation
     watcher: asyncio.Task[None] | None = None
-    expected_exit: bool = False
     selected_exit_reason: RuntimeExitReason | None = None
 
 
@@ -78,9 +77,9 @@ class RuntimeGenerationService:
                 return self._active.observation
             candidate = await self._start_candidate()
             try:
-                await self._prepare_and_activate(candidate)
+                await self._activate(candidate)
             except BaseException:
-                await _complete_cleanup(self._abort_candidate(candidate))
+                await _complete_cleanup(self._stop_candidate(candidate))
                 raise
             self._active = candidate
             self._candidate = None
@@ -96,9 +95,9 @@ class RuntimeGenerationService:
             if previous is None:
                 candidate = await self._start_candidate()
                 try:
-                    await self._prepare_and_activate(candidate)
+                    await self._activate(candidate)
                 except BaseException:
-                    await _complete_cleanup(self._abort_candidate(candidate))
+                    await _complete_cleanup(self._stop_candidate(candidate))
                     raise
                 self._active = candidate
                 self._candidate = None
@@ -106,9 +105,9 @@ class RuntimeGenerationService:
 
             candidate = await self._start_candidate()
             try:
-                await self._prepare_and_activate(candidate)
+                await self._activate(candidate)
             except BaseException as exc:
-                await _complete_cleanup(self._abort_candidate(candidate))
+                await _complete_cleanup(self._stop_candidate(candidate))
                 if isinstance(exc, asyncio.CancelledError):
                     raise
                 if isinstance(exc, RuntimeGenerationError):
@@ -132,31 +131,29 @@ class RuntimeGenerationService:
     async def status(self) -> RuntimeStatus:
         """Return detached current routing and bounded retained observations."""
 
-        async with self._lock:
-            self._refresh_return_codes()
-            observations = tuple(
-                sorted(self._observations.values(), key=lambda item: item.started_at, reverse=True)[
-                    : self._settings.retained_generations
-                ]
-            )
-            diagnostics = tuple(self._diagnostics[-self._settings.retained_diagnostics :])
-            active_generation_id = (
-                self._active.generation_id
-                if self._active is not None and self._active.observation.state is RuntimeGenerationState.active
-                else None
-            )
-            candidate_generation_id = (
-                self._candidate.generation_id
-                if self._candidate is not None
-                and self._candidate.observation.state is not RuntimeGenerationState.exited
-                else None
-            )
-            return RuntimeStatus(
-                active_generation_id=active_generation_id,
-                candidate_generation_id=candidate_generation_id,
-                generations=observations,
-                diagnostics=diagnostics,
-            )
+        self._refresh_return_codes()
+        observations = tuple(
+            sorted(self._observations.values(), key=lambda item: item.started_at, reverse=True)[
+                : self._settings.retained_generations
+            ]
+        )
+        diagnostics = tuple(self._diagnostics[-self._settings.retained_diagnostics :])
+        active_generation_id = (
+            self._active.generation_id
+            if self._active is not None and self._active.observation.state is RuntimeGenerationState.active
+            else None
+        )
+        candidate_generation_id = (
+            self._candidate.generation_id
+            if self._candidate is not None and self._candidate.observation.state is not RuntimeGenerationState.exited
+            else None
+        )
+        return RuntimeStatus(
+            active_generation_id=active_generation_id,
+            candidate_generation_id=candidate_generation_id,
+            generations=observations,
+            diagnostics=diagnostics,
+        )
 
     async def close(self) -> None:
         """Idempotently stop candidate and active Runners with bounded escalation."""
@@ -179,7 +176,7 @@ class RuntimeGenerationService:
         active: _RunnerGeneration | None,
     ) -> None:
         if candidate is not None:
-            await self._abort_candidate(candidate)
+            await self._stop_candidate(candidate)
         if active is not None:
             await self._drain_and_stop(active)
 
@@ -252,17 +249,31 @@ class RuntimeGenerationService:
                 *self._command,
                 env=environment,
                 cwd=str(Path.cwd()),
+                start_new_session=os.name != "nt",
             )
             channel = await self._await_connection(process, accepted)
             ready = await asyncio.wait_for(
                 channel.receive(expected_type="READY"), timeout=self._settings.command_timeout_seconds
             )
             require_generation(ready, generation_id)
+            readiness = RuntimeReadiness(
+                protocol_version=require_string(ready, "protocol_version", max_length=32),
+                agent_ui_version=require_string(ready, "agent_ui_version", max_length=64),
+                python_version=require_string(ready, "python_version", max_length=64),
+                loaded_provenance=require_string_list(ready, "loaded_provenance"),
+            )
+            if readiness != current_runtime_readiness():
+                raise self._error(
+                    "runtime_readiness_mismatch",
+                    "The candidate runtime provenance does not match the Host selection.",
+                    generation_id=generation_id,
+                )
             observation = observation.model_copy(
                 update={
                     "process_id": process.pid,
                     "state": RuntimeGenerationState.ready,
                     "updated_at": _now(),
+                    "readiness": readiness,
                 }
             )
             runner = _RunnerGeneration(
@@ -342,35 +353,10 @@ class RuntimeGenerationService:
                 with contextlib.suppress(asyncio.CancelledError):
                     await process_exit
 
-    async def _prepare_and_activate(self, candidate: _RunnerGeneration) -> None:
+    async def _activate(self, candidate: _RunnerGeneration) -> None:
         try:
-            probe = await asyncio.wait_for(
-                candidate.channel.request("PROBE", expected_type="RUNTIME_READY"),
-                timeout=self._settings.command_timeout_seconds,
-            )
-            require_generation(probe, candidate.generation_id)
-            readiness = RuntimeReadiness(
-                protocol_version=require_string(probe, "protocol_version", max_length=32),
-                agent_ui_version=require_string(probe, "agent_ui_version", max_length=64),
-                python_version=require_string(probe, "python_version", max_length=64),
-                loaded_provenance=require_string_list(probe, "loaded_provenance"),
-            )
-            expected = current_runtime_readiness()
-            if readiness != expected:
-                raise self._error(
-                    "runtime_readiness_mismatch",
-                    "The candidate runtime provenance does not match the Host selection.",
-                    generation_id=candidate.generation_id,
-                )
-            self._transition(candidate, RuntimeGenerationState.preparing, readiness=readiness)
-            prepared = await asyncio.wait_for(
-                candidate.channel.request("PREPARE", expected_type="PREPARED"),
-                timeout=self._settings.command_timeout_seconds,
-            )
-            require_generation(prepared, candidate.generation_id)
-            self._transition(candidate, RuntimeGenerationState.prepared)
             active = await asyncio.wait_for(
-                candidate.channel.request("COMMIT", expected_type="ACTIVE"),
+                candidate.channel.request("ACTIVATE", expected_type="ACTIVE"),
                 timeout=self._settings.command_timeout_seconds,
             )
             require_generation(active, candidate.generation_id)
@@ -382,22 +368,20 @@ class RuntimeGenerationService:
                 generation_id=candidate.generation_id,
             ) from exc
 
-    async def _abort_candidate(self, candidate: _RunnerGeneration) -> None:
-        candidate.expected_exit = True
-        candidate.selected_exit_reason = RuntimeExitReason.aborted
+    async def _stop_candidate(self, candidate: _RunnerGeneration) -> None:
+        candidate.selected_exit_reason = RuntimeExitReason.startup_failed
         if candidate.process.returncode is None:
             with contextlib.suppress(Exception):
-                aborted = await asyncio.wait_for(
-                    candidate.channel.request("ABORT", expected_type="ABORTED"),
+                exiting = await asyncio.wait_for(
+                    candidate.channel.request("SHUTDOWN", expected_type="EXITING"),
                     timeout=self._settings.command_timeout_seconds,
                 )
-                require_generation(aborted, candidate.generation_id)
-        await self._ensure_stopped(candidate, RuntimeExitReason.aborted)
+                require_generation(exiting, candidate.generation_id)
+        await self._ensure_stopped(candidate, RuntimeExitReason.startup_failed)
         if self._candidate is candidate:
             self._candidate = None
 
     async def _drain_and_stop(self, runner: _RunnerGeneration) -> None:
-        runner.expected_exit = True
         if runner.process.returncode is not None:
             await self._finish_watcher(runner)
             if runner.observation.state is not RuntimeGenerationState.exited:

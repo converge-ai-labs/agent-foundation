@@ -10,16 +10,25 @@ retained presentation after the Redis horizon.
 
 Redis and replay snapshots are projections, never Turn or `TurnAttempt`
 authority. Foundation creates no relational table for Items, live or retained
-stream replay, pending calls or approvals, or provider receipts.
+stream replay, Native notifications, pending calls or approvals, or provider
+receipts.
+
+The Thread-scoped Redis control signal Stream is a separate
+business-payload-free reconciliation wakeup
+transport owned by [Agent Control: Active
+Execution](35-agent-control-active-execution.md#thread-control-signal-stream).
+It never shares the Turn presentation cursor, retained replay object, or
+lifecycle projection state.
 
 ## Boundaries and Table Inventory
 
-| Concern                              | Persistence shape                     | Authority                                                        |
-| ------------------------------------ | ------------------------------------- | ---------------------------------------------------------------- |
-| Current Turn and attempt state       | `turns`, `turn_attempts`              | Owning domain row                                                |
-| Ordered lifecycle history            | `lifecycle_events`                    | Fact log committed with the owning state mutation                |
-| Live Agent messages and observations | Redis Stream                          | Bounded transport and replay projection only                     |
-| Retained Items and stream replay     | Immutable `TurnReplaySnapshot` object | Presentation projection, never Turn-state or lifecycle authority |
+| Concern                              | Persistence shape                     | Authority                                                                  |
+| ------------------------------------ | ------------------------------------- | -------------------------------------------------------------------------- |
+| Current Turn and attempt state       | `turns`, `turn_attempts`              | Owning domain row                                                          |
+| Thread control wakeups               | Thread-scoped Redis Stream            | Expiring notification only; PostgreSQL inbox and Turn remain authoritative |
+| Ordered lifecycle history            | `lifecycle_events`                    | Fact log committed with the owning state mutation                          |
+| Live Agent messages and observations | Redis Stream                          | Bounded transport and replay projection only                               |
+| Retained Items and stream replay     | Immutable `TurnReplaySnapshot` object | Presentation projection, never Turn-state or lifecycle authority           |
 
 Only `lifecycle_events` is introduced here, under the service-wide
 [Relational Schema Lifecycle](04-relational-schema.md). Turn waiting state and
@@ -51,6 +60,7 @@ class LifecycleEvent:
 
     entity_type: LifecycleEntityType
     entity_id: str
+    resource_seq: int
     entity_version: int
     event_type: str
     schema_version: str
@@ -76,8 +86,20 @@ class LifecycleEvent:
     projection_error: SafeFailure | None
 ```
 
-`seq` is a database-assigned positive monotonic cursor. It orders committed
-facts in one database history but does not invent causal or Turn-parent order.
+`seq` is a database-assigned positive monotonic Workspace cursor. It orders
+committed facts in one database history but is not contiguous after filtering
+to one resource and does not invent causal or Turn-parent order. It therefore
+cannot detect a resource-local delivery gap.
+
+`resource_seq` is a positive, contiguous lifecycle sequence beginning at `1`
+within one `(tenant_id, entity_type, entity_id)` resource. The owning state
+transaction allocates it while holding the resource mutation lock, so committed
+events for that resource have no internal sequence gap before retention. It is
+the ordering and gap-detection value shared by lifecycle Webhooks and the
+resource-scoped lifecycle API. `entity_version` is the resource version after
+the event's owning mutation; it is monotonic but need not be contiguous and is
+not a lifecycle cursor.
+
 `id` is the stable public event identity. `mutation_id` identifies the owning
 state mutation; `(tenant_id, mutation_id, event_type, entity_type, entity_id)`
 is unique so transaction retry cannot append the same fact twice.
@@ -114,24 +136,33 @@ The `lifecycle_events` table contains the conceptual fields above and preserves
 these constraints and access paths:
 
 1. `seq` is the primary key and `id` is globally unique.
-2. Entity and schema versions are positive; projection attempts are
+2. Resource sequences, entity versions, and schema versions are positive;
+   projection attempts are
    non-negative.
-3. Indexes on `(tenant_id, seq)`,
+3. `(tenant_id, entity_type, entity_id, resource_seq)` is unique and supports
+   ordered resource-local recovery.
+4. Indexes on `(tenant_id, seq)`,
    `(tenant_id, entity_type, entity_id, seq)`, `(tenant_id, turn_id, seq)`, and
    `(tenant_id, turn_attempt_id, seq)` support tenant polling, stable forward
    pagination, and entity or Turn correlation.
-4. A partial index on
+5. A partial index on
    `(projection_state, projection_next_attempt_at, seq)` for `pending`,
    `projecting`, and `retry_wait` supports bounded projectors.
-5. Projection lease fields exist only for `projecting`;
+6. Projection lease fields exist only for `projecting`;
    `projection_next_attempt_at` exists for `pending` and `retry_wait`; and
    `projected_at` exists only for `projected`.
-6. A state mutation and its required lifecycle events commit in the same short
+7. A state mutation and its required lifecycle events commit in the same short
    relational transaction. A missing required event aborts that mutation.
 
 Retention deletes bounded event ranges older than the configured horizon. The
 API rejects a cursor below the lowest retained tenant sequence and returns that
-boundary explicitly. Lifecycle events have no cold archive.
+boundary explicitly. A resource-scoped lifecycle read likewise reports its
+lowest retained `resource_seq`; a caller can claim gap-free event recovery only
+while its requested predecessor remains within that boundary. A lifecycle event
+referenced by a retained Outbox record remains pinned until that delivery is no
+longer deliverable or redriveable under the bounded
+[Outbox retention contract](06-durable-operations-and-outbox.md#outbox-contract).
+Lifecycle events have no cold archive.
 
 ## Turn Redis Stream
 
@@ -168,6 +199,34 @@ Writers bound payloads and stream length, use deterministic event identities
 for retryable publication, and set a retention TTL that never expires an active
 Turn's stream. Consumers resume within the live horizon from the last Redis
 Stream entry ID.
+
+The public Native SSE framing, `Last-Event-ID` behavior, and replay-to-live
+cutover are owned by [Native Streaming and
+Notifications](29-native-streaming-and-notifications.md#turn-sse). Hosted AG-UI
+and A2A can project this source under their own protocol identities, but they do
+not reinterpret the Redis entry ID as an AG-UI or A2A cursor.
+
+## Workspace Events and Best-Effort Notifications
+
+Authorized Workspace lifecycle reads page forward over `lifecycle_events.seq`
+under the Native Workspace event collection. The lifecycle cursor is distinct
+from every Turn Stream entry ID. Retention below a Workspace cursor produces an
+explicit lifecycle replay gap and never falls through to a surviving row as if
+history were complete.
+
+Authorized Turn and TurnAttempt lifecycle reads page forward over
+`resource_seq` under the Native resource lifecycle collections. Their sequence
+domain is independent for each resource and supports Webhook gap recovery; it
+is never inferred from the Workspace cursor. The complete API behavior is owned
+by [Native Streaming and
+Notifications](29-native-streaming-and-notifications.md#resource-lifecycle-event-collections).
+
+Native WebSocket notifications are an ephemeral wake-up projection of current
+resource and lifecycle changes. They have no relational row, Redis replay
+stream, retained object, delivery acknowledgement, or cursor. Their loss cannot
+remove a lifecycle event, Turn Stream entry, Item, or resource mutation.
+Disconnected clients reconcile through the Workspace event collection and
+current resource reads.
 
 ## Items and Retained Replay Object
 
@@ -237,19 +296,28 @@ execution, provider side effects, or Turn completion.
 
 ## Failure Semantics
 
-| Failure                                                         | Durable effect                    | Recovery                                                                    |
-| --------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------- |
-| Owning state mutation cannot append its required lifecycle fact | Neither change commits            | Retry the complete relational transaction                                   |
-| Lifecycle live projection fails                                 | Fact remains pending or retryable | Projector reclaims it without repeating the source mutation                 |
-| Redis stream is lost while Turn is active                       | Live observation is unavailable   | Work continues from durable Turn and attempt state; no cursor becomes state |
-| Replay snapshot publication fails                               | Turn outcome remains committed    | Retry deterministic create-only publication while source stream is complete |
+| Failure                                                         | Durable effect                                       | Recovery                                                                      |
+| --------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Owning state mutation cannot append its required lifecycle fact | Neither change commits                               | Retry the complete relational transaction                                     |
+| Lifecycle live projection fails                                 | Fact remains pending or retryable                    | Projector reclaims it without repeating the source mutation                   |
+| Redis presentation stream is lost while Turn is active          | Live observation is unavailable                      | Work continues from durable Turn and attempt state; no cursor becomes state   |
+| Redis Thread control Stream is trimmed, expires, or is lost     | Wakeup delivery and its group cursor are unavailable | Worker reconciles durable Thread inbox and Turn state at mandatory boundaries |
+| Replay snapshot publication fails                               | Turn outcome remains committed                       | Retry deterministic create-only publication while source stream is complete   |
+| Native notification is dropped or duplicated                    | Wake-up observation is incomplete                    | Client reconciles durable Workspace events and current resources              |
 
 ## Compatibility and Trade-offs
 
-Lifecycle payload versions, Redis event versions, replay snapshot versions, and
-Item projection versions are independent. Unknown required versions fail
+Lifecycle payload versions, Redis presentation-event versions, Thread control
+signal versions, replay snapshot versions, and Item projection versions are
+independent. Unknown required versions fail
 explicitly in their own reader; they do not change Turn or attempt
 interpretation.
+
+The distinction between the Workspace `seq` cursor and resource-local
+`resource_seq`, including the latter's per-resource contiguity, is a wire
+compatibility contract. A deployment cannot renumber retained resource events,
+reuse a resource sequence, or reinterpret `entity_version` as the recovery
+cursor.
 
 Using Redis Streams and one retained object instead of Item and replay tables
 keeps high-volume presentation writes out of the relational database. The cost
@@ -259,16 +327,24 @@ authority.
 
 ## Invariants
 
-1. Every required lifecycle fact commits atomically with its owning relational
-   state mutation in the one lifecycle fact table.
-2. Lifecycle facts are immutable; projection bookkeeping cannot change entity
-   state.
-3. One Turn uses one stable Redis Stream across all `TurnAttempt` values; its
-   entry IDs are transport cursors, not state, lifecycle, Item, or idempotency
-   identities.
-4. Foundation creates no relational Item, stream replay, pending-call, or
-   provider-receipt table.
-5. Retained presentation is one immutable, complete `TurnReplaySnapshot`; a
-   partial source never produces a complete-looking snapshot.
-6. Events, Items, Redis, and replay objects never select Turn state or authorize
-   another `TurnAttempt`.
+01. Every required lifecycle fact commits atomically with its owning relational
+    state mutation in the one lifecycle fact table.
+02. Lifecycle facts are immutable; projection bookkeeping cannot change entity
+    state.
+03. One Turn uses one stable Redis Stream across all `TurnAttempt` values; its
+    entry IDs are transport cursors, not state, lifecycle, Item, or idempotency
+    identities.
+04. Foundation creates no relational Item, stream replay, pending-call, or
+    provider-receipt table.
+05. Retained presentation is one immutable, complete `TurnReplaySnapshot`; a
+    partial source never produces a complete-looking snapshot.
+06. Events, Items, Redis, and replay objects never select Turn state or authorize
+    another `TurnAttempt`.
+07. Workspace lifecycle cursors, Turn Stream cursors, Hosted delivery cursors,
+    and best-effort notification identities remain separate domains.
+08. Native notifications have no durable replay source and never replace
+    lifecycle or resource reads.
+09. `seq` orders the Workspace lifecycle feed; `resource_seq` is contiguous only
+    within one lifecycle resource and is the sole numeric resource-gap signal.
+10. Thread control signal Streams, consumer-group cursors, and TTL expiry remain
+    separate from Turn presentation replay and every durable domain cursor.

@@ -34,10 +34,6 @@ class StoreError(AgentUiError):
     """The local store could not complete an operation safely."""
 
 
-class StoreLeaseConflict(StoreError):
-    """Another process currently owns the selected Agent UI data root."""
-
-
 class StoreIntegrityError(StoreError):
     """Stored authority is missing, corrupt, incompatible, or internally inconsistent."""
 
@@ -85,5 +81,4 @@ __all__ = [
     "SkillManagementError",
     "StoreError",
     "StoreIntegrityError",
-    "StoreLeaseConflict",
 ]

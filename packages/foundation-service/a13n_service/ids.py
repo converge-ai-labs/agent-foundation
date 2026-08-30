@@ -1,25 +1,18 @@
-"""Shared Foundation object-ID generation and validation."""
-
-from __future__ import annotations
+"""Shared Foundation object-ID allocation."""
 
 import re
 import secrets
+import string
 
-_ID_PATTERN = re.compile(r"^(?P<prefix>[a-z][a-z0-9]{1,11})_(?P<suffix>[a-z0-9]{20,64})$")
-
-
-def new_object_id(prefix: str) -> str:
-    """Generate one unpredictable lowercase kind-prefixed object ID."""
-
-    if not re.fullmatch(r"[a-z][a-z0-9]{1,11}", prefix):
-        raise ValueError("object ID prefix must be 2-12 lowercase ASCII letters or digits")
-    return f"{prefix}_{secrets.token_hex(16)}"
+_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9]{1,7}$")
+_ID_ALPHABET = string.ascii_lowercase + string.digits
+_ID_RANDOM_LENGTH = 24
 
 
-def validate_object_id(value: str, *, prefix: str | None = None) -> str:
-    """Validate one Foundation object ID and optionally require its kind."""
+def new_object_id(kind: str) -> str:
+    """Allocate one unpredictable Foundation object ID for an assigned kind."""
 
-    match = _ID_PATTERN.fullmatch(value)
-    if match is None or (prefix is not None and match.group("prefix") != prefix):
-        raise ValueError("invalid Foundation object ID")
-    return value
+    if _KIND_PATTERN.fullmatch(kind) is None:
+        raise ValueError("object ID kind must be 2-8 lowercase ASCII letters or digits")
+    suffix = "".join(secrets.choice(_ID_ALPHABET) for _ in range(_ID_RANDOM_LENGTH))
+    return f"{kind}_{suffix}"

@@ -2,7 +2,7 @@
 
 from .database import Database, check_database, open_database, short_session, transaction
 from .layout import StorageLayout
-from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef, RecoveryDiagnostic
+from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
 from .runtime import LocalStore, StoreDiagnostic, open_local_store
 
 __all__ = [
@@ -12,7 +12,6 @@ __all__ = [
     "ObjectEnvelope",
     "ObjectKind",
     "ObjectRef",
-    "RecoveryDiagnostic",
     "StorageLayout",
     "StoreDiagnostic",
     "check_database",

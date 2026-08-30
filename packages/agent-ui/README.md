@@ -1,18 +1,26 @@
 # Agent UI
 
-`a13n-ui` is the local single-user Host for Agent Foundation Harness. Its current executable path is an interactive Codex-style CLI with one-shot runtime commands:
+`a13n-ui` is the local single-user Host for Agent Foundation Harness. The default command and explicit `tui` command run the same interactive terminal frontend, with one-shot commands alongside it:
 
 ```console
 a13n-ui
+a13n-ui tui
 a13n-ui runtime status
 ```
 
-The CLI opens one stable `AgentUiHost` with local Session authority and runtime Runner supervision. Restart starts a fresh Runner, validates and promotes it, then drains the previous Runner without restarting the Host or terminal frontend. The bundled WebUI remains a peer surface in the accepted architecture, but its product interaction design is not coupled to this CLI foundation.
+Every path opens one stable `AgentUiHost` with local Session authority and runtime Runner supervision. Restart starts a fresh Runner, validates and promotes it, then drains the previous Runner without restarting the Host or terminal frontend. The bundled WebUI remains a peer surface in the accepted architecture, but its product interaction design is not coupled to this CLI foundation.
 
 The repository Make alias starts the interactive CLI:
 
 ```console
-make agent-ui
+make a13n-ui
+```
+
+After publication, the distribution and console entrypoint share the same name, so the terminal frontend can run without installation:
+
+```console
+uvx a13n-ui
+uvx a13n-ui tui
 ```
 
 Asset preparation remains an independent build concern.

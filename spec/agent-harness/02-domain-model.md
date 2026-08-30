@@ -30,8 +30,8 @@ flowchart LR
 | `ModelAttempt`       | One inner `Agent.run_stream_events()` invocation with a unique upstream run ID                     | Pydantic AI and [Execution Context](06-execution-context-and-lifecycle.md) |
 | `HarnessState`       | Stable Thread ID, detached messages, Capability namespaces, and optional portable Environment data | [State and Resume](10-snapshot-and-resume.md)                              |
 | `HarnessRunResult`   | Immutable process-local terminal outcome                                                           | [Public API](14-public-api-and-packaging.md)                               |
-| `BoundEnvironment`   | Identity-bound Harness lifecycle facade entered for one logical run                                | [Environment Integration](08-environment-integration.md)                   |
-| Topology controller  | Paired process-local Host mutation handle retained only for the entered logical run                | [Environment Integration](08-environment-integration.md)                   |
+| `BoundEnvironment`   | Identity-bound provider-neutral facade entered for one logical run                                 | [Environment Integration](08-environment-integration.md)                   |
+| `EnvironmentRuntime` | Process-local lifecycle and Host mutation authority retained for the entered logical run           | [Environment Integration](08-environment-integration.md)                   |
 | Pydantic `RunUsage`  | Live accumulator shared across all `ModelAttempt` values of the logical run                        | Pydantic AI                                                                |
 
 ## Identity
@@ -106,16 +106,16 @@ A compact model reference:
 - maps through trusted code to the exact internal identity or opaque handle and is reauthorized on every use;
 - is a selector, never a bearer credential, idempotency identity, provider receipt, or substitute for a durable resource ID;
 - is allocated under the owning scope's mutation boundary with collision detection and a finite namespace limit;
-- is never reused or silently redirected after release, expiry, removal, incompatible restore, or topology replacement; and
+- is never reused or silently redirected after release, expiry, removal, incompatible restore, or mount replacement; and
 - fails explicitly when unknown, stale, exhausted, or no longer authorized rather than exposing a longer private identifier as fallback.
 
-The owner persists a compact reference only when its semantic continuation crosses runs. Environment revision, cursor, process, and retained-output projections are run-local and disappear with the run. Working State task references remain in their task scope, and inline child references remain in the parent Delegation State. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, `thread_id`, provider handles and cursors, receipts, operation IDs, and Host Execution or `ExecutionAttempt` IDs retain their owning opaque/full representations and are not rewritten by this projection rule. The Environment, Working State, and Delegation specifications own each concrete allocator and lifetime.
+The owner persists a compact reference only when its semantic continuation crosses runs. Environment mount, cursor, process, and retained-output projections are run-local and disappear with the run. Working State task references remain in their task scope, and inline child references remain in the parent Delegation State. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, `thread_id`, provider handles and cursors, receipts, operation IDs, and Host Execution or `ExecutionAttempt` IDs retain their owning opaque/full representations and are not rewritten by this projection rule. The Environment, Working State, and Delegation specifications own each concrete allocator and lifetime.
 
 ## Process-local and Durable State
 
 A Host revision reconstructs a process-local `AgentDefinition`; it is not itself a Harness value. A Host Execution selects an executable, fresh `RunBindings`, optional input, and optional prior `HarnessState`. The Harness result and state become durable only if the Host commits them.
 
-One logical Harness Run can use several model-attempt IDs during bounded model recovery. This does not change the Foundation `ExecutionAttempt`, Harness run ID, context, Environment aggregate/controller lifetime, plugins, state coordinator, or usage accumulator. Dynamic topology replacement changes immutable routing snapshots inside that one Environment lifetime rather than creating another run identity.
+One logical Harness Run can use several model-attempt IDs during bounded model recovery. This does not change the Foundation `ExecutionAttempt`, Harness run ID, context, `EnvironmentRuntime` lifetime, plugins, state coordinator, or usage accumulator. Runtime mount mutations publish immutable snapshots inside that one Environment lifetime rather than creating another run identity.
 
 ## Version Boundaries
 
@@ -136,7 +136,7 @@ These versions evolve independently.
 2. A logical Harness Run has one public `run_id` and may have several unique model-attempt IDs.
 3. One `HarnessState.thread_id` identifies one independently advancing model history; it survives continuation and is never derived from Host bindings or transient Harness or model-attempt IDs.
 4. `AgentContext` is fresh per logical run, exposes the selected State's Thread ID as a read-only field, and is shared only by that run's internal `ModelAttempt` values.
-5. `HarnessState` restores model-history identity and data, not authority, desired Environment topology, provider launch state, controllers, or live resources.
+5. `HarnessState` restores model-history identity and data, not authority, desired Environment mounts, provider launch state, runtime mutation authority, or live resources.
 6. Trusted plugins may intentionally transform complete result state; the Harness does not infer provenance.
 7. A process-local terminal result does not commit a Host Execution or external delivery.
 8. Events and usage snapshots are observations until their owning Host subsystem persists them.

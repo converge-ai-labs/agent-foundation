@@ -137,7 +137,7 @@ def _require_context_operation_prefix(event_type: str, operation_id: str) -> Non
 
 class TaskEventProjection(_FirstPartyPayload):
     id: str = Field(pattern=r"^task-[1-9][0-9]*$", max_length=64)
-    revision: int = Field(ge=1)
+    version: int = Field(ge=1)
     subject: str = Field(min_length=1, max_length=512)
     active_form: str | None = Field(default=None, min_length=1, max_length=512)
     status: Literal["pending", "in_progress", "completed"]
@@ -149,7 +149,7 @@ class TaskEventProjection(_FirstPartyPayload):
 class TaskChangedPayload(_FirstPartyPayload):
     type: Literal["task_changed"] = "task_changed"
     operation_id: str = Field(pattern=r"^task-change-[A-Za-z0-9_-]+$", max_length=128)
-    state_revision: int = Field(ge=0)
+    task_state_version: int = Field(ge=1)
     reason: Literal[
         "created",
         "updated",

@@ -13,17 +13,14 @@ from a13n_environment_provider import EnvironmentProvider, EnvironmentResource
 from a13n_harness.identity import AgentInstanceContext
 
 from .attachments import create_environment_provider_binding
-from .coordinator import create_environment_run_binding, create_noop_environment_run_binding
-from .models import (
-    EnvironmentAction,
-    EnvironmentBindingRequest,
-    EnvironmentError,
-    EnvironmentPermissionSet,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
+from .coordinator import create_empty_environment_runtime, create_environment_runtime
+from .models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
+from .providers import (
+    BoundEnvironmentProvider,
+    EnvironmentProviderBinding,
+    EnvironmentRuntime,
+    EnvironmentRuntimeMount,
 )
-from .providers import BoundEnvironmentProvider, EnvironmentProviderBinding, EnvironmentRunBinding
 
 type EnvironmentSource = EnvironmentProvider | EnvironmentResource
 
@@ -129,21 +126,21 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
         *,
         run_id: str,
         instance: AgentInstanceContext,
-        binding_id: str,
-        binding_revision: int,
+        mount_id: str,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         if self._used or self._discarded:
-            raise EnvironmentError("Environment source binding is single-use.", code="environment_binding_reused")
+            raise EnvironmentError(
+                "Environment source binding is single-use.", code="environment_provider_binding_reused"
+            )
         self._used = True
         if isinstance(self._source, EnvironmentProvider):
-            correlation = _resource_correlation(run_id, binding_id)
+            correlation = _resource_correlation(run_id, mount_id)
             async with self._source.ephemeral(resource_correlation=correlation) as resource:
                 async with self._bind_resource(
                     resource,
                     run_id=run_id,
                     instance=instance,
-                    binding_id=binding_id,
-                    binding_revision=binding_revision,
+                    mount_id=mount_id,
                 ) as provider:
                     yield provider
             return
@@ -157,8 +154,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
             self._source,
             run_id=run_id,
             instance=instance,
-            binding_id=binding_id,
-            binding_revision=binding_revision,
+            mount_id=mount_id,
         ) as provider:
             yield provider
 
@@ -169,8 +165,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
         *,
         run_id: str,
         instance: AgentInstanceContext,
-        binding_id: str,
-        binding_revision: int,
+        mount_id: str,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         async with resource.acquire_attachment() as attachment:
             provider_binding = create_environment_provider_binding(attachment)
@@ -179,8 +174,7 @@ class _EnvironmentSourceBinding(EnvironmentProviderBinding):
             async with provider_binding.bind(
                 run_id=run_id,
                 instance=instance,
-                binding_id=binding_id,
-                binding_revision=binding_revision,
+                mount_id=mount_id,
             ) as provider:
                 yield provider
 
@@ -193,8 +187,8 @@ def normalize_environment_inputs(
     environment: EnvironmentEntry | None,
     environments: Mapping[str, EnvironmentEntry] | None,
     default_environment: str | None,
-    advanced_binding: EnvironmentRunBinding | None,
-) -> EnvironmentRunBinding:
+    advanced_binding: EnvironmentRuntime | None,
+) -> EnvironmentRuntime:
     """Normalize public inputs into the existing single aggregate lifecycle."""
     if environment is not None and environments is not None:
         raise EnvironmentError(
@@ -212,7 +206,7 @@ def normalize_environment_inputs(
             code="environment_request_invalid",
         )
     if environment is None and environments is None:
-        return advanced_binding or create_noop_environment_run_binding()
+        return advanced_binding or create_empty_environment_runtime()
 
     if environment is not None:
         entries = (("workspace", _normalize_entry(environment)),)
@@ -235,34 +229,21 @@ def normalize_environment_inputs(
         )
 
     try:
-        requests = tuple(
-            EnvironmentBindingRequest(
-                binding_id=_binding_id(alias),
-                binding_revision=1,
-                alias=alias,
+        mounts = {
+            name: EnvironmentRuntimeMount(
+                binding=_EnvironmentSourceBinding(mount.source),
                 permission_ceiling=mount.permissions,
-                default_working_directory=mount.working_directory,
-                provider_binding=_EnvironmentSourceBinding(mount.source),
+                working_directory=mount.working_directory,
             )
-            for alias, mount in entries
-        )
-        default_binding_id = _binding_id(default_alias) if default_alias is not None else None
-        topology = EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=requests,
-            default_binding_id=default_binding_id,
-        )
+            for name, mount in entries
+        }
     except (TypeError, ValueError) as exc:
         raise EnvironmentError(
-            "Environment aliases or mount policies are invalid.",
+            "Environment names or mount policies are invalid.",
             code="environment_request_invalid",
         ) from exc
 
-    return create_environment_run_binding(
-        initial_topology=topology,
-        topology_limits=EnvironmentTopologyLimits(),
-        state_limits=EnvironmentStateLimits(),
-    )
+    return create_environment_runtime(mounts=mounts, default_mount=default_alias)
 
 
 def _normalize_entry(entry: EnvironmentEntry) -> EnvironmentMount:
@@ -276,10 +257,6 @@ def _normalize_entry(entry: EnvironmentEntry) -> EnvironmentMount:
     )
 
 
-def _binding_id(alias: str) -> str:
-    return f"environment-{alias}"
-
-
-def _resource_correlation(run_id: str, binding_id: str) -> str:
-    digest = sha256(f"{run_id}\0{binding_id}".encode()).hexdigest()[:24]
+def _resource_correlation(run_id: str, mount_id: str) -> str:
+    digest = sha256(f"{run_id}\0{mount_id}".encode()).hexdigest()[:24]
     return f"resource-{digest}"

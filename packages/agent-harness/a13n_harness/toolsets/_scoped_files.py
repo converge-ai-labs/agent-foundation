@@ -15,7 +15,7 @@ from a13n_harness.tools.metadata import CanonicalResource, ToolResourceResolver
 
 
 class ScopedFileAccess:
-    """Bind managed resource authorization to one revision-pinned file scope."""
+    """Bind managed resource authorization to one mount-incarnation-pinned file scope."""
 
     def __init__(
         self,
@@ -53,10 +53,7 @@ class ScopedFileAccess:
                 CanonicalResource(
                     namespace="environment",
                     kind="file",
-                    identifier=(
-                        f"{selected.binding_id}:{selected.binding_revision}:"
-                        f"{selection.observed_generation}:{selected.path}"
-                    ),
+                    identifier=f"{selected.mount_id}:{selection.observed_generation}:{selected.path}",
                 ),
             )
 
@@ -78,12 +75,11 @@ class ScopedFileAccess:
         source_selection = scopes.select_files(source)
         destination_selection = scopes.select_files(destination)
         if (
-            source_selection.resolved_path.binding_id != destination_selection.resolved_path.binding_id
-            or source_selection.resolved_path.binding_revision != destination_selection.resolved_path.binding_revision
+            source_selection.resolved_path.mount_id != destination_selection.resolved_path.mount_id
             or source_selection.observed_generation != destination_selection.observed_generation
         ):
             raise EnvironmentError(
-                "Cross-binding move must be expressed as copy and separately authorized remove.",
+                "Cross-mount move must be expressed as copy and separately authorized remove.",
                 code="environment_unsupported",
             )
         if guard is not None:
@@ -116,21 +112,20 @@ class ScopedFileAccess:
                 destination_selected=destination_selection.resolved_path,
                 replace=replace,
             )
-        same_binding = (
-            source_selection.resolved_path.binding_id == destination_selection.resolved_path.binding_id
-            and source_selection.resolved_path.binding_revision == destination_selection.resolved_path.binding_revision
+        same_mount = (
+            source_selection.resolved_path.mount_id == destination_selection.resolved_path.mount_id
             and source_selection.observed_generation == destination_selection.observed_generation
         )
-        if not same_binding:
+        if not same_mount:
             raise EnvironmentError(
-                "Cross-binding copy requires a provider-neutral virtual file router.",
+                "Cross-mount copy requires a provider-neutral virtual file router.",
                 code="environment_unsupported",
             )
         async with scopes.open_files(source_selection) as source_files:
             return await source_files.copy(source, destination, replace=replace)
 
     def resolved_path(self, path: str) -> EnvironmentPath | None:
-        """Return the current revision-pinned Environment path when scopes are available."""
+        """Return the current mount-incarnation-pinned Environment path when scopes are available."""
         if self._scopes is None:
             return None
         selection = self._selection.get()
@@ -149,8 +144,8 @@ class ScopedFileAccess:
             or current.observed_generation != selection.observed_generation
         ):
             raise EnvironmentError(
-                "Environment binding changed after managed resource authorization.",
-                code="environment_stale_binding",
+                "Environment mount changed after managed resource authorization.",
+                code="environment_stale_mount",
             )
 
     @asynccontextmanager

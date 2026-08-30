@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -161,23 +160,25 @@ async def test_object_read_checks_declared_size_before_decompression(tmp_path: P
     assert excessive.value.code == "object_too_large"
 
 
-async def test_staging_recovery_publishes_valid_entries_and_quarantines_invalid_entries(tmp_path: Path) -> None:
+async def test_expired_staging_files_are_removed_without_recovery(tmp_path: Path) -> None:
     store, layout = _object_store(tmp_path)
-    await store.publish(
+    envelope = await store.publish(
         object_kind=ObjectKind.skill_package,
         object_schema_version="1",
         payload={"files": []},
     )
-    published = next(layout.objects.rglob("*.json.zst"))
-    valid_stage = layout.staging / "valid.json.zst.tmp"
-    invalid_stage = layout.staging / "invalid.json.zst.tmp"
-    shutil.copyfile(published, valid_stage)
-    invalid_stage.write_bytes(b"not-zstandard")
+    first = layout.staging / "00000000000000000000000000000000.json.zst.tmp"
+    second = layout.staging / "11111111111111111111111111111111.json.zst.tmp"
+    first.write_bytes(b"complete-but-unselected")
+    second.write_bytes(b"malformed")
+    old = datetime(2020, 1, 1, tzinfo=UTC).timestamp()
+    os.utime(first, (old, old))
+    os.utime(second, (old, old))
 
-    diagnostics = await store.recover_staging()
+    removed = await store.remove_expired_unregistered(
+        {envelope.logical_digest},
+        cutoff=datetime.now(UTC),
+    )
 
-    assert {diagnostic.code for diagnostic in diagnostics} == {"staging_recovered", "staging_quarantined"}
+    assert removed == 2
     assert list(layout.staging.iterdir()) == []
-    quarantined = list(layout.quarantine.iterdir())
-    assert len(quarantined) == 1
-    assert quarantined[0].name.endswith("-invalid.json.zst.tmp")

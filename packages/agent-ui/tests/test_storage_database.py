@@ -8,7 +8,7 @@ from a13n_ui.settings import StorageSettings
 from a13n_ui.storage.database import open_database, short_session, transaction
 from a13n_ui.storage.metadata import agent_ui_metadata
 from a13n_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
-from a13n_ui.storage.models import StoreLeaseRecord
+from a13n_ui.storage.models import RecoveryDiagnosticRecord
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, select, text
@@ -46,7 +46,6 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "session_presentation",
             "session_thread",
             "skill_package_reference",
-            "store_lease",
             "thread_checkpoint",
             "thread_turn",
             "turn_run",
@@ -89,21 +88,26 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path)
         now = datetime.now(UTC)
         async with transaction(database.sessions) as session:
             session.add(
-                StoreLeaseRecord(
-                    singleton_id=1,
+                RecoveryDiagnosticRecord(
                     process_generation="process-test",
-                    acquired_at=now,
-                    heartbeat_at=now,
+                    code="committed",
+                    detail="committed transaction",
+                    recorded_at=now,
                 )
             )
 
         with pytest.raises(RuntimeError, match="rollback"):
             async with transaction(database.sessions) as session:
-                lease = await session.get(StoreLeaseRecord, 1)
-                assert lease is not None
-                lease.process_generation = "process-rollback"
+                session.add(
+                    RecoveryDiagnosticRecord(
+                        process_generation="process-test",
+                        code="rollback",
+                        detail="rolled back transaction",
+                        recorded_at=now,
+                    )
+                )
                 raise RuntimeError("rollback")
 
         async with short_session(database.sessions) as session:
-            generation = (await session.execute(select(StoreLeaseRecord.process_generation))).scalar_one()
-            assert generation == "process-test"
+            codes = set((await session.execute(select(RecoveryDiagnosticRecord.code))).scalars())
+            assert codes == {"committed"}

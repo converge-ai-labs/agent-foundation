@@ -8,14 +8,14 @@ Agent UI is not a reduced Foundation Service. It implements the shared [`Session
 
 ## Document Catalog
 
-| Document                                                                             | Owning contract                                                                                                                                |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md)                                                     | Local workstation architecture, stable Host boundary, surfaces, packaging, and completion boundaries                                           |
-| [01-configuration-and-resource-catalog.md](01-configuration-and-resource-catalog.md) | Reloadable configuration, local Skill discovery/import, resource catalogs, credentials, validation, and accepted generations                   |
-| [02-agent-composition-and-snapshots.md](02-agent-composition-and-snapshots.md)       | Model, Prompt, Plugin, Skill exposure, Capability, and async child-Agent composition; snapshots and Harness reconstruction                     |
-| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                 | Hybrid SQLite and compressed-file persistence, authority, publication ordering, integrity, projection, retention, and recovery                 |
-| [04-sessions-environments-and-state.md](04-sessions-environments-and-state.md)       | Session and Thread identity, Environment assignment, Turn/checkpoint lifecycle, fork, async-child records, model-visible browsing, and cleanup |
-| [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)         | Stable Host, runtime Runner rotation, root coordination, async-only subagents, Environment attachments, WebUI, CLI, replay, and transport      |
+| Document                                                                             | Owning contract                                                                                                                                                 |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                                     | Local workstation architecture, stable Host boundary, surfaces, packaging, and completion boundaries                                                            |
+| [01-configuration-and-resource-catalog.md](01-configuration-and-resource-catalog.md) | Reloadable configuration, local Skill discovery/import, resource catalogs, credentials, validation, and accepted generations                                    |
+| [02-agent-composition-and-snapshots.md](02-agent-composition-and-snapshots.md)       | Model, Prompt, Plugin, Skill exposure, Capability, and async child-Agent composition; snapshots and Harness reconstruction                                      |
+| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                 | Hybrid SQLite and compressed-file persistence, authority, publication ordering, integrity, projection, retention, and recovery                                  |
+| [04-sessions-environments-and-state.md](04-sessions-environments-and-state.md)       | Session and Thread identity, Environment assignment, Turn/checkpoint lifecycle, fork, async-child records, model-visible browsing, and cleanup                  |
+| [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)         | Stable Host, runtime Runner rotation, root coordination, async-only subagents, provider attachments and Environment runtimes, WebUI, CLI, replay, and transport |
 
 ## Reading Paths
 
@@ -43,12 +43,12 @@ Read `05`, then the [Agent Stream Protocol specification](../agent-stream-protoc
 - `HarnessState` is the canonical process-local Agent state value. A waiting root Turn additionally pins the exact complete `DeferredToolRequests` required by the Harness resume contract; async-child jobs have only active or terminal Harness boundaries and never own deferred requests. AG-UI history, identifiers, transcript projections, SQLite indexes, rendered state, and browser caches replace none of these values.
 - The Harness and Pydantic AI own native Agent construction, Agent loops, built child collections, run events, results, and continuation semantics. Harness inline delegation remains available to other Hosts but Agent UI never selects it.
 - The embedding Host supplies one process-local `RunModelResolverFactory` when opening Agent UI. Agent UI invokes it with the exact pinned Agent snapshot for every attempted Run and accepts only a fresh callable Harness resolver; the default execution boundary is explicitly unavailable and performs no ambient Model or credential discovery. Neither factory nor resolver is persisted.
-- The Environment Provider package owns provider specification validation, Manager behavior, provider resource-state codecs, and fresh runtime attachments. Agent UI owns desired Environment definitions, lifecycle decisions, fencing, persistence, Session assignment, and Local Sandbox envd release/target resolution. The low-level client owns no executable discovery or process lifecycle.
+- The Environment Provider package owns provider specification validation, Manager behavior, provider resource-state codecs, and fresh runtime attachments. Agent UI owns desired Environment mount definitions, lifecycle decisions, fencing, persistence, Session assignment, and Local Sandbox envd release/target resolution. For every root or child Run, the selected Runner acquires fresh provider attachments and supplies one single-use `EnvironmentRuntime` containing the complete pinned desired mount set. The low-level client owns no executable discovery or process lifecycle.
 - Agent Stream Protocol owns reusable Harness-to-AG-UI conversion and process-local accumulation. Agent UI owns event-file persistence, query projection, replay, fan-out, transport, and presentation policy.
 - OpenTelemetry is exported through the repository observability boundary and is not stored in Agent UI SQLite databases, Session files, or AG-UI segments.
 - WebUI and CLI are product peers over one `AgentUiHost`. Neither owns a separate configuration model, Session model, orchestration loop, runtime-generation controller, or rendering truth.
-- The stable Host process owns the data-root lease, durable state, configuration, frontend listeners, runtime routing, and commit authority. Replaceable runtime Runners own only process-local execution behavior; restarting a Runner never transfers active work or durable authority.
-- Persisted references and local identifiers grant no Agent, Environment, model, plugin, credential, or child authority. Every invocation receives fresh current bindings.
+- Each frontend invocation owns one stable Host process. Multiple local Hosts can share the data root through SQLite transactions and atomic file publication; no process-lifetime owner lease exists. Replaceable runtime Runners own only process-local execution behavior and no durable commit authority.
+- Persisted references and local identifiers grant no Agent, Environment, model, plugin, credential, or child authority. Every invocation receives fresh current `RunBindings`, provider attachments, and a new `EnvironmentRuntime`; none is reconstructed from persisted state.
 
 ## Specification Conventions
 

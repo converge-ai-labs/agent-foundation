@@ -184,8 +184,7 @@ class LocalProcessManager:
         shell_profiles: tuple[DirectLocalShellProfile, ...],
         provider_type: str,
         environment_id: str,
-        binding_id: str,
-        binding_revision: int,
+        mount_id: str,
         generation: str,
     ) -> None:
         self._files = files
@@ -201,8 +200,7 @@ class LocalProcessManager:
         self._allowed_executables = {_resolve_configured_executable(path) for path in policy.allowed_executables}
         self._provider_type = provider_type
         self._environment_id = environment_id
-        self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._mount_id = mount_id
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._slots = asyncio.Semaphore(policy.max_concurrent_processes)
@@ -296,8 +294,7 @@ class LocalProcessManager:
                 raise _environment_error_from_os(exc, action="start the configured executable") from exc
             token = token_hex(16)
             handle = BoundProcessHandle(
-                binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                mount_id=self._mount_id,
                 identity=ProcessIdentity(
                     provider_type=self._provider_type,
                     environment_id=self._environment_id,
@@ -501,7 +498,7 @@ class LocalProcessManager:
             or identity.environment_id != self._environment_id
             or identity.generation != self._generation
         ):
-            raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_binding")
+            raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_mount")
         record = self._records.get(identity.process_id)
         if record is None:
             raise EnvironmentError("Process is unavailable.", code="environment_not_found")
@@ -688,12 +685,8 @@ class LocalProcessManager:
             return self._receipt()
 
     def _record(self, handle: BoundProcessHandle) -> _ProcessRecord:
-        if (
-            handle.binding_id != self._binding_id
-            or handle.binding_revision != self._binding_revision
-            or handle.observed_generation != self._generation
-        ):
-            raise EnvironmentError("Process handle is foreign or stale.", code="environment_stale_binding")
+        if handle.mount_id != self._mount_id or handle.observed_generation != self._generation:
+            raise EnvironmentError("Process handle is foreign or stale.", code="environment_stale_mount")
         token = _unwrap_opaque(handle.handle, OpaqueProcessHandle)
         record = self._records.get(token)
         if record is None:
@@ -737,8 +730,7 @@ class LocalProcessManager:
 
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            mount_id=self._mount_id,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

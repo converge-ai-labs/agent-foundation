@@ -102,15 +102,6 @@ class ObjectEnvelope(BaseModel):
         )
 
 
-class RecoveryDiagnostic(BaseModel):
-    """Bounded safe result of staging reconciliation."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
-
-    code: str = Field(min_length=1, max_length=64)
-    entry_name: str = Field(min_length=1, max_length=255)
-
-
 class ImmutableObjectStore:
     """Publish and verify content-addressed Agent UI payload files."""
 
@@ -145,11 +136,6 @@ class ImmutableObjectStore:
         """Read and verify one exact object reference."""
 
         return await to_thread.run_sync(self._read_ref, reference)
-
-    async def recover_staging(self) -> tuple[RecoveryDiagnostic, ...]:
-        """Finish valid staged publications and quarantine malformed candidates."""
-
-        return await to_thread.run_sync(self._recover_staging)
 
     async def remove(self, reference: ObjectRef) -> None:
         """Remove one unreferenced object selected by the metadata owner."""
@@ -202,6 +188,14 @@ class ImmutableObjectStore:
                 continue
             self._remove_ref(reference)
             removed += 1
+        for path in self._layout.staging.glob("*.json.zst.tmp"):
+            try:
+                metadata = path.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            if stat.S_ISREG(metadata.st_mode) and datetime.fromtimestamp(metadata.st_mtime, tz=UTC) < cutoff:
+                path.unlink(missing_ok=True)
+                removed += 1
         return removed
 
     def _publish(
@@ -363,34 +357,6 @@ class ImmutableObjectStore:
             )
         return envelope
 
-    def _recover_staging(self) -> tuple[RecoveryDiagnostic, ...]:
-        entries = sorted(self._layout.staging.iterdir(), key=lambda path: path.name)
-        if len(entries) > self._settings.max_staging_entries:
-            raise StoreIntegrityError(
-                "Agent UI staging contains too many entries to recover safely.",
-                code="staging_too_large",
-                details={"entry_count": len(entries)},
-            )
-        diagnostics: list[RecoveryDiagnostic] = []
-        for entry in entries:
-            try:
-                metadata = entry.stat(follow_symlinks=False)
-                if not stat.S_ISREG(metadata.st_mode):
-                    raise ObjectIntegrityError("Staging entry is not a regular file.", code="staging_entry_invalid")
-                envelope = self._read_path(entry)
-                self._publish_stage(entry, envelope.ref)
-            except (OSError, ObjectIntegrityError):
-                destination = self._layout.quarantine / f"{uuid4().hex}-{entry.name[:120]}"
-                os.replace(entry, destination)
-                diagnostics.append(RecoveryDiagnostic(code="staging_quarantined", entry_name=entry.name[:255]))
-            else:
-                entry.unlink(missing_ok=True)
-                diagnostics.append(RecoveryDiagnostic(code="staging_recovered", entry_name=entry.name[:255]))
-        if entries:
-            self._sync_directory(self._layout.staging)
-            self._sync_directory(self._layout.quarantine)
-        return tuple(diagnostics)
-
     def _path_for(self, reference: ObjectRef) -> Path:
         return (
             self._layout.objects
@@ -439,5 +405,4 @@ __all__ = [
     "ObjectEnvelope",
     "ObjectKind",
     "ObjectRef",
-    "RecoveryDiagnostic",
 ]

@@ -64,17 +64,19 @@ class _Processes:
     def __init__(
         self,
         *,
-        binding_revision: int = 1,
+        mount_id: str = "mount-1",
+        provider_generation: str = "generation-1",
         rebind_error: str | None = None,
         terminal_on_start: bool = False,
     ) -> None:
         self.identity = ProcessIdentity(
             provider_type="test",
             environment_id="environment-1",
-            generation="generation-1",
+            generation=provider_generation,
             process_id="provider-process-1",
         )
-        self.binding_revision = binding_revision
+        self.mount_id = mount_id
+        self.provider_generation = provider_generation
         self.handle = self._new_handle()
         self.rebind_error = rebind_error
         self.terminal_on_start = terminal_on_start
@@ -89,23 +91,20 @@ class _Processes:
 
     def _new_handle(self) -> BoundProcessHandle:
         return BoundProcessHandle(
-            binding_id="binding-1",
-            binding_revision=self.binding_revision,
+            mount_id=self.mount_id,
             identity=self.identity,
-            handle=OpaqueProcessHandle._from_payload(f"bound-{self.binding_revision}"),
-            observed_generation=self.identity.generation,
+            handle=OpaqueProcessHandle._from_payload(f"bound-{self.mount_id}"),
+            observed_generation=self.provider_generation,
         )
 
-    def refresh_binding(self) -> None:
-        self.binding_revision += 1
+    def replace_current_mount(self, mount_id: str = "mount-2") -> None:
+        self.mount_id = mount_id
         self.handle = self._new_handle()
 
-    @staticmethod
-    def _receipt(binding_revision: int = 1) -> EnvironmentOperationReceipt:
+    def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            binding_id="binding-1",
-            binding_revision=binding_revision,
-            observed_generation="generation-1",
+            mount_id=self.mount_id,
+            observed_generation=self.provider_generation,
             operation_id="operation-1",
             stage="completed",
             outcome="succeeded",
@@ -146,7 +145,7 @@ class _Processes:
 
     async def start(self, request: CommandRequest, *, alias: str | None = None) -> ProcessStartResult:
         del request, alias
-        return ProcessStartResult(process=self.info(), receipt=self._receipt(self.binding_revision))
+        return ProcessStartResult(process=self.info(), receipt=self._receipt())
 
     async def rebind(
         self,
@@ -163,7 +162,7 @@ class _Processes:
 
     async def inspect(self, handle: BoundProcessHandle) -> ProcessInfo:
         if handle != self.handle:
-            raise EnvironmentError("stale handle", code="environment_stale_binding")
+            raise EnvironmentError("stale handle", code="environment_stale_mount")
         return self.info()
 
     async def wait(
@@ -175,7 +174,7 @@ class _Processes:
     ) -> ProcessInfo:
         del condition, timeout_seconds
         if handle != self.handle:
-            raise EnvironmentError("stale handle", code="environment_stale_binding")
+            raise EnvironmentError("stale handle", code="environment_stale_mount")
         self.wait_started.set()
         await self.completion.wait()
         self.completed = True
@@ -186,12 +185,12 @@ class _Processes:
         self.kill_calls += 1
         self.completed = True
         self.completion.set()
-        return ProcessControlResult(process=self.info(), receipt=self._receipt(self.binding_revision))
+        return ProcessControlResult(process=self.info(), receipt=self._receipt())
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
         assert handle == self.handle
         self.release_calls += 1
-        return self._receipt(self.binding_revision)
+        return self._receipt()
 
 
 class _UnavailableProcesses(_Processes):
@@ -264,11 +263,11 @@ async def test_process_mapping_and_output_offsets_survive_agent_state_snapshot()
     await manager.close()
 
 
-async def test_restored_process_rebinds_to_a_fresh_binding_without_alias_retargeting() -> None:
+async def test_restored_process_rebinds_to_current_replacement_mount_without_name_retargeting() -> None:
     state = AgentContextState()
     original, first_manager = await _seed_running_process(state)
     await first_manager.close()
-    restored = _Processes(binding_revision=2)
+    restored = _Processes(mount_id="mount-2")
     second_manager = _manager(restored)
     run = _RunContext(state)
 
@@ -279,7 +278,7 @@ async def test_restored_process_rebinds_to_a_fresh_binding_without_alias_retarge
     assert restored.rebind_identities
     assert all(identity == original.identity for identity in restored.rebind_identities)
     stored = await _stored_state(state)
-    assert stored.processes["process-1"].binding_id == "binding-1"
+    assert stored.processes["process-1"].mount_id == "mount-2"
     assert stored.processes["process-1"].backend_lost is False
     await second_manager.close()
 
@@ -329,11 +328,11 @@ async def test_missing_process_or_changed_generation_is_lazy_corrected_to_backen
     await second_manager.close()
 
 
-async def test_rebind_topology_race_preserves_process_state_for_retry() -> None:
+async def test_rebind_during_current_mount_replacement_preserves_process_state_for_retry() -> None:
     state = AgentContextState()
     _, first_manager = await _seed_running_process(state)
     await first_manager.close()
-    second_manager = _manager(_Processes(rebind_error="environment_stale_binding"))
+    second_manager = _manager(_Processes(rebind_error="environment_stale_mount"))
     run = _RunContext(state)
 
     async with second_manager.active_run(cast(Any, run)):
@@ -342,7 +341,7 @@ async def test_rebind_topology_race_preserves_process_state_for_retry() -> None:
     assert result["processes"][0] == {
         "process_id": "process-1",
         "ok": False,
-        "error": {"code": "environment_stale_binding", "retry_hint": "none"},
+        "error": {"code": "environment_stale_mount", "retry_hint": "none"},
     }
     stored = await _stored_state(state)
     assert stored.processes["process-1"].backend_lost is False
@@ -432,7 +431,7 @@ async def test_turn_exit_cancels_observation_until_the_next_turn() -> None:
     await manager.close()
 
 
-async def test_stale_bound_handle_rebinds_before_marking_process_lost() -> None:
+async def test_stale_mount_handle_rebinds_before_marking_process_lost() -> None:
     state = AgentContextState()
     processes = _Processes()
     manager = _manager(processes)
@@ -440,7 +439,7 @@ async def test_stale_bound_handle_rebinds_before_marking_process_lost() -> None:
 
     async with manager.active_run(cast(Any, run)):
         await manager.start(_request(), alias=None)
-        processes.refresh_binding()
+        processes.replace_current_mount()
         result = await manager.status(cursor=0, limit=10)
 
     assert result["processes"][0]["ok"] is True
@@ -477,9 +476,8 @@ async def test_terminal_release_detaches_process_before_output_and_retries_parti
         def info(self) -> ProcessInfo:
             info = super().info()
             reference = BoundOutputReference(
-                binding_id="binding-1",
-                binding_revision=self.binding_revision,
-                observed_generation=self.identity.generation,
+                mount_id=self.mount_id,
+                observed_generation=self.provider_generation,
                 reference=OpaqueOutputReference._from_payload("stdout-1"),
             )
             stdout = info.output.stdout.model_copy(
@@ -498,7 +496,7 @@ async def test_terminal_release_detaches_process_before_output_and_retries_parti
             self.release_calls += 1
             if self.release_calls > 1:
                 raise EnvironmentError("already released", code="environment_not_found")
-            return self._receipt(self.binding_revision)
+            return self._receipt()
 
     class RetryOutputs(_Outputs):
         def __init__(self) -> None:

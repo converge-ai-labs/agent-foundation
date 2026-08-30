@@ -4,11 +4,13 @@ This directory contains runnable, tested examples of public Agent Foundation ext
 
 ## Start Here
 
-| Goal                                        | Example                                                                        | What it demonstrates                                                                                              |
-| ------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                               | Offline streaming turns, successful-turn state persistence, restart recovery, and temporary Environment cleanup   |
-| Wrap the complete Harness run               | [Integration package examples](plugins/README.md#harness-plugin)               | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation           |
-| Publish and compose an Environment provider | [Integration package examples](plugins/README.md#environment-provider-factory) | Entry-point and explicit factory modes, Host JSON configuration, provider bindings, and multi-environment routing |
+| Goal                                        | Example                                                                          | What it demonstrates                                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                                 | Offline streaming turns, successful-turn state persistence, restart recovery, and temporary Environment cleanup      |
+| Extend Agent-loop behavior                  | [Custom Capability example](plugins/README.md#custom-capability)                 | Host-authorized `AgentSpec` reconstruction and direct code composition of one custom Capability                      |
+| Wrap the complete Harness run               | [Harness plugin example](plugins/README.md#harness-plugin)                       | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation              |
+| Span the complete Environment lifecycle     | [Environment run-extension example](plugins/README.md#environment-run-extension) | Explicit factory selection, public Harness execution, aggregate setup, and reverse-order cleanup                     |
+| Publish and compose an Environment provider | [Environment provider example](plugins/README.md#environment-provider-factory)   | Entry-point and explicit factory modes, Host JSON configuration, fresh provider attachments, and multi-mount routing |
 
 Run every example and its focused checks from the repository root:
 
@@ -27,6 +29,8 @@ uv run pytest
 
 cd ../plugins
 uv sync --locked
+uv run plugin-example-capability-agent-spec
+uv run plugin-example-capability-code
 uv run plugin-example-environment-entrypoint
 uv run plugin-example-environment-code
 uv run plugin-example-environment-extension-entrypoint

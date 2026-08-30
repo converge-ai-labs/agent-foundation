@@ -2,10 +2,10 @@
 
 `a13n-harness` keeps Skill discovery reusable outside Agent execution. A Host chooses one of two explicit modes:
 
-| Host situation                                                 | API                                              | Result                         | Consistency owner                                                                          |
-| -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------ |
-| A CLI or embedded process directly controls one `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | The caller keeps the operator's namespace stable                                           |
-| A Host uses an entered `Environment`                           | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | The manager pins binding revisions; the Host checks catalog currency before later path use |
+| Host situation                                                 | API                                              | Result                         | Consistency owner                                                                           |
+| -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------- |
+| A CLI or embedded process directly controls one `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | The caller keeps the operator's namespace stable                                            |
+| A Host uses an entered `Environment`                           | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | The manager pins mount incarnations; the Host checks catalog currency before later path use |
 
 Both modes use the same `SkillSource`, `SkillMaterializer`, frontmatter parser, limits, conflict policy, and path-containment checks. Neither mode scans a home directory, installed package, or sibling workspace implicitly.
 
@@ -23,7 +23,7 @@ flowchart LR
     Manager --> Catalog[SkillCatalogItem catalog]
 
     Environment[Entered Environment] --> BoundScan[scan_environment]
-    BoundScan --> Scopes[Revision-pinned file scopes]
+    BoundScan --> Scopes[Mount-incarnation-pinned file scopes]
     Scopes --> Manager
     Manager --> BoundCatalog[BoundSkillCatalog]
 
@@ -38,16 +38,16 @@ The design separates four responsibilities:
 
 - `FileSkillSource` discovers bounded metadata below explicitly configured FileOperator roots.
 - `SkillMaterializer` is trusted Host code that publishes managed packages beneath one declared root.
-- `SkillManager` performs materialization, discovery, validation, conflict resolution, and optional Environment revision binding without depending on an Agent run.
+- `SkillManager` performs materialization, discovery, validation, conflict resolution, and optional Environment mount binding without depending on an Agent run.
 - `SkillsCapability` adapts one bound catalog into run selection, model instructions, resolved `SkillPath` values, access observations, and model/tool-boundary stale checks.
 
-The first-version API has no compatibility or discovery fallback:
+The two APIs have exact, non-overlapping behavior:
 
 - `scan(files=...)` uses exactly the supplied FileOperator and never constructs or probes an Environment;
-- `scan_environment(environment=...)` uses only revision-pinned scopes and never retries through the unpinned `environment.files` facade or direct scan mode;
+- `scan_environment(environment=...)` uses only mount-incarnation-pinned scopes and never retries through the unpinned `environment.files` facade or direct scan mode;
 - a source reads only its declared roots and never tries the process working directory, home directory, package locations, or alternate workspace paths;
 - a relevant route change raises `skill_catalog_stale`; it never triggers an automatic rescan or retarget;
-- `FileSkillSource`, `SkillSource.roots`, and `SkillManager.roots` are the only source/root names; there are no legacy aliases.
+- `FileSkillSource`, `SkillSource.roots`, and `SkillManager.roots` are the complete source/root surface.
 
 `required=False` is explicit source policy rather than fallback discovery. It can omit that exact missing, unroutable, or unsupported root, but it never substitutes another path.
 
@@ -108,13 +108,13 @@ async def scan_cli_skills(
     return await manager.scan(files=files)
 ```
 
-This mode intentionally has no Environment topology or binding-revision semantics. Keep the FileOperator's backing namespace stable until every path derived from the returned catalog has been consumed. If another process can replace the backing directory concurrently, provide an operator with the snapshot or locking behavior your Host requires, or use an entered Environment instead.
+This mode operates directly in the supplied FileOperator namespace and has no Environment mount-routing semantics. Keep that backing namespace stable until every path derived from the returned catalog has been consumed. If another process can replace the backing directory concurrently, provide an operator with the snapshot or locking behavior your Host requires, or use an entered Environment instead.
 
 `SkillManager.default()` is designed for Environment-backed runs and contains the canonical `/workspace/.agents/skills` source. A direct FileOperator Host normally constructs an explicit manager with roots in its own namespace.
 
 ## Scan an Entered Environment
 
-Use Environment-aware scanning when paths can route through `/workspace` or `/environment/{alias}` and topology can change while the Host is active:
+Use Environment-aware scanning when paths can route through `/workspace` or `/environment/{name}` and mounts can change while the Host is active:
 
 ```python
 from a13n_harness import BoundSkillCatalog, Environment, SkillManager
@@ -134,7 +134,7 @@ async def scan_environment_skills(
 `scan_environment()`:
 
 1. captures every configured root with `Environment.select_files()` before awaiting provider I/O;
-2. opens revision-pinned file scopes for those roots;
+2. opens mount-incarnation-pinned file scopes for those roots;
 3. runs materialization, listing, frontmatter reads, and final `SKILL.md` validation through the pinned scopes;
 4. resolves every final item to exact directory and document `EnvironmentPath` values;
 5. verifies that every configured scan route, including empty and conflict-overridden roots, is still current before returning.
@@ -144,9 +144,10 @@ A `BoundSkillCatalogItem` contains:
 - `name`, `description`, `path`, and `source_id`;
 - `directory`, the exact resolved Skill directory;
 - `document`, the exact resolved `SKILL.md` path;
+- `mount_id`, the opaque Harness mount incarnation held during scanning;
 - `observed_generation`, the provider generation held during scanning.
 
-`BoundSkillCatalog.require_current(environment)` reselects only paths represented by catalog items. Adding or refreshing an unrelated Environment binding does not invalidate the catalog. Changing a relevant binding revision, provider generation, default route, alias route, or resolved provider path raises `DefinitionError` with code `skill_catalog_stale`.
+`BoundSkillCatalog.require_current(environment)` reselects only paths represented by catalog items. Adding or replacing an unrelated Environment mount does not invalidate the catalog. Changing a relevant mount selection, opaque mount ID, provider generation, default route, or resolved provider path raises `DefinitionError` with code `skill_catalog_stale`.
 
 Do not persist `EnvironmentPath` values as durable authority. They describe one entered Environment and are useful only while that Environment remains active. A Host that imports Skill packages should copy and validate package content into its own immutable revision format.
 

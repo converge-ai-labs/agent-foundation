@@ -52,7 +52,7 @@ Follow these service invariants; the complete contract and rationale live in [DE
 make install
 make setup
 make dev
-make agent-ui
+make a13n-ui
 make db-migrate msg="description"
 make format
 make lint

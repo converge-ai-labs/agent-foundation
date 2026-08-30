@@ -212,12 +212,12 @@ async def load_catalog_candidate(
             if document.directory_id not in local_directory_ids:
                 raise _error("skill_source_unauthorized", "A Skill source selects an unauthorized directory alias.")
         elif isinstance(document, EnvironmentDefinitionDocument):
-            for binding in document.bindings:
-                lock = provider_locks.get(binding.provider_key)
+            for mount in document.mounts:
+                lock = provider_locks.get(mount.provider_key)
                 if lock is None:
                     raise _error("provider_factory_unavailable", "An Environment selects an unavailable provider.")
                 locks.append(lock)
-                capabilities = _validate_provider_binding(binding, settings)
+                capabilities = _validate_provider_mount(mount, settings)
                 _validate_environment_lifecycle(document.lifecycle.idle, capabilities)
 
         package_payload: JsonValue | None = None
@@ -603,12 +603,12 @@ def _availability(
     return availability, model_locks, plugin_locks, provider_locks
 
 
-def _validate_provider_binding(
-    binding: Any,
+def _validate_provider_mount(
+    mount: Any,
     settings: ConfigurationSettings,
 ) -> EnvironmentLifecycleCapabilities:
-    parameters = binding.provider_parameters
-    if binding.provider_key == "a13n.direct-local":
+    parameters = mount.provider_parameters
+    if mount.provider_key == "a13n.direct-local":
         root = parameters.get("root") if isinstance(parameters, dict) else None
         directory_id = root.get("directory_id") if isinstance(root, dict) else None
         directories = {item.directory_id: item.path for item in settings.local_directories}
@@ -632,8 +632,8 @@ def _validate_provider_binding(
         )
         resolved = catalog.resolve_spec(
             EnvironmentProviderSpec(
-                provider_key=binding.provider_key,
-                schema_version=binding.provider_schema_version,
+                provider_key=mount.provider_key,
+                schema_version=mount.provider_schema_version,
                 parameters=parameters,
             )
         )

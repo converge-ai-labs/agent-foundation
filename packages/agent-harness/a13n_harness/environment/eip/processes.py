@@ -115,8 +115,7 @@ class _ProcessConversions:
         outputs: EIPOutputRegistry,
         provider_type: str,
         environment_id: str,
-        binding_id: str,
-        binding_revision: int,
+        mount_id: str,
         generation: str,
     ) -> None:
         self._session = session
@@ -124,8 +123,7 @@ class _ProcessConversions:
         self._outputs = outputs
         self._provider_type = provider_type
         self._environment_id = environment_id
-        self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._mount_id = mount_id
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._raw_tokens: dict[eip.ProcessHandle, str] = {}
@@ -142,8 +140,7 @@ class _ProcessConversions:
         stderr = self._outputs.capture(process.output.stderr, policy=policy)
         info = ProcessInfo(
             handle=BoundProcessHandle(
-                binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                mount_id=self._mount_id,
                 identity=ProcessIdentity(
                     provider_type=self._provider_type,
                     environment_id=self._environment_id,
@@ -168,7 +165,7 @@ class _ProcessConversions:
 
     def _validate_process_identity(self, process: eip.ProcessInfo) -> None:
         if process.environment_id != self._environment_id or str(process.generation) != self._generation:
-            raise EnvironmentError("EIP process identity is stale", code="environment_stale_binding")
+            raise EnvironmentError("EIP process identity is stale", code="environment_stale_mount")
 
     def _ensure_record(self, process: eip.ProcessInfo, policy: EnvironmentOutputPolicy) -> str:
         token = self._raw_tokens.get(process.handle)
@@ -183,12 +180,8 @@ class _ProcessConversions:
         return token
 
     def resolve(self, handle: BoundProcessHandle) -> tuple[str, _ProcessRecord]:
-        if (
-            handle.binding_id != self._binding_id
-            or handle.binding_revision != self._binding_revision
-            or handle.observed_generation != self._generation
-        ):
-            raise EnvironmentError("Process handle is foreign or stale", code="environment_stale_binding")
+        if handle.mount_id != self._mount_id or handle.observed_generation != self._generation:
+            raise EnvironmentError("Process handle is foreign or stale", code="environment_stale_mount")
         token = _unwrap_opaque(handle.handle, OpaqueProcessHandle)
         record = self._records.get(token)
         if record is None:
@@ -199,8 +192,7 @@ class _ProcessConversions:
         return convert_receipt(
             receipt,
             environment_id=self._environment_id,
-            binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            mount_id=self._mount_id,
             generation=self._generation,
         )
 
@@ -400,7 +392,7 @@ class EIPProcessOperations:
             or identity.environment_id != self._conversions._environment_id
             or identity.generation != self._conversions._generation
         ):
-            raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_binding")
+            raise EnvironmentError("Process identity belongs to another Environment.", code="environment_stale_mount")
         raw_handle = eip.ProcessHandle(root=identity.process_id)
         result = await invoke(
             self._conversions._session.client.process_inspect(

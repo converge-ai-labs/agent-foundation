@@ -40,7 +40,7 @@ class DatabaseMigrator:
 
     def upgrade(self) -> None:
         self.verify_history()
-        self._run(lambda config: command.upgrade(config, "head"))
+        self._run(lambda config: command.upgrade(config, "head"), write=True)
 
     def verify_current(self) -> None:
         self.verify_history()
@@ -65,18 +65,22 @@ class DatabaseMigrator:
             raise ValueError("migration message must not be empty")
         self.verify_history(allow_empty=True)
         if self._heads():
-            self._run(lambda config: command.upgrade(config, "head"))
+            self._run(lambda config: command.upgrade(config, "head"), write=True)
         self._run(lambda config: command.revision(config, message=message, autogenerate=True))
 
-    def _run(self, operation: Callable[[Config], object]) -> None:
+    def _run(self, operation: Callable[[Config], object], *, write: bool = False) -> None:
         self._path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         engine = self._engine()
         try:
             with engine.connect() as connection:
                 self._configure(connection)
+                if write:
+                    connection.exec_driver_sql("BEGIN IMMEDIATE")
                 config = self._config()
                 config.attributes["connection"] = connection
                 operation(config)
+                if connection.in_transaction():
+                    connection.commit()
         finally:
             engine.dispose()
 

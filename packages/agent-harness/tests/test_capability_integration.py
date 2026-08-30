@@ -49,11 +49,8 @@ from a13n_harness import (
     WorkingStateCapability,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_environment_run_binding,
+    EnvironmentRuntimeMount,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from pydantic_ai.agent.spec import AgentSpec
@@ -134,23 +131,15 @@ def _environment(root: Path):
             root=DirectLocalRootConfiguration(path=root),
         )
     )
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-1",
-                    binding_revision=1,
-                    alias="local",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
-                    provider_binding=provider,
-                ),
-            ),
-            default_binding_id="binding-1",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
-        state_limits=EnvironmentStateLimits(),
+    return create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider,
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                working_directory="/",
+            )
+        },
+        default_mount="local",
     )
 
 

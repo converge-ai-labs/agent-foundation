@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from a13n_ui.errors import ConfigurationError
-from a13n_ui.settings import AgentUiSettings, DurabilityProfile, StorageSettings
+from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.settings_loader import ensure_default_directories, load_agent_ui_settings
 from pydantic import ValidationError
 
@@ -18,7 +18,6 @@ def test_settings_normalize_restart_bound_values(tmp_path: Path) -> None:
     )
 
     assert settings.storage.data_root == (tmp_path / "store").resolve()
-    assert settings.storage.durability_profile is DurabilityProfile.full
     assert settings.log_level == "DEBUG"
     assert settings.log_format == "pretty"
 

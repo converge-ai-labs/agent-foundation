@@ -4,7 +4,6 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,7 +12,7 @@ from a13n_environment_provider import EnvironmentPauseMode, EnvironmentProviderE
 from a13n_harness import RunModelResolver
 from a13n_ui.composition import ResolvedAgentSnapshot
 from a13n_ui.configuration import ConfigurationSettings, DefinitionRootSettings, LocalDirectorySettings
-from a13n_ui.environments import EnvdExecutableResolver, ProviderRuntimeResolver
+from a13n_ui.environments import ProviderRuntimeResolver
 from a13n_ui.errors import EnvironmentLifecycleError, RuntimeResolutionError, SessionError, StoreIntegrityError
 from a13n_ui.host import open_agent_ui_host
 from a13n_ui.sessions import SessionLifecycleState, SessionUpdate, TurnState
@@ -152,9 +151,9 @@ def _write_composition(
             "schema_version": "1",
             "environment_id": "environment-main",
             "display_name": "Main Environment",
-            "bindings": [
+            "mounts": [
                 {
-                    "binding_name": "binding-main",
+                    "mount_name": "mount-main",
                     "model_alias": "workspace",
                     "provider_key": "a13n.direct-local",
                     "provider_schema_version": "1",
@@ -163,10 +162,9 @@ def _write_composition(
                         "root": {"directory_id": "directory-workspace", "read_only": False},
                     },
                     "permission_ceiling": ["files"],
-                    "required": True,
                 }
             ],
-            "default_binding": "binding-main",
+            "default_mount": "mount-main",
             "lifecycle": {
                 "provision": provision,
                 "idle": "keep_running",
@@ -177,15 +175,12 @@ def _write_composition(
 
 
 async def test_local_envd_upstream_gate_is_explicit_and_never_falls_back() -> None:
-    envd_mock = AsyncMock(spec=EnvdExecutableResolver)
-    envd_mock.resolve.return_value = object()
-    resolver = ProviderRuntimeResolver(cast("EnvdExecutableResolver", envd_mock))
+    resolver = ProviderRuntimeResolver()
 
     with pytest.raises(RuntimeResolutionError) as raised:
         await resolver.resolve("a13n.local-envd")
 
     assert raised.value.code == "local_envd_provider_unavailable"
-    envd_mock.resolve.assert_awaited_once_with()
 
 
 async def test_session_baseline_and_direct_local_environment_survive_restart(tmp_path: Path) -> None:
@@ -210,7 +205,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
         before = await application.session_environment(created.session_id)
         assert before.ready is False
         snapshot = await application.environment_snapshot(environment)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -219,7 +214,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
             assert during.resources[0].selected_provider_state_digest is not None
         updated = await application.update_session(
             created.session_id,
-            expected_revision=created.control_revision,
+            expected_version=created.control_version,
             update=SessionUpdate(title="Renamed"),
         )
         session_id = created.session_id
@@ -234,7 +229,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
         availability = await restarted.session_environment(session_id)
         assert availability.ready is True
         snapshot = await restarted.environment_snapshot(retained.environment_snapshot)
-        async with restarted._environments.run_binding(session_id=session_id, snapshot=snapshot):
+        async with restarted._environments.run_environment(session_id=session_id, snapshot=snapshot):
             assert (await restarted.session_environment(session_id)).ready is True
 
 
@@ -276,7 +271,7 @@ async def test_foreground_turn_persists_checkpoint_and_agui_replay_across_restar
         turn = await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="hello",
         )
         replay = await application.session_events(created.session_id)
@@ -319,7 +314,7 @@ async def test_waiting_turn_resumes_from_exact_deferred_object(tmp_path: Path) -
         waiting = await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="clarify",
         )
 
@@ -334,7 +329,7 @@ async def test_waiting_turn_resumes_from_exact_deferred_object(tmp_path: Path) -
         completed = await application.resume_session_turn(
             created.session_id,
             turn_id=waiting.turn_id,
-            expected_thread_revision=(await application.session(created.session_id)).root.commit_revision,
+            expected_thread_version=(await application.session(created.session_id)).root.commit_version,
             results=requests.build_results(
                 calls={
                     call_id: {
@@ -371,7 +366,7 @@ async def test_event_subscription_has_gap_free_replay_to_live_cutover(tmp_path: 
         await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="first",
         )
 
@@ -384,7 +379,7 @@ async def test_event_subscription_has_gap_free_replay_to_live_cutover(tmp_path: 
             second = await application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=retained.root.commit_revision,
+                expected_thread_version=retained.root.commit_version,
                 input_value="second",
             )
             live = []
@@ -403,7 +398,7 @@ async def test_event_subscription_has_gap_free_replay_to_live_cutover(tmp_path: 
         assert len({item.stored.event_id for item in combined}) == len(combined)
 
 
-async def test_startup_recovers_file_first_event_segment(tmp_path: Path) -> None:
+async def test_startup_does_not_claim_an_unregistered_event_segment(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -421,7 +416,7 @@ async def test_startup_recovers_file_first_event_segment(tmp_path: Path) -> None
         await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="recover",
         )
         before = await application.session_events(created.session_id)
@@ -441,12 +436,17 @@ async def test_startup_recovers_file_first_event_segment(tmp_path: Path) -> None
             presentation.next_sequence = segment.first_sequence
             presentation.last_segment_digest = segment.previous_segment_digest
             await database_session.delete(segment)
+        retained_event_ids = [
+            item.stored.event_id for item in before if item.stored.presentation_sequence < segment.first_sequence
+        ]
+        orphan_path = application._store.layout.sessions / segment.relative_path
 
     async with open_agent_ui_host(settings) as restarted:
-        recovered = await restarted.session_events(session_id)
+        retained = await restarted.session_events(session_id)
         diagnostics = await restarted.recovery_diagnostics()
 
-        assert [item.stored.event_id for item in recovered] == [item.stored.event_id for item in before]
+        assert [item.stored.event_id for item in retained] == retained_event_ids
+        assert orphan_path.is_file()
         assert not any(item.code == "event_segment_unselected" for item in diagnostics)
 
 
@@ -480,7 +480,7 @@ async def test_terminal_commit_failure_closes_running_turn(tmp_path: Path, monke
             await application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=created.root.commit_revision,
+                expected_thread_version=created.root.commit_version,
                 input_value="fail commit",
             )
 
@@ -521,7 +521,7 @@ async def test_provider_dispatch_then_host_commit_failure_is_unknown(
         )
 
         with pytest.raises(StoreIntegrityError, match="Synthetic state commit"):
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -530,7 +530,7 @@ async def test_provider_dispatch_then_host_commit_failure_is_unknown(
         availability = await application.session_environment(created.session_id)
         assert availability.resources[0].lifecycle_state.value == "unknown"
         with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -552,7 +552,7 @@ async def test_pause_waits_for_active_environment_attachment(tmp_path: Path, mon
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
         pause_task: asyncio.Task[object]
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -589,7 +589,7 @@ async def test_delete_failure_retains_assignments_for_cleanup_retry(
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -604,7 +604,7 @@ async def test_delete_failure_retains_assignments_for_cleanup_retry(
         with pytest.raises(RuntimeError, match="synthetic destroy"):
             await application.delete_session(
                 created.session_id,
-                expected_revision=created.control_revision,
+                expected_version=created.control_version,
             )
 
         pending = await application.session(created.session_id)
@@ -614,7 +614,7 @@ async def test_delete_failure_retains_assignments_for_cleanup_retry(
         monkeypatch.setattr(application._environments, "destroy", original_destroy)
         await application.delete_session(
             created.session_id,
-            expected_revision=pending.control_revision,
+            expected_version=pending.control_version,
         )
         with pytest.raises(SessionError) as raised:
             await application.session(created.session_id)
@@ -635,7 +635,7 @@ async def test_hard_delete_removes_baseline_checkpoint_and_assignments(tmp_path:
         )
         await application.delete_session(
             created.session_id,
-            expected_revision=created.control_revision,
+            expected_version=created.control_version,
         )
         async with transaction(application._store.database.sessions) as database_session:
             checkpoint_count = int(
@@ -694,7 +694,7 @@ async def test_startup_blocks_session_with_unreadable_selected_checkpoint(tmp_pa
         with pytest.raises(StoreIntegrityError):
             await restarted.retry_session_provisioning(
                 session_id,
-                expected_revision=retained.control_revision,
+                expected_version=retained.control_version,
             )
         assert (await restarted.session(session_id)).lifecycle_state is SessionLifecycleState.blocked
 
@@ -712,7 +712,7 @@ async def test_startup_marks_unreadable_selected_provider_state_unknown(tmp_path
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -774,7 +774,7 @@ async def test_external_task_cancellation_re_raises_after_durable_run_cleanup(tm
             application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=created.root.commit_revision,
+                expected_thread_version=created.root.commit_version,
                 input_value="cancel",
             )
         )
@@ -807,7 +807,7 @@ async def test_startup_blocks_waiting_turn_with_unreadable_deferred_authority(tm
         waiting = await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="wait",
         )
         pending = waiting.pending_deferred
@@ -843,7 +843,7 @@ async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_p
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -856,7 +856,7 @@ async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_p
         failed = await application.session_environment(created.session_id)
         assert failed.resources[0].lifecycle_state.value == "failed"
         with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -899,7 +899,7 @@ async def test_anyio_cancellation_restores_environment_borrow_invariants(tmp_pat
             await application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=created.root.commit_revision,
+                expected_thread_version=created.root.commit_version,
                 input_value="cancel scope",
             )
 
@@ -938,7 +938,7 @@ async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -958,7 +958,7 @@ async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
         with pytest.raises(StoreIntegrityError, match="Synthetic destroy completion"):
             await application.delete_session(
                 created.session_id,
-                expected_revision=created.control_revision,
+                expected_version=created.control_version,
             )
         pending = await application.session(created.session_id)
         availability = await application.session_environment(created.session_id)
@@ -973,7 +973,7 @@ async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
         )
         await application.delete_session(
             created.session_id,
-            expected_revision=pending.control_revision,
+            expected_version=pending.control_version,
         )
         with pytest.raises(SessionError) as raised:
             await application.session(created.session_id)

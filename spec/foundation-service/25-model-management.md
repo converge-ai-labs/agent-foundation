@@ -4,12 +4,12 @@
 
 Foundation manages the configuration required for an Agent to call one primary
 generative model. A `ModelConfig` is a mutable Workspace resource selected by
-`model_id` from an `AgentRevision`. It combines one trusted provider type, the
+`model_id` from an `AgentPresetVersion`. It combines one trusted provider type, the
 provider's model name, non-secret connection configuration, one credential
 requirement, and advisory capability metadata.
 
 Model configuration has no published revision or version history. Editing a
-`ModelConfig` changes the configuration used by every Agent revision that
+`ModelConfig` changes the configuration used by every AgentPresetVersion that
 references it for each newly accepted Turn. Foundation does not expose pinned
 and follow-latest modes, model aliases, rollback, deployment promotion, traffic
 splitting, load balancing, fallback routing, or provider-account failover.
@@ -29,16 +29,16 @@ generation, and other specialized model resources are outside this domain.
 
 ## Boundaries
 
-| Concern                                   | Owner                                                                          | Contract                                                                                 |
-| ----------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| Model configuration and lifecycle         | This document                                                                  | Owns `ModelConfig`, provider discovery, testing, copying, disabling, and deletion        |
-| Agent model selection and native settings | [Agent Revisions and Reconstruction](12-agent-revisions-and-reconstruction.md) | Stores one `model_id` and immutable per-Agent model settings                             |
-| Turn-time model selection                 | This document and [Durable Turn State](14-turn-persistence.md)                 | Resolves the current enabled configuration and freezes one non-secret execution snapshot |
-| Secret values and use eligibility         | [Secret Management](11-secret-management.md)                                   | Stores, authorizes, resolves, rotates, and deletes credential values                     |
-| Provider API and balancing                | Selected model provider                                                        | Owns provider-native routing, capacity, quotas, and availability                         |
-| Trusted provider code                     | Distribution composition                                                       | Installs and allows provider adapters; public APIs never import caller-selected code     |
-| Harness model behavior                    | Agent Harness and selected adapter                                             | Constructs the process-local native Model and performs model calls                       |
-| Usage identity and measures               | [Events, Usage, and Delivery](20-events-usage-and-delivery.md)                 | Retains immutable usage facts with model and provider attribution                        |
+| Concern                            | Owner                                                          | Contract                                                                                 |
+| ---------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Model configuration and lifecycle  | This document                                                  | Owns `ModelConfig`, provider discovery, testing, updating, enabling, and disabling       |
+| Agent model selection and behavior | [Agent Management](12-agent-management.md)                     | Stores one `model_id`, concrete Harness model characteristics, and native model settings |
+| Turn-time model selection          | This document and [Durable Turn State](14-turn-persistence.md) | Resolves the current enabled configuration and freezes one non-secret execution snapshot |
+| Secret values and use eligibility  | [Secret Management](11-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                     |
+| Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                         |
+| Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code     |
+| Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                       |
+| Usage identity and measures        | [Events, Usage, and Delivery](20-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                        |
 
 `ModelConfig` is not a Provider account, connection pool, deployment, gateway,
 or credential container. Foundation exposes no independent Provider Connection
@@ -145,6 +145,7 @@ class ModelCapabilities:
 class ModelConfig:
     id: ModelConfigId
     workspace_id: WorkspaceId
+    version: int
     name: str
     description: str | None
     provider_type: str
@@ -166,16 +167,18 @@ so. It is null when the provider derives its endpoint from typed fields such as
 region or project. `provider_config` contains only the fields declared by the
 selected provider definition and never contains a credential.
 
-Temperature, maximum output requested for one invocation, reasoning effort,
-tool choice, structured-output policy, timeouts, and other Agent behavior are
-not `ModelConfig` fields. The immutable `AgentRevision` owns those native model
-settings because two Agents can use the same model configuration differently.
+Concrete `HarnessModelCharacteristics`, native `ModelSettings`, temperature,
+maximum output requested for one invocation, reasoning effort, tool choice,
+structured-output policy, timeouts, and other Agent behavior are not
+`ModelConfig` fields. The immutable `AgentPresetVersion` owns those values
+because two Presets can use the same model configuration differently.
 
 Capabilities describe catalog knowledge or an explicit Workspace override.
 They are informational for authoring and display. They do not gate Agent save,
 Turn acceptance, tool calling, structured output, or execution. Unknown facts
 are represented as unknown rather than false. Provider behavior and runtime
-errors remain authoritative.
+errors remain authoritative. They do not populate, default, or validate an
+AgentPresetVersion's concrete `HarnessModelCharacteristics`.
 
 ## Credential Requirements
 
@@ -198,6 +201,11 @@ AWS Bedrock, Google Vertex AI, and other authenticated providers use the same
 Workspace or invoking-User Secret boundary. Their adapter defines the expected
 credential content. Foundation does not add a deployment-identity or ambient
 workload-identity credential mode.
+
+A Google Vertex AI service-account credential must declare the exact official
+`https://oauth2.googleapis.com/token` token endpoint. Foundation validates that
+value and pins the same endpoint when constructing credentials; Secret content
+cannot select another token destination or bypass the outbound network policy.
 
 The `ModelExecutionSnapshot` retains only the non-secret credential requirement.
 Every TurnAttempt resolves and decrypts the current eligible Secret value into
@@ -225,7 +233,7 @@ passed at save time does not bypass DNS or redirect validation later.
 
 ## Turn Selection and Reconstruction
 
-Turn acceptance reads the exact immutable `AgentRevision`, obtains its
+Turn acceptance reads the exact immutable `AgentPresetVersion`, obtains its
 `model_id`, authorizes and validates the current enabled `ModelConfig`, and
 freezes this conceptual value:
 
@@ -239,9 +247,7 @@ class ModelExecutionSnapshot:
     credential: ModelCredential
     provider_config: JsonObject
     adapter_key: str
-    adapter_schema_version: str
-    adapter_dependency_lock: JsonObject
-    content_digest_sha256: str
+    adapter_version: str
 
 
 class ModelExecutionObservation:
@@ -271,8 +277,8 @@ sequenceDiagram
     participant Worker
     participant Provider
 
-    Caller->>Control: accept Turn for AgentRevision
-    Control->>Store: read AgentRevision.model_id and current ModelConfig
+    Caller->>Control: accept Turn for stable AgentPreset
+    Control->>Store: resolve active AgentPresetVersion and current ModelConfig
     Control->>Store: commit Turn plus non-secret ModelExecutionSnapshot
     Worker->>Store: claim TurnAttempt and read frozen snapshot
     Worker->>Store: resolve current eligible Secret value
@@ -280,9 +286,12 @@ sequenceDiagram
     Worker->>Store: seal Turn and retain safe model observation
 ```
 
-If the provider adapter or its exact compatibility lock is unavailable, the
-Turn fails before model dispatch. Foundation never substitutes another model,
-provider, endpoint, or current configuration.
+`adapter_key` and `adapter_version` identify the trusted adapter compatibility
+contract required to reconstruct the snapshot. The version changes only for an
+incompatible adapter change; it is not a package or transitive-dependency lock.
+If that compatibility identity is unavailable, the Turn fails before model
+dispatch. Foundation never substitutes another model, provider, endpoint, or
+current configuration.
 
 ## Management API
 
@@ -299,34 +308,30 @@ GET    /api/v1/workspaces/{workspace_id}/models
 POST   /api/v1/workspaces/{workspace_id}/models
 GET    /api/v1/workspaces/{workspace_id}/models/{model_id}
 PATCH  /api/v1/workspaces/{workspace_id}/models/{model_id}
-DELETE /api/v1/workspaces/{workspace_id}/models/{model_id}
 POST   /api/v1/workspaces/{workspace_id}/models/test
-POST   /api/v1/workspaces/{workspace_id}/models/{model_id}/copy
-GET    /api/v1/workspaces/{workspace_id}/models/{model_id}/references
 ```
 
 The model collection uses cursor pagination, deterministic
 `updated_at desc, id desc` order, bounded name search, and explicit
-`provider_type` and `enabled` filters. Create and copy accept an
-`Idempotency-Key`.
+`provider_type` and `enabled` filters.
 
-A single-resource response includes a strong `ETag` derived from the complete
-mutable representation. `PATCH` and `DELETE` require `If-Match`; a missing
-precondition returns `428 precondition_required`, and a stale tag returns
-`412 precondition_failed` without changing the resource. The ETag is concurrency
-evidence, not a public domain version, revision, history selector, or rollback
-handle.
+Create is a synchronous database mutation and retains no separate idempotency
+or replay record. It does not accept `Idempotency-Key`. Repeating it is a new
+request; the Workspace name uniqueness constraint returns
+`409 model_name_conflict` when the requested name already exists.
+
+`ModelConfig.version` starts at `1` and increments once for each effective
+update. `PATCH` requires `expected_version`; a mismatch returns
+`409 model_version_conflict` with the safe current version and changes nothing.
+A no-op update retains the same version. This counter is optimistic concurrency
+evidence, not configuration history, a provider model version, a revision
+selector, or a rollback handle.
 
 Create and update perform complete provider-schema, endpoint-policy,
 credential-reference, and static compatibility validation. Saving does not
 require a remote provider call. A PATCH that changes any execution field takes
-effect only for Turns accepted after its atomic commit. The response can include
-the current count of referencing executable Agent revisions so clients can warn
-about immediate impact; the mutation requires no approval workflow.
-
-`references` returns a cursor-paginated safe projection of retained executable
-Agent revisions that currently name the model. It does not infer usage from
-historical Turns.
+effect only for Turns accepted after its atomic commit and requires no approval
+workflow.
 
 ## Candidate Connection Test
 
@@ -350,68 +355,57 @@ Account cannot perform that test.
 ## Lifecycle
 
 An enabled model is available for Agent authoring and new Turn acceptance.
-Disabling it removes it from new selection and causes a new Turn for every
-referencing Agent revision to fail with `model_disabled`. A Turn already
+Disabling it removes it from new selection and causes a new Turn using any
+referencing AgentPresetVersion to fail with `model_disabled`. A Turn already
 accepted with a snapshot continues, including its replacement TurnAttempts.
 Re-enabling the model restores new-Turn execution for all existing references.
 
-Deletion is a hard removal of the current configuration. It succeeds only when
-no retained executable `AgentRevision` references the model. A reference
-conflict returns `409 model_in_use`; the caller can inspect `references` and
-disable the model instead. Completed historical Turns and UsageRecords do not
-block deletion. Deletion does not delete or rotate a referenced Secret, and a
-deleted ModelConfig ID is never reused.
-
-Historical Turn and TurnAttempt reads retain `model_id`, `provider_type`, and
-`model_name` as observations. If the configuration has been deleted, clients
-render it as deleted and do not receive a live resource link.
-
-Copy creates a new disabled or enabled `ModelConfig` according to the explicit
-request, with a new ID and Workspace-unique name. It copies provider type,
-model name, non-secret connection fields, capabilities, and the Secret
-reference; it never duplicates Secret material. Foundation exposes no model
-import, export, tag, or bulk-mutation surface.
+Model Management exposes no hard delete. A configuration that should no longer
+be selected is disabled and retained so existing `AgentPresetVersion`
+references remain resolvable. Foundation exposes no server-side copy, model
+import, export, tag, or bulk-mutation surface. Creating a similar configuration
+uses the ordinary create contract with safe fields obtained from an authorized
+read.
 
 ## Authorization and Audit
 
 Workspace Viewer can read safe provider and model metadata. Workspace Builder
-and Admin can create, update, copy, test, enable, disable, and delete model
-configurations. Agent-scoped grants do not confer Workspace model-management or
-Workspace Secret-management permission. Running an authorized Agent permits
-runtime use of its selected ModelConfig but does not permit reading a Secret
-value or changing the configuration.
+and Admin can create, update, test, enable, and disable model configurations.
+Agent-scoped grants do not confer Workspace model-management or Workspace
+Secret-management permission. Running an authorized Agent permits runtime use
+of its selected ModelConfig but does not permit reading a Secret value or
+changing the configuration.
 
-Create, update, copy, enable, disable, delete, and test attempts emit security
-audit events with Workspace, model when present, actor, request, outcome, and
-time. A successful update includes only a bounded sorted list of changed field
-names. Audit data contains no old or new field values, Secret reference or
-value, endpoint, raw provider error, prompt, or output. Audit is evidence and
-cannot restore a deleted or overwritten configuration.
+Create, update, enable, disable, and test attempts emit security audit events
+with Workspace, model when present, actor, request, outcome, and time. A
+successful update includes only a bounded sorted list of changed field names.
+Audit data contains no old or new field values, Secret reference or value,
+endpoint, raw provider error, prompt, or output. Audit is evidence and cannot
+restore an overwritten configuration.
 
 ## Failure Semantics
 
-| Failure                                                      | Outcome                                                                                              |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Unknown provider or invalid provider fields                  | Reject create, update, test, or Turn acceptance before provider I/O                                  |
-| Endpoint violates outbound policy                            | Reject the operation; no network request is sent                                                     |
-| Secret reference is missing or unauthorized                  | Fail closed without disclosing whether a concealed Secret exists                                     |
-| User credential is selected for a Service Account invocation | Turn or test fails before provider dispatch                                                          |
-| Model is disabled                                            | New Turn acceptance fails with `model_disabled`; accepted Turns continue                             |
-| ETag is absent or stale                                      | Mutation returns `precondition_required` or `precondition_failed` without changing the configuration |
-| Model remains referenced                                     | Delete returns `model_in_use`; configuration remains unchanged                                       |
-| Provider test fails or times out                             | Return a safe synchronous result; saved configuration is unchanged                                   |
-| Accepted adapter lock is unavailable                         | Turn fails before model dispatch; no current-config fallback occurs                                  |
-| Provider rejects a call                                      | Current TurnAttempt records a bounded safe failure under the owning runtime contract                 |
+| Failure                                                      | Outcome                                                                                   |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Unknown provider or invalid provider fields                  | Reject create, update, test, or Turn acceptance before provider I/O                       |
+| Endpoint violates outbound policy                            | Reject the operation; no network request is sent                                          |
+| Secret reference is missing or unauthorized                  | Fail closed without disclosing whether a concealed Secret exists                          |
+| User credential is selected for a Service Account invocation | Turn or test fails before provider dispatch                                               |
+| Model is disabled                                            | New Turn acceptance fails with `model_disabled`; accepted Turns continue                  |
+| `expected_version` is stale                                  | Update returns `model_version_conflict` with the safe current version and changes nothing |
+| Provider test fails or times out                             | Return a safe synchronous result; saved configuration is unchanged                        |
+| Accepted adapter identity is unavailable                     | Turn fails before model dispatch; no current-config fallback occurs                       |
+| Provider rejects a call                                      | Current TurnAttempt records a bounded safe failure under the owning runtime contract      |
 
 ## Invariants
 
 01. `ModelConfig` is a mutable Workspace resource for an Agent's primary
     generative model and has no configuration revision history.
-02. Every `AgentRevision` selects exactly one `model_id`; per-Agent runtime model
-    settings remain in the immutable Agent revision.
+02. Every `AgentPresetVersion` selects exactly one `model_id`; per-Preset-Version runtime model
+    settings remain in the immutable AgentPresetVersion.
 03. Every new Turn resolves the current enabled configuration once and freezes a
     non-secret execution snapshot; replacement TurnAttempts reuse it.
-04. A model edit affects old and new Agent revisions only for Turns accepted
+04. A model edit affects old and new AgentPresetVersions only for Turns accepted
     after the edit commits.
 05. Every credential requirement has exactly one source, and no durable model or
     Turn record contains a credential value.
@@ -422,6 +416,5 @@ cannot restore a deleted or overwritten configuration.
     a trusted adapter and the outbound network policy.
 09. Foundation does not balance, fail over, or silently substitute providers or
     model configurations.
-10. Disabling blocks new Turn acceptance, deletion is blocked by executable
-    Agent revision references, and historical observations do not keep a model
-    resource alive.
+10. Disabling blocks new Turn acceptance without invalidating existing
+    `AgentPresetVersion` references or accepted Turn snapshots.

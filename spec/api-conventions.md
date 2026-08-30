@@ -21,7 +21,7 @@ These conventions do not replace an upstream or project-owned protocol. The Harn
 
 Foundation-owned product HTTP APIs use the `/api` namespace. The current public compatibility line places its versioned resource routes below `/api/v1`. Operational endpoints such as liveness and readiness are outside `/api` and are not public resource APIs.
 
-Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/turns/{id}/cancel`; arbitrary verb-shaped RPC endpoints are not introduced when a resource or command expresses the operation directly.
+Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/turns/{id}/interrupt`; arbitrary verb-shaped RPC endpoints are not introduced when a resource or command expresses the operation directly.
 
 A successful single-resource, mutation, or command response returns that resource or receipt directly. There is no universal `data` envelope. Ordinary status meanings are:
 
@@ -62,7 +62,7 @@ Every request and response is bounded. The owning API defines tighter limits for
 Ordinary resource collections use one cursor-based shape:
 
 ```http
-GET /api/v1/agents?limit=50&cursor=opaque-value
+GET /api/v1/workspaces/ws_123/agent-presets?limit=50&cursor=opaque-value
 ```
 
 ```json

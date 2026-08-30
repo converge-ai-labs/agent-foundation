@@ -40,14 +40,11 @@ from a13n_harness import (
 )
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
-    EnvironmentBindingRequest,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
+    EnvironmentRuntimeMount,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
-from anyio import CancelScope, Event, Lock, current_time, move_on_after, to_thread
+from anyio import CancelScope, Lock, to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_ui.errors import SkillManagementError
@@ -153,14 +150,13 @@ class SkillChangePreview(BaseModel):
 
 
 @dataclass(slots=True)
-class _ScanLease:
+class _SkillScan:
     stack: AsyncExitStack
     generation_id: str
     catalog_digest: str
     environment: BoundEnvironment
     catalog: BoundSkillCatalog
     settings: ConfigurationSettings
-    expires_at: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,12 +170,10 @@ class _PreparedSkillChange:
     preview: SkillChangePreview
     manifest: SourceTransactionManifest
     replacements: dict[str, bytes]
-    size_bytes: int
-    expires_at: float
 
 
 class SkillService:
-    """Own process-local scan leases and publish managed package source edits."""
+    """Own process-local Skill previews and publish managed package source edits."""
 
     def __init__(
         self,
@@ -188,11 +182,9 @@ class SkillService:
     ) -> None:
         self._settings = settings
         self._repository = repository
-        self._scans: dict[str, _ScanLease] = {}
+        self._scans: dict[str, _SkillScan] = {}
         self._prepared_changes: dict[str, _PreparedSkillChange] = {}
-        self._inflight_scans = 0
         self._lock = Lock()
-        self._lease_changed = Event()
 
     def update_settings(self, settings: ConfigurationSettings) -> None:
         self._settings = settings
@@ -249,10 +241,6 @@ class SkillService:
                 catalog_digest=generation.catalog_digest,
                 conflicts=(),
             )
-        expired = await self._reserve_scan(settings.max_skill_scan_leases)
-        with CancelScope(shield=True):
-            for stale in expired:
-                await stale.stack.aclose()
         stack = AsyncExitStack()
         try:
             environment, _manager, harness_sources = await _open_environment(
@@ -296,7 +284,6 @@ class SkillService:
         finally:
             with CancelScope(shield=True):
                 await stack.aclose()
-                await self._release_scan_reservation()
 
     async def scan(
         self,
@@ -314,10 +301,6 @@ class SkillService:
                 catalog_digest=generation.catalog_digest,
                 items=(),
             )
-        expired = await self._reserve_scan(settings.max_skill_scan_leases)
-        with CancelScope(shield=True):
-            for stale in expired:
-                await stale.stack.aclose()
         stack = AsyncExitStack()
         try:
             environment, manager, _sources = await _open_environment(
@@ -331,27 +314,22 @@ class SkillService:
         except (DefinitionError, EnvironmentError, EnvironmentProviderError) as exc:
             with CancelScope(shield=True):
                 await stack.aclose()
-                await self._release_scan_reservation()
             raise _skill_boundary_error(exc, fallback_code="skill_scan_failed") from exc
         except BaseException:
             with CancelScope(shield=True):
                 await stack.aclose()
-                await self._release_scan_reservation()
             raise
         scan_id = f"scan-{uuid4().hex}"
-        lease = _ScanLease(
+        scan = _SkillScan(
             stack=stack,
             generation_id=generation.generation_id,
             catalog_digest=generation.catalog_digest,
             environment=environment,
             catalog=catalog,
             settings=settings,
-            expires_at=current_time() + settings.skill_scan_lease_seconds,
         )
         async with self._lock:
-            self._inflight_scans -= 1
-            self._scans[scan_id] = lease
-            self._lease_changed.set()
+            self._scans[scan_id] = scan
         return SkillScanPreview(
             scan_id=scan_id,
             generation_id=generation.generation_id,
@@ -408,7 +386,6 @@ class SkillService:
                 expected_operation is None or prepared.preview.operation == expected_operation
             ):
                 self._prepared_changes.pop(change_id)
-                self._lease_changed.set()
             elif prepared is not None:
                 raise SkillManagementError(
                     "The prepared Skill change has a different operation type.",
@@ -418,11 +395,6 @@ class SkillService:
             raise SkillManagementError(
                 "The prepared Skill change is unavailable.",
                 code="skill_change_missing",
-            )
-        if prepared.expires_at <= current_time():
-            raise SkillManagementError(
-                "The prepared Skill change has expired.",
-                code="skill_change_expired",
             )
         generation = await self._repository.current_generation()
         if generation is None or generation.generation_id != prepared.preview.generation_id:
@@ -434,8 +406,7 @@ class SkillService:
 
     async def discard_change(self, change_id: str) -> None:
         async with self._lock:
-            if self._prepared_changes.pop(change_id, None) is not None:
-                self._lease_changed.set()
+            self._prepared_changes.pop(change_id, None)
 
     async def _prepare_change(
         self,
@@ -447,31 +418,24 @@ class SkillService:
         target_root_id: str | None,
         existing_requirement: Literal["absent", "present", "any"],
     ) -> SkillChangePreview:
-        reserved = False
         async with self._lock:
-            lease = self._scans.pop(scan_id, None)
-            if lease is not None:
-                self._inflight_scans += 1
-                reserved = True
-                self._lease_changed.set()
-        if lease is None:
+            scan = self._scans.pop(scan_id, None)
+        if scan is None:
             raise SkillManagementError("The selected Skill scan is unavailable.", code="skill_scan_missing")
         try:
-            if lease.expires_at <= current_time():
-                raise SkillManagementError("The selected Skill scan has expired.", code="skill_scan_expired")
             generation = await self._repository.current_generation()
-            if generation is None or generation.generation_id != lease.generation_id:
+            if generation is None or generation.generation_id != scan.generation_id:
                 raise SkillManagementError(
                     "The selected Skill scan belongs to a stale configuration generation.",
                     code="skill_catalog_stale",
                 )
-            selected = lease.catalog.select(frozenset({skill_name}))
+            selected = scan.catalog.select(frozenset({skill_name}))
             if len(selected.items) != 1:
                 raise SkillManagementError("The selected Skill is absent from the scan.", code="skill_not_found")
             try:
-                selected.require_current(lease.environment)
+                selected.require_current(scan.environment)
                 item = selected.items[0]
-                scope = lease.environment.select_files(item.path)
+                scope = scan.environment.select_files(item.path)
             except (DefinitionError, EnvironmentError, EnvironmentProviderError) as exc:
                 raise _skill_boundary_error(exc, fallback_code="skill_catalog_stale") from exc
             if scope.resolved_path != item.directory or scope.observed_generation != item.observed_generation:
@@ -479,13 +443,13 @@ class SkillService:
                     "The selected Skill route changed after discovery.",
                     code="skill_catalog_stale",
                 )
-            async with lease.environment.open_files(scope) as files:
-                payload, copied = await _copy_package(files, item, lease.settings)
+            async with scan.environment.open_files(scope) as files:
+                payload, copied = await _copy_package(files, item, scan.settings)
             await validate_managed_skill_package(
                 copied,
                 expected_name=item.name,
                 expected_description=item.description,
-                settings=lease.settings,
+                settings=scan.settings,
             )
             existing = await self._existing_skill(generation, skill_id=skill_id)
             if existing_requirement == "present" and existing is None:
@@ -535,7 +499,7 @@ class SkillService:
                 display_name=display_name,
                 target_root_id=target_root_id,
                 existing_paths=existing_paths,
-                settings=lease.settings,
+                settings=scan.settings,
             )
             change_id = f"skill-change-{uuid4().hex[:16]}"
             preview = SkillChangePreview(
@@ -552,107 +516,30 @@ class SkillService:
                 definition_changed=_definition_changed(existing, definition),
                 files=_package_file_changes(existing, copied),
             )
-            size_bytes = sum(len(content) for content in replacements.values())
             async with self._lock:
-                retained_bytes = sum(change.size_bytes for change in self._prepared_changes.values())
-                if retained_bytes + size_bytes > lease.settings.max_prepared_skill_bytes:
-                    raise SkillManagementError(
-                        "Prepared Skill changes exceed their aggregate byte limit.",
-                        code="skill_change_limit",
-                    )
                 self._prepared_changes[change_id] = _PreparedSkillChange(
                     preview=preview,
                     manifest=manifest,
                     replacements=replacements,
-                    size_bytes=size_bytes,
-                    expires_at=lease.expires_at,
                 )
-                self._inflight_scans -= 1
-                reserved = False
-                self._lease_changed.set()
             return preview
         finally:
             with CancelScope(shield=True):
-                if reserved:
-                    await self._release_scan_reservation()
-                await lease.stack.aclose()
+                await scan.stack.aclose()
 
     async def discard_scan(self, scan_id: str) -> None:
         async with self._lock:
-            lease = self._scans.pop(scan_id, None)
-            if lease is not None:
-                self._lease_changed.set()
-        if lease is not None:
-            await lease.stack.aclose()
-
-    async def _reserve_scan(self, limit: int) -> tuple[_ScanLease, ...]:
-        now = current_time()
-        async with self._lock:
-            expired_ids = [scan_id for scan_id, lease in self._scans.items() if lease.expires_at <= now]
-            expired = tuple(self._scans.pop(scan_id) for scan_id in expired_ids)
-            expired_changes = [
-                change_id for change_id, change in self._prepared_changes.items() if change.expires_at <= now
-            ]
-            for change_id in expired_changes:
-                self._prepared_changes.pop(change_id)
-            if expired_ids or expired_changes:
-                self._lease_changed.set()
-            if len(self._scans) + len(self._prepared_changes) + self._inflight_scans >= limit:
-                raise SkillManagementError(
-                    "Too many Skill scans or prepared changes are awaiting a decision.",
-                    code="skill_scan_limit",
-                )
-            self._inflight_scans += 1
-            return expired
-
-    async def _release_scan_reservation(self) -> None:
-        async with self._lock:
-            self._inflight_scans -= 1
-
-    async def reap_periodically(self) -> None:
-        """Release retained scan resources at their exact process-local deadlines."""
-
-        while True:
-            async with self._lock:
-                event = self._lease_changed
-                deadlines = (
-                    *(lease.expires_at for lease in self._scans.values()),
-                    *(change.expires_at for change in self._prepared_changes.values()),
-                )
-            if deadlines:
-                delay = max(0.0, min(deadlines) - current_time())
-                with move_on_after(delay):
-                    await event.wait()
-            else:
-                await event.wait()
-            async with self._lock:
-                if self._lease_changed is event:
-                    self._lease_changed = Event()
-            await self.reap_expired()
-
-    async def reap_expired(self) -> None:
-        now = current_time()
-        async with self._lock:
-            expired_ids = [scan_id for scan_id, lease in self._scans.items() if lease.expires_at <= now]
-            expired = tuple(self._scans.pop(scan_id) for scan_id in expired_ids)
-            expired_changes = [
-                change_id for change_id, change in self._prepared_changes.items() if change.expires_at <= now
-            ]
-            for change_id in expired_changes:
-                self._prepared_changes.pop(change_id)
-            if expired_ids or expired_changes:
-                self._lease_changed.set()
-        for lease in expired:
-            await lease.stack.aclose()
+            scan = self._scans.pop(scan_id, None)
+        if scan is not None:
+            await scan.stack.aclose()
 
     async def close(self) -> None:
         async with self._lock:
-            leases = tuple(self._scans.values())
+            scans = tuple(self._scans.values())
             self._scans.clear()
             self._prepared_changes.clear()
-            self._lease_changed.set()
-        for lease in leases:
-            await lease.stack.aclose()
+        for scan in scans:
+            await scan.stack.aclose()
 
     async def _load_sources(
         self,
@@ -879,7 +766,7 @@ async def _open_environment(
 ) -> tuple[BoundEnvironment, SkillManager, tuple[FileSkillSource, ...]]:
     directories = {item.directory_id: item.path for item in settings.local_directories}
     factory_catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
-    bindings: list[EnvironmentBindingRequest] = []
+    mounts: dict[str, EnvironmentRuntimeMount] = {}
     harness_sources: list[FileSkillSource] = []
     alias_by_directory: dict[str, str] = {}
     for source in sources:
@@ -912,15 +799,10 @@ async def _open_environment(
             entered = await stack.enter_async_context(managed)
             attachment = await stack.enter_async_context(entered.acquire_attachment())
             provider_binding = create_environment_provider_binding(attachment)
-            bindings.append(
-                EnvironmentBindingRequest(
-                    binding_id=f"skill-binding-{len(alias_by_directory)}",
-                    binding_revision=1,
-                    alias=alias,
-                    permission_ceiling=_READ_PERMISSIONS,
-                    default_working_directory="/",
-                    provider_binding=provider_binding,
-                )
+            mounts[alias] = EnvironmentRuntimeMount(
+                binding=provider_binding,
+                permission_ceiling=_READ_PERMISSIONS,
+                working_directory="/",
             )
         roots = tuple(f"/environment/{alias}{root if root != '/' else ''}" for root in source.roots)
         harness_sources.append(
@@ -931,17 +813,11 @@ async def _open_environment(
                 max_entries_per_root=source.max_entries_per_root,
             )
         )
-    run_binding = create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=tuple(bindings),
-            default_binding_id=None,
-        ),
-        topology_limits=EnvironmentTopologyLimits(max_bindings=max(1, len(bindings))),
-        state_limits=EnvironmentStateLimits(),
+    runtime = create_environment_runtime(
+        mounts=mounts,
     )
     environment = await stack.enter_async_context(
-        run_binding.bind(
+        runtime.bind(
             run_id=f"skill-scan-{uuid4().hex}",
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-ui", subject="skill-management"),

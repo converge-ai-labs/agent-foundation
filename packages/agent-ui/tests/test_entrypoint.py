@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def test_module_entrypoint_exposes_cli_help() -> None:
     result = subprocess.run(
@@ -44,11 +46,15 @@ def test_module_entrypoint_runs_runtime_status_from_yaml(tmp_path: Path) -> None
     assert payload["generations"][0]["state"] == "active"
 
 
-def test_interactive_cli_keeps_host_alive_across_runtime_restart(tmp_path: Path) -> None:
+@pytest.mark.parametrize("subcommand", [(), ("tui",)])
+def test_terminal_frontend_keeps_host_alive_across_runtime_restart(
+    tmp_path: Path,
+    subcommand: tuple[str, ...],
+) -> None:
     settings = _write_settings(tmp_path)
 
     result = subprocess.run(
-        [sys.executable, "-m", "a13n_ui", "--config", str(settings)],
+        [sys.executable, "-m", "a13n_ui", "--config", str(settings), *subcommand],
         input="/runtime\n/restart\n/runtime\n/exit\n",
         check=False,
         capture_output=True,

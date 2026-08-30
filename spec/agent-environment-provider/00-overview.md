@@ -68,7 +68,7 @@ For reusable or durable resources, the Host decides whether to provision, attach
 | Attachment-to-binding adaptation and Environment operations                                | Harness                               | No provider lifecycle authority                                   |
 | EIP protocol and session behavior                                                          | `a13n-envd-client` and `agent-envd`   | Independent from vendor provisioning                              |
 
-The provider package does not own an Agent schema, Harness `EnvironmentState`, desired Environment topology, model-facing aliases, tools, durable Execution, queue, database, user API, or product policy.
+The provider package does not own an Agent schema, Harness `EnvironmentState`, desired Harness mount definitions, model-facing mount names, tools, durable Execution, queue, database, user API, or product policy.
 
 ## Core Flow
 

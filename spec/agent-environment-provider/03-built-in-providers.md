@@ -359,7 +359,7 @@ Docker advertises `resource_allocation=MULTIPLE_FROM_SPEC`, `attachment_concurre
 
 Resource entry re-inspects the exact running container, recovers its credential, and resolves only the `127.0.0.1` EIP route from authoritative port inspection. It opens one provider-owned HTTP Session, completes initialization and mandatory readiness under finite deadlines, cleanly closes that Session, and only then admits attachments. Entry failure or a later route, credential, initialization, readiness, or close failure makes that Resource entry unavailable without restarting or replacing the container and without rewriting outer lifecycle state.
 
-Each `acquire_attachment()` returns one fresh single-use `EIPEnvironmentAttachment` with a fresh `HttpEIPSessionSource` for the same running daemon generation. Only one attachment scope can be active. Attachment initialization performs mandatory readiness before the Harness publishes a binding. Resource exit fences admission and requires attachment release but does not stop, pause, destroy, or restart the container.
+Each `acquire_attachment()` returns one fresh single-use `EIPEnvironmentAttachment` with a fresh `HttpEIPSessionSource` for the same running daemon generation. Only one attachment scope can be active. Attachment initialization performs mandatory readiness before the Harness publishes a mount. Resource exit fences admission and requires attachment release but does not stop, pause, destroy, or restart the container.
 
 `pause(mode=FILESYSTEM)` requires the matching entered Resource after attachment release, fences admission, stops only the exact validated container using the configured grace period, confirms stopped inspection, and returns state with `phase=PAUSED`. Its writable layer and external mounts remain. `FULL` and Docker process freeze are unsupported.
 
@@ -405,13 +405,13 @@ E2B advertises `resource_allocation=MULTIPLE_FROM_SPEC` and `attachment_concurre
 
 ### Provider behavior
 
-`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, and provider/configuration fingerprint. It waits for provider running state and records the sandbox identity without treating generic provider availability as envd readiness. Resource entry resolves the provider-routed HTTPS host for the dedicated EIP port, completes a provider-owned initialize/readiness/close Session against that fresh routing, and only then issues attachment sources. Every acquired attachment independently initializes EIP, completes its mandatory initial readiness operation, and must match the expected Environment identity, generation, protocol, required methods, and limits before the Harness publishes a binding.
+`create()` calls the E2B SDK to create one sandbox from the selected template and lifecycle configuration, including bounded metadata for the Host operation ID, resource correlation, and provider/configuration fingerprint. It waits for provider running state and records the sandbox identity without treating generic provider availability as envd readiness. Resource entry resolves the provider-routed HTTPS host for the dedicated EIP port, completes a provider-owned initialize/readiness/close Session against that fresh routing, and only then issues attachment sources. Every acquired attachment independently initializes EIP, completes its mandatory initial readiness operation, and must match the expected Environment identity, generation, protocol, required methods, and limits before the Harness publishes a mount.
 
 `resume()` uses the sandbox ID from validated provider resource state. E2B's connect operation attaches to a running sandbox or resumes a paused sandbox; it never creates a replacement for a missing or killed sandbox. After connect, Resource entry resolves fresh routing and performs the same provider-owned readiness Session before issuing fresh attachment sources.
 
 `pause(mode=FULL)` preserves the sandbox filesystem, memory, and running processes. External network connections still close. On resume, the in-sandbox `agent-envd` process and daemon generation can remain, but the Host obtains a fresh endpoint and establishes a fresh readiness-confirmed Session. No HTTP request, transfer, or EIP Session survives pause.
 
-`pause(mode=FILESYSTEM)` preserves the sandbox filesystem while discarding memory and processes. Resume reboots from disk, the template startup contract launches a new `agent-envd` process, and the daemon generation changes. Every previous operation receipt, process handle, output reference, transfer, and session is fenced. The Harness receives a fresh binding revision before operations resume.
+`pause(mode=FILESYSTEM)` preserves the sandbox filesystem while discarding memory and processes. Resume reboots from disk, the template startup contract launches a new `agent-envd` process, and the daemon generation changes. Every previous operation receipt, process handle, output reference, transfer, and session is fenced. The Harness receives a fresh attachment and mount incarnation before operations resume.
 
 `destroy()` kills the exact sandbox ID. A killed or expired sandbox is successful absence only when E2B reports that state authoritatively. Sandbox timeout and connect behavior follow the SDK contract: connect can extend an expiring running sandbox but does not silently shorten a longer current timeout; exact timeout changes use the SDK's explicit timeout operation.
 
@@ -425,12 +425,12 @@ E2B persistence does not replace Harness Environment state:
 
 | E2B event                   | Provider resource             | `agent-envd` generation           | Harness requirement                                                      |
 | --------------------------- | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------ |
-| Connect to running sandbox  | Same sandbox                  | Same when daemon remained running | Fresh attachment, binding, and EIP session                               |
+| Connect to running sandbox  | Same sandbox                  | Same when daemon remained running | Fresh attachment, mount incarnation, and EIP session                     |
 | Full pause and resume       | Same sandbox, memory restored | Can remain the same               | Fresh external connection/session; no transfer resume                    |
-| Filesystem pause and resume | Same sandbox, rebooted        | Changes                           | Fresh binding revision; every daemon selector fenced                     |
+| Filesystem pause and resume | Same sandbox, rebooted        | Changes                           | Fresh attachment and mount incarnation; every daemon selector fenced     |
 | Kill or expiry              | Resource absent               | Absent                            | Resume fails; Host explicitly decides whether to create another resource |
 
-Files written in the sandbox can survive both pause modes as provider-native resource state. EIP 1.0 still exports no `EnvironmentBindingState`. If the Host also selects a portable Harness workspace codec, that codec remains a separate explicit import/export mechanism and is not inferred from E2B pause.
+Files written in the sandbox can survive both pause modes as provider-native resource state. EIP 1.0 still exports no `EnvironmentMountState`. If the Host also selects a portable Harness workspace codec, that codec remains a separate explicit import/export mechanism and is not inferred from E2B pause.
 
 ## Dependencies and Public Surface
 

@@ -415,19 +415,19 @@ class AgentReconstructor:
                 await self._catalog.skill_package(skill.revision),
                 skill,
             )
-        binding_name = node.skill_materialization_binding
-        assert binding_name is not None
-        binding = next(
-            (item for item in environment.bindings if item.binding_name == binding_name),
+        mount_name = node.skill_materialization_mount
+        assert mount_name is not None
+        mount = next(
+            (item for item in environment.mounts if item.mount_name == mount_name),
             None,
         )
-        if binding is None:
+        if mount is None:
             raise CompositionError(
-                "The Skill materialization binding is absent from the Environment snapshot.",
+                "The Skill materialization mount is absent from the Environment snapshot.",
                 code="agent_environment_incompatible",
-                details={"agent_id": node.agent_id, "binding_name": binding_name},
+                details={"agent_id": node.agent_id, "mount_name": mount_name},
             )
-        root = f"/environment/{binding.model_alias}/.a13n/skills/{snapshot.logical_agent_digest}/{node.agent_id}"
+        root = f"/environment/{mount.model_alias}/.a13n/skills/{snapshot.logical_agent_digest}/{node.agent_id}"
         materializer = SnapshotSkillMaterializer(
             f"materializer-{node.agent_id}",
             root,

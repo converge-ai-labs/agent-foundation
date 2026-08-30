@@ -2,14 +2,27 @@
 
 Agent Harness exposes focused extension points rather than one universal plugin interface. Choose the narrowest boundary that owns the behavior and lifetime you need.
 
-| Extension point                | Use it for                                                                                                                       | Lifecycle                                                                | Model-visible                                    |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------ |
-| Harness middleware plugin      | Transform semantic input, observe events, wrap errors, or replace a complete result candidate                                    | Agent-bound at build, then freshly run-bound around each logical run     | Only through an explicit Capability contribution |
-| Pydantic Capability or Toolset | Instructions, request hooks, tools, Agent-loop state, and collaboration with other run Capabilities                              | Native Pydantic Agent/run lifecycle                                      | Yes                                              |
-| `EnvironmentProviderBinding`   | Implement one already selected provider-neutral Environment operation revision                                                   | One binding scope inside one `EnvironmentRunBinding`                     | Only through explicit Environment tools/context  |
-| `EnvironmentRunExtension`      | Hold a resource that needs the complete entered Environment aggregate; use `EnvironmentRunCallbacks` for simple paired callbacks | Entered after state restore; reverse-order exit before provider teardown | No                                               |
+| Extension point              | Use it for                                                                                                                       | Lifecycle                                                                | Model-visible                                    |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------ |
+| Harness middleware plugin    | Transform semantic input, observe events, wrap errors, or replace a complete result candidate                                    | Agent-bound at build, then freshly run-bound around each logical run     | Only through an explicit Capability contribution |
+| Pydantic Capability          | Own or compose Toolsets, instructions, request hooks, Agent-loop state, and collaboration with other run Capabilities            | Native Pydantic Agent/run lifecycle                                      | Yes                                              |
+| `EnvironmentProviderBinding` | Implement one already selected provider-neutral Environment operation revision                                                   | One binding scope inside one `EnvironmentRuntime`                        | Only through explicit Environment tools/context  |
+| `EnvironmentRunExtension`    | Hold a resource that needs the complete entered Environment aggregate; use `EnvironmentRunCallbacks` for simple paired callbacks | Entered after state restore; reverse-order exit before provider teardown | No                                               |
 
 Installed entry-point metadata means code is available, not enabled or authorized. Importing `a13n_harness` scans no entry points and activates no extension.
+
+## Choose and Activate an Extension Point
+
+Availability, selection, and activation are separate decisions:
+
+| Extension point              | Makes an implementation available                                                                               | Selects and activates it                                                                                                 | Automatic behavior                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Harness middleware plugin    | Install a package with an `a13n_harness.plugins` entry point, or import a concrete plugin                       | Enable one configured `plugin_key`/`plugin_id`, or pass the concrete plugin to `HarnessBuilder.build()`                  | Ambient configuration is disabled by default; after explicit opt-in, only entries with `enabled: true` are loaded                      |
+| Pydantic Capability          | Import a concrete Capability, or let a trusted Host authorize an exact declarative type                         | Put the instance in definition/run composition, or put its serialized spec in `AgentSpec.capabilities`                   | Optional Capabilities are never inferred from package presence; see [Capabilities](capabilities.md#select-capabilities-with-agentspec) |
+| `EnvironmentRunExtension`    | Install a package with an `a13n_harness.environment_run_extensions` entry point, or import a concrete extension | Select an exact factory key, create one identified instance, and pass it to `create_environment_runtime(extensions=...)` | There is no ambient configuration or automatic selection                                                                               |
+| `EnvironmentProviderBinding` | Construct a fresh trusted binding from the owning Provider layer                                                | Put the binding in an `EnvironmentRuntimeMount`                                                                          | Provider availability never mounts or exposes model tools by itself                                                                    |
+
+`AgentSpec` selects only Capabilities. It does not select Harness middleware, Environment run extensions, Providers, credentials, or live collaborators. A selected plugin may contribute ordinary Capabilities from trusted plugin code, but that contribution is owned by the plugin rather than reconstructed from `AgentSpec`.
 
 ## Harness Middleware
 
@@ -118,7 +131,7 @@ context = HarnessBuildContext.from_file("harness-plugins.yaml")
 builder = HarnessBuilder(build_context=context)
 ```
 
-Configuration selects stable entry-point keys and never accepts a `module:object` target.
+Configuration selects stable entry-point keys and never accepts a `module:object` target. `HarnessBuildContext.extensions` is a bounded namespaced JSON value forwarded to selected plugin factories; despite its name, it is not a plugin or Environment-extension list and does not enable anything.
 
 ### Optional Environment Source
 
@@ -158,7 +171,7 @@ The directory must contain both the import package and standard distribution met
 
 Publish into a fresh directory that is not yet searchable, validate the complete installation, atomically place it, activate that exact path, then build a replacement executable. Do not mutate an already imported release in place or append two releases that own the same plugin key.
 
-A new builder discovers current distribution metadata. An existing builder retains its selected factory catalog; an existing executable retains its already constructed plugin graph. Keep old executables alive until their active runs finish.
+A replacement builder with configured plugins explicitly enabled resolves current distribution metadata only for factory keys selected by its enabled entries. A disabled builder still performs no metadata scan. An existing builder retains its selected factory catalog; an existing executable retains its already constructed plugin graph. Keep old executables alive until their active runs finish.
 
 The Host remains responsible for artifact trust, dependency compatibility, installation locks, directory ordering, and rollback. Harness includes no package installer or process-global mutable plugin registry.
 
@@ -184,7 +197,7 @@ An `EnvironmentProviderBinding` is fresh and single-use. Effectful allocation, a
 
 ## Environment Run Extensions
 
-Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `Environment`, including zero, one, or several provider bindings.
+Use an `EnvironmentRunExtension` when setup and teardown need the stable complete `EnvironmentRuntime`, including an empty, single-mount, or multi-mount runtime.
 
 ### Callback Composition
 
@@ -222,7 +235,7 @@ active_run_callbacks = EnvironmentRunCallbacks(
 )
 ```
 
-`on_enter` runs after portable Environment state restoration and before controller activation. It participates in making the aggregate active; it does not mean every operation family is globally ready. Call `context.environment.ensure_ready()` when setup depends on an exact family. `on_exit` runs during reverse-order Environment teardown while provider-neutral operations remain available. It also runs after failure, cancellation, or rollback following successful entry, so it is cleanup rather than a success notification.
+`on_enter` runs after portable Environment state restoration and before runtime activation. It participates in making the runtime active; it does not mean every operation family is globally ready. Call `context.environment.ensure_ready()` when setup depends on an exact family. `on_exit` runs during reverse-order Environment teardown while provider-neutral operations remain available. It also runs after failure, cancellation, or rollback following successful entry, so it is cleanup rather than a success notification.
 
 Each adapter is one identified extension. Multiple adapters enter in registration order and exit in reverse order. Callback failures use the same authoritative failure semantics as custom extension setup and cleanup. Catch expected failures inside a callback only when the Host deliberately wants best-effort behavior.
 
@@ -258,27 +271,34 @@ class WorkspaceMarkerExtension:
             await context.environment.files.remove(path)
 ```
 
-Register direct extension objects through the advanced aggregate route:
+Register direct extension objects through the advanced runtime route:
 
 ```python
-from a13n_harness.environment.advanced import create_environment_run_binding
+from a13n_harness.environment.advanced import create_environment_runtime
 
 
-environment_binding = create_environment_run_binding(
-    initial_topology=topology,
-    topology_limits=topology_limits,
-    state_limits=state_limits,
+environment_runtime = create_environment_runtime(
+    mounts=mounts,
+    default_mount="workspace",
     extensions=(WorkspaceMarkerExtension("workspace-marker"),),
 )
+```
+
+Give the advanced runtime to the Harness through fresh run bindings. The Harness, not Host code, binds, activates, and closes it:
+
+```python
+from a13n_harness import RunBindings
+
+bindings = RunBindings.embedded(environment=environment_runtime)
+result = await executable.run("Use the prepared workspace", bindings=bindings)
 ```
 
 The same `extensions=` sequence accepts callback adapters and custom extension objects together:
 
 ```python
-environment_binding = create_environment_run_binding(
-    initial_topology=topology,
-    topology_limits=topology_limits,
-    state_limits=state_limits,
+environment_runtime = create_environment_runtime(
+    mounts=mounts,
+    default_mount="workspace",
     extensions=(
         active_run_callbacks,
         WorkspaceMarkerExtension("custom-marker"),
@@ -297,8 +317,37 @@ A distribution can register a side-effect-free factory under:
 "acme.workspace-marker" = "acme_environment.extension:WorkspaceMarkerFactory"
 ```
 
-The Host explicitly selects keys with `build_environment_run_extension_factory_catalog()` or provides exact registrations. Harness owns no ambient configuration document for Environment run extensions.
+The Host explicitly selects keys with `build_environment_run_extension_factory_catalog()` or provides exact factories. Harness owns no ambient configuration document for Environment run extensions. A complete installed-factory path is:
+
+```python
+from a13n_harness import (
+    EnvironmentRunExtensionFactoryContext,
+    RunBindings,
+    build_environment_run_extension_factory_catalog,
+)
+from a13n_harness.environment.advanced import create_environment_runtime
+
+catalog = build_environment_run_extension_factory_catalog(
+    extension_keys=("acme.workspace-marker",),
+)
+extension = catalog.create_extension(
+    EnvironmentRunExtensionFactoryContext(
+        extension_key="acme.workspace-marker",
+        extension_id="workspace-marker-primary",
+        configuration={"marker_path": "/workspace/.active-run"},
+    )
+)
+environment_runtime = create_environment_runtime(
+    mounts=mounts,
+    default_mount="workspace",
+    extensions=(extension,),
+)
+bindings = RunBindings.embedded(environment=environment_runtime)
+result = await executable.run("Use the prepared workspace", bindings=bindings)
+```
+
+`extension_key` chooses one installed factory; `extension_id` identifies one concrete aggregate instance and must be unique within that runtime. Catalog construction imports only explicitly selected keys. Passing a concrete extension directly skips metadata discovery entirely.
 
 ## Runnable Example
 
-The [plugin integration example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) contains wheel-ready middleware and Environment extension entry points, direct-code composition, YAML selection, per-run isolation, and offline tests.
+The [integration package example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) contains Host-authorized custom Capability selection, wheel-ready middleware and Environment extension entry points, direct-code composition, YAML selection, public Harness execution, per-run isolation, and offline tests.

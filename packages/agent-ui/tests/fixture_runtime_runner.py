@@ -23,22 +23,13 @@ async def main() -> int:
     await channel.send("HELLO", token=token, generation_id=generation_id)
     welcome = await channel.receive(expected_type="WELCOME")
     require_generation(welcome, generation_id)
-    await channel.send("READY", generation_id=generation_id)
+    readiness = current_runtime_readiness()
+    await channel.send("READY", generation_id=generation_id, **readiness.model_dump(mode="json"))
     state = "ready"
     while True:
         message = await channel.receive()
         message_type = require_string(message, "type", max_length=32)
-        if message_type == "PROBE" and state == "ready":
-            readiness = current_runtime_readiness()
-            await channel.send(
-                "RUNTIME_READY",
-                generation_id=generation_id,
-                **readiness.model_dump(mode="json"),
-            )
-        elif message_type == "PREPARE" and state == "ready":
-            state = "prepared"
-            await channel.send("PREPARED", generation_id=generation_id)
-        elif message_type == "COMMIT" and state == "prepared":
+        if message_type == "ACTIVATE" and state == "ready":
             state = "active"
             await channel.send("ACTIVE", generation_id=generation_id)
         elif message_type == "DRAIN" and state == "active" and behavior == "stall_drain":
@@ -48,12 +39,8 @@ async def main() -> int:
         elif message_type == "DRAIN" and state == "active":
             state = "drained"
             await channel.send("DRAINED", generation_id=generation_id)
-        elif message_type == "SHUTDOWN" and state in {"ready", "prepared", "drained"}:
+        elif message_type == "SHUTDOWN" and state in {"ready", "drained"}:
             await channel.send("EXITING", generation_id=generation_id)
-            await channel.close()
-            return 0
-        elif message_type == "ABORT" and state in {"ready", "prepared"}:
-            await channel.send("ABORTED", generation_id=generation_id)
             await channel.close()
             return 0
         else:

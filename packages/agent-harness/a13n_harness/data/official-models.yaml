@@ -1,34 +1,34 @@
 schema_version: 1
 models:
   anthropic:claude-sonnet-5:
-    configuration:
+    characteristics:
       context_window: 1000000
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   anthropic:claude-opus-5:
-    configuration:
+    characteristics:
       context_window: 1000000
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   openai:gpt-5.5:
-    configuration:
+    characteristics:
       context_window: 1050000
     source_url: https://developers.openai.com/api/docs/models/gpt-5.5
   google-gla:gemini-3.5-flash:
-    configuration:
+    characteristics:
       context_window: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash
   google-gla:gemini-3.6-flash:
-    configuration:
+    characteristics:
       context_window: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash
   google-gla:gemini-3.5-flash-lite:
-    configuration:
+    characteristics:
       context_window: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
   deepseek:deepseek-v4-flash:
-    configuration:
+    characteristics:
       context_window: 1000000
     source_url: https://api-docs.deepseek.com/quick_start/pricing
   deepseek:deepseek-v4-pro:
-    configuration:
+    characteristics:
       context_window: 1000000
     source_url: https://api-docs.deepseek.com/quick_start/pricing

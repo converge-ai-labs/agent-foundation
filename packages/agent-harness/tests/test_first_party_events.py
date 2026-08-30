@@ -305,7 +305,7 @@ async def test_task_changed_events_are_committed_deltas_and_skip_semantic_noop()
     ]
     reciprocal = changed[1:3]
     assert reciprocal[0]["operation_id"] == reciprocal[1]["operation_id"]
-    assert reciprocal[0]["state_revision"] == reciprocal[1]["state_revision"] == 2
+    assert reciprocal[0]["task_state_version"] == reciprocal[1]["task_state_version"] == 3
     assert all("description" not in event["task"] and "metadata" not in event["task"] for event in changed)
 
 
@@ -348,10 +348,10 @@ async def test_provider_task_observation_emits_once_at_harness_read_boundaries()
     observed = [event for event in _payloads(events, "state") if event["type"] == "task_changed"]
     assert len(observed) == 1
     assert observed[0]["reason"] == "provider_observed"
-    assert observed[0]["state_revision"] == 1
+    assert observed[0]["task_state_version"] == 2
     assert observed[0]["task"] == {
         "id": "task-1",
-        "revision": 1,
+        "version": 2,
         "subject": "External",
         "active_form": None,
         "status": "pending",
@@ -376,7 +376,7 @@ async def test_provider_changes_before_harness_mutation_keep_provider_observed_r
             await cell.update(
                 second.id,
                 TaskMutation(subject="Externally changed"),
-                snapshot.tasks[second.id].revision,
+                snapshot.tasks[second.id].version,
             )
             yield {
                 0: DeltaToolCall(

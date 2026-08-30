@@ -13,8 +13,6 @@ class RuntimeGenerationState(StrEnum):
 
     starting = "starting"
     ready = "ready"
-    preparing = "preparing"
-    prepared = "prepared"
     active = "active"
     draining = "draining"
     exited = "exited"
@@ -24,7 +22,6 @@ class RuntimeExitReason(StrEnum):
     """Bounded reason for one observed Runner exit."""
 
     graceful = "graceful"
-    aborted = "aborted"
     startup_failed = "startup_failed"
     unexpected = "unexpected"
     terminated = "terminated"

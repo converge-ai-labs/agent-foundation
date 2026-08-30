@@ -404,7 +404,7 @@ def test_unmapped_public_events_fall_back_to_namespaced_custom_events() -> None:
             1,
             HarnessExtensionEvent(
                 kind="context",
-                payload={"type": "environment_topology_changed", "revision": 3},
+                payload={"type": "environment_mount_set_changed", "sequence": 3},
             ),
         )
     )[0]

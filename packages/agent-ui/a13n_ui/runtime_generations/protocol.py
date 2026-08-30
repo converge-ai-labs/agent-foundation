@@ -27,7 +27,6 @@ class ControlChannel:
         self._reader = reader
         self._writer = writer
         self._max_message_bytes = max_message_bytes
-        self._lock = asyncio.Lock()
 
     async def send(self, message_type: str, **fields: object) -> None:
         payload = {"version": CONTROL_PROTOCOL_VERSION, "type": message_type, **fields}
@@ -69,9 +68,8 @@ class ControlChannel:
         return value
 
     async def request(self, message_type: str, *, expected_type: str, **fields: object) -> dict[str, Any]:
-        async with self._lock:
-            await self.send(message_type, **fields)
-            return await self.receive(expected_type=expected_type)
+        await self.send(message_type, **fields)
+        return await self.receive(expected_type=expected_type)
 
     async def close(self) -> None:
         self._writer.close()

@@ -25,11 +25,18 @@ COPY packages/foundation-service/pyproject.toml packages/foundation-service/pypr
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package a13n-service --no-install-workspace
 
+COPY packages/agent-envd-client packages/agent-envd-client
+COPY packages/agent-environment-provider packages/agent-environment-provider
+COPY packages/agent-harness packages/agent-harness
 COPY packages/logging packages/logging
 COPY packages/foundation-service packages/foundation-service
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package a13n-service \
-    && rm -rf packages/logging/tests packages/foundation-service/tests
+    && rm -rf packages/agent-envd-client/tests \
+        packages/agent-environment-provider/tests \
+        packages/agent-harness/tests \
+        packages/logging/tests \
+        packages/foundation-service/tests
 
 FROM python:3.13-slim-bookworm AS runtime
 

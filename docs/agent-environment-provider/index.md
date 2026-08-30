@@ -99,7 +99,7 @@ Cleanup has three distinct layers:
 
 | Layer                          | Owner and trigger                                         | Effect                                                                              |
 | ------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Harness binding                | Harness run close or topology replacement                 | Stops binding-local sessions, handles, retained output, and adapters                |
+| Harness mount                  | Harness run close, unmount, or mount replacement          | Stops mount-local sessions, handles, retained output, and adapters                  |
 | Resource and attachment scopes | Harness for Provider input; Host around borrowed Resource | Closes process-local clients, admission, and attachment material                    |
 | Provider resource              | Harness through `ephemeral()` or explicit Host policy     | Creates, resumes, pauses, destroys, and reconciles the external or logical resource |
 

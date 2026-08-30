@@ -72,7 +72,7 @@ class SkillCatalogItem(BaseModel):
 
 
 class BoundSkillCatalogItem(BaseModel):
-    """One catalog item resolved to an exact Environment binding revision."""
+    """One catalog item resolved to an exact Environment mount incarnation."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -90,7 +90,6 @@ class BoundSkillCatalog(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    topology_version: int = Field(ge=0)
     items: tuple[BoundSkillCatalogItem, ...]
 
     @model_validator(mode="after")
@@ -124,13 +123,9 @@ class BoundSkillCatalog(BaseModel):
                 or document != item.document
             ):
                 raise DefinitionError(
-                    "A bound skill catalog no longer matches the current Environment binding revision.",
+                    "A bound skill catalog no longer matches the current Environment mount incarnation.",
                     code="skill_catalog_stale",
-                    details={
-                        "skill": item.name,
-                        "binding_id": item.document.binding_id,
-                        "binding_revision": item.document.binding_revision,
-                    },
+                    details={"skill": item.name, "mount_id": item.document.mount_id},
                 )
 
 
@@ -267,7 +262,7 @@ class _SkillFileRoute:
 
 
 class _PinnedSkillFileOperator:
-    """Route selected roots through revision-pinned Environment file scopes."""
+    """Route selected roots through mount-incarnation-pinned Environment file scopes."""
 
     def __init__(
         self,
@@ -290,8 +285,7 @@ class _PinnedSkillFileOperator:
         base = route.selection.resolved_path.path.rstrip("/")
         provider_path = f"{base}/{relative}" if relative else (base or "/")
         return EnvironmentPath(
-            binding_id=route.selection.resolved_path.binding_id,
-            binding_revision=route.selection.resolved_path.binding_revision,
+            mount_id=route.selection.resolved_path.mount_id,
             path=provider_path,
         )
 
@@ -606,10 +600,9 @@ class SkillManager:
         return tuple(selected[name] for name in sorted(selected))
 
     async def scan_environment(self, *, environment: BoundEnvironment) -> BoundSkillCatalog:
-        """Scan through revision-pinned scopes and bind every result to its exact route."""
+        """Scan through mount-incarnation-pinned scopes and bind every result to its exact route."""
         if not isinstance(environment, BoundEnvironment):
             raise TypeError("environment must be a BoundEnvironment")
-        topology_version = environment.topology.topology_version
         unavailable: dict[str, str] = {}
         initially_unresolved: dict[str, str] = {}
         selections: list[tuple[str, FileScopeSelection]] = []
@@ -626,25 +619,18 @@ class SkillManager:
                 try:
                     files = await stack.enter_async_context(environment.open_files(selection))
                 except EnvironmentError as exc:
-                    if exc.code == "environment_stale_binding":
+                    if exc.code == "environment_stale_mount":
                         raise DefinitionError(
-                            "An Environment binding changed while preparing the skill catalog.",
+                            "An Environment mount changed while preparing the skill catalog.",
                             code="skill_catalog_stale",
-                            details={
-                                "binding_id": selection.resolved_path.binding_id,
-                                "binding_revision": selection.resolved_path.binding_revision,
-                            },
+                            details={"mount_id": selection.resolved_path.mount_id},
                         ) from exc
                     unavailable[root] = exc.code
                     continue
                 routes.append(_SkillFileRoute(root=root, selection=selection, files=files))
             pinned_files = _PinnedSkillFileOperator(routes, unavailable)
             catalog = await self._scan_files(pinned_files)
-            bound = _bind_skill_catalog(
-                catalog,
-                files=pinned_files,
-                topology_version=topology_version,
-            )
+            bound = _bind_skill_catalog(catalog, files=pinned_files)
         _require_skill_scan_roots_current(
             environment,
             selections=selections,
@@ -719,7 +705,7 @@ class _SkillsRunCapability(SkillsCapability):
         self.manager = manager
         self._catalog = catalog.model_copy(deep=True)
         self._context = context
-        keys: dict[tuple[str, int, str], BoundSkillCatalogItem] = {}
+        keys: dict[tuple[str, str], BoundSkillCatalogItem] = {}
         skill_paths: list[SkillPath] = []
         for item in self._catalog.items:
             skill_paths.append(
@@ -729,7 +715,7 @@ class _SkillsRunCapability(SkillsCapability):
                     directory=item.directory,
                 )
             )
-            keys[(item.document.binding_id, item.document.binding_revision, item.document.path)] = item
+            keys[(item.document.mount_id, item.document.path)] = item
         self._access_keys = MappingProxyType(keys)
         context.skill_paths.publish(SKILLS_CAPABILITY_ID, skill_paths)
 
@@ -804,7 +790,7 @@ class _SkillsRunCapability(SkillsCapability):
             selected = ctx.deps.environment.resolve_path(path)
         except EnvironmentError:
             return result
-        item = self._access_keys.get((selected.binding_id, selected.binding_revision, selected.path))
+        item = self._access_keys.get((selected.mount_id, selected.path))
         if item is None:
             return result
         await ctx.deps.events.emit(
@@ -867,7 +853,7 @@ def _is_path_within_root(candidate: str, root: str) -> bool:
 
 
 def _is_within_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:
-    if candidate.binding_id != root.binding_id or candidate.binding_revision != root.binding_revision:
+    if candidate.mount_id != root.mount_id:
         return False
     normalized_root = root.path.rstrip("/")
     prefix = f"{normalized_root}/" if normalized_root else "/"
@@ -893,11 +879,7 @@ def _require_skill_scan_roots_current(
             raise DefinitionError(
                 "A selected skill root changed while preparing the catalog.",
                 code="skill_catalog_stale",
-                details={
-                    "root": root,
-                    "binding_id": captured.resolved_path.binding_id,
-                    "binding_revision": captured.resolved_path.binding_revision,
-                },
+                details={"root": root, "mount_id": captured.resolved_path.mount_id},
             )
     for root, previous_code in initially_unresolved.items():
         try:
@@ -925,9 +907,8 @@ def _bind_skill_catalog(
     catalog: Sequence[SkillCatalogItem],
     *,
     files: _PinnedSkillFileOperator,
-    topology_version: int,
 ) -> BoundSkillCatalog:
-    resolved_documents: dict[tuple[str, int, str], str] = {}
+    resolved_documents: dict[tuple[str, str], str] = {}
     bound: list[BoundSkillCatalogItem] = []
     for item in catalog:
         skill_file = _join_logical_path(item.path, _SKILL_FILE_NAME)
@@ -946,7 +927,7 @@ def _bind_skill_catalog(
                 code="skill_path_unavailable",
                 details={"skill": item.name},
             )
-        key = (document.binding_id, document.binding_revision, document.path)
+        key = (document.mount_id, document.path)
         previous = resolved_documents.setdefault(key, item.name)
         if previous != item.name:
             raise DefinitionError(
@@ -967,7 +948,7 @@ def _bind_skill_catalog(
                 observed_generation=files.observed_generation(item.path),
             )
         )
-    return BoundSkillCatalog(topology_version=topology_version, items=tuple(bound))
+    return BoundSkillCatalog(items=tuple(bound))
 
 
 async def _is_file(files: FileOperator, path: str) -> bool:

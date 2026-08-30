@@ -216,7 +216,7 @@ async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() ->
 
     async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
         assert calls == []
-        assert stream.context.environment.topology.bindings == ()
+        assert stream.context.environment.snapshot.mounts == ()
         assert len(stream.context.subagents) == 0
 
         items = [item async for item in stream]
@@ -243,13 +243,11 @@ async def test_stream_is_lazy_and_delivers_one_terminal_result_after_events() ->
 async def test_environment_state_restores_before_input_factory_and_exports_fresh_state() -> None:
     calls: list[tuple[ModelMessage, ...]] = []
     executable = _build(_turn_model(calls))
-    previous = HarnessState.new(
-        environment_state=EnvironmentState(observed_topology_version=0, bindings={}),
-    )
+    previous = HarnessState.new(environment_state=EnvironmentState())
 
     async def input_factory(preparation) -> str:
-        assert preparation.environment.restored_state_topology_version == 0
-        assert preparation.environment.topology.topology_version == 0
+        assert preparation.environment.snapshot.mounts == ()
+        assert preparation.environment.snapshot.default_mount is None
         return "restored"
 
     result = await executable.run(
@@ -261,7 +259,7 @@ async def test_environment_state_restores_before_input_factory_and_exports_fresh
     assert result.output_or_raise() == "turn-1"
     assert result.state is not None
     assert result.state.environment_state is not None
-    assert result.state.environment_state.observed_topology_version == 0
+    assert result.state.environment_state == EnvironmentState()
 
 
 async def test_enter_and_exit_without_iteration_does_not_start_the_agent() -> None:
@@ -682,7 +680,7 @@ async def test_input_factory_runs_once_after_noop_environment_entry() -> None:
     executable = _build(_turn_model(model_calls))
 
     async def input_factory(preparation):
-        assert preparation.environment.topology.bindings == ()
+        assert preparation.environment.snapshot.mounts == ()
         calls.append(preparation.run_id)
         return "from factory"
 
@@ -875,9 +873,9 @@ async def test_recognized_pydantic_run_failure_becomes_a_failed_result() -> None
     assert "invalid response" not in result.failure.message
 
 
-async def test_event_consumer_stop_wakes_a_blocked_topology_event_producer() -> None:
+async def test_event_consumer_stop_wakes_a_blocked_environment_change_producer() -> None:
     emitter = _RunEventEmitter("thread-1", "run-1", capacity=1)
-    event = HarnessExtensionEvent(kind="context", payload={"type": "environment_topology_changed"})
+    event = HarnessExtensionEvent(kind="context", payload={"type": "environment_changed"})
     emitter.start_consuming()
     await emitter.emit(event)
     blocked = asyncio.create_task(emitter.emit(event))

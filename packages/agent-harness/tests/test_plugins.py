@@ -27,10 +27,9 @@ from a13n_harness import (
 )
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
-    EnvironmentRunBinding,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_noop_environment_run_binding,
+    EnvironmentRuntime,
+    EnvironmentRuntimeMount,
+    create_empty_environment_runtime,
 )
 from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec
@@ -651,22 +650,37 @@ async def test_normal_cleanup_stays_in_the_task_that_entered_the_plugin_iterator
     assert response._item_validator is None
 
 
-class TaskAffineEnvironment(EnvironmentRunBinding):
+class TaskAffineEnvironment(EnvironmentRuntime):
     def __init__(self) -> None:
-        self.delegate = create_noop_environment_run_binding()
+        self.delegate = create_empty_environment_runtime()
         self.closed = asyncio.Event()
 
-    @property
-    def controller(self):
-        return self.delegate.controller
+    async def wait_until_active(self) -> None:
+        await self.delegate.wait_until_active()
 
-    @property
-    def topology_limits(self):
-        return self.delegate.topology_limits
+    async def mount(
+        self,
+        name: str,
+        mount: EnvironmentRuntimeMount,
+        *,
+        make_default: bool = False,
+    ):
+        return await self.delegate.mount(name, mount, make_default=make_default)
 
-    @property
-    def state_limits(self):
-        return self.delegate.state_limits
+    async def replace(self, name: str, mount: EnvironmentRuntimeMount):
+        return await self.delegate.replace(name, mount)
+
+    async def unmount(self, name: str):
+        return await self.delegate.unmount(name)
+
+    async def set_default(self, name: str | None):
+        return await self.delegate.set_default(name)
+
+    async def _activate(self) -> None:
+        await self.delegate._activate()
+
+    def _begin_close(self) -> None:
+        self.delegate._begin_close()
 
     @asynccontextmanager
     async def bind(self, *, run_id: str, instance) -> AsyncGenerator[BoundEnvironment]:
@@ -876,7 +890,7 @@ async def test_cancellation_during_terminal_pump_cleanup_stays_primary() -> None
         await run_task
 
 
-async def test_early_close_installs_topology_fence_before_plugin_cleanup() -> None:
+async def test_early_close_installs_mount_mutation_fence_before_plugin_cleanup() -> None:
     cleanup_started = asyncio.Event()
     release_cleanup = asyncio.Event()
     plugin = CleanupTrackingPlugin(
@@ -885,9 +899,7 @@ async def test_early_close_installs_topology_fence_before_plugin_cleanup() -> No
         started=cleanup_started,
         release=release_cleanup,
     )
-    environment = create_noop_environment_run_binding(
-        topology_limits=EnvironmentTopologyLimits(max_bindings=1, max_committed_changes=1)
-    )
+    environment = create_empty_environment_runtime()
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
@@ -902,9 +914,7 @@ async def test_early_close_installs_topology_fence_before_plugin_cleanup() -> No
     close_task = asyncio.create_task(stream.__aexit__(None, None, None))
     await cleanup_started.wait()
     with pytest.raises(EnvironmentError) as exc_info:
-        await environment.controller.apply(
-            EnvironmentTopologyRequest(topology_version=1, bindings=(), default_binding_id=None)
-        )
+        await environment.set_default(None)
     assert exc_info.value.code == "run_not_active"
     release_cleanup.set()
     await close_task
@@ -965,22 +975,10 @@ async def test_internal_pump_cancellation_cannot_publish_into_an_unconsumed_full
     await asyncio.wait_for(stream.__aexit__(None, None, None), timeout=2)
 
 
-class FailingTrackingEnvironment(EnvironmentRunBinding):
+class FailingTrackingEnvironment(TaskAffineEnvironment):
     def __init__(self, log: list[str]) -> None:
+        super().__init__()
         self.log = log
-        self.delegate = create_noop_environment_run_binding()
-
-    @property
-    def controller(self):
-        return self.delegate.controller
-
-    @property
-    def topology_limits(self):
-        return self.delegate.topology_limits
-
-    @property
-    def state_limits(self):
-        return self.delegate.state_limits
 
     @asynccontextmanager
     async def bind(self, *, run_id: str, instance) -> AsyncGenerator[BoundEnvironment]:

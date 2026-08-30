@@ -27,7 +27,7 @@ def create_environment_provider_binding(
         if attachment.configuration.environment_id != attachment.environment_id:
             raise EnvironmentError(
                 "Direct Local attachment environment identity is inconsistent",
-                code="environment_stale_binding",
+                code="environment_stale_mount",
             )
         return DirectLocalEnvironmentProviderBinding(attachment.configuration)
     if isinstance(attachment, EIPEnvironmentAttachment):

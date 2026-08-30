@@ -4,7 +4,7 @@
 
 An `EnvironmentProvider` is the small Host-facing management API for one resolved provider specification. It creates a resource, resumes an existing resource, pauses it when the provider supports suspension, destroys it, reconciles uncertain lifecycle operations, and exposes fresh runtime attachments while the resource is usable.
 
-The Provider encapsulates vendor lifecycle differences without becoming a durable store or a second Environment operation API. A Host chooses whether to retain the returned provider state and when to invoke each durable lifecycle action. The shared `ephemeral()` scope is the one convenience path for a caller that intentionally owns a temporary resource only for the duration of one use. The Harness consumes a Provider through that scope or borrows an already entered Resource, then continues to own file, shell, process, output, port, topology, and portable Environment-state behavior.
+The Provider encapsulates vendor lifecycle differences without becoming a durable store or a second Environment operation API. A Host chooses whether to retain the returned provider state and when to invoke each durable lifecycle action. The shared `ephemeral()` scope is the one convenience path for a caller that intentionally owns a temporary resource only for the duration of one use. The Harness consumes a Provider through that scope or borrows an already entered Resource, then continues to own the current mount set, file, shell, process, output, port, and portable Environment-state behavior.
 
 ## Resource Model
 
@@ -320,7 +320,7 @@ The async context returned by `acquire_attachment()` is the attachment concurren
 
 Provider plugins replace the complete management and attachment behavior through the abstract contracts above. Cleanup has three independent layers:
 
-1. the Harness closes or discards one transferred provider binding when a run ends or topology replacement retires that binding;
+1. the Harness closes or discards one transferred provider binding when a run ends or runtime mount replacement retires that binding;
 2. exiting `acquire_attachment()` releases its concurrency lease and any untransferred attachment material, while exiting `EnvironmentResource` closes process-local provider clients, maintenance tasks, and attachment admission;
 3. only the Host selects a later Provider `pause()` or `destroy()` operation for an external provider resource after its own reference, policy, and fencing checks.
 
@@ -350,7 +350,7 @@ class EIPSessionSource(ABC):
     async def discard(self) -> None: ...
 ```
 
-Each entry returns a fresh initialized and readiness-confirmed low-level `EIPSession` or fails. After `initialize`, the source/client performs the mandatory initial `environment.readiness` operation with a fresh operation ID and finite timeout before exposing the Session. `discard()` returns an unentered stdio lease to its Resource without closing resource-owned pipes, closes an unclaimed accepted WebSocket, and clears retained HTTP credential material; it is idempotently invoked only through the owning attachment/binding cleanup path. The source owns its single-use Session admission and profile-specific transport authentication, but never the managed stdio process or pipes. Generated methods, initialization/readiness validation, operation IDs, transfers, timeout, cancellation, reconciliation, and errors remain owned by `a13n-envd-client` and EIP.
+Each entry returns a fresh initialized and readiness-confirmed low-level `EIPSession` or fails. After `initialize`, the source/client performs the mandatory initial `environment.readiness` operation with a fresh operation ID and finite timeout before exposing the Session. `discard()` returns an unentered stdio lease to its Resource without closing resource-owned pipes, closes an unclaimed accepted WebSocket, and clears retained HTTP credential material; it is idempotently invoked only through the owning attachment/provider-binding cleanup path. The source owns its single-use Session admission and profile-specific transport authentication, but never the managed stdio process or pipes. Generated methods, initialization/readiness validation, operation IDs, transfers, timeout, cancellation, reconciliation, and errors remain owned by `a13n-envd-client` and EIP.
 
 Supported sources are:
 
@@ -360,13 +360,13 @@ Supported sources are:
 | `HttpEIPSessionSource`              | Dial one dedicated authenticated EIP HTTP(S) endpoint                                  | Client requests; envd responds |
 | `AcceptedWebSocketEIPSessionSource` | Claim one already-authenticated `websockets.ServerConnection`                          | Client requests; envd responds |
 
-Each concrete source is a fresh single-use process-local value. Stdio captures one exclusive carrier lease issued by the Resource plus transport bounds; HTTP captures the normalized endpoint, Bearer credential, optional additive CA trust, and finite client/session bounds; accepted reverse WebSocket captures the Host-accepted connection and transport bounds. The common initialization arguments remain the `expected_environment_id` and exact application `required_methods` supplied by the Harness binding; the low-level client always requires and invokes `environment.readiness` as protocol foundation rather than making every caller remember it.
+Each concrete source is a fresh single-use process-local value. Stdio captures one exclusive carrier lease issued by the Resource plus transport bounds; HTTP captures the normalized endpoint, Bearer credential, optional additive CA trust, and finite client/session bounds; accepted reverse WebSocket captures the Host-accepted connection and transport bounds. The common initialization arguments remain the `expected_environment_id` and exact application `required_methods` supplied by the Harness provider binding; the low-level client always requires and invokes `environment.readiness` as protocol foundation rather than making every caller remember it.
 
 For stdio, the entered `EnvironmentResource` is the sole owner of the daemon subprocess, complete process tree, private runtime, and underlying pipes. A fresh source claims exclusive requester access for one initialized and readiness-confirmed EIP Session. On clean exit it sends ordinary `session.close` and returns the healthy carrier lease without closing the process or pipes only after envd delivers the close response, cleans session-owned state, and rearms the physical stdio carrier for a fresh `initialize`. The resource can then issue another sequential source against the same daemon generation. Lost close response, failed initialization, fatal protocol/carrier failure, or unexpected process exit marks the Resource unavailable; attachment acquisition never starts a replacement process. Only the selected Provider create/resume lifecycle starts a daemon, and pause/destroy owns process termination and private-runtime cleanup.
 
 For reverse WebSocket, the Host listener authenticates and bounds the upgrade before constructing the source, then transfers the accepted `ServerConnection` exactly once. `AcceptedWebSocketEIPSessionSource` passes that object to the low-level `AcceptedWebSocketTransport` and sends `initialize`; it does not inspect or repeat the Bearer credential. Envd remains the responder even though it opened the carrier.
 
-A source never shares an initialized session, resumes a transfer, or automatically retries an operation whose dispatch is ambiguous. Same-generation reconnect creates a fresh EIP session. A changed daemon generation requires a fresh Harness binding revision.
+A source never shares an initialized session, resumes a transfer, or automatically retries an operation whose dispatch is ambiguous. Same-generation reconnect creates a fresh EIP session. A changed daemon generation requires a fresh attachment and a fresh Harness mount incarnation.
 
 ## Lifecycle and Harness Flow
 
@@ -390,7 +390,7 @@ sequenceDiagram
         Resource-->>Host: fresh single-use attachment
         Host->>Harness: adapt attachment into fresh binding
         Harness->>Envd: initialize and confirm readiness for a fresh EIP Session when applicable
-        Harness-->>Host: result after binding cleanup and HarnessState candidate
+        Harness-->>Host: result after provider-binding cleanup and HarnessState candidate
         Host->>Resource: release attachment scope
     end
     alt retain paused for later
@@ -422,7 +422,7 @@ Resume restores provider resources, not Harness authority:
 
 A full-memory sandbox resume can preserve the in-sandbox `agent-envd` process and daemon generation, but every external connection and EIP session is still fresh. A filesystem-only resume can reboot the sandbox, so the provider restarts `agent-envd`; its daemon generation changes and no prior EIP handle, process reference, receipt, or output reference remains valid.
 
-EIP 1.0 contributes no `EnvironmentBindingState`. Provider-managed filesystem persistence and Harness portable Environment state are separate mechanisms and must not be double-counted as session restoration.
+EIP 1.0 contributes no `EnvironmentMountState`. Provider-managed filesystem persistence and Harness portable Environment state are separate mechanisms and must not be double-counted as session restoration.
 
 ## Failure Semantics
 
@@ -438,7 +438,7 @@ EIP 1.0 contributes no `EnvironmentBindingState`. Provider-managed filesystem pe
 | Reconciliation proves authoritative absence            | Return `ABSENT`; Host policy can permit retry or terminal destroy                    |
 | Reconciliation evidence is insufficient                | Return `UNKNOWN`; no lifecycle transition is inferred                                |
 | EIP carrier fails after possible operation dispatch    | EIP operation outcome remains owned by EIP; provider lifecycle is unchanged          |
-| Harness binding cleanup fails                          | Harness preserves the nearest valid operation/result candidate                       |
+| Harness provider-binding cleanup fails                 | Harness preserves the nearest valid operation/result candidate                       |
 | Managed-resource disconnect fails                      | Provider cleanup failure; no implied pause or destroy                                |
 | Destroy reports not found                              | Successful absence only when the provider response is authoritative                  |
 | External cancellation after possible provider dispatch | Cancellation propagates with unknown outcome preserved                               |

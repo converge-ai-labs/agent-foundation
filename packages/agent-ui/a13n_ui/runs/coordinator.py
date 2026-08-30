@@ -76,7 +76,7 @@ class ForegroundRunCoordinator:
         *,
         session_id: str,
         thread_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         input_value: RunInputValue,
     ) -> TurnView:
         """Accept and synchronously advance one new root Turn to a durable boundary."""
@@ -84,13 +84,13 @@ class ForegroundRunCoordinator:
         prepared = await self._prepare(
             session_id=session_id,
             thread_id=thread_id,
-            expected_thread_revision=expected_thread_revision,
+            expected_thread_version=expected_thread_version,
         )
         turn_id = f"turn-{uuid4().hex}"
         accepted = await self._sessions.repository.accept_turn(
             session_id=session_id,
             thread_id=thread_id,
-            expected_revision=expected_thread_revision,
+            expected_version=expected_thread_version,
             turn_id=turn_id,
             input_value=TypeAdapter(RunInputValue).dump_python(input_value, mode="json"),
         )
@@ -98,14 +98,14 @@ class ForegroundRunCoordinator:
             return await self._run_accepted(
                 prepared=prepared,
                 turn=accepted,
-                expected_thread_revision=expected_thread_revision + 1,
+                expected_thread_version=expected_thread_version + 1,
                 input_value=input_value,
                 deferred_resume=None,
             )
         except BaseException as exc:
             await self._close_unstarted_after_failure(
                 turn_id=turn_id,
-                expected_thread_revision=expected_thread_revision + 1,
+                expected_thread_version=expected_thread_version + 1,
                 exc=exc,
             )
             raise
@@ -115,17 +115,17 @@ class ForegroundRunCoordinator:
         *,
         session_id: str,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         results: DeferredToolResults,
     ) -> TurnView:
         """Consume one exact pending deferred request and advance the same Turn."""
 
         session = await self._sessions.get(session_id)
-        if session.root.commit_revision != expected_thread_revision:
+        if session.root.commit_version != expected_thread_version:
             raise SessionError(
-                "The Thread commit revision is stale.",
-                code="thread_revision_conflict",
-                details={"current_revision": session.root.commit_revision},
+                "The Thread commit version is stale.",
+                code="thread_version_conflict",
+                details={"current_version": session.root.commit_version},
             )
         turn = _turn(session, turn_id)
         if (
@@ -141,7 +141,7 @@ class ForegroundRunCoordinator:
         prepared = await self._prepare(
             session_id=session_id,
             thread_id=turn.thread_id,
-            expected_thread_revision=expected_thread_revision,
+            expected_thread_version=expected_thread_version,
             checkpoint=turn.selected_checkpoint,
         )
         requests = await self._sessions.load_deferred_requests(
@@ -155,7 +155,7 @@ class ForegroundRunCoordinator:
         return await self._run_accepted(
             prepared=prepared,
             turn=turn,
-            expected_thread_revision=expected_thread_revision,
+            expected_thread_version=expected_thread_version,
             input_value=None,
             deferred_resume=resume,
         )
@@ -188,16 +188,16 @@ class ForegroundRunCoordinator:
         *,
         session_id: str,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
     ) -> TurnView:
         """Request active cancellation or close accepted/waiting work immediately."""
 
         session = await self._sessions.get(session_id)
-        if session.root.commit_revision != expected_thread_revision:
+        if session.root.commit_version != expected_thread_version:
             raise SessionError(
-                "The Thread commit revision is stale.",
-                code="thread_revision_conflict",
-                details={"current_revision": session.root.commit_revision},
+                "The Thread commit version is stale.",
+                code="thread_version_conflict",
+                details={"current_version": session.root.commit_version},
             )
         turn = _turn(session, turn_id)
         async with self._active_lock:
@@ -209,7 +209,7 @@ class ForegroundRunCoordinator:
             raise RunCoordinationError("The selected Turn is not cancellable.", code="turn_not_cancellable")
         return await self._sessions.repository.commit_unstarted_terminal(
             turn_id=turn_id,
-            expected_thread_revision=expected_thread_revision,
+            expected_thread_version=expected_thread_version,
             state=TurnState.cancelled,
             failure={"code": "run_cancelled", "message": "The Turn was cancelled before another Run."},
         )
@@ -231,17 +231,17 @@ class ForegroundRunCoordinator:
         *,
         session_id: str,
         thread_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         checkpoint: object | None = None,
     ) -> _PreparedSession:
         session = await self._sessions.get(session_id)
         if session.root.thread_id != thread_id:
             raise SessionError("The selected Thread does not exist in this Session.", code="thread_missing")
-        if session.root.commit_revision != expected_thread_revision:
+        if session.root.commit_version != expected_thread_version:
             raise SessionError(
-                "The Thread commit revision is stale.",
-                code="thread_revision_conflict",
-                details={"current_revision": session.root.commit_revision},
+                "The Thread commit version is stale.",
+                code="thread_version_conflict",
+                details={"current_version": session.root.commit_version},
             )
         selected = checkpoint or session.root.selected_checkpoint
         if selected is None:
@@ -277,7 +277,7 @@ class ForegroundRunCoordinator:
         *,
         prepared: _PreparedSession,
         turn: TurnView,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         input_value: RunInputValue | None,
         deferred_resume: DeferredToolResume | None,
     ) -> TurnView:
@@ -285,14 +285,14 @@ class ForegroundRunCoordinator:
         model_resolver = prepared.model_resolver
         capabilities = _run_capabilities(prepared.session, prepared.agent)
         stream: HarnessRunStream[object] | None = None
-        started_revision: int | None = None
+        started_version: int | None = None
         terminal_observed = False
         durable_committed = False
         presentation_failure: EventStoreError | None = None
         external_cancellation: asyncio.CancelledError | None = None
         selected: TurnView | None = None
         try:
-            async with self._environments.run_binding(
+            async with self._environments.run_environment(
                 session_id=prepared.session.session_id,
                 snapshot=prepared.environment,
             ) as environment:
@@ -317,9 +317,9 @@ class ForegroundRunCoordinator:
                     previous_state=prepared.previous_state,
                     deferred_resume=deferred_resume,
                 )
-                started_revision = await self._sessions.repository.start_run(
+                started_version = await self._sessions.repository.start_run(
                     turn_id=turn.turn_id,
-                    expected_thread_revision=expected_thread_revision,
+                    expected_thread_version=expected_thread_version,
                     run_id=stream.run_id,
                     consume_deferred=deferred_resume is not None,
                 )
@@ -337,7 +337,7 @@ class ForegroundRunCoordinator:
                     selected = await self._commit_result(
                         prepared=prepared,
                         turn=turn,
-                        expected_thread_revision=started_revision,
+                        expected_thread_version=started_version,
                         terminal=terminal,
                     )
                 if selected is None:
@@ -361,20 +361,20 @@ class ForegroundRunCoordinator:
         except asyncio.CancelledError as exc:
             if stream is not None:
                 stream.cancel()
-            if started_revision is not None and not durable_committed and stream is not None:
+            if started_version is not None and not durable_committed and stream is not None:
                 await self._commit_running_failure(
                     turn_id=turn.turn_id,
-                    expected_thread_revision=started_revision,
+                    expected_thread_version=started_version,
                     run_id=stream.run_id,
                     exc=exc,
                     terminal_observed=terminal_observed,
                 )
             raise
         except BaseException as exc:
-            if started_revision is not None and not durable_committed and stream is not None:
+            if started_version is not None and not durable_committed and stream is not None:
                 await self._commit_running_failure(
                     turn_id=turn.turn_id,
-                    expected_thread_revision=started_revision,
+                    expected_thread_version=started_version,
                     run_id=stream.run_id,
                     exc=exc,
                     terminal_observed=terminal_observed,
@@ -438,7 +438,7 @@ class ForegroundRunCoordinator:
         *,
         prepared: _PreparedSession,
         turn: TurnView,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         terminal: HarnessRunResult[object],
     ) -> TurnView:
         checkpoint = None
@@ -462,7 +462,7 @@ class ForegroundRunCoordinator:
             )
             return await self._sessions.repository.commit_waiting(
                 turn_id=turn.turn_id,
-                expected_thread_revision=expected_thread_revision,
+                expected_thread_version=expected_thread_version,
                 run_id=terminal.run_id,
                 checkpoint=checkpoint,
                 state_object=ObjectRef(
@@ -477,7 +477,7 @@ class ForegroundRunCoordinator:
             assert checkpoint is not None
             return await self._sessions.repository.commit_terminal(
                 turn_id=turn.turn_id,
-                expected_thread_revision=expected_thread_revision,
+                expected_thread_version=expected_thread_version,
                 run_id=terminal.run_id,
                 state=TurnState.completed,
                 checkpoint=checkpoint,
@@ -489,7 +489,7 @@ class ForegroundRunCoordinator:
             assert failure is not None
             return await self._sessions.repository.commit_terminal(
                 turn_id=turn.turn_id,
-                expected_thread_revision=expected_thread_revision,
+                expected_thread_version=expected_thread_version,
                 run_id=terminal.run_id,
                 state=TurnState.failed,
                 checkpoint=checkpoint,
@@ -498,7 +498,7 @@ class ForegroundRunCoordinator:
             )
         return await self._sessions.repository.commit_terminal(
             turn_id=turn.turn_id,
-            expected_thread_revision=expected_thread_revision,
+            expected_thread_version=expected_thread_version,
             run_id=terminal.run_id,
             state=TurnState.cancelled,
             checkpoint=None,
@@ -510,7 +510,7 @@ class ForegroundRunCoordinator:
         self,
         *,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         run_id: str,
         exc: BaseException,
         terminal_observed: bool,
@@ -525,7 +525,7 @@ class ForegroundRunCoordinator:
                     state = TurnState.failed
                 await self._sessions.repository.commit_terminal(
                     turn_id=turn_id,
-                    expected_thread_revision=expected_thread_revision,
+                    expected_thread_version=expected_thread_version,
                     run_id=run_id,
                     state=state,
                     checkpoint=None,
@@ -539,14 +539,14 @@ class ForegroundRunCoordinator:
         self,
         *,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         exc: BaseException,
     ) -> None:
         with CancelScope(shield=True):
             try:
                 await self._sessions.repository.commit_unstarted_terminal(
                     turn_id=turn_id,
-                    expected_thread_revision=expected_thread_revision,
+                    expected_thread_version=expected_thread_version,
                     state=(TurnState.cancelled if isinstance(exc, asyncio.CancelledError) else TurnState.interrupted),
                     failure=_safe_failure(exc, "run_not_started"),
                 )

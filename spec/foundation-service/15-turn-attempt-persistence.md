@@ -26,7 +26,7 @@ under the same Turn.
 | Resource      | Responsibilities                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Thread`      | Owns Session membership, origin, version, the current Turn (the most recently accepted Turn), and selected continuation head. Current-Turn status determines whether work is active. The Thread serializes whether another Turn can be accepted but does not schedule or execute that Turn.                                                                                                                         |
-| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact AgentRevision selection, accepted model execution snapshot, safe model observation, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                                                   |
+| `Turn`        | Owns the accepted Agent-work identity, input, lineage, exact AgentPresetVersion and Runtime lock selection, accepted model execution snapshot, safe model observation, scheduling, recovery budget and consumption, current-attempt selection, current state, and durable outcome. It is the sole authority for whether another attempt may be created.                                                             |
 | `TurnAttempt` | Owns one worker generation's lease, fence, worker and Harness Run correlation, safe model observation, bounded dispatch, usage and failure audit, and generation outcome. It does not own accepted input, lineage, model configuration, state, durable outcome, credentials, live bindings, or presentation data, and it cannot independently authorize a successor. Terminal attempts are immutable audit records. |
 
 ## Boundaries
@@ -35,42 +35,49 @@ under the same Turn.
 | ------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Model-loop retries inside one Harness Run  | Agent Harness                                                              | Remain process-local `ModelAttempt` values and never allocate another `TurnAttempt`               |
 | Lifecycle history                          | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) | Records ordered facts without becoming Turn or attempt authority                                  |
+| Thread inbox acceptance and consumption    | [Agent Control: Active Execution](35-agent-control-active-execution.md)    | Supplies durable steer entries and requires current-attempt fencing for same-Turn consumption     |
 | Agent tool dispatch and result correlation | Foundation Host dispatch integration plus selected Harness state           | Durably identifies calls with no recorded result without deciding their external business outcome |
 | Recovery notice shown to the Agent         | Fresh Harness `ModelContextRunBinding` supplied by Foundation              | Projects bounded `unknown_outcome` facts without editing imported Harness messages                |
 
 ## Turn and TurnAttempt Allocation Boundary
 
-A new `Turn` records acceptance of a new input-driven advancement of one
-Thread. A new `TurnAttempt` records a worker generation authorized to advance
-an already accepted, unsealed Turn. Creating a Turn therefore does not create
-an attempt in the same transaction: the Turn first becomes `accepted`, and a
-later Worker scan and claim creates attempt number one.
+A new `Turn` records acceptance of one input-driven Thread advancement under
+the [Agent control input and continuation
+contract](34-agent-control-input-and-continuation.md). A new `TurnAttempt`
+records a worker generation authorized to advance an already accepted,
+unsealed Turn. Creating a Turn therefore does not create an attempt in the same
+transaction: the Turn first becomes `accepted`, and a later Worker scan and
+claim creates attempt number one.
 
 A later attempt preserves the Turn ID, Session, Thread, parent edge, accepted
-input, exact AgentRevision selection, model execution snapshot, recovery policy,
-and deterministic state key. It receives a new attempt ID, attempt number,
-fence, lease, worker generation, fresh credentials and bindings, and, after
-entry, a fresh Harness Run. By contrast,
-root acceptance, continuation, authenticated waiting feedback, fork, and an
-authorized retry of sealed intent allocate another Turn and another state key.
+input, exact AgentPresetVersion and Runtime lock selection, model execution
+snapshot, recovery policy, and deterministic state key. It receives a new
+attempt ID, attempt number, fence, lease, worker generation, fresh credentials
+and bindings, and, after entry, a fresh Harness Run. By contrast, start,
+continuation from the selected head or an explicit historical Turn, root-like
+existing-Thread input with no selected head, atomic waiting feedback, fork, and
+an authorized retry of sealed intent allocate another Turn and another state
+key.
 
-Root, fork, and child acceptance create a Thread with its first Turn;
-continuation, feedback, and retry advance an existing Thread version. Creating
-another TurnAttempt under the same current Turn changes neither Thread references
-nor Thread version.
+Initial root, fork, and child acceptance create a Thread with its first Turn.
+Continuation, root-like existing-Thread acceptance, queued-submission
+consumption, feedback, and retry advance an existing Thread version. Enqueuing,
+editing, deleting, or reordering a queued submission allocates neither identity.
+Creating another TurnAttempt under the same current Turn changes neither Thread
+references nor Thread version.
 
 The allocation decision is normative. Only the successful operations listed
 below allocate a new identity. Every other event allocates neither identity; it
 may preserve, mutate, or terminalize an existing Turn or `TurnAttempt` under its
 owning lifecycle contract.
 
-| Successful operation                                                                                                                                                                                                                     | Turn allocation                                                                          | TurnAttempt allocation                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accept a root Agent invocation, including an independent schedule, webhook, service request, or Host-managed asynchronous child                                                                                                          | Create a root Turn                                                                       | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
-| Accept a continuation through ordinary input or a schedule, webhook, or service request from an eligible completed parent; authenticated feedback from the exact waiting parent; or a compatible continuation selecting another revision | Create a new Turn with `lineage_kind=continue` and `parent_turn_id` naming that parent   | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
-| Accept an explicit fork from an eligible completed parent                                                                                                                                                                                | Create a new Turn with `lineage_kind=fork` and `parent_turn_id` naming that parent       | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
-| Accept an authorized product retry of sealed failed or cancelled intent                                                                                                                                                                  | Create another Turn through the ordinary parent, lineage, policy, and idempotency checks | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
-| Claim an eligible active Turn                                                                                                                                                                                                            | Preserve the Turn                                                                        | Create `attempts_started + 1`: attempt number one from `accepted`, or a later generation while the same Turn remains `running` after a failed generation, backoff, or expired-lease takeover |
+| Successful operation                                                                                                                                                                                                                                                                                                | Turn allocation                                                                                                                                 | TurnAttempt allocation                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accept a root Agent invocation, including an independent schedule, webhook, service request, or Host-managed asynchronous child; or accept root-like direct or queued input in an existing Thread whose head remains null after failed or cancelled work                                                            | Create a root Turn with `parent_turn_id=null`; only initial acceptance also creates the Thread                                                  | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
+| Accept a continuation through ordinary input, explicit Continue From, queued-submission consumption from a completed head, a schedule, webhook, or service request from an eligible completed parent; authenticated feedback from the exact waiting parent; or a compatible continuation selecting another revision | Create a new Turn with `lineage_kind=continue` and `parent_turn_id` naming that parent                                                          | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
+| Accept an explicit fork from an eligible completed parent                                                                                                                                                                                                                                                           | Create a new Turn with `lineage_kind=fork` and `parent_turn_id` naming that parent                                                              | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
+| Accept an authorized product retry of sealed failed or cancelled intent                                                                                                                                                                                                                                             | Create another Turn that copies the source's input kind, accepted value, lineage, and eligible state-parent edge and records `retry_of_turn_id` | Allocate none during acceptance; the first successful claim creates attempt number one                                                                                                       |
+| Claim an eligible active Turn                                                                                                                                                                                                                                                                                       | Preserve the Turn                                                                                                                               | Create `attempts_started + 1`: attempt number one from `accepted`, or a later generation while the same Turn remains `running` after a failed generation, backoff, or expired-lease takeover |
 
 ## Durable Model
 
@@ -132,6 +139,7 @@ class TurnAttempt:
     recovery_reason: str | None
     worker_id: str
     worker_generation: str
+    runtime_lock_digest: str
     run_id: str | None
     model_execution_observation: ModelExecutionObservation
 
@@ -227,19 +235,30 @@ to `running`.
 
 Each worker generation is one `turn_attempts` row:
 
-| Column group      | Columns                                                                      | Contract                                                                                               |
-| ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Identity          | `id`, `version`, `tenant_id`, `turn_id`, `attempt_number`, `fence`, `status` | Unique attempt identity, positive CAS version, and monotonically increasing generation within the Turn |
-| Recovery lineage  | `replaces_turn_attempt_id`, `recovery_reason`                                | Names the immediately superseded attempt and bounded recovery reason                                   |
-| Worker and run    | `worker_id`, `worker_generation`, `run_id`                                   | Worker process correlation and at most one Harness Run ID after entry                                  |
-| Model observation | `model_execution_observation_json`                                           | Immutable safe model ID, provider type, and model name copied from the Turn at claim                   |
-| Lease             | `lease_token_digest`, `lease_expires_at`, `heartbeat_at`                     | Opaque lease proof, expiry, and last durable renewal                                                   |
-| Tool dispatch     | `tool_invocations_json`                                                      | Bounded dispatch and result-correlation records; not a provider receipt ledger                         |
-| Recovery context  | `recovery_unknown_outcomes_json`                                             | Bounded unmatched prior Agent tool calls selected during fenced preparation                            |
-| Usage and failure | `usage_json`, `failure_json`                                                 | Attempt-local accounting and safe failure provenance                                                   |
-| Time              | `created_at`, `claimed_at`, `started_at`, `finished_at`, `updated_at`        | UTC lifecycle observations                                                                             |
+| Column group      | Columns                                                                      | Contract                                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Identity          | `id`, `version`, `tenant_id`, `turn_id`, `attempt_number`, `fence`, `status` | Unique attempt identity, positive CAS version, and monotonically increasing generation within the Turn    |
+| Recovery lineage  | `replaces_turn_attempt_id`, `recovery_reason`                                | Names the immediately superseded attempt and bounded recovery reason                                      |
+| Worker and run    | `worker_id`, `worker_generation`, `runtime_lock_digest`, `run_id`            | Execution-process correlation, exact Turn-pinned Runtime lock, and at most one Harness Run ID after entry |
+| Model observation | `model_execution_observation_json`                                           | Immutable safe model ID, provider type, and model name copied from the Turn at claim                      |
+| Lease             | `lease_token_digest`, `lease_expires_at`, `heartbeat_at`                     | Opaque lease proof, expiry, and last durable renewal                                                      |
+| Tool dispatch     | `tool_invocations_json`                                                      | Bounded dispatch and result-correlation records; not a provider receipt ledger                            |
+| Recovery context  | `recovery_unknown_outcomes_json`                                             | Bounded unmatched prior Agent tool calls selected during fenced preparation                               |
+| Usage and failure | `usage_json`, `failure_json`                                                 | Attempt-local accounting and safe failure provenance                                                      |
+| Time              | `created_at`, `claimed_at`, `started_at`, `finished_at`, `updated_at`        | UTC lifecycle observations                                                                                |
 
 Once terminal, every attempt column is immutable.
+
+`usage.model_requests` is monotonic durable execution evidence, not only a
+terminal accounting total. After all required input preparation and immediately
+before each provider model request, the Worker increments it in a short fenced
+Attempt update; the provider request does not start unless that update commits.
+The update does not claim that the provider received or completed the request.
+When an Attempt is terminalized or replaced, its known usage is charged into
+`Turn.usage_charged` in the same transaction. Consequently,
+`Turn.usage_charged.model_requests > 0` proves that a prior Attempt crossed a
+model boundary after input preparation without adding a separate input-file
+materialization field.
 
 ## Current Attempt Authority
 
@@ -251,7 +270,10 @@ selects that non-terminal attempt and the caller matches its worker generation,
 fence, lease proof, and unexpired lease.
 
 Every Worker periodically scans bounded, deterministically ordered relational
-candidates. A candidate is exactly one of:
+candidates through its configured Plugin Runtime profile. An on-demand Worker
+preflights the exact candidate lock against its process-local registry before
+claim; a runner Supervisor ensures a matching Runner exists and that Runner scans
+only an equal `runtime_lock_digest`. A candidate is exactly one of:
 
 - an `accepted` Turn with no current attempt and `available_at <= now`;
 - a `running` Turn with no current attempt after a retryable failed generation
@@ -304,24 +326,40 @@ additionally supplies the current opaque object version and conditionally
 replaces the same deterministic state key.
 
 A waiting or completed outcome transaction validates the current running
-attempt, Turn version, and Thread current selection, selects the already written
-state outcome candidate by its exact digest and checkpoint sequence, seals the
-Turn, terminalizes the attempt as `succeeded`, clears
-`current_turn_attempt_id`, retains this Turn as the Thread's current Turn,
-selects it as the Thread head, increments the Thread version, charges known
-usage, and appends lifecycle facts. Failed or cancelled Turn commits
-terminalize a current attempt when one exists, retain that terminal Turn as
-current, preserve the prior head, and increment the Thread version. State and
-payload publication required by the Turn occurs before the transaction as
-defined by the Turn contract.
+attempt, Turn version, and Thread current selection, satisfies the
+[active-control outcome
+precondition](35-agent-control-active-execution.md#completion-and-control-races),
+selects the already written state outcome candidate by its exact digest and
+checkpoint sequence, seals the Turn, terminalizes the attempt as `succeeded`,
+clears `current_turn_attempt_id`, charges known usage, and appends lifecycle
+facts. An ordinary outcome retains this Turn as Thread current, selects it as
+Thread head, and increments the Thread version.
+
+A completed outcome can instead use the queued-submission contract's
+[state-first combined
+handoff](36-agent-control-queued-submissions.md#completion-time-combined-handoff).
+The exact same fenced transaction terminalizes this attempt and seals its Turn,
+then consumes the first queued submission, inserts an already-state-backed
+successor Turn as `accepted`, selects the completed Turn as head and the
+successor as current, increments the Thread version twice, and increments the
+queue version once. No TurnAttempt is created for the successor in that
+transaction; a later ordinary claim creates its first generation.
+
+Failed or cancelled Turn commits terminalize a current attempt when one exists,
+retain that terminal Turn as current, preserve the prior head, and increment
+the Thread version. State and payload publication required by the Turn,
+including a combined successor's complete initial state, occurs before the
+transaction as defined by the Turn contract; direct interrupt requires no state
+publication.
 
 A known attempt failure commits atomically with its Turn decision and charges
 known usage. A retryable in-budget failure terminalizes the current attempt as
 `failed`, clears `current_turn_attempt_id`, leaves the Turn `running`, and sets
 its bounded `available_at`; a later Worker scan may create the next attempt. A
-non-retryable or exhausted failure additionally seals the Turn as `failed`.
-Neither path returns the Turn to `accepted`. A failure before Harness entry has
-no attempt-owned tool dispatch and leaves `run_id` and `started_at` null.
+non-retryable or exhausted failure additionally seals the Turn as `failed` and
+applies the active-control contract's terminal inbox disposition. Neither path
+returns the Turn to `accepted`. A failure before Harness entry has no
+attempt-owned tool dispatch and leaves `run_id` and `started_at` null.
 
 ## Recovery and Budget Enforcement
 
@@ -332,16 +370,18 @@ generation.
 
 After any new attempt owns the lease, its Worker reads the exact state, attempt
 history, immutable artifacts, and current authorization outside a database
-transaction. It admits Harness entry only when all of these conditions hold:
+transaction and satisfies the
+[active-control recovery contract](35-agent-control-active-execution.md#steer-consumption-and-state-commitment).
+It admits Harness entry only when all of these conditions hold:
 
 - the latest complete state object passes key, tenant, Turn, Thread, digest,
-  size, envelope, checkpoint, Agent revision, and required Harness, Capability,
+  size, envelope, checkpoint, AgentPresetVersion, Runtime lock, and required Harness, Capability,
   Host, and Environment-state codec validation;
 - every prior Agent tool dispatch without a matching result in that exact state
   can be represented within the bounded `recovery_unknown_outcomes` schema;
 - the fixed attempt-count, elapsed-time, and known-usage ceilings still permit
   this already-created attempt after all durable usage charges;
-- the exact Agent revision, structurally decodable model execution snapshot,
+- the exact AgentPresetVersion and Runtime lock, structurally decodable model execution snapshot,
   state-owned Environment execution configuration, managed Harness plugin and Skill artifacts,
   Connector contracts, Environment connector locks, and other frozen dependency
   locks are present, digest-valid, and compatible; and
@@ -387,8 +427,9 @@ the newly owned attempt, not recovery admission checks.
 
 One representable `unknown_outcome` alone never blocks recovery and does not
 assert that the operation failed, succeeded, rolled back, or is safe to repeat. A later
-attempt receives a new ID, fence, lease, fresh bindings, and fresh Harness Run,
-then follows the [Turn resume contract](14-turn-persistence.md#resume-semantics)
+attempt receives a new ID, fence, lease, fresh `RunBindings`, Environment attachments,
+runtime mounts, `EnvironmentRuntime`, and Harness Run, then follows the
+[Turn resume contract](14-turn-persistence.md#resume-semantics)
 against the same Turn state key.
 
 For each eligible model request of the recovered Harness Run, Foundation
@@ -445,21 +486,26 @@ its coordination transactions.
 
 ## Invariants
 
-1. One `TurnAttempt` is one worker generation and starts at most one Harness
-   Run.
-2. Attempt number and fence increase monotonically, are never reused, and at
-   most one attempt is current and lease-authorized for a Turn.
-3. Every worker-originated durable write validates the current attempt, fence,
-   lease, tenant, Turn status, and expected Turn version.
-4. Only a Worker's short Turn claim or takeover transaction can authorize a
-   later attempt; after the first claim the same Turn remains `running`, and its
-   budget must permit the new generation.
-5. A later attempt receives fresh worker and Harness identities while resuming
-   the same Turn state under the Turn persistence contract.
-6. A durably dispatched Agent tool call without a result in the exact selected
-   state is preserved as `unknown_outcome` on the replacement attempt and
-   projected to the next Agent. Foundation never replays the prior request or
-   guarantees cross-attempt idempotency-key reuse.
-7. Attempt `failed` is generation-terminal and does not imply Turn `failed`;
-   Turn `failed` is sealed and never receives another attempt.
-8. Terminal attempt rows are immutable audit records.
+01. One `TurnAttempt` is one worker generation and starts at most one Harness
+    Run.
+02. Attempt number and fence increase monotonically, are never reused, and at
+    most one attempt is current and lease-authorized for a Turn.
+03. Every worker-originated durable write validates the current attempt, fence,
+    lease, tenant, Turn status, and expected Turn version.
+04. A Worker marks same-Turn steer entries consumed only under the current
+    Attempt fence and with exact complete-state evidence.
+05. Only a Worker's short Turn claim or takeover transaction can authorize a
+    later attempt; after the first claim the same Turn remains `running`, and its
+    budget must permit the new generation.
+06. A later attempt receives fresh worker and Harness identities while resuming
+    the same Turn state under the Turn persistence contract.
+07. A durably dispatched Agent tool call without a result in the exact selected
+    state is preserved as `unknown_outcome` on the replacement attempt and
+    projected to the next Agent. Foundation never replays the prior request or
+    guarantees cross-attempt idempotency-key reuse.
+08. Attempt `failed` is generation-terminal and does not imply Turn `failed`;
+    Turn `failed` is sealed and never receives another attempt.
+09. Terminal attempt rows are immutable audit records.
+10. A completion-time combined queue handoff can terminalize the source
+    TurnAttempt and accept its already-state-backed successor in one relational
+    transaction, but the successor receives no TurnAttempt until a later claim.

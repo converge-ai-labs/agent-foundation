@@ -1,9 +1,11 @@
 import asyncio
+from base64 import b64encode
 from pathlib import Path
 
 import httpx2
 import pytest
 from a13n_service.app import create_app
+from a13n_service.secret_management import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from fastapi import FastAPI
 
@@ -34,6 +36,8 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
         "object_backend": "local",
         "object_local_root": tmp_path / "objects",
         "filesystem_root": tmp_path / "files",
+        "secret_master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
+        "secret_encryption_key_id": "foundation-service-test-key",
     }
     values.update(updates)
     return ServiceSettings(**values)
@@ -116,3 +120,18 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+async def test_lifespan_fails_closed_without_secret_master_key(tmp_path: Path) -> None:
+    app = create_app(
+        local_settings(
+            tmp_path,
+            secret_master_key_base64=None,
+            secret_encryption_key_id=None,
+        )
+    )
+
+    with pytest.raises(SecretProtectionError, match="FOUNDATION_SECRET_MASTER_KEY_BASE64"):
+        async with app.router.lifespan_context(app):
+            pytest.fail("lifespan unexpectedly started")

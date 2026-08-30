@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from datetime import datetime
 from pathlib import Path
 from threading import Event
@@ -15,12 +15,10 @@ from a13n_ui.errors import (
     HostStateError,
     ObjectIntegrityError,
     StoreIntegrityError,
-    StoreLeaseConflict,
 )
 from a13n_ui.host import AgentUiHost, HostState, open_agent_ui_host
 from a13n_ui.settings import AgentUiSettings, StorageSettings
-from a13n_ui.storage import ObjectEnvelope, ObjectKind, short_session
-from a13n_ui.storage.models import StoreLeaseRecord
+from a13n_ui.storage import ObjectEnvelope, ObjectKind
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep, sleep_forever
 from anyio import Event as AsyncEvent
 from anyio.abc import TaskStatus
@@ -29,13 +27,8 @@ from pydantic import JsonValue
 pytestmark = pytest.mark.anyio
 
 
-def _settings(root: Path, *, heartbeat: float = 2.0) -> AgentUiSettings:
-    return AgentUiSettings(
-        storage=StorageSettings(
-            data_root=root,
-            lease_heartbeat_seconds=heartbeat,
-        )
-    )
+def _settings(root: Path) -> AgentUiSettings:
+    return AgentUiSettings(storage=StorageSettings(data_root=root))
 
 
 async def test_host_runtime_restart_keeps_the_host_and_store_generation(tmp_path: Path) -> None:
@@ -109,8 +102,6 @@ async def test_application_shutdown_drains_an_accepted_operation(
             while application.state is not HostState.stopping:
                 await sleep(0)
         assert not close_completed.is_set()
-        async with short_session(application._store.database.sessions) as session:
-            assert await session.get(StoreLeaseRecord, 1) is not None
         release_operation.set()
         await close_completed.wait()
 
@@ -163,9 +154,6 @@ async def test_application_closes_after_external_cancellation(tmp_path: Path) ->
         tasks.cancel_scope.cancel()
 
     assert application.state is HostState.closed
-    async with storage_runtime.open_database(tmp_path / "metadata.sqlite3", settings.storage) as database:
-        async with short_session(database.sessions) as session:
-            assert await session.get(StoreLeaseRecord, 1) is None
 
 
 async def test_application_marks_closed_when_store_cleanup_fails(
@@ -191,58 +179,25 @@ async def test_application_marks_closed_when_store_cleanup_fails(
     assert retained.state is HostState.closed
 
 
-async def test_application_rejects_a_concurrent_data_root_owner(tmp_path: Path) -> None:
+async def test_concurrent_hosts_share_one_data_root(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
 
-    async with open_agent_ui_host(settings):
-        with pytest.raises(StoreLeaseConflict) as conflict:
-            async with open_agent_ui_host(settings):
-                pytest.fail("a second application unexpectedly acquired the data root")
-
-    assert conflict.value.code == "store_lease_conflict"
-
-
-async def test_store_lease_heartbeats_and_releases_last(tmp_path: Path) -> None:
-    settings = _settings(tmp_path, heartbeat=0.02)
-
-    async with open_agent_ui_host(settings) as application:
-        store = application._store
-        async with short_session(store.database.sessions) as session:
-            initial = await session.get(StoreLeaseRecord, 1)
-            assert initial is not None
-            acquired_at = initial.acquired_at
-            initial_heartbeat = initial.heartbeat_at
-        with fail_after(2):
-            while True:
-                async with short_session(store.database.sessions) as session:
-                    updated = await session.get(StoreLeaseRecord, 1)
-                    assert updated is not None
-                    assert updated.process_generation == application._store.process_generation
-                    if _comparable(updated.heartbeat_at) > _comparable(initial_heartbeat):
-                        break
-                await sleep(0.01)
-        assert _comparable(updated.heartbeat_at) >= _comparable(acquired_at)
-
-    async with storage_runtime.open_database(tmp_path / "metadata.sqlite3", settings.storage) as database:
-        async with short_session(database.sessions) as session:
-            assert await session.get(StoreLeaseRecord, 1) is None
+    async with open_agent_ui_host(settings) as first:
+        async with open_agent_ui_host(settings) as second:
+            assert first.state is HostState.ready
+            assert second.state is HostState.ready
+            assert (await first.status()).process_generation != (await second.status()).process_generation
 
 
-async def test_startup_quarantines_malformed_staging_and_records_diagnostic(tmp_path: Path) -> None:
+async def test_startup_leaves_recent_staging_owned_by_another_process(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     staging = tmp_path / "staging"
     staging.mkdir(parents=True)
-    (staging / "broken.tmp").write_bytes(b"broken")
+    candidate = staging / "00000000000000000000000000000000.json.zst.tmp"
+    candidate.write_bytes(b"in-progress")
 
-    async with open_agent_ui_host(settings) as application:
-        diagnostics = await application.recovery_diagnostics()
-        assert len(diagnostics) == 1
-        assert diagnostics[0].code == "staging_quarantined"
-        assert diagnostics[0].detail == "broken.tmp"
-        assert diagnostics[0].process_generation == (await application.status()).process_generation
-
-    assert list(staging.iterdir()) == []
-    assert len(list((tmp_path / "quarantine").iterdir())) == 1
+    async with open_agent_ui_host(settings):
+        assert candidate.read_bytes() == b"in-progress"
 
 
 async def test_missing_unselected_object_does_not_block_startup_but_fails_on_read(tmp_path: Path) -> None:
@@ -273,8 +228,9 @@ async def test_invalid_unselected_registration_does_not_block_startup_but_fails_
             payload={"agent": "root"},
         )
 
-    with sqlite3.connect(tmp_path / "metadata.sqlite3") as connection:
+    with closing(sqlite3.connect(tmp_path / "metadata.sqlite3")) as connection:
         connection.execute("UPDATE immutable_object SET object_kind = 'unknown-kind'")
+        connection.commit()
 
     async with open_agent_ui_host(settings) as restarted:
         with pytest.raises(StoreIntegrityError) as invalid:
@@ -292,8 +248,9 @@ async def test_malformed_registration_timestamp_fails_with_bounded_integrity_err
             payload={"agent": "root"},
         )
 
-    with sqlite3.connect(tmp_path / "metadata.sqlite3") as connection:
+    with closing(sqlite3.connect(tmp_path / "metadata.sqlite3")) as connection:
         connection.execute("UPDATE immutable_object SET created_at = 'not-a-date'")
+        connection.commit()
 
     async with open_agent_ui_host(settings) as restarted:
         with pytest.raises(StoreIntegrityError) as invalid:
@@ -405,7 +362,3 @@ async def _hold_application(
     async with open_agent_ui_host(settings) as application:
         task_status.started(application)
         await sleep_forever()
-
-
-def _comparable(value: datetime) -> datetime:
-    return value.replace(tzinfo=None)

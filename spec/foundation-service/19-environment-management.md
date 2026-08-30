@@ -1,4 +1,4 @@
-# Environment Configuration and Runtime Bindings
+# Environment Configuration and Runtime Mounts
 
 ## Design Position
 
@@ -21,22 +21,22 @@ While a TurnAttempt is actively using an attachment, its connector may perform
 bounded provider-specific keep-alive so that the already-running resource does
 not expire mid-run. This is run-scoped liveness maintenance, not durable
 lifecycle management: it starts only after a successful connection, stops when
-the binding closes or the Attempt loses authority, and never runs as a
+the attachment scope closes or the Attempt loses authority, and never runs as a
 background Foundation workflow.
 
 ## Boundaries
 
-| Concern                                                   | Owner                                        | Contract                                                                    |
-| --------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------- |
-| Environment identity and immutable connection revisions   | Foundation                                   | Serializable non-secret connection configuration                            |
-| Agent requirements and Turn execution configuration       | Foundation                                   | Exact topology, connector locks, Secret references, and permission ceilings |
-| External Sandbox or provider-resource lifecycle           | User and external provider                   | Resource exists and is running before Foundation connects                   |
-| Connector schema, connection, keep-alive, and local close | Trusted Foundation Environment connector     | Produces one process-local canonical runtime attachment                     |
-| Connector artifact trust and availability                 | Foundation distribution or operator boundary | Exact code lock; no Workspace authorization                                 |
-| Workspace provider selection                              | Foundation authorization                     | Enables one exact trusted connector lock                                    |
-| Secret storage and current eligibility                    | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Environment data           |
-| Provider-neutral operations, routing, and portable state  | Harness                                      | Uses the supplied attachment and stores portable Environment state          |
-| EIP session and daemon enforcement                        | Agent-envd and its client                    | Daemon generation and bounded Environment operations                        |
+| Concern                                                         | Owner                                        | Contract                                                                                     |
+| --------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Environment identity and immutable connection revisions         | Foundation                                   | Serializable non-secret connection configuration                                             |
+| Agent requirements and Turn execution configuration             | Foundation                                   | Exact desired mount definitions, connector locks, Secret references, and permission ceilings |
+| External Sandbox or provider-resource lifecycle                 | User and external provider                   | Resource exists and is running before Foundation connects                                    |
+| Connector schema, connection, keep-alive, and local close       | Trusted Foundation Environment connector     | Produces one process-local canonical runtime attachment                                      |
+| Connector artifact trust and availability                       | Foundation distribution or operator boundary | Exact code lock; no Workspace authorization                                                  |
+| Workspace provider selection                                    | Foundation authorization                     | Enables one exact trusted connector lock                                                     |
+| Secret storage and current eligibility                          | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Environment data                            |
+| Current mount set, provider-neutral routing, and portable state | Harness                                      | Enters fresh mount candidates and stores portable Environment data                           |
+| EIP session and daemon enforcement                              | Agent-envd and its client                    | Daemon generation and bounded Environment operations                                         |
 
 Provider discovery, package upload, schema validity, or identifier possession
 does not authorize provider use. API input and stored data never supply an
@@ -109,10 +109,12 @@ retained data, but later use fails closed without substituting another
 connector.
 
 The connector receives only the accepted connection specification, bounded
-TurnAttempt context, and resolved credentials. It returns the canonical
-`EnvironmentRuntimeAttachment` consumed by the Harness advanced Environment
-binding API. It receives no unrestricted Secret resolver, database session,
-repository, request, or ambient credential lookup.
+TurnAttempt context, and resolved credentials. It returns one fresh canonical
+`EnvironmentRuntimeAttachment`. The Worker passes that attachment through the
+Harness attachment adapter to construct a fresh `EnvironmentRuntimeMount`; the
+connector does not construct or mutate the Harness runtime. It receives no
+unrestricted Secret resolver, database session, repository, request, or ambient
+credential lookup.
 
 Its Foundation-owned service-provider interface is conceptually:
 
@@ -227,25 +229,24 @@ credentials fail closed.
 
 ## Environment Selection and Turn State
 
-An AgentRevision stores an ordered topology of exact Environment requirements
+An AgentPresetVersion stores an ordered set of exact desired Environment mount requirements
 plus its runtime-selection policy:
 
 ```python
 class AgentEnvironmentRequirement:
-    binding_name: str
-    model_alias: str
+    mount_name: str
     environment_revision_id: EnvironmentRevisionId
     required: bool
 ```
 
-Requirement binding names and aliases are unique. An optional default binding
-names one requirement. Authoring may accept an `EnvironmentId`, but
+Mount names are unique and use the Harness mount-name syntax. An optional default
+mount names one requirement. Authoring may accept an `EnvironmentId`, but
 materialization stores its current revision. Runtime-selection policy controls
-whether a caller can replace or add entries and the maximum topology and
-permissions it can select.
+whether a caller can replace or add desired mounts and the maximum mount count
+and permission ceilings it can select.
 
-A permitted Turn topology uses an exact revision, a mutable Environment resolved
-at acceptance, or inline configuration:
+A permitted Turn mount selection uses an exact revision, a mutable Environment
+resolved at acceptance, or inline configuration:
 
 ```python
 type EnvironmentSourceSelection = (
@@ -270,8 +271,7 @@ class InlineEnvironmentSelection:
 
 
 class EnvironmentSelectionEntry:
-    binding_name: str
-    model_alias: str
+    mount_name: str
     required: bool
     source: EnvironmentSourceSelection
 ```
@@ -283,9 +283,8 @@ Acceptance writes the complete non-secret configuration into the initial
 `state.json`:
 
 ```python
-class EnvironmentExecutionEntry:
-    binding_name: str
-    model_alias: str
+class EnvironmentExecutionMount:
+    mount_name: str
     required: bool
     source_environment_revision_id: EnvironmentRevisionId | None
     connection_spec: EnvironmentConnectionSpec
@@ -298,13 +297,14 @@ class EnvironmentExecutionEntry:
 
 class EnvironmentExecutionConfig:
     schema_version: str
-    entries: tuple[EnvironmentExecutionEntry, ...]
-    default_binding: str | None
+    desired_mounts: tuple[EnvironmentExecutionMount, ...]
+    default_mount: str | None
     logical_digest_sha256: str
 ```
 
 `EnvironmentExecutionConfig` is one immutable field of the Turn state envelope,
-not a relational Environment snapshot resource or column. Every replacement
+not a relational Environment snapshot resource or column. It records desired
+mount definitions, not a Harness current mount set. Every replacement
 TurnAttempt reuses it while reauthorizing current selection and credentials. It
 never follows newer Environment revisions, connector artifacts, or Workspace
 defaults.
@@ -334,7 +334,7 @@ provider-private state, runtime objects, attachments, or import paths.
 Foundation exposes no provider resource, assignment, lease, or
 lifecycle-command API.
 
-## TurnAttempt Runtime Binding
+## TurnAttempt Runtime Mount Construction
 
 Turn acceptance performs no provider I/O. For each claimed TurnAttempt, the
 Worker:
@@ -345,15 +345,17 @@ Worker:
    principal eligibility, and every credential source;
 3. resolves fresh Secret values outside the authorization transaction;
 4. asks each exact connector to connect to the already-running resource and
-   validate its attachment and EIP compatibility;
-5. adapts the returned attachments into the Harness advanced Environment run
-   binding; and
-6. while the Harness binding is active, performs connector-defined bounded
-   keep-alive and then closes process-local clients.
+   return one fresh attachment after validating EIP compatibility;
+5. adapts each attachment into a fresh `EnvironmentRuntimeMount`, constructs one
+   `EnvironmentRuntime` with the complete desired initial mount mapping and
+   default mount, retains that runtime, and supplies it through
+   `RunBindings.environment`; and
+6. while the Harness run and attachment scopes are active, performs
+   connector-defined bounded keep-alive and then closes process-local clients.
 
 Keep-alive may extend a provider timeout only while the current Attempt remains
-authorized to run. It stops promptly on binding close, cancellation, lease loss,
-or Worker shutdown. An extension already accepted by the provider is not rolled
+authorized to run. It stops promptly on attachment-scope close, cancellation,
+lease loss, or Worker shutdown. An extension already accepted by the provider is not rolled
 back or reconciled. Connector and deployment policy bound its interval and
 maximum extension; it never outlives the Turn recovery deadline as an autonomous
 task.
@@ -365,9 +367,16 @@ to the user. Foundation does not queue, silently retry, or substitute a resource
 Connectors may apply bounded transport retries before attachment or keep-alive;
 exhaustion fails the Attempt.
 
+On each Harness run, the runtime allocates a fresh opaque `mount_id` for every
+mounted incarnation. Foundation does not persist a `mount_id`, use it as an
+Environment or provider-resource identity, or expect it to survive a replacement
+TurnAttempt. The Harness current mount set and its run-local change journal are
+not Foundation state.
+
 Portable provider-defined data can appear only in
 `HarnessState.environment_state` under the Harness codec contract. It does not
-identify or recreate an external resource. Agent-visible Environment operations
+identify or recreate an external resource, restore a current mount set, or
+supply mount authority. Agent-visible Environment operations
 are ordinary Agent tool calls and use the shared `unknown_outcome` recovery
 contract. Foundation performs no Sandbox inspection or lifecycle reconciliation
 during recovery.
@@ -375,6 +384,26 @@ during recovery.
 Managed Skill materialization is Host preparation, not an Agent tool call. It is
 content-addressed, writes a completion manifest last, and may be repeated after
 reconnecting without exposing a partial catalog.
+
+[`environment_path` Agent input
+delivery](33-agent-input.md#binary-source-and-delivery) requires a writable
+default binding. The Worker reads the accepted URL or authorized source binding
+path into private local staging and transfers it through the active default
+attachment's authorized file-write interface to the deterministic logical path
+below `/workspace/.a13n/inputs/`. Only that Environment path enters Agent input;
+the Worker staging path is never exposed. Foundation assigns no temporary or
+persistent retention class to the materialized Environment file, does not manage
+the external Environment lifecycle because of it, and never treats the path as
+durable input authority.
+
+A replacement TurnAttempt reconnects to the configured Environment and derives
+whether to rewrite the path from the Turn's existing charged model-request
+usage. Zero prior model requests causes another bounded source read and
+deterministic replacement; a positive total assumes that input preparation
+already wrote the path and performs no file inspection or rewrite. Foundation
+stores no separate materialization status. A pending steer follows its existing
+inbox status and receipt instead: it can be reacquired and rewritten until
+consumption commits, while a consumed steer is not materialized again.
 
 ## E2B Connector
 
@@ -386,13 +415,13 @@ incompatible Sandbox fails the Attempt.
 
 After successful attachment, the connector may call E2B keep-alive to prevent
 the Sandbox timeout from expiring during the active Harness run. It stops those
-calls when the binding closes and never pauses or destroys the Sandbox.
+calls when the attachment scope closes and never pauses or destroys the Sandbox.
 
 ## Failure Semantics
 
 | Failure                                                 | Foundation outcome                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Invalid schema, lock, topology, or permission           | No Environment revision or Turn is accepted                                                |
+| Invalid schema, lock, desired mount set, or permission  | No Environment revision or Turn is accepted                                                |
 | Archived, disabled, denied, or raced selection          | Acceptance or Attempt reconstruction fails closed without substitution                     |
 | Missing, inactive, or denied credential                 | Attempt records a bounded credential failure                                               |
 | Resource is missing, stopped, paused, or incompatible   | Attempt records a bounded connection or EIP compatibility failure                          |
@@ -413,8 +442,9 @@ locks and operator-only publication do not sandbox it. Connection parameters,
 including external resource IDs and private endpoints, are protected tenant
 data. Secret values remain process-local.
 
-Environment revisions, connection schemas, connector locks, state configuration,
-Harness attachments, EIP, and Foundation APIs evolve independently. An
+Environment revisions, connection schemas, connector locks, desired mount
+configuration, Harness runtime mounts, EIP, and Foundation APIs evolve
+independently. An
 incompatible exact lock or state schema fails before model or tool work and
 never falls back to another revision, connector, or resource.
 
@@ -425,7 +455,7 @@ never falls back to another revision, connector, or resource.
 3. A Turn's exact `EnvironmentExecutionConfig` is stored only in its immutable `state.json` envelope.
 4. Every TurnAttempt reauthorizes current provider selection and resolves fresh credential values.
 5. Runtime attachments, clients, and credentials are process-local and never persisted.
-6. Keep-alive exists only within an active binding scope and creates no durable lifecycle state.
+6. Keep-alive exists only within an active attachment scope and creates no durable lifecycle state.
 7. Foundation creates no connection lease; provider concurrency rejection is surfaced to the user.
-8. Replacement TurnAttempts reconnect to the accepted target and receive no process-local continuity.
+8. Replacement TurnAttempts reconnect to the accepted target, construct a fresh Host-retained `EnvironmentRuntime`, and receive fresh opaque mount IDs with no process-local continuity.
 9. Agent Environment tool uncertainty uses the same `unknown_outcome` contract as every other Agent tool.

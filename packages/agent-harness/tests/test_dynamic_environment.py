@@ -34,21 +34,18 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    HarnessModelCharacteristics,
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
     ModelCapability,
-    ModelConfiguration,
     ModelRecoveryPolicy,
     ProviderUsageRecord,
     RunBindings,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_environment_run_binding,
-    create_noop_environment_run_binding,
+    EnvironmentRuntimeMount,
+    create_empty_environment_runtime,
+    create_environment_runtime,
 )
 from a13n_harness.environment.dynamic import _DynamicEnvironmentRunCapability
 from a13n_harness.environment.files import (
@@ -68,7 +65,6 @@ from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
 from a13n_harness.plugins import (
     AbstractHarnessPlugin,
-    PluginOrdering,
     PluginRunExchange,
     PluginRunNext,
     PluginRunResponse,
@@ -280,37 +276,35 @@ def _policy() -> InvocationPolicyCapability:
     return InvocationPolicyCapability(evaluator=_Allow(), max_dispatch_retries=0)
 
 
-def _local_binding(root: Path, *, process_output: bool = False):
-    provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=root),
-            shell_profiles=(
-                (DirectLocalShellProfile(profile_id="default", executable=Path("/bin/sh")),)
-                if process_output and sys.platform != "win32"
-                else ()
-            ),
-            allowed_executables=(frozenset({_PROCESS_EXECUTABLE}) if process_output else frozenset()),
-        )
-    )
-    request = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_revision=1,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
+def _local_mount(
+    root: Path,
+    *,
+    environment_id: str = "dynamic-environment-test",
+    operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
+    process_output: bool = False,
+) -> EnvironmentRuntimeMount:
+    return EnvironmentRuntimeMount(
+        binding=DirectLocalEnvironmentProviderBinding(
+            DirectLocalProviderConfiguration(
+                environment_id=environment_id,
+                root=DirectLocalRootConfiguration(path=root),
+                shell_profiles=(
+                    (DirectLocalShellProfile(profile_id="default", executable=Path("/bin/sh")),)
+                    if process_output and sys.platform != "win32"
+                    else ()
+                ),
+                allowed_executables=(frozenset({_PROCESS_EXECUTABLE}) if process_output else frozenset()),
+            )
         ),
-        default_binding_id="binding-1",
+        permission_ceiling=EnvironmentPermissionSet(operations=operations),
+        working_directory="/",
     )
-    return create_environment_run_binding(
-        initial_topology=request,
-        topology_limits=EnvironmentTopologyLimits(),
-        state_limits=EnvironmentStateLimits(),
+
+
+def _local_binding(root: Path, *, process_output: bool = False):
+    return create_environment_runtime(
+        mounts={"local": _local_mount(root, process_output=process_output)},
+        default_mount="local",
     )
 
 
@@ -321,39 +315,24 @@ def _two_local_bindings(
     first_operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
     second_operations: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
 ):
-    bindings = tuple(
-        EnvironmentBindingRequest(
-            binding_id=f"binding-{index}",
-            binding_revision=1,
-            alias=alias,
-            permission_ceiling=EnvironmentPermissionSet(
-                operations=first_operations if index == 1 else second_operations
+    return create_environment_runtime(
+        mounts={
+            "local": _local_mount(
+                first_root,
+                environment_id="dynamic-environment-1",
+                operations=first_operations,
             ),
-            default_working_directory="/",
-            provider_binding=DirectLocalEnvironmentProviderBinding(
-                DirectLocalProviderConfiguration(
-                    environment_id=f"dynamic-environment-{index}",
-                    root=DirectLocalRootConfiguration(path=root),
-                )
+            "shared": _local_mount(
+                second_root,
+                environment_id="dynamic-environment-2",
+                operations=second_operations,
             ),
-        )
-        for index, (alias, root) in enumerate(
-            (("local", first_root), ("shared", second_root)),
-            start=1,
-        )
-    )
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=bindings,
-            default_binding_id="binding-1",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
-        state_limits=EnvironmentStateLimits(),
+        },
+        default_mount="local",
     )
 
 
-async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_path: Path) -> None:
+async def test_dynamic_mount_change_emits_an_independent_harness_context_event(tmp_path: Path) -> None:
     started = asyncio.Event()
     finish = asyncio.Event()
 
@@ -363,56 +342,39 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         await finish.wait()
         yield "done"
 
-    aggregate = create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(topology_version=0, bindings=(), default_binding_id=None),
-        topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2),
-        state_limits=EnvironmentStateLimits(),
-    )
+    aggregate = create_empty_environment_runtime()
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
-    provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=tmp_path),
-        )
-    )
-    request = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_revision=1,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="binding-1",
-    )
 
     async with executable.stream("wait", bindings=RunBindings.embedded(environment=aggregate)) as run:
         pending = asyncio.create_task(run.__anext__())
         await started.wait()
-        await aggregate.controller.apply(request)
+        await aggregate.mount("local", _local_mount(tmp_path), make_default=True)
         item = await asyncio.wait_for(pending, timeout=2)
         while not (
             isinstance(item, HarnessEvent)
             and isinstance(item.event, HarnessExtensionEvent)
             and item.event.kind == "context"
-            and item.event.payload.get("type") == "environment_topology_changed"
+            and item.event.payload.get("type") == "environment_changed"
         ):
             item = await asyncio.wait_for(run.__anext__(), timeout=2)
-        assert item.event.payload["current_version"] == 1
+        assert item.event.payload == {
+            "type": "environment_changed",
+            "sequence": 1,
+            "kind": "mounted",
+            "name": "local",
+            "previous_default": None,
+            "current_default": "local",
+        }
         finish.set()
         terminal = [event async for event in run][-1]
         assert terminal.result.output_or_raise() == "done"
 
 
-async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_snapshot() -> None:
+async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snapshot() -> None:
     calls: list[tuple[list[ModelMessage], AgentInfo]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -453,16 +415,19 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_topology_s
     assert '<tool-instruction name="environment-shell">' in info.instructions
     assert '<tool-instruction name="copy">' not in info.instructions
     assert '<tool-instruction name="delete">' not in info.instructions
-    topology_parts = [
+    mount_parts = [
         part.content
         for message in messages
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, str) and "topology_version" in part.content
+        if isinstance(part, UserPromptPart)
+        and isinstance(part.content, str)
+        and "Current Environment mounts" in part.content
     ]
-    assert len(topology_parts) == 1
-    assert '"bindings":[]' in topology_parts[0]
-    assert len(topology_parts[0].encode()) < 64 * 1024
+    assert len(mount_parts) == 1
+    assert '"default_mount":null' in mount_parts[0]
+    assert '"mounts":[]' in mount_parts[0]
+    assert len(mount_parts[0].encode()) < 64 * 1024
     assert executable.definition.agent.tool_timeout is None
 
 
@@ -913,7 +878,9 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
 
     executable = HarnessBuilder().build(
         HarnessAgentSpec(
-            model_config=ModelConfiguration(capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING})),
+            model_characteristics=HarnessModelCharacteristics(
+                capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING})
+            ),
         ),
         output_type=str,
         model=FunctionModel(stream_function=stream),
@@ -1008,11 +975,8 @@ async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native
     assert requests[0].kind == "image"
     assert requests[0].media_type == "image/png"
     assert requests[0].source_bytes == b"\x89PNG"
-    assert requests[0].source == EnvironmentPath(
-        binding_id="binding-1",
-        binding_revision=1,
-        path="/image.png",
-    )
+    assert requests[0].source.path == "/image.png"
+    assert requests[0].source.mount_id.startswith("mount-")
     assert requests[0].source_name == "/workspace/image.png"
     assert requests[0].instructions == "Read visible text."
     assert len(tool_returns) == 1
@@ -1243,13 +1207,13 @@ async def test_view_reports_unavailable_understanding_as_an_ordinary_tool_result
     }
 
 
-async def test_media_understanding_releases_revision_scope_before_model_execution() -> None:
+async def test_media_understanding_releases_mount_scope_before_model_execution() -> None:
     scope_open = False
     scope_released = asyncio.Event()
     provider_started = asyncio.Event()
     release_provider = asyncio.Event()
 
-    class RevisionFiles:
+    class BindingVersionFiles:
         async def stat(self, path: str) -> FileMetadata:
             assert scope_open
             return FileMetadata(path=path, kind="file", size=4, writable=False)
@@ -1259,15 +1223,14 @@ async def test_media_understanding_releases_revision_scope_before_model_executio
             assert scope_open
             return b"\x89PNG"
 
-    files = RevisionFiles()
+    files = BindingVersionFiles()
 
     class Scopes:
         def select_files(self, path: str) -> FileScopeSelection:
             return FileScopeSelection(
                 logical_path=path,
                 resolved_path=EnvironmentPath(
-                    binding_id="binding-1",
-                    binding_revision=1,
+                    mount_id="mount-1",
                     path="/image.png",
                 ),
                 observed_generation="generation-1",
@@ -1287,8 +1250,7 @@ async def test_media_understanding_releases_revision_scope_before_model_executio
     class BlockingProvider:
         async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
             assert request.source == EnvironmentPath(
-                binding_id="binding-1",
-                binding_revision=1,
+                mount_id="mount-1",
                 path="/image.png",
             )
             assert not scope_open
@@ -1303,7 +1265,7 @@ async def test_media_understanding_releases_revision_scope_before_model_executio
         Any,
         SimpleNamespace(
             deps=SimpleNamespace(
-                model_configuration=None,
+                model_characteristics=None,
                 record_provider_usage=record_provider_usage,
             ),
             tool_call_id="view-detached-media",
@@ -1523,25 +1485,9 @@ async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_p
 async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(tmp_path: Path) -> None:
     (tmp_path / "value.txt").write_text("value")
     aggregate = _local_binding(tmp_path)
-    replacement = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=tmp_path),
-        )
-    )
-    refresh = EnvironmentTopologyRequest(
-        topology_version=2,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_revision=2,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=replacement,
-            ),
-        ),
-        default_binding_id="binding-1",
+    replacement = _local_mount(
+        tmp_path,
+        environment_id="dynamic-environment-test-replacement",
     )
 
     class RefreshOnAuthorize:
@@ -1551,7 +1497,7 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
             del invocation, metadata, context
             if not self.applied:
                 self.applied = True
-                await aggregate.controller.apply(refresh)
+                await aggregate.replace("local", replacement)
             return InvocationPolicyDecision.allow()
 
     observed: dict[str, Any] = {}
@@ -1594,35 +1540,19 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
 
     assert result.output_or_raise() == "done"
     assert observed["ok"] is False
-    assert observed["error"]["code"] == "environment_stale_binding"
+    assert observed["error"]["code"] == "environment_stale_mount"
 
 
-async def test_managed_authorization_is_fenced_by_binding_revision(tmp_path: Path) -> None:
+async def test_managed_authorization_is_fenced_by_mount_incarnation(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path)
     run_bindings = RunBindings.embedded(environment=aggregate)
-    replacement = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="dynamic-environment-test",
-            root=DirectLocalRootConfiguration(path=tmp_path),
-        )
-    )
-    refresh = EnvironmentTopologyRequest(
-        topology_version=2,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_revision=2,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=replacement,
-            ),
-        ),
-        default_binding_id="binding-1",
+    replacement = _local_mount(
+        tmp_path,
+        environment_id="dynamic-environment-test-replacement",
     )
 
     async with aggregate.bind(run_id="run-1", instance=run_bindings.instance) as environment:
-        await environment.activate()
+        await aggregate._activate()
         capability = _DynamicEnvironmentRunCapability(
             _configuration(),
             run_id="run-1",
@@ -1635,11 +1565,11 @@ async def test_managed_authorization_is_fenced_by_binding_revision(tmp_path: Pat
             context=cast(Any, SimpleNamespace(environment=environment)),
         )
         assert len(resources) == 1
-        await aggregate.controller.apply(refresh)
+        await aggregate.replace("local", replacement)
 
         with pytest.raises(Exception) as stale_authorization:
             capability._assert_authorized_fence()
-        assert getattr(stale_authorization.value, "code", None) == "environment_stale_binding"
+        assert getattr(stale_authorization.value, "code", None) == "environment_stale_mount"
 
 
 async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_path: Path) -> None:
@@ -1754,7 +1684,7 @@ async def test_model_error_projection_omits_internal_environment_details() -> No
             "internal provider detail",
             code="environment_unavailable",
             details={
-                "binding_id": "binding-secret",
+                "mount_id": "mount-secret",
                 "generation": "generation-secret",
                 "reason_code": "provider-secret",
                 "timeout_seconds": 3,
@@ -1771,7 +1701,7 @@ async def test_model_error_projection_omits_internal_environment_details() -> No
     assert result["error"]["details"] == {"timeout_seconds": 3, "missing": ["files"]}
 
 
-async def test_empty_topology_tool_returns_typed_unavailable_result_after_policy_allow() -> None:
+async def test_empty_environment_tool_returns_typed_unavailable_result_after_policy_allow() -> None:
     observed: dict[str, Any] = {}
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -1891,7 +1821,7 @@ async def test_agent_spec_tool_retries_exhaust_once_without_environment_retry_lo
 
 
 @pytest.mark.parametrize("source_fails", [False, True])
-async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: bool) -> None:
+async def test_cross_mount_copy_uses_plain_stream_completion(source_fails: bool) -> None:
     class SourceBackend:
         async def read_bytes_stream(self, path: str, *, chunk_size: int = 65_536):
             del path, chunk_size
@@ -1913,8 +1843,7 @@ async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: boo
                 path=path,
                 bytes_written=len(staged),
                 receipt=EnvironmentOperationReceipt(
-                    binding_id="binding-destination",
-                    binding_revision=1,
+                    mount_id="mount-destination-1",
                     observed_generation="generation-destination",
                     operation_id="operation-1",
                     stage="completed",
@@ -1924,32 +1853,33 @@ async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: boo
 
     source_backend = SourceBackend()
     destination_backend = DestinationBackend()
-    topology_revision = 1
-    prepared_revisions: list[int] = []
+    current_incarnation = 1
+    prepared_mount_ids: list[str] = []
 
     def resolve(path: str) -> EnvironmentPath:
         source = path == "source"
+        kind = "source" if source else "destination"
         return EnvironmentPath(
-            binding_id="binding-source" if source else "binding-destination",
-            binding_revision=topology_revision,
+            mount_id=f"mount-{kind}-{current_incarnation}",
             path=f"/{path}",
         )
 
     @asynccontextmanager
     async def prepare(selected: EnvironmentPath, action: EnvironmentAction) -> AsyncGenerator[Any]:
-        nonlocal topology_revision
+        nonlocal current_incarnation
         source = action is EnvironmentAction.FILE_COPY_SOURCE
-        prepared_revisions.append(selected.binding_revision)
+        prepared_mount_ids.append(selected.mount_id)
         if source:
-            topology_revision = 2
+            current_incarnation = 2
         yield _PreparedFile(
             selected=selected,
             observed_generation="generation-source" if source else "generation-destination",
             backend=source_backend if source else destination_backend,
             validate_result=lambda value: None,
+            virtualize_path=lambda path: path,
         )
 
-    files = VirtualFileOperator(resolve, prepare, lambda selected, path: path)
+    files = VirtualFileOperator(resolve, prepare)
     if source_fails:
         with pytest.raises(RuntimeError, match="source failed"):
             await files.copy("source", "destination")
@@ -1958,24 +1888,18 @@ async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: boo
         result = await files.copy("source", "destination")
         assert result.bytes_copied == 4
         assert destination_backend.data == b"data"
-    assert prepared_revisions == [1, 1]
+    assert prepared_mount_ids == ["mount-source-1", "mount-destination-1"]
 
 
-class _ApplyTopologyAfterResultPlugin(AbstractHarnessPlugin):
-    def __init__(
-        self,
-        controller: Any,
-        request: EnvironmentTopologyRequest,
-        *,
-        applied: asyncio.Event | None = None,
-    ) -> None:
-        self._controller = controller
-        self._request = request
-        self._applied = applied
+class _MountAfterResultPlugin(AbstractHarnessPlugin):
+    def __init__(self, runtime: Any, mount: EnvironmentRuntimeMount) -> None:
+        self._runtime = runtime
+        self._mount = mount
+        self.error_code: str | None = None
 
     @property
     def plugin_id(self) -> str:
-        return "apply-topology-after-result"
+        return "mount-after-result"
 
     def wrap_run(
         self,
@@ -1985,48 +1909,26 @@ class _ApplyTopologyAfterResultPlugin(AbstractHarnessPlugin):
         async def iterate():
             async for item in call_next(exchange):
                 if isinstance(item, HarnessRunResult):
-                    await self._controller.apply(self._request)
-                    if self._applied is not None:
-                        self._applied.set()
+                    try:
+                        await self._runtime.mount("local", self._mount, make_default=True)
+                    except EnvironmentError as exc:
+                        self.error_code = exc.code
                 yield item
 
         return PluginRunResponse(iterate())
 
 
-def _dynamic_local_request(root: Path) -> EnvironmentTopologyRequest:
-    provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
-            environment_id="environment-event-test",
-            root=DirectLocalRootConfiguration(path=root),
-        )
-    )
-    return EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_revision=1,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="binding-1",
-    )
-
-
-def _topology_context_events(items: list[Any]) -> list[HarnessEvent]:
+def _environment_change_events(items: list[Any]) -> list[HarnessEvent]:
     return [
         item
         for item in items
         if isinstance(item, HarnessEvent)
         and isinstance(item.event, HarnessExtensionEvent)
-        and item.event.payload.get("type") == "environment_topology_changed"
+        and item.event.payload.get("type") == "environment_changed"
     ]
 
 
-async def test_topology_event_adapter_survives_model_recovery_boundary(tmp_path: Path) -> None:
+async def test_environment_change_event_adapter_survives_model_recovery_boundary(tmp_path: Path) -> None:
     prompt_started = asyncio.Event()
     release_prompt = asyncio.Event()
     calls = 0
@@ -2045,9 +1947,7 @@ async def test_topology_event_adapter_survives_model_recovery_boundary(tmp_path:
             raise RuntimeError("recoverable failure")
         yield "done"
 
-    aggregate = create_noop_environment_run_binding(
-        topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2)
-    )
+    aggregate = create_empty_environment_runtime()
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
@@ -2063,12 +1963,12 @@ async def test_topology_event_adapter_survives_model_recovery_boundary(tmp_path:
     async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         pending = asyncio.create_task(run.__anext__())
         await prompt_started.wait()
-        await aggregate.controller.apply(_dynamic_local_request(tmp_path))
+        await aggregate.mount("local", _local_mount(tmp_path), make_default=True)
         observed = [await asyncio.wait_for(pending, timeout=2)]
-        while not _topology_context_events(observed):
+        while not _environment_change_events(observed):
             observed.append(await asyncio.wait_for(run.__anext__(), timeout=2))
-        topology_event = _topology_context_events(observed)[0]
-        assert _topology_context_events([topology_event]) == [topology_event]
+        change_event = _environment_change_events(observed)[0]
+        assert _environment_change_events([change_event]) == [change_event]
         release_prompt.set()
         remaining = [item async for item in run]
 
@@ -2076,14 +1976,9 @@ async def test_topology_event_adapter_survives_model_recovery_boundary(tmp_path:
     assert remaining[-1].result.output_or_raise() == "done"
 
 
-async def test_topology_event_from_result_middleware_precedes_terminal_result(tmp_path: Path) -> None:
-    aggregate = create_noop_environment_run_binding(
-        topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2)
-    )
-    plugin = _ApplyTopologyAfterResultPlugin(
-        aggregate.controller,
-        _dynamic_local_request(tmp_path),
-    )
+async def test_mount_from_result_middleware_drains_before_terminal_result(tmp_path: Path) -> None:
+    aggregate = create_empty_environment_runtime()
+    plugin = _MountAfterResultPlugin(aggregate, _local_mount(tmp_path))
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
@@ -2098,23 +1993,22 @@ async def test_topology_event_from_result_middleware_precedes_terminal_result(tm
     async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         items = [item async for item in run]
 
-    topology_events = _topology_context_events(items)
-    assert len(topology_events) == 1
-    assert items.index(topology_events[0]) < len(items) - 1
+    change_events = _environment_change_events(items)
+    assert plugin.error_code is None
+    assert len(change_events) == 1
+    assert change_events[0].event.payload["kind"] == "mounted"
+    assert items.index(change_events[0]) < len(items) - 1
     assert items[-1].result.output_or_raise() == "done"
 
 
-class _TransformTopologyEventsPlugin(AbstractHarnessPlugin):
+class _TransformEnvironmentChangeEventsPlugin(AbstractHarnessPlugin):
     def __init__(self) -> None:
         self.seen = 0
         self.order: list[str] = []
 
     @property
     def plugin_id(self) -> str:
-        return "transform-topology-events"
-
-    def get_ordering(self) -> PluginOrdering:
-        return PluginOrdering(wraps=("apply-topology-after-result",))
+        return "transform-environment-change-events"
 
     def wrap_run(
         self,
@@ -2123,7 +2017,7 @@ class _TransformTopologyEventsPlugin(AbstractHarnessPlugin):
     ) -> PluginRunResponse:
         async def iterate():
             async for item in call_next(exchange):
-                if _topology_context_events([item]):
+                if _environment_change_events([item]):
                     assert isinstance(item, HarnessEvent)
                     assert isinstance(item.event, HarnessExtensionEvent)
                     self.seen += 1
@@ -2145,124 +2039,88 @@ class _TransformTopologyEventsPlugin(AbstractHarnessPlugin):
         return PluginRunResponse(iterate())
 
 
-async def test_emitter_topology_events_pass_through_plugin_middleware(tmp_path: Path) -> None:
-    aggregate = create_noop_environment_run_binding(
-        topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2)
-    )
-    apply_plugin = _ApplyTopologyAfterResultPlugin(
-        aggregate.controller,
-        _dynamic_local_request(tmp_path),
-    )
-    transform_plugin = _TransformTopologyEventsPlugin()
+async def test_environment_change_events_pass_through_plugin_middleware(tmp_path: Path) -> None:
+    aggregate = create_empty_environment_runtime()
+    transform_plugin = _TransformEnvironmentChangeEventsPlugin()
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
+        await aggregate.mount("local", _local_mount(tmp_path), make_default=True)
         yield "done"
 
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        plugins=(apply_plugin, transform_plugin),
+        plugins=(transform_plugin,),
     )
     async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         items = [item async for item in run]
 
-    topology_events = _topology_context_events(items)
+    change_events = _environment_change_events(items)
     assert transform_plugin.seen == 1
     assert transform_plugin.order == ["event", "result"]
-    assert len(topology_events) == 1
-    assert topology_events[0].event.payload["observed_by_plugin"] is True
+    assert len(change_events) == 1
+    assert change_events[0].event.payload["observed_by_plugin"] is True
     assert items[-1].result.output_or_raise() == "done"
 
 
-class _ApplyTopologyBurstAfterResultPlugin(AbstractHarnessPlugin):
-    def __init__(self, controller: Any, count: int) -> None:
-        self._controller = controller
-        self._count = count
-
-    @property
-    def plugin_id(self) -> str:
-        return "apply-topology-burst-after-result"
-
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessRunResult):
-                    for version in range(1, self._count + 1):
-                        await self._controller.apply(
-                            EnvironmentTopologyRequest(
-                                topology_version=version,
-                                bindings=(),
-                                default_binding_id=None,
-                            )
-                        )
-                yield item
-
-        return PluginRunResponse(iterate())
-
-
-async def test_terminal_drains_topology_burst_larger_than_emitter_capacity() -> None:
+async def test_terminal_drains_mount_change_burst_larger_than_emitter_capacity(tmp_path: Path) -> None:
     change_count = 65
-    aggregate = create_noop_environment_run_binding(
-        topology_limits=EnvironmentTopologyLimits(max_bindings=1, max_committed_changes=change_count)
-    )
-    plugin = _ApplyTopologyBurstAfterResultPlugin(aggregate.controller, change_count)
+    aggregate = create_empty_environment_runtime()
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
+        for index in range(change_count):
+            if index % 2 == 0:
+                await aggregate.mount(
+                    "local",
+                    _local_mount(tmp_path, environment_id=f"environment-burst-{index}"),
+                    make_default=True,
+                )
+            else:
+                await aggregate.unmount("local")
         yield "done"
 
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        plugins=(plugin,),
     )
     async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
         items = [item async for item in run]
 
-    assert len(_topology_context_events(items)) == change_count
+    assert len(_environment_change_events(items)) == change_count
     assert items[-1].result.output_or_raise() == "done"
 
 
-async def test_terminal_waits_for_delayed_topology_adapter_drain(
+async def test_terminal_waits_for_delayed_environment_change_adapter_drain(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     adapter_started = asyncio.Event()
     release_adapter = asyncio.Event()
-    topology_applied = asyncio.Event()
-    original_adapter = execution_module._emit_environment_topology_events
+    mount_applied = asyncio.Event()
+    original_adapter = execution_module._emit_environment_change_events
 
     async def delayed_adapter(context: Any, drain: Any) -> None:
         adapter_started.set()
         await release_adapter.wait()
         await original_adapter(context, drain)
 
-    monkeypatch.setattr(execution_module, "_emit_environment_topology_events", delayed_adapter)
-    aggregate = create_noop_environment_run_binding(
-        topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2)
-    )
-    plugin = _ApplyTopologyAfterResultPlugin(
-        aggregate.controller,
-        _dynamic_local_request(tmp_path),
-        applied=topology_applied,
-    )
+    monkeypatch.setattr(execution_module, "_emit_environment_change_events", delayed_adapter)
+    aggregate = create_empty_environment_runtime()
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
+        await aggregate.mount("local", _local_mount(tmp_path), make_default=True)
+        mount_applied.set()
         yield "done"
 
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        plugins=(plugin,),
     )
 
     async def collect() -> list[Any]:
@@ -2271,15 +2129,15 @@ async def test_terminal_waits_for_delayed_topology_adapter_drain(
 
     collect_task = asyncio.create_task(collect())
     await adapter_started.wait()
-    await topology_applied.wait()
+    await mount_applied.wait()
     await asyncio.sleep(0)
     assert not collect_task.done()
     release_adapter.set()
     items = await collect_task
 
-    topology_events = _topology_context_events(items)
-    assert len(topology_events) == 1
-    assert items.index(topology_events[0]) < len(items) - 1
+    change_events = _environment_change_events(items)
+    assert len(change_events) == 1
+    assert items.index(change_events[0]) < len(items) - 1
     assert items[-1].result.output_or_raise() == "done"
 
 
@@ -2294,8 +2152,7 @@ async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_revision=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
 
@@ -2314,8 +2171,7 @@ async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_revision=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
     environment = SimpleNamespace(files=files)
@@ -2569,8 +2425,7 @@ async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_er
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_revision=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
     toolset = FileToolset(files)
@@ -2593,18 +2448,17 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_revision=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
-    revision = 1
+    mount_current = True
     writes = 0
 
     class RefreshingFiles:
         async def mkdir(self, path: str, *, parents: bool, exist_ok: bool):
-            nonlocal revision
+            nonlocal mount_current
             result = await files.mkdir(path, parents=parents, exist_ok=exist_ok)
-            revision = 2
+            mount_current = False
             return result
 
         async def write_text(self, path: str, text: str, *, mode: str):
@@ -2613,8 +2467,8 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
             return await files.write_text(path, text, mode=cast(Any, mode))
 
     def guard() -> None:
-        if revision != 1:
-            raise EnvironmentError("Binding changed.", code="environment_stale_binding")
+        if not mount_current:
+            raise EnvironmentError("Mount changed.", code="environment_stale_mount")
 
     toolset = FileToolset(cast(Any, RefreshingFiles()), execution_guard=guard)
     ctx = cast(Any, SimpleNamespace())
@@ -2622,61 +2476,59 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
     result = await toolset.write(ctx, "/nested/value.txt", "must-not-write")
 
     assert result["ok"] is False
-    assert result["error"]["code"] == "environment_stale_binding"
+    assert result["error"]["code"] == "environment_stale_mount"
     assert writes == 0
     assert not (tmp_path / "nested" / "value.txt").exists()
 
 
-async def test_file_toolset_pins_one_revision_across_compound_write() -> None:
-    writes: list[tuple[int, str]] = []
-    current_revision = 1
+async def test_file_toolset_pins_one_mount_incarnation_across_compound_write() -> None:
+    writes: list[tuple[str, str]] = []
+    current_mount_id = "mount-1"
 
-    class RevisionFiles:
-        def __init__(self, revision: int) -> None:
-            self.revision = revision
+    class MountFiles:
+        def __init__(self, mount_id: str) -> None:
+            self.mount_id = mount_id
 
         async def mkdir(self, path: str, *, parents: bool, exist_ok: bool):
-            nonlocal current_revision
+            nonlocal current_mount_id
             del path, parents, exist_ok
-            if self.revision == 1:
-                current_revision = 2
+            if self.mount_id == "mount-1":
+                current_mount_id = "mount-2"
             return SimpleNamespace()
 
         async def write_text(self, path: str, text: str, *, mode: str):
             del mode
-            writes.append((self.revision, path))
+            writes.append((self.mount_id, path))
             return FileWriteResult(
                 path=path,
                 bytes_written=len(text.encode()),
                 receipt=EnvironmentOperationReceipt(
-                    binding_id="binding-1",
-                    binding_revision=self.revision,
-                    observed_generation=f"generation-{self.revision}",
+                    mount_id=self.mount_id,
+                    observed_generation=f"generation-{self.mount_id}",
                     operation_id=f"operation-{len(writes)}",
                     stage="completed",
                     outcome="succeeded",
                 ),
             )
 
-    revisions = {1: RevisionFiles(1), 2: RevisionFiles(2)}
+    mounts = {"mount-1": MountFiles("mount-1"), "mount-2": MountFiles("mount-2")}
 
     class Scopes:
         def select_files(self, path: str) -> FileScopeSelection:
             return FileScopeSelection(
                 logical_path=path,
                 resolved_path=EnvironmentPath(
-                    binding_id="binding-1",
-                    binding_revision=current_revision,
+                    mount_id=current_mount_id,
                     path=path,
                 ),
-                observed_generation=f"generation-{current_revision}",
+                observed_generation=f"generation-{current_mount_id}",
             )
 
         @asynccontextmanager
         async def open_files(self, selection: FileScopeSelection) -> AsyncGenerator[Any]:
-            yield revisions[selection.resolved_path.binding_revision]
+            yield mounts[selection.resolved_path.mount_id]
 
-    toolset = FileToolset(cast(Any, revisions[1]), file_scopes=Scopes())
+    toolset = FileToolset(cast(Any, mounts["mount-1"]), file_scopes=Scopes())
     ctx = cast(Any, SimpleNamespace())
 
     first = await toolset.write(ctx, "/nested/first.txt", "first")
@@ -2684,7 +2536,7 @@ async def test_file_toolset_pins_one_revision_across_compound_write() -> None:
 
     assert first["ok"] is True
     assert second["ok"] is True
-    assert writes == [(1, "/nested/first.txt"), (2, "/nested/second.txt")]
+    assert writes == [("mount-1", "/nested/first.txt"), ("mount-2", "/nested/second.txt")]
 
 
 async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) -> None:
@@ -2694,8 +2546,7 @@ async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) ->
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_revision=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
     toolset = FileToolset(files)
@@ -2716,8 +2567,7 @@ async def test_direct_local_create_is_exclusive_under_concurrency(tmp_path: Path
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_revision=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
 
@@ -2746,8 +2596,7 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_revision=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
     toolset = FileToolset(files)

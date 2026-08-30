@@ -69,7 +69,7 @@ class ManagedProcessState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     identity: ProcessIdentity
-    binding_id: str | None = Field(default=None, max_length=256)
+    mount_id: str | None = Field(default=None, max_length=256)
     stdout_offset: int = Field(default=0, ge=0)
     stderr_offset: int = Field(default=0, ge=0)
     status: ProcessStatus
@@ -495,7 +495,7 @@ class ProcessManager:
         try:
             return await operation(await self._handle(entry))
         except EnvironmentError as exc:
-            if exc.code == "environment_stale_binding" and entry.handle is not None:
+            if exc.code == "environment_stale_mount" and entry.handle is not None:
                 entry.handle = None
                 try:
                     return await operation(await self._handle(entry))
@@ -514,7 +514,7 @@ class ProcessManager:
         entry.handle = info.handle
         entry.state = entry.state.model_copy(
             update={
-                "binding_id": info.handle.binding_id,
+                "mount_id": info.handle.mount_id,
                 "status": info.status,
                 "stdin_open": info.stdin_open,
                 "stdout_produced_bytes": info.output.stdout.produced_bytes,
@@ -610,7 +610,7 @@ class ProcessManager:
             _require_stream_progress(stdout_available, stderr_available, stdout_data, stderr_data)
             entry.state = entry.state.model_copy(
                 update={
-                    "binding_id": result.process.handle.binding_id,
+                    "mount_id": result.process.handle.mount_id,
                     "stdout_offset": stdout_start + len(stdout_data),
                     "stderr_offset": stderr_start + len(stderr_data),
                     "status": result.process.status,
@@ -847,7 +847,7 @@ class ProcessManager:
     def _state_from_info(info: ProcessInfo) -> ManagedProcessState:
         return ManagedProcessState(
             identity=info.handle.identity,
-            binding_id=info.handle.binding_id,
+            mount_id=info.handle.mount_id,
             status=info.status,
             stdin_open=info.stdin_open,
             stdout_produced_bytes=info.output.stdout.produced_bytes,

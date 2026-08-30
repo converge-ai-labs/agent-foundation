@@ -66,7 +66,7 @@ class SessionAgentSkillSelection(StrictModel):
 class SessionForkRef(StrictModel):
     source_session_id: _SESSION_ID
     source_thread_id: _THREAD_ID
-    source_thread_commit_revision: int = Field(ge=0)
+    source_thread_commit_version: int = Field(ge=1)
     source_checkpoint_id: _CHECKPOINT_ID | None = None
     source_agent_digest: _DIGEST
     source_environment_digest: _DIGEST
@@ -133,8 +133,8 @@ class TurnView(StrictModel):
 class ThreadView(StrictModel):
     thread_id: _THREAD_ID
     session_id: _SESSION_ID
-    commit_revision: int = Field(ge=0)
-    queue_revision: int = Field(ge=0)
+    commit_version: int = Field(ge=1)
+    queue_version: int = Field(ge=1)
     selected_checkpoint: CheckpointRef | None = None
     active_turn_id: _TURN_ID | None = None
     turns: tuple[TurnView, ...] = ()
@@ -151,7 +151,7 @@ class LocalSession(StrictModel):
     archived_at: datetime | None = None
     pinned: bool = False
     display_order: int = 0
-    control_revision: int = Field(ge=1)
+    control_version: int = Field(ge=1)
     agent_snapshot: SnapshotReference
     environment_snapshot: SnapshotReference
     skill_selections: tuple[SessionAgentSkillSelection, ...] = ()
@@ -175,9 +175,9 @@ class SessionSummary(StrictModel):
     archived_at: datetime | None
     pinned: bool
     display_order: int
-    control_revision: int = Field(ge=1)
+    control_version: int = Field(ge=1)
     thread_id: _THREAD_ID
-    thread_commit_revision: int = Field(ge=0)
+    thread_commit_version: int = Field(ge=1)
     active_turn_id: _TURN_ID | None
     updated_at: datetime
 

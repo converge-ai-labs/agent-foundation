@@ -7,7 +7,7 @@ Repository automation builds this application, copies `dist/` into the generated
 Run the Agent UI CLI or validate/build its browser assets through the repository targets:
 
 ```bash
-make agent-ui
+make a13n-ui
 make harness-ui-check
 make agent-ui-build
 ```

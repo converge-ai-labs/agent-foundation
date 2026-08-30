@@ -5,18 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import secrets
 import sys
 from collections.abc import AsyncGenerator, Coroutine, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
-from hashlib import sha256
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from pydantic import BaseModel, JsonValue
 
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.identity import AgentInstanceContext
 
+from .changes import EnvironmentChangeJournal
 from .commands import (
     BoundProcessHandle,
     CommandRequest,
@@ -40,24 +41,19 @@ from .models import (
     ENVIRONMENT_ACTION_DISPATCH,
     EnvironmentAction,
     EnvironmentAvailability,
-    EnvironmentBinding,
-    EnvironmentBindingObservation,
-    EnvironmentBindingRequest,
-    EnvironmentBindingState,
+    EnvironmentChange,
     EnvironmentDescriptor,
     EnvironmentError,
+    EnvironmentMountInfo,
+    EnvironmentMountObservation,
+    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentOperationReceipt,
     EnvironmentPath,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
+    EnvironmentSnapshot,
     EnvironmentState,
-    EnvironmentStateLimits,
-    EnvironmentTopology,
-    EnvironmentTopologyBindingChange,
-    EnvironmentTopologyChange,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
 )
 from .providers import (
     BoundEnvironment,
@@ -68,9 +64,8 @@ from .providers import (
     BoundShellOperations,
     EnvironmentProviderBinding,
     EnvironmentProviderOperations,
-    EnvironmentRunBinding,
-    EnvironmentTopologyController,
-    EnvironmentTopologyObserver,
+    EnvironmentRuntime,
+    EnvironmentRuntimeMount,
     FileScopeSelection,
 )
 from .retention import (
@@ -80,7 +75,6 @@ from .retention import (
     EnvironmentOutputPolicy,
     EnvironmentOutputReadResult,
 )
-from .topology import DynamicTopologyController, DynamicTopologyObserver
 from .virtual_files import VirtualFileOperator, _PreparedFile
 
 if TYPE_CHECKING:
@@ -91,48 +85,53 @@ _MAX_MODEL_CONTEXT_BINDINGS = 64
 _MAX_MODEL_CONTEXT_BYTES = 64 * 1024
 
 
-def _bounded_topology_json(payload: dict[str, JsonValue], max_bytes: int) -> str:
-    bindings = cast(list[JsonValue], payload["bindings"])
+def _bounded_snapshot_json(payload: dict[str, JsonValue], max_bytes: int) -> str:
+    mounts = cast(list[JsonValue], payload["mounts"])
     while True:
         encoded = dump_json_bytes(payload, sort_keys=True)
         if len(encoded) <= max_bytes:
             return encoded.decode("utf-8")
-        if bindings:
-            bindings.pop()
+        if mounts:
+            mounts.pop()
             payload["truncated"] = True
             continue
-        minimal: dict[str, JsonValue] = {
-            "topology_version": payload["topology_version"],
-            "bindings": [],
-            "truncated": True,
-        }
+        minimal: dict[str, JsonValue] = {"mounts": [], "truncated": True}
         encoded = dump_json_bytes(minimal, sort_keys=True)
         if len(encoded) > max_bytes:
             raise EnvironmentError(
-                "Environment topology byte limit cannot encode a minimal snapshot.",
+                "Environment snapshot byte limit cannot encode a minimal value.",
                 code="environment_projection_limit_invalid",
             )
         return encoded.decode("utf-8")
 
 
 @dataclass(frozen=True, slots=True)
-class _EnteredBinding:
-    public: EnvironmentBinding
+class _MountRequest:
+    name: str
+    permission_ceiling: EnvironmentPermissionSet
+    default_working_directory: str | None
+    candidate: EnvironmentProviderBinding
+
+
+@dataclass(frozen=True, slots=True)
+class _EnteredMount:
+    mount_id: str
+    public: EnvironmentMountInfo
     provider: BoundEnvironmentProvider
     operations: EnvironmentProviderOperations
     environment_id: str
 
 
-type _RevisionKey = tuple[str, int, str]
+type _MountKey = tuple[str, str]
 
 
 @dataclass(slots=True)
 class _OwnedProviderScope:
-    entered: _EnteredBinding
+    entered: _EnteredMount
     scope: AbstractAsyncContextManager[BoundEnvironmentProvider]
 
 
-def _validate_provider_artifacts(entered: _EnteredBinding, value: Any) -> None:
+def _validate_provider_artifacts(entered: _EnteredMount, value: Any) -> None:
     bound_types = (
         BoundProcessHandle,
         BoundOutputReference,
@@ -140,13 +139,9 @@ def _validate_provider_artifacts(entered: _EnteredBinding, value: Any) -> None:
         EnvironmentOperationReceipt,
     )
     if isinstance(value, bound_types):
-        if (
-            value.binding_id != entered.public.binding_id
-            or value.binding_revision != entered.public.binding_revision
-            or value.observed_generation != entered.public.descriptor.generation
-        ):
+        if value.mount_id != entered.mount_id or value.observed_generation != entered.public.descriptor.generation:
             raise EnvironmentError(
-                "Environment provider returned an artifact for another binding revision.",
+                "Environment provider returned an artifact for another mount incarnation.",
                 code="environment_provider_failure",
             )
         return
@@ -255,15 +250,16 @@ class _OutputFacade:
         self,
         selected: BoundOutputReference | BoundOutputCursor,
         action: EnvironmentAction,
-    ) -> AsyncGenerator[_EnteredBinding]:
-        binding_id = selected.binding_id
-        entered = self._environment.require_action(binding_id, action)
-        if (
-            selected.binding_revision != entered.public.binding_revision
-            or selected.observed_generation != entered.public.descriptor.generation
+    ) -> AsyncGenerator[_EnteredMount]:
+        entered = self._environment.require_action(selected.mount_id, action)
+        if selected.observed_generation != entered.public.descriptor.generation:
+            raise EnvironmentError("Output selector is stale.", code="environment_stale_mount")
+        async with self._environment._operation_lease(
+            entered,
+            action,
+            "outputs",
+            allow_retired=True,
         ):
-            raise EnvironmentError("Output selector is stale.", code="environment_stale_binding")
-        async with self._environment._operation_lease(entered, action, "outputs"):
             if entered.operations.outputs is None:
                 raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
             yield entered
@@ -289,14 +285,12 @@ class _ShellFacade:
             return result
 
     async def exec_captured(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
-        """Preflight and hold one revision through foreground output materialization."""
+        """Preflight and hold one mount incarnation through foreground output materialization."""
         entered, provider_request = self._environment._prepare_command(request, alias=alias)
         for action in (EnvironmentAction.SHELL_EXEC, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE):
-            selected = self._environment.require_action(entered.public.binding_id, action)
+            selected = self._environment.require_action(entered.mount_id, action)
             if selected is not entered:
-                raise EnvironmentError(
-                    "Shell binding revision changed before dispatch.", code="environment_stale_binding"
-                )
+                raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")
         if entered.operations.outputs is None:
             raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
         async with self._environment._operation_lease(
@@ -331,7 +325,7 @@ class _ShellFacade:
 
     @staticmethod
     async def _materialize_capture(
-        entered: _EnteredBinding,
+        entered: _EnteredMount,
         capture: EnvironmentOutputCapture,
         policy: EnvironmentOutputPolicy,
     ) -> EnvironmentOutputCapture:
@@ -482,6 +476,7 @@ class _ProcessFacade:
             action,
             "processes",
             timeout_seconds=timeout_seconds,
+            allow_retired=True,
         ):
             processes = entered.operations.processes
             if processes is None:
@@ -541,74 +536,48 @@ class _PortFacade:
 
 
 class CompositeBoundEnvironment(BoundEnvironment):
-    """One stable facade over a validated entered topology."""
+    """One stable read-only facade over a mutable run-local mount set."""
 
     def __init__(
         self,
         *,
         run_id: str,
         instance: AgentInstanceContext,
-        initial_request: EnvironmentTopologyRequest,
-        topology: EnvironmentTopology,
-        entered: Mapping[str, _EnteredBinding],
-        owned_scopes: Mapping[_RevisionKey, _OwnedProviderScope],
-        topology_limits: EnvironmentTopologyLimits,
-        state_limits: EnvironmentStateLimits,
-        observer: DynamicTopologyObserver,
-        controller: DynamicTopologyController,
+        snapshot: EnvironmentSnapshot,
+        entered: Mapping[str, _EnteredMount],
+        owned_scopes: Mapping[_MountKey, _OwnedProviderScope],
+        journal: EnvironmentChangeJournal,
+        runtime: ManagedEnvironmentRuntime,
         extensions: tuple[tuple[str, EnvironmentRunExtension], ...],
     ) -> None:
         self._run_id = run_id
         self._instance = instance
-        self._topology = topology
+        self._snapshot = snapshot
         self._entered = dict(entered)
-        self._entered_by_revision = {
-            (item.public.binding_id, item.public.binding_revision): item for item in entered.values()
-        }
+        self._entered_by_id = {item.mount_id: item for item in entered.values()}
         self._owned_scopes = dict(owned_scopes)
-        self._topology_limits = topology_limits
-        self._state_limits = state_limits
-        self._observer = observer
-        self._controller = controller
+        self._journal = journal
+        self._runtime = runtime
         self._extensions = extensions
         self._extension_scopes: list[tuple[str, AbstractAsyncContextManager[None]]] = []
         self._activation_state = "not_started"
-        self._restored_state_topology_version: int | None = None
+        self._state_restored = False
         self._readiness_lock = asyncio.Lock()
         self._operation_lock = asyncio.Lock()
-        self._topology_apply_lock = asyncio.Lock()
+        self._mutation_lock = asyncio.Lock()
         self._closed = False
         self._operation_tasks: dict[asyncio.Task[Any], int] = {}
-        self._revision_tasks: dict[_RevisionKey, dict[asyncio.Task[Any], int]] = {}
-        self._revision_drained: dict[_RevisionKey, asyncio.Event] = {}
-        self._process_start_leases: dict[_RevisionKey, int] = {}
-        self._active_process_handles: dict[_RevisionKey, set[BoundProcessHandle]] = {}
-        self._readiness_tasks: dict[tuple[str, int, str, str], asyncio.Task[None]] = {}
+        self._mount_tasks: dict[_MountKey, dict[asyncio.Task[Any], int]] = {}
+        self._mount_drained: dict[_MountKey, asyncio.Event] = {}
+        self._process_start_leases: dict[_MountKey, int] = {}
+        self._active_process_handles: dict[_MountKey, set[BoundProcessHandle]] = {}
+        self._readiness_tasks: dict[tuple[str, str, str], asyncio.Task[None]] = {}
         self._readiness_waiters: dict[asyncio.Task[None], int] = {}
         self._retirement_tasks: set[asyncio.Task[None]] = set()
         self._retirement_failures: list[BaseException] = []
-        self._alias_owners = {item.alias: item.binding_id for item in topology.bindings}
-        self._default_owner = topology.default_binding_id
-        self._max_revision_by_id = {item.binding_id: item.binding_revision for item in topology.bindings}
-        self._requests_by_id = {item.binding_id: item for item in initial_request.bindings}
-        self._provider_identity_by_id = {
-            item.public.binding_id: (item.public.provider_type, item.environment_id) for item in entered.values()
-        }
-        initial_digest = _topology_request_digest(initial_request)
-        initial_receipt = EnvironmentTopologyChange(
-            previous_version=topology.topology_version,
-            current_version=topology.topology_version,
-            request_digest=initial_digest,
-            bindings=(),
-        )
-        self._receipts: dict[int, tuple[str, EnvironmentTopologyChange]] = {
-            topology.topology_version: (initial_digest, initial_receipt)
-        }
-        self._committed_changes = 0
         self._files = VirtualFileOperator(
             self.resolve_path,
             self._prepare_file,
-            self._virtualize_provider_path,
         )
         self._shell = _ShellFacade(self)
         self._processes = _ProcessFacade(self)
@@ -616,16 +585,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._outputs = _OutputFacade(self)
 
     @property
-    def topology(self) -> EnvironmentTopology:
-        return self._topology
-
-    @property
-    def restored_state_topology_version(self) -> int | None:
-        return self._restored_state_topology_version
-
-    @property
-    def topology_observer(self) -> EnvironmentTopologyObserver:
-        return self._observer
+    def snapshot(self) -> EnvironmentSnapshot:
+        return self._snapshot
 
     @property
     def files(self) -> FileOperator:
@@ -644,16 +605,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
         if request.kind is not ModelContextRequestKind.INPUT:
             return ModelContextProjection()
-        topology = self.topology
-        selected = topology.bindings[:_MAX_MODEL_CONTEXT_BINDINGS]
-        default = next((item for item in topology.bindings if item.binding_id == topology.default_binding_id), None)
-        bindings: list[dict[str, JsonValue]] = []
-        for binding in selected:
+        snapshot = self.snapshot
+        selected = snapshot.mounts[:_MAX_MODEL_CONTEXT_BINDINGS]
+        mounts: list[dict[str, JsonValue]] = []
+        for mount in selected:
             availability = "unavailable"
             ready: list[str] = []
             reason: str | None = None
             try:
-                observation = await self.describe(binding.binding_id)
+                observation = await self.describe(mount.name)
                 availability = observation.availability.status
                 ready = sorted(observation.availability.ready_families)
                 reason = observation.availability.reason_code
@@ -662,17 +622,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
             operations = sorted(
                 {
                     ENVIRONMENT_ACTION_DISPATCH[action].family
-                    for action in binding.permission_ceiling.operations
+                    for action in mount.permission_ceiling.operations
                     if ENVIRONMENT_ACTION_DISPATCH[action].family != "state"
                 }
             )
             projected: dict[str, JsonValue] = {
-                "alias": binding.alias,
-                "root": (
-                    "/workspace"
-                    if binding.binding_id == topology.default_binding_id
-                    else f"/environment/{binding.alias}"
-                ),
+                "name": mount.name,
+                "root": "/workspace" if mount.name == snapshot.default_mount else f"/environment/{mount.name}",
                 "operations": cast(JsonValue, operations),
                 "availability": availability,
                 "ready": cast(JsonValue, ready),
@@ -685,28 +641,26 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         "environment.file.remove",
                         "environment.file.copy_destination",
                     }
-                    for action in binding.permission_ceiling.operations
+                    for action in mount.permission_ceiling.operations
                 ),
             }
             if reason is not None:
                 projected["reason"] = reason
-            bindings.append(projected)
+            mounts.append(projected)
         payload: dict[str, JsonValue] = {
-            "topology_version": topology.topology_version,
-            "restored_state_topology_version": self.restored_state_topology_version,
-            "default_alias": default.alias if default is not None else None,
-            "bindings": cast(JsonValue, bindings),
-            "truncated": len(selected) < len(topology.bindings),
+            "default_mount": snapshot.default_mount,
+            "mounts": cast(JsonValue, mounts),
+            "truncated": len(selected) < len(snapshot.mounts),
         }
-        prefix = "Current Environment topology (trusted dynamic context):\n"
-        content = prefix + _bounded_topology_json(
+        prefix = "Current Environment mounts (trusted dynamic context):\n"
+        content = prefix + _bounded_snapshot_json(
             payload,
             _MAX_MODEL_CONTEXT_BYTES - len(prefix.encode("utf-8")),
         )
         return ModelContextProjection(
             blocks=(
                 ModelContextBlock(
-                    source_id="a13n.environment-topology",
+                    source_id="a13n.environment-mounts",
                     placement=ModelContextPlacement.INPUT_PREAMBLE,
                     content=content,
                 ),
@@ -715,12 +669,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     def select_files(self, path: str) -> FileScopeSelection:
         selected = self.resolve_path(path)
-        entered = self._entered_by_revision.get((selected.binding_id, selected.binding_revision))
+        entered = self._entered_by_id.get(selected.mount_id)
         if entered is None:
-            raise EnvironmentError(
-                "Environment binding revision is unavailable.",
-                code="environment_stale_binding",
-            )
+            raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
         return FileScopeSelection(
             logical_path=path,
             resolved_path=selected,
@@ -732,27 +683,21 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if not isinstance(selection, FileScopeSelection):
             raise EnvironmentError("File scope selection is invalid.", code="environment_request_invalid")
         selected = selection.resolved_path
-        entered = self._entered_by_revision.get((selected.binding_id, selected.binding_revision))
-        if entered is None or entered.public.descriptor.generation != selection.observed_generation:
-            raise EnvironmentError("File scope selection is stale.", code="environment_stale_binding")
-        async with self._revision_slot(entered):
+        entered = self._entered_by_id.get(selected.mount_id)
+        if (
+            entered is None
+            or self._entered.get(entered.public.name) is not entered
+            or entered.public.descriptor.generation != selection.observed_generation
+        ):
+            raise EnvironmentError("File scope selection is stale.", code="environment_stale_mount")
+        async with self._mount_slot(entered):
             await self._ensure_provider_family(entered, "files")
-            self._validate_live_observation(
-                entered,
-                entered.provider.availability,
-                frozenset({"files"}),
-            )
+            self._validate_live_observation(entered, entered.provider.availability, frozenset({"files"}))
             if entered.operations.files is None:
                 raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
             scoped = VirtualFileOperator(
                 lambda path: self._resolve_scoped_file_path(path, entered, selection),
-                lambda path, action: self._prepare_scoped_file(entered, path, action),
-                lambda path, provider_path: self._virtualize_scoped_file_path(
-                    entered,
-                    selection,
-                    path,
-                    provider_path,
-                ),
+                lambda path, action: self._prepare_scoped_file(entered, selection, path, action),
             )
             yield scoped
 
@@ -772,7 +717,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
     def outputs(self) -> BoundOutputOperations:
         return self._outputs
 
-    async def activate(self) -> None:
+    async def _activate(self) -> None:
         self._assert_open()
         if self._activation_state == "active":
             return
@@ -815,272 +760,216 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         "Environment run extension activation and cleanup failed",
                         [primary, cleanup_error],
                     ) from None
+            self._runtime._activation_failed()
             raise
-        self._controller.activate()
         self._activation_state = "active"
+        self._runtime._activated(self)
 
-    @staticmethod
-    def _revision_key(entered: _EnteredBinding) -> _RevisionKey:
-        return (
-            entered.public.binding_id,
-            entered.public.binding_revision,
-            entered.public.descriptor.generation,
+    async def _read_changes(
+        self,
+        *,
+        after_sequence: int,
+        wait: bool = False,
+    ) -> tuple[EnvironmentChange, ...]:
+        return await self._journal.read(after_sequence=after_sequence, wait=wait)
+
+    @property
+    def _change_sequence(self) -> int:
+        return self._journal.current_sequence
+
+    def _is_mount_current(self, mount_id: str, observed_generation: str) -> bool:
+        return any(
+            entered.mount_id == mount_id and entered.public.descriptor.generation == observed_generation
+            for entered in self._entered.values()
         )
 
+    @staticmethod
+    def _mount_key(entered: _EnteredMount) -> _MountKey:
+        return (entered.mount_id, entered.public.descriptor.generation)
+
     def _track_process_handle(self, handle: BoundProcessHandle, *, added: bool) -> None:
-        key = (handle.binding_id, handle.binding_revision, handle.observed_generation)
+        key = (handle.mount_id, handle.observed_generation)
         if added:
             self._active_process_handles.setdefault(key, set()).add(handle)
-            return
-        handles = self._active_process_handles.get(key)
-        if handles is None:
-            return
-        handles.discard(handle)
-        if not handles:
-            self._active_process_handles.pop(key, None)
+        else:
+            handles = self._active_process_handles.get(key)
+            if handles is not None:
+                handles.discard(handle)
+                if not handles:
+                    self._active_process_handles.pop(key, None)
+        self._refresh_mount_drained(key)
 
-    async def apply_topology(self, request: EnvironmentTopologyRequest) -> EnvironmentTopologyChange:
-        """Prepare and atomically publish one complete Host-owned topology request."""
-        supplied = request.bindings if isinstance(request, EnvironmentTopologyRequest) else ()
-        claimed, reused = _claim_candidate_transfers(supplied)
-        if reused:
-            primary = EnvironmentError(
-                "Environment provider binding was already transferred.",
-                code="environment_binding_reused",
-            )
-            try:
-                await _await_cleanup_shielded(_discard_candidate_instances(claimed))
-            except BaseException as cleanup:
-                raise BaseExceptionGroup(
-                    "Environment candidate reuse rejection and cleanup failed",
-                    [primary, cleanup],
-                ) from None
-            raise primary
-        normalized: EnvironmentTopologyRequest | None = None
-        prepared_scopes: dict[_RevisionKey, _OwnedProviderScope] = {}
-        successfully_entered: set[int] = set()
-        committed = False
-        async with self._topology_apply_admission(supplied):
-            try:
-                normalized = _normalize_topology_request(request)
-                digest = _topology_request_digest(normalized)
-                current_version = self._topology.topology_version
-                if self._closed or not self._controller.can_apply:
-                    raise EnvironmentError("The Environment run is not active.", code="run_not_active")
-                if normalized.topology_version < current_version:
-                    raise EnvironmentError("Environment topology version is stale.", code="topology_stale")
-                if normalized.topology_version == current_version:
-                    stored_digest, receipt = self._receipts[current_version]
-                    if digest != stored_digest:
-                        raise EnvironmentError(
-                            "Environment topology version has a conflicting request.",
-                            code="topology_conflict",
-                        )
-                    if any(item.provider_binding is not None for item in normalized.bindings):
-                        raise EnvironmentError(
-                            "A topology replay cannot transfer provider bindings.",
-                            code="environment_topology_invalid",
-                        )
-                    return receipt
-                if self._committed_changes >= self._topology_limits.max_committed_changes:
-                    raise EnvironmentError(
-                        "Environment topology committed-change limit is exhausted.",
-                        code="environment_topology_limit",
-                    )
-
-                candidate_requests = self._validate_dynamic_request(normalized)
-                for requested in candidate_requests:
-                    candidate = requested.provider_binding
-                    assert isinstance(candidate, EnvironmentProviderBinding)
-                    scope = candidate.bind(
-                        run_id=self._run_id,
-                        instance=self._instance,
-                        binding_id=requested.binding_id,
-                        binding_revision=requested.binding_revision,
-                    )
-                    async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
-                        provider = await scope.__aenter__()
-                    successfully_entered.add(id(candidate))
-                    try:
-                        entered = _validate_entered(requested, candidate, provider)
-                    except BaseException as primary:
-                        try:
-                            await _await_cleanup_shielded(_close_provider_scopes([scope]))
-                        except BaseException as cleanup:
-                            raise BaseExceptionGroup(
-                                "Environment provider validation and scope cleanup failed",
-                                [primary, cleanup],
-                            ) from None
-                        raise
-                    key = self._revision_key(entered)
-                    prepared_scopes[key] = _OwnedProviderScope(entered=entered, scope=scope)
-
-                proposed: dict[str, _EnteredBinding] = {}
-                for requested in normalized.bindings:
-                    current = self._entered.get(requested.binding_id)
-                    if current is not None and current.public.binding_revision == requested.binding_revision:
-                        proposed[requested.binding_id] = current
-                    else:
-                        prepared = next(
-                            item
-                            for item in prepared_scopes.values()
-                            if item.entered.public.binding_id == requested.binding_id
-                        )
-                        proposed[requested.binding_id] = prepared.entered
-                topology = EnvironmentTopology(
-                    topology_version=normalized.topology_version,
-                    bindings=tuple(item.public for item in proposed.values()),
-                    default_binding_id=normalized.default_binding_id,
-                )
-                change = _topology_change(self._topology, topology, digest)
-                retiring = {
-                    self._revision_key(old): old
-                    for binding_id, old in self._entered.items()
-                    if binding_id not in proposed
-                    or proposed[binding_id].public.binding_revision != old.public.binding_revision
-                }
-
-                async with self._operation_lock:
-                    if self._closed or not self._controller.can_apply:
-                        raise EnvironmentError("The Environment run is not active.", code="run_not_active")
-                    in_use = [
-                        key
-                        for key in retiring
-                        if self._active_process_handles.get(key) or self._process_start_leases.get(key, 0) > 0
-                    ]
-                    if in_use:
-                        raise EnvironmentError(
-                            "Environment topology update would retire an active process handle.",
-                            code="topology_in_use",
-                        )
-                    for key, owned in prepared_scopes.items():
-                        self._owned_scopes[key] = owned
-                        self._entered_by_revision[
-                            (owned.entered.public.binding_id, owned.entered.public.binding_revision)
-                        ] = owned.entered
-                    retired_scopes = {key: self._owned_scopes.pop(key) for key in retiring if key in self._owned_scopes}
-                    self._topology = topology
-                    self._entered = proposed
-                    self._requests_by_id = {item.binding_id: item for item in normalized.bindings}
-                    for item in topology.bindings:
-                        self._alias_owners.setdefault(item.alias, item.binding_id)
-                        self._max_revision_by_id[item.binding_id] = item.binding_revision
-                    if topology.default_binding_id is not None and self._default_owner is None:
-                        self._default_owner = topology.default_binding_id
-                    for owned in prepared_scopes.values():
-                        self._provider_identity_by_id.setdefault(
-                            owned.entered.public.binding_id,
-                            (owned.entered.public.provider_type, owned.entered.environment_id),
-                        )
-                    self._committed_changes += 1
-                    self._receipts[topology.topology_version] = (digest, change)
-                    self._observer.publish(change)
-                committed = True
-                for key, owned in retired_scopes.items():
-                    self._schedule_retirement(key, owned)
-                return change
-            finally:
-                if not committed:
-                    cleanup_requests = normalized.bindings if normalized is not None else supplied
-                    active_error = sys.exception()
-                    try:
-                        await _await_cleanup_shielded(
-                            _cleanup_topology_candidates(
-                                requests=cleanup_requests,
-                                prepared_scopes=prepared_scopes,
-                                successfully_entered=successfully_entered,
-                            )
-                        )
-                    except BaseException as cleanup_error:
-                        if active_error is not None and active_error is not cleanup_error:
-                            raise BaseExceptionGroup(
-                                "Environment topology apply and candidate cleanup failed",
-                                [active_error, cleanup_error],
-                            ) from None
-                        raise
-
-    @asynccontextmanager
-    async def _topology_apply_admission(
+    async def _mount(
         self,
-        supplied: tuple[EnvironmentBindingRequest, ...],
-    ) -> AsyncGenerator[None]:
+        name: str,
+        mount: EnvironmentRuntimeMount,
+        *,
+        make_default: bool,
+    ) -> EnvironmentChange:
+        _validate_mount_name(name)
+        async with self._mutation_lock:
+            self._assert_mutable()
+            if name in self._entered:
+                raise EnvironmentError("Environment mount already exists.", code="environment_conflict")
+            owned = await self._prepare_runtime_mount(name, mount)
+            previous_default = self._snapshot.default_mount
+            current_default = name if make_default else previous_default
+            try:
+                async with self._operation_lock:
+                    self._assert_mutable()
+                    self._owned_scopes[self._mount_key(owned.entered)] = owned
+                    self._entered[name] = owned.entered
+                    self._entered_by_id[owned.entered.mount_id] = owned.entered
+                    self._snapshot = EnvironmentSnapshot(
+                        mounts=tuple(item.public for item in self._entered.values()),
+                        default_mount=current_default,
+                    )
+                    change = EnvironmentChange(
+                        sequence=self._journal.current_sequence + 1,
+                        kind="mounted",
+                        name=name,
+                        previous_default=previous_default,
+                        current_default=current_default,
+                    )
+                    self._journal.publish(change)
+            except BaseException as primary:
+                await _raise_with_provider_cleanup(primary, owned.scope)
+            return change
+
+    async def _replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
+        _validate_mount_name(name)
+        async with self._mutation_lock:
+            self._assert_mutable()
+            current = self._entered.get(name)
+            if current is None:
+                raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+            owned = await self._prepare_runtime_mount(name, mount)
+            old_key = self._mount_key(current)
+            try:
+                async with self._operation_lock:
+                    self._assert_mutable()
+                    old_owned = self._owned_scopes.pop(old_key)
+                    self._owned_scopes[self._mount_key(owned.entered)] = owned
+                    self._entered[name] = owned.entered
+                    self._entered_by_id[owned.entered.mount_id] = owned.entered
+                    self._snapshot = EnvironmentSnapshot(
+                        mounts=tuple(item.public for item in self._entered.values()),
+                        default_mount=self._snapshot.default_mount,
+                    )
+                    change = EnvironmentChange(
+                        sequence=self._journal.current_sequence + 1,
+                        kind="replaced",
+                        name=name,
+                        previous_default=self._snapshot.default_mount,
+                        current_default=self._snapshot.default_mount,
+                    )
+                    self._journal.publish(change)
+            except BaseException as primary:
+                await _raise_with_provider_cleanup(primary, owned.scope)
+            self._schedule_retirement(old_key, old_owned)
+            return change
+
+    async def _unmount(self, name: str) -> EnvironmentChange:
+        _validate_mount_name(name)
+        async with self._mutation_lock:
+            self._assert_mutable()
+            current = self._entered.get(name)
+            if current is None:
+                raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+            key = self._mount_key(current)
+            previous_default = self._snapshot.default_mount
+            current_default = None if previous_default == name else previous_default
+            async with self._operation_lock:
+                self._assert_mutable()
+                old_owned = self._owned_scopes.pop(key)
+                self._entered.pop(name)
+                self._snapshot = EnvironmentSnapshot(
+                    mounts=tuple(item.public for item in self._entered.values()),
+                    default_mount=current_default,
+                )
+                change = EnvironmentChange(
+                    sequence=self._journal.current_sequence + 1,
+                    kind="unmounted",
+                    name=name,
+                    previous_default=previous_default,
+                    current_default=current_default,
+                )
+                self._journal.publish(change)
+            self._schedule_retirement(key, old_owned)
+            return change
+
+    async def _set_default(self, name: str | None) -> EnvironmentChange:
+        if name is not None:
+            _validate_mount_name(name)
+        async with self._mutation_lock:
+            self._assert_mutable()
+            if name is not None and name not in self._entered:
+                raise EnvironmentError("Environment mount does not exist.", code="environment_not_found")
+            previous_default = self._snapshot.default_mount
+            async with self._operation_lock:
+                self._assert_mutable()
+                self._snapshot = EnvironmentSnapshot(mounts=self._snapshot.mounts, default_mount=name)
+                change = EnvironmentChange(
+                    sequence=self._journal.current_sequence + 1,
+                    kind="default_changed",
+                    previous_default=previous_default,
+                    current_default=name,
+                )
+                self._journal.publish(change)
+            return change
+
+    async def _prepare_runtime_mount(
+        self,
+        name: str,
+        mount: EnvironmentRuntimeMount,
+    ) -> _OwnedProviderScope:
+        if not isinstance(mount, EnvironmentRuntimeMount):
+            raise EnvironmentError("Environment mount input is invalid.", code="environment_request_invalid")
+        candidate = mount.binding
+        if not EnvironmentProviderBinding._claim_transfer(candidate):
+            raise EnvironmentError(
+                "Environment provider binding was already transferred.",
+                code="environment_provider_binding_reused",
+            )
+        request = _MountRequest(
+            name=name,
+            permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
+            default_working_directory=mount.working_directory,
+            candidate=candidate,
+        )
+        mount_id = _new_mount_id()
+        scope = candidate.bind(run_id=self._run_id, instance=self._instance, mount_id=mount_id)
         try:
-            await self._topology_apply_lock.acquire()
+            async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
+                provider = await scope.__aenter__()
         except BaseException as primary:
             try:
-                await _await_cleanup_shielded(_discard_candidates(supplied, set()))
+                await _await_cleanup_shielded(_discard_candidate_instances((candidate,)))
             except BaseException as cleanup:
                 raise BaseExceptionGroup(
-                    "Environment topology admission and candidate cleanup failed",
+                    "Environment mount entry and candidate cleanup failed",
                     [primary, cleanup],
                 ) from None
             raise
         try:
-            yield
-        finally:
-            self._topology_apply_lock.release()
+            entered = _validate_entered(request, mount_id, candidate, provider)
+        except BaseException as primary:
+            try:
+                await _await_cleanup_shielded(_close_provider_scopes([scope]))
+            except BaseException as cleanup:
+                raise BaseExceptionGroup(
+                    "Environment provider validation and cleanup failed",
+                    [primary, cleanup],
+                ) from None
+            raise
+        return _OwnedProviderScope(entered=entered, scope=scope)
 
-    def _validate_dynamic_request(
-        self,
-        request: EnvironmentTopologyRequest,
-    ) -> tuple[EnvironmentBindingRequest, ...]:
-        _validate_request(request, self._topology_limits)
-        candidates: list[EnvironmentBindingRequest] = []
-        for requested in request.bindings:
-            owner = self._alias_owners.get(requested.alias)
-            if owner is not None and owner != requested.binding_id:
-                raise EnvironmentError(
-                    "Environment alias is owned by another historical binding.",
-                    code="environment_topology_invalid",
-                )
-            current = self._entered.get(requested.binding_id)
-            maximum = self._max_revision_by_id.get(requested.binding_id, 0)
-            if current is not None and requested.binding_revision == current.public.binding_revision:
-                retained_request = self._requests_by_id[requested.binding_id]
-                if requested.provider_binding is not None:
-                    raise EnvironmentError(
-                        "A retained topology binding cannot transfer a provider binding.",
-                        code="environment_topology_invalid",
-                    )
-                if (
-                    requested.alias != retained_request.alias
-                    or requested.permission_ceiling != retained_request.permission_ceiling
-                    or requested.default_working_directory != retained_request.default_working_directory
-                ):
-                    raise EnvironmentError(
-                        "A retained topology binding is not immutable.",
-                        code="environment_topology_invalid",
-                    )
-                continue
-            if requested.binding_revision <= maximum:
-                raise EnvironmentError(
-                    "Environment binding revision is not monotonic.",
-                    code="environment_topology_invalid",
-                )
-            candidate = requested.provider_binding
-            if not isinstance(candidate, EnvironmentProviderBinding):
-                raise EnvironmentError(
-                    "An added or refreshed binding requires a fresh provider binding.",
-                    code="environment_topology_invalid",
-                )
-            identity = self._provider_identity_by_id.get(requested.binding_id)
-            if identity is not None and (
-                candidate.provider_type != identity[0] or candidate.environment_id != identity[1]
-            ):
-                raise EnvironmentError(
-                    "Environment binding provider identity is incompatible with its history.",
-                    code="environment_topology_invalid",
-                )
-            candidates.append(requested)
-        if request.default_binding_id is not None:
-            if self._default_owner is not None and request.default_binding_id != self._default_owner:
-                raise EnvironmentError(
-                    "The /workspace selector is owned by another historical binding.",
-                    code="environment_topology_invalid",
-                )
-        return tuple(candidates)
+    def _assert_mutable(self) -> None:
+        self._assert_open()
+        if self._activation_state != "active" or not self._runtime._accepting_mutations:
+            raise EnvironmentError("The Environment run is not active.", code="run_not_active")
 
-    def _schedule_retirement(self, key: _RevisionKey, owned: _OwnedProviderScope) -> None:
+    def _schedule_retirement(self, key: _MountKey, owned: _OwnedProviderScope) -> None:
         task = asyncio.create_task(self._retire_scope(key, owned))
         self._retirement_tasks.add(task)
         task.add_done_callback(self._retirement_finished)
@@ -1092,20 +981,22 @@ class CompositeBoundEnvironment(BoundEnvironment):
             if error is not None:
                 self._retirement_failures.append(error)
 
-    async def _retire_scope(self, key: _RevisionKey, owned: _OwnedProviderScope) -> None:
+    async def _retire_scope(self, key: _MountKey, owned: _OwnedProviderScope) -> None:
         while True:
             async with self._operation_lock:
-                active = bool(self._revision_tasks.get(key))
-                drained = self._revision_drained.setdefault(key, asyncio.Event())
-                if not active:
-                    drained.set()
-            if not active:
+                drained = self._mount_drained.setdefault(key, asyncio.Event())
+                self._refresh_mount_drained(key)
+                ready = self._mount_retirement_ready(key)
+                if ready:
+                    self._entered_by_id.pop(owned.entered.mount_id, None)
+            if ready:
                 break
             await drained.wait()
-        scopes = [owned.scope]
-        await _close_provider_scopes(scopes)
+        await _close_provider_scopes([owned.scope])
         async with self._operation_lock:
-            self._revision_drained.pop(key, None)
+            self._mount_drained.pop(key, None)
+            self._active_process_handles.pop(key, None)
+            self._process_start_leases.pop(key, None)
 
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
         """Resolve one virtual or relative path without native-path fallback."""
@@ -1116,26 +1007,24 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if any(segment == ".." or (segment == "." and path != ".") for segment in segments):
             raise EnvironmentError("Environment path traversal is invalid.", code="environment_request_invalid")
 
-        by_alias = {entered.public.alias: entered for entered in self._entered.values()}
-        selected: _EnteredBinding | None = None
+        by_name = {entered.public.name: entered for entered in self._entered.values()}
+        selected: _EnteredMount | None = None
         provider_path: str
         if path.startswith("/workspace") and (path == "/workspace" or path.startswith("/workspace/")):
-            if alias is not None:
-                selected_alias = by_alias.get(alias)
-                if selected_alias is None or selected_alias.public.binding_id != self._topology.default_binding_id:
-                    raise EnvironmentError(
-                        "The alias and virtual path select different bindings.",
-                        code="environment_selection_invalid",
-                    )
-            selected = self._entered.get(self._topology.default_binding_id or "")
+            if alias is not None and alias != self._snapshot.default_mount:
+                raise EnvironmentError(
+                    "The mount name and virtual path select different mounts.",
+                    code="environment_selection_invalid",
+                )
+            selected = self._entered.get(self._snapshot.default_mount or "")
             provider_path = path.removeprefix("/workspace") or "/"
         elif path.startswith("/environment/"):
             remainder = path.removeprefix("/environment/")
             selected_alias, separator, tail = remainder.partition("/")
-            selected = by_alias.get(selected_alias)
+            selected = by_name.get(selected_alias)
             if alias is not None and alias != selected_alias:
                 raise EnvironmentError(
-                    "The alias and virtual path select different bindings.",
+                    "The mount name and virtual path select different mounts.",
                     code="environment_selection_invalid",
                 )
             provider_path = f"/{tail}" if separator else "/"
@@ -1146,46 +1035,42 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
         else:
             if alias is not None:
-                selected = by_alias.get(alias)
+                selected = by_name.get(alias)
             else:
-                selected = self._entered.get(self._topology.default_binding_id or "")
+                selected = self._entered.get(self._snapshot.default_mount or "")
             if selected is None:
                 raise EnvironmentError(
-                    "A relative path requires an available selected or default binding.",
+                    "A relative path requires an available selected or default mount.",
                     code="environment_selection_invalid",
                 )
             base = selected.public.default_working_directory or "/"
             if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
                 raise EnvironmentError(
-                    "The binding default working directory is invalid.",
+                    "The mount working directory is invalid.",
                     code="environment_provider_failure",
                 )
             provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
 
         if selected is None:
             raise EnvironmentError(
-                "The selected Environment binding is unavailable.",
+                "The selected Environment mount is unavailable.",
                 code="environment_selection_invalid",
                 retry_hint="dependency_change",
             )
-        return EnvironmentPath(
-            binding_id=selected.public.binding_id,
-            binding_revision=selected.public.binding_revision,
-            path=provider_path,
-        )
+        return EnvironmentPath(mount_id=selected.mount_id, path=provider_path)
 
-    def _select_entered(self, alias: str | None) -> _EnteredBinding:
+    def _select_entered(self, alias: str | None) -> _EnteredMount:
         self._assert_open()
         if alias is None:
-            entered = self._entered.get(self._topology.default_binding_id or "")
+            entered = self._entered.get(self._snapshot.default_mount or "")
         else:
             entered = next(
-                (item for item in self._entered.values() if item.public.alias == alias),
+                (item for item in self._entered.values() if item.public.name == alias),
                 None,
             )
         if entered is None:
             raise EnvironmentError(
-                "The selected Environment binding is unavailable.",
+                "The selected Environment mount is unavailable.",
                 code="environment_selection_invalid",
             )
         return entered
@@ -1195,13 +1080,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
         request: CommandRequest,
         *,
         alias: str | None,
-    ) -> tuple[_EnteredBinding, CommandRequest]:
+    ) -> tuple[_EnteredMount, CommandRequest]:
         if request.cwd is None:
             entered = self._select_entered(alias)
             cwd = entered.public.default_working_directory or "/"
         else:
             selected = self.resolve_path(request.cwd, alias=alias)
-            entered = self._entered[selected.binding_id]
+            entered = self._entered_by_id[selected.mount_id]
             cwd = selected.path
         limits = request.limits
         ceiling = entered.public.descriptor.limits.get("max_wall_time_seconds")
@@ -1220,7 +1105,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             limits = limits.model_copy(update={"wall_time_seconds": effective})
         return entered, request.model_copy(update={"cwd": cwd, "limits": limits})
 
-    def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredBinding:
+    def _entered_for_process_identity(self, identity: ProcessIdentity) -> _EnteredMount:
         if not isinstance(identity, ProcessIdentity):
             raise EnvironmentError("Process identity is invalid.", code="environment_request_invalid")
         matches = tuple(
@@ -1246,45 +1131,44 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
         return entered
 
-    def _entered_for_handle(self, handle: BoundProcessHandle) -> _EnteredBinding:
+    def _entered_for_handle(self, handle: BoundProcessHandle) -> _EnteredMount:
         if not isinstance(handle, BoundProcessHandle):
             raise EnvironmentError("Process handle is invalid.", code="environment_request_invalid")
-        entered = self._entered.get(handle.binding_id)
+        entered = self._entered_by_id.get(handle.mount_id)
         if entered is None:
-            raise EnvironmentError("Process binding is unavailable.", code="environment_selection_invalid")
+            raise EnvironmentError("Process handle refers to a stale mount.", code="environment_stale_mount")
         if (
-            handle.binding_revision != entered.public.binding_revision
-            or handle.observed_generation != entered.public.descriptor.generation
+            handle.observed_generation != entered.public.descriptor.generation
             or handle.identity.provider_type != entered.public.provider_type
             or handle.identity.environment_id != entered.environment_id
             or handle.identity.generation != entered.public.descriptor.generation
         ):
-            raise EnvironmentError("Process handle is stale.", code="environment_stale_binding")
+            raise EnvironmentError("Process handle is stale.", code="environment_stale_mount")
         return entered
 
-    def require_action(self, binding_id: str, action: EnvironmentAction) -> _EnteredBinding:
-        """Fail closed unless one exact catalog action is effective for the binding."""
+    def require_action(self, mount_id: str, action: EnvironmentAction) -> _EnteredMount:
+        """Fail closed unless one exact catalog action is effective for the mount."""
         self._assert_open()
         if not isinstance(action, EnvironmentAction):
             raise EnvironmentError(
                 "Environment authorization requires an exact catalog action.",
                 code="environment_request_invalid",
             )
-        entered = self._entered.get(binding_id)
+        entered = self._entered_by_id.get(mount_id)
         if entered is None:
-            raise EnvironmentError("Unknown Environment binding.", code="environment_selection_invalid")
+            raise EnvironmentError("Unknown Environment mount.", code="environment_selection_invalid")
         if action not in entered.public.permission_ceiling.operations:
             raise EnvironmentError(
-                "Environment operation is denied by the binding permission ceiling.",
+                "Environment operation is denied by the mount permission ceiling.",
                 code="environment_denied",
-                details={"action": action.value, "binding_id": binding_id},
+                details={"action": action.value, "mount_id": mount_id},
             )
         return entered
 
     def _resolve_scoped_file_path(
         self,
         path: str,
-        entered: _EnteredBinding,
+        entered: _EnteredMount,
         selection: FileScopeSelection,
     ) -> EnvironmentPath:
         if not isinstance(path, str) or not path or "\x00" in path:
@@ -1296,16 +1180,16 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if path.startswith("/workspace") and (path == "/workspace" or path.startswith("/workspace/")):
             if not selected_as_default:
                 raise EnvironmentError(
-                    "The scoped file path selects another binding.",
+                    "The scoped file path selects another mount.",
                     code="environment_selection_invalid",
                 )
             provider_path = path.removeprefix("/workspace") or "/"
         elif path.startswith("/environment/"):
             remainder = path.removeprefix("/environment/")
             alias, separator, tail = remainder.partition("/")
-            if alias != entered.public.alias:
+            if alias != entered.public.name:
                 raise EnvironmentError(
-                    "The scoped file path selects another binding.",
+                    "The scoped file path selects another mount.",
                     code="environment_selection_invalid",
                 )
             provider_path = f"/{tail}" if separator else "/"
@@ -1318,36 +1202,30 @@ class CompositeBoundEnvironment(BoundEnvironment):
             base = entered.public.default_working_directory or "/"
             if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
                 raise EnvironmentError(
-                    "The binding default working directory is invalid.",
+                    "The mount working directory is invalid.",
                     code="environment_provider_failure",
                 )
             provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
-        return EnvironmentPath(
-            binding_id=entered.public.binding_id,
-            binding_revision=entered.public.binding_revision,
-            path=provider_path,
-        )
+        return EnvironmentPath(mount_id=entered.mount_id, path=provider_path)
 
     @asynccontextmanager
     async def _prepare_scoped_file(
         self,
-        entered: _EnteredBinding,
+        entered: _EnteredMount,
+        selection: FileScopeSelection,
         selected: EnvironmentPath,
         action: EnvironmentAction,
     ) -> AsyncGenerator[_PreparedFile]:
-        if (
-            selected.binding_id != entered.public.binding_id
-            or selected.binding_revision != entered.public.binding_revision
-        ):
+        if selected.mount_id != entered.mount_id:
             raise EnvironmentError(
-                "The scoped file path selects another binding revision.",
+                "The scoped file path selects another mount incarnation.",
                 code="environment_selection_invalid",
             )
         if action not in entered.public.permission_ceiling.operations:
             raise EnvironmentError(
-                "Environment operation is denied by the binding permission ceiling.",
+                "Environment operation is denied by the mount permission ceiling.",
                 code="environment_denied",
-                details={"action": action.value, "binding_id": entered.public.binding_id},
+                details={"action": action.value, "mount_id": entered.mount_id},
             )
         try:
             async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
@@ -1363,6 +1241,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     observed_generation=entered.public.descriptor.generation,
                     backend=entered.operations.files,
                     validate_result=lambda value: _validate_provider_artifacts(entered, value),
+                    virtualize_path=lambda provider_path: self._virtualize_scoped_file_path(
+                        entered,
+                        selection,
+                        selected,
+                        provider_path,
+                    ),
                 )
         except TimeoutError as exc:
             raise EnvironmentError(
@@ -1374,24 +1258,21 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     @staticmethod
     def _virtualize_scoped_file_path(
-        entered: _EnteredBinding,
+        entered: _EnteredMount,
         selection: FileScopeSelection,
         selected: EnvironmentPath,
         provider_path: str,
     ) -> str:
-        if (
-            selected.binding_id != entered.public.binding_id
-            or selected.binding_revision != entered.public.binding_revision
-        ):
+        if selected.mount_id != entered.mount_id:
             raise EnvironmentError(
-                "Provider returned a path for another scoped binding revision.",
+                "Provider returned a path for another scoped mount incarnation.",
                 code="environment_provider_failure",
             )
         suffix = provider_path if provider_path.startswith("/") else f"/{provider_path}"
         root = (
             "/workspace"
             if not selection.logical_path.startswith("/environment/")
-            else f"/environment/{entered.public.alias}"
+            else f"/environment/{entered.public.name}"
         )
         return f"{root}{suffix}" if suffix != "/" else root
 
@@ -1401,29 +1282,27 @@ class CompositeBoundEnvironment(BoundEnvironment):
         selected: EnvironmentPath,
         action: EnvironmentAction,
     ) -> AsyncGenerator[_PreparedFile]:
-        entered = self._entered_by_revision.get((selected.binding_id, selected.binding_revision))
+        entered = self._entered_by_id.get(selected.mount_id)
         if entered is None:
             raise EnvironmentError(
-                "Environment binding revision is unavailable.",
-                code="environment_stale_binding",
+                "Environment mount incarnation is unavailable.",
+                code="environment_stale_mount",
             )
         async with self._operation_lease(entered, action, "files"):
             if entered.operations.files is None:
                 raise EnvironmentError("File operation facet is unavailable.", code="environment_unsupported")
+            root = (
+                "/workspace"
+                if self._snapshot.default_mount == entered.public.name
+                else f"/environment/{entered.public.name}"
+            )
             yield _PreparedFile(
                 selected=selected,
                 observed_generation=entered.public.descriptor.generation,
                 backend=entered.operations.files,
                 validate_result=lambda value: _validate_provider_artifacts(entered, value),
+                virtualize_path=lambda provider_path: _virtualize_path(root, provider_path),
             )
-
-    def _virtualize_provider_path(self, selected: EnvironmentPath, provider_path: str) -> str:
-        entered = self._entered_by_revision[(selected.binding_id, selected.binding_revision)]
-        suffix = provider_path if provider_path.startswith("/") else f"/{provider_path}"
-        if self._topology.default_binding_id == selected.binding_id:
-            return f"/workspace{suffix}" if suffix != "/" else "/workspace"
-        root = f"/environment/{entered.public.alias}"
-        return f"{root}{suffix}" if suffix != "/" else root
 
     def _assert_open(self) -> None:
         if self._closed:
@@ -1431,7 +1310,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     def _validate_live_observation(
         self,
-        entered: _EnteredBinding,
+        entered: _EnteredMount,
         availability: object,
         requested: frozenset[EnvironmentOperationFamily] = frozenset(),
     ) -> None:
@@ -1439,41 +1318,41 @@ class CompositeBoundEnvironment(BoundEnvironment):
             raise EnvironmentError(
                 "Provider returned an invalid availability observation.",
                 code="environment_provider_failure",
-                details={"binding_id": entered.public.binding_id},
+                details={"mount_id": entered.mount_id},
             )
         if not availability.ready_families <= entered.public.descriptor.operation_families:
             raise EnvironmentError(
                 "Provider readiness drifted beyond its published descriptor.",
                 code="environment_provider_failure",
-                details={"binding_id": entered.public.binding_id},
+                details={"mount_id": entered.mount_id},
             )
         if requested and availability.status == "unavailable":
             raise EnvironmentError(
                 "Provider is unavailable for the requested operation.",
                 code="environment_unavailable",
-                details={"binding_id": entered.public.binding_id, "reason_code": availability.reason_code},
+                details={"mount_id": entered.mount_id, "reason_code": availability.reason_code},
                 retry_hint="dependency_change",
             )
         if not requested <= availability.ready_families:
             raise EnvironmentError(
                 "Provider returned before the requested families became ready.",
                 code="environment_unavailable",
-                details={"binding_id": entered.public.binding_id},
+                details={"mount_id": entered.mount_id},
                 retry_hint="dependency_change",
             )
 
-    async def describe(self, binding_id: str) -> EnvironmentBindingObservation:
+    async def describe(self, name: str) -> EnvironmentMountObservation:
         self._assert_open()
-        entered = self._entered.get(binding_id)
+        entered = self._entered.get(name)
         if entered is None:
             raise EnvironmentError(
-                f"Unknown Environment binding: {binding_id!r}.",
+                f"Unknown Environment mount: {name!r}.",
                 code="environment_selection_invalid",
-                details={"binding_id": binding_id},
+                details={"name": name},
             )
         availability = entered.provider.availability
         self._validate_live_observation(entered, availability)
-        return EnvironmentBindingObservation(binding=entered.public, availability=availability)
+        return EnvironmentMountObservation(mount=entered.public, availability=availability)
 
     async def ensure_ready(self, requirement: EnvironmentReadinessRequirement) -> None:
         async with self._operation_slot():
@@ -1481,7 +1360,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     async def _ensure_ready(self, requirement: EnvironmentReadinessRequirement) -> None:
         requested = requirement.operations
-        if requirement.binding_ids is None:
+        if requirement.mounts is None:
             selected = [
                 entered
                 for entered in self._entered.values()
@@ -1489,33 +1368,33 @@ class CompositeBoundEnvironment(BoundEnvironment):
             ]
         else:
             selected = []
-            for binding_id in requirement.binding_ids:
-                entered = self._entered.get(binding_id)
+            for name in requirement.mounts:
+                entered = self._entered.get(name)
                 if entered is None:
                     raise EnvironmentError(
-                        f"Unknown Environment binding: {binding_id!r}.",
+                        f"Unknown Environment mount: {name!r}.",
                         code="environment_selection_invalid",
-                        details={"binding_id": binding_id},
+                        details={"name": name},
                     )
                 if not entered.public.descriptor.operation_families & requested:
                     raise EnvironmentError(
-                        "An explicitly selected binding advertises none of the requested families.",
+                        "An explicitly selected mount advertises none of the requested families.",
                         code="environment_readiness_invalid",
-                        details={"binding_id": binding_id},
+                        details={"name": name},
                     )
                 selected.append(entered)
 
         covered = frozenset().union(*(entered.public.descriptor.operation_families & requested for entered in selected))
         if not selected or covered != requested:
             raise EnvironmentError(
-                "The selected topology does not cover every requested operation family.",
+                "The selected mount set does not cover every requested operation family.",
                 code="environment_unavailable",
                 details={"missing": [str(item) for item in sorted(requested - covered)]},
                 retry_hint="dependency_change",
             )
 
-        async def wait_one(entered: _EnteredBinding) -> None:
-            async with self._revision_slot(entered):
+        async def wait_one(entered: _EnteredMount) -> None:
+            async with self._mount_slot(entered):
                 families = frozenset(entered.public.descriptor.operation_families & requested)
                 await asyncio.gather(*(self._ensure_provider_family(entered, family) for family in families))
                 current = entered.provider.descriptor
@@ -1527,15 +1406,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 if current.generation != entered.public.descriptor.generation:
                     raise EnvironmentError(
                         "Provider generation changed during readiness.",
-                        code="environment_stale_binding",
-                        details={"binding_id": entered.public.binding_id},
+                        code="environment_stale_mount",
+                        details={"mount_id": entered.mount_id},
                         retry_hint="dependency_change",
                     )
                 if current != entered.public.descriptor:
                     raise EnvironmentError(
                         "Provider descriptor changed in place during readiness.",
                         code="environment_provider_failure",
-                        details={"binding_id": entered.public.binding_id},
+                        details={"mount_id": entered.mount_id},
                     )
                 self._validate_live_observation(entered, entered.provider.availability, families)
 
@@ -1581,38 +1460,57 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     self._operation_tasks.pop(task, None)
 
     @asynccontextmanager
-    async def _revision_slot(self, entered: _EnteredBinding) -> AsyncGenerator[None]:
+    async def _mount_slot(
+        self,
+        entered: _EnteredMount,
+        *,
+        allow_retired: bool = False,
+    ) -> AsyncGenerator[None]:
         task = asyncio.current_task()
         if task is None:
             raise RuntimeError("Environment operations require an asyncio task")
-        key = self._revision_key(entered)
+        key = self._mount_key(entered)
         async with self._operation_lock:
             if self._closed:
                 raise EnvironmentError("The Environment is closed.", code="environment_closed")
-            if self._entered.get(entered.public.binding_id) is not entered:
-                raise EnvironmentError("Environment binding is stale.", code="environment_stale_binding")
+            if self._entered_by_id.get(entered.mount_id) is not entered or (
+                not allow_retired and self._entered.get(entered.public.name) is not entered
+            ):
+                raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
             self._operation_tasks[task] = self._operation_tasks.get(task, 0) + 1
-            self._register_revision_task_locked(key, task)
+            self._register_mount_task_locked(key, task)
         try:
             yield
         finally:
             async with self._operation_lock:
                 self._release_task_count(self._operation_tasks, task)
-                self._release_revision_task_locked(key, task)
+                self._release_mount_task_locked(key, task)
 
-    def _register_revision_task_locked(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
-        revision = self._revision_tasks.setdefault(key, {})
-        revision[task] = revision.get(task, 0) + 1
-        self._revision_drained.setdefault(key, asyncio.Event()).clear()
+    def _register_mount_task_locked(self, key: _MountKey, task: asyncio.Task[Any]) -> None:
+        task_counts = self._mount_tasks.setdefault(key, {})
+        task_counts[task] = task_counts.get(task, 0) + 1
+        self._refresh_mount_drained(key)
 
-    def _release_revision_task_locked(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
-        revision = self._revision_tasks.get(key)
-        if revision is None:
+    def _release_mount_task_locked(self, key: _MountKey, task: asyncio.Task[Any]) -> None:
+        task_counts = self._mount_tasks.get(key)
+        if task_counts is None:
             return
-        self._release_task_count(revision, task)
-        if not revision:
-            self._revision_tasks.pop(key, None)
-            self._revision_drained.setdefault(key, asyncio.Event()).set()
+        self._release_task_count(task_counts, task)
+        if not task_counts:
+            self._mount_tasks.pop(key, None)
+        self._refresh_mount_drained(key)
+
+    def _mount_retirement_ready(self, key: _MountKey) -> bool:
+        return not self._mount_tasks.get(key) and (
+            self._closed or (not self._active_process_handles.get(key) and self._process_start_leases.get(key, 0) == 0)
+        )
+
+    def _refresh_mount_drained(self, key: _MountKey) -> None:
+        drained = self._mount_drained.setdefault(key, asyncio.Event())
+        if self._mount_retirement_ready(key):
+            drained.set()
+        else:
+            drained.clear()
 
     @staticmethod
     def _release_task_count(tasks: dict[asyncio.Task[Any], int], task: asyncio.Task[Any]) -> None:
@@ -1625,12 +1523,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
     @asynccontextmanager
     async def _operation_lease(
         self,
-        entered: _EnteredBinding,
+        entered: _EnteredMount,
         action: EnvironmentAction,
         family: EnvironmentOperationFamily,
         *,
         timeout_seconds: float | None = None,
         timeout_code: str = "environment_timeout",
+        allow_retired: bool = False,
     ) -> AsyncGenerator[None]:
         timeout = (
             DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS
@@ -1640,16 +1539,17 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 timeout_seconds + DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
             )
         )
-        key = self._revision_key(entered)
+        key = self._mount_key(entered)
         if action not in entered.public.permission_ceiling.operations:
             raise EnvironmentError(
-                "Environment operation is denied by the binding permission ceiling.",
+                "Environment operation is denied by the mount permission ceiling.",
                 code="environment_denied",
-                details={"action": action.value, "binding_id": entered.public.binding_id},
+                details={"action": action.value, "mount_id": entered.mount_id},
             )
-        async with self._revision_slot(entered):
+        async with self._mount_slot(entered, allow_retired=allow_retired):
             if action is EnvironmentAction.PROCESS_START:
                 self._process_start_leases[key] = self._process_start_leases.get(key, 0) + 1
+                self._refresh_mount_drained(key)
             try:
                 try:
                     async with asyncio.timeout(timeout):
@@ -1674,19 +1574,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         self._process_start_leases[key] = remaining
                     else:
                         self._process_start_leases.pop(key, None)
+                    self._refresh_mount_drained(key)
 
     async def _ensure_provider_family(
         self,
-        entered: _EnteredBinding,
+        entered: _EnteredMount,
         family: EnvironmentOperationFamily,
     ) -> None:
-        key = (
-            entered.public.binding_id,
-            entered.public.binding_revision,
-            entered.public.descriptor.generation,
-            family,
-        )
-        revision_key = self._revision_key(entered)
+        key = (entered.mount_id, entered.public.descriptor.generation, family)
+        mount_key = self._mount_key(entered)
         async with self._readiness_lock:
             if self._closed:
                 raise EnvironmentError("The Environment is closed.", code="environment_closed")
@@ -1695,12 +1591,12 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 async with self._operation_lock:
                     if self._closed:
                         raise EnvironmentError("The Environment is closed.", code="environment_closed")
-                    if self._entered.get(entered.public.binding_id) is not entered:
-                        raise EnvironmentError("Environment binding is stale.", code="environment_stale_binding")
+                    if self._entered_by_id.get(entered.mount_id) is not entered:
+                        raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
                     task = asyncio.create_task(entered.provider.ensure_ready(frozenset({family})))
-                    self._register_revision_task_locked(revision_key, task)
+                    self._register_mount_task_locked(mount_key, task)
                     task.add_done_callback(
-                        lambda completed, captured=revision_key: self._readiness_worker_finished(captured, completed)
+                        lambda completed, captured=mount_key: self._readiness_worker_finished(captured, completed)
                     )
                 self._readiness_tasks[key] = task
             self._readiness_waiters[task] = self._readiness_waiters.get(task, 0) + 1
@@ -1723,27 +1619,31 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         self._readiness_tasks.pop(key, None)
                         task.cancel()
 
-    def _readiness_worker_finished(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
-        release = asyncio.create_task(self._release_readiness_revision(key, task))
+    def _readiness_worker_finished(self, key: _MountKey, task: asyncio.Task[Any]) -> None:
+        release = asyncio.create_task(self._release_readiness_mount(key, task))
         _supervise_cleanup_task(release)
 
-    async def _release_readiness_revision(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
+    async def _release_readiness_mount(self, key: _MountKey, task: asyncio.Task[Any]) -> None:
         async with self._operation_lock:
-            self._release_revision_task_locked(key, task)
+            self._release_mount_task_locked(key, task)
 
     async def _close(self) -> None:
         current = asyncio.current_task()
         failures: list[BaseException] = []
-        self._activation_state = "closing"
-        extension_scopes = tuple(self._extension_scopes)
-        self._extension_scopes.clear()
-        async with self._topology_apply_lock:
-            try:
-                await _close_extension_scopes(extension_scopes)
-            except BaseException as exc:
-                failures.append(exc)
+        self._runtime._begin_close()
+        async with self._mutation_lock:
+            self._activation_state = "closing"
+            extension_scopes = tuple(self._extension_scopes)
+            self._extension_scopes.clear()
+        try:
+            await _close_extension_scopes(extension_scopes)
+        except BaseException as exc:
+            failures.append(exc)
+        async with self._mutation_lock:
             async with self._operation_lock:
                 self._closed = True
+                for key in tuple(self._mount_drained):
+                    self._refresh_mount_drained(key)
                 operation_tasks = tuple(task for task in self._operation_tasks if task is not current)
         async with self._readiness_lock:
             readiness_tasks = tuple(self._readiness_tasks.values())
@@ -1787,60 +1687,36 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     async def export_state(self) -> EnvironmentState:
         self._assert_open()
-        topology = self._topology
         eligible = [
-            self._entered[item.binding_id]
-            for item in topology.bindings
-            if "state" in item.descriptor.operation_families
+            entered
+            for entered in self._entered.values()
+            if "state" in entered.public.descriptor.operation_families
+            and EnvironmentAction.STATE_EXPORT in entered.public.permission_ceiling.operations
         ]
-        if len(eligible) > self._state_limits.max_binding_entries:
-            raise EnvironmentError("Environment state has too many entries.", code="state_too_large")
-        entries: dict[str, EnvironmentBindingState] = {}
-        remaining = self._state_limits.max_aggregate_encoded_bytes
+        entries: dict[str, EnvironmentMountState] = {}
         try:
-            async with asyncio.timeout(self._state_limits.export_timeout_seconds):
-                for entered in eligible:
-                    async with self._operation_lease(
-                        entered,
-                        EnvironmentAction.STATE_EXPORT,
-                        "state",
-                        timeout_seconds=self._state_limits.export_timeout_seconds,
-                        timeout_code="state_timeout",
-                    ):
-                        budget = min(self._state_limits.max_binding_encoded_bytes, remaining)
-                        state = await entered.provider.export_state(max_bytes=budget)
-                        if state is None:
-                            continue
-                        if state.provider_type != entered.public.provider_type:
-                            raise EnvironmentError(
-                                "Provider state has an incompatible provider type.",
-                                code="state_invalid",
-                            )
-                        raw = dump_json_bytes(state.model_dump(mode="json"), sort_keys=True)
-                        if len(raw) > budget:
-                            raise EnvironmentError(
-                                "Provider state exceeds its encoded byte limit.",
-                                code="state_too_large",
-                            )
-                        detached = EnvironmentBindingState.model_validate(json.loads(raw))
-                        entries[entered.public.binding_id] = detached
-                        remaining -= len(raw)
-        except TimeoutError as exc:
-            raise EnvironmentError("Environment state export timed out.", code="state_timeout") from exc
+            for entered in eligible:
+                async with self._operation_lease(
+                    entered,
+                    EnvironmentAction.STATE_EXPORT,
+                    "state",
+                    timeout_code="state_timeout",
+                ):
+                    state = await entered.provider.export_state()
+                    if state is None:
+                        continue
+                    if state.provider_type != entered.public.provider_type:
+                        raise EnvironmentError(
+                            "Provider state has an incompatible provider type.",
+                            code="state_invalid",
+                        )
+                    raw = dump_json_bytes(state.model_dump(mode="json"), sort_keys=True)
+                    entries[entered.public.name] = EnvironmentMountState.model_validate(json.loads(raw))
         except EnvironmentError:
             raise
         except (TypeError, ValueError) as exc:
             raise EnvironmentError("Provider state is not canonical JSON.", code="state_invalid") from exc
-        result = EnvironmentState(
-            observed_topology_version=topology.topology_version,
-            bindings=entries,
-        )
-        if (
-            len(dump_json_bytes(result.model_dump(mode="json"), sort_keys=True))
-            > self._state_limits.max_aggregate_encoded_bytes
-        ):
-            raise EnvironmentError("Environment state exceeds aggregate limit.", code="state_too_large")
-        return result
+        return EnvironmentState(mounts=entries)
 
     async def restore_state(self, state: EnvironmentState) -> None:
         self._assert_open()
@@ -1849,76 +1725,111 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "Environment state must be restored before activation begins.",
                 code="state_invalid",
             )
-        if self._restored_state_topology_version is not None:
+        if self._state_restored:
             raise EnvironmentError("Environment state was already restored.", code="state_invalid")
         try:
             raw_state = dump_json_bytes(state.model_dump(mode="json"), sort_keys=True)
             detached = EnvironmentState.model_validate(json.loads(raw_state))
         except (TypeError, ValueError) as exc:
             raise EnvironmentError("Environment state is not canonical JSON.", code="state_invalid") from exc
-        if len(detached.bindings) > self._state_limits.max_binding_entries:
-            raise EnvironmentError("Environment state has too many entries.", code="state_too_large")
-        if len(raw_state) > self._state_limits.max_aggregate_encoded_bytes:
-            raise EnvironmentError("Environment state exceeds aggregate limit.", code="state_too_large")
-        for entry in detached.bindings.values():
-            encoded = dump_json_bytes(entry.model_dump(mode="json"), sort_keys=True)
-            if len(encoded) > self._state_limits.max_binding_encoded_bytes:
-                raise EnvironmentError("Environment state entry exceeds its limit.", code="state_too_large")
-        matched: list[tuple[str, EnvironmentBindingState, _EnteredBinding]] = []
-        for binding_id, entry in detached.bindings.items():
-            entered = self._entered.get(binding_id)
+        matched: list[tuple[EnvironmentMountState, _EnteredMount]] = []
+        for name, entry in detached.mounts.items():
+            entered = self._entered.get(name)
             if entered is None:
                 continue
             if entry.provider_type != entered.public.provider_type:
                 raise EnvironmentError(
                     "Environment state provider type is incompatible.",
                     code="state_invalid",
-                    details={"binding_id": binding_id},
+                    details={"name": name},
                 )
-            matched.append((binding_id, entry, entered))
-        try:
-            async with asyncio.timeout(self._state_limits.restore_timeout_seconds):
-                for _, entry, entered in matched:
-                    async with self._operation_lease(
-                        entered,
-                        EnvironmentAction.STATE_RESTORE,
-                        "state",
-                        timeout_seconds=self._state_limits.restore_timeout_seconds,
-                        timeout_code="state_timeout",
-                    ):
-                        await entered.provider.restore_state(entry)
-        except TimeoutError as exc:
-            raise EnvironmentError("Environment state restore timed out.", code="state_timeout") from exc
-        self._restored_state_topology_version = detached.observed_topology_version
+            matched.append((entry, entered))
+        for entry, entered in matched:
+            async with self._operation_lease(
+                entered,
+                EnvironmentAction.STATE_RESTORE,
+                "state",
+                timeout_code="state_timeout",
+            ):
+                await entered.provider.restore_state(entry)
+        self._state_restored = True
 
 
 class NoopBoundEnvironment(CompositeBoundEnvironment):
-    """The complete aggregate facade with an empty initial topology."""
+    """The complete aggregate facade with an empty initial mount set."""
 
 
 @dataclass(slots=True)
-class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
-    """Public single-use aggregate constructed from one complete topology request."""
+class ManagedEnvironmentRuntime(EnvironmentRuntime):
+    """Single-use Host authority over one run's Environment mount set."""
 
-    _initial_topology: EnvironmentTopologyRequest
-    _topology_limits: EnvironmentTopologyLimits
-    _state_limits: EnvironmentStateLimits
+    _initial_mounts: tuple[_MountRequest, ...]
+    _default_mount: str | None
     _extensions: tuple[tuple[str, EnvironmentRunExtension], ...] = ()
     _noop: bool = False
-    _controller: DynamicTopologyController = field(default_factory=DynamicTopologyController, init=False)
     _used: bool = field(default=False, init=False, repr=False)
+    _bound: CompositeBoundEnvironment | None = field(default=None, init=False, repr=False)
+    _activation_changed: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
+    _activation_error: BaseException | None = field(default=None, init=False, repr=False)
+    _accepting_mutations: bool = field(default=False, init=False, repr=False)
+    _closed: bool = field(default=False, init=False, repr=False)
 
-    @property
-    def controller(self) -> EnvironmentTopologyController:
-        return self._controller
+    async def wait_until_active(self) -> None:
+        await self._activation_changed.wait()
+        if self._activation_error is not None:
+            raise EnvironmentError(
+                "The Environment failed before activation.",
+                code="environment_activation_failed",
+            ) from self._activation_error
+        if not self._accepting_mutations:
+            raise EnvironmentError("The Environment run is not active.", code="run_not_active")
 
-    @property
-    def topology_limits(self) -> EnvironmentTopologyLimits:
-        return self._topology_limits
+    async def mount(
+        self,
+        name: str,
+        mount: EnvironmentRuntimeMount,
+        *,
+        make_default: bool = False,
+    ) -> EnvironmentChange:
+        return await self._require_active_bound()._mount(name, mount, make_default=make_default)
 
-    @property
-    def state_limits(self) -> EnvironmentStateLimits:
-        return self._state_limits
+    async def replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
+        return await self._require_active_bound()._replace(name, mount)
+
+    async def unmount(self, name: str) -> EnvironmentChange:
+        return await self._require_active_bound()._unmount(name)
+
+    async def set_default(self, name: str | None) -> EnvironmentChange:
+        return await self._require_active_bound()._set_default(name)
+
+    def _require_active_bound(self) -> CompositeBoundEnvironment:
+        bound = self._bound
+        if bound is None or not self._accepting_mutations:
+            raise EnvironmentError("The Environment run is not active.", code="run_not_active")
+        return bound
+
+    async def _activate(self) -> None:
+        bound = self._bound
+        if bound is None:
+            raise EnvironmentError("The Environment is not entered.", code="run_not_active")
+        await bound._activate()
+
+    def _activated(self, bound: CompositeBoundEnvironment) -> None:
+        if self._bound is not bound or self._closed:
+            raise EnvironmentError("The Environment is closing.", code="environment_closed")
+        self._accepting_mutations = True
+        self._activation_changed.set()
+
+    def _activation_failed(self) -> None:
+        self._activation_error = EnvironmentError(
+            "Environment activation failed.",
+            code="environment_activation_failed",
+        )
+        self._activation_changed.set()
+
+    def _begin_close(self) -> None:
+        self._accepting_mutations = False
+        self._activation_changed.set()
 
     @asynccontextmanager
     async def bind(
@@ -1928,18 +1839,18 @@ class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
         instance: AgentInstanceContext,
     ) -> AsyncGenerator[BoundEnvironment]:
         if not isinstance(run_id, str) or not run_id.strip() or not isinstance(instance, AgentInstanceContext):
-            raise EnvironmentError("Environment binding identity is invalid.", code="environment_request_invalid")
+            raise EnvironmentError("Environment run identity is invalid.", code="environment_request_invalid")
         if self._used:
             raise EnvironmentError(
-                "EnvironmentRunBinding instances are single-use.",
-                code="environment_binding_reused",
+                "EnvironmentRuntime instances are single-use.",
+                code="environment_runtime_reused",
             )
         self._used = True
-        claimed, reused = _claim_candidate_transfers(self._initial_topology.bindings)
+        claimed, reused = _claim_candidate_transfers(self._initial_mounts)
         if reused:
             primary = EnvironmentError(
                 "Environment provider binding was already transferred.",
-                code="environment_binding_reused",
+                code="environment_provider_binding_reused",
             )
             try:
                 await _await_cleanup_shielded(_discard_candidate_instances(claimed))
@@ -1948,73 +1859,53 @@ class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
                     "Environment initial candidate reuse rejection and cleanup failed",
                     [primary, cleanup],
                 ) from None
+            self._activation_error = primary
+            self._activation_changed.set()
             raise primary
 
         scopes: list[AbstractAsyncContextManager[BoundEnvironmentProvider]] = []
-        entered: dict[str, _EnteredBinding] = {}
+        entered: dict[str, _EnteredMount] = {}
         successfully_entered: set[int] = set()
+        journal = EnvironmentChangeJournal()
         try:
-            for requested in self._initial_topology.bindings:
-                candidate = requested.provider_binding
-                if not isinstance(candidate, EnvironmentProviderBinding):
-                    raise EnvironmentError(
-                        "Every initial binding requires an EnvironmentProviderBinding.",
-                        code="environment_request_invalid",
-                        details={"binding_id": requested.binding_id},
-                    )
-                scope = candidate.bind(
-                    run_id=run_id,
-                    instance=instance,
-                    binding_id=requested.binding_id,
-                    binding_revision=requested.binding_revision,
-                )
+            for requested in self._initial_mounts:
+                candidate = requested.candidate
+                mount_id = _new_mount_id()
+                scope = candidate.bind(run_id=run_id, instance=instance, mount_id=mount_id)
                 async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
                     provider = await scope.__aenter__()
                 scopes.append(scope)
                 successfully_entered.add(id(candidate))
-                entered[requested.binding_id] = _validate_entered(requested, candidate, provider)
+                entered[requested.name] = _validate_entered(requested, mount_id, candidate, provider)
 
-            topology = EnvironmentTopology(
-                topology_version=self._initial_topology.topology_version,
-                bindings=tuple(item.public for item in entered.values()),
-                default_binding_id=self._initial_topology.default_binding_id,
+            snapshot = EnvironmentSnapshot(
+                mounts=tuple(item.public for item in entered.values()),
+                default_mount=self._default_mount,
             )
-            observer = DynamicTopologyObserver(topology.topology_version)
             owned_scopes = {
-                CompositeBoundEnvironment._revision_key(item): _OwnedProviderScope(
-                    entered=item,
-                    scope=scope,
-                )
+                CompositeBoundEnvironment._mount_key(item): _OwnedProviderScope(entered=item, scope=scope)
                 for item, scope in zip(entered.values(), scopes, strict=True)
             }
             bound_type = NoopBoundEnvironment if self._noop else CompositeBoundEnvironment
             bound = bound_type(
                 run_id=run_id,
                 instance=instance,
-                initial_request=self._initial_topology,
-                topology=topology,
+                snapshot=snapshot,
                 entered=entered,
                 owned_scopes=owned_scopes,
-                topology_limits=self._topology_limits,
-                state_limits=self._state_limits,
-                observer=observer,
-                controller=self._controller,
+                journal=journal,
+                runtime=self,
                 extensions=self._extensions,
             )
-            self._controller.attach(bound)
+            self._bound = bound
             scopes.clear()
             try:
                 yield bound
             finally:
+                self._begin_close()
                 active_error = sys.exception()
                 try:
-                    await _await_cleanup_shielded(
-                        _teardown_entered_environment(
-                            controller=self._controller,
-                            bound=bound,
-                            observer=observer,
-                        )
-                    )
+                    await _await_cleanup_shielded(_teardown_entered_environment(bound=bound, journal=journal))
                 except BaseException as cleanup_error:
                     if active_error is not None and active_error is not cleanup_error:
                         raise BaseExceptionGroup(
@@ -2023,10 +1914,10 @@ class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
                         ) from None
                     raise
         except BaseException as primary:
-            if not self._controller.is_closed:
-                await self._controller.close()
+            self._activation_error = primary
+            self._activation_changed.set()
             try:
-                await _discard_candidates(self._initial_topology.bindings, successfully_entered)
+                await _discard_candidates(self._initial_mounts, successfully_entered)
             except BaseException as cleanup:
                 raise BaseExceptionGroup(
                     "Environment entry and candidate cleanup failed",
@@ -2034,6 +1925,9 @@ class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
                 ) from None
             raise
         finally:
+            self._accepting_mutations = False
+            self._closed = True
+            self._activation_changed.set()
             active_error = sys.exception()
             try:
                 await _await_cleanup_shielded(_close_provider_scopes(scopes))
@@ -2046,70 +1940,57 @@ class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
                 raise
 
 
-class NoopEnvironmentRunBinding(CompositeEnvironmentRunBinding):
-    """Public empty aggregate; its stable facade can support later topology updates."""
+class EmptyEnvironmentRuntime(ManagedEnvironmentRuntime):
+    """Empty aggregate that can receive mounts after activation."""
 
-    def __init__(
-        self,
-        *,
-        topology_version: int = 0,
-        topology_limits: EnvironmentTopologyLimits | None = None,
-        state_limits: EnvironmentStateLimits | None = None,
-    ) -> None:
-        limits = topology_limits or EnvironmentTopologyLimits()
-        state = state_limits or EnvironmentStateLimits()
-        request = EnvironmentTopologyRequest(
-            topology_version=topology_version,
-            bindings=(),
-            default_binding_id=None,
-        )
+    def __init__(self) -> None:
         super().__init__(
-            _initial_topology=request,
-            _topology_limits=limits.model_copy(deep=True),
-            _state_limits=state.model_copy(deep=True),
+            _initial_mounts=(),
+            _default_mount=None,
             _extensions=(),
             _noop=True,
         )
 
 
-def _validate_request(request: EnvironmentTopologyRequest, limits: EnvironmentTopologyLimits) -> None:
-    if len(request.bindings) > limits.max_bindings:
-        raise EnvironmentError("Environment topology exceeds max_bindings.", code="environment_topology_invalid")
-    ids = [item.binding_id for item in request.bindings]
-    aliases = [item.alias for item in request.bindings]
-    candidate_ids = [id(item.provider_binding) for item in request.bindings if item.provider_binding is not None]
-    if len(ids) != len(set(ids)) or len(aliases) != len(set(aliases)):
-        raise EnvironmentError(
-            "Environment binding IDs and aliases must be unique.", code="environment_topology_invalid"
-        )
+def _validate_initial_mounts(
+    mounts: tuple[_MountRequest, ...],
+    default_mount: str | None,
+) -> None:
+    names = [item.name for item in mounts]
+    candidate_ids = [id(item.candidate) for item in mounts]
+    if len(names) != len(set(names)):
+        raise EnvironmentError("Environment mount names must be unique.", code="environment_request_invalid")
     if len(candidate_ids) != len(set(candidate_ids)):
         raise EnvironmentError(
-            "One provider candidate cannot occupy multiple bindings.",
-            code="environment_topology_invalid",
+            "One provider candidate cannot occupy multiple mounts.",
+            code="environment_request_invalid",
         )
-    if request.default_binding_id is not None and request.default_binding_id not in ids:
+    for name in names:
+        _validate_mount_name(name)
+    if default_mount is not None and default_mount not in names:
         raise EnvironmentError(
-            "default_binding_id is not present in the topology.", code="environment_topology_invalid"
+            "default_mount is not present in mounts.",
+            code="environment_request_invalid",
         )
-    if any(
-        item.default_working_directory is not None
-        and (
-            not item.default_working_directory.startswith("/")
-            or any(segment in {".", ".."} for segment in item.default_working_directory.split("/"))
-        )
-        for item in request.bindings
-    ):
-        raise EnvironmentError(
-            "Environment default working directories must be canonical absolute paths.",
-            code="environment_topology_invalid",
-        )
+
+
+def _validate_mount_name(name: str) -> None:
+    try:
+        EnvironmentSnapshot(mounts=(), default_mount=name)
+    except (TypeError, ValueError) as exc:
+        raise EnvironmentError("Environment mount name is invalid.", code="environment_request_invalid") from exc
+
+
+def _new_mount_id() -> str:
+    return f"mount-{secrets.token_urlsafe(9)}"
 
 
 def _validate_entered(
-    requested: EnvironmentBindingRequest,
+    requested: _MountRequest,
+    mount_id: str,
     candidate: EnvironmentProviderBinding,
     provider: BoundEnvironmentProvider,
-) -> _EnteredBinding:
+) -> _EnteredMount:
     descriptor = provider.descriptor
     availability = provider.availability
     operations = provider.operations
@@ -2140,7 +2021,7 @@ def _validate_entered(
         raise EnvironmentError(
             "Provider descriptor and operation facets disagree.",
             code="environment_provider_failure",
-            details={"binding_id": requested.binding_id},
+            details={"name": requested.name},
         )
     for action in descriptor.permissions.operations:
         dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
@@ -2158,16 +2039,15 @@ def _validate_entered(
     effective = EnvironmentPermissionSet(
         operations=requested.permission_ceiling.operations & descriptor.permissions.operations
     )
-    public = EnvironmentBinding(
-        binding_id=requested.binding_id,
-        binding_revision=requested.binding_revision,
-        alias=requested.alias,
+    public = EnvironmentMountInfo(
+        name=requested.name,
         provider_type=provider.provider_type,
         descriptor=descriptor,
         permission_ceiling=effective,
         default_working_directory=requested.default_working_directory,
     )
-    return _EnteredBinding(
+    return _EnteredMount(
+        mount_id=mount_id,
         public=public,
         provider=provider,
         operations=operations,
@@ -2219,22 +2099,16 @@ async def _await_cleanup_shielded(operation: Coroutine[Any, Any, None]) -> None:
 
 async def _teardown_entered_environment(
     *,
-    controller: DynamicTopologyController,
     bound: CompositeBoundEnvironment,
-    observer: DynamicTopologyObserver,
+    journal: EnvironmentChangeJournal,
 ) -> None:
     failures: list[BaseException] = []
-    controller.begin_close()
     try:
         await bound._close()
     except BaseException as exc:
         failures.append(exc)
     try:
-        await observer.close()
-    except BaseException as exc:
-        failures.append(exc)
-    try:
-        await controller.close()
+        await journal.close()
     except BaseException as exc:
         failures.append(exc)
     if failures:
@@ -2268,6 +2142,21 @@ async def _close_provider_scopes_after_tasks(
     await _close_provider_scopes(scopes)
 
 
+async def _raise_with_provider_cleanup(
+    primary: BaseException,
+    scope: AbstractAsyncContextManager[BoundEnvironmentProvider],
+) -> NoReturn:
+    try:
+        await _await_cleanup_shielded(_close_provider_scopes([scope]))
+    except BaseException as cleanup:
+        if cleanup is not primary:
+            raise BaseExceptionGroup(
+                "Environment mutation and prepared provider cleanup failed",
+                [primary, cleanup],
+            ) from None
+    raise primary.with_traceback(primary.__traceback__)
+
+
 async def _close_provider_scopes(
     scopes: list[AbstractAsyncContextManager[BoundEnvironmentProvider]],
 ) -> None:
@@ -2297,13 +2186,9 @@ async def _close_provider_scopes(
 
 
 def _claim_candidate_transfers(
-    requests: tuple[EnvironmentBindingRequest, ...],
+    requests: tuple[_MountRequest, ...],
 ) -> tuple[tuple[EnvironmentProviderBinding, ...], tuple[EnvironmentProviderBinding, ...]]:
-    candidates = {
-        id(item.provider_binding): item.provider_binding
-        for item in requests
-        if isinstance(item, EnvironmentBindingRequest) and isinstance(item.provider_binding, EnvironmentProviderBinding)
-    }
+    candidates = {id(item.candidate): item.candidate for item in requests}
     claimed: list[EnvironmentProviderBinding] = []
     reused: list[EnvironmentProviderBinding] = []
     for candidate in candidates.values():
@@ -2316,10 +2201,7 @@ async def _discard_candidate_instances(candidates: tuple[EnvironmentProviderBind
     failures: list[BaseException] = []
     for candidate in candidates:
         task = asyncio.create_task(candidate.discard())
-        done, _ = await asyncio.wait(
-            (task,),
-            timeout=DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
-        )
+        done, _ = await asyncio.wait((task,), timeout=DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS)
         if task not in done:
             task.cancel()
             _supervise_cleanup_task(task)
@@ -2339,141 +2221,13 @@ async def _discard_candidate_instances(candidates: tuple[EnvironmentProviderBind
 
 
 async def _discard_candidates(
-    requests: tuple[EnvironmentBindingRequest, ...],
+    requests: tuple[_MountRequest, ...],
     successfully_entered: set[int],
 ) -> None:
     candidates = {
-        id(item.provider_binding): item.provider_binding
-        for item in requests
-        if isinstance(item, EnvironmentBindingRequest)
-        and isinstance(item.provider_binding, EnvironmentProviderBinding)
-        and id(item.provider_binding) not in successfully_entered
+        id(item.candidate): item.candidate for item in requests if id(item.candidate) not in successfully_entered
     }
     await _discard_candidate_instances(tuple(candidates.values()))
-
-
-async def _cleanup_topology_candidates(
-    *,
-    requests: tuple[EnvironmentBindingRequest, ...],
-    prepared_scopes: Mapping[_RevisionKey, _OwnedProviderScope],
-    successfully_entered: set[int],
-) -> None:
-    failures: list[BaseException] = []
-    scopes = [owned.scope for owned in prepared_scopes.values()]
-    try:
-        await _close_provider_scopes(scopes)
-    except BaseException as exc:
-        failures.append(exc)
-    try:
-        await _discard_candidates(requests, successfully_entered)
-    except BaseException as exc:
-        failures.append(exc)
-    if failures:
-        raise BaseExceptionGroup("Environment topology candidate cleanup failed", failures)
-
-
-def _normalize_topology_request(request: object) -> EnvironmentTopologyRequest:
-    if not isinstance(request, EnvironmentTopologyRequest):
-        raise EnvironmentError("Environment topology request is invalid.", code="environment_request_invalid")
-    bindings: list[EnvironmentBindingRequest] = []
-    try:
-        for item in request.bindings:
-            if not isinstance(item, EnvironmentBindingRequest):
-                raise TypeError("invalid binding request")
-            if not isinstance(item.permission_ceiling, EnvironmentPermissionSet):
-                raise TypeError("invalid permission ceiling")
-            bindings.append(
-                EnvironmentBindingRequest(
-                    binding_id=item.binding_id,
-                    binding_revision=item.binding_revision,
-                    alias=item.alias,
-                    permission_ceiling=EnvironmentPermissionSet(
-                        operations=frozenset(item.permission_ceiling.operations)
-                    ),
-                    default_working_directory=item.default_working_directory,
-                    provider_binding=item.provider_binding,
-                )
-            )
-        return EnvironmentTopologyRequest(
-            topology_version=request.topology_version,
-            bindings=tuple(bindings),
-            default_binding_id=request.default_binding_id,
-        )
-    except (TypeError, ValueError) as exc:
-        raise EnvironmentError(
-            "Environment topology request is invalid.",
-            code="environment_request_invalid",
-        ) from exc
-
-
-def _topology_request_digest(request: EnvironmentTopologyRequest) -> str:
-    payload = {
-        "topology_version": request.topology_version,
-        "bindings": [
-            {
-                "binding_id": item.binding_id,
-                "binding_revision": item.binding_revision,
-                "alias": item.alias,
-                "permission_ceiling": sorted(action.value for action in item.permission_ceiling.operations),
-                "default_working_directory": item.default_working_directory,
-            }
-            for item in request.bindings
-        ],
-        "default_binding_id": request.default_binding_id,
-    }
-    return sha256(dump_json_bytes(payload, sort_keys=True)).hexdigest()
-
-
-def _topology_change(
-    previous: EnvironmentTopology,
-    current: EnvironmentTopology,
-    digest: str,
-) -> EnvironmentTopologyChange:
-    before = {item.binding_id: item for item in previous.bindings}
-    after = {item.binding_id: item for item in current.bindings}
-    changes: list[EnvironmentTopologyBindingChange] = []
-    for item in previous.bindings:
-        replacement = after.get(item.binding_id)
-        if replacement is None:
-            changes.append(
-                EnvironmentTopologyBindingChange(
-                    kind="removed",
-                    binding_id=item.binding_id,
-                    previous_revision=item.binding_revision,
-                    current_revision=None,
-                    previous_alias=item.alias,
-                    current_alias=None,
-                )
-            )
-        elif replacement.binding_revision != item.binding_revision:
-            changes.append(
-                EnvironmentTopologyBindingChange(
-                    kind="refreshed",
-                    binding_id=item.binding_id,
-                    previous_revision=item.binding_revision,
-                    current_revision=replacement.binding_revision,
-                    previous_alias=item.alias,
-                    current_alias=replacement.alias,
-                )
-            )
-    for item in current.bindings:
-        if item.binding_id not in before:
-            changes.append(
-                EnvironmentTopologyBindingChange(
-                    kind="added",
-                    binding_id=item.binding_id,
-                    previous_revision=None,
-                    current_revision=item.binding_revision,
-                    previous_alias=None,
-                    current_alias=item.alias,
-                )
-            )
-    return EnvironmentTopologyChange(
-        previous_version=previous.topology_version,
-        current_version=current.topology_version,
-        request_digest=digest,
-        bindings=tuple(changes),
-    )
 
 
 def _normalize_environment_run_extensions(
@@ -2522,42 +2276,39 @@ def _normalize_environment_run_extensions(
     return tuple(captured)
 
 
-def create_environment_run_binding(
+def _virtualize_path(root: str, provider_path: str) -> str:
+    suffix = provider_path if provider_path.startswith("/") else f"/{provider_path}"
+    return f"{root}{suffix}" if suffix != "/" else root
+
+
+def create_environment_runtime(
     *,
-    initial_topology: EnvironmentTopologyRequest,
-    topology_limits: EnvironmentTopologyLimits,
-    state_limits: EnvironmentStateLimits,
+    mounts: Mapping[str, EnvironmentRuntimeMount],
+    default_mount: str | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
-) -> EnvironmentRunBinding:
-    """Capture one initial complete topology in a fresh single-use aggregate."""
-    captured = _normalize_topology_request(initial_topology)
+) -> EnvironmentRuntime:
+    """Capture one atomic initial mount set in a fresh single-use runtime."""
+    try:
+        captured = tuple(
+            _MountRequest(
+                name=name,
+                permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
+                default_working_directory=mount.working_directory,
+                candidate=mount.binding,
+            )
+            for name, mount in dict(mounts).items()
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc
     captured_extensions = _normalize_environment_run_extensions(extensions)
-    _validate_request(captured, topology_limits)
-    return CompositeEnvironmentRunBinding(
-        _initial_topology=captured,
-        _topology_limits=topology_limits.model_copy(deep=True),
-        _state_limits=state_limits.model_copy(deep=True),
+    _validate_initial_mounts(captured, default_mount)
+    return ManagedEnvironmentRuntime(
+        _initial_mounts=captured,
+        _default_mount=default_mount,
         _extensions=captured_extensions,
     )
 
 
-def create_noop_environment_run_binding(
-    *,
-    topology_version: int = 0,
-    topology_limits: EnvironmentTopologyLimits | None = None,
-    state_limits: EnvironmentStateLimits | None = None,
-) -> EnvironmentRunBinding:
-    """Create the finite empty aggregate used by embedded local runs."""
-    limits = topology_limits or EnvironmentTopologyLimits()
-    state = state_limits or EnvironmentStateLimits()
-    request = EnvironmentTopologyRequest(
-        topology_version=topology_version,
-        bindings=(),
-        default_binding_id=None,
-    )
-    _validate_request(request, limits)
-    return NoopEnvironmentRunBinding(
-        topology_version=topology_version,
-        topology_limits=limits,
-        state_limits=state,
-    )
+def create_empty_environment_runtime() -> EnvironmentRuntime:
+    """Create the empty runtime used by embedded runs without initial mounts."""
+    return EmptyEnvironmentRuntime()

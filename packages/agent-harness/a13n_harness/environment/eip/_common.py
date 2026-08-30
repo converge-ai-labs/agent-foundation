@@ -64,19 +64,17 @@ def convert_receipt(
     receipt: eip.OperationReceipt,
     *,
     environment_id: str,
-    binding_id: str,
-    binding_revision: int,
+    mount_id: str,
     generation: str,
 ) -> EnvironmentOperationReceipt:
     if receipt.environment_id != environment_id or str(receipt.generation) != generation:
         raise EnvironmentError(
             "EIP receipt identity does not match the bound environment",
-            code="environment_stale_binding",
+            code="environment_stale_mount",
             retry_hint="new_run",
         )
     return EnvironmentOperationReceipt(
-        binding_id=binding_id,
-        binding_revision=binding_revision,
+        mount_id=mount_id,
         observed_generation=generation,
         operation_id=receipt.operation_id,
         stage=receipt.stage.value,
@@ -93,7 +91,7 @@ def convert_error(error: BaseException) -> EnvironmentError:
             eip.ErrorType.DENIED: "environment_denied",
             eip.ErrorType.NOT_FOUND_OR_DENIED: "environment_not_found",
             eip.ErrorType.UNSUPPORTED: "environment_unsupported",
-            eip.ErrorType.STALE_GENERATION: "environment_stale_binding",
+            eip.ErrorType.STALE_GENERATION: "environment_stale_mount",
             eip.ErrorType.INVALID_HANDLE: "environment_not_found",
             eip.ErrorType.BUSY: "environment_busy",
             eip.ErrorType.QUOTA_EXCEEDED: "environment_too_large",
