@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Turn authority. [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Turn-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `TurnReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and observability consequences of those records.
+Foundation owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Turn authority. [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Turn-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `TurnReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and the authority boundary between those records and telemetry. [Observability and Trace Archive](33-observability-and-trace-archive.md) owns trace topology, content and scope policy, OTLP export, hot-backend mapping, and cold archive.
 
 Harness observations follow the accepted Agent Stream Protocol path. Foundation consumes `HarnessAguiObserver` output and does not implement another Harness-to-AG-UI mapping. A live message or delivered envelope becomes authoritative only through the owning Turn, lifecycle-event, retained-Item, or usage commit.
 
@@ -135,9 +135,16 @@ For example, a command result that exceeds the inline Item limit is staged as an
 
 ## Observability
 
-OpenTelemetry traces and metrics correlate safe service role, build, Session, Thread, Turn, TurnAttempt, Harness Run, and provider identities. They omit credentials, authorization headers, plaintext Secrets, raw prompts, model output, tool payloads, and uploaded content by default.
+OpenTelemetry traces and metrics correlate Foundation execution under the
+[observability contract](33-observability-and-trace-archive.md). Trace content
+can intentionally include upstream Pydantic execution payloads when the
+deployment selects `standard` or `full`; Service-owned fields retain their
+closed information boundary at every content level.
 
-Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retained Item, state, or usage facts, and its presence cannot prove commitment.
+Hot telemetry and Parquet archive are best effort. Their loss cannot erase
+durable audit, lifecycle, retained Item, state, or usage facts, and their
+presence cannot prove commitment. Neither projection is a usage ledger,
+retained interaction replay source, or lifecycle repair input.
 
 ## Failure Semantics
 

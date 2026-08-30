@@ -291,8 +291,10 @@ its scan. The transaction performs no object, artifact, policy-provider, or
 other external read.
 
 After commit, the winning Worker performs state and dependency preparation
-outside database transactions while renewing the lease. Before model or tool
-work, it conditionally claims the Turn's current state object version for its
+outside database transactions while renewing the lease. When Service tracing is
+enabled, that committed claim starts the parentless TurnAttempt root defined by
+[Observability and Trace Archive](33-observability-and-trace-archive.md). Before
+model or tool work, it conditionally claims the Turn's current state object version for its
 fence. It then enters the Harness Run through another short fenced transaction:
 it verifies the current leased attempt and the expected Attempt version returned
 by the preparation decision, records `run_id` and `started_at`, changes the

@@ -8,16 +8,17 @@ Runtime owns process behavior, not domain behavior. It loads the distribution fi
 
 ## Boundaries
 
-| Concern                                                             | Owner                                                                        | Relationship                                                        |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                      | Produces one immutable effective configuration                      |
-| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md)    | Supplies the explicit application composition fixed by the artifact |
-| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                     | Constructs the selected typed clients and roots                     |
-| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                 | Prepares or verifies the final distribution schema before readiness |
-| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                      | Exposes only the surfaces owned by the selected role                |
-| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                    | Declare role ownership and durable failure semantics                |
-| Plugin Runtime profile and loading behavior                         | [Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Defines on-demand import or Supervisor/Runner execution             |
-| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                   | Supplies external resources without changing service semantics      |
+| Concern                                                             | Owner                                                                        | Relationship                                                         |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                      | Produces one immutable effective configuration                       |
+| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md)    | Supplies the explicit application composition fixed by the artifact  |
+| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                     | Constructs the selected typed clients and roots                      |
+| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                 | Prepares or verifies the final distribution schema before readiness  |
+| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                      | Exposes only the surfaces owned by the selected role                 |
+| Process tracer provider, content policy, and OTLP lifecycle         | [Observability](33-observability-and-trace-archive.md)                       | Adds one optional best-effort export path without changing readiness |
+| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                    | Declare role ownership and durable failure semantics                 |
+| Plugin Runtime profile and loading behavior                         | [Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Defines on-demand import or Supervisor/Runner execution              |
+| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                   | Supplies external resources without changing service semantics       |
 
 The runtime does not define a general plugin loader, dependency-injection container, process manager, or dynamic configuration service. Domain code does not read process environment variables, choose a deployment role, run migrations, or start unowned background tasks.
 
@@ -61,6 +62,10 @@ a2a_enabled = true
 
 [plugin_runtime]
 mode = "on_demand"
+
+[observability]
+tracing = true
+trace_content = "none"
 ```
 
 The example defines section ownership, not an exhaustive setting catalog. The executable package documents concrete fields and environment names. An environment variable maps to its section and field under the `FOUNDATION_` prefix. Unknown TOML sections and fields are rejected; a misspelled or distribution-unsupported setting never disappears silently.
@@ -75,6 +80,13 @@ the `control` or `all` process omits A2A discovery, runtime, streaming, push
 routes, and A2A delivery components while preserving every Native and Hosted
 AG-UI surface. The setting does not select another distribution and there is no
 Agent-level A2A enable setting.
+
+The observability section contains only the tracing switch and Harness content
+selection owned by the [observability contract](33-observability-and-trace-archive.md).
+Exporter, endpoint, protocol, headers, TLS, sampler, batch, and timeout settings
+use standard `OTEL_*` input and do not gain Foundation aliases. Static
+configuration is validated before startup completes. Runtime exporter
+availability is diagnostic and never becomes a readiness dependency.
 
 ## Deployment Profiles
 
@@ -137,15 +149,16 @@ stateDiagram-v2
 
 Startup performs these ordered gates:
 
-1. load the artifact's fixed distribution descriptor and effective configuration;
-2. validate the role, distribution, and deployment profile as one unit;
-3. configure process logging once;
-4. apply or verify the final relational schema;
-5. construct required storage and external clients;
-6. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
-7. start the selected role components under one supervised lifespan;
-8. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
-9. report readiness only after every preceding gate succeeds.
+01. load the artifact's fixed distribution descriptor and effective configuration;
+02. validate the role, distribution, and deployment profile as one unit;
+03. configure process logging once;
+04. apply or verify the final relational schema;
+05. construct required storage and external clients;
+06. construct the selected process telemetry boundary;
+07. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
+08. start the selected role components under one supervised lifespan;
+09. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
+10. report readiness only after every preceding gate succeeds.
 
 A container entrypoint delegates to this lifecycle and does not own another migration, role, or fallback policy. A worker verifies the expected schema head and never mutates it. A control or all-in-one process can apply migrations under the schema contract when automatic migration is enabled; a deployment using a dedicated migration job disables replica migration.
 
@@ -169,6 +182,11 @@ readiness. A disabled A2A surface contributes no route, component, or readiness
 dependency.
 
 Loss of PostgreSQL, Redis, shared object storage, or another role-required dependency makes the affected process unready. A transient dependency loss does not by itself make liveness fail or erase already committed work. The process stops accepting new dependent work while the owning component performs bounded reconnect behavior. An unrecoverable client or component failure terminates the process.
+
+An OTLP endpoint or Trace Archive is not a role-required Service dependency.
+Exporter failure, queue pressure, and archive failure preserve readiness and
+ordinary work while emitting bounded diagnostics under the observability
+contract.
 
 Probe responses expose only bounded status, role, build identity, and safe dependency categories. They contain no endpoint, credential, tenant data, queue contents, traceback, or raw provider error.
 

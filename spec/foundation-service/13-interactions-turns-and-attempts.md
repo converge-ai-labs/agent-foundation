@@ -105,6 +105,14 @@ As soon as the Harness supplies its Run identity and before the worker publishes
 
 Bounded connector transport retries and internal Harness recovery remain within the Harness Run and do not allocate another TurnAttempt. Conversely, durable worker replacement always allocates another TurnAttempt and another Harness Run.
 
+After durable claim, each traced TurnAttempt starts one parentless
+`foundation.turn_attempt` root under the [Service observability
+contract](33-observability-and-trace-archive.md#turnattempt-trace-lifecycle).
+`harness.run` remains the existing child owner. Replacement Attempts create
+separate traces and correlate through stable domain IDs plus best-effort span
+links; a Thread Trace groups those bounded traces and never becomes another
+durable interaction resource.
+
 ## Cancellation and Unknown Outcomes
 
 Cancellation is durable intent followed by cooperative enforcement. A worker checks cancellation before expensive or effectful boundaries and attempts a fenced outcome commit. Cancellation never claims rollback of model, tool, child, external Environment, keep-alive, provider, or client effects.

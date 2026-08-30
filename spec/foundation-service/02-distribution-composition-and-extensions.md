@@ -70,7 +70,7 @@ Duplicate route method and path pairs, component identities, authorization actio
 
 ## OSS Composition
 
-The OSS distribution includes the common durable Turn/TurnAttempt kernel and the OSS capability set defined by the owning domain specifications. It presents the singleton Organization behavior, local password identity, built-in roles, and other OSS policy without adding an `edition` decision to shared rows or use cases.
+The OSS distribution includes the common durable Turn/TurnAttempt kernel and the OSS capability set defined by the owning domain specifications. It presents the singleton Organization behavior, local password identity, built-in roles, and other OSS policy without adding an `edition` decision to shared rows or use cases. It also supplies the optional [Trace Archive](33-observability-and-trace-archive.md) components as an independently deployed OSS capability; their absence does not change the Service composition or make telemetry storage required.
 
 The OSS capability set includes the complete
 [Protocol Gateway](28-protocol-gateway.md). Its `control` and `all` roles always

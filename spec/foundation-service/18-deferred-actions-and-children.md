@@ -8,6 +8,12 @@ Authenticated feedback never reopens the waiting Turn. Once the exact pending se
 
 An asynchronous subagent is an independent child Turn in its own child Thread under the same Session. It has its own TurnAttempts, Harness Runs, state key, cancellation, Environment attachments, usage, retained replay, and result-delivery state. The Harness continues to own native Pydantic deferred values and blocking inline delegation; Foundation does not encode pending authority in `HarnessState` or reinterpret asynchronous submission as an unfinished Pydantic tool call.
 
+The child Thread is also an independent [Thread Trace and observability
+session](33-observability-and-trace-archive.md#thread-trace-and-vendor-mapping).
+Its TurnAttempts start separate traces; bounded lineage and a best-effort span
+link express origin without placing child execution inside the parent Thread's
+trace set or vendor session.
+
 ## Pending Actions
 
 Pending kinds remain distinct:
