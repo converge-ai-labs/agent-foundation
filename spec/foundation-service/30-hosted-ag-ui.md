@@ -4,7 +4,8 @@
 
 Foundation Service hosts an AG-UI HTTP/SSE adapter for every callable
 AgentPreset. The adapter accepts standard `RunAgentInput`, maps it to the
-existing Foundation Session/Thread/Turn application contract, and delivers
+canonical [`AgentInput`](33-agent-input.md) and the existing
+Session/Thread/Turn control contract, and delivers
 standard AG-UI `BaseEvent` values derived from the selected Harness release
 group and durable Foundation facts. It is not another Agent runtime or lifecycle
 authority.
@@ -19,7 +20,9 @@ standard AG-UI client can call it using the wire profile defined here.
 | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | Standard AG-UI input and event models                                                | Pinned upstream AG-UI dependency selected by the Foundation-compatible Harness release group |
 | Harness-to-AG-UI observation                                                         | [`HarnessAguiObserver`](../agent-stream-protocol/00-overview.md)                             |
-| Durable Turn acceptance, waiting, cancellation, and outcome                          | Foundation interaction owners                                                                |
+| Canonical accepted input                                                             | [Agent Input](33-agent-input.md)                                                             |
+| Durable Turn acceptance and waiting feedback                                         | [Agent Control](34-agent-control-input-and-continuation.md)                                  |
+| Durable interruption                                                                 | [Active Execution](35-agent-control-active-execution.md)                                     |
 | Hosted external bindings, input validation, lifecycle projection, retention, and SSE | This document                                                                                |
 | Current Principal and AgentPreset authorization                                      | [Foundation IAM](10-identity-and-access-management.md)                                       |
 | Preset-specific schemas, visibility, and limits                                      | [Protocol configuration](12-agent-management.md#protocol-configuration)                      |
@@ -47,7 +50,7 @@ delivery and reconnect; that ID is a Hosted AG-UI delivery cursor, not a
 standard AG-UI identity or Native Turn Stream cursor. `Last-Event-ID` resumes
 exclusively after the last completely applied hosted event.
 
-The adapter also exposes explicit durable cancellation:
+The adapter also exposes the AG-UI cancellation surface:
 
 ```http
 POST /ag-ui/v1/agent-presets/{agent_preset_id}/cancel
@@ -56,8 +59,8 @@ Content-Type: application/json
 
 The body names the external `threadId` and `runId`. Cancellation resolves their
 persisted binding, reauthorizes the current AgentPreset and Turn, and invokes
-the same durable Turn cancellation command used by Native clients. Closing the
-run SSE does not call this command.
+the Native durable Turn interrupt command. The Foundation Turn outcome is
+`cancelled`; closing the run SSE does not call this command.
 
 ## External Binding
 
@@ -115,6 +118,15 @@ Hosted input is append-only relative to Foundation history:
 An initial call does not import an arbitrary prior transcript. Historical import
 is a separate Native operation with its own authority and validation.
 
+The adapter maps the accepted new user tail into one canonical `AgentInput`.
+Text and binary parts retain their order, media type, acquisition, and delivery
+semantics; structured AG-UI data maps to `structured_content` and follows the
+selected AgentPresetVersion's optional `ProtocolConfig.input_data_schema`. The
+common Agent input contract validates the resulting value before the control
+operation accepts a Turn. AG-UI protocol fields that express state, context,
+client tools, or feedback remain command options or correlated feedback and
+never enter `AgentInput` implicitly.
+
 Standard `state`, `context`, and `tools` plus Foundation extensions are bounded
 untrusted inputs:
 
@@ -127,11 +139,13 @@ untrusted inputs:
 | `forwardedProps.a13n`   | Versioned Foundation extension object containing only fields declared below                                         |
 
 `forwardedProps.a13n` can contain a structured `resume` array. Each element
-names one pending call, its exact kind, and a native bounded result or
-`status="cancelled"`. The array must resolve the complete pending set exactly
-once and calls the same pending-action feedback command as Native input. It
-accepts a new child Turn and never reopens the waiting parent. Unknown
-Foundation extension fields fail validation.
+names one pending call and one approve, reject, complete, or respond value under
+the exact frozen kind. The array can cover any explicit subset and calls the
+same atomic waiting-feedback command as Native input; omitted approvals become
+rejections and omitted non-approval calls become no-response outcomes. It
+accepts a new child Turn and never reopens the waiting parent. Duplicate,
+unknown, or mismatched entries and unknown Foundation extension fields fail
+validation.
 
 The normalized client tool surface and exact `agent_preset_version_id` are
 frozen with the accepted Turn. A feedback run reuses the waiting Turn's exact

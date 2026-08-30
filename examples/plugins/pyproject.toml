@@ -1,7 +1,7 @@
 [project]
 name = "a13n-plugin-examples"
 version = "0.0.0"
-description = "Runnable Environment provider, Environment run-extension, and Harness plugin examples for Agent Foundation"
+description = "Runnable Capability, Environment extension, provider, and Harness plugin examples for Agent Foundation"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.13"
@@ -22,6 +22,8 @@ dependencies = [
 "example.run-recorder" = "a13n_plugin_examples.harness:RunRecorderPluginFactory"
 
 [project.scripts]
+plugin-example-capability-agent-spec = "a13n_plugin_examples.demo_capability:main_agent_spec"
+plugin-example-capability-code = "a13n_plugin_examples.demo_capability:main_code"
 plugin-example-environment-entrypoint = "a13n_plugin_examples.demo_environment:main_entrypoint"
 plugin-example-environment-code = "a13n_plugin_examples.demo_environment:main_code"
 plugin-example-environment-extension-entrypoint = "a13n_plugin_examples.demo_environment_extension:main_entrypoint"

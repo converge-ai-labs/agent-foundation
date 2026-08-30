@@ -56,7 +56,7 @@ TurnAttempt to a request retry, or treats stream close as cancellation.
 Each client instance owns its connection pools and long-lived transports and
 has an explicit close operation. Closing an iterator, stream, WebSocket, SDK
 client, page traversal, or process stops only local delivery and network
-resources. It never submits a Turn cancellation command implicitly.
+resources. It never submits a Turn interrupt command implicitly.
 
 Language surfaces use their native asynchronous model:
 

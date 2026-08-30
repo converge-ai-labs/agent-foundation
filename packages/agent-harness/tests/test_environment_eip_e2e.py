@@ -37,9 +37,7 @@ from a13n_harness import (
     ShellCommand,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_environment_provider_binding,
     create_environment_runtime,
 )
@@ -170,8 +168,6 @@ async def exercise_attachment(
             )
         },
         default_mount="workspace",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     instance = AgentInstanceContext(
         identity=AgentIdentityRef(issuer="test", subject="agent"),
@@ -215,8 +211,6 @@ def _local_envd_run_binding(attachment: EIPEnvironmentAttachment):
             )
         },
         default_mount="workspace",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 

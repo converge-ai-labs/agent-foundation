@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,24 +16,38 @@ from a13n_environment_provider import (
     build_environment_provider_factory_catalog,
 )
 from a13n_harness import (
+    AgentSpec,
     EnvironmentAction,
     EnvironmentPermissionSet,
     EnvironmentRunExtensionFactoryCatalog,
     EnvironmentRunExtensionFactoryContext,
+    HarnessBuilder,
     RunBindings,
+    RunPreparationContext,
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_environment_provider_binding,
     create_environment_runtime,
 )
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 EXTENSION_KEY = "example.workspace-marker"
 type ExtensionSelectionMode = Literal["entrypoint", "code"]
+
+
+def _offline_model() -> FunctionModel:
+    async def stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str]:
+        del messages, info
+        yield "extension observed"
+
+    return FunctionModel(stream_function=stream)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +55,7 @@ class EnvironmentExtensionDemoResult:
     selection_mode: ExtensionSelectionMode
     extension_key: str
     extension_id: str
+    run_id: str
     marker_text: str
     marker_removed: bool
 
@@ -76,7 +92,6 @@ async def _run_extension_demo(
         resource_correlation=f"resource-extension-{selection_mode}",
         attempt=1,
     )
-    resource = await manager.create(operation=operation)
     extension_id = f"marker-{selection_mode}"
     marker_path = "/workspace/.example-run"
     extension = catalog.create_extension(
@@ -86,56 +101,68 @@ async def _run_extension_demo(
             configuration={"marker_path": marker_path, "label": selection_mode},
         )
     )
-    state = resource.state
-    async with resource:
-        async with resource.acquire_attachment() as attachment:
-            provider = create_environment_provider_binding(attachment)
-            environment_runtime = create_environment_runtime(
-                mounts={
-                    "workspace": EnvironmentRuntimeMount(
-                        binding=provider,
-                        permission_ceiling=EnvironmentPermissionSet(
-                            operations=frozenset(
-                                {
-                                    EnvironmentAction.FILE_READ_TEXT,
-                                    EnvironmentAction.FILE_WRITE_TEXT,
-                                    EnvironmentAction.FILE_REMOVE,
-                                }
-                            )
-                        ),
-                        working_directory="/",
-                    )
-                },
-                default_mount="workspace",
-                runtime_limits=EnvironmentRuntimeLimits(max_mounts=1),
-                state_limits=EnvironmentStateLimits(max_mount_entries=1),
-                extensions=(extension,),
-            )
-            run_bindings = RunBindings.embedded(environment=environment_runtime)
+    marker_text: str | None = None
+    marker_removed = False
 
-            async with environment_runtime.bind(
-                run_id="run-extension-example",
-                instance=run_bindings.instance,
-            ) as environment:
-                await environment_runtime._activate()
-                marker_text = (await environment.files.read_text(marker_path)).text
+    async def read_marker(context: RunPreparationContext) -> str:
+        nonlocal marker_text
+        marker_text = (await context.environment.files.read_text(marker_path)).text
+        return "Confirm that the Environment run extension is active."
 
-    await manager.destroy(
-        state,
-        operation=EnvironmentOperationContext(
-            operation_id=f"operation-destroy-{selection_mode}",
-            action=EnvironmentManagementAction.DESTROY,
-            resource_correlation=f"resource-extension-{selection_mode}",
-            attempt=1,
-        ),
+    executable = HarnessBuilder(configured_plugins_enabled=False).build(
+        AgentSpec(),
+        output_type=str,
+        model=_offline_model(),
     )
+    resource = await manager.create(operation=operation)
+    try:
+        async with executable, resource:
+            async with resource.acquire_attachment() as attachment:
+                provider = create_environment_provider_binding(attachment)
+                environment_runtime = create_environment_runtime(
+                    mounts={
+                        "workspace": EnvironmentRuntimeMount(
+                            binding=provider,
+                            permission_ceiling=EnvironmentPermissionSet(
+                                operations=frozenset(
+                                    {
+                                        EnvironmentAction.FILE_READ_TEXT,
+                                        EnvironmentAction.FILE_WRITE_TEXT,
+                                        EnvironmentAction.FILE_REMOVE,
+                                    }
+                                )
+                            ),
+                            working_directory="/",
+                        )
+                    },
+                    default_mount="workspace",
+                    extensions=(extension,),
+                )
+                result = await executable.run(
+                    input_factory=read_marker,
+                    bindings=RunBindings.embedded(environment=environment_runtime),
+                )
+                if result.output_or_raise() != "extension observed":
+                    raise RuntimeError("The offline Agent returned an unexpected result")
+                marker_removed = not (workspace_root / ".example-run").exists()
+    finally:
+        await manager.destroy(
+            resource.state,
+            operation=EnvironmentOperationContext(
+                operation_id=f"operation-destroy-{selection_mode}",
+                action=EnvironmentManagementAction.DESTROY,
+                resource_correlation=f"resource-extension-{selection_mode}",
+                attempt=1,
+            ),
+        )
 
     return EnvironmentExtensionDemoResult(
         selection_mode=selection_mode,
         extension_key=catalog.registrations[0].extension_key,
         extension_id=extension.extension_id,
-        marker_text=marker_text,
-        marker_removed=not (workspace_root / ".example-run").exists(),
+        run_id=result.run_id,
+        marker_text=marker_text or "",
+        marker_removed=marker_removed,
     )
 
 

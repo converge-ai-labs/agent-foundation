@@ -13,11 +13,16 @@ dependencies = [
     "anyio>=4,<5",
     "botocore>=1.43.3,<1.43.57",
     "click>=8.2,<9",
+    "cryptography>=50,<51",
+    "a13n-harness",
     "a13n-logging",
     "fakeredis>=2.31,<3",
     "fastapi>=0.116,<1",
+    "google-auth>=2.40,<3",
     "httpx2>=2.5,<3",
+    "openai>=3.5,<4",
     "pydantic>=2.12,<3",
+    "pydantic-ai>=2.33,<3",
     "pydantic-settings>=2.10,<3",
     "psycopg[binary]>=3.2,<4",
     "redis>=8,<9",
@@ -38,7 +43,7 @@ packages = ["a13n_service"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-logging" = "a13n_logging", "httpx2" = "httpx2", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
 
 # Database drivers are loaded by SQLAlchemy from the selected backend. httpx2
 # is the service-wide outbound client contract and is used by service tests.

@@ -236,7 +236,7 @@ preparation decision. It does not inspect or reconcile the prior Sandbox. Every
 Turn owns one deterministic state key; Foundation replaces that key at complete
 checkpoints and exposes no separate base, result, or checkpoint-history object.
 
-Client-side tools use native Pydantic deferred values. Foundation seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. Asynchronous children use independent Threads and Turns rather than Pydantic deferred spawn calls.
+Client-side tools use native Pydantic deferred values. Foundation's [Agent control input and continuation contract](foundation-service/34-agent-control-input-and-continuation.md) seals the waiting Turn with its complete pending set, atomically normalizes authenticated feedback into a full reject, no-response, or supplied-result batch, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The same contract can explicitly continue from any retained readable completed historical Turn while preserving its Thread. [Queued submissions](foundation-service/36-agent-control-queued-submissions.md) give ordinary input queue-if-busy semantics: eligible idle Threads accept a Turn immediately, while busy or state-blocked Threads retain editable input outside the Turn DAG. A completed Turn can prepublish its queued successor's state and atomically seal, consume the queue entry, and accept that successor; terminal relational scanning recovers paths that do not combine. The new Turn starts a later run with fresh bindings. [Active Agent control](foundation-service/35-agent-control-active-execution.md) persists steering and asynchronous results in a durable Thread inbox, couples steer consumption to complete Turn state, and uses an expiring Thread Redis Stream only for Worker wakeups. Interrupt seals the active Turn as cancelled. [Async subagents](foundation-service/18-async-subagents.md) use independent Threads and Turns rather than Pydantic deferred spawn calls and deliver terminal results through the parent Thread inbox.
 
 Foundation's [Thread persistence](foundation-service/24-thread-persistence.md)
 owns one independent versioned relational Thread resource, its Session
@@ -248,8 +248,9 @@ persistence](foundation-service/15-turn-attempt-persistence.md) owns the
 `turn_attempts` table, worker leases, and fences. [Lifecycle and stream
 persistence](foundation-service/17-lifecycle-and-stream-persistence.md) owns
 one lifecycle-event table and Redis Agent-message transport with object-backed
-retained replay; pending calls, Items, stream entries, and generic provider
-receipts do not receive separate relational tables.
+retained replay. Active Agent control separately owns the `thread_inbox` table
+and expiring Thread control signal Stream; pending calls, Items, stream entries,
+and generic provider receipts do not receive separate relational tables.
 
 The hosted service boundary is defined in [Foundation Service](foundation-service/README.md).
 
@@ -375,13 +376,14 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 | Foundation runtime and deployment      | [foundation-service/01-runtime-configuration-and-deployment.md](foundation-service/01-runtime-configuration-and-deployment.md)                       |
 | Foundation distribution composition    | [foundation-service/02-distribution-composition-and-extensions.md](foundation-service/02-distribution-composition-and-extensions.md)                 |
 | Foundation Secret management           | [foundation-service/11-secret-management.md](foundation-service/11-secret-management.md)                                                             |
+| Foundation Agent management            | [foundation-service/12-agent-management.md](foundation-service/12-agent-management.md)                                                               |
 | Foundation interaction/runtime mapping | [foundation-service/13-interactions-turns-and-attempts.md](foundation-service/13-interactions-turns-and-attempts.md)                                 |
 | Foundation Turn persistence            | [foundation-service/14-turn-persistence.md](foundation-service/14-turn-persistence.md)                                                               |
 | Foundation TurnAttempt persistence     | [foundation-service/15-turn-attempt-persistence.md](foundation-service/15-turn-attempt-persistence.md)                                               |
 | Foundation scheduling and recovery     | [foundation-service/16-scheduling-workers-and-recovery.md](foundation-service/16-scheduling-workers-and-recovery.md)                                 |
 | Foundation lifecycle and Turn streams  | [foundation-service/17-lifecycle-and-stream-persistence.md](foundation-service/17-lifecycle-and-stream-persistence.md)                               |
+| Foundation Hook notifications          | [foundation-service/20a-hook-notifications.md](foundation-service/20a-hook-notifications.md)                                                         |
 | Foundation public API                  | [foundation-service/21-management-api.md](foundation-service/21-management-api.md)                                                                   |
-| Foundation Agent management            | [foundation-service/12-agent-management.md](foundation-service/12-agent-management.md)                                                               |
 | Foundation model management            | [foundation-service/25-model-management.md](foundation-service/25-model-management.md)                                                               |
 | Foundation managed Harness plugins     | [foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md](foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md)       |
 | Foundation Skill management            | [foundation-service/27-skill-management.md](foundation-service/27-skill-management.md)                                                               |
@@ -390,3 +392,7 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 | Foundation Hosted AG-UI                | [foundation-service/30-hosted-ag-ui.md](foundation-service/30-hosted-ag-ui.md)                                                                       |
 | Foundation A2A                         | [foundation-service/31-a2a.md](foundation-service/31-a2a.md)                                                                                         |
 | Foundation SDKs and clients            | [foundation-service/32-service-sdks-and-clients.md](foundation-service/32-service-sdks-and-clients.md)                                               |
+| Foundation Agent input                 | [foundation-service/33-agent-input.md](foundation-service/33-agent-input.md)                                                                         |
+| Foundation Agent control input         | [foundation-service/34-agent-control-input-and-continuation.md](foundation-service/34-agent-control-input-and-continuation.md)                       |
+| Foundation active Agent control        | [foundation-service/35-agent-control-active-execution.md](foundation-service/35-agent-control-active-execution.md)                                   |
+| Foundation queued Agent control        | [foundation-service/36-agent-control-queued-submissions.md](foundation-service/36-agent-control-queued-submissions.md)                               |

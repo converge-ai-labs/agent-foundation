@@ -17,7 +17,7 @@ trusted Environment connector to attach an already-running external resource.
 The connector maintains bounded keep-alive only while its fresh attachment
 scope and the current Harness run are active; Foundation owns no Sandbox lifecycle.
 Each claimed TurnAttempt can own one bounded [OpenTelemetry
-trace](33-observability-and-trace-archive.md), and the OSS distribution supplies
+trace](37-observability-and-trace-archive.md), and the OSS distribution supplies
 an independently deployed optional Parquet Trace Archive. Redis delivery,
 Harness completion, AG-UI delivery, hot telemetry, and cold archive are never
 durable completion authority.
@@ -39,6 +39,8 @@ flowchart LR
         Interaction[Session, Thread, Turn, and Item]
         Lifecycle[Turn lifecycle]
         Feedback[Deferred feedback]
+        Queue[Queued submissions]
+        ActiveControl[Thread inbox, steer, and interrupt]
         Publisher[Outbox publisher]
     end
 
@@ -47,7 +49,8 @@ flowchart LR
         Objects[(Object storage)]
     end
 
-    LiveBus[Turn-scoped Redis Streams]
+    LiveBus[Turn presentation Redis Streams]
+    ControlBus[Thread control signal Redis Streams]
 
     subgraph WorkerRole[Worker role]
         Runtime[On-demand loop or Runner]
@@ -63,8 +66,9 @@ flowchart LR
     Client --> Gateway
     Gateway --> Native & Agui & A2A
     Native & Agui & A2A --> Auth
-    Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback
-    Authoring & Interaction & Lifecycle & ConnectorControl & Feedback --> Database
+    Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & Queue & ActiveControl
+    Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & Queue & ActiveControl --> Database
+    ActiveControl -. best-effort wakeup .-> ControlBus --> Runtime
     Runtime -->|scan, preflight, claim, and takeover| Database
     Runtime --> Reconstruct --> Harness
     Runtime --> Connector --> Harness
@@ -76,7 +80,25 @@ flowchart LR
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, Thread version and head selection, Turns, current TurnAttempt generations, Agent tool dispatch evidence, pending actions, Environment configuration, and terminal outcomes. Each Worker discovers claim and takeover candidates directly from that durable state. Redis carries domain-owned live data flow, including each Turn's stable bounded-replay message stream; Redis publication alone never proves a relational lifecycle transition committed. Shared object storage holds the Turn's complete conditionally replaced state, immutable replay snapshot, and bounded large content. The detailed authorities belong to [Durable Thread Persistence](24-thread-persistence.md), [Durable Turn State](14-turn-persistence.md), [Environment Configuration and Runtime Mounts](19-environment-management.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
+PostgreSQL is the distributed authority for accepted resources, Thread
+advancement and queue versions, head selection, queued submissions, the durable
+Thread inbox, Turns, current TurnAttempt generations, Agent tool dispatch
+evidence, waiting pending summaries, desired Environment mounts, and terminal
+outcomes. Each Worker discovers claim, takeover, and pending-inbox work directly
+from that durable state. Redis carries domain-owned live data flow, including
+each Turn's stable bounded-replay message stream and each active Thread's
+expiring control-signal Stream; Redis publication or consumer-group progress
+never proves a relational transition or inbox consumption. Shared object
+storage holds the Turn's complete conditionally replaced state, including exact
+pending requests, consumed inbox receipts, immutable replay snapshot, and
+bounded large content. The detailed authorities belong to [Durable Thread
+Persistence](24-thread-persistence.md), [Durable Turn
+State](14-turn-persistence.md), [Agent Control: Active
+Execution](35-agent-control-active-execution.md), [Agent Control: Queued
+Submissions](36-agent-control-queued-submissions.md), [Environment Configuration
+and Runtime Mounts](19-environment-management.md), [Lifecycle and Stream
+Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction
+Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
 ## Component Boundaries
 
@@ -90,6 +112,8 @@ PostgreSQL is the distributed authority for accepted resources, Thread version a
 | Managed Harness plugin artifacts and Runtime locks                          | Foundation control plane and Worker runtime                   | Preflights on demand or stages exact trusted Runner environments                              |
 | Durable Thread resource                                                     | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version                 |
 | Turn and TurnAttempt                                                        | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                                 |
+| Queue-if-busy ordinary input                                                | [Queued Submissions](36-agent-control-queued-submissions.md)  | Accepts immediately when eligible or remains editable outside the Turn DAG                    |
+| Thread inbox, steer, and interrupt                                          | [Active Execution](35-agent-control-active-execution.md)      | Persists inbound active control and uses Redis only for expiring wakeups                      |
 | Environment, EnvironmentRevision, and Turn execution configuration          | [Environment Configuration](19-environment-management.md)     | Freezes an exact connection target in Turn state                                              |
 | Process-local Agent composition and loop                                    | Harness                                                       | Built by a trusted Foundation reconstruction adapter                                          |
 | External Environment resource lifecycle                                     | User and external provider                                    | Resource already exists and is running before Foundation connects                             |
@@ -98,7 +122,7 @@ PostgreSQL is the distributed authority for accepted resources, Thread version a
 | Harness-to-AG-UI conversion                                                 | `HarnessAguiObserver`                                         | Foundation supplies visibility processing, retention, and delivery                            |
 | Durable lifecycle events, Items, and usage                                  | Foundation                                                    | Commits product facts independently from process-local observations                           |
 | Native, Hosted AG-UI, and A2A public protocols                              | [Protocol Gateway](28-protocol-gateway.md)                    | Map distinct wire protocols to the same application and IAM authority                         |
-| TurnAttempt tracing and optional Trace Archive                              | [Observability](33-observability-and-trace-archive.md)        | Exports best-effort diagnostic projections without becoming domain authority                  |
+| TurnAttempt tracing and optional Trace Archive                              | [Observability](37-observability-and-trace-archive.md)        | Exports best-effort diagnostic projections without becoming domain authority                  |
 | Client-side effects                                                         | External client                                               | Foundation authenticates feedback but does not claim the effect                               |
 
 Foundation depends on the public Harness, Environment Provider, Agent Stream Protocol, and envd-client contracts. Those packages never import Foundation tenancy, database, lifecycle, or API types. The selected [distribution](02-distribution-composition-and-extensions.md) can add capabilities through explicit narrow boundaries without replacing the common resource authorizer or durable Turn/TurnAttempt kernel.
@@ -145,7 +169,7 @@ sequenceDiagram
     DB-->>Caller: retained interaction and lifecycle delivery
 ```
 
-The same `running` Turn can receive another TurnAttempt after an Attempt fails or its lease expires. The takeover transaction marks an expired old Attempt `failed`; Foundation defines no Attempt `lost` state. A new Attempt always creates fresh process-local objects and a fresh Harness Run. A waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names the waiting Turn. The new Turn receives fresh state and later its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
+The same `running` Turn can receive another TurnAttempt after an Attempt fails or its lease expires. The takeover transaction marks an expired old Attempt `failed`; Foundation defines no Attempt `lost` state. A new Attempt always creates fresh process-local objects and a fresh Harness Run. Under the [Agent control input and continuation contract](34-agent-control-input-and-continuation.md), a waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and later its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
 
 Schedules, webhooks, service requests, and asynchronous children accept Turns and follow the same Worker scan, TurnAttempt, dispatch, Harness, state, and outcome contracts as interactive work.
 
@@ -201,3 +225,8 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
 09. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
 10. Public protocol adapters share application and authorization authority but
     retain independent wire identities, errors, and delivery contracts.
+11. A queued submission owns no execution lease or outcome; only atomic
+    consumption accepts the Turn that later owns scheduling and recovery. A
+    state-first completed handoff can combine source sealing, first-entry
+    consumption, and successor acceptance in one short transaction; otherwise
+    terminal relational state remains sufficient for recovery scanning.

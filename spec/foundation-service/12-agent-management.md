@@ -32,6 +32,7 @@ flowchart LR
 | Plugin factories, configured instances, ordering, middleware, and Capability contribution | [Harness Plugin System](../agent-harness/05-plugin-system.md)                                                    | Builds concrete process-local plugins from an explicitly selected catalog  |
 | Agent execution, state, and process-local subagent graph                                  | Agent Harness                                                                                                    | Receives reconstructed definitions and fresh run bindings                  |
 | Turn acceptance, pinning, recovery, and lineage                                           | [Interactions and Turns](13-interactions-turns-and-attempts.md) and [Durable Turn State](14-turn-persistence.md) | Persist the exact selected Version and never re-resolve the mutable Preset |
+| Agent input wire, canonicalization, and adapter mapping                                   | [Agent Input](33-agent-input.md)                                                                                 | AgentPresetConfig stores adapter configuration and each Version freezes it |
 | Product authorization and executable-code administration                                  | [Foundation IAM](10-identity-and-access-management.md)                                                           | Separates Preset authoring from deployment code authority                  |
 | Secret values and run-time eligibility                                                    | [Secret Management](11-secret-management.md)                                                                     | Versions store requirements and references, never plaintext values         |
 | Public HTTP paths and common mutation behavior                                            | [Management API](21-management-api.md) and [Platform API Conventions](../api-conventions.md)                     | Expose the resources and commands defined here                             |
@@ -80,7 +81,7 @@ A custom Preset is created as `enabled` with no active Version. Its complete con
 
 `AgentPresetConfig` is finite Foundation-owned serializable data. It contains the complete behavior needed to publish an executable Version, including:
 
-- instructions and typed input and output declarations;
+- instructions and the typed output declaration;
 - one exact `model_id` plus concrete Harness `HarnessModelCharacteristics` and native `ModelSettings`;
 - Capability, Tool, Skill, Connector, and Environment declarations or exact managed-resource references;
 - bounded public protocol metadata, schemas, visibility, client-tool policy, and limits;
@@ -93,6 +94,15 @@ The config contains no Python class, import target, callable, native Model, Tool
 
 Saving config performs only request-schema structure, type, size, and bounds validation. Foundation exposes no independent Validate resource, preview state, warning collection, or partially valid config lifecycle. Publish is the sole authoritative resolve-and-build validation path.
 
+The config stores one exact trusted input adapter key and bounded configuration.
+Publish validates them against the selected Plugin Runtime profile and freezes
+them inside the AgentPresetVersion. The Version carries no declaration of
+allowed input block types, media types, sources, deliveries, or per-input limits;
+every Version accepts the common [`AgentInput`](33-agent-input.md) wire contract.
+Turn acceptance validates and canonicalizes that input, and the Worker verifies
+the pinned Runtime lock before invoking the adapter. A replacement TurnAttempt
+reuses the same Version, adapter configuration, accepted input, and Runtime lock.
+
 ## Protocol Configuration
 
 Every `AgentPresetConfig` embeds one finite `protocol` configuration. It is
@@ -104,7 +114,6 @@ class ProtocolConfig:
     schema_version: Literal["1"]
     public_name: str
     public_description: str | None
-    input_modes: tuple[str, ...]
     output_modes: tuple[str, ...]
     input_data_schema: JsonObject | None
     state_schema: JsonObject | None
@@ -124,12 +133,18 @@ cannot expose raw reasoning, credentials, private execution identities,
 unregistered events, arbitrary code, or a capability that the deployment does
 not support.
 
-Safe defaults accept bounded text input, expose bounded text output and the
-standard Run, text, and client-visible tool event families, accept no client
-tools, require empty state and context, generate a minimal public-safe A2A Agent
-Card, and expose no extended Card. Native and Hosted AG-UI remain available for
-every callable Preset. The deployment-wide `gateway.a2a_enabled` setting is the
-only A2A availability switch; ProtocolConfig does not enable or disable a
+`input_data_schema`, when present, is the self-contained JSON Schema Draft
+2020-12 contract projected for `AgentInput.structured_content`. Publish validates
+and freezes it. Turn acceptance applies it only when `structured_content` is
+non-null; absent structured content is always valid. The schema does not restrict
+text or binary blocks, media types, sources, or deliveries.
+
+Safe defaults impose no structured-content schema, expose bounded text output
+and the standard Run, text, and client-visible tool event families, accept no
+client tools, require empty state and context, generate a minimal public-safe A2A
+Agent Card, and expose no extended Card. Native and Hosted AG-UI remain available
+for every callable Preset. The deployment-wide `gateway.a2a_enabled` setting is
+the only A2A availability switch; ProtocolConfig does not enable or disable a
 protocol.
 
 Publish copies the normalized ProtocolConfig into the immutable
@@ -239,7 +254,13 @@ A parent config declares each named child edge with a stable child `preset_id`. 
 
 Publishing a child later does not change an existing parent Version. The parent adopts the new child behavior only after another parent Publish. An active parent Version may internally execute its pinned historical child Version; this is part of the already published parent graph and is not public non-active Version selection.
 
-The worker recursively reconstructs the exact finite graph into Harness `SubagentDefinition` and `SubagentCollection` values. Root and child definitions use the same Harness build and plugin contracts. An asynchronous hosted child receives its own Thread, Turn, TurnAttempts, fresh `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, and exact child Version selection under [Deferred Actions and Children](18-deferred-actions-and-children.md); an inline child remains process-local Harness execution.
+The worker recursively reconstructs the exact finite graph into Harness
+`SubagentDefinition` and `SubagentCollection` values. Root and child definitions
+use the same Harness build and plugin contracts. An asynchronous hosted child
+receives its own Thread, Turn, TurnAttempts, fresh `RunBindings`, Environment
+attachments, runtime mounts, `EnvironmentRuntime`, exact child Version, and
+compatible Runtime lock under [Async Subagents](18-async-subagents.md); an inline
+child remains process-local Harness execution.
 
 ## Turn Selection and Reconstruction
 

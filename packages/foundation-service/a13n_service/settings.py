@@ -11,6 +11,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from a13n_service.database import MigrationConfig
+from a13n_service.secret_management import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (
     FilesystemConfig,
     LocalObjectConfig,
@@ -78,6 +79,13 @@ class ServiceSettings(BaseSettings):
     database_sqlite_busy_timeout_seconds: float = Field(default=5, gt=0, le=300)
     database_cleanup_timeout_seconds: float = Field(default=5, gt=0, le=60)
     database_readiness_timeout_seconds: float = Field(default=3, gt=0, le=300)
+
+    model_private_endpoint_domains: tuple[str, ...] = ()
+    model_private_endpoint_cidrs: tuple[str, ...] = ()
+    model_resolve_dns_on_save: bool = True
+    model_connection_test_timeout_seconds: float = Field(default=15, gt=0, le=120)
+    secret_master_key_base64: SecretStr | None = Field(default=None, repr=False)
+    secret_encryption_key_id: str | None = Field(default=None, min_length=1, max_length=128, repr=False)
 
     redis_backend: RedisBackend = RedisBackend.redis
     redis_url: SecretStr | None = Field(default=SecretStr("redis://127.0.0.1:6379/0"), repr=False)
@@ -177,6 +185,16 @@ class ServiceSettings(BaseSettings):
             lock_timeout_seconds=self.migration_lock_timeout_seconds,
             statement_timeout_seconds=self.migration_statement_timeout_seconds,
             idle_transaction_timeout_seconds=self.migration_idle_transaction_timeout_seconds,
+        )
+
+    def secret_protector(self) -> SecretProtector:
+        if self.secret_master_key_base64 is None or self.secret_encryption_key_id is None:
+            raise SecretProtectionError(
+                "FOUNDATION_SECRET_MASTER_KEY_BASE64 and FOUNDATION_SECRET_ENCRYPTION_KEY_ID are required"
+            )
+        return SecretProtector.from_base64(
+            encoded_key=self.secret_master_key_base64.get_secret_value(),
+            encryption_key_id=self.secret_encryption_key_id,
         )
 
 

@@ -28,9 +28,7 @@ from a13n_harness import (
 from a13n_harness.environment.advanced import (
     EnvironmentProviderBinding,
     EnvironmentProviderOperations,
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     NoopBoundEnvironment,
     create_empty_environment_runtime,
     create_environment_runtime,
@@ -68,6 +66,8 @@ class _BoundProvider:
     operations: EnvironmentProviderOperations
     availability: EnvironmentAvailability
     ready_calls: list[frozenset[str]] = field(default_factory=list)
+    exported_state: EnvironmentMountState | None = None
+    restored_states: list[EnvironmentMountState] = field(default_factory=list)
     export_calls: int = 0
     restore_calls: int = 0
 
@@ -78,13 +78,12 @@ class _BoundProvider:
             ready_families=self.availability.ready_families | operations,
         )
 
-    async def export_state(self, *, max_bytes: int):
-        del max_bytes
+    async def export_state(self) -> EnvironmentMountState | None:
         self.export_calls += 1
-        return None
+        return self.exported_state
 
-    async def restore_state(self, state) -> None:
-        del state
+    async def restore_state(self, state: EnvironmentMountState) -> None:
+        self.restored_states.append(state)
         self.restore_calls += 1
 
 
@@ -230,8 +229,6 @@ async def test_static_aggregate_intersects_permissions_and_scopes_readiness() ->
     binding = create_environment_runtime(
         mounts=_request(first, second),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         assert [item.name for item in environment.snapshot.mounts] == ["workspace-1", "workspace-2"]
@@ -256,8 +253,6 @@ async def test_environment_run_extensions_follow_aggregate_lifecycle_and_remain_
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
         extensions=(first, second),
     )
 
@@ -301,8 +296,6 @@ async def test_environment_run_callbacks_follow_the_extension_lifecycle() -> Non
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
         extensions=(
             EnvironmentRunCallbacks(
                 extension_id="first",
@@ -356,8 +349,6 @@ async def test_environment_run_callback_entry_failure_only_unwinds_admitted_call
 
     binding = create_environment_runtime(
         mounts=_request(),
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
         extensions=(
             EnvironmentRunCallbacks(
                 extension_id="first",
@@ -394,8 +385,6 @@ async def test_environment_run_callback_cleanup_continues_after_failure() -> Non
 
     binding = create_environment_runtime(
         mounts=_request(),
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
         extensions=(
             EnvironmentRunCallbacks(extension_id="first", on_exit=exit_first),
             EnvironmentRunCallbacks(extension_id="failing", on_exit=exit_failing),
@@ -421,8 +410,6 @@ async def test_environment_run_extension_entry_failure_unwinds_and_keeps_runtime
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
         extensions=(
             _RunExtension("first", events),
             _RunExtension("failing", events, fail_entry=True),
@@ -450,8 +437,6 @@ async def test_environment_run_extension_cleanup_continues_after_failure() -> No
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
         extensions=(
             _RunExtension("first", events),
             _RunExtension("failing", events, fail_exit=True),
@@ -477,8 +462,6 @@ def test_environment_run_extension_ids_are_validated(extension_id: str) -> None:
     with pytest.raises(EnvironmentError) as exc_info:
         create_environment_runtime(
             mounts=_request(),
-            runtime_limits=EnvironmentRuntimeLimits(),
-            state_limits=EnvironmentStateLimits(),
             extensions=(_RunExtension(extension_id, []),),
         )
 
@@ -489,8 +472,6 @@ def test_environment_run_extension_ids_must_be_unique() -> None:
     with pytest.raises(EnvironmentError) as exc_info:
         create_environment_runtime(
             mounts=_request(),
-            runtime_limits=EnvironmentRuntimeLimits(),
-            state_limits=EnvironmentStateLimits(),
             extensions=(_RunExtension("same", []), _RunExtension("same", [])),
         )
 
@@ -500,8 +481,6 @@ def test_environment_run_extension_ids_must_be_unique() -> None:
 async def test_environment_state_restore_is_rejected_after_extension_activation_begins() -> None:
     binding = create_environment_runtime(
         mounts=_request(),
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
         extensions=(_RunExtension("extension", []),),
     )
 
@@ -518,8 +497,6 @@ async def test_readiness_is_reacquired_after_live_availability_regresses() -> No
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     requirement = EnvironmentReadinessRequirement(operations=frozenset({"files"}))
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
@@ -551,8 +528,6 @@ async def test_descriptor_facet_mismatch_fails_and_all_candidates_are_owned() ->
     binding = create_environment_runtime(
         mounts=_request(invalid, never_entered),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     with pytest.raises(EnvironmentError) as failure:
         async with binding.bind(run_id="run-1", instance=_instance()):
@@ -570,8 +545,6 @@ async def test_partial_entry_failure_closes_entered_and_discards_remaining_candi
     binding = create_environment_runtime(
         mounts=_request(entered, failed, later),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     with pytest.raises(RuntimeError, match="entry failed"):
         async with binding.bind(run_id="run-1", instance=_instance()):
@@ -586,8 +559,6 @@ async def test_invalid_mount_set_is_rejected_before_provider_entry() -> None:
     with pytest.raises(EnvironmentError) as exc_info:
         create_environment_runtime(
             mounts={"one": mount, "two": mount},
-            runtime_limits=EnvironmentRuntimeLimits(),
-            state_limits=EnvironmentStateLimits(),
         )
     assert exc_info.value.code == "environment_request_invalid"
     assert candidate.entered == candidate.discarded == 0
@@ -598,8 +569,6 @@ async def test_closed_environment_rejects_new_provider_work() -> None:
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         await environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))
@@ -620,8 +589,6 @@ async def test_readiness_requires_live_ready_observation() -> None:
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         with pytest.raises(EnvironmentError) as unavailable:
@@ -644,8 +611,6 @@ async def test_unavailable_status_rejects_residual_ready_family() -> None:
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         with pytest.raises(EnvironmentError) as unavailable:
@@ -670,8 +635,6 @@ async def test_accepted_operation_is_cancelled_before_provider_exit() -> None:
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     task: asyncio.Task[Any]
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
@@ -697,8 +660,6 @@ async def test_file_operation_fallback_covers_readiness_and_backend(
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         with pytest.raises(EnvironmentError) as timed_out:
@@ -728,8 +689,6 @@ async def test_each_provider_exit_has_an_independent_cleanup_deadline(
     binding = create_environment_runtime(
         mounts=_request(first, second),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     with pytest.raises(BaseExceptionGroup):
         async with binding.bind(run_id="run-1", instance=_instance()):
@@ -742,8 +701,6 @@ async def test_invalid_identity_does_not_transfer_or_consume_binding() -> None:
     binding = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     with pytest.raises(EnvironmentError):
         async with binding.bind(run_id="", instance=_instance()):
@@ -769,8 +726,6 @@ async def test_state_callbacks_respect_exact_effective_actions() -> None:
                 permissions=frozenset(),
             )
         },
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     state = EnvironmentState(
         mounts={
@@ -789,6 +744,50 @@ async def test_state_callbacks_respect_exact_effective_actions() -> None:
     assert provider.bound.export_calls == provider.bound.restore_calls == 0
 
 
+async def test_state_export_and_restore_do_not_apply_harness_capacity_limits() -> None:
+    permissions = frozenset({EnvironmentAction.STATE_EXPORT, EnvironmentAction.STATE_RESTORE})
+    providers = [
+        _Binding(
+            f"state-{index}",
+            families=frozenset({"state"}),
+            operations=EnvironmentProviderOperations(),
+            permissions=permissions,
+        )
+        for index in range(33)
+    ]
+    for index, provider in enumerate(providers):
+        provider.bound.exported_state = EnvironmentMountState(
+            provider_type="test.provider",
+            state_version="state-1",
+            state={"payload": "x" * (1024 * 1024 + 1) if index == 0 else str(index)},
+        )
+    mounts = {
+        f"state-{index}": _runtime_mount(
+            provider,
+            working_directory=None,
+            permissions=permissions,
+        )
+        for index, provider in enumerate(providers)
+    }
+
+    runtime = create_environment_runtime(mounts=mounts)
+    async with runtime.bind(run_id="run-1", instance=_instance()) as environment:
+        exported = await environment.export_state()
+        assert len(exported.mounts) == 33
+        large_state = exported.mounts["state-0"].state
+        assert isinstance(large_state, dict)
+        large_payload = large_state["payload"]
+        assert isinstance(large_payload, str)
+        assert len(large_payload) > 1024 * 1024
+
+        await environment.restore_state(exported)
+
+    for index, provider in enumerate(providers):
+        assert provider.bound.export_calls == 1
+        assert provider.bound.restore_calls == 1
+        assert provider.bound.restored_states == [exported.mounts[f"state-{index}"]]
+
+
 async def test_state_provider_type_is_rejected_before_provider_readiness() -> None:
     provider = _Binding(
         "state-compatibility",
@@ -804,8 +803,6 @@ async def test_state_provider_type_is_rejected_before_provider_readiness() -> No
                 permissions=frozenset({EnvironmentAction.STATE_RESTORE}),
             )
         },
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     incompatible = EnvironmentState(
         mounts={
@@ -825,7 +822,7 @@ async def test_state_provider_type_is_rejected_before_provider_readiness() -> No
 
 
 async def test_mount_and_default_change_are_atomic_and_sequenced() -> None:
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
     provider = _Binding("dynamic")
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await aggregate._activate()
@@ -859,8 +856,6 @@ async def test_replace_preserves_default_and_changes_mount_incarnation() -> None
     aggregate = create_environment_runtime(
         mounts={"workspace": _runtime_mount(initial)},
         default_mount="workspace",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     replacement = _Binding("replacement")
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
@@ -888,8 +883,6 @@ async def test_unmounting_the_default_clears_it_atomically() -> None:
             "second": _runtime_mount(second),
         },
         default_mount="first",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await aggregate._activate()
@@ -911,8 +904,6 @@ async def test_dynamic_prepare_failure_is_atomic_and_cleans_candidate() -> None:
     aggregate = create_environment_runtime(
         mounts={"initial": _runtime_mount(initial)},
         default_mount="initial",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     invalid = _Binding("invalid", operations=EnvironmentProviderOperations())
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
@@ -942,8 +933,6 @@ async def test_unmounted_scope_retires_after_accepted_operation_drains() -> None
     aggregate = create_environment_runtime(
         mounts={"retire": _runtime_mount(provider)},
         default_mount="retire",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await aggregate._activate()
@@ -986,7 +975,7 @@ async def test_cancelled_queued_mount_does_not_consume_candidate() -> None:
             finally:
                 self.exited += 1
 
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
     slow = SlowBinding("slow")
     queued = _Binding("queued")
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
@@ -1065,8 +1054,6 @@ async def test_cleanup_timeout_supervises_provider_exit_after_operation_drains(
     aggregate = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     scope = aggregate.bind(run_id="run-1", instance=_instance())
     environment = await scope.__aenter__()
@@ -1102,8 +1089,6 @@ async def test_readiness_timeout_cancels_an_unowned_worker_and_releases_its_moun
     aggregate = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await aggregate._activate()
@@ -1144,8 +1129,6 @@ async def test_readiness_timeout_preserves_a_worker_owned_by_another_waiter() ->
     aggregate = create_environment_runtime(
         mounts=_request(provider),
         default_mount="workspace-1",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await aggregate._activate()
@@ -1186,7 +1169,7 @@ async def test_readiness_timeout_preserves_a_worker_owned_by_another_waiter() ->
 
 
 async def test_reused_candidate_rejection_leaves_independent_candidate_transferable() -> None:
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
     active = _Binding("active")
     fresh = _Binding("fresh")
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
@@ -1224,7 +1207,7 @@ async def test_candidate_discard_deadline_is_hard_and_does_not_block_later_candi
 
     stubborn = StubbornDiscardBinding("stubborn-discard", fail_entry=True)
     later = _Binding("later-discard")
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await aggregate._activate()
         with pytest.raises(BaseExceptionGroup):
@@ -1266,8 +1249,6 @@ async def test_provider_bound_artifacts_must_match_selected_mount() -> None:
             )
         },
         default_mount="workspace",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await aggregate._activate()
@@ -1407,8 +1388,6 @@ def _process_test_binding() -> tuple[Any, _IdempotentProcessOperations]:
             )
         },
         default_mount="processes",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
     return aggregate, operations
 
@@ -1474,8 +1453,6 @@ async def test_process_rebind_selects_environment_instance_identity_instead_of_d
             "target": _runtime_mount(provider_b, permissions=permissions),
         },
         default_mount="target",
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
     )
 
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
@@ -1529,8 +1506,6 @@ async def test_process_rebind_keeps_unattached_and_changed_generation_failures_d
     aggregate = create_environment_runtime(
         mounts={"current": _runtime_mount(provider, permissions=permissions)},
         default_mount="current",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     policy = EnvironmentOutputPolicy(max_inline_bytes=64, max_output_bytes=64, overflow="retain")
 

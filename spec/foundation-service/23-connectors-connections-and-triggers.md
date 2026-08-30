@@ -12,10 +12,10 @@ trusted deployment code. `Connector`, `ConnectorRevision`, `Connection`, and
 An AgentPresetVersion selects exact Connector revisions and freezes its complete
 model-visible tool contract. A Turn fixes every resolved Connection identity,
 while each TurnAttempt obtains current authorization and credential use. A
-Trigger targets one stable `AgentPreset` and submits each unique schedule or Connector-event occurrence through the
-common root [Turn acceptance](13-interactions-turns-and-attempts.md#acceptance-and-lineage)
-contract. Acceptance resolves the Preset's then-active Version and stores it on
-the Turn. That contract selects or creates the Session and root Thread; Trigger
+Trigger targets one stable `AgentPreset` and submits each unique schedule or
+Connector-event occurrence through the common root [Turn acceptance](34-agent-control-input-and-continuation.md#acceptance-and-lineage)
+contract. Acceptance resolves the Preset's then-active Version and Runtime lock,
+stores both on the Turn, and selects or creates the Session and root Thread; Trigger
 does not own another Agent runtime, queue, or retry lifecycle.
 
 Provider packages are an OSS extension surface. Installing a package makes it
@@ -569,10 +569,13 @@ arbitrary expressions are not supported. Connector-event templates can select
 
 Foundation compiles the template at Trigger creation or update and validates the
 possible expanded structure against the target Preset's current active Version
-input schema. It resolves the then-active Version and revalidates the bounded
-expanded value at occurrence acceptance. Provider event
-data is untrusted Agent input and cannot add a tool, Connection, Secret, Principal,
-policy, or run grant.
+[`ProtocolConfig.input_data_schema`](12-agent-management.md#protocol-configuration)
+when present. At occurrence acceptance it resolves the then-active
+AgentPresetVersion and Runtime lock, revalidates the bounded expanded value
+against that frozen optional schema, and constructs an `AgentInput` with empty
+`content` and that value in `structured_content`. Provider event data is
+untrusted Agent input and cannot add a content block, binary source, delivery
+preference, tool, Connection, Secret, Principal, policy, or run grant.
 
 Each Provider-normalized event contains a stable external `event_id`, type,
 optional occurrence time, receipt time, and bounded data. Webhook admission bounds

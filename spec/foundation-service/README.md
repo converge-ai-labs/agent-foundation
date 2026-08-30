@@ -7,13 +7,13 @@ This directory defines `foundation-service`, the optional durable Host that embe
 Foundation owns managed Secrets, ModelConfigs, resource authorization,
 serializable AgentPreset authoring resources, immutable AgentPresetVersions,
 Workspace Skill resources and immutable package revisions, trusted Harness
-plugin artifacts and Runtime locks, durable Threads, Turns, and TurnAttempts,
-scheduling, pending actions, Environment connection configuration in Turn state,
+plugin artifacts and Runtime locks, durable Threads, editable queued
+submissions, Turns, and TurnAttempts, scheduling, the durable Thread inbox, waiting pending summaries and exact
+Turn-state requests, Environment connection configuration in Turn state,
 lifecycle events, raw usage records, generic OpenTelemetry tracing, and the
 public management API. The OSS distribution also supplies an independently
 deployed optional Trace Archive; neither hot telemetry nor cold archive is a
 durable domain authority.
-
 The control surface also owns the Foundation Service Protocol Gateway, which
 maps Native, Hosted AG-UI, and A2A callers into the same application authority.
 
@@ -35,49 +35,61 @@ the selected continuation head, and optimistic concurrency for accepted
 advancement; Turn rows remain the durable work and state DAG. Whether the
 current Turn is active derives from its status.
 
-A non-terminal Turn can span several process-local Harness Runs when Worker takeover creates another TurnAttempt. A waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and, when claimed, its own TurnAttempt, `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
+A non-terminal Turn can span several process-local Harness Runs when Worker takeover creates another TurnAttempt. Under [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md), a waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and, when claimed, its own TurnAttempt, fresh `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
 
 ## Specification Catalog
 
-| Document                                                                                              | Owning contract                                                                                                                        |
-| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| [00 Overview](00-overview.md)                                                                         | Service shape, end-to-end flow, subsystem boundaries, dependency direction, and completion boundaries                                  |
-| [01 Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md)                 | Configuration precedence, deployment profiles, control and worker roles, startup, readiness, supervision, drain, and shutdown          |
-| [02 Distribution Composition and Extensions](02-distribution-composition-and-extensions.md)           | OSS, EE, and Cloud composition, dependency direction, contribution conflicts, configuration, and final schema assembly                 |
-| [03 Storage](03-storage.md)                                                                           | Relational, Redis-compatible, object, and mounted-filesystem capabilities and local/network semantics                                  |
-| [04 Relational Schema](04-relational-schema.md)                                                       | Final distribution metadata, migration authority, compatibility, application, and failure semantics                                    |
-| [05 HTTP Ingress and Request Contract](05-http-ingress-and-request-contract.md)                       | Role surfaces, request context, proxy and browser trust, authentication boundaries, errors, streaming, and drain                       |
-| [06 Durable Operations and Outbox](06-durable-operations-and-outbox.md)                               | Conditional mutation, idempotency evidence, atomic durable commits, outbox publication, retries, and unknown outcomes                  |
-| [10 Identity and Access Management](10-identity-and-access-management.md)                             | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit             |
-| [11 Secret Management](11-secret-management.md)                                                       | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls              |
-| [12 Agent Management](12-agent-management.md)                                                         | AgentPreset identity, immutable Versions, lifecycle, invocation, Plugin management, and reconstruction                                 |
-| [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                         | Interaction-to-runtime mapping, Agent tool dispatch evidence, Harness Run binding, cancellation, and unknown outcomes                  |
-| [14 Durable Turn State](14-turn-persistence.md)                                                       | Turn identity, lifecycle, lineage, deterministic state object, conditional checkpoints, sealing, recovery budget, and retention        |
-| [15 Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                                 | TurnAttempt allocation, relational shape, leases, fences, dispatch evidence, transactional takeover, recovery, and Attempt outcomes    |
-| [16 Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md)                         | Worker scans, claims, expired-lease takeover, post-claim checks, stale-worker rejection, retry, and shutdown                           |
-| [17 Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                         | Lifecycle-event persistence, stable Turn Redis Stream, bounded live replay, Items, and immutable replay snapshots                      |
-| [18 Deferred Actions and Children](18-deferred-actions-and-children.md)                               | Approval, client tools, user input, sealed waiting Turns, asynchronous child Turns, result delivery, and cancellation                  |
-| [19 Environment Configuration and Runtime Mounts](19-environment-management.md)                       | Connection revisions, state-owned desired mounts, fresh attachments, Host-retained runtime, active-run keep-alive, and envd boundary   |
-| [20 Events, Usage, and Delivery](20-events-usage-and-delivery.md)                                     | Harness observation, AG-UI and Item projection, lifecycle events, delivery, raw usage, large content, and telemetry authority boundary |
-| [21 Management API](21-management-api.md)                                                             | Public resource routes, existing-Thread and root Turn submission, commands, read models, replay, and compatibility                     |
-| [22 Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                                   | Agent-facing authorized retrieval of retained Turn lineage and interaction projections                                                 |
-| [23 Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)                 | Trusted Provider discovery, Connector revisions, account Connections, managed tools, and Trigger occurrence acceptance                 |
-| [24 Durable Thread Persistence](24-thread-persistence.md)                                             | Thread relational identity, Session membership, origin, version, current Turn, continuation head, creation, advancement, and reads     |
-| [25 Model Management](25-model-management.md)                                                         | Workspace ModelConfigs, trusted provider registry, credentials, testing, lifecycle, and Turn-time execution snapshots                  |
-| [26 Harness Plugin Artifacts and Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Trusted Wheel publication, durable Runtime mode, on-demand loading, Runner cutover, and historical reconstruction                      |
-| [27 Skill Management](27-skill-management.md)                                                         | Workspace Skills, ZIP/GitHub import, immutable revisions, public APIs, object storage, Agent locks, and Worker materialization         |
-| [28 Protocol Gateway](28-protocol-gateway.md)                                                         | Native, Hosted AG-UI, and A2A composition over one Foundation application and authorization boundary                                   |
-| [29 Native Streaming and Notifications](29-native-streaming-and-notifications.md)                     | Turn SSE, Workspace lifecycle event reads, and best-effort Native notification WebSocket                                               |
-| [30 Hosted AG-UI](30-hosted-ag-ui.md)                                                                 | AG-UI input authority, external bindings, Turn mapping, event visibility, SSE replay, and cancellation                                 |
-| [31 A2A](31-a2a.md)                                                                                   | A2A 1.0 HTTP+JSON discovery, Context/Task projection, streaming, Artifacts, push notifications, and security                           |
-| [32 Service SDKs and Clients](32-service-sdks-and-clients.md)                                         | Python, Go, Rust, and TypeScript SDK parity plus Foundation Web and remote CLI boundaries                                              |
-| [33 Observability and Trace Archive](33-observability-and-trace-archive.md)                           | TurnAttempt traces, content and scope policy, generic OTLP and Langfuse mapping, Parquet archive, retention, and operator reads        |
+| Document                                                                                              | Owning contract                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [00 Overview](00-overview.md)                                                                         | Service shape, end-to-end flow, subsystem boundaries, dependency direction, and completion boundaries                                       |
+| [01 Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md)                 | Configuration precedence, deployment profiles, control and worker roles, startup, readiness, supervision, drain, and shutdown               |
+| [02 Distribution Composition and Extensions](02-distribution-composition-and-extensions.md)           | OSS, EE, and Cloud composition, dependency direction, contribution conflicts, configuration, and final schema assembly                      |
+| [03 Storage](03-storage.md)                                                                           | Relational, Redis-compatible, object, and mounted-filesystem capabilities and local/network semantics                                       |
+| [04 Relational Schema](04-relational-schema.md)                                                       | Final distribution metadata, migration authority, compatibility, application, and failure semantics                                         |
+| [05 HTTP Ingress and Request Contract](05-http-ingress-and-request-contract.md)                       | Role surfaces, request context, proxy and browser trust, authentication boundaries, errors, streaming, and drain                            |
+| [06 Durable Operations and Outbox](06-durable-operations-and-outbox.md)                               | Conditional mutation, idempotency evidence, atomic durable commits, outbox publication, retries, and unknown outcomes                       |
+| [10 Identity and Access Management](10-identity-and-access-management.md)                             | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit                  |
+| [11 Secret Management](11-secret-management.md)                                                       | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls                   |
+| [12 Agent Management](12-agent-management.md)                                                         | AgentPreset identity, immutable Versions, lifecycle, invocation, Plugin management, and reconstruction                                      |
+| [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                         | Interaction-to-runtime mapping, Agent tool dispatch evidence, Harness Run binding, active control, and unknown outcomes                     |
+| [14 Durable Turn State](14-turn-persistence.md)                                                       | Turn identity, lifecycle, lineage, deterministic state object, conditional checkpoints, sealing, recovery budget, and retention             |
+| [15 Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                                 | TurnAttempt allocation, relational shape, leases, fences, dispatch evidence, transactional takeover, recovery, and Attempt outcomes         |
+| [16 Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md)                         | Worker scans, claims, expired-lease takeover, post-claim checks, stale-worker rejection, retry, and shutdown                                |
+| [17 Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                         | Lifecycle-event persistence, stable Turn presentation Stream, control-Stream separation, bounded live replay, Items, and replay snapshots   |
+| [18 Async Subagents](18-async-subagents.md)                                                           | Independent child Threads and Turns, durable relationships, result delivery, and cancellation policy                                        |
+| [19 Environment Configuration and Runtime Mounts](19-environment-management.md)                       | Connection revisions, state-owned desired mounts, fresh attachments, Host-retained runtime, active-run keep-alive, and envd boundary        |
+| [20 Events, Usage, and Delivery](20-events-usage-and-delivery.md)                                     | Harness observation, AG-UI and Item projection, lifecycle events, delivery, raw usage, large content, and telemetry                         |
+| [20a Hook Notifications](20a-hook-notifications.md)                                                   | Hook registry, durable subscriptions, Webhook delivery, channel eligibility, and blocking semantics                                         |
+| [21 Management API](21-management-api.md)                                                             | Public resource catalog, common command boundaries, read models, replay, and compatibility                                                  |
+| [22 Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                                   | Agent-facing authorized retrieval of retained Turn lineage and interaction projections                                                      |
+| [23 Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)                 | Trusted Provider discovery, Connector revisions, account Connections, managed tools, and Trigger occurrence acceptance                      |
+| [24 Durable Thread Persistence](24-thread-persistence.md)                                             | Thread relational identity, Session membership, origin, version, current Turn, continuation head, creation, advancement, and reads          |
+| [25 Model Management](25-model-management.md)                                                         | Workspace ModelConfigs, trusted provider registry, credentials, testing, lifecycle, and Turn-time execution snapshots                       |
+| [26 Harness Plugin Artifacts and Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Trusted Wheel publication, durable Runtime mode, on-demand loading, Runner cutover, and historical reconstruction                           |
+| [27 Skill Management](27-skill-management.md)                                                         | Workspace Skills, ZIP/GitHub import, immutable revisions, public APIs, object storage, AgentPresetVersion locks, and Worker materialization |
+| [28 Protocol Gateway](28-protocol-gateway.md)                                                         | Native, Hosted AG-UI, and A2A composition over one Foundation application and authorization boundary                                        |
+| [29 Native Streaming and Notifications](29-native-streaming-and-notifications.md)                     | Turn SSE, Workspace lifecycle event reads, and best-effort Native notification WebSocket                                                    |
+| [30 Hosted AG-UI](30-hosted-ag-ui.md)                                                                 | AG-UI input authority, external bindings, Turn mapping, event visibility, SSE replay, and cancellation                                      |
+| [31 A2A](31-a2a.md)                                                                                   | A2A 1.0 HTTP+JSON discovery, Context/Task projection, streaming, Artifacts, push notifications, and security                                |
+| [32 Service SDKs and Clients](32-service-sdks-and-clients.md)                                         | Python, Go, Rust, and TypeScript SDK parity plus Foundation Web and remote CLI boundaries                                                   |
+| [33 Agent Input](33-agent-input.md)                                                                   | Versioned Agent input, binary acquisition and delivery, accepted canonicalization, adapter configuration, and Harness mapping               |
+| [34 Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                | Start, selected-head, null-head root-like, or explicit historical same-Thread continuation, atomic waiting feedback, fork, and retry        |
+| [35 Agent Control: Active Execution](35-agent-control-active-execution.md)                            | Thread inbox, durable steer and interrupt commands, state-coupled consumption, Redis control wakeups, and outcome races                     |
+| [36 Agent Control: Queued Submissions](36-agent-control-queued-submissions.md)                        | Queue-if-busy Thread submission, editable ordered input, state-first completed handoff, terminal recovery drain, and atomic consumption     |
+| [37 Observability and Trace Archive](37-observability-and-trace-archive.md)                           | TurnAttempt traces, content and scope policy, generic OTLP and Langfuse mapping, Parquet archive, retention, and operator reads             |
 
 Read `00`, `01`, and `02` before changing process startup, roles, or distribution
 contents. Read `03`, `04`, and `06` before introducing a durable capability.
 Read `05`, `10`, and `21` before changing public ingress. Read `24` before `13`
-through `17` when changing Thread or Turn acceptance, persistence, recovery, or
-reads. Read `18` before changing waiting feedback or asynchronous children.
+through `17` when changing Thread or Turn persistence, recovery, or reads. Read
+`12`, `14`, `19`, and `25` before `33` when changing Agent input. Read
+`14` and `15` before `34`, `35`, or `36` when changing Agent invocation,
+continuation, queued submission, atomic waiting feedback, fork, retry, steer,
+interrupt, or durable control state.
+Read `18` before changing async subagents.
+Read `06`, `17`, `20`, and `20a` before changing Hook names,
+subscriptions, replay, Webhook delivery, or live notification
+semantics.
 Read `23` before changing Connector Providers, Connections, managed Connector
 tools, or Trigger ingress. Read `25` before changing ModelConfigs, Model
 Providers, model credentials, or Turn-time model selection. Read `26` with `12`
@@ -97,7 +109,7 @@ Contract](../managed-skill-packages.md), `12`, `16`, and the Harness Skill contr
 before changing managed Skill upload, revision selection, Worker materialization,
 or model-facing exposure.
 
-Read `33` with Harness Observation, `01`, `05`, `13`, `15`, `16`, and `20`
+Read `37` with Harness Observation, `01`, `05`, `13`, `15`, `16`, and `20`
 before changing tracing, telemetry correlation, OTLP export, Langfuse
 integration, or Trace Archive storage and retention.
 
@@ -128,6 +140,9 @@ These roots are boundaries, not a requirement that every capability become a sub
   fenced `TurnAttempt` leases, performs recovery checks, and invokes Harness. It
   exposes no additional product API and never runs migrations.
 - PostgreSQL is authoritative for accepted lifecycle state and fencing. Real Redis is required for distributed data flow and coordination; each owning domain defines its Redis retention and replay semantics, and Redis delivery alone never proves a relational transition.
+- Queued input remains a separate editable relational resource until one short
+  consumption transaction accepts its Turn. Queue rows own no Worker lease,
+  retry, or outcome state.
 - The artifact's distribution descriptor explicitly composes the complete configuration, routers, role components, authorization contributions, metadata, and migration graph; installed packages never change the service implicitly.
 - Foundation records contain only Foundation-owned serializable data. They contain no Python class, plugin instance, native Model, Toolset, Capability, callable, client, credential, Environment attachment, runtime mount, opaque `mount_id`, or live `EnvironmentRuntime`.
 - The worker verifies exact locks and uses trusted installed adapters to reconstruct a process-local Harness `AgentDefinition` and fresh `RunBindings`.

@@ -35,9 +35,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities.context import _requires_exact_history
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
@@ -79,8 +77,6 @@ def _local_binding(root: Path, *, default_working_directory: str = "/"):
             )
         },
         default_mount="local",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 

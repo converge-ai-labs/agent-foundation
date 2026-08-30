@@ -24,6 +24,75 @@ flowchart LR
 
 Capability presence does not itself authorize external work. Tools that cross a managed boundary still evaluate fresh run policy and provider enforcement.
 
+## Select Capabilities with AgentSpec
+
+`AgentSpec.capabilities` is the declarative feature-selection surface. It can select native Pydantic AI Capability types, the closed set of Harness types supported for declarative reconstruction, and exact custom types authorized by the current Host. It does not select Harness middleware plugins, Environment run extensions, Providers, credentials, policies, or live clients.
+
+For example, `ShellReviewCapability` is a Harness-owned declarative type and can be selected directly as shown in [Shell Command Review](#shell-command-review). Most first-party Harness features are composed as concrete definition or run instances because they accept typed collaborators or code-first configuration that does not belong in portable data.
+
+### Authorize a custom declarative type
+
+A trusted Host can make one directly declared dataclass Capability type available to its builder:
+
+```python
+from dataclasses import dataclass
+
+from a13n_harness import (
+    AgentContext,
+    AgentSpec,
+    CapabilityTypeCatalog,
+    HarnessBuilder,
+)
+from pydantic_ai.agent.spec import CapabilitySpec
+from pydantic_ai.capabilities import AbstractCapability
+
+
+@dataclass
+class PolicyInstructionsCapability(AbstractCapability[AgentContext]):
+    instructions: str
+    id: str | None = "policy-instructions"
+
+    @classmethod
+    def get_serialization_name(cls) -> str:
+        return "policy_instructions"
+
+    def get_instructions(self) -> str:
+        return self.instructions
+
+
+catalog = CapabilityTypeCatalog.from_types(
+    (PolicyInstructionsCapability,),
+)
+agent_spec = AgentSpec(
+    capabilities=[
+        CapabilitySpec(
+            name="policy_instructions",
+            arguments={
+                "instructions": "Explain material assumptions before the answer.",
+            },
+        )
+    ]
+)
+executable = HarnessBuilder(
+    capability_type_catalog=catalog,
+).build(
+    agent_spec,
+    output_type=str,
+    model=model,
+)
+```
+
+The two steps have different authority:
+
+1. `CapabilityTypeCatalog` makes an exact serialization name and Python type available to this builder. It performs no package discovery and enables no feature by itself.
+2. `AgentSpec.capabilities` selects and configures an instance for this Agent. A name absent from the native, first-party, and Host catalogs fails during construction.
+
+Use `HarnessBuilder.build(..., capabilities=(PolicyInstructionsCapability(...),))` instead when the definition already exists as trusted Python code. Use `RunBindings.capabilities` for fresh policy or provider collaborators that must be reconstructed for each run. A plugin may also contribute a Capability from its trusted `get_capabilities()` implementation after that plugin is explicitly enabled.
+
+Do not confuse `AgentSpec.capabilities`, which selects Agent-loop behavior, with `AgentSpec.model_characteristics.capabilities`, which records explicit image, video, and audio understanding characteristics of the active Model.
+
+The [integration package example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins#custom-capability) runs both the Host-authorized `AgentSpec` path and direct code composition against an offline Model.
+
 ## Common Definition Capabilities
 
 | Capability                     | Adds                                                                                        | Needs fresh run collaborator                                   |

@@ -86,7 +86,7 @@ Object upload, Redis publication, webhook delivery, provider calls, and other ex
 
 An outbox intent names one committed source record and one publication class. It contains bounded routing metadata and references large or differently retained content rather than copying it. The source identity is stable across every publication attempt.
 
-The shared durable record is conceptually:
+The shared PostgreSQL table is `outbox_records`. Its conceptual record is:
 
 ```python
 class OutboxRecord:
@@ -100,11 +100,25 @@ class OutboxRecord:
     claim_generation: int
     lease_expires_at: datetime | None
     attempt_count: int
+    created_at: datetime
+    updated_at: datetime
     published_at: datetime | None
+    dead_lettered_at: datetime | None
     last_error_code: str | None
 ```
 
 Owning domains define the stable `source_kind` and `destination_kind` values. `destination_ref` identifies bounded configuration and contains no endpoint credential or Secret value. Outbox payload is derived from the immutable source record rather than copied as another authority.
+
+`id` is the primary key and the stable external delivery identity when the
+owning delivery contract exposes one. The tuple
+`(source_kind, source_id, destination_kind, destination_ref)` is unique so a
+source-transaction retry cannot create the same destination delivery twice.
+Claim generations and attempt counts are non-negative. Lease fields exist only
+while `status = publishing`; `published_at` exists only for `published`; and
+`dead_lettered_at` exists only for `dead_lettered`. An index on
+`(status, available_at, id)` supports bounded due-row claims;
+destination-scoped indexes support authorized delivery inspection and redrive
+without changing source identity.
 
 ```mermaid
 stateDiagram-v2
@@ -128,6 +142,13 @@ Publication is at least once:
 - a permanent publication failure remains durable and observable rather than being dropped or marked delivered.
 
 A claim increments `claim_generation`; completion succeeds only for the current generation. A crash or lease expiry can therefore duplicate delivery but cannot let a stale publisher record success. Retry preserves the same source identity and uses durable `available_at`. `published` means the configured destination acknowledged, not that an end user processed the event. Dead-lettering emits an operational and security-safe diagnostic, and an authorized redrive reuses the same record and source identity.
+
+Published records remain for a bounded delivery-audit and duplicate-suppression
+horizon. Dead-lettered records remain redriveable only for a bounded configured
+horizon. An owning source or destination record cannot be removed while a
+retained Outbox record can still be delivered or redriven; after the owning
+horizon expires, cleanup can remove the delivery record and release those
+retention dependencies together.
 
 Redis Streams, Pub/Sub, SSE, WebSocket, webhook, and analytical sinks are delivery mechanisms, not relational transactions. Redis is a required distributed dependency, but successful Redis publication alone never proves that the source domain mutation committed. The owning delivery contract defines whether a Redis value is retained, replayable, or intentionally live-only.
 

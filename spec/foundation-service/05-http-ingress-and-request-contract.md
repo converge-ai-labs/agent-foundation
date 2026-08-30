@@ -45,7 +45,7 @@ flowchart LR
 
 The diagram defines semantic order, not one middleware class per box. An implementation can combine stateless checks while preserving the same boundary and failure behavior.
 
-The service owns the final request ID returned in the shared error envelope and emitted in safe diagnostics. It generates a bounded unpredictable request ID for every request. An inbound request ID can be recorded only as separately labeled, validated upstream correlation and never replaces the service identity or grants trust. Trace propagation follows the configured [OpenTelemetry boundary](33-observability-and-trace-archive.md#links-and-propagation) and remains distinct from product authorization. A later durable TurnAttempt starts a parentless trace and can link this request context only while a valid context remains available; Foundation does not persist the context with the Turn.
+The service owns the final request ID returned in the shared error envelope and emitted in safe diagnostics. It generates a bounded unpredictable request ID for every request. An inbound request ID can be recorded only as separately labeled, validated upstream correlation and never replaces the service identity or grants trust. Trace propagation follows the configured [OpenTelemetry boundary](37-observability-and-trace-archive.md#links-and-propagation) and remains distinct from product authorization. A later durable TurnAttempt starts a parentless trace and can link this request context only while a valid context remains available; Foundation does not persist the context with the Turn.
 
 Request context contains only immutable safe values such as request ID, trace correlation, selected role, route identity, and authenticated Principal reference after authentication. It contains no live database session, credential secret, request body, mutable authorization cache, or provider client.
 
@@ -85,7 +85,7 @@ Operational probe failures use a smaller bounded operational representation and 
 
 SSE and WebSocket routes authenticate, authorize, and complete initial database reads in closed short sessions before constructing the streaming response. The stream receives immutable detached values and process-wide factories, never a yielded database session through its dependency graph.
 
-Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never cancels a Turn unless the client separately submits an authorized cancellation command.
+Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never interrupts a Turn unless the client separately submits the authorized interrupt command.
 
 When the process begins draining, it rejects new streams, signals or closes existing streams according to their owning reconnect contract, and releases subscriptions within the drain deadline. A reconnect uses the owning durable cursor or reports an explicit replay gap; it does not treat a transport connection as execution authority.
 

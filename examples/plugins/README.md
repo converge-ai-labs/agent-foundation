@@ -4,22 +4,23 @@ This standalone project demonstrates the supported configuration and direct-code
 
 ## Composition Matrix
 
-| Boundary                  | Installed entry-point mode                                                                                                                     | Explicit code mode                                                                                         |
+| Boundary                  | Declarative or installed-package mode                                                                                                          | Explicit code mode                                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Custom Capability         | Authorize an exact type with `CapabilityTypeCatalog`, then select its serialization name in `AgentSpec.capabilities`                           | Construct the Capability and place it in `AgentDefinition.capabilities`                                    |
 | Environment provider      | Select an `EnvironmentProviderFactory` from `a13n_environment_provider.providers`, then construct a Provider from an exact specification       | Supply an `EnvironmentProviderFactory` object directly, then construct the same Provider                   |
 | Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                      | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
 | Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
 
 Entry-point metadata provides only a stable key and import target. Harness middleware configuration uses the Harness-owned versioned envelope; YAML is preferred for files, JSON is supported for files and inline environment values, and each plugin package owns only the typed `configuration` payload.
 
-Both entry-point paths are explicit and lazy:
+All entry-point paths are explicit and lazy:
 
 1. metadata discovery does not import target modules;
 2. Environment callers select exact provider or run-extension keys, while the Harness builder selects only enabled document keys;
 3. catalog construction imports only those selected targets;
 4. factory output enters the same ordinary concrete-object path used by code mode.
 
-Package presence is availability, not authorization. Neither catalog accepts an arbitrary import path or mutates a process-global registry.
+Package presence is availability, not authorization. No catalog accepts an arbitrary import path or mutates a process-global registry.
 
 ## Quick Start
 
@@ -33,6 +34,8 @@ From this directory:
 
 ```bash
 uv sync --locked
+uv run plugin-example-capability-agent-spec
+uv run plugin-example-capability-code
 uv run plugin-example-environment-entrypoint
 uv run plugin-example-environment-code
 uv run plugin-example-environment-extension-entrypoint
@@ -50,7 +53,7 @@ a13n-environment-provider = { path = "../../packages/agent-environment-provider"
 a13n-harness = { path = "../../packages/agent-harness", editable = true }
 ```
 
-A standalone plugin distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
+A standalone integration distribution should remove those development sources and declare the released Provider and Harness ranges it supports.
 
 ## Environment Provider Factory
 
@@ -134,7 +137,7 @@ The factory receives an `EnvironmentRunExtensionFactoryContext` with separate `e
 
 ### Installed entry-point mode
 
-[`run_environment_extension_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment_extension.py) discovers metadata, selects only `example.workspace-marker`, creates one configured instance, registers it on `create_environment_runtime()`, and exercises the complete scope:
+[`run_environment_extension_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment_extension.py) discovers metadata, selects only `example.workspace-marker`, creates one configured instance, registers it on `create_environment_runtime()`, and gives that runtime to a real offline `ExecutableAgent` through `RunBindings`:
 
 ```bash
 uv run plugin-example-environment-extension-entrypoint
@@ -148,13 +151,13 @@ uv run plugin-example-environment-extension-entrypoint
 uv run plugin-example-environment-extension-code
 ```
 
-Both paths verify that the marker is available after aggregate activation and absent after aggregate close:
+Both paths verify through an input factory that the marker is available after Harness-managed aggregate activation and absent after the public Agent run closes:
 
 ```text
 selection mode: entrypoint
 selected extension: example.workspace-marker
 extension id: marker-entrypoint
-marker content: entrypoint:run-extension-example
+marker content: entrypoint:run-...
 marker removed: True
 ```
 
@@ -172,6 +175,89 @@ A run extension spans the complete `EnvironmentRuntime`, not one provider resour
 - Make exit finite and clean every owned resource even when the run failed.
 - Do not expect runtime mount mutations to rebind the extension.
 - Use a Harness plugin for input/result middleware and a Capability for Agent-loop behavior instead.
+
+## Custom Capability
+
+Pydantic AI Capability is the extension point for instructions, Toolsets, request hooks, Agent-loop state, and native Agent/run lifecycle. Capability packages do not use a Harness entry-point group: a trusted Host imports and authorizes exact types, and `AgentSpec` selects only from that closed catalog.
+
+[`capability.py`](src/a13n_plugin_examples/capability.py) defines `ExampleInstructionsCapability`, a directly declared dataclass with one stable serialization name and a package-owned instruction field.
+
+### AgentSpec mode
+
+[`run_capability_demo(selection_mode="agent-spec")`](src/a13n_plugin_examples/demo_capability.py) constructs an immutable `CapabilityTypeCatalog` from the exact custom type, then selects and configures it in `AgentSpec.capabilities`:
+
+```python
+catalog = CapabilityTypeCatalog.from_types(
+    (ExampleInstructionsCapability,),
+)
+agent_spec = AgentSpec(
+    capabilities=[
+        CapabilitySpec(
+            name="example_instructions",
+            arguments={
+                "instructions": "Selection mode is agent-spec.",
+            },
+        )
+    ]
+)
+executable = HarnessBuilder(
+    capability_type_catalog=catalog,
+).build(
+    agent_spec,
+    output_type=str,
+    model=model,
+)
+```
+
+Run the complete offline path with:
+
+```bash
+uv run plugin-example-capability-agent-spec
+```
+
+The catalog makes one type available to that builder; it neither scans packages nor enables an instance. The `AgentSpec` entry is the separate selection step. An unregistered serialization name fails during Agent construction.
+
+### Explicit code mode
+
+Trusted embedded code can skip declarative reconstruction and supply the same concrete object directly:
+
+```python
+executable = HarnessBuilder().build(
+    AgentSpec(),
+    output_type=str,
+    model=model,
+    capabilities=(
+        ExampleInstructionsCapability(
+            instructions="Selection mode is code.",
+        ),
+    ),
+)
+```
+
+Run it with:
+
+```bash
+uv run plugin-example-capability-code
+```
+
+Both modes prove that the selected instruction reaches the offline Model and produce:
+
+```text
+selection mode: agent-spec
+selected capability: example_instructions
+capability instructions: Selection mode is agent-spec.
+model received instructions: Selection mode is agent-spec.
+output: offline capability response
+```
+
+### Real custom-Capability checklist
+
+- Use one directly declared dataclass with a stable non-colliding serialization name.
+- Keep declarative fields deterministic and serializable; put live clients, credentials, and current policy in fresh run Capabilities.
+- Let trusted Host code construct the exact `CapabilityTypeCatalog`; do not discover classes from package metadata or serialized import targets.
+- Treat catalog membership as availability and `AgentSpec.capabilities` as selection.
+- Use direct definition composition when the caller already owns a trusted concrete instance.
+- Use a Harness plugin only when behavior must wrap the complete semantic-input-to-result boundary.
 
 ## Harness Plugin
 
