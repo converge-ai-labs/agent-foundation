@@ -54,7 +54,7 @@ class ScopedFileAccess:
                     namespace="environment",
                     kind="file",
                     identifier=(
-                        f"{selected.binding_id}:{selected.binding_revision}:"
+                        f"{selected.binding_id}:{selected.binding_version}:"
                         f"{selection.observed_generation}:{selected.path}"
                     ),
                 ),
@@ -79,7 +79,7 @@ class ScopedFileAccess:
         destination_selection = scopes.select_files(destination)
         if (
             source_selection.resolved_path.binding_id != destination_selection.resolved_path.binding_id
-            or source_selection.resolved_path.binding_revision != destination_selection.resolved_path.binding_revision
+            or source_selection.resolved_path.binding_version != destination_selection.resolved_path.binding_version
             or source_selection.observed_generation != destination_selection.observed_generation
         ):
             raise EnvironmentError(
@@ -118,7 +118,7 @@ class ScopedFileAccess:
             )
         same_binding = (
             source_selection.resolved_path.binding_id == destination_selection.resolved_path.binding_id
-            and source_selection.resolved_path.binding_revision == destination_selection.resolved_path.binding_revision
+            and source_selection.resolved_path.binding_version == destination_selection.resolved_path.binding_version
             and source_selection.observed_generation == destination_selection.observed_generation
         )
         if not same_binding:

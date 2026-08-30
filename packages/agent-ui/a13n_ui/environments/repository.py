@@ -113,10 +113,7 @@ class EnvironmentRepository:
         self._store = store
 
     async def availability(self, session_id: str) -> EnvironmentAvailability:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             assignment_rows = tuple(
                 (
                     await database_session.execute(
@@ -157,10 +154,7 @@ class EnvironmentRepository:
         )
 
     async def resource(self, host_resource_id: str) -> HostEnvironmentResource:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             row = await database_session.get(HostEnvironmentResourceRecord, host_resource_id)
         if row is None:
             raise EnvironmentLifecycleError(
@@ -173,10 +167,7 @@ class EnvironmentRepository:
         self,
         host_resource_id: str,
     ) -> tuple[str, str, str, dict[str, JsonValue]]:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             row = await database_session.get(HostEnvironmentResourceRecord, host_resource_id)
         if row is None:
             raise EnvironmentLifecycleError(
@@ -201,10 +192,7 @@ class EnvironmentRepository:
     ) -> tuple[HostEnvironmentResource, EnvironmentOperationContext]:
         now = datetime.now(UTC)
         operation_id = f"operation-{uuid4().hex}"
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             row = await database_session.get(HostEnvironmentResourceRecord, host_resource_id)
             if row is None:
                 raise EnvironmentLifecycleError(
@@ -249,10 +237,7 @@ class EnvironmentRepository:
     ) -> HostEnvironmentResource:
         if state not in {HostResourceLifecycleState.available, HostResourceLifecycleState.paused}:
             raise ValueError("state completion must select available or paused")
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             row = await self._matching_operation(database_session, host_resource_id, fence, operation_id)
             row.lifecycle_state = state.value
             row.selected_provider_state_digest = provider_state_digest
@@ -272,10 +257,7 @@ class EnvironmentRepository:
             HostResourceLifecycleState.missing,
         ],
     ) -> HostEnvironmentResource:
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             row = await self._matching_operation(database_session, host_resource_id, fence, operation_id)
             row.lifecycle_state = state.value
             row.selected_provider_state_digest = None
@@ -292,10 +274,7 @@ class EnvironmentRepository:
         unknown: bool,
         failure: JsonValue,
     ) -> HostEnvironmentResource:
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             row = await self._matching_operation(database_session, host_resource_id, fence, operation_id)
             row.lifecycle_state = (
                 HostResourceLifecycleState.unknown.value if unknown else HostResourceLifecycleState.failed.value
@@ -305,10 +284,7 @@ class EnvironmentRepository:
         return await self.resource(host_resource_id)
 
     async def assignment_count(self, host_resource_id: str) -> int:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             return int(
                 (
                     await database_session.execute(
@@ -322,10 +298,7 @@ class EnvironmentRepository:
     async def all_resources(self) -> tuple[HostEnvironmentResource, ...]:
         """Return all retained Host resource authority for startup validation."""
 
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             rows = tuple(
                 (
                     await database_session.execute(
@@ -338,10 +311,7 @@ class EnvironmentRepository:
     async def fail_closed(self, host_resource_id: str, *, failure: JsonValue) -> None:
         """Mark one resource unknown when selected startup authority is invalid."""
 
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             row = await database_session.get(HostEnvironmentResourceRecord, host_resource_id)
             if row is None:
                 return
@@ -355,10 +325,7 @@ class EnvironmentRepository:
     ) -> tuple[HostEnvironmentResource, ...]:
         if not states:
             return ()
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             rows = tuple(
                 (
                     await database_session.execute(
@@ -371,10 +338,7 @@ class EnvironmentRepository:
         return tuple(_resource_view(row) for row in rows)
 
     async def detach_session_assignments(self, session_id: str) -> tuple[str, ...]:
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             resource_ids = tuple(
                 dict.fromkeys(
                     (

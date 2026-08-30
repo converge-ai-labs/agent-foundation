@@ -137,7 +137,7 @@ class SessionService:
         self,
         source_session_id: str,
         *,
-        expected_source_revision: int,
+        expected_source_version: int,
         agent_snapshot: SnapshotReference | None = None,
         environment_snapshot: SnapshotReference | None = None,
         creation_request_id: str | None = None,
@@ -145,11 +145,11 @@ class SessionService:
         skill_selections: Sequence[SessionAgentSkillSelection] | None = None,
     ) -> LocalSession:
         source = await self._repository.get(source_session_id)
-        if source.control_revision != expected_source_revision:
+        if source.control_version != expected_source_version:
             raise SessionError(
-                "The source Session control revision is stale.",
-                code="session_revision_conflict",
-                details={"current_revision": source.control_revision},
+                "The source Session control version is stale.",
+                code="session_version_conflict",
+                details={"current_version": source.control_version},
             )
         source_checkpoint = source.root.selected_checkpoint
         if source_checkpoint is None:
@@ -183,7 +183,7 @@ class SessionService:
         parent = SessionForkRef(
             source_session_id=source.session_id,
             source_thread_id=source.root.thread_id,
-            source_thread_commit_revision=source.root.commit_revision,
+            source_thread_commit_version=source.root.commit_version,
             source_checkpoint_id=source_checkpoint.checkpoint_id,
             source_agent_digest=source.agent_snapshot.logical_digest,
             source_environment_digest=source.environment_snapshot.logical_digest,
@@ -217,16 +217,16 @@ class SessionService:
         self,
         session_id: str,
         *,
-        expected_revision: int,
+        expected_version: int,
         update: SessionUpdate,
     ) -> LocalSession:
-        return await self._repository.update(session_id, expected_revision, update)
+        return await self._repository.update(session_id, expected_version, update)
 
     async def set_lifecycle(
         self,
         session_id: str,
         *,
-        expected_revision: int,
+        expected_version: int,
         state: SessionLifecycleState,
         failure: object | None = None,
     ) -> LocalSession:
@@ -234,15 +234,15 @@ class SessionService:
 
         return await self._repository.set_lifecycle(
             session_id,
-            expected_revision=expected_revision,
+            expected_version=expected_version,
             state=state,
             failure=canonical_json_value(failure) if failure is not None else None,
         )
 
-    async def delete(self, session_id: str, *, expected_revision: int) -> None:
+    async def delete(self, session_id: str, *, expected_version: int) -> None:
         """Delete metadata after the Environment service has released assignments."""
 
-        await self._repository.hard_delete(session_id, expected_revision)
+        await self._repository.hard_delete(session_id, expected_version)
 
     async def load_state(self, session_id: str, checkpoint: CheckpointRef) -> HarnessState:
         envelope = await self._store.read_object(

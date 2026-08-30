@@ -4,12 +4,15 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any, cast
 
 import a13n_harness.models.inference as inference_module
+import httpx2
 import pytest
-from a13n_harness import RequestHeadersModel, infer_model
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from a13n_harness import ModelHttpRetryConfig, RequestHeadersModel, create_model_http_client, infer_model
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers import Provider
+from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.settings import ModelSettings
 
 pytestmark = pytest.mark.anyio
@@ -21,6 +24,174 @@ def _text_model() -> FunctionModel:
         return ModelResponse(parts=[TextPart("done")])
 
     return FunctionModel(function=respond, model_name="test-model")
+
+
+async def test_model_http_client_owns_only_transport_timeouts() -> None:
+    client = create_model_http_client(timeout=321, connect=7)
+    try:
+        assert client.timeout.connect == 7
+        assert client.timeout.read == 321
+        assert client.timeout.write == 321
+        assert client.timeout.pool == 321
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("timeout", 0),
+        ("timeout", -1),
+        ("timeout", True),
+        ("connect", 0),
+        ("connect", -1),
+        ("connect", False),
+    ],
+)
+def test_model_http_client_rejects_invalid_timeouts(field: str, value: int) -> None:
+    with pytest.raises(ValueError, match=f"{field} must be a positive integer"):
+        if field == "timeout":
+            create_model_http_client(timeout=value)
+        else:
+            create_model_http_client(connect=value)
+
+
+async def test_model_http_client_retries_transient_status_and_transport_errors() -> None:
+    requests: list[httpx2.Request] = []
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            raise httpx2.ConnectError("temporary connection failure", request=request)
+        if len(requests) == 2:
+            return httpx2.Response(503, headers={"Retry-After": "0"})
+        return httpx2.Response(200, json={"ok": True})
+
+    client = create_model_http_client(
+        transport=httpx2.MockTransport(handle),
+        retry=ModelHttpRetryConfig(
+            attempts=3,
+            backoff_multiplier=0,
+            max_wait_seconds=0,
+            retry_after_max_wait_seconds=0,
+        ),
+    )
+    try:
+        response = await client.get("https://example.test/model")
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    assert len(requests) == 3
+
+
+async def test_model_http_client_one_attempt_still_validates_retryable_status() -> None:
+    attempts = 0
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        del request
+        attempts += 1
+        return httpx2.Response(503)
+
+    client = create_model_http_client(
+        transport=httpx2.MockTransport(handle),
+        retry=ModelHttpRetryConfig(attempts=1),
+    )
+    try:
+        with pytest.raises(httpx2.HTTPStatusError):
+            await client.get("https://example.test/model")
+    finally:
+        await client.aclose()
+
+    assert attempts == 1
+
+
+async def test_model_http_client_can_disable_automatic_retries() -> None:
+    attempts = 0
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        del request
+        attempts += 1
+        return httpx2.Response(503)
+
+    client = create_model_http_client(
+        transport=httpx2.MockTransport(handle),
+        retry=None,
+    )
+    try:
+        response = await client.get("https://example.test/model")
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 503
+    assert attempts == 1
+
+
+def test_model_http_retry_config_rejects_invalid_values() -> None:
+    with pytest.raises(ValueError, match="attempts must be a positive integer"):
+        ModelHttpRetryConfig(attempts=0)
+    with pytest.raises(ValueError, match="max_wait_seconds must be a finite non-negative number"):
+        ModelHttpRetryConfig(max_wait_seconds=-1)
+    with pytest.raises(ValueError, match="status_codes must contain valid HTTP status integers"):
+        ModelHttpRetryConfig(status_codes=frozenset({99}))
+
+
+async def test_google_request_settings_override_transport_and_carry_headers() -> None:
+    requests: list[httpx2.Request] = []
+
+    async def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {"parts": [{"text": "done"}], "role": "model"},
+                        "finishReason": "STOP",
+                    }
+                ],
+                "usageMetadata": {
+                    "promptTokenCount": 1,
+                    "candidatesTokenCount": 1,
+                    "totalTokenCount": 2,
+                },
+                "modelVersion": "gemini-test",
+                "responseId": "response-1",
+            },
+        )
+
+    client = create_model_http_client(
+        timeout=900,
+        connect=5,
+        transport=httpx2.MockTransport(handle),
+    )
+    try:
+        provider = GoogleProvider(
+            api_key="test-key",
+            http_client=client,
+            base_url="https://example.test",
+        )
+        model = GoogleModel("gemini-2.5-flash", provider=provider)
+
+        response = await model.request(
+            [ModelRequest(parts=[UserPromptPart(content="hello")])],
+            ModelSettings(timeout=321, extra_headers={"x-session-id": "session-1"}),
+            ModelRequestParameters(),
+        )
+    finally:
+        await client.aclose()
+
+    assert response.text == "done"
+    assert len(requests) == 1
+    assert requests[0].headers["x-session-id"] == "session-1"
+    assert requests[0].extensions["timeout"] == {
+        "connect": 321.0,
+        "read": 321.0,
+        "write": 321.0,
+        "pool": 321.0,
+    }
 
 
 def test_infer_model_normalizes_legacy_provider_names(

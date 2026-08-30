@@ -9,10 +9,12 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
 from a13n_harness import (
+    AgentStreamEventProtocol,
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     HarnessStreamEvent,
+    ToolExtraEventPayload,
 )
 from ag_ui.core import Event
 from ag_ui.core.events import (
@@ -34,9 +36,8 @@ from ag_ui.core.events import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
-    AgentStreamEvent,
     FunctionToolResultEvent,
     OutputToolResultEvent,
     PartDeltaEvent,
@@ -52,7 +53,6 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.tools import DeferredToolRequests
 
-_AGENT_EVENT_ADAPTER = TypeAdapter(AgentStreamEvent)
 _AGUI_EVENT_ADAPTER = TypeAdapter(Event)
 _ANY_ADAPTER = TypeAdapter(Any)
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
@@ -460,15 +460,23 @@ def _observe_request_lifecycle(event: HarnessExtensionEvent, state: _ObserverSta
 
 
 def _custom_harness_event(item: HarnessEvent, event: HarnessExtensionEvent) -> CustomEvent:
+    name = f"a13n.harness.{event.kind}"
+    if event.kind == "tool":
+        try:
+            tool_event = ToolExtraEventPayload.model_validate(event.payload)
+        except ValidationError:
+            pass
+        else:
+            name = f"{name}.{tool_event.name}"
     return CustomEvent(
         timestamp=_timestamp_ms(item),
-        name=f"a13n.harness.{event.kind}",
+        name=name,
         value=_source_value(item, event.model_dump(mode="json", by_alias=True)),
     )
 
 
-def _custom_pydantic_event(item: HarnessEvent, event: AgentStreamEvent) -> CustomEvent:
-    source = _AGENT_EVENT_ADAPTER.dump_python(event, mode="json", by_alias=True)
+def _custom_pydantic_event(item: HarnessEvent, event: AgentStreamEventProtocol) -> CustomEvent:
+    source = _ANY_ADAPTER.dump_python(event, mode="json", by_alias=True, warnings="error")
     return CustomEvent(
         timestamp=_timestamp_ms(item),
         name=f"a13n.pydantic_ai.{event.event_kind}",

@@ -81,7 +81,7 @@ def _binding(
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=permissions),
                 default_working_directory="/",
@@ -273,7 +273,7 @@ async def test_binding_refresh_cannot_split_exec_from_output_materialization(
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -320,7 +320,7 @@ async def test_binding_refresh_cannot_split_exec_from_output_materialization(
                     bindings=(
                         EnvironmentBindingRequest(
                             binding_id="binding-1",
-                            binding_revision=2,
+                            binding_version=2,
                             alias="local",
                             permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                             default_working_directory="/",
@@ -452,7 +452,7 @@ async def test_cancelled_foreground_exec_releases_unreachable_retained_output(tm
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         shell = entered.operations.shell
         store = entered.operations.outputs
@@ -506,7 +506,7 @@ async def test_cancelled_second_output_reservation_releases_the_first(
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         processes = entered.operations.processes
         store = entered.operations.outputs
@@ -629,7 +629,7 @@ async def test_process_manager_closes_active_processes_concurrently(
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         processes = entered.operations.processes
         assert processes is not None

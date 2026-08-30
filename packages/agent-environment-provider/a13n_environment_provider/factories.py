@@ -338,11 +338,13 @@ def build_environment_provider_factory_catalog(
 
 def _builtin_factory_types() -> dict[str, type[EnvironmentProviderFactory]]:
     from .direct_local.provider import DirectLocalEnvironmentProviderFactory
+    from .docker.provider import DockerEnvironmentProviderFactory
     from .local_envd.provider import LocalEnvdEnvironmentProviderFactory
 
     factory_types = (
         DirectLocalEnvironmentProviderFactory,
         LocalEnvdEnvironmentProviderFactory,
+        DockerEnvironmentProviderFactory,
     )
     return {factory_type.provider_key(): factory_type for factory_type in factory_types}
 

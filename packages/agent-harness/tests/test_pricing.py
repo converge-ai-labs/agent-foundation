@@ -64,7 +64,7 @@ def test_official_model_catalog_contains_only_provider_qualified_direct_models()
         "google-gla:gemini-3.6-flash",
         "openai:gpt-5.5",
     }
-    assert catalog["openai:gpt-5.5"].configuration.context_window == 1_050_000
+    assert catalog["openai:gpt-5.5"].characteristics.context_window == 1_050_000
     assert all(entry.key.count(":") == 1 for entry in catalog.entries)
 
 

@@ -53,7 +53,6 @@ make install
 make setup
 make dev
 make agent-ui
-make agent-ui tui
 make db-migrate msg="description"
 make format
 make lint

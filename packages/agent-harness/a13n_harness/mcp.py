@@ -143,8 +143,11 @@ class ContextualMCP(MCP[AgentContext]):
         parsed_url = urlparse(url)
         if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
             raise DefinitionError("Contextual MCP url must be an HTTP(S) URL.", code="mcp_definition_invalid")
-        if not isinstance(id, str) or not id.strip():
-            raise DefinitionError("Contextual MCP id must be a non-blank string.", code="mcp_definition_invalid")
+        if not isinstance(id, str) or not id.strip() or ":" in id:
+            raise DefinitionError(
+                "Contextual MCP id must be a non-blank string without ':'.",
+                code="mcp_definition_invalid",
+            )
         if not callable(headers_factory):
             raise DefinitionError("Contextual MCP headers_factory must be callable.", code="mcp_definition_invalid")
         if not isinstance(native, bool) or (local is not None and not isinstance(local, bool)):
@@ -187,7 +190,7 @@ class ContextualMCP(MCP[AgentContext]):
         self.defer_loading = defer_loading
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        cache_id = f"a13n.mcp.context:{self._recipe.capability_id}"
+        cache_id = f"a13n.mcp.context.{self._recipe.capability_id}"
         existing = ctx.deps._run_capability(cache_id)
         if existing is not None:
             if not isinstance(existing, MCP):

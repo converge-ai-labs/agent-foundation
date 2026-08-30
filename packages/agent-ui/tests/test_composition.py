@@ -10,7 +10,6 @@ import yaml
 from a13n_harness import ContextualMCP
 from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
 from a13n_harness.environment.local.files import LocalFileOperator
-from a13n_ui.application import open_application
 from a13n_ui.composition.reconstruction import SnapshotSkillMaterializer, _PackageFile
 from a13n_ui.configuration import (
     ConfigurationSettings,
@@ -20,6 +19,7 @@ from a13n_ui.configuration import (
 )
 from a13n_ui.configuration.models import MCPSelection
 from a13n_ui.errors import CompositionError, ConfigurationError
+from a13n_ui.host import open_agent_ui_host
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 
 pytestmark = pytest.mark.anyio
@@ -125,7 +125,7 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
     _write_composition(definitions)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         generation_one = await application.current_configuration()
         assert generation_one is not None
         agent_reference = await application.resolve_agent_snapshot("agent-main")
@@ -170,7 +170,7 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         )
         assert exact_reference == agent_reference
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         assert await restarted.agent_snapshot(agent_reference) == agent
         assert await restarted.environment_snapshot(environment_reference) == environment
         await restarted.validate_agent_executable(agent_reference)
@@ -186,7 +186,7 @@ async def test_reconstruction_rejects_a_changed_model_adapter_lock(
     _write_composition(definitions)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         agent_reference = await application.resolve_agent_snapshot("agent-main")
         monkeypatch.setattr(
             reconstruction_module,
@@ -228,7 +228,7 @@ async def test_subagent_identity_policy_survives_snapshot_reconstruction(tmp_pat
     _write_yaml(agent_path, agent)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         reference = await application.resolve_agent_snapshot("agent-main")
         snapshot = await application.agent_snapshot(reference)
         executable = await application._composition.executable(reference)
@@ -292,7 +292,7 @@ async def test_mcp_selection_survives_snapshot_reconstruction(tmp_path: Path) ->
     _write_yaml(agent_path, agent)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         reference = await application.resolve_agent_snapshot("agent-main")
         snapshot = await application.agent_snapshot(reference)
         executable = await application._composition.executable(reference)
@@ -327,7 +327,7 @@ async def test_unrelated_reload_reuses_the_logical_agent_snapshot(tmp_path: Path
     _write_composition(definitions)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         original = await application.resolve_agent_snapshot("agent-main")
         environment_path = definitions / "environments/environment-main.yaml"
         environment = yaml.safe_load(environment_path.read_text())
@@ -382,7 +382,7 @@ async def test_skill_reconstruction_uses_the_selected_environment_alias(tmp_path
     _write_yaml(agent_path, agent)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         agent_reference = await application.resolve_agent_snapshot("agent-main")
         environment_reference = await application.resolve_environment_snapshot("environment-main")
         with pytest.raises(CompositionError) as missing_environment:
@@ -412,7 +412,7 @@ async def test_environment_snapshot_rejects_data_root_overlap(
     _write_composition(definitions)
     settings = _settings(data_root, definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         with pytest.raises(CompositionError) as overlap:
             await application.resolve_environment_snapshot("environment-main")
 
@@ -434,7 +434,7 @@ async def test_environment_snapshot_resolves_symlinks_before_overlap_check(
     _write_composition(definitions)
     settings = _settings(data_root, definitions, workspace_link)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         with pytest.raises(CompositionError) as overlap:
             await application.resolve_environment_snapshot("environment-main")
 
@@ -459,7 +459,7 @@ async def test_compatibility_rejects_a_missing_required_binding(tmp_path: Path) 
     _write_yaml(agent_path, agent)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         agent_reference = await application.resolve_agent_snapshot("agent-main")
         environment_reference = await application.resolve_environment_snapshot("environment-main")
         with pytest.raises(CompositionError) as incompatible:
@@ -480,7 +480,7 @@ async def test_reload_rejects_unsupported_environment_lifecycle_and_async_tools(
     _write_composition(definitions)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         accepted = await application.current_configuration()
         assert accepted is not None
 
@@ -546,7 +546,7 @@ async def test_child_environment_policy_uses_provider_lifecycle_capabilities(
     _write_yaml(agent_path, agent)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         agent_reference = await application.resolve_agent_snapshot("agent-main")
         environment_reference = await application.resolve_environment_snapshot("environment-main")
         if compatible:
@@ -590,7 +590,7 @@ async def test_skill_materializer_replaces_stale_tree_and_handles_concurrent_pub
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-main",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
 

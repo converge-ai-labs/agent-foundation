@@ -123,7 +123,7 @@ class _EnteredBinding:
     environment_id: str
 
 
-type _RevisionKey = tuple[str, int, str]
+type _BindingVersionKey = tuple[str, int, str]
 
 
 @dataclass(slots=True)
@@ -142,11 +142,11 @@ def _validate_provider_artifacts(entered: _EnteredBinding, value: Any) -> None:
     if isinstance(value, bound_types):
         if (
             value.binding_id != entered.public.binding_id
-            or value.binding_revision != entered.public.binding_revision
+            or value.binding_version != entered.public.binding_version
             or value.observed_generation != entered.public.descriptor.generation
         ):
             raise EnvironmentError(
-                "Environment provider returned an artifact for another binding revision.",
+                "Environment provider returned an artifact for another binding version.",
                 code="environment_provider_failure",
             )
         return
@@ -259,7 +259,7 @@ class _OutputFacade:
         binding_id = selected.binding_id
         entered = self._environment.require_action(binding_id, action)
         if (
-            selected.binding_revision != entered.public.binding_revision
+            selected.binding_version != entered.public.binding_version
             or selected.observed_generation != entered.public.descriptor.generation
         ):
             raise EnvironmentError("Output selector is stale.", code="environment_stale_binding")
@@ -289,13 +289,13 @@ class _ShellFacade:
             return result
 
     async def exec_captured(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
-        """Preflight and hold one revision through foreground output materialization."""
+        """Preflight and hold one binding version through foreground output materialization."""
         entered, provider_request = self._environment._prepare_command(request, alias=alias)
         for action in (EnvironmentAction.SHELL_EXEC, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE):
             selected = self._environment.require_action(entered.public.binding_id, action)
             if selected is not entered:
                 raise EnvironmentError(
-                    "Shell binding revision changed before dispatch.", code="environment_stale_binding"
+                    "Shell binding version changed before dispatch.", code="environment_stale_binding"
                 )
         if entered.operations.outputs is None:
             raise EnvironmentError("Output operation facet is unavailable.", code="environment_unsupported")
@@ -551,7 +551,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         initial_request: EnvironmentTopologyRequest,
         topology: EnvironmentTopology,
         entered: Mapping[str, _EnteredBinding],
-        owned_scopes: Mapping[_RevisionKey, _OwnedProviderScope],
+        owned_scopes: Mapping[_BindingVersionKey, _OwnedProviderScope],
         topology_limits: EnvironmentTopologyLimits,
         state_limits: EnvironmentStateLimits,
         observer: DynamicTopologyObserver,
@@ -562,8 +562,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._instance = instance
         self._topology = topology
         self._entered = dict(entered)
-        self._entered_by_revision = {
-            (item.public.binding_id, item.public.binding_revision): item for item in entered.values()
+        self._entered_by_version = {
+            (item.public.binding_id, item.public.binding_version): item for item in entered.values()
         }
         self._owned_scopes = dict(owned_scopes)
         self._topology_limits = topology_limits
@@ -579,17 +579,17 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._topology_apply_lock = asyncio.Lock()
         self._closed = False
         self._operation_tasks: dict[asyncio.Task[Any], int] = {}
-        self._revision_tasks: dict[_RevisionKey, dict[asyncio.Task[Any], int]] = {}
-        self._revision_drained: dict[_RevisionKey, asyncio.Event] = {}
-        self._process_start_leases: dict[_RevisionKey, int] = {}
-        self._active_process_handles: dict[_RevisionKey, set[BoundProcessHandle]] = {}
+        self._version_tasks: dict[_BindingVersionKey, dict[asyncio.Task[Any], int]] = {}
+        self._version_drained: dict[_BindingVersionKey, asyncio.Event] = {}
+        self._process_start_leases: dict[_BindingVersionKey, int] = {}
+        self._active_process_handles: dict[_BindingVersionKey, set[BoundProcessHandle]] = {}
         self._readiness_tasks: dict[tuple[str, int, str, str], asyncio.Task[None]] = {}
         self._readiness_waiters: dict[asyncio.Task[None], int] = {}
         self._retirement_tasks: set[asyncio.Task[None]] = set()
         self._retirement_failures: list[BaseException] = []
         self._alias_owners = {item.alias: item.binding_id for item in topology.bindings}
         self._default_owner = topology.default_binding_id
-        self._max_revision_by_id = {item.binding_id: item.binding_revision for item in topology.bindings}
+        self._max_version_by_id = {item.binding_id: item.binding_version for item in topology.bindings}
         self._requests_by_id = {item.binding_id: item for item in initial_request.bindings}
         self._provider_identity_by_id = {
             item.public.binding_id: (item.public.provider_type, item.environment_id) for item in entered.values()
@@ -715,10 +715,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     def select_files(self, path: str) -> FileScopeSelection:
         selected = self.resolve_path(path)
-        entered = self._entered_by_revision.get((selected.binding_id, selected.binding_revision))
+        entered = self._entered_by_version.get((selected.binding_id, selected.binding_version))
         if entered is None:
             raise EnvironmentError(
-                "Environment binding revision is unavailable.",
+                "Environment binding version is unavailable.",
                 code="environment_stale_binding",
             )
         return FileScopeSelection(
@@ -732,10 +732,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if not isinstance(selection, FileScopeSelection):
             raise EnvironmentError("File scope selection is invalid.", code="environment_request_invalid")
         selected = selection.resolved_path
-        entered = self._entered_by_revision.get((selected.binding_id, selected.binding_revision))
+        entered = self._entered_by_version.get((selected.binding_id, selected.binding_version))
         if entered is None or entered.public.descriptor.generation != selection.observed_generation:
             raise EnvironmentError("File scope selection is stale.", code="environment_stale_binding")
-        async with self._revision_slot(entered):
+        async with self._version_slot(entered):
             await self._ensure_provider_family(entered, "files")
             self._validate_live_observation(
                 entered,
@@ -820,15 +820,15 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._activation_state = "active"
 
     @staticmethod
-    def _revision_key(entered: _EnteredBinding) -> _RevisionKey:
+    def _binding_version_key(entered: _EnteredBinding) -> _BindingVersionKey:
         return (
             entered.public.binding_id,
-            entered.public.binding_revision,
+            entered.public.binding_version,
             entered.public.descriptor.generation,
         )
 
     def _track_process_handle(self, handle: BoundProcessHandle, *, added: bool) -> None:
-        key = (handle.binding_id, handle.binding_revision, handle.observed_generation)
+        key = (handle.binding_id, handle.binding_version, handle.observed_generation)
         if added:
             self._active_process_handles.setdefault(key, set()).add(handle)
             return
@@ -857,7 +857,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 ) from None
             raise primary
         normalized: EnvironmentTopologyRequest | None = None
-        prepared_scopes: dict[_RevisionKey, _OwnedProviderScope] = {}
+        prepared_scopes: dict[_BindingVersionKey, _OwnedProviderScope] = {}
         successfully_entered: set[int] = set()
         committed = False
         async with self._topology_apply_admission(supplied):
@@ -896,7 +896,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         run_id=self._run_id,
                         instance=self._instance,
                         binding_id=requested.binding_id,
-                        binding_revision=requested.binding_revision,
+                        binding_version=requested.binding_version,
                     )
                     async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
                         provider = await scope.__aenter__()
@@ -912,13 +912,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
                                 [primary, cleanup],
                             ) from None
                         raise
-                    key = self._revision_key(entered)
+                    key = self._binding_version_key(entered)
                     prepared_scopes[key] = _OwnedProviderScope(entered=entered, scope=scope)
 
                 proposed: dict[str, _EnteredBinding] = {}
                 for requested in normalized.bindings:
                     current = self._entered.get(requested.binding_id)
-                    if current is not None and current.public.binding_revision == requested.binding_revision:
+                    if current is not None and current.public.binding_version == requested.binding_version:
                         proposed[requested.binding_id] = current
                     else:
                         prepared = next(
@@ -934,10 +934,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 )
                 change = _topology_change(self._topology, topology, digest)
                 retiring = {
-                    self._revision_key(old): old
+                    self._binding_version_key(old): old
                     for binding_id, old in self._entered.items()
                     if binding_id not in proposed
-                    or proposed[binding_id].public.binding_revision != old.public.binding_revision
+                    or proposed[binding_id].public.binding_version != old.public.binding_version
                 }
 
                 async with self._operation_lock:
@@ -955,8 +955,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         )
                     for key, owned in prepared_scopes.items():
                         self._owned_scopes[key] = owned
-                        self._entered_by_revision[
-                            (owned.entered.public.binding_id, owned.entered.public.binding_revision)
+                        self._entered_by_version[
+                            (owned.entered.public.binding_id, owned.entered.public.binding_version)
                         ] = owned.entered
                     retired_scopes = {key: self._owned_scopes.pop(key) for key in retiring if key in self._owned_scopes}
                     self._topology = topology
@@ -964,7 +964,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     self._requests_by_id = {item.binding_id: item for item in normalized.bindings}
                     for item in topology.bindings:
                         self._alias_owners.setdefault(item.alias, item.binding_id)
-                        self._max_revision_by_id[item.binding_id] = item.binding_revision
+                        self._max_version_by_id[item.binding_id] = item.binding_version
                     if topology.default_binding_id is not None and self._default_owner is None:
                         self._default_owner = topology.default_binding_id
                     for owned in prepared_scopes.values():
@@ -1034,8 +1034,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     code="environment_topology_invalid",
                 )
             current = self._entered.get(requested.binding_id)
-            maximum = self._max_revision_by_id.get(requested.binding_id, 0)
-            if current is not None and requested.binding_revision == current.public.binding_revision:
+            maximum = self._max_version_by_id.get(requested.binding_id, 0)
+            if current is not None and requested.binding_version == current.public.binding_version:
                 retained_request = self._requests_by_id[requested.binding_id]
                 if requested.provider_binding is not None:
                     raise EnvironmentError(
@@ -1052,9 +1052,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         code="environment_topology_invalid",
                     )
                 continue
-            if requested.binding_revision <= maximum:
+            if requested.binding_version <= maximum:
                 raise EnvironmentError(
-                    "Environment binding revision is not monotonic.",
+                    "Environment binding version is not monotonic.",
                     code="environment_topology_invalid",
                 )
             candidate = requested.provider_binding
@@ -1080,7 +1080,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 )
         return tuple(candidates)
 
-    def _schedule_retirement(self, key: _RevisionKey, owned: _OwnedProviderScope) -> None:
+    def _schedule_retirement(self, key: _BindingVersionKey, owned: _OwnedProviderScope) -> None:
         task = asyncio.create_task(self._retire_scope(key, owned))
         self._retirement_tasks.add(task)
         task.add_done_callback(self._retirement_finished)
@@ -1092,11 +1092,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
             if error is not None:
                 self._retirement_failures.append(error)
 
-    async def _retire_scope(self, key: _RevisionKey, owned: _OwnedProviderScope) -> None:
+    async def _retire_scope(self, key: _BindingVersionKey, owned: _OwnedProviderScope) -> None:
         while True:
             async with self._operation_lock:
-                active = bool(self._revision_tasks.get(key))
-                drained = self._revision_drained.setdefault(key, asyncio.Event())
+                active = bool(self._version_tasks.get(key))
+                drained = self._version_drained.setdefault(key, asyncio.Event())
                 if not active:
                     drained.set()
             if not active:
@@ -1105,7 +1105,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         scopes = [owned.scope]
         await _close_provider_scopes(scopes)
         async with self._operation_lock:
-            self._revision_drained.pop(key, None)
+            self._version_drained.pop(key, None)
 
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
         """Resolve one virtual or relative path without native-path fallback."""
@@ -1170,7 +1170,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
         return EnvironmentPath(
             binding_id=selected.public.binding_id,
-            binding_revision=selected.public.binding_revision,
+            binding_version=selected.public.binding_version,
             path=provider_path,
         )
 
@@ -1253,7 +1253,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if entered is None:
             raise EnvironmentError("Process binding is unavailable.", code="environment_selection_invalid")
         if (
-            handle.binding_revision != entered.public.binding_revision
+            handle.binding_version != entered.public.binding_version
             or handle.observed_generation != entered.public.descriptor.generation
             or handle.identity.provider_type != entered.public.provider_type
             or handle.identity.environment_id != entered.environment_id
@@ -1324,7 +1324,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             provider_path = base if path == "." else f"{base.rstrip('/')}/{path}"
         return EnvironmentPath(
             binding_id=entered.public.binding_id,
-            binding_revision=entered.public.binding_revision,
+            binding_version=entered.public.binding_version,
             path=provider_path,
         )
 
@@ -1337,10 +1337,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
     ) -> AsyncGenerator[_PreparedFile]:
         if (
             selected.binding_id != entered.public.binding_id
-            or selected.binding_revision != entered.public.binding_revision
+            or selected.binding_version != entered.public.binding_version
         ):
             raise EnvironmentError(
-                "The scoped file path selects another binding revision.",
+                "The scoped file path selects another binding version.",
                 code="environment_selection_invalid",
             )
         if action not in entered.public.permission_ceiling.operations:
@@ -1381,10 +1381,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
     ) -> str:
         if (
             selected.binding_id != entered.public.binding_id
-            or selected.binding_revision != entered.public.binding_revision
+            or selected.binding_version != entered.public.binding_version
         ):
             raise EnvironmentError(
-                "Provider returned a path for another scoped binding revision.",
+                "Provider returned a path for another scoped binding version.",
                 code="environment_provider_failure",
             )
         suffix = provider_path if provider_path.startswith("/") else f"/{provider_path}"
@@ -1401,10 +1401,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
         selected: EnvironmentPath,
         action: EnvironmentAction,
     ) -> AsyncGenerator[_PreparedFile]:
-        entered = self._entered_by_revision.get((selected.binding_id, selected.binding_revision))
+        entered = self._entered_by_version.get((selected.binding_id, selected.binding_version))
         if entered is None:
             raise EnvironmentError(
-                "Environment binding revision is unavailable.",
+                "Environment binding version is unavailable.",
                 code="environment_stale_binding",
             )
         async with self._operation_lease(entered, action, "files"):
@@ -1418,7 +1418,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
 
     def _virtualize_provider_path(self, selected: EnvironmentPath, provider_path: str) -> str:
-        entered = self._entered_by_revision[(selected.binding_id, selected.binding_revision)]
+        entered = self._entered_by_version[(selected.binding_id, selected.binding_version)]
         suffix = provider_path if provider_path.startswith("/") else f"/{provider_path}"
         if self._topology.default_binding_id == selected.binding_id:
             return f"/workspace{suffix}" if suffix != "/" else "/workspace"
@@ -1515,7 +1515,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
 
         async def wait_one(entered: _EnteredBinding) -> None:
-            async with self._revision_slot(entered):
+            async with self._version_slot(entered):
                 families = frozenset(entered.public.descriptor.operation_families & requested)
                 await asyncio.gather(*(self._ensure_provider_family(entered, family) for family in families))
                 current = entered.provider.descriptor
@@ -1581,38 +1581,38 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     self._operation_tasks.pop(task, None)
 
     @asynccontextmanager
-    async def _revision_slot(self, entered: _EnteredBinding) -> AsyncGenerator[None]:
+    async def _version_slot(self, entered: _EnteredBinding) -> AsyncGenerator[None]:
         task = asyncio.current_task()
         if task is None:
             raise RuntimeError("Environment operations require an asyncio task")
-        key = self._revision_key(entered)
+        key = self._binding_version_key(entered)
         async with self._operation_lock:
             if self._closed:
                 raise EnvironmentError("The Environment is closed.", code="environment_closed")
             if self._entered.get(entered.public.binding_id) is not entered:
                 raise EnvironmentError("Environment binding is stale.", code="environment_stale_binding")
             self._operation_tasks[task] = self._operation_tasks.get(task, 0) + 1
-            self._register_revision_task_locked(key, task)
+            self._register_version_task_locked(key, task)
         try:
             yield
         finally:
             async with self._operation_lock:
                 self._release_task_count(self._operation_tasks, task)
-                self._release_revision_task_locked(key, task)
+                self._release_version_task_locked(key, task)
 
-    def _register_revision_task_locked(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
-        revision = self._revision_tasks.setdefault(key, {})
-        revision[task] = revision.get(task, 0) + 1
-        self._revision_drained.setdefault(key, asyncio.Event()).clear()
+    def _register_version_task_locked(self, key: _BindingVersionKey, task: asyncio.Task[Any]) -> None:
+        task_counts = self._version_tasks.setdefault(key, {})
+        task_counts[task] = task_counts.get(task, 0) + 1
+        self._version_drained.setdefault(key, asyncio.Event()).clear()
 
-    def _release_revision_task_locked(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
-        revision = self._revision_tasks.get(key)
-        if revision is None:
+    def _release_version_task_locked(self, key: _BindingVersionKey, task: asyncio.Task[Any]) -> None:
+        task_counts = self._version_tasks.get(key)
+        if task_counts is None:
             return
-        self._release_task_count(revision, task)
-        if not revision:
-            self._revision_tasks.pop(key, None)
-            self._revision_drained.setdefault(key, asyncio.Event()).set()
+        self._release_task_count(task_counts, task)
+        if not task_counts:
+            self._version_tasks.pop(key, None)
+            self._version_drained.setdefault(key, asyncio.Event()).set()
 
     @staticmethod
     def _release_task_count(tasks: dict[asyncio.Task[Any], int], task: asyncio.Task[Any]) -> None:
@@ -1640,14 +1640,14 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 timeout_seconds + DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
             )
         )
-        key = self._revision_key(entered)
+        key = self._binding_version_key(entered)
         if action not in entered.public.permission_ceiling.operations:
             raise EnvironmentError(
                 "Environment operation is denied by the binding permission ceiling.",
                 code="environment_denied",
                 details={"action": action.value, "binding_id": entered.public.binding_id},
             )
-        async with self._revision_slot(entered):
+        async with self._version_slot(entered):
             if action is EnvironmentAction.PROCESS_START:
                 self._process_start_leases[key] = self._process_start_leases.get(key, 0) + 1
             try:
@@ -1682,11 +1682,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
     ) -> None:
         key = (
             entered.public.binding_id,
-            entered.public.binding_revision,
+            entered.public.binding_version,
             entered.public.descriptor.generation,
             family,
         )
-        revision_key = self._revision_key(entered)
+        version_key = self._binding_version_key(entered)
         async with self._readiness_lock:
             if self._closed:
                 raise EnvironmentError("The Environment is closed.", code="environment_closed")
@@ -1698,9 +1698,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     if self._entered.get(entered.public.binding_id) is not entered:
                         raise EnvironmentError("Environment binding is stale.", code="environment_stale_binding")
                     task = asyncio.create_task(entered.provider.ensure_ready(frozenset({family})))
-                    self._register_revision_task_locked(revision_key, task)
+                    self._register_version_task_locked(version_key, task)
                     task.add_done_callback(
-                        lambda completed, captured=revision_key: self._readiness_worker_finished(captured, completed)
+                        lambda completed, captured=version_key: self._readiness_worker_finished(captured, completed)
                     )
                 self._readiness_tasks[key] = task
             self._readiness_waiters[task] = self._readiness_waiters.get(task, 0) + 1
@@ -1723,13 +1723,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         self._readiness_tasks.pop(key, None)
                         task.cancel()
 
-    def _readiness_worker_finished(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
-        release = asyncio.create_task(self._release_readiness_revision(key, task))
+    def _readiness_worker_finished(self, key: _BindingVersionKey, task: asyncio.Task[Any]) -> None:
+        release = asyncio.create_task(self._release_readiness_version(key, task))
         _supervise_cleanup_task(release)
 
-    async def _release_readiness_revision(self, key: _RevisionKey, task: asyncio.Task[Any]) -> None:
+    async def _release_readiness_version(self, key: _BindingVersionKey, task: asyncio.Task[Any]) -> None:
         async with self._operation_lock:
-            self._release_revision_task_locked(key, task)
+            self._release_version_task_locked(key, task)
 
     async def _close(self) -> None:
         current = asyncio.current_task()
@@ -1966,7 +1966,7 @@ class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
                     run_id=run_id,
                     instance=instance,
                     binding_id=requested.binding_id,
-                    binding_revision=requested.binding_revision,
+                    binding_version=requested.binding_version,
                 )
                 async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
                     provider = await scope.__aenter__()
@@ -1981,7 +1981,7 @@ class CompositeEnvironmentRunBinding(EnvironmentRunBinding):
             )
             observer = DynamicTopologyObserver(topology.topology_version)
             owned_scopes = {
-                CompositeBoundEnvironment._revision_key(item): _OwnedProviderScope(
+                CompositeBoundEnvironment._binding_version_key(item): _OwnedProviderScope(
                     entered=item,
                     scope=scope,
                 )
@@ -2052,7 +2052,7 @@ class NoopEnvironmentRunBinding(CompositeEnvironmentRunBinding):
     def __init__(
         self,
         *,
-        topology_version: int = 0,
+        topology_version: int = 1,
         topology_limits: EnvironmentTopologyLimits | None = None,
         state_limits: EnvironmentStateLimits | None = None,
     ) -> None:
@@ -2160,7 +2160,7 @@ def _validate_entered(
     )
     public = EnvironmentBinding(
         binding_id=requested.binding_id,
-        binding_revision=requested.binding_revision,
+        binding_version=requested.binding_version,
         alias=requested.alias,
         provider_type=provider.provider_type,
         descriptor=descriptor,
@@ -2355,7 +2355,7 @@ async def _discard_candidates(
 async def _cleanup_topology_candidates(
     *,
     requests: tuple[EnvironmentBindingRequest, ...],
-    prepared_scopes: Mapping[_RevisionKey, _OwnedProviderScope],
+    prepared_scopes: Mapping[_BindingVersionKey, _OwnedProviderScope],
     successfully_entered: set[int],
 ) -> None:
     failures: list[BaseException] = []
@@ -2385,7 +2385,7 @@ def _normalize_topology_request(request: object) -> EnvironmentTopologyRequest:
             bindings.append(
                 EnvironmentBindingRequest(
                     binding_id=item.binding_id,
-                    binding_revision=item.binding_revision,
+                    binding_version=item.binding_version,
                     alias=item.alias,
                     permission_ceiling=EnvironmentPermissionSet(
                         operations=frozenset(item.permission_ceiling.operations)
@@ -2412,7 +2412,7 @@ def _topology_request_digest(request: EnvironmentTopologyRequest) -> str:
         "bindings": [
             {
                 "binding_id": item.binding_id,
-                "binding_revision": item.binding_revision,
+                "binding_version": item.binding_version,
                 "alias": item.alias,
                 "permission_ceiling": sorted(action.value for action in item.permission_ceiling.operations),
                 "default_working_directory": item.default_working_directory,
@@ -2439,19 +2439,19 @@ def _topology_change(
                 EnvironmentTopologyBindingChange(
                     kind="removed",
                     binding_id=item.binding_id,
-                    previous_revision=item.binding_revision,
-                    current_revision=None,
+                    previous_version=item.binding_version,
+                    current_version=None,
                     previous_alias=item.alias,
                     current_alias=None,
                 )
             )
-        elif replacement.binding_revision != item.binding_revision:
+        elif replacement.binding_version != item.binding_version:
             changes.append(
                 EnvironmentTopologyBindingChange(
                     kind="refreshed",
                     binding_id=item.binding_id,
-                    previous_revision=item.binding_revision,
-                    current_revision=replacement.binding_revision,
+                    previous_version=item.binding_version,
+                    current_version=replacement.binding_version,
                     previous_alias=item.alias,
                     current_alias=replacement.alias,
                 )
@@ -2462,8 +2462,8 @@ def _topology_change(
                 EnvironmentTopologyBindingChange(
                     kind="added",
                     binding_id=item.binding_id,
-                    previous_revision=None,
-                    current_revision=item.binding_revision,
+                    previous_version=None,
+                    current_version=item.binding_version,
                     previous_alias=None,
                     current_alias=item.alias,
                 )
@@ -2543,7 +2543,7 @@ def create_environment_run_binding(
 
 def create_noop_environment_run_binding(
     *,
-    topology_version: int = 0,
+    topology_version: int = 1,
     topology_limits: EnvironmentTopologyLimits | None = None,
     state_limits: EnvironmentStateLimits | None = None,
 ) -> EnvironmentRunBinding:

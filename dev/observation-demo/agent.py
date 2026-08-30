@@ -398,7 +398,7 @@ def _local_environment(root: Path):
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="observation-demo-binding",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",

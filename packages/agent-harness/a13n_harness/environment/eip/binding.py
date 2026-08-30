@@ -87,20 +87,20 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
         run_id: str,
         instance,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
     ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
         del run_id, instance
         if self._discarded or self._scope_created:
             raise EnvironmentError("EIP provider binding was already consumed", code="environment_conflict")
         self._scope_created = True
-        return self._bind(binding_id=binding_id, binding_revision=binding_revision)
+        return self._bind(binding_id=binding_id, binding_version=binding_version)
 
     @asynccontextmanager
     async def _bind(
         self,
         *,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         self._entry_started = True
         async with self._session_source.open_session(
@@ -116,7 +116,7 @@ class EIPEnvironmentProviderBinding(EnvironmentProviderBinding):
                 session=session,
                 environment_id=self._environment_id,
                 binding_id=binding_id,
-                binding_revision=binding_revision,
+                binding_version=binding_version,
             )
             try:
                 yield provider
@@ -137,12 +137,12 @@ class _BoundEIPProvider:
         session: EIPSession,
         environment_id: str,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
     ) -> None:
         self._session = session
         self._environment_id = environment_id
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = str(session.descriptor.generation)
         self._descriptor = _convert_descriptor(session.descriptor)
         methods = set(session.descriptor.available_methods)
@@ -150,14 +150,14 @@ class _BoundEIPProvider:
             session=session,
             environment_id=environment_id,
             binding_id=binding_id,
-            binding_revision=binding_revision,
+            binding_version=binding_version,
             generation=self._generation,
         )
         outputs = EIPOutputRegistry(
             session=session,
             environment_id=environment_id,
             binding_id=binding_id,
-            binding_revision=binding_revision,
+            binding_version=binding_version,
             generation=self._generation,
         )
         self._outputs = outputs
@@ -168,7 +168,7 @@ class _BoundEIPProvider:
             provider_type=self.provider_type,
             environment_id=environment_id,
             binding_id=binding_id,
-            binding_revision=binding_revision,
+            binding_version=binding_version,
             generation=self._generation,
         )
         processes = EIPProcessOperations(conversions) if "process.start" in methods else None

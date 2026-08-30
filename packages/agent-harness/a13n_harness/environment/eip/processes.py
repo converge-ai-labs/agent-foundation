@@ -116,7 +116,7 @@ class _ProcessConversions:
         provider_type: str,
         environment_id: str,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
         generation: str,
     ) -> None:
         self._session = session
@@ -125,7 +125,7 @@ class _ProcessConversions:
         self._provider_type = provider_type
         self._environment_id = environment_id
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._raw_tokens: dict[eip.ProcessHandle, str] = {}
@@ -143,7 +143,7 @@ class _ProcessConversions:
         info = ProcessInfo(
             handle=BoundProcessHandle(
                 binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                binding_version=self._binding_version,
                 identity=ProcessIdentity(
                     provider_type=self._provider_type,
                     environment_id=self._environment_id,
@@ -185,7 +185,7 @@ class _ProcessConversions:
     def resolve(self, handle: BoundProcessHandle) -> tuple[str, _ProcessRecord]:
         if (
             handle.binding_id != self._binding_id
-            or handle.binding_revision != self._binding_revision
+            or handle.binding_version != self._binding_version
             or handle.observed_generation != self._generation
         ):
             raise EnvironmentError("Process handle is foreign or stale", code="environment_stale_binding")
@@ -200,7 +200,7 @@ class _ProcessConversions:
             receipt,
             environment_id=self._environment_id,
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             generation=self._generation,
         )
 

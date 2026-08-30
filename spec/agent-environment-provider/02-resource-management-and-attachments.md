@@ -160,7 +160,7 @@ For a provider that allocates one of several possible resources from the same sp
 
 `ephemeral()` creates one temporary Resource, enters it, yields it, exits it, and destroys its latest observed state. It generates one stable resource correlation when the caller does not supply one and distinct lifecycle operation IDs for create, resume when needed, and destroy. A retry of the same uncertain operation keeps its operation ID and increments only `attempt`.
 
-If create has an unknown outcome, the scope reconciles that exact operation. Authoritative absence permits one create retry; authoritative running evidence resumes the identified Resource; any still-unknown or invalid reconciliation fails without allocating another identity. If destroy has an unknown outcome, authoritative absence completes cleanup, while running or paused evidence permits one destroy retry. Reconciliation always repeats the inspected operation ID.
+If create has an unknown outcome, the scope reconciles that exact operation. Authoritative absence permits one create retry; authoritative running or paused evidence resumes the identified Resource; any still-unknown or invalid reconciliation fails without allocating another identity. If destroy has an unknown outcome, authoritative absence completes cleanup, while running or paused evidence permits one destroy retry. Reconciliation always repeats the inspected operation ID.
 
 Resource entry failure, caller failure, normal return, and cancellation all trigger Resource exit when entry completed and then destroy. A caller failure and cleanup failure are both preserved. Cancellation remains the primary exception and records cleanup failure as secondary diagnostic information. The scope does not pause, persist state, or make a Resource reusable after it exits.
 
@@ -366,7 +366,7 @@ For stdio, the entered `EnvironmentResource` is the sole owner of the daemon sub
 
 For reverse WebSocket, the Host listener authenticates and bounds the upgrade before constructing the source, then transfers the accepted `ServerConnection` exactly once. `AcceptedWebSocketEIPSessionSource` passes that object to the low-level `AcceptedWebSocketTransport` and sends `initialize`; it does not inspect or repeat the Bearer credential. Envd remains the responder even though it opened the carrier.
 
-A source never shares an initialized session, resumes a transfer, or automatically retries an operation whose dispatch is ambiguous. Same-generation reconnect creates a fresh EIP session. A changed daemon generation requires a fresh Harness binding revision.
+A source never shares an initialized session, resumes a transfer, or automatically retries an operation whose dispatch is ambiguous. Same-generation reconnect creates a fresh EIP session. A changed daemon generation requires a fresh Harness binding version.
 
 ## Lifecycle and Harness Flow
 

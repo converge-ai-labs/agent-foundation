@@ -199,21 +199,21 @@ class LocalFileOperator:
         read_only: bool,
         policy: _DirectLocalFilePolicy,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
         generation: str,
     ) -> None:
         self._root = root.resolve(strict=True)
         self._read_only = read_only
         self._policy = policy
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = generation
         self._operations = itertools.count(1)
 
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

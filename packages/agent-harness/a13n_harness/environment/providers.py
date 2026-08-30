@@ -76,7 +76,7 @@ class FileScopeSelection:
 
 
 class FileScopeProvider(Protocol):
-    """Select and hold one revision-pinned FileOperator for compound operations."""
+    """Select and hold one binding-version-pinned FileOperator for compound operations."""
 
     def select_files(self, path: str) -> FileScopeSelection: ...
 
@@ -89,7 +89,7 @@ class BoundShellOperations(Protocol):
     async def exec(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult: ...
 
     async def exec_captured(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
-        """Execute and materialize output under one exact binding-revision lease."""
+        """Execute and materialize output under one exact binding-version lease."""
         ...
 
 
@@ -237,7 +237,7 @@ class EnvironmentProviderBinding(ABC):
         run_id: str,
         instance: AgentInstanceContext,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
     ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
         """Enter this candidate exactly once."""
 
@@ -288,11 +288,11 @@ class BoundEnvironment(ABC):
 
     @abstractmethod
     def select_files(self, path: str) -> FileScopeSelection:
-        """Capture one exact binding revision for a logical file path."""
+        """Capture one exact binding version for a logical file path."""
 
     @abstractmethod
     def open_files(self, selection: FileScopeSelection) -> AbstractAsyncContextManager[FileOperator]:
-        """Hold the selected revision and route all scoped paths through it."""
+        """Hold the selected binding version and route all scoped paths through it."""
 
     @property
     @abstractmethod

@@ -10,8 +10,6 @@ from a13n_harness import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
     DefinitionError,
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
     HarnessBuilder,
     RunBindings,
 )
@@ -188,32 +186,3 @@ async def test_run_replacement_cannot_wrap_outside_the_mandatory_surface() -> No
         await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert exc_info.value.code == "tool_surface_order_invalid"
-
-
-async def test_file_mutation_candidates_are_visible_without_shell_exec() -> None:
-    observed_names: set[str] = set()
-
-    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages
-        observed_names.update(tool.name for tool in info.function_tools)
-        yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=model),
-        capabilities=(
-            DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(
-                    file_tools=True,
-                    shell_tools=False,
-                    max_reference_entries=64,
-                )
-            ),
-        ),
-    )
-
-    result = await executable.run("inspect", bindings=RunBindings.embedded())
-
-    assert result.output_or_raise() == "done"
-    assert {"mkdir", "move", "copy", "delete"} <= observed_names

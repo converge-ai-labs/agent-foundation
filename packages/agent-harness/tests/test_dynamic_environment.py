@@ -34,10 +34,10 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    HarnessModelCharacteristics,
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
     ModelCapability,
-    ModelConfiguration,
     ModelRecoveryPolicy,
     ProviderUsageRecord,
     RunBindings,
@@ -298,7 +298,7 @@ def _local_binding(root: Path, *, process_output: bool = False):
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -324,7 +324,7 @@ def _two_local_bindings(
     bindings = tuple(
         EnvironmentBindingRequest(
             binding_id=f"binding-{index}",
-            binding_revision=1,
+            binding_version=1,
             alias=alias,
             permission_ceiling=EnvironmentPermissionSet(
                 operations=first_operations if index == 1 else second_operations
@@ -364,7 +364,7 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         yield "done"
 
     aggregate = create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(topology_version=0, bindings=(), default_binding_id=None),
+        initial_topology=EnvironmentTopologyRequest(topology_version=1, bindings=(), default_binding_id=None),
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2),
         state_limits=EnvironmentStateLimits(),
     )
@@ -380,11 +380,11 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
         )
     )
     request = EnvironmentTopologyRequest(
-        topology_version=1,
+        topology_version=2,
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -406,7 +406,7 @@ async def test_dynamic_topology_emits_an_independent_harness_context_event(tmp_p
             and item.event.payload.get("type") == "environment_topology_changed"
         ):
             item = await asyncio.wait_for(run.__anext__(), timeout=2)
-        assert item.event.payload["current_version"] == 1
+        assert item.event.payload["current_version"] == 2
         finish.set()
         terminal = [event async for event in run][-1]
         assert terminal.result.output_or_raise() == "done"
@@ -504,6 +504,20 @@ async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_
                     tool_call_id="write-2",
                 )
             }
+        elif len(returns) == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="write",
+                    json_args=json.dumps(
+                        {
+                            "file_path": "/workspace/note.txt",
+                            "content": "",
+                            "mode": "a",
+                        }
+                    ),
+                    tool_call_id="write-noop",
+                )
+            }
         else:
             yield "done"
 
@@ -513,19 +527,36 @@ async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
-    result = await executable.run(
+    tool_events: list[HarnessExtensionEvent] = []
+    result: HarnessRunResult[Any] | None = None
+    async with executable.stream(
         "write",
         bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
-    )
+    ) as run:
+        async for item in run:
+            if isinstance(item, HarnessEvent):
+                if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "tool":
+                    tool_events.append(item.event)
+            else:
+                result = item.result
 
+    assert result is not None
     assert result.output_or_raise() == "done"
-    assert model_calls == 3
+    assert [event.payload["tool_call_id"] for event in tool_events] == ["write-1", "write-2"]
+    assert [event.payload["tool_id"] for event in tool_events] == ["filesystem.write", "filesystem.write"]
+    assert [event.payload["value"]["changes"] for event in tool_events] == [
+        [{"path": "note.txt", "action": "written", "destination": None}],
+        [{"path": "/workspace/note.txt", "action": "written", "destination": None}],
+    ]
+    assert model_calls == 4
     assert (tmp_path / "note.txt").read_text() == "two"
     assert tool_results[0]["ok"] is True
     assert tool_results[0]["bytes_written"] == 3
     assert tool_results[1]["bytes_written"] == 3
+    assert tool_results[2]["bytes_written"] == 0
     assert "revision" not in tool_results[0]
     assert "revision" not in tool_results[1]
+    assert "revision" not in tool_results[2]
 
 
 async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None:
@@ -577,17 +608,170 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(_configuration(shell_tools=False)),),
     )
-    result = await executable.run(
+    tool_events: list[HarnessExtensionEvent] = []
+    result: HarnessRunResult[Any] | None = None
+    async with executable.stream(
         "mutate files",
         bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
-    )
+    ) as run:
+        async for item in run:
+            if isinstance(item, HarnessEvent):
+                if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "tool":
+                    tool_events.append(item.event)
+            else:
+                result = item.result
 
+    assert result is not None
     assert result.output_or_raise() == "done"
+    assert [event.payload["tool_id"] for event in tool_events] == [
+        "filesystem.mkdir",
+        "filesystem.move",
+        "filesystem.copy",
+        "filesystem.remove",
+    ]
+    assert [event.payload["tool_call_id"] for event in tool_events] == [
+        "mkdir-1",
+        "move-1",
+        "copy-1",
+        "delete-1",
+    ]
+    assert [event.payload["value"]["changes"] for event in tool_events] == [
+        [{"path": "folder", "action": "created", "destination": None}],
+        [{"path": "source.txt", "action": "moved", "destination": "folder/moved.txt"}],
+        [{"path": "folder/moved.txt", "action": "copied", "destination": "copied.txt"}],
+        [{"path": "folder", "action": "deleted", "destination": None}],
+    ]
     assert len(observed_results) == len(calls)
     assert all(item["ok"] is True for item in observed_results)
     assert not (tmp_path / "source.txt").exists()
     assert not (tmp_path / "folder").exists()
     assert (tmp_path / "copied.txt").read_text(encoding="utf-8") == "value"
+
+
+async def test_file_edit_events_keep_called_tool_id_and_skip_content_noop(tmp_path: Path) -> None:
+    (tmp_path / "edit.txt").write_text("value", encoding="utf-8")
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        if not returns:
+            name = "multi_edit"
+            arguments = {
+                "file_path": "edit.txt",
+                "edits": [{"old_string": "value", "new_string": "changed"}],
+            }
+            tool_call_id = "multi-edit-one"
+        elif len(returns) == 1:
+            name = "edit"
+            arguments = {
+                "file_path": "edit.txt",
+                "old_string": "changed",
+                "new_string": "changed",
+            }
+            tool_call_id = "edit-noop"
+        else:
+            yield "done"
+            return
+        yield {
+            0: DeltaToolCall(
+                name=name,
+                json_args=json.dumps(arguments),
+                tool_call_id=tool_call_id,
+            )
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    tool_events: list[HarnessExtensionEvent] = []
+    async with executable.stream(
+        "edit file",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    ) as run:
+        async for item in run:
+            if (
+                isinstance(item, HarnessEvent)
+                and isinstance(item.event, HarnessExtensionEvent)
+                and item.event.kind == "tool"
+            ):
+                tool_events.append(item.event)
+
+    assert (tmp_path / "edit.txt").read_text(encoding="utf-8") == "changed"
+    assert len(tool_events) == 1
+    assert tool_events[0].payload["tool_call_id"] == "multi-edit-one"
+    assert tool_events[0].payload["tool_name"] == "multi_edit"
+    assert tool_events[0].payload["tool_id"] == "filesystem.multi_edit"
+    assert tool_events[0].payload["value"]["changes"] == [
+        {"path": "edit.txt", "action": "modified", "destination": None},
+    ]
+
+
+async def test_file_change_event_keeps_only_confirmed_partial_batch_items(tmp_path: Path) -> None:
+    (tmp_path / "existing.txt").write_text("value", encoding="utf-8")
+    tool_results: list[dict[str, Any]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart) and isinstance(part.content, dict)
+        ]
+        tool_results[:] = returns
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="delete",
+                    json_args=json.dumps(
+                        {
+                            "paths": ["existing.txt", "missing.txt"],
+                            "recursive": False,
+                            "force": False,
+                        }
+                    ),
+                    tool_call_id="delete-partial",
+                )
+            }
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration(shell_tools=False)),),
+    )
+    tool_events: list[HarnessExtensionEvent] = []
+    async with executable.stream(
+        "delete files",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    ) as run:
+        async for item in run:
+            if (
+                isinstance(item, HarnessEvent)
+                and isinstance(item.event, HarnessExtensionEvent)
+                and item.event.kind == "tool"
+            ):
+                tool_events.append(item.event)
+
+    assert len(tool_results) == 1
+    assert tool_results[0]["ok"] is False
+    assert [item["ok"] for item in tool_results[0]["results"]] == [True, False]
+    assert len(tool_events) == 1
+    assert tool_events[0].payload["value"]["changes"] == [
+        {"path": "existing.txt", "action": "deleted", "destination": None},
+    ]
 
 
 async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path) -> None:
@@ -729,7 +913,9 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
 
     executable = HarnessBuilder().build(
         HarnessAgentSpec(
-            model_config=ModelConfiguration(capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING})),
+            model_characteristics=HarnessModelCharacteristics(
+                capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING})
+            ),
         ),
         output_type=str,
         model=FunctionModel(stream_function=stream),
@@ -826,7 +1012,7 @@ async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native
     assert requests[0].source_bytes == b"\x89PNG"
     assert requests[0].source == EnvironmentPath(
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         path="/image.png",
     )
     assert requests[0].source_name == "/workspace/image.png"
@@ -1059,13 +1245,13 @@ async def test_view_reports_unavailable_understanding_as_an_ordinary_tool_result
     }
 
 
-async def test_media_understanding_releases_revision_scope_before_model_execution() -> None:
+async def test_media_understanding_releases_binding_version_scope_before_model_execution() -> None:
     scope_open = False
     scope_released = asyncio.Event()
     provider_started = asyncio.Event()
     release_provider = asyncio.Event()
 
-    class RevisionFiles:
+    class BindingVersionFiles:
         async def stat(self, path: str) -> FileMetadata:
             assert scope_open
             return FileMetadata(path=path, kind="file", size=4, writable=False)
@@ -1075,7 +1261,7 @@ async def test_media_understanding_releases_revision_scope_before_model_executio
             assert scope_open
             return b"\x89PNG"
 
-    files = RevisionFiles()
+    files = BindingVersionFiles()
 
     class Scopes:
         def select_files(self, path: str) -> FileScopeSelection:
@@ -1083,7 +1269,7 @@ async def test_media_understanding_releases_revision_scope_before_model_executio
                 logical_path=path,
                 resolved_path=EnvironmentPath(
                     binding_id="binding-1",
-                    binding_revision=1,
+                    binding_version=1,
                     path="/image.png",
                 ),
                 observed_generation="generation-1",
@@ -1104,7 +1290,7 @@ async def test_media_understanding_releases_revision_scope_before_model_executio
         async def understand(self, request: MediaUnderstandingRequest) -> MediaUnderstandingResult:
             assert request.source == EnvironmentPath(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 path="/image.png",
             )
             assert not scope_open
@@ -1119,7 +1305,7 @@ async def test_media_understanding_releases_revision_scope_before_model_executio
         Any,
         SimpleNamespace(
             deps=SimpleNamespace(
-                model_configuration=None,
+                model_characteristics=None,
                 record_provider_usage=record_provider_usage,
             ),
             tool_call_id="view-detached-media",
@@ -1350,7 +1536,7 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=2,
+                binding_version=2,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -1413,7 +1599,7 @@ async def test_managed_dispatch_fails_stale_when_policy_wait_refreshes_binding(t
     assert observed["error"]["code"] == "environment_stale_binding"
 
 
-async def test_managed_authorization_is_fenced_by_binding_revision(tmp_path: Path) -> None:
+async def test_managed_authorization_is_fenced_by_binding_version(tmp_path: Path) -> None:
     aggregate = _local_binding(tmp_path)
     run_bindings = RunBindings.embedded(environment=aggregate)
     replacement = DirectLocalEnvironmentProviderBinding(
@@ -1427,7 +1613,7 @@ async def test_managed_authorization_is_fenced_by_binding_revision(tmp_path: Pat
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=2,
+                binding_version=2,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -1730,7 +1916,7 @@ async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: boo
                 bytes_written=len(staged),
                 receipt=EnvironmentOperationReceipt(
                     binding_id="binding-destination",
-                    binding_revision=1,
+                    binding_version=1,
                     observed_generation="generation-destination",
                     operation_id="operation-1",
                     stage="completed",
@@ -1740,24 +1926,24 @@ async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: boo
 
     source_backend = SourceBackend()
     destination_backend = DestinationBackend()
-    topology_revision = 1
-    prepared_revisions: list[int] = []
+    topology_version = 1
+    prepared_versions: list[int] = []
 
     def resolve(path: str) -> EnvironmentPath:
         source = path == "source"
         return EnvironmentPath(
             binding_id="binding-source" if source else "binding-destination",
-            binding_revision=topology_revision,
+            binding_version=topology_version,
             path=f"/{path}",
         )
 
     @asynccontextmanager
     async def prepare(selected: EnvironmentPath, action: EnvironmentAction) -> AsyncGenerator[Any]:
-        nonlocal topology_revision
+        nonlocal topology_version
         source = action is EnvironmentAction.FILE_COPY_SOURCE
-        prepared_revisions.append(selected.binding_revision)
+        prepared_versions.append(selected.binding_version)
         if source:
-            topology_revision = 2
+            topology_version = 2
         yield _PreparedFile(
             selected=selected,
             observed_generation="generation-source" if source else "generation-destination",
@@ -1774,7 +1960,7 @@ async def test_cross_binding_copy_uses_plain_stream_completion(source_fails: boo
         result = await files.copy("source", "destination")
         assert result.bytes_copied == 4
         assert destination_backend.data == b"data"
-    assert prepared_revisions == [1, 1]
+    assert prepared_versions == [1, 1]
 
 
 class _ApplyTopologyAfterResultPlugin(AbstractHarnessPlugin):
@@ -1817,11 +2003,11 @@ def _dynamic_local_request(root: Path) -> EnvironmentTopologyRequest:
         )
     )
     return EnvironmentTopologyRequest(
-        topology_version=1,
+        topology_version=2,
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -2009,7 +2195,7 @@ class _ApplyTopologyBurstAfterResultPlugin(AbstractHarnessPlugin):
         async def iterate():
             async for item in call_next(exchange):
                 if isinstance(item, HarnessRunResult):
-                    for version in range(1, self._count + 1):
+                    for version in range(2, self._count + 2):
                         await self._controller.apply(
                             EnvironmentTopologyRequest(
                                 topology_version=version,
@@ -2111,7 +2297,7 @@ async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
 
@@ -2131,7 +2317,7 @@ async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
     environment = SimpleNamespace(files=files)
@@ -2386,7 +2572,7 @@ async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_er
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
     toolset = FileToolset(files)
@@ -2410,17 +2596,17 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
-    revision = 1
+    binding_version = 1
     writes = 0
 
     class RefreshingFiles:
         async def mkdir(self, path: str, *, parents: bool, exist_ok: bool):
-            nonlocal revision
+            nonlocal binding_version
             result = await files.mkdir(path, parents=parents, exist_ok=exist_ok)
-            revision = 2
+            binding_version = 2
             return result
 
         async def write_text(self, path: str, text: str, *, mode: str):
@@ -2429,7 +2615,7 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
             return await files.write_text(path, text, mode=cast(Any, mode))
 
     def guard() -> None:
-        if revision != 1:
+        if binding_version != 1:
             raise EnvironmentError("Binding changed.", code="environment_stale_binding")
 
     toolset = FileToolset(cast(Any, RefreshingFiles()), execution_guard=guard)
@@ -2443,38 +2629,38 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
     assert not (tmp_path / "nested" / "value.txt").exists()
 
 
-async def test_file_toolset_pins_one_revision_across_compound_write() -> None:
+async def test_file_toolset_pins_one_version_across_compound_write() -> None:
     writes: list[tuple[int, str]] = []
-    current_revision = 1
+    current_version = 1
 
-    class RevisionFiles:
-        def __init__(self, revision: int) -> None:
-            self.revision = revision
+    class VersionFiles:
+        def __init__(self, version: int) -> None:
+            self.version = version
 
         async def mkdir(self, path: str, *, parents: bool, exist_ok: bool):
-            nonlocal current_revision
+            nonlocal current_version
             del path, parents, exist_ok
-            if self.revision == 1:
-                current_revision = 2
+            if self.version == 1:
+                current_version = 2
             return SimpleNamespace()
 
         async def write_text(self, path: str, text: str, *, mode: str):
             del mode
-            writes.append((self.revision, path))
+            writes.append((self.version, path))
             return FileWriteResult(
                 path=path,
                 bytes_written=len(text.encode()),
                 receipt=EnvironmentOperationReceipt(
                     binding_id="binding-1",
-                    binding_revision=self.revision,
-                    observed_generation=f"generation-{self.revision}",
+                    binding_version=self.version,
+                    observed_generation=f"generation-{self.version}",
                     operation_id=f"operation-{len(writes)}",
                     stage="completed",
                     outcome="succeeded",
                 ),
             )
 
-    revisions = {1: RevisionFiles(1), 2: RevisionFiles(2)}
+    versions = {1: VersionFiles(1), 2: VersionFiles(2)}
 
     class Scopes:
         def select_files(self, path: str) -> FileScopeSelection:
@@ -2482,17 +2668,17 @@ async def test_file_toolset_pins_one_revision_across_compound_write() -> None:
                 logical_path=path,
                 resolved_path=EnvironmentPath(
                     binding_id="binding-1",
-                    binding_revision=current_revision,
+                    binding_version=current_version,
                     path=path,
                 ),
-                observed_generation=f"generation-{current_revision}",
+                observed_generation=f"generation-{current_version}",
             )
 
         @asynccontextmanager
         async def open_files(self, selection: FileScopeSelection) -> AsyncGenerator[Any]:
-            yield revisions[selection.resolved_path.binding_revision]
+            yield versions[selection.resolved_path.binding_version]
 
-    toolset = FileToolset(cast(Any, revisions[1]), file_scopes=Scopes())
+    toolset = FileToolset(cast(Any, versions[1]), file_scopes=Scopes())
     ctx = cast(Any, SimpleNamespace())
 
     first = await toolset.write(ctx, "/nested/first.txt", "first")
@@ -2511,7 +2697,7 @@ async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) ->
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
     toolset = FileToolset(files)
@@ -2533,7 +2719,7 @@ async def test_direct_local_create_is_exclusive_under_concurrency(tmp_path: Path
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
 
@@ -2563,7 +2749,7 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
     toolset = FileToolset(files)

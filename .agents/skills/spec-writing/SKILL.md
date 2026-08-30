@@ -52,6 +52,18 @@ Read [references/structure-and-template.md](references/structure-and-template.md
 
 Write in present tense with decisive, testable language. Describe what the system is and how it behaves, not what a team plans to implement.
 
+Before drafting schemas or APIs, establish the domain model:
+
+1. Walk through representative end-to-end use flows before choosing resources, schemas, or tables. If a common operation cannot be expressed naturally, the model is not ready.
+2. Derive the core concepts, identities, owners, relationships, and lifecycles from those flows.
+3. Separate values that can change independently; keep values together when they have no independent lifecycle or meaning.
+4. Give each concept one owning specification, one canonical model, and one canonical term.
+5. Add a separate model only when it has independent identity, lifecycle, authority, compatibility, or query value.
+6. Normalize different entry paths such as managed references, revisions, overrides, inline definitions, triggers, and children into the same core concepts.
+7. Use names that state what a concept is without repeating its project or module namespace.
+
+Read [references/domain-modeling-and-naming.md](references/domain-modeling-and-naming.md) when adding or restructuring a domain model, introducing several related schemas, changing a core term, or reviewing model and field names.
+
 For each material contract, make clear:
 
 - its design position and purpose;

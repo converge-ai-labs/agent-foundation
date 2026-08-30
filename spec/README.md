@@ -9,7 +9,7 @@ The platform consists of:
 - `agent-harness`, distributed as `a13n-harness`, for code-first Pydantic AI execution;
 - `agent-environment-provider`, distributed as `a13n-environment-provider`, for shared Environment provider specifications, Providers, Resources, built-ins, and runtime attachments;
 - `agent-stream-protocol`, distributed as `a13n-stream-protocol`, for shared Harness-to-AG-UI observation;
-- `agent-ui`, distributed as `a13n-ui`, for reloadable local Agent/Environment composition, Sessions, and complete WebUI/TUI interaction;
+- `agent-ui`, distributed as `a13n-ui`, for reloadable local Agent/Environment composition, Sessions, a stable local Host with replaceable runtime Runners, and complete WebUI/CLI interaction;
 - `agent-envd`, distributed as `agent-envd`, for Environment Interaction Protocol operations;
 - `a13n-envd-client`, the generated low-level Python EIP client;
 - `foundation-service`, distributed as `a13n-service`, for optional durable hosting;
@@ -37,10 +37,11 @@ flowchart TB
     end
 
     subgraph LocalUI[agent-ui]
-        AppService[Local application service]
+        Host[Stable AgentUiHost]
         Sessions[Local sessions]
+        Runner[Replaceable runtime Runner]
         WebUI[Bundled WebUI]
-        TUI[Terminal UI]
+        LocalCLI[Interactive and one-shot CLI]
     end
 
     subgraph FoundationClients[Foundation clients]
@@ -81,10 +82,10 @@ flowchart TB
     Product --> Gateway --> Control
     FoundationCLI --> RustSDK --> Gateway
     Product -. embedded .-> Definition
-    Product -. local interactive .-> AppService
-    AppService --> Sessions
-    AppService --> Definition
-    AppService --> StreamProtocol --> WebUI & TUI
+    Product -. local interactive .-> Host
+    Host --> Sessions
+    Host --> Runner --> Definition
+    Host --> StreamProtocol --> WebUI & LocalCLI
     Control --> Definitions & Connectors
     Definitions & Connectors --> Lifecycle --> Worker
     Definitions & Connectors --> Reconstruct --> Definition
@@ -94,7 +95,7 @@ flowchart TB
     Plugins & Bindings --> Context --> Run --> State
     Run --> Models & Tools
     Run -. deferred calls .-> Clients
-    Worker & AppService --> ProviderPackage
+    Worker & Runner --> ProviderPackage
     ProviderPackage --> Local & EIPClient
     ProviderPackage --> Bindings
     Context --> Bound
@@ -113,7 +114,7 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 | `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                                                 | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                  |
 | `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                                                 | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                       |
 | `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                               | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                 |
-| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, hybrid Sessions, provider orchestration, root execution, async-only subagent jobs, application service, WebUI, and TUI                               | Distributed execution, multi-tenant authorization, or another Agent loop                                                 |
+| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, hybrid Sessions, stable Host authority, replaceable runtime Runners, root execution, async-only subagent jobs, WebUI, and CLI                        | Distributed execution, multi-tenant authorization, or another Agent loop                                                 |
 | `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                              | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle |
 | `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                            | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                         |
 | Foundation SDKs              | Language-typed access to the public Foundation Service Native `/api` contract, including streams and notifications                                                                                                                        | Service internals, standard-protocol replacement, product policy, or durable lifecycle authority                         |
@@ -140,7 +141,7 @@ The complete design is indexed in [agent-harness/README.md](agent-harness/README
 
 ## Local Agent Interaction
 
-Agent UI is a complete local single-user workstation above the Harness. Human- and agent-editable configuration dynamically publishes validated Model, Prompt, Plugin, local Skill source/package, Agent, and Environment catalogs. Each Session pins immutable Agent and Environment snapshots plus validated root/child Skill exposure, references Host-managed Environment Provider resources through explicit assignments, selects complete `HarnessState` checkpoints, and manages Host-coordinated asynchronous child jobs over exact Harness-built subagents. Agent UI never enables the Harness blocking inline Delegation Capability. SQLite owns mutable metadata and control state, while resolved snapshots, provider state, Harness state, and retained AG-UI events live in verified compressed files; OpenTelemetry remains an independent export path. One application service exposes the same product semantics through a default bundled WebUI or a direct in-process TUI. Neither surface interprets private Harness events, reads storage for authority, operates providers independently, or owns a second Session model.
+Agent UI is a complete local single-user workstation above the Harness. Human- and agent-editable configuration dynamically publishes validated Model, Prompt, Plugin, local Skill source/package, Agent, and Environment catalogs. Each Session pins immutable Agent and Environment snapshots plus validated root/child Skill exposure, references Host-managed Environment Provider resources through explicit assignments, selects complete `HarnessState` checkpoints, and manages Host-coordinated asynchronous child jobs over exact Harness-built subagents. Agent UI never enables the Harness blocking inline Delegation Capability. SQLite owns mutable metadata and control state, while resolved snapshots, provider state, Harness state, and retained AG-UI events live in verified compressed files; OpenTelemetry remains an independent export path. One stable `AgentUiHost` exposes the same product semantics through a bundled WebUI and an interactive or one-shot CLI. The Host retains the data-root lease, durable state, configuration, runtime routing, and commit authority while replaceable child Runners own process-local Harness, plugin, Model, and Provider execution. Neither surface interprets private Harness events, controls a Runner directly, reads storage for authority, operates providers independently, or owns a second Session model.
 
 `a13n-harness`, `a13n-environment-provider`, and `a13n-stream-protocol` form the Harness release group. One `release/harness-v<version>` tag assigns the same version to all three distributions. Published Harness metadata pins the exact provider-package version, and published Stream Protocol metadata pins the exact Harness version. Agent UI releases independently through `release/agent-ui-v<version>` and its published artifact pins the reviewed Harness release dependencies. Source checkouts continue to resolve unversioned package dependencies from the shared uv workspace. Each tag version is a stable `X.Y.Z` identity or an RC `X.Y.Z-rc.N` identity as defined by [repository release automation](repository-model.md#release-automation). Source directories omit the distribution prefix (`packages/agent-*`), while Python distribution names use `a13n-` and import packages use `a13n_`.
 

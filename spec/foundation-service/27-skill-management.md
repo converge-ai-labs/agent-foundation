@@ -368,7 +368,7 @@ state. After Harness enters the fresh Environment, but before model or tool work
 `SkillsCapability`:
 
 1. invokes the materializer to write those files through the current
-   revision-pinned `FileOperator` into a Host-reserved content-addressed root;
+   version-pinned `FileOperator` into a Host-reserved content-addressed root;
 2. verifies the complete root and writes a Host completion manifest last;
 3. scans only the verified package roots with the explicit `SkillManager`; and
 4. applies the already supplied exact-name selection before publishing model

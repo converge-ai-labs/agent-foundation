@@ -5,11 +5,15 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
+from pydantic_ai import RunContext
 from pydantic_ai.messages import AgentStreamEvent
+
+if TYPE_CHECKING:
+    from a13n_harness.context import AgentContext
 
 from a13n_harness._json import dump_json_bytes, redact_json
 from a13n_harness.errors import RunError
@@ -25,6 +29,7 @@ type HarnessExtensionKind = Literal[
     "delegation",
     "usage",
     "lifecycle",
+    "tool",
     "diagnostic",
 ]
 
@@ -132,7 +137,7 @@ def _require_context_operation_prefix(event_type: str, operation_id: str) -> Non
 
 class TaskEventProjection(_FirstPartyPayload):
     id: str = Field(pattern=r"^task-[1-9][0-9]*$", max_length=64)
-    revision: int = Field(ge=1)
+    version: int = Field(ge=1)
     subject: str = Field(min_length=1, max_length=512)
     active_form: str | None = Field(default=None, min_length=1, max_length=512)
     status: Literal["pending", "in_progress", "completed"]
@@ -144,7 +149,7 @@ class TaskEventProjection(_FirstPartyPayload):
 class TaskChangedPayload(_FirstPartyPayload):
     type: Literal["task_changed"] = "task_changed"
     operation_id: str = Field(pattern=r"^task-change-[A-Za-z0-9_-]+$", max_length=128)
-    state_revision: int = Field(ge=0)
+    task_state_version: int = Field(ge=1)
     reason: Literal[
         "created",
         "updated",
@@ -234,6 +239,37 @@ class CodeActExecutionCompletedPayload(_FirstPartyPayload):
     side_effect_uncertain: bool
 
 
+class FileChangeProjection(_FirstPartyPayload):
+    """One confirmed logical file mutation without content disclosure."""
+
+    path: str = Field(min_length=1, max_length=4096)
+    action: Literal["created", "modified", "written", "deleted", "moved", "copied"]
+    destination: str | None = Field(default=None, min_length=1, max_length=4096)
+
+    @model_validator(mode="after")
+    def _validate_destination(self) -> FileChangeProjection:
+        if (self.action in {"moved", "copied"}) != (self.destination is not None):
+            raise ValueError("file move and copy changes require exactly one destination")
+        return self
+
+
+class FilesystemChangedValue(_FirstPartyPayload):
+    """Bounded confirmed file changes produced by one Tool call."""
+
+    changes: tuple[FileChangeProjection, ...] = Field(min_length=1, max_length=256)
+
+
+class ToolExtraEventPayload(_FirstPartyPayload):
+    """Generic typed envelope for one Tool-owned semantic observation."""
+
+    type: Literal["tool_extra"] = "tool_extra"
+    tool_call_id: str = Field(min_length=1, max_length=256)
+    tool_name: str = Field(min_length=1, max_length=256)
+    tool_id: str = Field(min_length=1, max_length=256)
+    name: str = Field(pattern=r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$", max_length=256)
+    value: JsonValue
+
+
 type FirstPartyEventPayload = (
     ModelRequestStartedPayload
     | ModelRequestCompletedPayload
@@ -250,7 +286,19 @@ type FirstPartyEventPayload = (
     | CodeActToolCallStartedPayload
     | CodeActToolCallCompletedPayload
     | CodeActExecutionCompletedPayload
+    | ToolExtraEventPayload
 )
+
+
+@runtime_checkable
+class AgentStreamEventProtocol(Protocol):
+    """Minimal runtime surface shared by native and extended Pydantic AI stream events."""
+
+    @property
+    def event_kind(self) -> str: ...
+
+
+type HarnessEventValue = AgentStreamEvent | AgentStreamEventProtocol | HarnessExtensionEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,7 +309,7 @@ class HarnessEvent:
     run_id: str
     sequence: int
     occurred_at: datetime
-    event: AgentStreamEvent | HarnessExtensionEvent
+    event: HarnessEventValue
 
     def __post_init__(self) -> None:
         if (
@@ -343,6 +391,26 @@ async def emit_harness_event(
             payload=payload.model_dump(mode="json"),
         )
     )
+
+
+async def emit_tool_event(
+    ctx: RunContext[AgentContext],
+    *,
+    tool_id: str,
+    name: str,
+    value: BaseModel,
+) -> None:
+    """Emit one typed Tool-owned observation correlated to the active call."""
+    if not ctx.tool_call_id or not ctx.tool_name:
+        raise RunError("A Tool extra event requires active Tool correlation.", code="event_invalid")
+    payload = ToolExtraEventPayload(
+        tool_call_id=ctx.tool_call_id,
+        tool_name=ctx.tool_name,
+        tool_id=tool_id,
+        name=name,
+        value=value.model_dump(mode="json"),
+    )
+    await emit_harness_event(ctx.deps.events, kind="tool", payload=payload)
 
 
 class _ChildEventForwarder:

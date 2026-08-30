@@ -75,10 +75,7 @@ class SessionRepository:
         now = datetime.now(UTC)
         skills_json = _json([item.model_dump(mode="json") for item in skill_selections])
         fork_json = _json(parent_fork.model_dump(mode="json")) if parent_fork is not None else None
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             existing = (
                 await database_session.execute(
                     select(SessionRecord).where(SessionRecord.creation_request_id == creation_request_id)
@@ -117,7 +114,7 @@ class SessionRepository:
                     archived_at=None,
                     pinned=False,
                     display_order=0,
-                    control_revision=1,
+                    control_version=1,
                     agent_snapshot_id=agent_snapshot_id,
                     environment_snapshot_id=environment_snapshot_id,
                     skill_selections_json=skills_json,
@@ -135,8 +132,8 @@ class SessionRepository:
                         thread_id=thread_id,
                         session_id=session_id,
                         root_ordinal=0,
-                        commit_revision=0,
-                        queue_revision=0,
+                        commit_version=1,
+                        queue_version=1,
                         selected_checkpoint_id=None,
                         active_turn_id=None,
                         created_at=now,
@@ -181,10 +178,7 @@ class SessionRepository:
         return await self.get(existing_id)
 
     async def get(self, session_id: str) -> LocalSession:
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             session_row = await database_session.get(SessionRecord, session_id)
             if session_row is None or session_row.lifecycle_state == SessionLifecycleState.deleted.value:
                 raise SessionError("The selected Session does not exist.", code="session_missing")
@@ -290,7 +284,7 @@ class SessionRepository:
                 archived_at=session_row.archived_at,
                 pinned=session_row.pinned,
                 display_order=session_row.display_order,
-                control_revision=session_row.control_revision,
+                control_version=session_row.control_version,
                 agent_snapshot=_snapshot_reference(agent_row),
                 environment_snapshot=_snapshot_reference(environment_row),
                 skill_selections=tuple(
@@ -305,8 +299,8 @@ class SessionRepository:
                 root=ThreadView(
                     thread_id=thread_row.thread_id,
                     session_id=session_row.session_id,
-                    commit_revision=thread_row.commit_revision,
-                    queue_revision=thread_row.queue_revision,
+                    commit_version=thread_row.commit_version,
+                    queue_version=thread_row.queue_version,
                     selected_checkpoint=(
                         checkpoint_refs.get(thread_row.selected_checkpoint_id)
                         if thread_row.selected_checkpoint_id is not None
@@ -325,10 +319,7 @@ class SessionRepository:
     async def recovery_session_ids(self) -> tuple[str, ...]:
         """Return every retained Session identity for startup authority validation."""
 
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             return tuple(
                 (
                     await database_session.execute(
@@ -342,16 +333,13 @@ class SessionRepository:
     async def fail_closed(self, session_id: str, *, failure: JsonValue) -> None:
         """Block one retained Session whose selected startup authority is invalid."""
 
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
             if record is None or record.lifecycle_state == SessionLifecycleState.deleted.value:
                 return
             record.lifecycle_state = SessionLifecycleState.blocked.value
             record.lifecycle_failure_json = _json(failure)
-            record.control_revision += 1
+            record.control_version += 1
             record.updated_at = datetime.now(UTC)
 
     async def list(
@@ -362,10 +350,7 @@ class SessionRepository:
     ) -> tuple[SessionSummary, ...]:
         if not 1 <= limit <= 1000:
             raise ValueError("Session list limit must be between 1 and 1000")
-        async with short_session(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with short_session(self._store.database.sessions) as database_session:
             statement = (
                 select(SessionRecord, SessionThreadRecord)
                 .join(SessionThreadRecord, SessionRecord.root_thread_id == SessionThreadRecord.thread_id)
@@ -393,9 +378,9 @@ class SessionRepository:
                     archived_at=session_row.archived_at,
                     pinned=session_row.pinned,
                     display_order=session_row.display_order,
-                    control_revision=session_row.control_revision,
+                    control_version=session_row.control_version,
                     thread_id=thread_row.thread_id,
-                    thread_commit_revision=thread_row.commit_revision,
+                    thread_commit_version=thread_row.commit_version,
                     active_turn_id=thread_row.active_turn_id,
                     updated_at=session_row.updated_at,
                 )
@@ -407,14 +392,11 @@ class SessionRepository:
                 code="session_projection_invalid",
             ) from exc
 
-    async def update(self, session_id: str, expected_revision: int, update: SessionUpdate) -> LocalSession:
+    async def update(self, session_id: str, expected_version: int, update: SessionUpdate) -> LocalSession:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
-            self._require_control_revision(record, expected_revision)
+            self._require_control_version(record, expected_version)
             assert record is not None
             if record.lifecycle_state in {
                 SessionLifecycleState.deleting.value,
@@ -434,7 +416,7 @@ class SessionRepository:
                 record.pinned = update.pinned
             if "display_order" in updates and update.display_order is not None:
                 record.display_order = update.display_order
-            record.control_revision += 1
+            record.control_version += 1
             record.updated_at = now
         return await self.get(session_id)
 
@@ -442,17 +424,14 @@ class SessionRepository:
         self,
         session_id: str,
         *,
-        expected_revision: int,
+        expected_version: int,
         state: SessionLifecycleState,
         failure: JsonValue | None = None,
     ) -> LocalSession:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
-            self._require_control_revision(record, expected_revision)
+            self._require_control_version(record, expected_version)
             assert record is not None
             if state is SessionLifecycleState.deleting:
                 thread = await database_session.get(SessionThreadRecord, record.root_thread_id)
@@ -463,7 +442,7 @@ class SessionRepository:
                     )
             record.lifecycle_state = state.value
             record.lifecycle_failure_json = _json(failure) if failure is not None else None
-            record.control_revision += 1
+            record.control_version += 1
             record.updated_at = now
         return await self.get(session_id)
 
@@ -472,15 +451,12 @@ class SessionRepository:
         *,
         session_id: str,
         thread_id: str,
-        expected_revision: int,
+        expected_version: int,
         turn_id: str,
         input_value: JsonValue,
     ) -> TurnView:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             session_row = await database_session.get(SessionRecord, session_id)
             if session_row is None or session_row.lifecycle_state != SessionLifecycleState.ready.value:
                 raise SessionError(
@@ -488,7 +464,7 @@ class SessionRepository:
                     code="session_not_ready",
                 )
             thread_row = await database_session.get(SessionThreadRecord, thread_id)
-            self._require_thread(thread_row, session_id, expected_revision)
+            self._require_thread(thread_row, session_id, expected_version)
             assert thread_row is not None
             if thread_row.active_turn_id is not None:
                 raise SessionError(
@@ -514,7 +490,7 @@ class SessionRepository:
             database_session.add(turn)
             await database_session.flush()
             thread_row.active_turn_id = turn_id
-            thread_row.commit_revision += 1
+            thread_row.commit_version += 1
             thread_row.updated_at = now
         return (await self.get(session_id)).root.turns[-1]
 
@@ -522,20 +498,17 @@ class SessionRepository:
         self,
         *,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         run_id: str,
         consume_deferred: bool,
     ) -> int:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn = await database_session.get(TurnRecord, turn_id)
             if turn is None:
                 raise SessionError("The selected Turn does not exist.", code="turn_missing")
             thread = await database_session.get(SessionThreadRecord, turn.thread_id)
-            self._require_thread(thread, turn.session_id, expected_thread_revision)
+            self._require_thread(thread, turn.session_id, expected_thread_version)
             assert thread is not None
             if thread.active_turn_id != turn_id or turn.state not in {
                 TurnState.accepted.value,
@@ -582,15 +555,15 @@ class SessionRepository:
             turn.started_at = turn.started_at or now
             turn.process_generation = self._store.process_generation
             if consume_deferred:
-                thread.commit_revision += 1
+                thread.commit_version += 1
                 thread.updated_at = now
-            return thread.commit_revision
+            return thread.commit_version
 
     async def commit_waiting(
         self,
         *,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         run_id: str,
         checkpoint: CheckpointRef,
         state_object: ObjectRef,
@@ -600,14 +573,11 @@ class SessionRepository:
         if checkpoint.state_object_digest != state_object.logical_digest:
             raise ValueError("checkpoint and state object digest must agree")
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn, thread = await self._require_running_turn(
                 database_session,
                 turn_id,
-                expected_thread_revision,
+                expected_thread_version,
                 run_id,
             )
             await self._insert_checkpoint(database_session, turn, checkpoint, now)
@@ -631,7 +601,7 @@ class SessionRepository:
             turn.failure_json = None
             turn.terminal_projection_json = None
             thread.selected_checkpoint_id = checkpoint.checkpoint_id
-            thread.commit_revision += 1
+            thread.commit_version += 1
             thread.updated_at = now
         session = await self.get(turn.session_id)
         return next(item for item in session.root.turns if item.turn_id == turn_id)
@@ -640,7 +610,7 @@ class SessionRepository:
         self,
         *,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         run_id: str,
         state: Literal[
             TurnState.completed,
@@ -653,14 +623,11 @@ class SessionRepository:
         failure: JsonValue | None,
     ) -> TurnView:
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn, thread = await self._require_running_turn(
                 database_session,
                 turn_id,
-                expected_thread_revision,
+                expected_thread_version,
                 run_id,
             )
             if checkpoint is not None:
@@ -673,7 +640,7 @@ class SessionRepository:
             turn.failure_json = _json(failure) if failure is not None else None
             turn.finished_at = now
             thread.active_turn_id = None
-            thread.commit_revision += 1
+            thread.commit_version += 1
             thread.updated_at = now
             deferred = await database_session.get(PendingDeferredRecord, turn_id)
             if deferred is not None:
@@ -688,22 +655,19 @@ class SessionRepository:
         self,
         *,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         state: Literal[TurnState.cancelled, TurnState.interrupted],
         failure: JsonValue | None,
     ) -> TurnView:
         """Close accepted or waiting work that never entered another Harness Run."""
 
         now = datetime.now(UTC)
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             turn = await database_session.get(TurnRecord, turn_id)
             if turn is None:
                 raise SessionError("The selected Turn does not exist.", code="turn_missing")
             thread = await database_session.get(SessionThreadRecord, turn.thread_id)
-            self._require_thread(thread, turn.session_id, expected_thread_revision)
+            self._require_thread(thread, turn.session_id, expected_thread_version)
             assert thread is not None
             if thread.active_turn_id != turn_id or turn.state not in {
                 TurnState.accepted.value,
@@ -716,7 +680,7 @@ class SessionRepository:
             turn.terminal_projection_json = None
             turn.finished_at = now
             thread.active_turn_id = None
-            thread.commit_revision += 1
+            thread.commit_version += 1
             thread.updated_at = now
             deferred = await database_session.get(PendingDeferredRecord, turn_id)
             if deferred is not None:
@@ -730,10 +694,7 @@ class SessionRepository:
     async def interrupt_prior_process_turns(self) -> int:
         now = datetime.now(UTC)
         interrupted = 0
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+        async with transaction(self._store.database.sessions) as database_session:
             rows = tuple(
                 (
                     await database_session.execute(
@@ -757,18 +718,15 @@ class SessionRepository:
                 thread = await database_session.get(SessionThreadRecord, turn.thread_id)
                 if thread is not None and thread.active_turn_id == turn.turn_id:
                     thread.active_turn_id = None
-                    thread.commit_revision += 1
+                    thread.commit_version += 1
                     thread.updated_at = now
                 interrupted += 1
         return interrupted
 
-    async def hard_delete(self, session_id: str, expected_revision: int) -> None:
-        async with transaction(
-            self._store.database.sessions,
-            cleanup_timeout_seconds=self._store.settings.cleanup_timeout_seconds,
-        ) as database_session:
+    async def hard_delete(self, session_id: str, expected_version: int) -> None:
+        async with transaction(self._store.database.sessions) as database_session:
             record = await database_session.get(SessionRecord, session_id)
-            self._require_control_revision(record, expected_revision)
+            self._require_control_version(record, expected_version)
             assert record is not None
             thread = await database_session.get(SessionThreadRecord, record.root_thread_id)
             if thread is not None and thread.active_turn_id is not None:
@@ -822,36 +780,36 @@ class SessionRepository:
             )
         return row.snapshot_id
 
-    def _require_control_revision(self, record: SessionRecord | None, expected_revision: int) -> None:
+    def _require_control_version(self, record: SessionRecord | None, expected_version: int) -> None:
         if record is None or record.lifecycle_state == SessionLifecycleState.deleted.value:
             raise SessionError("The selected Session does not exist.", code="session_missing")
-        if record.control_revision != expected_revision:
+        if record.control_version != expected_version:
             raise SessionError(
-                "The Session control revision is stale.",
-                code="session_revision_conflict",
-                details={"current_revision": record.control_revision},
+                "The Session control version is stale.",
+                code="session_version_conflict",
+                details={"current_version": record.control_version},
             )
 
     def _require_thread(
         self,
         thread: SessionThreadRecord | None,
         session_id: str,
-        expected_revision: int,
+        expected_version: int,
     ) -> None:
         if thread is None or thread.session_id != session_id:
             raise SessionError("The selected Thread does not exist in this Session.", code="thread_missing")
-        if thread.commit_revision != expected_revision:
+        if thread.commit_version != expected_version:
             raise SessionError(
-                "The Thread commit revision is stale.",
-                code="thread_revision_conflict",
-                details={"current_revision": thread.commit_revision},
+                "The Thread commit version is stale.",
+                code="thread_version_conflict",
+                details={"current_version": thread.commit_version},
             )
 
     async def _require_running_turn(
         self,
         database_session: object,
         turn_id: str,
-        expected_thread_revision: int,
+        expected_thread_version: int,
         run_id: str,
     ) -> tuple[TurnRecord, SessionThreadRecord]:
         from sqlalchemy.ext.asyncio import AsyncSession
@@ -862,7 +820,7 @@ class SessionRepository:
         if turn is None:
             raise SessionError("The selected Turn does not exist.", code="turn_missing")
         thread = await database_session.get(SessionThreadRecord, turn.thread_id)
-        self._require_thread(thread, turn.session_id, expected_thread_revision)
+        self._require_thread(thread, turn.session_id, expected_thread_version)
         assert thread is not None
         if thread.active_turn_id != turn_id or turn.state != TurnState.running.value:
             raise SessionError("The selected Turn is not running.", code="turn_not_running")
@@ -875,7 +833,7 @@ class SessionRepository:
             )
         ).scalar_one_or_none()
         if latest_run is None or latest_run.run_id != run_id:
-            raise SessionError("The Run completion is stale.", code="run_revision_conflict")
+            raise SessionError("The Run completion is stale.", code="run_completion_conflict")
         return turn, thread
 
     async def _insert_checkpoint(

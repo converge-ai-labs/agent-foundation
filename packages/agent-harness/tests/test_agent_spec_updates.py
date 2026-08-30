@@ -5,8 +5,8 @@ from a13n_harness import (
     AgentDefinition,
     AgentSpec,
     DefinitionError,
+    HarnessModelCharacteristics,
     ModelCapability,
-    ModelConfiguration,
     SubagentDefinition,
     UserInteractionCapability,
 )
@@ -24,7 +24,7 @@ def _preset() -> AgentSpec:
             "model_settings": {"temperature": 0.2, "max_tokens": 2048},
             "metadata": {"preset": "research"},
             "capabilities": [{"WebSearch": {"native": True}}],
-            "model_config": {
+            "model_characteristics": {
                 "capabilities": ["image_understanding"],
                 "context_window": 128000,
             },
@@ -90,7 +90,7 @@ def test_with_updates_accepts_field_aliases_and_dynamic_mapping_input() -> None:
 
     updated = preset.with_updates(
         {
-            "model_config": {
+            "model_characteristics": {
                 "capabilities": ["audio_understanding"],
                 "context_window": 256000,
                 "compact_threshold": 0.8,
@@ -100,14 +100,14 @@ def test_with_updates_accepts_field_aliases_and_dynamic_mapping_input() -> None:
         toolset_instructions=False,
     )
 
-    assert updated.model_configuration == ModelConfiguration(
+    assert updated.model_characteristics == HarnessModelCharacteristics(
         capabilities=frozenset({ModelCapability.AUDIO_UNDERSTANDING}),
         context_window=256000,
         compact_threshold=0.8,
     )
     assert updated.json_schema_path == "./agent-schema.json"
     assert updated.toolset_instructions is False
-    assert preset.model_configuration == ModelConfiguration(
+    assert preset.model_characteristics == HarnessModelCharacteristics(
         capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING}),
         context_window=128000,
     )
@@ -120,15 +120,8 @@ def test_with_updates_rejects_unknown_duplicate_and_invalid_fields() -> None:
         preset.with_updates(temperature=0.1)
     with pytest.raises(ValueError, match="supplied more than once"):
         preset.with_updates({"model": "openai:gpt-5-mini"}, model="openai:gpt-5")
-    with pytest.raises(ValueError, match="supplied through both"):
-        preset.with_updates(
-            {
-                "model_configuration": ModelConfiguration(context_window=1000),
-                "model_config": {"context_window": 2000},
-            }
-        )
     with pytest.raises(ValidationError):
-        preset.with_updates(model_config={"context_window": 0})
+        preset.with_updates(model_characteristics={"context_window": 0})
 
 
 def test_with_updates_does_not_recursively_merge_mapping_fields() -> None:

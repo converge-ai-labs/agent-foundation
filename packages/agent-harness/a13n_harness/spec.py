@@ -23,7 +23,7 @@ class ModelCapability(StrEnum):
     AUDIO_UNDERSTANDING = "audio_understanding"
 
 
-class ModelConfiguration(BaseModel):
+class HarnessModelCharacteristics(BaseModel):
     """Resolved Harness characteristics of the active Agent model."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -53,14 +53,14 @@ def _default_usage_limits() -> UsageLimits:
 
 
 class AgentSpec(PydanticAgentSpec):
-    """Native AgentSpec plus Harness-owned run and model configuration."""
+    """Native AgentSpec plus Harness-owned run and model characteristics."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     system_prompt: str | list[str] | None = None
     toolset_instructions: bool = True
     usage_limits: UsageLimits = Field(default_factory=_default_usage_limits)
-    model_configuration: ModelConfiguration | None = Field(default=None, alias="model_config")
+    model_characteristics: HarnessModelCharacteristics | None = None
 
     def with_updates(
         self,
@@ -103,14 +103,14 @@ class AgentSpec(PydanticAgentSpec):
         cls,
         custom_capability_types: Sequence[type[AbstractCapability[Any]]] = (),
     ) -> dict[str, Any]:
-        """Include Harness model configuration in the native strict AgentSpec schema."""
+        """Include Harness model characteristics in the native strict AgentSpec schema."""
         schema = super().model_json_schema_with_capabilities(
             (*first_party_declarative_capability_types(), *custom_capability_types)
         )
         definitions = schema.setdefault("$defs", {})
-        model_configuration_schema = ModelConfiguration.model_json_schema()
-        definitions.update(model_configuration_schema.pop("$defs", {}))
-        definitions["ModelConfiguration"] = model_configuration_schema
+        model_characteristics_schema = HarnessModelCharacteristics.model_json_schema()
+        definitions.update(model_characteristics_schema.pop("$defs", {}))
+        definitions["HarnessModelCharacteristics"] = model_characteristics_schema
         schema["properties"]["system_prompt"] = {
             "anyOf": [
                 {"type": "string"},
@@ -129,9 +129,9 @@ class AgentSpec(PydanticAgentSpec):
             mode="json",
         )
         schema["properties"]["usage_limits"] = usage_limits_schema
-        schema["properties"]["model_config"] = {
+        schema["properties"]["model_characteristics"] = {
             "anyOf": [
-                {"$ref": "#/$defs/ModelConfiguration"},
+                {"$ref": "#/$defs/HarnessModelCharacteristics"},
                 {"type": "null"},
             ],
             "default": None,
@@ -139,4 +139,4 @@ class AgentSpec(PydanticAgentSpec):
         return schema
 
 
-__all__ = ["AgentSpec", "ModelCapability", "ModelConfiguration"]
+__all__ = ["AgentSpec", "HarnessModelCharacteristics", "ModelCapability"]

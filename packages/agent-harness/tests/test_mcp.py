@@ -279,6 +279,7 @@ async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_pe
     assert first is recovered
     assert first is not second
     assert calls == ["run-1", "run-2"]
+    assert set(first_deps._capabilities) == {"a13n.mcp.context.context-server"}
     assert isinstance(first, MCP)
     native = first.get_native_tools()[0]
     assert native.headers == {"X-Static": "static", "X-Run": "run-1"}
@@ -298,6 +299,17 @@ def test_contextual_mcp_rejects_invalid_static_recipes(arguments: dict[str, obje
             id="context-server",
             headers_factory=lambda context: {"X-Run": context.run_id},
             **arguments,  # type: ignore[arg-type]
+        )
+
+    assert error.value.code == "mcp_definition_invalid"
+
+
+def test_contextual_mcp_rejects_ids_containing_colons() -> None:
+    with pytest.raises(DefinitionError) as error:
+        ContextualMCP(
+            "https://mcp.example.com/mcp",
+            id="context:server",
+            headers_factory=lambda context: {"X-Run": context.run_id},
         )
 
     assert error.value.code == "mcp_definition_invalid"

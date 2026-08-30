@@ -25,6 +25,7 @@ from a13n_harness.environment.files import (
 from a13n_harness.environment.models import EnvironmentError, EnvironmentPath
 from a13n_harness.environment.providers import FileScopeProvider
 from a13n_harness.errors import HarnessError
+from a13n_harness.events import FileChangeProjection, FilesystemChangedValue, emit_tool_event
 from a13n_harness.spec import ModelCapability
 from a13n_harness.tools.metadata import (
     HarnessTool,
@@ -138,6 +139,12 @@ class _FileViewProfile:
     page_bytes: int
     semantic_output_chars: int
     preserve_complete_lines: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _FileWriteOutcome:
+    path: str
+    bytes_written: int
 
 
 _MEDIA_TYPES = {
@@ -503,11 +510,18 @@ class FileToolset:
                     mode="append" if mode == "a" else "upsert",
                 )
 
-        return await self._execute(
+        result = await self._execute(
             file_path,
             operation,
             lambda result: {"file_path": result.path, "bytes_written": result.bytes_written},
         )
+        if result["ok"] and (mode != "a" or content):
+            await _emit_filesystem_changed(
+                ctx,
+                tool_id="filesystem.write",
+                changes=(FileChangeProjection(path=result["file_path"], action="written"),),
+            )
+        return result
 
     async def edit(
         self,
@@ -525,6 +539,7 @@ class FileToolset:
             ctx,
             file_path,
             (FileTextEdit(old_string=old_string, new_string=new_string, replace_all=replace_all),),
+            tool_id="filesystem.edit",
         )
 
     async def multi_edit(
@@ -537,7 +552,12 @@ class FileToolset:
         ],
     ) -> FileEditResult:
         """Validate all replacements in memory, then publish one final file write."""
-        return await self._apply_edits(ctx, file_path, tuple(edits))
+        return await self._apply_edits(
+            ctx,
+            file_path,
+            tuple(edits),
+            tool_id="filesystem.multi_edit",
+        )
 
     async def mkdir(
         self,
@@ -549,7 +569,6 @@ class FileToolset:
         parents: Annotated[bool, Field(description="Create missing parent directories")] = False,
     ) -> FileMkdirResult:
         """Create a bounded batch of directories and report each outcome."""
-        del ctx
         results: list[FileMutationItem] = []
         async with self._mutation_lock:
             for path in paths:
@@ -560,6 +579,8 @@ class FileToolset:
                     results.append({"ok": True, "path": path})
                 except EnvironmentError as exc:
                     results.append({"ok": False, "path": path, "error": _environment_tool_error(exc)})
+        changes = tuple(FileChangeProjection(path=item["path"], action="created") for item in results if item["ok"])
+        await _emit_filesystem_changed(ctx, tool_id="filesystem.mkdir", changes=changes)
         return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
 
     async def move(
@@ -572,7 +593,6 @@ class FileToolset:
         overwrite: Annotated[bool, Field(description="Replace existing destinations")] = False,
     ) -> FileMoveResult:
         """Move a bounded batch of files or directories within their bindings."""
-        del ctx
         results: list[FilePathPairItem] = []
         async with self._mutation_lock:
             for pair in pairs:
@@ -593,6 +613,12 @@ class FileToolset:
                             "error": _environment_tool_error(exc),
                         }
                     )
+        changes = tuple(
+            FileChangeProjection(path=item["src"], action="moved", destination=item["dst"])
+            for item in results
+            if item["ok"]
+        )
+        await _emit_filesystem_changed(ctx, tool_id="filesystem.move", changes=changes)
         return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
 
     async def copy(
@@ -605,7 +631,6 @@ class FileToolset:
         overwrite: Annotated[bool, Field(description="Replace existing destinations")] = False,
     ) -> FileCopyToolResult:
         """Copy a bounded batch of files, including across Environment bindings."""
-        del ctx
         results: list[FileCopyItem] = []
         async with self._mutation_lock:
             for pair in pairs:
@@ -633,6 +658,12 @@ class FileToolset:
                             "error": _environment_tool_error(exc),
                         }
                     )
+        changes = tuple(
+            FileChangeProjection(path=item["src"], action="copied", destination=item["dst"])
+            for item in results
+            if item["ok"]
+        )
+        await _emit_filesystem_changed(ctx, tool_id="filesystem.copy", changes=changes)
         return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
 
     async def delete(
@@ -646,8 +677,8 @@ class FileToolset:
         force: Annotated[bool, Field(description="Treat missing paths as successful no-ops")] = False,
     ) -> FileDeleteResult:
         """Delete a bounded batch while preserving provider root protections."""
-        del ctx
         results: list[FileMutationItem] = []
+        deleted_paths: list[str] = []
         async with self._mutation_lock:
             for path in paths:
                 try:
@@ -655,11 +686,14 @@ class FileToolset:
                         self._guard_execution()
                         await files.remove(path, recursive=recursive)
                     results.append({"ok": True, "path": path})
+                    deleted_paths.append(path)
                 except EnvironmentError as exc:
                     if force and exc.code == "environment_not_found":
                         results.append({"ok": True, "path": path})
                     else:
                         results.append({"ok": False, "path": path, "error": _environment_tool_error(exc)})
+        changes = tuple(FileChangeProjection(path=path, action="deleted") for path in deleted_paths)
+        await _emit_filesystem_changed(ctx, tool_id="filesystem.remove", changes=changes)
         return {"ok": all(item["ok"] for item in results), "results": results, "count": len(results)}
 
     async def ls(
@@ -872,11 +906,17 @@ class FileToolset:
         ctx: RunContext[AgentContext],
         file_path: str,
         edits: tuple[FileTextEdit, ...],
+        *,
+        tool_id: Literal["filesystem.edit", "filesystem.multi_edit"],
     ) -> FileEditResult:
+        changed = False
+
         async def operation(files: FileOperator):
+            nonlocal changed
             async with self._mutation_lock:
                 self._guard_execution()
                 create = edits[0].old_string == ""
+                original_content: str | None = None
                 if create:
                     content = edits[0].new_string
                     pending = edits[1:]
@@ -898,6 +938,7 @@ class FileToolset:
                             "Edit target is not valid UTF-8 text.",
                             code="environment_unsupported",
                         ) from exc
+                    original_content = content
                     pending = edits
                     write_mode = "replace"
 
@@ -907,12 +948,16 @@ class FileToolset:
                     pending,
                     2 if create else 1,
                 )
+                if original_content is not None and content == original_content:
+                    return _FileWriteOutcome(path=file_path, bytes_written=0)
                 if create:
                     await self._ensure_parent(files, file_path)
                 self._guard_unscoped_step()
-                return await files.write_text(file_path, content, mode=write_mode)
+                result = await files.write_text(file_path, content, mode=write_mode)
+                changed = True
+                return result
 
-        return await self._execute(
+        result = await self._execute(
             file_path,
             operation,
             lambda result: {
@@ -922,6 +967,18 @@ class FileToolset:
                 "created": edits[0].old_string == "",
             },
         )
+        if result["ok"] and changed:
+            await _emit_filesystem_changed(
+                ctx,
+                tool_id=tool_id,
+                changes=(
+                    FileChangeProjection(
+                        path=result["file_path"],
+                        action="created" if result["created"] else "modified",
+                    ),
+                ),
+            )
+        return result
 
     async def _ensure_parent(self, files: FileOperator, file_path: str) -> None:
         parent = posixpath.dirname(file_path)
@@ -989,7 +1046,7 @@ def _model_supports_native_media(
     ctx: RunContext[AgentContext],
     kind: NativeInputMediaKind,
 ) -> bool:
-    configuration = ctx.deps.model_configuration
+    configuration = ctx.deps.model_characteristics
     if configuration is None:
         return False
     capability = ModelCapability(f"{kind}_understanding")
@@ -1007,6 +1064,22 @@ async def _record_media_understanding_usage(
             tool_id="filesystem.view",
             tool_call_id=ctx.tool_call_id,
         )
+
+
+async def _emit_filesystem_changed(
+    ctx: RunContext[AgentContext],
+    *,
+    tool_id: str,
+    changes: tuple[FileChangeProjection, ...],
+) -> None:
+    if not changes or not isinstance(ctx, RunContext) or not isinstance(ctx.deps, AgentContext):
+        return
+    await emit_tool_event(
+        ctx,
+        tool_id=tool_id,
+        name="filesystem.changed",
+        value=FilesystemChangedValue(changes=changes),
+    )
 
 
 def _media_understanding_error(code: str) -> ToolFailure:
@@ -1094,7 +1167,7 @@ def _file_view_profile(context: AgentContext, file_path: str) -> _FileViewProfil
 
 
 def _is_within_environment_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:
-    if candidate.binding_id != root.binding_id or candidate.binding_revision != root.binding_revision:
+    if candidate.binding_id != root.binding_id or candidate.binding_version != root.binding_version:
         return False
     normalized_root = root.path.rstrip("/")
     prefix = f"{normalized_root}/" if normalized_root else "/"

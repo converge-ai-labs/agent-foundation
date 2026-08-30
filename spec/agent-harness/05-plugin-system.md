@@ -366,7 +366,7 @@ Input flows outer-to-inner. Events and the complete result candidate flow inner-
 - translate an explicitly handled error;
 - replace the complete `HarnessRunResult` candidate.
 
-Already emitted events cannot be retracted. The Harness retains run correlation, output typing, message suffix, and result-combination validation at every response boundary and before public terminal delivery.
+Already emitted events cannot be retracted. At each response boundary, the Harness checks the `HarnessEvent` envelope, root or registered-child correlation, preserved child provenance and sequence, and a non-blank `event_kind` for events satisfying the open `AgentStreamEventProtocol`. It does not reconstruct or schema-validate trusted Pydantic AI or plugin-transformed Agent event payloads. Harness-owned `HarnessExtensionEvent` values are revalidated for their schema, redaction, finite-JSON, and payload-size invariants after plugin transformation. Complete result candidates remain subject to output typing, message suffix, state schema, run correlation, and result-combination validation before public terminal delivery.
 
 ## Trusted Result and State Composition
 

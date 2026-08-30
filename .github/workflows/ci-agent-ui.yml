@@ -63,6 +63,8 @@ jobs:
             runner: ubuntu-24.04
           - name: Windows
             runner: windows-2025
+          - name: macOS
+            runner: macos-15
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
@@ -120,8 +122,8 @@ jobs:
           scripts/tests/test_check_agent_ui_distribution.py
           scripts/tests/test_prepare_agent_ui_assets.py
 
-      - name: Test Agent UI on Windows
-        if: matrix.name == 'Windows'
+      - name: Test Agent UI on Windows and macOS
+        if: matrix.name != 'Linux'
         run: uv run --locked python -m pytest packages/agent-ui/tests
 
       - name: Build Agent UI distribution
