@@ -51,6 +51,7 @@ class _Provider(ConnectorProvider):
         return ConnectorProviderMetadata(
             display_name="Test",
             description="Test Connector Provider",
+            contract_version="1",
             provider_config_schemas={"1": {"type": "object"}},
             capabilities=ConnectorProviderCapabilities(tools=True),
         )
@@ -72,6 +73,7 @@ class _InvalidMetadataProvider(_Provider):
         return ConnectorProviderMetadata(
             display_name=" Test ",
             description="invalid surrounding whitespace",
+            contract_version="1",
             provider_config_schemas={"1": {"type": "object"}},
             capabilities=ConnectorProviderCapabilities(tools=True),
         )
@@ -83,6 +85,7 @@ class _InvalidSchemaProvider(_Provider):
         return ConnectorProviderMetadata(
             display_name="Invalid schema",
             description="Schema keyword has an invalid type",
+            contract_version="1",
             provider_config_schemas={"1": {"type": 42}},
             capabilities=ConnectorProviderCapabilities(tools=True),
         )
@@ -94,6 +97,7 @@ class _MissingCapabilityMethodProvider(ConnectorProvider):
         return ConnectorProviderMetadata(
             display_name="Missing methods",
             description="Claims tools without implementing their methods",
+            contract_version="1",
             provider_config_schemas={"1": {"type": "object"}},
             capabilities=ConnectorProviderCapabilities(tools=True),
         )

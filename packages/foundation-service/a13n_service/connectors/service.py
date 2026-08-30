@@ -35,6 +35,7 @@ from .domain import (
 from .errors import ConnectorError, ConnectorProviderError, ConnectorReauthorizationRequired
 from .models import ConnectionRecord, ConnectorRecord, ConnectorRevisionRecord, TriggerRecord
 from .provider import (
+    ConnectorConnectionProvider,
     ConnectorProviderConnection,
     ConnectorProviderConnectionResult,
     ConnectorProviderContext,
@@ -411,6 +412,8 @@ class ConnectionService:
             connector_revision_id,
         )
         provider = self._providers.require(revision.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         try:
             provider.validate_connection(
                 provider_config_version=revision.provider_config_version,
@@ -568,17 +571,32 @@ class ConnectionService:
                 "Connection requires reauthorization.",
                 code="connection_reauthorization_required",
             )
+        async with transaction(self._sessions) as session:
+            current = await _get_connection(
+                session,
+                organization_id,
+                workspace_id,
+                connection_id,
+                for_update=True,
+            )
+            _require_version(current.version, expected_version, "Connection")
+            if current.lifecycle_operation_id is None:
+                current.lifecycle_operation_id = context.operation_id
+            operation_id = current.lifecycle_operation_id
+        effective_context = ConnectorProviderContext(operation_id=operation_id, deadline=context.deadline)
         secrets = await self._secrets.read_connection_secrets(
             organization_id=organization_id,
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
         provider = self._providers.require(record.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         try:
             result = await invoke_provider(
-                context,
+                effective_context,
                 provider.refresh_connection(
-                    context,
+                    effective_context,
                     provider_config_version=revision.provider_config_version,
                     config=revision.config,
                     connection=_record_provider_connection(record, secrets),
@@ -597,6 +615,7 @@ class ConnectionService:
                 if current.status != "reauthorization_required":
                     current.status = "reauthorization_required"
                     _advance_connection(current)
+                current.lifecycle_operation_id = None
             raise
         provider.validate_connection(
             provider_config_version=revision.provider_config_version,
@@ -613,6 +632,8 @@ class ConnectionService:
                 for_update=True,
             )
             _require_version(current.version, expected_version, "Connection")
+            if current.lifecycle_operation_id != operation_id:
+                raise ConnectorError("Connection refresh was superseded.", code="version_conflict")
             if current.status == "revoked":
                 raise ConnectorError("A revoked Connection cannot be refreshed.", code="connection_revoked")
             changed = (
@@ -635,6 +656,7 @@ class ConnectionService:
             current.account_external_id = result.account.external_id
             current.account_display_name = result.account.display_name
             current.expires_at = result.expires_at
+            current.lifecycle_operation_id = None
             if changed:
                 _advance_connection(current)
         return _connection(current)
@@ -665,6 +687,8 @@ class ConnectionService:
             connection_id=connection_id,
         )
         provider = self._providers.require(record.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         provider_error: BaseException | None = None
         try:
             await invoke_provider(
@@ -695,13 +719,14 @@ class ConnectionService:
                     _advance_connection(current)
                 current.cleanup_pending = cleanup_pending
                 current.lifecycle_operation_id = context.operation_id if cleanup_pending else None
-                await self._secrets.delete_connection_secrets(
-                    session,
-                    organization_id=organization_id,
-                    workspace_id=workspace_id,
-                    connection_id=connection_id,
-                    actor=actor,
-                )
+                if not cleanup_pending:
+                    await self._secrets.delete_connection_secrets(
+                        session,
+                        organization_id=organization_id,
+                        workspace_id=workspace_id,
+                        connection_id=connection_id,
+                        actor=actor,
+                    )
         if provider_error is not None and not isinstance(provider_error, Exception):
             raise provider_error
         return _connection(current)
@@ -726,13 +751,24 @@ class ConnectionService:
         if not record.cleanup_pending:
             return _connection(record)
         provider = self._providers.require(record.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
+        secrets = await self._secrets.read_connection_secrets(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            connection_id=connection_id,
+        )
+        effective_context = ConnectorProviderContext(
+            operation_id=record.lifecycle_operation_id or context.operation_id,
+            deadline=context.deadline,
+        )
         await invoke_provider(
-            context,
+            effective_context,
             provider.revoke_connection(
-                context,
+                effective_context,
                 provider_config_version=revision.provider_config_version,
                 config=revision.config,
-                connection=_record_provider_connection(record, ()),
+                connection=_record_provider_connection(record, secrets),
             ),
         )
         async with transaction(self._sessions) as session:
@@ -744,6 +780,18 @@ class ConnectionService:
                 for_update=True,
             )
             if current.status == "revoked" and current.cleanup_pending:
+                await self._secrets.delete_connection_secrets(
+                    session,
+                    organization_id=organization_id,
+                    workspace_id=workspace_id,
+                    connection_id=connection_id,
+                    actor=PrincipalRef.model_validate(
+                        {
+                            "principal_type": current.created_by_type,
+                            "principal_id": current.created_by_id,
+                        }
+                    ),
+                )
                 current.cleanup_pending = False
                 current.lifecycle_operation_id = None
                 _advance_connection(current)

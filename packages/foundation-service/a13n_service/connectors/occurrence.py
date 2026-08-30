@@ -26,9 +26,11 @@ from .domain import (
 from .errors import ConnectorError
 from .models import TriggerOccurrenceRecord, TriggerRecord
 from .provider import (
+    ConnectorPollingProvider,
     ConnectorProviderContext,
     ConnectorProviderEvent,
     ConnectorProviderEventSourceResult,
+    ConnectorWebhookProvider,
     invoke_provider,
 )
 from .registry import ConnectorProviderCatalog
@@ -98,7 +100,7 @@ class TriggerIngressService:
             raise ConnectorError("Webhook body is too large.", code="event_payload_invalid")
         snapshot = await self._event_snapshot(trigger_id)
         provider = self._providers.require(snapshot.provider_key)
-        if provider.metadata.capabilities.event_delivery != "webhook":
+        if not isinstance(provider, ConnectorWebhookProvider):
             raise ConnectorError("Trigger Provider does not use webhooks.", code="trigger_source_incompatible")
         secrets = await self._trigger_secrets.read_trigger_secrets(
             organization_id=snapshot.organization_id,
@@ -173,7 +175,7 @@ class TriggerIngressService:
     ) -> tuple[TriggerOccurrenceReceipt, ...]:
         snapshot = await self._event_snapshot(trigger_id)
         provider = self._providers.require(snapshot.provider_key)
-        if provider.metadata.capabilities.event_delivery != "polling":
+        if not isinstance(provider, ConnectorPollingProvider):
             raise ConnectorError("Trigger Provider does not use polling.", code="trigger_source_incompatible")
         secrets = await self._trigger_secrets.read_trigger_secrets(
             organization_id=snapshot.organization_id,

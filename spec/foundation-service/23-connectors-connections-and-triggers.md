@@ -96,9 +96,12 @@ A historical ConnectorRevision can name a `provider_key` not selected by the
 current deployment. The service remains available, but authoring or execution
 that requires the revision fails explicitly as `provider_unavailable` or
 `provider_not_trusted`; Foundation never substitutes a similarly named or newer
-Provider. AgentPresetVersions additionally lock the exact provider artifact used to
-materialize their tools. A replacement artifact reconstructs a retained revision
-only when it explicitly declares compatibility with that lock.
+Provider. AgentPresetVersions additionally lock the Provider's semantic
+`contract_version` used to materialize their tools. The deployment image and
+package lock own the exact installed distribution; durable Agent data does not
+retain wheel, module, or class identity. A replacement artifact reconstructs a
+retained declaration only when it exposes the same `provider_key` and
+`contract_version`.
 
 Python dependency resolution and artifact construction occur before service
 startup. Foundation does not resolve conflicting package requirements at runtime.
@@ -109,6 +112,7 @@ One loaded Provider supplies deterministic, bounded, non-secret metadata through
 code rather than a second manifest. Its metadata includes:
 
 - a display name and description;
+- one semantic `contract_version` for reconstructing frozen Agent declarations;
 - supported `provider_config_version` values and JSON Schemas for Connector
   configuration;
 - whether it implements `tools`, `connections`, and `events`;
@@ -120,9 +124,13 @@ Connector configuration schemas. Every schema, configuration object, provider
 state object, tool declaration, argument, result, and event payload is subject to
 Foundation hard bounds for size, depth, count, and time.
 
-The public Provider object is one extension point with capability-specific method
-groups. The following names describe the stable responsibilities; concrete Python
-value classes remain typed process-local values rather than durable resources:
+The public extension contract has a small base `ConnectorProvider` containing
+metadata and `validate_config`. Optional runtime-checkable capability protocols
+add tool, Connection, and event operations. A Provider implements only the
+protocols it advertises; metadata and structural capability checks must agree at
+startup. The following names describe the stable responsibilities; concrete
+Python value classes remain typed process-local values rather than durable
+resources:
 
 | Capability    | Provider operations                                                                                                                                                              | Required semantics                                                                                |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -283,16 +291,26 @@ write-only. Foundation creates the Connection and its initial Secrets as one
 complete local result only after setup succeeds; it never commits an active
 Connection missing required credential material.
 
+Every effectful setup step has a Foundation-owned stable operation identity.
+`complete_connection` uses an identity derived from the setup operation rather
+than from an individual HTTP request. Foundation commits `completing` before the
+external call; after a process loss, recovery replays that same operation identity
+and the Provider must return or recover the same external result. It never starts
+a second authorization because a callback response was lost.
+
 Reauthorization updates the same `reauthorization_required` Connection. A revoked
 Connection is never reused. Credential refresh replaces Connection-owned Secret
 values without advancing Connection `version` when no public Connection field
 changes; a provider-state, account, expiry, or status change advances it once.
 
-Revocation attempts the external issuer operation, then stops local use, deletes
-live Connection-owned Secret ciphertext, and commits `revoked` regardless of an
-external success, failure, or unknown result. A stable operation identity and
-reconciliation can continue external cleanup, but external uncertainty never
-restores local authority.
+Revocation attempts the external issuer operation and commits terminal local
+`revoked` regardless of external success, failure, or unknown result. On confirmed
+success Foundation deletes Connection-owned Secret ciphertext in that commit. On
+failure or an unknown result, it retains the encrypted credential material only
+for bounded external-cleanup reconciliation under the original stable operation
+identity; the revoked Connection cannot expose or use it for Agent work. Successful
+reconciliation deletes the retained material. External uncertainty never restores
+local authority.
 
 At use time Foundation checks the exact Connector, current Connection status,
 Principal eligibility, Provider key, provider-state version, selected
@@ -328,6 +346,12 @@ class AgentConnectorDeclaration:
     connector_revision_id: ConnectorRevisionId
     connection_id: ConnectionId | None
     tools: tuple[FrozenConnectorTool, ...]
+    provider_lock: ConnectorProviderContractLock
+
+
+class ConnectorProviderContractLock:
+    provider_key: str
+    contract_version: str
 ```
 
 Foundation validates the complete Provider result and freezes every selected
@@ -713,12 +737,14 @@ The following version axes have separate owners and meanings:
 | `provider_state_version`        | Provider-owned interpretation of non-secret Connection or Trigger state |
 | `provider_event_config_version` | Provider-owned interpretation of Trigger event-selection config         |
 | `Trigger.version`               | CAS for mutable Trigger definition and lifecycle                        |
-| Agent dependency lock           | Exact trusted Provider artifact and reconstruction compatibility        |
+| `contract_version`              | Provider-owned semantic compatibility for frozen Agent declarations     |
+| Agent Provider contract lock    | Exact `provider_key` plus `contract_version` reconstruction requirement |
 | HTTP `/api/v1`                  | Public wire compatibility under Platform API Conventions                |
 
 No version substitutes for another. A Provider upgrade can support old config,
-state, event, and dependency-lock identities explicitly; absence of that declared
-compatibility fails rather than applying current defaults. Frozen Agent tool
+state, and event versions explicitly, while a frozen Agent declaration requires
+an exact Provider contract lock; absence of that declared compatibility fails
+rather than applying current defaults. Frozen Agent tool
 definitions change only through a new AgentPresetVersion. Publishing that Version
 or changing a Trigger affects only later occurrence acceptance because every Turn
 retains the selected Trigger version, exact Preset Version, Runtime lock, and
@@ -734,8 +760,9 @@ incompatible while durable data relies on it.
 
 Trusted in-process Providers give OSS deployments a small, direct Python extension
 surface and avoid one service hop per tool call. They also make Provider code part
-of the Foundation process trust boundary, so deployment selection and exact locks
-are mandatory and API-based code installation is excluded.
+of the Foundation process trust boundary, so exact deployment artifact selection
+and durable semantic contract locks are mandatory and API-based code installation
+is excluded.
 
 Keeping Connector configuration immutable while Connection authorization remains
 current permits safe config history and credential rotation without copying Secret
@@ -759,7 +786,7 @@ explicit authoring action.
 02. Connector, ConnectorRevision, Connection, and Trigger are tenant-consistent Workspace data, while only ConnectorRevision and AgentPresetVersion are immutable revisions.
 03. ConnectorRevision contains bounded non-secret Provider configuration and never contains a credential, code target, live object, or frozen tool contract.
 04. Connection credential material exists only in Connection-owned managed Secrets; public Connection data contains bounded non-secret account and Provider state.
-05. AgentPresetVersion freezes exact ConnectorRevision references, complete managed tool declarations, and Provider dependency locks without storing live authority.
+05. AgentPresetVersion freezes exact ConnectorRevision references, complete managed tool declarations, and Provider semantic contract locks without storing live authority or installed package identity.
 06. Turn acceptance resolves every unpinned required Connection once; a Turn submission cannot override or substitute that selection.
 07. Every TurnAttempt obtains current IAM, run grants, Provider compatibility, Connection eligibility, and credential use before Harness or external dispatch.
 08. Connector tools enter the model only through native Pydantic composition and the mandatory Harness managed-tool boundary.

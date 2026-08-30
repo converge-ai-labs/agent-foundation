@@ -10,7 +10,7 @@ from .domain import (
     Connector,
     ConnectorCreateResult,
     ConnectorEventTriggerSource,
-    ConnectorProviderDependencyLock,
+    ConnectorProviderContractLock,
     ConnectorRevision,
     ConnectorRevisionCreateResult,
     ConnectorTurnSelection,
@@ -36,6 +36,9 @@ from .errors import (
 )
 from .occurrence import TriggerIngressService, TriggerTurnAcceptor
 from .provider import (
+    ConnectorConnectionProvider,
+    ConnectorEventProvider,
+    ConnectorPollingProvider,
     ConnectorProvider,
     ConnectorProviderAccount,
     ConnectorProviderCapabilities,
@@ -50,6 +53,8 @@ from .provider import (
     ConnectorProviderSetupResult,
     ConnectorProviderTool,
     ConnectorProviderToolResult,
+    ConnectorToolProvider,
+    ConnectorWebhookProvider,
 )
 from .registry import (
     CONNECTOR_PROVIDER_ENTRY_POINT_GROUP,
@@ -61,6 +66,7 @@ from .registry import (
     discover_connector_provider_references,
 )
 from .runtime import ConnectorRunAuthorizer, ConnectorToolRuntime
+from .secrets import DatabaseConnectorSecretStore
 from .service import ConnectionSecretStore, ConnectionService, ConnectorService, resolve_connection
 from .setup import ConnectionSetupService, ConnectionSetupStateProtector
 from .toolset import ConnectorManagedToolset
@@ -80,10 +86,13 @@ __all__ = [
     "ConnectionSetupStateProtector",
     "ConnectionStatus",
     "Connector",
+    "ConnectorConnectionProvider",
     "ConnectorCreateResult",
     "ConnectorError",
+    "ConnectorEventProvider",
     "ConnectorEventTriggerSource",
     "ConnectorManagedToolset",
+    "ConnectorPollingProvider",
     "ConnectorProvider",
     "ConnectorProviderAccount",
     "ConnectorProviderCapabilities",
@@ -92,7 +101,7 @@ __all__ = [
     "ConnectorProviderConnection",
     "ConnectorProviderConnectionResult",
     "ConnectorProviderContext",
-    "ConnectorProviderDependencyLock",
+    "ConnectorProviderContractLock",
     "ConnectorProviderError",
     "ConnectorProviderEvent",
     "ConnectorProviderEventSourceResult",
@@ -110,11 +119,14 @@ __all__ = [
     "ConnectorRevisionCreateResult",
     "ConnectorRunAuthorizer",
     "ConnectorService",
+    "ConnectorToolProvider",
     "ConnectorToolRuntime",
     "ConnectorTurnSelection",
+    "ConnectorWebhookProvider",
     "CreateConnector",
     "CreateConnectorRevision",
     "CreateTrigger",
+    "DatabaseConnectorSecretStore",
     "FrozenConnectorTool",
     "PrincipalRef",
     "ScheduleTriggerSource",

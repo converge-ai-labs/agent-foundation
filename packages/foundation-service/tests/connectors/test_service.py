@@ -46,8 +46,9 @@ from a13n_service.connectors import (
     UpdateConnector,
     resolve_connection,
 )
-from a13n_service.connectors.models import ConnectionRecord, ConnectionSetupRecord
+from a13n_service.connectors.models import ConnectionRecord, ConnectionSetupRecord, TriggerRecord
 from a13n_service.database import DatabaseMigrator
+from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction
 from a13n_service.storage.config import SQLiteConfig
@@ -56,18 +57,28 @@ from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+ORG_ID = "org_0000000000000001"
+OTHER_ORG_ID = "org_0000000000000002"
+WORKSPACE_ID = "ws_0000000000000001"
+USER_ID = "usr_0000000000000001"
+OTHER_USER_ID = "usr_0000000000000002"
+
 
 class _Provider(ConnectorProvider):
     require_reauthorization = False
     fail_revoke = False
     fail_stop = False
     last_call_had_secret = False
+    last_complete_operation_id: str | None = None
+    last_reconcile_operation_id: str | None = None
+    last_reconcile_had_source: bool | None = None
 
     @property
     def metadata(self) -> ConnectorProviderMetadata:
         return ConnectorProviderMetadata(
             display_name="Test",
             description="Test Provider",
+            contract_version="1",
             provider_config_schemas={"1": {"type": "object"}},
             capabilities=ConnectorProviderCapabilities(
                 tools=True,
@@ -122,6 +133,7 @@ class _Provider(ConnectorProvider):
         return ConnectorProviderSetupResult(completed=True, connection=_connection_result("setup-token"))
 
     async def complete_connection(self, context, **kwargs):
+        self.last_complete_operation_id = context.operation_id
         assert kwargs["continuation_state"]["verifier"] == "private-verifier"
         return _connection_result("callback-token")
 
@@ -165,6 +177,8 @@ class _Provider(ConnectorProvider):
         return kwargs["source"]
 
     async def reconcile_event_source(self, context, **kwargs):
+        self.last_reconcile_operation_id = context.operation_id
+        self.last_reconcile_had_source = kwargs["source"] is not None
         return kwargs["source"] or ConnectorProviderEventSourceResult(
             provider_state_version="1",
             provider_state={"subscription": "sub-reconciled"},
@@ -255,7 +269,7 @@ class _TurnAcceptor:
 
     async def prepare_trigger_turn(self, **kwargs):
         self.calls.append(kwargs)
-        return {"turn_id": f"turn_{len(self.calls)}"}
+        return {"turn_id": f"turn_000000000000000{len(self.calls)}"}
 
     async def commit_trigger_turn(self, session, *, prepared, source):
         del session, source
@@ -283,13 +297,36 @@ async def sessions(tmp_path: Path) -> AsyncIterator[async_sessionmaker[AsyncSess
     DatabaseMigrator(config).upgrade()
     engine = create_sql_engine(config)
     factory = create_session_factory(engine)
+    now = datetime.now(UTC)
+    async with transaction(factory) as session:
+        session.add(
+            OrganizationRecord(
+                id=ORG_ID,
+                name="Test Organization",
+                version=1,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.add(
+            WorkspaceRecord(
+                id=WORKSPACE_ID,
+                organization_id=ORG_ID,
+                name="Test Workspace",
+                normalized_name="test-workspace",
+                version=1,
+                created_at=now,
+                updated_at=now,
+                deleted_at=None,
+            )
+        )
     try:
         yield factory
     finally:
         await engine.dispose()
 
 
-def _actor(identifier: str = "user_1") -> PrincipalRef:
+def _actor(identifier: str = USER_ID) -> PrincipalRef:
     return PrincipalRef(principal_type="user", principal_id=identifier)
 
 
@@ -304,8 +341,8 @@ def _connection_result(token: str) -> ConnectorProviderConnectionResult:
 
 def _create_request(**updates: object) -> CreateConnector:
     values: dict[str, object] = {
-        "organization_id": "org_1",
-        "workspace_id": "ws_1",
+        "organization_id": ORG_ID,
+        "workspace_id": WORKSPACE_ID,
         "name": "GitHub",
         "provider_key": "test",
         "provider_config_version": "1",
@@ -330,9 +367,9 @@ async def test_create_connector_atomically_creates_revision_one_and_tenant_reads
     assert created.revision.connector_id == created.connector.id
     assert created.revision.version == 1
     assert created.revision.config == {"base": "https://example.test"}
-    assert await service.get("org_1", "ws_1", created.connector.id) == created.connector
+    assert await service.get(ORG_ID, WORKSPACE_ID, created.connector.id) == created.connector
     with pytest.raises(ConnectorError) as concealed:
-        await service.get("org_other", "ws_1", created.connector.id)
+        await service.get(OTHER_ORG_ID, WORKSPACE_ID, created.connector.id)
     assert concealed.value.code == "not_found"
 
 
@@ -345,20 +382,20 @@ async def test_connector_update_uses_cas_and_semantic_noop_does_not_advance(
     created = await service.create(_create_request())
 
     unchanged = await service.update(
-        "org_1",
-        "ws_1",
+        ORG_ID,
+        WORKSPACE_ID,
         created.connector.id,
         UpdateConnector(name="GitHub", expected_version=1),
     )
     changed = await service.update(
-        "org_1",
-        "ws_1",
+        ORG_ID,
+        WORKSPACE_ID,
         created.connector.id,
         UpdateConnector(enabled=False, expected_version=1),
     )
     cleared = await service.update(
-        "org_1",
-        "ws_1",
+        ORG_ID,
+        WORKSPACE_ID,
         created.connector.id,
         UpdateConnector(description=None, expected_version=2),
     )
@@ -370,8 +407,8 @@ async def test_connector_update_uses_cas_and_semantic_noop_does_not_advance(
     assert cleared.description is None
     with pytest.raises(ConnectorError) as conflict:
         await service.update(
-            "org_1",
-            "ws_1",
+            ORG_ID,
+            WORKSPACE_ID,
             created.connector.id,
             UpdateConnector(enabled=True, expected_version=1),
         )
@@ -388,8 +425,8 @@ async def test_revision_creation_is_immutable_monotonic_and_deduplicates_noop(
     created = await service.create(_create_request())
 
     duplicate = await service.create_revision(
-        "org_1",
-        "ws_1",
+        ORG_ID,
+        WORKSPACE_ID,
         created.connector.id,
         CreateConnectorRevision(
             provider_key="test",
@@ -399,8 +436,8 @@ async def test_revision_creation_is_immutable_monotonic_and_deduplicates_noop(
         ),
     )
     second = await service.create_revision(
-        "org_1",
-        "ws_1",
+        ORG_ID,
+        WORKSPACE_ID,
         created.connector.id,
         CreateConnectorRevision(
             provider_key="test",
@@ -414,7 +451,9 @@ async def test_revision_creation_is_immutable_monotonic_and_deduplicates_noop(
     assert duplicate.revision.id == created.revision.id
     assert second.created is True
     assert second.revision.version == 2
-    assert [revision.version for revision in await service.list_revisions("org_1", "ws_1", created.connector.id)] == [
+    assert [
+        revision.version for revision in await service.list_revisions(ORG_ID, WORKSPACE_ID, created.connector.id)
+    ] == [
         2,
         1,
     ]
@@ -431,7 +470,7 @@ async def test_invalid_provider_configuration_creates_nothing(
         await service.create(_create_request(config={"invalid": True}))
 
     assert rejected.value.code == "provider_config_incompatible"
-    assert await service.list("org_1", "ws_1") == ()
+    assert await service.list(ORG_ID, WORKSPACE_ID) == ()
 
 
 async def _add_connection(
@@ -447,8 +486,8 @@ async def _add_connection(
         session.add(
             ConnectionRecord(
                 id=connection_id,
-                organization_id="org_1",
-                workspace_id="ws_1",
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
                 connector_id=connector_id,
                 principal_type=principal.principal_type if principal else None,
                 principal_id=principal.principal_id if principal else None,
@@ -462,7 +501,7 @@ async def _add_connection(
                 expires_at=None,
                 version=1,
                 created_by_type="user",
-                created_by_id="user_1",
+                created_by_id=USER_ID,
                 created_at=now,
                 updated_at=now,
             )
@@ -481,8 +520,8 @@ async def test_connection_resolution_prefers_exact_personal_then_shared(
 
     shared = await resolve_connection(
         sessions,
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_id=connector.id,
         provider_key="test",
         principal=_actor(),
@@ -491,8 +530,8 @@ async def test_connection_resolution_prefers_exact_personal_then_shared(
     personal_id = await _add_connection(sessions, connector_id=connector.id, principal=_actor(), name="personal")
     personal = await resolve_connection(
         sessions,
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_id=connector.id,
         provider_key="test",
         principal=_actor(),
@@ -511,14 +550,14 @@ async def test_connection_resolution_rejects_ambiguity_and_ineligible_pin(
     service = ConnectorService(sessions, providers)
     connector = (await service.create(_create_request())).connector
     await _add_connection(sessions, connector_id=connector.id, principal=_actor(), name="first")
-    other_id = await _add_connection(sessions, connector_id=connector.id, principal=_actor("user_2"), name="other")
+    other_id = await _add_connection(sessions, connector_id=connector.id, principal=_actor(OTHER_USER_ID), name="other")
     await _add_connection(sessions, connector_id=connector.id, principal=_actor(), name="second")
 
     with pytest.raises(ConnectorError) as ambiguous:
         await resolve_connection(
             sessions,
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             connector_id=connector.id,
             provider_key="test",
             principal=_actor(),
@@ -529,8 +568,8 @@ async def test_connection_resolution_rejects_ambiguity_and_ineligible_pin(
     with pytest.raises(ConnectorError) as denied:
         await resolve_connection(
             sessions,
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             connector_id=connector.id,
             provider_key="test",
             principal=_actor(),
@@ -548,8 +587,8 @@ async def test_connection_setup_commits_connection_and_secrets_atomically(
     secrets = _Secrets()
     setup = ConnectionSetupService(sessions, providers, secrets, _SetupProtector())
     request = StartConnectionSetup(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=connector.revision.id,
         principal_ref=_actor(),
         name="Personal GitHub",
@@ -593,8 +632,8 @@ async def test_connection_callback_setup_is_single_completion_and_hides_continua
     setup = ConnectionSetupService(sessions, providers, secrets, protector)
     pending = await setup.start(
         StartConnectionSetup(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             connector_revision_id=connector.revision.id,
             principal_ref=None,
             name="Shared GitHub",
@@ -645,6 +684,51 @@ async def test_connection_callback_setup_is_single_completion_and_hides_continua
 
 
 @pytest.mark.anyio
+async def test_connection_callback_recovers_completing_with_stable_provider_operation(
+    sessions: async_sessionmaker[AsyncSession],
+    providers: ConnectorProviderCatalog,
+) -> None:
+    connector = await ConnectorService(sessions, providers).create(_create_request())
+    setup = ConnectionSetupService(sessions, providers, _Secrets(), _SetupProtector())
+    pending = await setup.start(
+        StartConnectionSetup(
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            connector_revision_id=connector.revision.id,
+            principal_ref=None,
+            name="Shared GitHub",
+            setup_mode="manual",
+            input={"pending": True},
+            actor=_actor(),
+        ),
+        context=ConnectorProviderContext(
+            operation_id="op_setup_recover",
+            deadline=datetime.now(UTC) + timedelta(seconds=30),
+        ),
+    )
+    async with transaction(sessions) as session:
+        record = await session.get(ConnectionSetupRecord, pending.setup_id)
+        assert record is not None
+        record.status = "completing"
+
+    completed = await setup.complete(
+        setup_id=pending.setup_id,
+        input={"code": "replayed-code"},
+        context=ConnectorProviderContext(
+            operation_id="different_http_request",
+            deadline=datetime.now(UTC) + timedelta(seconds=30),
+        ),
+        actor=_actor(),
+    )
+
+    provider = providers.require("test")
+    assert isinstance(provider, _Provider)
+    assert provider.last_complete_operation_id == "op_setup_recover:complete"
+    assert completed.completed is True
+    assert completed.connection is not None
+
+
+@pytest.mark.anyio
 async def test_connection_provider_result_and_lifecycle_keep_secrets_private(
     sessions: async_sessionmaker[AsyncSession],
     providers: ConnectorProviderCatalog,
@@ -661,18 +745,18 @@ async def test_connection_provider_result_and_lifecycle_keep_secrets_private(
     )
 
     connection = await service.create_from_provider_result(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=created.revision.id,
         principal_ref=_actor(),
         name="Personal GitHub",
         result=result,
         actor=_actor(),
     )
-    disabled = await service.disable("org_1", "ws_1", connection.id, expected_version=1)
+    disabled = await service.disable(ORG_ID, WORKSPACE_ID, connection.id, expected_version=1)
     refreshed_disabled = await service.refresh(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connection_id=connection.id,
         connector_revision_id=created.revision.id,
         expected_version=2,
@@ -682,7 +766,7 @@ async def test_connection_provider_result_and_lifecycle_keep_secrets_private(
         ),
         actor=_actor(),
     )
-    enabled = await service.enable("org_1", "ws_1", connection.id, expected_version=3)
+    enabled = await service.enable(ORG_ID, WORKSPACE_ID, connection.id, expected_version=3)
 
     assert connection.status is ConnectionStatus.active
     assert connection.model_dump_json().find("secret-token") == -1
@@ -705,8 +789,8 @@ async def test_connection_refresh_and_revoke_recheck_cas_and_revoke_locally_on_p
     secrets = _Secrets()
     service = ConnectionService(sessions, providers, secrets)
     connection = await service.create_from_provider_result(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=created.revision.id,
         principal_ref=None,
         name="Shared GitHub",
@@ -721,8 +805,8 @@ async def test_connection_refresh_and_revoke_recheck_cas_and_revoke_locally_on_p
     context = ConnectorProviderContext(operation_id="op_refresh", deadline=datetime.now(UTC) + timedelta(seconds=30))
 
     refreshed = await service.refresh(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connection_id=connection.id,
         connector_revision_id=created.revision.id,
         expected_version=1,
@@ -733,8 +817,8 @@ async def test_connection_refresh_and_revoke_recheck_cas_and_revoke_locally_on_p
     assert isinstance(provider, _Provider)
     provider.fail_revoke = True
     revoked = await service.revoke(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connection_id=connection.id,
         connector_revision_id=created.revision.id,
         expected_version=2,
@@ -747,9 +831,25 @@ async def test_connection_refresh_and_revoke_recheck_cas_and_revoke_locally_on_p
 
     assert refreshed.account.display_name == "Refreshed Account"
     assert refreshed.version == 2
-    assert secrets.values.get(connection.id) is None
+    assert secrets.values.get(connection.id) is not None
     assert revoked.status is ConnectionStatus.revoked
     assert revoked.version == 3
+
+    provider.fail_revoke = False
+    reconciled = await service.reconcile_revoke(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        connection_id=connection.id,
+        connector_revision_id=created.revision.id,
+        context=ConnectorProviderContext(
+            operation_id="op_reconcile",
+            deadline=datetime.now(UTC) + timedelta(seconds=30),
+        ),
+    )
+
+    assert reconciled.status is ConnectionStatus.revoked
+    assert reconciled.version == 4
+    assert secrets.values.get(connection.id) is None
 
 
 @pytest.mark.anyio
@@ -761,8 +861,8 @@ async def test_reauthorization_updates_same_connection_identity(
     secrets = _Secrets()
     connections = ConnectionService(sessions, providers, secrets)
     connection = await connections.create_from_provider_result(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=connector.revision.id,
         principal_ref=_actor(),
         name="Personal GitHub",
@@ -775,8 +875,8 @@ async def test_reauthorization_updates_same_connection_identity(
 
     with pytest.raises(ConnectorReauthorizationRequired):
         await connections.refresh(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             connection_id=connection.id,
             connector_revision_id=connector.revision.id,
             expected_version=1,
@@ -786,14 +886,14 @@ async def test_reauthorization_updates_same_connection_identity(
             ),
             actor=_actor(),
         )
-    required = await connections.get("org_1", "ws_1", connection.id)
+    required = await connections.get(ORG_ID, WORKSPACE_ID, connection.id)
     assert required.status is ConnectionStatus.reauthorization_required
     provider.require_reauthorization = False
 
     receipt = await ConnectionSetupService(sessions, providers, secrets, _SetupProtector()).start(
         StartConnectionSetup(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             connector_revision_id=connector.revision.id,
             connection_id=connection.id,
             principal_ref=_actor(),
@@ -826,8 +926,8 @@ async def test_schedule_trigger_is_created_disabled_and_uses_cas_lifecycle(
     service = TriggerService(sessions, providers, _Secrets(), _TriggerSecrets(), targets)
     trigger = await service.create(
         CreateTrigger(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             name="Daily report",
             principal_ref=_actor(),
             agent_revision_id="agrev_1",
@@ -838,8 +938,8 @@ async def test_schedule_trigger_is_created_disabled_and_uses_cas_lifecycle(
     )
     context = ConnectorProviderContext(operation_id="op_schedule", deadline=datetime.now(UTC) + timedelta(seconds=30))
     active = await service.enable(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         trigger_id=trigger.id,
         expected_version=1,
         context=context,
@@ -853,8 +953,8 @@ async def test_schedule_trigger_is_created_disabled_and_uses_cas_lifecycle(
     assert targets.validations == 1
 
     disabled = await service.disable(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         trigger_id=trigger.id,
         expected_version=2,
         context=context,
@@ -874,8 +974,8 @@ async def test_connector_event_trigger_activates_and_cleans_up_provider_source(
     connection_secrets = _Secrets()
     connection_service = ConnectionService(sessions, providers, connection_secrets)
     connection = await connection_service.create_from_provider_result(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=created.revision.id,
         principal_ref=None,
         name="Shared GitHub",
@@ -891,8 +991,8 @@ async def test_connector_event_trigger_activates_and_cleans_up_provider_source(
     service = TriggerService(sessions, providers, connection_secrets, trigger_secrets, _AgentTargets())
     trigger = await service.create(
         CreateTrigger(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             name="On push",
             principal_ref=_actor(),
             agent_revision_id="agrev_1",
@@ -908,8 +1008,8 @@ async def test_connector_event_trigger_activates_and_cleans_up_provider_source(
         )
     )
     active = await service.enable(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         trigger_id=trigger.id,
         expected_version=1,
         context=ConnectorProviderContext(
@@ -928,8 +1028,8 @@ async def test_connector_event_trigger_activates_and_cleans_up_provider_source(
     assert isinstance(provider, _Provider)
     provider.fail_stop = True
     disabled = await service.disable(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         trigger_id=trigger.id,
         expected_version=3,
         context=ConnectorProviderContext(
@@ -944,8 +1044,8 @@ async def test_connector_event_trigger_activates_and_cleans_up_provider_source(
 
     provider.fail_stop = False
     reconciled = await service.reconcile_event_source(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         trigger_id=trigger.id,
         expected_version=4,
         context=ConnectorProviderContext(
@@ -960,6 +1060,81 @@ async def test_connector_event_trigger_activates_and_cleans_up_provider_source(
 
 
 @pytest.mark.anyio
+async def test_disabling_unknown_activation_reconciles_original_operation_before_cleanup(
+    sessions: async_sessionmaker[AsyncSession],
+    providers: ConnectorProviderCatalog,
+) -> None:
+    created = await ConnectorService(sessions, providers).create(_create_request())
+    connection_secrets = _Secrets()
+    connection = await ConnectionService(sessions, providers, connection_secrets).create_from_provider_result(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        connector_revision_id=created.revision.id,
+        principal_ref=None,
+        name="Shared GitHub",
+        result=_connection_result("access-token"),
+        actor=_actor(),
+    )
+    trigger_secrets = _TriggerSecrets()
+    service = TriggerService(sessions, providers, connection_secrets, trigger_secrets, _AgentTargets())
+    trigger = await service.create(
+        CreateTrigger(
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            name="On push",
+            principal_ref=_actor(),
+            agent_revision_id="agrev_1",
+            source=ConnectorEventTriggerSource(
+                connector_revision_id=created.revision.id,
+                connection_id=connection.id,
+                event_type="push",
+                provider_event_config_version="1",
+                config={},
+            ),
+            input_template={"event": "{{ event }}"},
+            created_by=_actor(),
+        )
+    )
+    async with transaction(sessions) as session:
+        record = await session.get(TriggerRecord, trigger.id)
+        assert record is not None
+        record.status = "activating"
+        record.lifecycle_operation_id = "op_activation_unknown"
+        record.version = 2
+
+    disabled = await service.disable(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        trigger_id=trigger.id,
+        expected_version=2,
+        context=ConnectorProviderContext(
+            operation_id="op_disable_request",
+            deadline=datetime.now(UTC) + timedelta(seconds=30),
+        ),
+        actor=_actor(),
+    )
+    reconciled = await service.reconcile_event_source(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        trigger_id=trigger.id,
+        expected_version=3,
+        context=ConnectorProviderContext(
+            operation_id="op_reconcile_request",
+            deadline=datetime.now(UTC) + timedelta(seconds=30),
+        ),
+        actor=_actor(),
+    )
+
+    provider = providers.require("test")
+    assert isinstance(provider, _Provider)
+    assert disabled.status is TriggerStatus.disabled
+    assert provider.last_reconcile_operation_id == "op_activation_unknown"
+    assert provider.last_reconcile_had_source is False
+    assert reconciled.status is TriggerStatus.disabled
+    assert reconciled.version == 4
+
+
+@pytest.mark.anyio
 async def test_connector_event_ingress_verifies_expands_and_deduplicates_turn(
     sessions: async_sessionmaker[AsyncSession],
     providers: ConnectorProviderCatalog,
@@ -967,8 +1142,8 @@ async def test_connector_event_ingress_verifies_expands_and_deduplicates_turn(
     connector = await ConnectorService(sessions, providers).create(_create_request())
     connection_secrets = _Secrets()
     connection = await ConnectionService(sessions, providers, connection_secrets).create_from_provider_result(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=connector.revision.id,
         principal_ref=None,
         name="Shared GitHub",
@@ -984,8 +1159,8 @@ async def test_connector_event_ingress_verifies_expands_and_deduplicates_turn(
     triggers = TriggerService(sessions, providers, connection_secrets, trigger_secrets, _AgentTargets())
     trigger = await triggers.create(
         CreateTrigger(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             name="On push",
             principal_ref=_actor(),
             agent_revision_id="agrev_1",
@@ -1001,8 +1176,8 @@ async def test_connector_event_ingress_verifies_expands_and_deduplicates_turn(
         )
     )
     active = await triggers.enable(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         trigger_id=trigger.id,
         expected_version=1,
         context=ConnectorProviderContext(
@@ -1044,8 +1219,8 @@ async def test_schedule_ingress_accepts_only_latest_missed_instant(
     triggers = TriggerService(sessions, providers, _Secrets(), _TriggerSecrets(), _AgentTargets())
     trigger = await triggers.create(
         CreateTrigger(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             name="Report",
             principal_ref=_actor(),
             agent_revision_id="agrev_1",
@@ -1056,8 +1231,8 @@ async def test_schedule_ingress_accepts_only_latest_missed_instant(
     )
     enabled_at = datetime.now(UTC)
     active = await triggers.enable(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         trigger_id=trigger.id,
         expected_version=1,
         context=ConnectorProviderContext(
@@ -1092,8 +1267,8 @@ async def test_trigger_template_rejects_interpolation_and_wrong_source_placehold
     with pytest.raises(ConnectorError) as rejected:
         await service.create(
             CreateTrigger(
-                organization_id="org_1",
-                workspace_id="ws_1",
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
                 name="Invalid",
                 principal_ref=_actor(),
                 agent_revision_id="agrev_1",
@@ -1116,8 +1291,8 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
     secrets = _Secrets()
     connection_service = ConnectionService(sessions, providers, secrets)
     connection = await connection_service.create_from_provider_result(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=created.revision.id,
         principal_ref=_actor(),
         name="Personal GitHub",
@@ -1134,8 +1309,8 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
     context = ConnectorProviderContext(operation_id="op_tool", deadline=datetime.now(UTC) + timedelta(seconds=30))
 
     declaration = await runtime.create_declaration(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=created.revision.id,
         connection_id=connection.id,
         selected_provider_tool_names=("create_issue",),
@@ -1143,8 +1318,8 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
         context=context,
     )
     result = await runtime.call_tool(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         declaration=declaration,
         selection=ConnectorTurnSelection(
             declaration_index=0,
@@ -1158,8 +1333,8 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
     )
     toolset = ConnectorManagedToolset(
         runtime,
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         principal=_actor(),
         declarations=(declaration,),
         selections=(
@@ -1188,7 +1363,7 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
     assert declaration.tools[0].provider_tool_name == "create_issue"
     assert declaration.tools[0].model_tool_name.endswith("_create_issue")
     assert declaration.tools[0].parameters_json_schema["required"] == ["title"]
-    assert declaration.provider_lock.distribution_version == "1.0.0"
+    assert declaration.provider_lock.contract_version == "1"
     assert result.value == {"created": "Runtime bug"}
     assert projected_result == {"created": "Projected call"}
     assert HARNESS_TOOL_METADATA_KEY in projected_tools[tool_name].tool_def.metadata
@@ -1208,8 +1383,8 @@ async def test_connector_tool_dispatch_fails_closed_for_dependency_lock_change(
     runtime = ConnectorToolRuntime(sessions, providers, secrets, authorizer)
     context = ConnectorProviderContext(operation_id="op_tool", deadline=datetime.now(UTC) + timedelta(seconds=30))
     declaration = await runtime.create_declaration(
-        organization_id="org_1",
-        workspace_id="ws_1",
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
         connector_revision_id=created.revision.id,
         connection_id=None,
         selected_provider_tool_names=("create_issue",),
@@ -1218,14 +1393,14 @@ async def test_connector_tool_dispatch_fails_closed_for_dependency_lock_change(
     )
     incompatible = declaration.model_copy(
         update={
-            "provider_lock": declaration.provider_lock.model_copy(update={"distribution_version": "2.0.0"}),
+            "provider_lock": declaration.provider_lock.model_copy(update={"contract_version": "2"}),
         }
     )
 
     with pytest.raises(ConnectorError) as rejected:
         await runtime.call_tool(
-            organization_id="org_1",
-            workspace_id="ws_1",
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
             declaration=incompatible,
             selection=ConnectorTurnSelection(
                 declaration_index=0,

@@ -27,6 +27,7 @@ from .domain import (
 from .errors import ConnectorError
 from .models import ConnectionRecord, ConnectionSetupRecord, ConnectorRecord, ConnectorRevisionRecord
 from .provider import (
+    ConnectorConnectionProvider,
     ConnectorProviderConnection,
     ConnectorProviderConnectionResult,
     ConnectorProviderContext,
@@ -105,6 +106,8 @@ class ConnectionSetupService:
         )
         target_connection = await self._load_reauthorization_target(request, revision)
         provider = self._providers.require(revision.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         if not provider.metadata.capabilities.connections:
             raise ConnectorError("Connector Provider supports no Connections.", code="connection_incompatible")
         if request.setup_mode not in provider.metadata.connection_setup_modes:
@@ -228,19 +231,27 @@ class ConnectionSetupService:
         async with transaction(self._sessions) as session:
             current = await _get_setup(session, setup_id, for_update=True)
             _require_setup_eligible(current, actor=actor, provider_key=provider_key)
-            current.status = "completing"
-            current.updated_at = datetime.now(UTC)
+            if current.status == "pending":
+                current.status = "completing"
+                current.updated_at = datetime.now(UTC)
         async with short_session(self._sessions) as session:
             revision = await session.get(ConnectorRevisionRecord, current.connector_revision_id)
         if revision is None:
             await self._fail(setup_id, "connection_setup_failed")
             raise ConnectorError("Connector revision was not found.", code="not_found")
         provider = self._providers.require(current.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            await self._fail(setup_id, "connection_setup_failed")
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
+        effective_context = ConnectorProviderContext(
+            operation_id=f"{current.operation_id}:complete",
+            deadline=context.deadline,
+        )
         try:
             result = await invoke_provider(
-                context,
+                effective_context,
                 provider.complete_connection(
-                    context,
+                    effective_context,
                     provider_config_version=revision.provider_config_version,
                     config=revision.config,
                     continuation_state=continuation,
@@ -320,6 +331,9 @@ class ConnectionSetupService:
             await self._fail(setup_id, "connector_disabled")
             raise ConnectorError("Connector is disabled or unavailable.", code="connector_disabled")
         provider = self._providers.require(revision.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            await self._fail(setup_id, "connection_incompatible")
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         provider_connection = ConnectorProviderConnection(
             provider_state_version=result.provider_state_version,
             provider_state=result.provider_state,
@@ -537,7 +551,7 @@ def _require_setup_eligible(
     _require_setup_identity(record, actor=actor, provider_key=provider_key)
     if _utc(record.expires_at) <= datetime.now(UTC):
         raise ConnectorError("Connection setup has expired.", code="connection_incompatible")
-    if record.status != "pending":
+    if record.status not in {"pending", "completing"}:
         raise ConnectorError("Connection setup cannot be completed.", code="connection_incompatible")
 
 

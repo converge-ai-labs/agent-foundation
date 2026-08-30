@@ -17,11 +17,28 @@ class WorkspaceAction(StrEnum):
     models_manage = "models.manage"
     secrets_read = "secrets.read"
     secrets_manage = "secrets.manage"
+    connector_read = "connector.read"
+    connector_create = "connector.create"
+    connector_configure = "connector.configure"
+    connection_read = "connection.read"
+    connection_manage = "connection.manage"
+    trigger_read = "trigger.read"
+    trigger_configure = "trigger.configure"
 
+
+_WORKSPACE_READ_ACTIONS = frozenset(
+    {
+        WorkspaceAction.models_read,
+        WorkspaceAction.secrets_read,
+        WorkspaceAction.connector_read,
+        WorkspaceAction.connection_read,
+        WorkspaceAction.trigger_read,
+    }
+)
 
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
-    "viewer": frozenset({WorkspaceAction.models_read, WorkspaceAction.secrets_read}),
-    "runner": frozenset({WorkspaceAction.models_read, WorkspaceAction.secrets_read}),
+    "viewer": _WORKSPACE_READ_ACTIONS,
+    "runner": _WORKSPACE_READ_ACTIONS,
     "builder": frozenset(WorkspaceAction),
     "admin": frozenset(WorkspaceAction),
 }

@@ -6,12 +6,12 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 from anyio import fail_after
 from pydantic import JsonValue, SecretStr
 
-from .errors import ConnectorError, ConnectorProviderCapabilityError
+from .errors import ConnectorError
 
 type JsonObject = Mapping[str, JsonValue]
 type EventDelivery = Literal["webhook", "polling"]
@@ -52,6 +52,7 @@ class ConnectorProviderMetadata:
 
     display_name: str
     description: str
+    contract_version: str
     provider_config_schemas: Mapping[str, JsonObject]
     capabilities: ConnectorProviderCapabilities
     connection_setup_modes: tuple[str, ...] = ()
@@ -218,18 +219,15 @@ class ConnectorProvider(ABC):
     def validate_config(self, provider_config_version: str, config: JsonObject) -> None:
         """Validate one exact Connector configuration locally."""
 
-    def supports_dependency_lock(
-        self,
-        *,
-        distribution_name: str,
-        distribution_version: str,
-        class_module: str,
-        class_qualname: str,
-    ) -> bool:
-        """Explicitly accept reconstruction from one older Provider artifact lock."""
 
-        del distribution_name, distribution_version, class_module, class_qualname
-        return False
+class _ConnectorProviderProtocol(Protocol):
+    @property
+    def metadata(self) -> ConnectorProviderMetadata: ...
+
+
+@runtime_checkable
+class ConnectorToolProvider(_ConnectorProviderProtocol, Protocol):
+    """Optional tool discovery and dispatch capability."""
 
     async def list_tools(
         self,
@@ -239,8 +237,9 @@ class ConnectorProvider(ABC):
         config: JsonObject,
         connection: ConnectorProviderConnection | None,
     ) -> tuple[ConnectorProviderTool, ...]:
-        del context, provider_config_version, config, connection
-        raise ConnectorProviderCapabilityError("tools")
+        """List tools available through the exact accepted configuration."""
+
+        ...
 
     async def call_tool(
         self,
@@ -252,12 +251,19 @@ class ConnectorProvider(ABC):
         tool_name: str,
         arguments: JsonObject,
     ) -> ConnectorProviderToolResult:
-        del context, provider_config_version, config, connection, tool_name, arguments
-        raise ConnectorProviderCapabilityError("tools")
+        """Call one Provider tool through the exact accepted configuration."""
+
+        ...
+
+
+@runtime_checkable
+class ConnectorConnectionProvider(_ConnectorProviderProtocol, Protocol):
+    """Optional external-account setup and credential lifecycle capability."""
 
     def connection_spec(self, provider_config_version: str, config: JsonObject) -> JsonObject:
-        del provider_config_version, config
-        raise ConnectorProviderCapabilityError("connections")
+        """Return the safe write-only setup contract for authoring clients."""
+
+        ...
 
     async def start_connection(
         self,
@@ -270,8 +276,9 @@ class ConnectorProvider(ABC):
         callback_url: str | None,
         callback_state: str | None,
     ) -> ConnectorProviderSetupResult:
-        del context, provider_config_version, config, setup_mode, input, callback_url, callback_state
-        raise ConnectorProviderCapabilityError("connections")
+        """Start or synchronously complete one idempotent setup operation."""
+
+        ...
 
     async def complete_connection(
         self,
@@ -282,8 +289,9 @@ class ConnectorProvider(ABC):
         continuation_state: JsonObject,
         input: JsonObject,
     ) -> ConnectorProviderConnectionResult:
-        del context, provider_config_version, config, continuation_state, input
-        raise ConnectorProviderCapabilityError("connections")
+        """Complete an existing setup operation after an external callback."""
+
+        ...
 
     async def refresh_connection(
         self,
@@ -293,8 +301,9 @@ class ConnectorProvider(ABC):
         config: JsonObject,
         connection: ConnectorProviderConnection,
     ) -> ConnectorProviderConnectionResult:
-        del context, provider_config_version, config, connection
-        raise ConnectorProviderCapabilityError("connections")
+        """Refresh one exact Connection authorization."""
+
+        ...
 
     async def revoke_connection(
         self,
@@ -304,8 +313,9 @@ class ConnectorProvider(ABC):
         config: JsonObject,
         connection: ConnectorProviderConnection,
     ) -> None:
-        del context, provider_config_version, config, connection
-        raise ConnectorProviderCapabilityError("connections")
+        """Revoke one exact external authorization when supported."""
+
+        ...
 
     def validate_connection(
         self,
@@ -314,8 +324,14 @@ class ConnectorProvider(ABC):
         config: JsonObject,
         connection: ConnectorProviderConnection,
     ) -> None:
-        del provider_config_version, config, connection
-        raise ConnectorProviderCapabilityError("connections")
+        """Validate local compatibility without external I/O."""
+
+        ...
+
+
+@runtime_checkable
+class ConnectorEventProvider(_ConnectorProviderProtocol, Protocol):
+    """Optional external event catalog and subscription lifecycle capability."""
 
     async def list_events(
         self,
@@ -325,8 +341,9 @@ class ConnectorProvider(ABC):
         config: JsonObject,
         connection: ConnectorProviderConnection,
     ) -> tuple[ConnectorProviderEventType, ...]:
-        del context, provider_config_version, config, connection
-        raise ConnectorProviderCapabilityError("events")
+        """List event contracts available to Trigger authoring."""
+
+        ...
 
     def validate_event_config(
         self,
@@ -338,15 +355,9 @@ class ConnectorProvider(ABC):
         provider_event_config_version: str,
         event_config: JsonObject,
     ) -> None:
-        del (
-            provider_config_version,
-            config,
-            connection,
-            event_type,
-            provider_event_config_version,
-            event_config,
-        )
-        raise ConnectorProviderCapabilityError("events")
+        """Validate event configuration locally."""
+
+        ...
 
     async def start_event_source(
         self,
@@ -360,17 +371,9 @@ class ConnectorProvider(ABC):
         event_config: JsonObject,
         callback_url: str | None,
     ) -> ConnectorProviderEventSourceResult:
-        del (
-            context,
-            provider_config_version,
-            config,
-            connection,
-            event_type,
-            provider_event_config_version,
-            event_config,
-            callback_url,
-        )
-        raise ConnectorProviderCapabilityError("events")
+        """Create or recover one idempotent external event subscription."""
+
+        ...
 
     async def stop_event_source(
         self,
@@ -378,8 +381,9 @@ class ConnectorProvider(ABC):
         *,
         source: ConnectorProviderEventSourceResult,
     ) -> None:
-        del context, source
-        raise ConnectorProviderCapabilityError("events")
+        """Disable and remove one external event subscription."""
+
+        ...
 
     async def renew_event_source(
         self,
@@ -387,8 +391,9 @@ class ConnectorProvider(ABC):
         *,
         source: ConnectorProviderEventSourceResult,
     ) -> ConnectorProviderEventSourceResult:
-        del context, source
-        raise ConnectorProviderCapabilityError("events")
+        """Renew an expiring external event subscription."""
+
+        ...
 
     async def reconcile_event_source(
         self,
@@ -402,17 +407,14 @@ class ConnectorProvider(ABC):
         event_config: JsonObject,
         source: ConnectorProviderEventSourceResult | None,
     ) -> ConnectorProviderEventSourceResult:
-        del (
-            context,
-            provider_config_version,
-            config,
-            connection,
-            event_type,
-            provider_event_config_version,
-            event_config,
-            source,
-        )
-        raise ConnectorProviderCapabilityError("events")
+        """Recover an external event subscription after an unknown outcome."""
+
+        ...
+
+
+@runtime_checkable
+class ConnectorWebhookProvider(ConnectorEventProvider, Protocol):
+    """Webhook delivery variant of the event capability."""
 
     async def receive_webhook(
         self,
@@ -422,8 +424,14 @@ class ConnectorProvider(ABC):
         headers: Mapping[str, str],
         body: bytes,
     ) -> tuple[ConnectorProviderEvent, ...]:
-        del context, source, headers, body
-        raise ConnectorProviderCapabilityError("events")
+        """Authenticate and normalize one webhook delivery."""
+
+        ...
+
+
+@runtime_checkable
+class ConnectorPollingProvider(ConnectorEventProvider, Protocol):
+    """Polling delivery variant of the event capability."""
 
     async def poll_events(
         self,
@@ -432,5 +440,6 @@ class ConnectorProvider(ABC):
         source: ConnectorProviderEventSourceResult,
         cursor: str | None,
     ) -> tuple[tuple[ConnectorProviderEvent, ...], str | None]:
-        del context, source, cursor
-        raise ConnectorProviderCapabilityError("events")
+        """Read and normalize one bounded page of external events."""
+
+        ...

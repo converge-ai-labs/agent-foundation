@@ -146,7 +146,7 @@ These roots are boundaries, not a requirement that every capability become a sub
   lock in an AgentPresetVersion. The selected Worker execution loop verifies its immutable object and supplies
   run-local materialization through the fresh Environment before model exposure;
   GitHub and upload sources are never runtime inputs.
-- Connector Provider package presence grants no trust. AgentPresetVersions freeze tool contracts and exact Provider dependency locks; every TurnAttempt resolves current Connection authority and credentials.
+- Connector Provider package presence grants no trust. AgentPresetVersions freeze tool contracts and exact Provider semantic contract locks; deployment composition owns the installed artifact, and every TurnAttempt resolves current Connection authority and credentials.
 - Trigger ingress deduplicates one source occurrence into one root Turn under the common Session and Thread contract. It does not bypass Agent, IAM, scheduling, or Turn authority.
 - Foundation Environment connectors return the canonical runtime attachment and
   Foundation consumes `HarnessAguiObserver`; it does not create parallel

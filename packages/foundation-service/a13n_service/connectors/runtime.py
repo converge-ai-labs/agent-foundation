@@ -15,7 +15,7 @@ from a13n_service.storage import short_session
 
 from .domain import (
     AgentConnectorDeclaration,
-    ConnectorProviderDependencyLock,
+    ConnectorProviderContractLock,
     ConnectorTurnSelection,
     FrozenConnectorTool,
     PrincipalRef,
@@ -25,11 +25,14 @@ from .domain import (
 from .errors import ConnectorError
 from .models import ConnectionRecord, ConnectorRecord, ConnectorRevisionRecord
 from .provider import (
+    ConnectorConnectionProvider,
+    ConnectorEventProvider,
     ConnectorProviderConnection,
     ConnectorProviderContext,
     ConnectorProviderEventType,
     ConnectorProviderTool,
     ConnectorProviderToolResult,
+    ConnectorToolProvider,
     invoke_provider,
 )
 from .registry import ConnectorProviderCatalog
@@ -115,7 +118,7 @@ class ConnectorToolRuntime:
             workspace_id=workspace_id,
         )
         provider = self._providers.require(target.revision.provider_key)
-        if not provider.metadata.capabilities.tools:
+        if not isinstance(provider, ConnectorToolProvider):
             raise ConnectorError("Connector Provider exposes no tools.", code="tool_not_found")
         tools = await invoke_provider(
             context,
@@ -165,12 +168,9 @@ class ConnectorToolRuntime:
             connector_revision_id=connector_revision_id,
             connection_id=connection_id,
             tools=frozen,
-            provider_lock=ConnectorProviderDependencyLock(
+            provider_lock=ConnectorProviderContractLock(
                 provider_key=registration.provider_key,
-                distribution_name=registration.distribution_name,
-                distribution_version=registration.distribution_version,
-                class_module=registration.class_module,
-                class_qualname=registration.class_qualname,
+                contract_version=registration.metadata.contract_version,
             ),
         )
 
@@ -207,7 +207,7 @@ class ConnectorToolRuntime:
         if provider_connection is None:
             raise ConnectorError("Event discovery requires a Connection.", code="connection_required")
         provider = self._providers.require(target.revision.provider_key)
-        if not provider.metadata.capabilities.events:
+        if not isinstance(provider, ConnectorEventProvider):
             raise ConnectorError("Connector Provider exposes no events.", code="trigger_source_incompatible")
         events = await invoke_provider(
             context,
@@ -250,24 +250,14 @@ class ConnectorToolRuntime:
         )
         registration = self._providers.registration(target.revision.provider_key)
         lock = declaration.provider_lock
-        exact_lock = (
-            registration.provider_key == lock.provider_key
-            and registration.distribution_name == lock.distribution_name
-            and registration.distribution_version == lock.distribution_version
-            and registration.class_module == lock.class_module
-            and registration.class_qualname == lock.class_qualname
-        )
         provider = self._providers.require(target.revision.provider_key)
-        if not exact_lock and not (
-            registration.provider_key == lock.provider_key
-            and provider.supports_dependency_lock(
-                distribution_name=lock.distribution_name,
-                distribution_version=lock.distribution_version,
-                class_module=lock.class_module,
-                class_qualname=lock.class_qualname,
-            )
+        if not isinstance(provider, ConnectorToolProvider):
+            raise ConnectorError("Connector Provider exposes no tools.", code="tool_not_found")
+        if (
+            registration.provider_key != lock.provider_key
+            or registration.metadata.contract_version != lock.contract_version
         ):
-            raise ConnectorError("Connector Provider dependency lock is unavailable.", code="provider_not_trusted")
+            raise ConnectorError("Connector Provider contract is unavailable.", code="provider_not_trusted")
         if frozen.credential_audiences and target.connection is None:
             raise ConnectorError("Connector tool requires a Connection.", code="connection_required")
         args = bounded_json_object(dict(arguments), field_name="arguments")
@@ -367,6 +357,8 @@ class ConnectorToolRuntime:
             secrets=secrets,
         )
         provider = self._providers.require(target.revision.provider_key)
+        if not isinstance(provider, ConnectorConnectionProvider):
+            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         provider.validate_connection(
             provider_config_version=target.revision.provider_config_version,
             config=target.revision.config,

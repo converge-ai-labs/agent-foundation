@@ -15,7 +15,15 @@ from jsonschema.exceptions import SchemaError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from .errors import ConnectorProviderError
-from .provider import ConnectorProvider, ConnectorProviderMetadata
+from .provider import (
+    ConnectorConnectionProvider,
+    ConnectorEventProvider,
+    ConnectorPollingProvider,
+    ConnectorProvider,
+    ConnectorProviderMetadata,
+    ConnectorToolProvider,
+    ConnectorWebhookProvider,
+)
 
 CONNECTOR_PROVIDER_ENTRY_POINT_GROUP = "a13n_service.connector_providers"
 _MAX_KEY_LENGTH = 200
@@ -303,7 +311,11 @@ def _provider_metadata(
 
 
 def _validate_metadata(metadata: ConnectorProviderMetadata, reference: ConnectorProviderReference) -> None:
-    if not _bounded_text(metadata.display_name) or not _bounded_text(metadata.description, allow_empty=True):
+    if (
+        not _bounded_text(metadata.display_name)
+        or not _bounded_text(metadata.description, allow_empty=True)
+        or not _bounded_text(metadata.contract_version)
+    ):
         raise _metadata_invalid(reference)
     schemas = metadata.provider_config_schemas
     if not schemas or len(schemas) > _MAX_SCHEMA_VERSIONS:
@@ -333,36 +345,16 @@ def _validate_capability_methods(
     metadata: ConnectorProviderMetadata,
     reference: ConnectorProviderReference,
 ) -> None:
-    required: list[str] = []
-    if metadata.capabilities.tools:
-        required.extend(("list_tools", "call_tool"))
-    if metadata.capabilities.connections:
-        required.extend(
-            (
-                "connection_spec",
-                "start_connection",
-                "complete_connection",
-                "refresh_connection",
-                "revoke_connection",
-                "validate_connection",
-            )
-        )
-    if metadata.capabilities.events:
-        required.extend(
-            (
-                "list_events",
-                "validate_event_config",
-                "start_event_source",
-                "stop_event_source",
-                "renew_event_source",
-                "reconcile_event_source",
-            )
-        )
-        required.append("receive_webhook" if metadata.capabilities.event_delivery == "webhook" else "poll_events")
-    provider_type = type(provider)
-    for method_name in required:
-        if getattr(provider_type, method_name) is getattr(ConnectorProvider, method_name):
-            raise _metadata_invalid(reference)
+    if metadata.capabilities.tools != isinstance(provider, ConnectorToolProvider):
+        raise _metadata_invalid(reference)
+    if metadata.capabilities.connections != isinstance(provider, ConnectorConnectionProvider):
+        raise _metadata_invalid(reference)
+    if metadata.capabilities.events != isinstance(provider, ConnectorEventProvider):
+        raise _metadata_invalid(reference)
+    if metadata.capabilities.event_delivery == "webhook" and not isinstance(provider, ConnectorWebhookProvider):
+        raise _metadata_invalid(reference)
+    if metadata.capabilities.event_delivery == "polling" and not isinstance(provider, ConnectorPollingProvider):
+        raise _metadata_invalid(reference)
 
 
 def _detach_metadata(metadata: ConnectorProviderMetadata) -> ConnectorProviderMetadata:
@@ -375,6 +367,7 @@ def _detach_metadata(metadata: ConnectorProviderMetadata) -> ConnectorProviderMe
     return ConnectorProviderMetadata(
         display_name=metadata.display_name,
         description=metadata.description,
+        contract_version=metadata.contract_version,
         provider_config_schemas=MappingProxyType(schemas),
         capabilities=metadata.capabilities,
         connection_setup_modes=tuple(metadata.connection_setup_modes),

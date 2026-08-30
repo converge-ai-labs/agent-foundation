@@ -9,6 +9,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from a13n_service.iam.domain import ObjectId, PrincipalRef
+
 from .errors import ConnectorError
 
 CONNECTOR_ID_PREFIX = "con"
@@ -26,11 +28,6 @@ ProviderVersion = Annotated[str, Field(min_length=1, max_length=200)]
 
 class DomainModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class PrincipalRef(DomainModel):
-    principal_type: Literal["user", "service_account"]
-    principal_id: Annotated[str, Field(min_length=1, max_length=64)]
 
 
 class Connector(DomainModel):
@@ -60,8 +57,8 @@ class ConnectorRevision(DomainModel):
 
 
 class CreateConnector(DomainModel):
-    organization_id: Annotated[str, Field(min_length=1, max_length=64)]
-    workspace_id: Annotated[str, Field(min_length=1, max_length=64)]
+    organization_id: ObjectId
+    workspace_id: ObjectId
     name: Name
     description: Description | None = None
     enabled: bool = True
@@ -113,19 +110,16 @@ class FrozenConnectorTool(DomainModel):
     output_policy: dict[str, JsonValue]
 
 
-class ConnectorProviderDependencyLock(DomainModel):
+class ConnectorProviderContractLock(DomainModel):
     provider_key: str
-    distribution_name: str
-    distribution_version: str
-    class_module: str
-    class_qualname: str
+    contract_version: str
 
 
 class AgentConnectorDeclaration(DomainModel):
     connector_revision_id: str
     connection_id: str | None
     tools: tuple[FrozenConnectorTool, ...]
-    provider_lock: ConnectorProviderDependencyLock
+    provider_lock: ConnectorProviderContractLock
 
 
 class ConnectorTurnSelection(DomainModel):
@@ -178,10 +172,10 @@ class Connection(DomainModel):
 
 
 class StartConnectionSetup(DomainModel):
-    organization_id: Annotated[str, Field(min_length=1, max_length=64)]
-    workspace_id: Annotated[str, Field(min_length=1, max_length=64)]
-    connector_revision_id: Annotated[str, Field(min_length=1, max_length=64)]
-    connection_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    organization_id: ObjectId
+    workspace_id: ObjectId
+    connector_revision_id: ObjectId
+    connection_id: ObjectId | None = None
     principal_ref: PrincipalRef | None
     name: Name
     setup_mode: Annotated[str, Field(min_length=1, max_length=100)]
@@ -266,8 +260,8 @@ class Trigger(DomainModel):
 
 
 class CreateTrigger(DomainModel):
-    organization_id: Annotated[str, Field(min_length=1, max_length=64)]
-    workspace_id: Annotated[str, Field(min_length=1, max_length=64)]
+    organization_id: ObjectId
+    workspace_id: ObjectId
     name: Name
     description: Description | None = None
     principal_ref: PrincipalRef
