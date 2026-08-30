@@ -176,7 +176,7 @@ def _binding(root: Path):
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-1",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="local",
                     permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                     default_working_directory="/",
@@ -210,7 +210,7 @@ def _multi_binding(default_root: Path, shared_root: Path):
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-default",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="default",
                     permission_ceiling=permission,
                     default_working_directory="/",
@@ -218,7 +218,7 @@ def _multi_binding(default_root: Path, shared_root: Path):
                 ),
                 EnvironmentBindingRequest(
                     binding_id="binding-shared",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="shared",
                     permission_ceiling=permission,
                     default_working_directory="/",
@@ -384,7 +384,7 @@ async def test_host_can_scan_skills_through_entered_environment_file_operator(tm
             item.path,
             item.source_id,
             item.document.binding_id,
-            item.document.binding_revision,
+            item.document.binding_version,
             item.document.path,
         )
         for item in catalog.items
@@ -413,7 +413,7 @@ async def test_host_can_scan_non_virtual_local_file_operator(tmp_path: Path) -> 
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="cli-files",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
     manager = SkillManager((FileSkillSource("local", ("/.agents/skills",)),))
@@ -495,7 +495,7 @@ async def test_bound_catalog_ignores_unrelated_topology_refresh(tmp_path: Path) 
                 bindings=(
                     EnvironmentBindingRequest(
                         binding_id="binding-default",
-                        binding_revision=1,
+                        binding_version=1,
                         alias="default",
                         permission_ceiling=permission,
                         default_working_directory="/",
@@ -503,7 +503,7 @@ async def test_bound_catalog_ignores_unrelated_topology_refresh(tmp_path: Path) 
                     ),
                     EnvironmentBindingRequest(
                         binding_id="binding-shared",
-                        binding_revision=2,
+                        binding_version=2,
                         alias="shared",
                         permission_ceiling=permission,
                         default_working_directory="/",
@@ -540,7 +540,7 @@ async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: P
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=2,
+                binding_version=2,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -567,7 +567,7 @@ async def test_skills_capability_rejects_topology_change_during_scan(tmp_path: P
     assert exc_info.value.details == {
         "root": "/workspace/.agents/skills",
         "binding_id": "binding-1",
-        "binding_revision": 1,
+        "binding_version": 1,
     }
 
 
@@ -588,7 +588,7 @@ async def test_environment_scan_rejects_empty_root_refresh_during_scan(tmp_path:
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=2,
+                binding_version=2,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -615,7 +615,7 @@ async def test_environment_scan_rejects_empty_root_refresh_during_scan(tmp_path:
     assert exc_info.value.details == {
         "root": "/workspace/.agents/skills",
         "binding_id": "binding-1",
-        "binding_revision": 1,
+        "binding_version": 1,
     }
 
 

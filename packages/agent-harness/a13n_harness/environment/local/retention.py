@@ -142,13 +142,13 @@ class LocalRetentionStore:
         *,
         root: Path,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
         generation: str,
         max_spool_bytes: int,
     ) -> None:
         self._root = root
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = generation
         self._max_spool_bytes = max_spool_bytes
         self._records: dict[str, _Record] = {}
@@ -214,7 +214,7 @@ class LocalRetentionStore:
             )
         return BoundOutputReference(
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             observed_generation=self._generation,
             reference=OpaqueOutputReference._from_payload(token),
         )
@@ -228,7 +228,7 @@ class LocalRetentionStore:
     def _validate_reference(self, reference: BoundOutputReference) -> str:
         if (
             reference.binding_id != self._binding_id
-            or reference.binding_revision != self._binding_revision
+            or reference.binding_version != self._binding_version
             or reference.observed_generation != self._generation
         ):
             raise EnvironmentError("Retained-output reference is foreign or stale.", code="environment_stale_binding")
@@ -248,7 +248,7 @@ class LocalRetentionStore:
         if cursor is not None:
             if (
                 cursor.binding_id != self._binding_id
-                or cursor.binding_revision != self._binding_revision
+                or cursor.binding_version != self._binding_version
                 or cursor.observed_generation != self._generation
             ):
                 raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_binding")
@@ -280,7 +280,7 @@ class LocalRetentionStore:
         if not complete:
             next_cursor = BoundOutputCursor(
                 binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                binding_version=self._binding_version,
                 observed_generation=self._generation,
                 cursor=OpaqueOutputCursor._from_payload(f"{token}:{end}"),
             )
@@ -321,7 +321,7 @@ class LocalRetentionStore:
             assert cursor is not None
             if (
                 cursor.binding_id != self._binding_id
-                or cursor.binding_revision != self._binding_revision
+                or cursor.binding_version != self._binding_version
                 or cursor.observed_generation != self._generation
             ):
                 raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_binding")
@@ -341,7 +341,7 @@ class LocalRetentionStore:
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

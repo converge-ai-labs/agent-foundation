@@ -169,7 +169,7 @@ Persist `EnvironmentProviderResourceState` after each successful lifecycle trans
 - `destroy()` detaches the logical Provider resource only;
 - `read_only` restricts operations through the binding but is not an OS sandbox against an allowed local child process.
 
-Use Local Envd, Docker, E2B, or another EIP provider when workloads require isolation from the embedding OS account.
+Use Local Envd, Docker, or an implemented third-party EIP provider when workloads require isolation from the embedding OS account. E2B and other sandbox backends remain extension architectures rather than current built-in Providers.
 
 ## Local Envd sandbox
 
@@ -210,6 +210,40 @@ provider = catalog.create_provider(spec, runtime=runtime)
 `resolve_agent_envd_executable()` checks an explicit argument, then `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` or `agent-envd.exe` through `shutil.which()`. It returns one validated absolute executable. The library does not read `.env`; a Host or development command may load one before calling the resolver. In this repository, `make local-envd-test` builds the Rust daemon, loads the optional root `.env` only for that command, defaults to `target/debug/agent-envd`, and exercises the real provider path.
 
 Local Envd validates the exact daemon/client release and required native-isolation probe during create and resume. It does not fall back to Direct Local or disable isolation. Filesystem pause stops the current daemon generation while preserving workspace files; resume starts a fresh Resource entry and generation.
+
+## Docker sandbox
+
+`a13n.docker` manages one container on a local Docker Engine. With only `environment_id`, it uses the repository sandbox `latest` image, pulls it when missing, exposes the container-backed `/workspace` virtual mount, and enables Bash. Docker owns only outer image/container lifecycle and bootstrap; every Harness file, shell, process, output, and port operation uses authenticated HTTP EIP rather than Docker exec, copy, archive, or logs.
+
+```python
+from pathlib import Path
+
+from a13n_environment_provider import (
+    DirectoryDockerBootstrapStore,
+    DockerProviderRuntime,
+    DockerSDKEngine,
+    EnvironmentProviderSpec,
+    build_environment_provider_factory_catalog,
+)
+
+catalog = build_environment_provider_factory_catalog(
+    builtin_keys=("a13n.docker",),
+)
+spec = EnvironmentProviderSpec(
+    provider_key="a13n.docker",
+    schema_version="1",
+    parameters={"environment_id": "sandbox"},
+)
+runtime = DockerProviderRuntime(
+    engine=DockerSDKEngine.from_env(),
+    bootstrap_store=DirectoryDockerBootstrapStore(
+        Path("/var/lib/my-host/docker-bootstrap")
+    ),
+)
+provider = catalog.create_provider(spec, runtime=runtime)
+```
+
+The default bootstrap store favors local usability with ordinary Host-readable files; a Host can supply another `DockerBootstrapStore` with stricter ownership or persistence. Registry authentication, credential helpers, mirrors, and proxies remain ordinary Docker client configuration. The Provider supports existing Host bind directories and external named volumes, never creates or deletes named volumes, publishes EIP only on a Docker-assigned `127.0.0.1` Host port, and supports filesystem pause. Run the real image and Harness lifecycle check with `make docker-provider-test`.
 
 ## Create a provider plugin
 
@@ -277,7 +311,7 @@ A plugin returns only a supported shared attachment type:
 - `DirectLocalEnvironmentAttachment` for the in-process Direct Local backend;
 - `EIPEnvironmentAttachment` for an initialized-session source backed by stdio, authenticated HTTP(S), or an already accepted reverse WebSocket.
 
-Attachments are process-local, single-use, and non-serializable. Docker, E2B, and other sandbox providers use vendor SDKs only for outer lifecycle and bootstrap; all Harness file, shell, process, output, and port operations use EIP.
+Attachments are process-local, single-use, and non-serializable. Docker and third-party E2B or other sandbox providers use their lifecycle SDK only for outer lifecycle and bootstrap; Harness file, shell, process, output, and port operations then use EIP.
 
 ## Errors and diagnostics
 

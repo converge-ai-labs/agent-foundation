@@ -81,7 +81,7 @@ A custom Preset is created as `enabled` with no active Version. Its complete con
 `AgentPresetConfig` is finite Foundation-owned serializable data. It contains the complete behavior needed to publish an executable Version, including:
 
 - instructions and typed input and output declarations;
-- one exact `model_id` plus concrete Harness model configuration and native settings;
+- one exact `model_id` plus concrete Harness `HarnessModelCharacteristics` and native `ModelSettings`;
 - Capability, Tool, Skill, Connector, and Environment declarations or exact managed-resource references;
 - non-secret Secret requirements;
 - bounded trusted-adapter keys and configuration;
@@ -218,7 +218,7 @@ For each TurnAttempt, the Worker:
 2. verifies and materializes the Turn's exact `runtime_lock_digest` under the [runtime-loading contract](26-harness-plugin-artifacts-and-runtime-loading.md);
 3. records that lock digest, Harness version, and bounded selected Plugin distribution identities on the attempt;
 4. resolves current credentials, RoleBindings, run grants, Secret eligibility, provider availability, and Environment attachments;
-5. reconstructs fresh native Models, Capabilities, plugins, `AgentDefinition` values, and `RunBindings`; and
+5. reconstructs concrete `HarnessModelCharacteristics`, native `ModelSettings`, fresh native Models, Capabilities, plugins, `AgentDefinition` values, and `RunBindings`; and
 6. enters the Harness only after the current TurnAttempt fence authorizes effects.
 
 Deployment code can change between TurnAttempts, but one accepted Turn never silently changes Plugin code or dependencies. Retry, waiting resume, and worker-loss recovery reconstruct the Runtime lock pinned by that Turn. In `on_demand`, a Worker with a conflicting process-local import set declines the Turn before claim; in `runner`, a matching lock-scoped Runner claims it. Current credentials, authorization, Secret eligibility, provider availability, and live Environment bindings remain fresh per TurnAttempt.

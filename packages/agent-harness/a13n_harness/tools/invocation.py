@@ -6,7 +6,7 @@ import asyncio
 import contextvars
 import hashlib
 import json
-from collections.abc import AsyncIterable, Iterator, Mapping
+from collections.abc import AsyncIterable, Generator, Iterator, Mapping, Sequence
 from contextlib import AsyncExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
@@ -29,6 +29,16 @@ from a13n_harness._json import (
     redact_json,
     require_finite_json,
 )
+from a13n_harness.capabilities.shell_review import (
+    SHELL_EXEC_TOOL_ID,
+    SHELL_REVIEW_CAPABILITY_ID,
+    ShellReviewAction,
+    ShellReviewAssessment,
+    ShellReviewCapability,
+    ShellReviewError,
+    ShellReviewRequest,
+)
+from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
@@ -53,6 +63,7 @@ from a13n_harness.tools.policy import (
     InvocationScope,
     ToolInvocationContext,
 )
+from a13n_harness.usage import ProviderUsage
 
 TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID = "a13n.tool-execution-boundary"
 MAX_ARGUMENT_BYTES = 64 * 1024
@@ -105,7 +116,7 @@ def current_invocation_scope() -> InvocationScope:
 
 
 @contextmanager
-def disabled_tool_execution() -> Iterator[None]:
+def disabled_tool_execution() -> Generator[None]:
     """Disable function-tool dispatch in the current async execution context."""
     token = _TOOL_EXECUTION_DISABLED.set(True)
     try:
@@ -247,16 +258,20 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             raise
         invocation = prepared.context
         await _emit(ctx, managed, "prepared", invocation_id=invocation.invocation_id)
-        if ctx.tool_call_approved and policy.approval_verifier is not None:
-            approval_metadata = ctx.tool_call_metadata
-            if approval_metadata is None:
-                approval_metadata = {}
-            if not isinstance(approval_metadata, Mapping) or not all(isinstance(key, str) for key in approval_metadata):
-                raise ToolFailed("Managed tool approval metadata is invalid.")
+        policy_decision = await _evaluate_policy(ctx, policy, invocation, managed)
+        if policy_decision.decision == "deny":
+            await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
+            raise ToolFailed("Managed tool invocation was denied.")
+        if (
+            ctx.tool_call_approved
+            and policy_decision.decision == "approval_required"
+            and policy.approval_verifier is not None
+        ):
+            approval_metadata = _policy_approval_metadata(ctx.tool_call_metadata)
             try:
                 verified = await policy.approval_verifier.verify(
                     invocation,
-                    cast(Mapping[str, JsonValue], approval_metadata),
+                    approval_metadata,
                     context=ctx.deps,
                 )
             except Exception as exc:
@@ -264,13 +279,19 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
             if verified is not True:
                 await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
                 raise ToolFailed("Managed tool approval is no longer valid.")
-        await _require_policy_allow(
-            ctx,
-            policy,
-            invocation,
-            managed,
-            approval_satisfied=ctx.tool_call_approved,
+
+        shell_action, shell_assessment = await _evaluate_shell_review(ctx, invocation, managed)
+        if shell_action == ShellReviewAction.DENY:
+            await _emit(ctx, managed, "denied", invocation_id=invocation.invocation_id)
+            raise ToolFailed("Shell command review denied the invocation.")
+        requires_approval = (
+            policy_decision.decision == "approval_required" or shell_action == ShellReviewAction.APPROVAL_REQUIRED
         )
+        if requires_approval and not ctx.tool_call_approved:
+            await _emit(ctx, managed, "approval_required", invocation_id=invocation.invocation_id)
+            raise ApprovalRequired(
+                metadata=_combined_approval_metadata(policy_decision, shell_assessment, shell_action)
+            )
         await _emit(ctx, managed, "authorized", invocation_id=invocation.invocation_id)
         leases: list[CredentialLease] = []
         lease_stack = AsyncExitStack()
@@ -397,23 +418,141 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         raise AssertionError("unreachable")
 
 
-async def _require_policy_allow(
+_POLICY_APPROVAL_METADATA_KEY = "a13n.harness.invocation-policy"
+_SHELL_REVIEW_APPROVAL_METADATA_KEY = "a13n.harness.shell-review"
+
+
+async def _evaluate_policy(
     ctx: RunContext[AgentContext],
     policy: InvocationPolicyCapability,
     invocation: ToolInvocationContext,
     metadata: HarnessToolMetadata,
-    *,
-    approval_satisfied: bool,
-) -> None:
+) -> InvocationPolicyDecision:
     decision = await policy.evaluator(invocation, metadata, context=ctx.deps)
     if not isinstance(decision, InvocationPolicyDecision):
         raise DefinitionError("Invocation policy returned an invalid decision.", code="invocation_policy_invalid")
-    if decision.decision == "deny":
-        await _emit(ctx, metadata, "denied", invocation_id=invocation.invocation_id)
-        raise ToolFailed("Managed tool invocation was denied.")
-    if decision.decision == "approval_required" and not approval_satisfied:
-        await _emit(ctx, metadata, "approval_required", invocation_id=invocation.invocation_id)
-        raise ApprovalRequired(metadata=dict(decision.approval_metadata))
+    return decision
+
+
+async def _evaluate_shell_review(
+    ctx: RunContext[AgentContext],
+    invocation: ToolInvocationContext,
+    metadata: HarnessToolMetadata,
+) -> tuple[ShellReviewAction | None, ShellReviewAssessment | None]:
+    if not metadata.shell_review:
+        return None, None
+    capability = ctx.capabilities.get(SHELL_REVIEW_CAPABILITY_ID)
+    if capability is None:
+        return None, None
+    if type(capability) is not ShellReviewCapability:
+        raise DefinitionError(
+            "The finalized shell review Capability has an incompatible type.",
+            code="capability_scope_invalid",
+        )
+    try:
+        request = _project_shell_review_request(invocation)
+        result = await capability.review(request, context=ctx.deps)
+        await _record_shell_review_usage(ctx, result.usage)
+        return capability.action_for(result.assessment), result.assessment
+    except asyncio.CancelledError:
+        raise
+    except ShellReviewError as exc:
+        await _record_shell_review_usage(ctx, exc.usage)
+        return capability.on_error, None
+    except DefinitionError:
+        raise
+    except Exception:
+        return capability.on_error, None
+
+
+def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellReviewRequest:
+    arguments = invocation.normalized_arguments
+    command = arguments.get("command")
+    cwd = arguments.get("cwd")
+    environment = arguments.get("environment")
+    timeout_seconds = arguments.get("timeout_seconds")
+    background = arguments.get("background", False)
+    alias = arguments.get("alias")
+    if not isinstance(command, str):
+        raise ValueError("reviewable shell invocation has no string command")
+    if cwd is not None and not isinstance(cwd, str):
+        raise ValueError("reviewable shell invocation has an invalid cwd")
+    if environment is None:
+        environment_keys: tuple[str, ...] = ()
+    elif isinstance(environment, Mapping) and all(isinstance(key, str) for key in environment):
+        environment_keys = tuple(sorted(environment))
+    else:
+        raise ValueError("reviewable shell invocation has an invalid environment")
+    if timeout_seconds is not None and (
+        not isinstance(timeout_seconds, int | float) or isinstance(timeout_seconds, bool)
+    ):
+        raise ValueError("reviewable shell invocation has an invalid timeout")
+    if not isinstance(background, bool):
+        raise ValueError("reviewable shell invocation has an invalid background flag")
+    if alias is not None and not isinstance(alias, str):
+        raise ValueError("reviewable shell invocation has an invalid alias")
+    return ShellReviewRequest(
+        tool_id=invocation.tool_id,
+        tool_call_id=invocation.tool_call_id,
+        command=command,
+        cwd=cwd,
+        environment_keys=environment_keys,
+        timeout_seconds=timeout_seconds,
+        background=background,
+        alias=alias,
+    )
+
+
+async def _record_shell_review_usage(
+    ctx: RunContext[AgentContext],
+    usage: Sequence[ProviderUsage],
+) -> None:
+    for receipt in usage:
+        await ctx.deps.record_provider_usage(
+            receipt,
+            source="shell.review",
+            tool_id=SHELL_EXEC_TOOL_ID,
+            tool_call_id=ctx.tool_call_id,
+        )
+
+
+def _combined_approval_metadata(
+    policy_decision: InvocationPolicyDecision,
+    shell_assessment: ShellReviewAssessment | None,
+    shell_action: ShellReviewAction | None,
+) -> dict[str, JsonValue]:
+    if shell_action != ShellReviewAction.APPROVAL_REQUIRED:
+        return dict(policy_decision.approval_metadata)
+    shell_metadata: dict[str, JsonValue] = {
+        "action": ShellReviewAction.APPROVAL_REQUIRED.value,
+        "status": "error" if shell_assessment is None else "flagged",
+    }
+    if shell_assessment is not None:
+        shell_metadata["risk"] = shell_assessment.risk.value
+        shell_metadata["reason"] = shell_assessment.reason
+    return {
+        _POLICY_APPROVAL_METADATA_KEY: {
+            "decision": policy_decision.decision,
+            "metadata": dict(policy_decision.approval_metadata),
+        },
+        _SHELL_REVIEW_APPROVAL_METADATA_KEY: shell_metadata,
+    }
+
+
+def _policy_approval_metadata(value: object) -> Mapping[str, JsonValue]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):
+        raise ToolFailed("Managed tool approval metadata is invalid.")
+    policy_value = value.get(_POLICY_APPROVAL_METADATA_KEY)
+    if policy_value is None:
+        return cast(Mapping[str, JsonValue], value)
+    if not isinstance(policy_value, Mapping):
+        raise ToolFailed("Managed tool approval metadata is invalid.")
+    metadata = policy_value.get("metadata")
+    if not isinstance(metadata, Mapping) or not all(isinstance(key, str) for key in metadata):
+        raise ToolFailed("Managed tool approval metadata is invalid.")
+    return cast(Mapping[str, JsonValue], metadata)
 
 
 def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> None:
@@ -538,6 +677,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (DynamicEnvironmentCapability, _DynamicEnvironmentRunCapability),
             provenance.definition_ids,
         ),
+        SHELL_REVIEW_CAPABILITY_ID: (
+            (ShellReviewCapability,),
+            provenance.definition_ids,
+        ),
         RUNTIME_CONTEXT_CAPABILITY_ID: (
             (RuntimeContextCapability,),
             provenance.definition_ids,
@@ -605,6 +748,12 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
     }
     reserved_types = tuple(capability_type for item in expected.values() for capability_type in item[0])
     for capability_id, capability in ctx.capabilities.items():
+        if capability.id is not None:
+            _validate_capability_id(
+                capability.id,
+                capability_type=type(capability),
+                source="run_finalized",
+            )
         if isinstance(capability, reserved_types) and capability_id not in expected:
             raise DefinitionError(
                 "A protected Harness Capability changed its reserved ID during run binding.",

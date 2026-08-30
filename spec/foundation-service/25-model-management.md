@@ -29,16 +29,16 @@ generation, and other specialized model resources are outside this domain.
 
 ## Boundaries
 
-| Concern                                   | Owner                                                          | Contract                                                                                 |
-| ----------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Model configuration and lifecycle         | This document                                                  | Owns `ModelConfig`, provider discovery, testing, copying, disabling, and deletion        |
-| Agent model selection and native settings | [Agent Management](12-agent-management.md)                     | Stores one `model_id` and immutable per-Preset-Version model settings                    |
-| Turn-time model selection                 | This document and [Durable Turn State](14-turn-persistence.md) | Resolves the current enabled configuration and freezes one non-secret execution snapshot |
-| Secret values and use eligibility         | [Secret Management](11-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                     |
-| Provider API and balancing                | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                         |
-| Trusted provider code                     | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code     |
-| Harness model behavior                    | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                       |
-| Usage identity and measures               | [Events, Usage, and Delivery](20-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                        |
+| Concern                            | Owner                                                          | Contract                                                                                 |
+| ---------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Model configuration and lifecycle  | This document                                                  | Owns `ModelConfig`, provider discovery, testing, copying, disabling, and deletion        |
+| Agent model selection and behavior | [Agent Management](12-agent-management.md)                     | Stores one `model_id`, concrete Harness model characteristics, and native model settings |
+| Turn-time model selection          | This document and [Durable Turn State](14-turn-persistence.md) | Resolves the current enabled configuration and freezes one non-secret execution snapshot |
+| Secret values and use eligibility  | [Secret Management](11-secret-management.md)                   | Stores, authorizes, resolves, rotates, and deletes credential values                     |
+| Provider API and balancing         | Selected model provider                                        | Owns provider-native routing, capacity, quotas, and availability                         |
+| Trusted provider code              | Distribution composition                                       | Installs and allows provider adapters; public APIs never import caller-selected code     |
+| Harness model behavior             | Agent Harness and selected adapter                             | Constructs the process-local native Model and performs model calls                       |
+| Usage identity and measures        | [Events, Usage, and Delivery](20-events-usage-and-delivery.md) | Retains immutable usage facts with model and provider attribution                        |
 
 `ModelConfig` is not a Provider account, connection pool, deployment, gateway,
 or credential container. Foundation exposes no independent Provider Connection
@@ -166,16 +166,18 @@ so. It is null when the provider derives its endpoint from typed fields such as
 region or project. `provider_config` contains only the fields declared by the
 selected provider definition and never contains a credential.
 
-Temperature, maximum output requested for one invocation, reasoning effort,
-tool choice, structured-output policy, timeouts, and other Agent behavior are
-not `ModelConfig` fields. The immutable `AgentPresetVersion` owns those native model
-settings because two Presets can use the same model configuration differently.
+Concrete `HarnessModelCharacteristics`, native `ModelSettings`, temperature,
+maximum output requested for one invocation, reasoning effort, tool choice,
+structured-output policy, timeouts, and other Agent behavior are not
+`ModelConfig` fields. The immutable `AgentPresetVersion` owns those values
+because two Presets can use the same model configuration differently.
 
 Capabilities describe catalog knowledge or an explicit Workspace override.
 They are informational for authoring and display. They do not gate Agent save,
 Turn acceptance, tool calling, structured output, or execution. Unknown facts
 are represented as unknown rather than false. Provider behavior and runtime
-errors remain authoritative.
+errors remain authoritative. They do not populate, default, or validate an
+AgentPresetVersion's concrete `HarnessModelCharacteristics`.
 
 ## Credential Requirements
 

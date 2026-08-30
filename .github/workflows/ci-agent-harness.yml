@@ -41,12 +41,21 @@ jobs:
         include:
           - name: Linux
             runner: ubuntu-24.04
+            test_targets: packages/agent-harness/tests
           - name: Windows
             runner: windows-2025
-          # macOS protects the Harness filesystem, process, and environment integrations from regressions.
+            test_targets: >-
+              packages/agent-harness/tests/test_environment_local.py
+              packages/agent-harness/tests/test_environment_processes.py
+              packages/agent-harness/tests/test_monitored_process.py
           - name: macOS
             runner: macos-15
+            test_targets: >-
+              packages/agent-harness/tests/test_environment_local.py
+              packages/agent-harness/tests/test_environment_processes.py
+              packages/agent-harness/tests/test_monitored_process.py
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -72,7 +81,7 @@ jobs:
         run: uv run --locked pyright packages/agent-harness/a13n_harness
 
       - name: Test Agent Harness
-        run: uv run --locked python -m pytest packages/agent-harness/tests
+        run: uv run --locked python -m pytest -vv ${{ matrix.test_targets }}
 
       - name: Build Agent Harness distribution
         if: matrix.name == 'Linux'

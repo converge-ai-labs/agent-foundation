@@ -10,7 +10,7 @@ from types import MappingProxyType
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
-from a13n_harness.spec import ModelConfiguration
+from a13n_harness.spec import HarnessModelCharacteristics
 
 
 class OfficialModelEntry(BaseModel):
@@ -19,7 +19,7 @@ class OfficialModelEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     model: str = Field(min_length=1, max_length=512)
-    configuration: ModelConfiguration
+    characteristics: HarnessModelCharacteristics
     source_url: HttpUrl
 
     @model_validator(mode="after")

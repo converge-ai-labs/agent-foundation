@@ -101,7 +101,7 @@ class BoundOutputReference(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     binding_id: str
-    binding_revision: int = Field(gt=0)
+    binding_version: int = Field(gt=0)
     observed_generation: str
     reference: OpaqueOutputReference
 
@@ -110,7 +110,7 @@ class BoundOutputCursor(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     binding_id: str
-    binding_revision: int = Field(gt=0)
+    binding_version: int = Field(gt=0)
     observed_generation: str
     cursor: OpaqueOutputCursor
 

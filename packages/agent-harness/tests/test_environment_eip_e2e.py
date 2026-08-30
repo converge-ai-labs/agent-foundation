@@ -159,7 +159,7 @@ async def exercise_attachment(
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-eip",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="workspace",
                     permission_ceiling=EnvironmentPermissionSet(
                         operations=frozenset(
@@ -216,15 +216,15 @@ def _operation(
 def _local_envd_run_binding(
     attachment: EIPEnvironmentAttachment,
     *,
-    binding_revision: int,
+    binding_version: int,
 ):
     return create_environment_run_binding(
         initial_topology=EnvironmentTopologyRequest(
-            topology_version=binding_revision,
+            topology_version=binding_version,
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-local-envd",
-                    binding_revision=binding_revision,
+                    binding_version=binding_version,
                     alias="workspace",
                     permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                     default_working_directory="/",
@@ -281,7 +281,7 @@ def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None
 
         async with resource:
             async with resource.acquire_attachment() as attachment:
-                binding = _local_envd_run_binding(attachment, binding_revision=1)
+                binding = _local_envd_run_binding(attachment, binding_version=1)
                 async with binding.bind(run_id="run-local-envd-1", instance=instance) as environment:
                     await environment.activate()
                     await environment.files.write_text(
@@ -349,7 +349,7 @@ def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None
                     await environment.processes.release(old_handle)
 
             async with resource.acquire_attachment() as attachment:
-                binding = _local_envd_run_binding(attachment, binding_revision=2)
+                binding = _local_envd_run_binding(attachment, binding_version=2)
                 async with binding.bind(run_id="run-local-envd-2", instance=instance) as environment:
                     await environment.activate()
                     result = await environment.shell.exec(
@@ -376,7 +376,7 @@ def test_local_envd_provider_runs_full_harness_lifecycle(tmp_path: Path) -> None
         )
         async with resumed:
             async with resumed.acquire_attachment() as attachment:
-                binding = _local_envd_run_binding(attachment, binding_revision=3)
+                binding = _local_envd_run_binding(attachment, binding_version=3)
                 async with binding.bind(run_id="run-local-envd-3", instance=instance) as environment:
                     await environment.activate()
                     result = await environment.shell.exec(

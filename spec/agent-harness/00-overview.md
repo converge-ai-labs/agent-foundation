@@ -18,7 +18,7 @@ Pydantic AI owns the Agent loop, Models, profiles, Toolsets, Capabilities, messa
 - ordered Environment aggregate extensions entered after state restore and closed before provider teardown;
 - detached `HarnessState` containing messages, Capability namespaces, and optional portable Environment data;
 - a single-consumer event/result stream with deterministic cleanup;
-- optional independently selected OpenTelemetry traces and metrics, with summary tracing as the low-detail enabled default;
+- optional independently selected OpenTelemetry traces and metrics, with tracing either off or fully instrumented;
 - narrow Model self-healing and bounded recovery from interrupted model execution.
 
 It does not add a second Agent loop, Model/profile system, Toolset hierarchy, Capability registry, serialized compiler/catalog, universal plugin package manager, or durable workflow engine.

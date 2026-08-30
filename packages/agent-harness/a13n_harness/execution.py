@@ -70,6 +70,10 @@ from a13n_harness.capabilities.media import (
     MediaCapability,
     MediaRunCapability,
 )
+from a13n_harness.capabilities.shell_review import (
+    SHELL_REVIEW_CAPABILITY_ID,
+    ShellReviewCapability,
+)
 from a13n_harness.capabilities.skills import (
     SKILL_SELECTION_RUN_CAPABILITY_ID,
     SKILLS_CAPABILITY_ID,
@@ -93,7 +97,11 @@ from a13n_harness.capabilities.working_state import (
     TaskStateRunCapability,
     WorkingStateCapability,
 )
-from a13n_harness.capability_types import CapabilityTypeCatalog
+from a13n_harness.capability_types import (
+    CapabilityTypeCatalog,
+    _validate_capability_id,
+    first_party_declarative_capability_types,
+)
 from a13n_harness.context import (
     AgentContext,
     BuiltSubagent,
@@ -124,6 +132,7 @@ from a13n_harness.errors import (
     StateError,
 )
 from a13n_harness.events import (
+    AgentStreamEventProtocol,
     HarnessEvent,
     HarnessEventEmitter,
     HarnessExtensionEvent,
@@ -148,7 +157,7 @@ from a13n_harness.model_context import (
     MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID,
     ModelContextCoordinatorCapability,
 )
-from a13n_harness.models.binding import resolve_run_model
+from a13n_harness.models.binding import RunModelResolver, resolve_run_model
 from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
 from a13n_harness.models.request_headers import (
     MODEL_REQUEST_HEADERS_CAPABILITY_ID,
@@ -214,7 +223,6 @@ from a13n_harness.tools.surface import (
 )
 from a13n_harness.usage import USAGE_CAPABILITY_ID, RunUsageLedger, UsageCapability
 
-_AGENT_EVENT_ADAPTER = TypeAdapter(AgentStreamEvent)
 _EXTENSION_EVENT_ADAPTER = TypeAdapter(HarnessExtensionEvent)
 _EMPTY_CAPABILITY_TYPE_CATALOG = CapabilityTypeCatalog()
 
@@ -323,8 +331,8 @@ def _environment_topology_event(change: EnvironmentTopologyChange) -> HarnessExt
         {
             "kind": item.kind,
             "binding_id": item.binding_id,
-            "previous_revision": item.previous_revision,
-            "current_revision": item.current_revision,
+            "previous_version": item.previous_version,
+            "current_version": item.current_version,
             "previous_alias": item.previous_alias,
             "current_alias": item.current_alias,
         }
@@ -557,27 +565,29 @@ def _reconcile_system_prompt(
     return tuple(reconciled)
 
 
-def _resolve_model_configured_capabilities(
+def _resolve_model_characteristics_capabilities(
     agent: AgentSpec,
     capabilities: tuple[AbstractCapability[AgentContext], ...],
 ) -> tuple[AbstractCapability[AgentContext], ...]:
-    model_configuration = agent.model_configuration if isinstance(agent, HarnessAgentSpec) else None
+    model_characteristics = agent.model_characteristics if isinstance(agent, HarnessAgentSpec) else None
     resolved: list[AbstractCapability[AgentContext]] = []
     for capability in capabilities:
         if isinstance(capability, CompactionCapability) and capability.policy is None:
-            trigger_tokens = model_configuration.compaction_trigger_tokens if model_configuration is not None else None
+            trigger_tokens = (
+                model_characteristics.compaction_trigger_tokens if model_characteristics is not None else None
+            )
             if trigger_tokens is None:
                 raise DefinitionError(
-                    "Automatic compaction requires AgentSpec.model_config.context_window.",
+                    "Automatic compaction requires AgentSpec.model_characteristics.context_window.",
                     code="compaction_policy_unresolved",
                 )
             resolved.append(CompactionCapability(CompactionPolicy(trigger_tokens=trigger_tokens)))
             continue
-        if isinstance(capability, HandoffCapability) and model_configuration is not None:
+        if isinstance(capability, HandoffCapability) and model_characteristics is not None:
             configuration = capability.configuration
             threshold_fields = {"include_summary_reminder", "summary_reminder_tokens"}
             if not threshold_fields.intersection(configuration.model_fields_set):
-                proactive_threshold = model_configuration.proactive_context_management_threshold
+                proactive_threshold = model_characteristics.proactive_context_management_threshold
                 if proactive_threshold is None:
                     configuration = configuration.model_copy(
                         update={"include_summary_reminder": False},
@@ -585,8 +595,8 @@ def _resolve_model_configured_capabilities(
                     )
                     resolved.append(HandoffCapability(configuration))
                     continue
-                if model_configuration.context_window is not None:
-                    reminder_tokens = model_configuration.summary_reminder_tokens
+                if model_characteristics.context_window is not None:
+                    reminder_tokens = model_characteristics.summary_reminder_tokens
                     assert reminder_tokens is not None
                     configuration = configuration.model_copy(
                         update={"summary_reminder_tokens": reminder_tokens},
@@ -776,7 +786,8 @@ class HarnessBuilder:
         subagents = SubagentCollection({child.declaration.name: child for child in built_children})
         configured_plugins = self._create_configured_plugins()
         plugins, plugin_capabilities = bind_agent_plugins((*definition.plugins, *configured_plugins))
-        authored_capabilities = _resolve_model_configured_capabilities(
+        _validate_capability_source(plugin_capabilities, source="plugin")
+        authored_capabilities = _resolve_model_characteristics_capabilities(
             definition.agent,
             (*definition.capabilities, *plugin_capabilities),
         )
@@ -832,13 +843,17 @@ class HarnessBuilder:
         )
         try:
             construction_spec, business_output, output_adapter = _resolve_business_output(definition)
+            definition_reserved_ids = definition_reserved_ids | _first_party_spec_reserved_ids(construction_spec)
             complete_output = [business_output, DeferredToolRequests]
             system_prompt = _normalize_system_prompt(construction_spec)
             agent = Agent.from_spec(
                 construction_spec,
                 deps_type=AgentContext,
                 system_prompt=system_prompt,
-                custom_capability_types=self._capability_type_catalog.custom_capability_types,
+                custom_capability_types=(
+                    *first_party_declarative_capability_types(),
+                    *self._capability_type_catalog.custom_capability_types,
+                ),
                 model=definition.model,
                 output_type=complete_output,
                 capabilities=capabilities,
@@ -866,6 +881,7 @@ class HarnessBuilder:
             plugins=plugins,
             subagents=subagents,
             definition_reserved_capability_ids=definition_reserved_ids,
+            model_inference=resolve_model,
             observation=self._observation,
         )
 
@@ -905,6 +921,7 @@ class ExecutableAgent[OutputT]:
         plugins: tuple[AbstractHarnessPlugin, ...],
         subagents: SubagentCollection,
         definition_reserved_capability_ids: frozenset[str],
+        model_inference: RunModelResolver,
         observation: _ObservationRuntime,
     ) -> None:
         self.definition = definition
@@ -914,6 +931,7 @@ class ExecutableAgent[OutputT]:
         self._output_adapter = output_adapter
         self._plugins = plugins
         self._definition_reserved_capability_ids = definition_reserved_capability_ids
+        self._model_inference = model_inference
         self._observation = observation
         self._closed = False
 
@@ -1288,11 +1306,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 state=context_state,
                 environment=environment,
                 model_resolver=self._bindings.model_resolver,
-                model_configuration=(
-                    self._executable.definition.agent.model_configuration
+                model_characteristics=(
+                    self._executable.definition.agent.model_characteristics
                     if isinstance(self._executable.definition.agent, HarnessAgentSpec)
                     else None
                 ),
+                _model_inference=self._executable._model_inference,
                 toolset_instructions=(
                     self._bindings.toolset_instructions
                     if self._bindings.toolset_instructions is not None
@@ -1684,20 +1703,24 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             )
         if not isinstance(item, HarnessEvent) or item.sequence < 0:
             raise PluginError("Plugin emitted an invalid stream item.", code="plugin_event_invalid")
-        try:
-            event = (
-                _EXTENSION_EVENT_ADAPTER.validate_python(
-                    item.event.model_dump(),
-                    strict=True,
-                )
-                if isinstance(item.event, HarnessExtensionEvent)
-                else _AGENT_EVENT_ADAPTER.validate_python(item.event, strict=True)
-            )
-        except ValidationError as exc:
+        event = item.event
+        if isinstance(event, HarnessExtensionEvent):
+            try:
+                event = _EXTENSION_EVENT_ADAPTER.validate_python(event.model_dump(), strict=True)
+            except ValidationError as exc:
+                raise PluginError(
+                    "Plugin emitted an invalid Harness event.",
+                    code="plugin_event_invalid",
+                ) from exc
+        elif (
+            not isinstance(event, AgentStreamEventProtocol)
+            or not isinstance(event.event_kind, str)
+            or not event.event_kind.strip()
+        ):
             raise PluginError(
                 "Plugin emitted an invalid Harness event.",
                 code="plugin_event_invalid",
-            ) from exc
+            )
         provenance = self._emitter.take_child_provenance(item)
         if provenance is not None and (item.thread_id != provenance.thread_id or item.run_id != provenance.run_id):
             raise PluginError(
@@ -2495,6 +2518,22 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await self._context._close_run_cleanups()
 
 
+def _first_party_spec_reserved_ids(spec: AgentSpec) -> frozenset[str]:
+    """Authorize reserved definition IDs selected by exact first-party wire names."""
+    names = [capability.name for capability in spec.capabilities]
+    shell_review_name = ShellReviewCapability.get_serialization_name()
+    if shell_review_name is None:
+        raise AssertionError("ShellReviewCapability must be serializable")
+    count = names.count(shell_review_name)
+    if count > 1:
+        raise DefinitionError(
+            "AgentSpec contains duplicate ShellReviewCapability declarations.",
+            code="capability_id_duplicate",
+            details={"capability_id": SHELL_REVIEW_CAPABILITY_ID, "source": "definition"},
+        )
+    return frozenset({SHELL_REVIEW_CAPABILITY_ID}) if count else frozenset()
+
+
 def _resolve_business_output[OutputT](
     definition: AgentDefinition[OutputT],
 ) -> tuple[AgentSpec, Any, TypeAdapter[Any]]:
@@ -2555,6 +2594,7 @@ def _validate_built_capability_tree(
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
+        SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
@@ -2584,12 +2624,11 @@ def _validate_built_capability_tree(
             )
         capability_id = capability.id
         if capability_id is not None:
-            if not isinstance(capability_id, str) or not capability_id.strip():
-                raise DefinitionError(
-                    "Capability IDs must be non-blank strings when present.",
-                    code="capability_id_invalid",
-                    details={"capability_type": type(capability).__name__},
-                )
+            capability_id = _validate_capability_id(
+                capability_id,
+                capability_type=type(capability),
+                source="built",
+            )
             previous = seen_ids.get(capability_id)
             if previous is not None:
                 raise DefinitionError(
@@ -2694,6 +2733,7 @@ def _validate_built_capability_tree(
                 ClientToolsCapability,
                 CodeActCapability,
                 DynamicEnvironmentCapability,
+                ShellReviewCapability,
                 RuntimeContextCapability,
                 WorkspaceOutlineCapability,
                 FileContextCapability,
@@ -2813,7 +2853,7 @@ def _capture_skill_selection_names(
 def _validate_capability_source(
     capabilities: Sequence[AbstractCapability[AgentContext]],
     *,
-    source: Literal["definition", "run"],
+    source: Literal["definition", "plugin", "run"],
 ) -> frozenset[str]:
     """Flatten Capability trees and preserve ownership of reserved Harness IDs."""
     run_types = (
@@ -2874,6 +2914,7 @@ def _validate_capability_source(
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
+        SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
@@ -2911,6 +2952,7 @@ def _validate_capability_source(
                     ClientToolsCapability,
                     CodeActCapability,
                     DynamicEnvironmentCapability,
+                    ShellReviewCapability,
                     RuntimeContextCapability,
                     WorkspaceOutlineCapability,
                     FileContextCapability,
@@ -2940,6 +2982,7 @@ def _validate_capability_source(
             | ClientToolsRunCapability
             | CodeActCapability
             | DynamicEnvironmentCapability
+            | ShellReviewCapability
             | RuntimeContextCapability
             | WorkspaceOutlineCapability
             | FileContextCapability

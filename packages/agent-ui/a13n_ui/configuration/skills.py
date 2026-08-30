@@ -915,7 +915,7 @@ async def _open_environment(
             bindings.append(
                 EnvironmentBindingRequest(
                     binding_id=f"skill-binding-{len(alias_by_directory)}",
-                    binding_revision=1,
+                    binding_version=1,
                     alias=alias,
                     permission_ceiling=_READ_PERMISSIONS,
                     default_working_directory="/",

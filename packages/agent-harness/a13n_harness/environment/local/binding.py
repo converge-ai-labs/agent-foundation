@@ -168,7 +168,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
         run_id: str,
         instance,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         del run_id, instance
         if self._used or self._discarded:
@@ -187,7 +187,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                 read_only=self.configuration.read_only,
                 policy=self.configuration.files,
                 binding_id=binding_id,
-                binding_revision=binding_revision,
+                binding_version=binding_version,
                 generation=generation,
             )
             process_enabled = bool(
@@ -198,7 +198,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                 retention = LocalRetentionStore(
                     root=retention_root,
                     binding_id=binding_id,
-                    binding_revision=binding_revision,
+                    binding_version=binding_version,
                     generation=generation,
                     max_spool_bytes=self.configuration.outputs.max_spool_bytes,
                 )
@@ -211,7 +211,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                     provider_type=self.provider_type,
                     environment_id=self.configuration.environment_id,
                     binding_id=binding_id,
-                    binding_revision=binding_revision,
+                    binding_version=binding_version,
                     generation=generation,
                 )
             shell = LocalShell(processes) if processes is not None else None

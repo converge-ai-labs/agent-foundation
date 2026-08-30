@@ -10,14 +10,14 @@ Use `HarnessBuilder.build()` for direct application composition:
 from a13n_harness import (
     AgentSpec,
     HarnessBuilder,
-    ModelConfiguration,
+    HarnessModelCharacteristics,
     SelfHealingModelCapability,
 )
 
 executable = HarnessBuilder().build(
     AgentSpec(
         system_prompt="Answer concisely.",
-        model_config=ModelConfiguration(context_window=200_000),
+        model_characteristics=HarnessModelCharacteristics(context_window=200_000),
     ),
     output_type=str,
     model=model,
@@ -71,7 +71,7 @@ local = preset.with_updates(
 )
 ```
 
-The optional positional mapping supports dynamic fields and serialization aliases such as `model_config` or `$schema`. Keyword overrides support the ordinary Python field names. Unknown fields, duplicate alias/name updates, and invalid values fail immediately. Updates replace complete top-level fields and do not recursively merge nested provider settings, metadata, schemas, or Capability arguments; construct an explicitly merged field when that behavior is intended.
+The optional positional mapping supports dynamic fields and serialization aliases such as `model_characteristics` or `$schema`. Keyword overrides support the ordinary Python field names. Unknown fields, duplicate alias/name updates, and invalid values fail immediately. Updates replace complete top-level fields and do not recursively merge nested provider settings, metadata, schemas, or Capability arguments; construct an explicitly merged field when that behavior is intended.
 
 This happens before `HarnessBuilder.build()` and returns an independent deep copy. It is not the temporary run-scoped context manager exposed by Pydantic AI's built Agent.
 
@@ -206,31 +206,31 @@ For direct-provider model facts, the package includes a small immutable official
 from a13n_harness import get_official_model_catalog
 
 models = get_official_model_catalog()
-configuration = models["anthropic:claude-sonnet-5"].configuration
+characteristics = models["anthropic:claude-sonnet-5"].characteristics
 ```
 
-Entries contain only a provider-qualified official model ID, objective `ModelConfiguration`, and an official source URL. They do not contain gateway routes, credentials, request presets, reasoning settings, aliases, labels, or application defaults. Lookup is explicit; `HarnessBuilder` does not silently apply catalog configuration.
+Entries contain only a provider-qualified official model ID, objective `HarnessModelCharacteristics`, and an official source URL. They do not contain gateway routes, credentials, request presets, reasoning settings, aliases, labels, or application defaults. Lookup is explicit; `HarnessBuilder` does not silently apply catalog characteristics.
 
 For run-specific routing, credentials, or tenant policy, pass an async function or async callable object through `RunBindings.model_resolver`. It receives the Pydantic `ModelResolutionContext` and string selection and returns a native Model. No Harness base class is required. A resolver can call Harness `infer_model()` with current Host-owned factories and patches, or return a self-constructed Model.
 
 ### Model authoring aliases
 
-Use the two parallel resolvers when an authoring surface wants short, explicit names while keeping concrete values everywhere else. Context budgets resolve to Harness `ModelConfiguration`; provider request choices resolve independently to native `ModelSettings`:
+Use the two parallel resolvers when an authoring surface wants short, explicit names while keeping concrete values everywhere else. Context budgets resolve to Harness `HarnessModelCharacteristics`; provider request choices resolve independently to native `ModelSettings`:
 
 ```python
 from a13n_harness import (
     AgentSpec,
-    ModelConfiguration,
-    resolve_model_configuration,
+    HarnessModelCharacteristics,
+    resolve_model_characteristics,
     resolve_model_settings,
 )
 from pydantic_ai.settings import ModelSettings
 
 model = "anthropic:claude-sonnet-5"
-configuration = resolve_model_configuration(
+characteristics = resolve_model_characteristics(
     model,
     aliases=("anthropic:context-1m",),
-    overrides=ModelConfiguration(compact_threshold=0.85),
+    overrides=HarnessModelCharacteristics(compact_threshold=0.85),
 )
 settings = resolve_model_settings(
     model,
@@ -243,12 +243,12 @@ settings = resolve_model_settings(
 
 spec = AgentSpec(
     model=model,
-    model_config=configuration,
+    model_characteristics=characteristics,
     model_settings=settings,
 )
 ```
 
-The built-in configuration aliases are:
+The built-in characteristics aliases are:
 
 - `anthropic:context-200k` for a `200_000`-token Harness context budget;
 - `anthropic:context-400k` for a `400_000`-token Harness context budget;
@@ -264,16 +264,16 @@ The built-in settings aliases are:
 
 A max-output alias is an explicit request limit, not a compatibility claim. The selected model and provider still validate whether the request is supported.
 
-Within each resolver, aliases apply in declaration order and concrete overrides apply last. Alias resolution requires a provider-qualified direct or gateway model string and fails immediately for an unknown or incompatible alias. `resolve_model_configuration()` returns `None` when neither aliases nor overrides provide configuration; `resolve_model_settings()` returns an ordinary detached native settings dictionary. A Host can add private choices through immutable custom catalogs, but resolves every alias before persisting an Agent revision. `AgentSpec`, `HarnessBuilder`, workers, and Harness state never contain alias names.
+Within each resolver, aliases apply in declaration order and concrete overrides apply last. Alias resolution requires a provider-qualified direct or gateway model string and fails immediately for an unknown or incompatible alias. `resolve_model_characteristics()` returns `None` when neither aliases nor overrides provide characteristics; `resolve_model_settings()` returns an ordinary detached native settings dictionary. A Host can add private choices through immutable custom catalogs, but resolves every alias before persisting an Agent revision. `AgentSpec`, `HarnessBuilder`, workers, and Harness state never contain alias names.
 
-### Model configuration
+### Model characteristics
 
-The `model_config` construction and serialization key holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Python code reads the value through `spec.model_configuration` because `model_config` is reserved by Pydantic for class configuration. It defines explicit Harness model capabilities together with the context window and proactive summarize and compaction ratios:
+The `model_characteristics` construction and serialization key holds resolved characteristics that complement Pydantic AI's provider `ModelProfile`; it is not provider request settings. Python code reads the value through `spec.model_characteristics` without conflicting with Pydantic's class-level `model_config`. It defines explicit Harness model capabilities together with the context window and proactive summarize and compaction ratios:
 
 ```python
 spec = AgentSpec(
     model="logical:support",
-    model_config=ModelConfiguration(
+    model_characteristics=HarnessModelCharacteristics(
         context_window=200_000,
         proactive_context_management_threshold=0.65,
         compact_threshold=0.90,
@@ -281,7 +281,7 @@ spec = AgentSpec(
 )
 ```
 
-When selected, `HandoffCapability()` derives its summarize reminder at 65% and `CompactionCapability()` derives its trigger at 90%. Explicit Capability token thresholds take precedence, and model configuration never enables either Capability by itself. A Host may resolve these values from its own preset catalog, the Harness official model catalog, or configuration aliases; `HarnessBuilder` never infers one from the model name. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
+When selected, `HandoffCapability()` derives its summarize reminder at 65% and `CompactionCapability()` derives its trigger at 90%. Explicit Capability token thresholds take precedence, and model characteristics never enable either Capability by itself. A Host may resolve these values from its own preset catalog, the Harness official model catalog, or characteristics aliases; `HarnessBuilder` never infers one from the model name. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
 
 ### Automatic model request affinity
 

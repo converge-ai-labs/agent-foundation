@@ -8,16 +8,16 @@ from pathlib import Path
 from threading import Event
 from typing import NoReturn
 
-import a13n_ui.application as application_module
+import a13n_ui.host as host_module
 import a13n_ui.storage.runtime as storage_runtime
 import pytest
-from a13n_ui.application import AgentUiApplication, ApplicationState, open_application
 from a13n_ui.errors import (
-    ApplicationStateError,
+    HostStateError,
     ObjectIntegrityError,
     StoreIntegrityError,
     StoreLeaseConflict,
 )
+from a13n_ui.host import AgentUiHost, HostState, open_agent_ui_host
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectEnvelope, ObjectKind, short_session
 from a13n_ui.storage.models import StoreLeaseRecord
@@ -38,13 +38,28 @@ def _settings(root: Path, *, heartbeat: float = 2.0) -> AgentUiSettings:
     )
 
 
+async def test_host_runtime_restart_keeps_the_host_and_store_generation(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+
+    async with open_agent_ui_host(settings) as host:
+        process_generation = (await host.status()).process_generation
+        first_runtime = (await host.runtime_status()).active_generation_id
+
+        result = await host.restart_runtime()
+
+        assert result.previous_generation_id == first_runtime
+        assert result.active.generation_id != first_runtime
+        assert (await host.status()).process_generation == process_generation
+        assert (await host.runtime_status()).active_generation_id == result.active.generation_id
+
+
 async def test_application_starts_publishes_restarts_and_closes(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         retained_application = application
         first_generation = (await application.status()).process_generation
-        assert application.state is ApplicationState.ready
+        assert application.state is HostState.ready
         assert (await application.status()).registered_object_count == 0
         reference = await application._store.publish_object(
             object_kind=ObjectKind.agent_snapshot,
@@ -54,12 +69,12 @@ async def test_application_starts_publishes_restarts_and_closes(tmp_path: Path) 
         assert (await application._store.read_object(reference)).payload == {"agent": "root"}
         assert (await application.status()).registered_object_count == 1
 
-    assert retained_application.state is ApplicationState.closed
-    with pytest.raises(ApplicationStateError) as closed:
+    assert retained_application.state is HostState.closed
+    with pytest.raises(HostStateError) as closed:
         await retained_application.status()
-    assert closed.value.code == "application_not_ready"
+    assert closed.value.code == "host_not_ready"
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         assert (await restarted._store.read_object(reference)).payload == {"agent": "root"}
         assert (await restarted.status()).process_generation != first_generation
 
@@ -91,7 +106,7 @@ async def test_application_shutdown_drains_an_accepted_operation(
         await operation_started.wait()
         shutdown.set()
         with fail_after(2):
-            while application.state is not ApplicationState.stopping:
+            while application.state is not HostState.stopping:
                 await sleep(0)
         assert not close_completed.is_set()
         async with short_session(application._store.database.sessions) as session:
@@ -100,7 +115,7 @@ async def test_application_shutdown_drains_an_accepted_operation(
         await close_completed.wait()
 
     assert len(statuses) == 1
-    assert application.state is ApplicationState.closed
+    assert application.state is HostState.closed
 
 
 async def test_application_shutdown_cancels_an_operation_after_its_deadline(
@@ -114,7 +129,7 @@ async def test_application_shutdown_cancels_an_operation_after_its_deadline(
     shutdown = AsyncEvent()
     close_completed = AsyncEvent()
     operation_started = AsyncEvent()
-    errors: list[ApplicationStateError] = []
+    errors: list[HostStateError] = []
 
     async with create_task_group() as tasks:
         application = await tasks.start(_run_until_shutdown, settings, shutdown, close_completed)
@@ -126,7 +141,7 @@ async def test_application_shutdown_cancels_an_operation_after_its_deadline(
         async def read_status() -> None:
             try:
                 await application.status()
-            except ApplicationStateError as exc:
+            except HostStateError as exc:
                 errors.append(exc)
 
         monkeypatch.setattr(application._store, "object_count", stalled_object_count)
@@ -135,9 +150,9 @@ async def test_application_shutdown_cancels_an_operation_after_its_deadline(
         shutdown.set()
         await close_completed.wait()
 
-    assert application.state is ApplicationState.closed
+    assert application.state is HostState.closed
     assert len(errors) == 1
-    assert errors[0].code == "application_stopping"
+    assert errors[0].code == "host_stopping"
 
 
 async def test_application_closes_after_external_cancellation(tmp_path: Path) -> None:
@@ -147,7 +162,7 @@ async def test_application_closes_after_external_cancellation(tmp_path: Path) ->
         application = await tasks.start(_hold_application, settings)
         tasks.cancel_scope.cancel()
 
-    assert application.state is ApplicationState.closed
+    assert application.state is HostState.closed
     async with storage_runtime.open_database(tmp_path / "metadata.sqlite3", settings.storage) as database:
         async with short_session(database.sessions) as session:
             assert await session.get(StoreLeaseRecord, 1) is None
@@ -158,7 +173,7 @@ async def test_application_marks_closed_when_store_cleanup_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = _settings(tmp_path)
-    original_open_store = application_module.open_local_store
+    original_open_store = host_module.open_local_store
 
     @asynccontextmanager
     async def failing_close(storage: StorageSettings) -> AsyncGenerator[storage_runtime.LocalStore]:
@@ -166,22 +181,22 @@ async def test_application_marks_closed_when_store_cleanup_fails(
             yield store
         raise RuntimeError("store close failed")
 
-    monkeypatch.setattr(application_module, "open_local_store", failing_close)
-    retained: AgentUiApplication | None = None
+    monkeypatch.setattr(host_module, "open_local_store", failing_close)
+    retained: AgentUiHost | None = None
     with pytest.raises(RuntimeError, match="store close failed"):
-        async with open_application(settings) as application:
+        async with open_agent_ui_host(settings) as application:
             retained = application
 
     assert retained is not None
-    assert retained.state is ApplicationState.closed
+    assert retained.state is HostState.closed
 
 
 async def test_application_rejects_a_concurrent_data_root_owner(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
 
-    async with open_application(settings):
+    async with open_agent_ui_host(settings):
         with pytest.raises(StoreLeaseConflict) as conflict:
-            async with open_application(settings):
+            async with open_agent_ui_host(settings):
                 pytest.fail("a second application unexpectedly acquired the data root")
 
     assert conflict.value.code == "store_lease_conflict"
@@ -190,7 +205,7 @@ async def test_application_rejects_a_concurrent_data_root_owner(tmp_path: Path) 
 async def test_store_lease_heartbeats_and_releases_last(tmp_path: Path) -> None:
     settings = _settings(tmp_path, heartbeat=0.02)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         store = application._store
         async with short_session(store.database.sessions) as session:
             initial = await session.get(StoreLeaseRecord, 1)
@@ -219,7 +234,7 @@ async def test_startup_quarantines_malformed_staging_and_records_diagnostic(tmp_
     staging.mkdir(parents=True)
     (staging / "broken.tmp").write_bytes(b"broken")
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         diagnostics = await application.recovery_diagnostics()
         assert len(diagnostics) == 1
         assert diagnostics[0].code == "staging_quarantined"
@@ -233,7 +248,7 @@ async def test_startup_quarantines_malformed_staging_and_records_diagnostic(tmp_
 async def test_missing_unselected_object_does_not_block_startup_but_fails_on_read(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         reference = await application._store.publish_object(
             object_kind=ObjectKind.environment_snapshot,
             object_schema_version="1",
@@ -242,7 +257,7 @@ async def test_missing_unselected_object_does_not_block_startup_but_fails_on_rea
 
     next((tmp_path / "objects").rglob("*.json.zst")).unlink()
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         with pytest.raises(ObjectIntegrityError) as missing:
             await restarted._store.read_object(reference)
     assert missing.value.code == "object_unreadable"
@@ -251,7 +266,7 @@ async def test_missing_unselected_object_does_not_block_startup_but_fails_on_rea
 async def test_invalid_unselected_registration_does_not_block_startup_but_fails_on_read(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         reference = await application._store.publish_object(
             object_kind=ObjectKind.agent_snapshot,
             object_schema_version="1",
@@ -261,7 +276,7 @@ async def test_invalid_unselected_registration_does_not_block_startup_but_fails_
     with sqlite3.connect(tmp_path / "metadata.sqlite3") as connection:
         connection.execute("UPDATE immutable_object SET object_kind = 'unknown-kind'")
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         with pytest.raises(StoreIntegrityError) as invalid:
             await restarted._store.read_object(reference)
     assert invalid.value.code == "object_registration_mismatch"
@@ -270,7 +285,7 @@ async def test_invalid_unselected_registration_does_not_block_startup_but_fails_
 async def test_malformed_registration_timestamp_fails_with_bounded_integrity_error(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         reference = await application._store.publish_object(
             object_kind=ObjectKind.agent_snapshot,
             object_schema_version="1",
@@ -280,7 +295,7 @@ async def test_malformed_registration_timestamp_fails_with_bounded_integrity_err
     with sqlite3.connect(tmp_path / "metadata.sqlite3") as connection:
         connection.execute("UPDATE immutable_object SET created_at = 'not-a-date'")
 
-    async with open_application(settings) as restarted:
+    async with open_agent_ui_host(settings) as restarted:
         with pytest.raises(StoreIntegrityError) as invalid:
             await restarted._store.read_object(reference)
     assert invalid.value.code == "object_registration_invalid"
@@ -292,7 +307,7 @@ async def test_cancelled_publication_never_registers_an_object(
 ) -> None:
     settings = _settings(tmp_path)
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         objects = application._store.objects
         original_publish = objects._publish
         started = Event()
@@ -353,7 +368,7 @@ async def test_failed_registration_leaves_an_unselected_orphan(
         raise RuntimeError("registration failed")
         yield  # pragma: no cover
 
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         original_transaction = storage_runtime.transaction
         monkeypatch.setattr(storage_runtime, "transaction", fail_transaction)
         try:
@@ -374,9 +389,9 @@ async def _run_until_shutdown(
     shutdown: AsyncEvent,
     close_completed: AsyncEvent,
     *,
-    task_status: TaskStatus[AgentUiApplication] = TASK_STATUS_IGNORED,
+    task_status: TaskStatus[AgentUiHost] = TASK_STATUS_IGNORED,
 ) -> None:
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         task_status.started(application)
         await shutdown.wait()
     close_completed.set()
@@ -385,9 +400,9 @@ async def _run_until_shutdown(
 async def _hold_application(
     settings: AgentUiSettings,
     *,
-    task_status: TaskStatus[AgentUiApplication] = TASK_STATUS_IGNORED,
+    task_status: TaskStatus[AgentUiHost] = TASK_STATUS_IGNORED,
 ) -> None:
-    async with open_application(settings) as application:
+    async with open_agent_ui_host(settings) as application:
         task_status.started(application)
         await sleep_forever()
 

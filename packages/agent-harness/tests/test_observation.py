@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any
@@ -19,7 +19,6 @@ from a13n_harness import (
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessTraceContent,
-    HarnessTraceLevel,
     ModelCostInput,
     ModelCostQuote,
     ModelRecoveryPolicy,
@@ -107,10 +106,13 @@ def test_instrumentation_configuration_rejects_invalid_ownership_and_policy(
     assert missing.value.code == "instrumentation_provider_missing"
 
     _, _, meter_provider, _ = _providers()
-    with pytest.raises(DefinitionError, match="Non-none") as content:
+    metrics_only = HarnessInstrumentation(meter_provider=meter_provider)
+    assert metrics_only.trace_content is HarnessTraceContent.STANDARD
+
+    with pytest.raises(DefinitionError, match="trace_content") as content:
         HarnessInstrumentation(
             meter_provider=meter_provider,
-            trace_content=HarnessTraceContent.STANDARD,
+            trace_content="standard",  # type: ignore[arg-type]
         )
     assert content.value.code == "instrumentation_policy_invalid"
 
@@ -118,16 +120,55 @@ def test_instrumentation_configuration_rejects_invalid_ownership_and_policy(
         HarnessBuilder(instrumentation=object())  # type: ignore[arg-type]
     assert invalid.value.code == "instrumentation_invalid"
 
-    monkeypatch.setenv("A13N_HARNESS_TRACE_LEVEL", "invalid")
-    monkeypatch.setenv("A13N_HARNESS_TRACE_CONTENT", "invalid")
-    monkeypatch.setenv("A13N_HARNESS_METRICS", "invalid")
     assert _build(None) is not None
-    with pytest.raises(DefinitionError) as environment_invalid:
-        HarnessBuilder()
-    assert environment_invalid.value.code == "instrumentation_environment_invalid"
     with pytest.raises(DefinitionError) as selection_invalid:
         HarnessBuilder(instrumentation="invalid")  # type: ignore[arg-type]
     assert selection_invalid.value.code == "instrumentation_invalid"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    (
+        ("A13N_HARNESS_TRACE_LEVEL", "standard"),
+        ("A13N_HARNESS_TRACE_CONTENT", "invalid"),
+        ("A13N_HARNESS_METRICS", "invalid"),
+    ),
+)
+def test_environment_rejects_unsupported_observation_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: str,
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(DefinitionError) as invalid:
+        HarnessBuilder()
+
+    assert invalid.value.code == "instrumentation_environment_invalid"
+    assert invalid.value.details == {"field": name}
+
+
+def test_environment_defaults_to_trace_off_with_dormant_standard_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("A13N_HARNESS_TRACE_LEVEL", raising=False)
+    monkeypatch.delenv("A13N_HARNESS_TRACE_CONTENT", raising=False)
+    monkeypatch.delenv("A13N_HARNESS_METRICS", raising=False)
+
+    assert HarnessInstrumentation.from_environment() is None
+
+    _, _, meter_provider, _ = _providers()
+    monkeypatch.setenv("A13N_HARNESS_METRICS", "standard")
+    monkeypatch.setattr(
+        trace,
+        "get_tracer_provider",
+        lambda: pytest.fail("trace provider must not be selected while tracing is off"),
+    )
+    configuration = HarnessInstrumentation.from_environment(meter_provider=meter_provider)
+    assert configuration is not None
+    assert configuration.tracer_provider is None
+    assert configuration.meter_provider is meter_provider
+    assert configuration.trace_content is HarnessTraceContent.STANDARD
 
 
 def test_builder_environment_mode_uses_otel_global_providers(
@@ -135,7 +176,7 @@ def test_builder_environment_mode_uses_otel_global_providers(
 ) -> None:
     tracer_provider, _, meter_provider, _ = _providers()
     monkeypatch.setenv("A13N_HARNESS_TRACE_LEVEL", "verbose")
-    monkeypatch.setenv("A13N_HARNESS_TRACE_CONTENT", "none")
+    monkeypatch.delenv("A13N_HARNESS_TRACE_CONTENT", raising=False)
     monkeypatch.setenv("A13N_HARNESS_METRICS", "standard")
     monkeypatch.setattr(trace, "get_tracer_provider", lambda: tracer_provider)
     monkeypatch.setattr(metrics, "get_meter_provider", lambda: meter_provider)
@@ -150,60 +191,90 @@ def test_builder_environment_mode_uses_otel_global_providers(
     assert configuration is not None
     assert configuration.tracer_provider is tracer_provider
     assert configuration.meter_provider is meter_provider
-    assert configuration.trace_level is HarnessTraceLevel.VERBOSE
-    assert configuration.trace_content is HarnessTraceContent.NONE
+    assert configuration.trace_content is HarnessTraceContent.STANDARD
 
 
 def test_signal_matrix_uses_explicit_noop_providers_and_suppresses_ambient_instrumentation() -> None:
     tracer_provider, _, meter_provider, _ = _providers()
 
     disabled = _build(None)
-    summary = _build(HarnessInstrumentation(tracer_provider=tracer_provider))
+    trace_only = _build(HarnessInstrumentation(tracer_provider=tracer_provider))
     metrics_only = _build(HarnessInstrumentation(meter_provider=meter_provider))
-    summary_with_metrics = _build(
-        HarnessInstrumentation(tracer_provider=tracer_provider, meter_provider=meter_provider)
-    )
-    standard_trace_only = _build(
-        HarnessInstrumentation(
-            tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.STANDARD,
-        )
-    )
+    both = _build(HarnessInstrumentation(tracer_provider=tracer_provider, meter_provider=meter_provider))
 
     assert disabled._agent.instrument is False
-    assert summary._agent.instrument is False
+    assert trace_only._agent.instrument is False
+    assert metrics_only._agent.instrument is False
+    assert both._agent.instrument is False
     assert _instrumentation_capabilities(disabled) == []
-    assert _instrumentation_capabilities(summary) == []
 
+    trace_capability = _instrumentation_capabilities(trace_only)
     metrics_capability = _instrumentation_capabilities(metrics_only)
-    summary_metrics_capability = _instrumentation_capabilities(summary_with_metrics)
-    standard_capability = _instrumentation_capabilities(standard_trace_only)
-    assert len(metrics_capability) == len(summary_metrics_capability) == len(standard_capability) == 1
+    both_capability = _instrumentation_capabilities(both)
+    assert len(trace_capability) == len(metrics_capability) == len(both_capability) == 1
+    assert type(trace_capability[0].settings.meter).__name__ == "NoOpMeter"
     assert type(metrics_capability[0].settings.tracer).__name__ == "NoOpTracer"
-    assert type(summary_metrics_capability[0].settings.tracer).__name__ == "NoOpTracer"
-    assert type(standard_capability[0].settings.meter).__name__ == "NoOpMeter"
+    assert type(both_capability[0].settings.tracer).__name__ != "NoOpTracer"
+    assert type(both_capability[0].settings.meter).__name__ != "NoOpMeter"
+
+
+async def test_shared_provider_exports_one_span_hierarchy_to_multiple_backends() -> None:
+    first_exporter = InMemorySpanExporter()
+    second_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(first_exporter))
+    tracer_provider.add_span_processor(SimpleSpanProcessor(second_exporter))
+    executable = _build(HarnessInstrumentation(tracer_provider=tracer_provider))
+
+    result = await executable.run("hello", bindings=RunBindings.embedded())
+    assert result.status == "completed"
+
+    def hierarchy(exporter: InMemorySpanExporter) -> set[tuple[int, int, int | None, str]]:
+        return {
+            (
+                span.context.trace_id,
+                span.context.span_id,
+                span.parent.span_id if span.parent is not None else None,
+                span.name,
+            )
+            for span in exporter.get_finished_spans()
+        }
+
+    first_hierarchy = hierarchy(first_exporter)
+    second_hierarchy = hierarchy(second_exporter)
+    assert first_hierarchy == second_hierarchy
+    assert len(first_hierarchy) == len(first_exporter.get_finished_spans())
+    assert sum(span.name == "harness.run" for span in first_exporter.get_finished_spans()) == 1
 
 
 def test_trace_content_maps_to_pydantic_instrumentation_settings() -> None:
     tracer_provider, _, _, _ = _providers()
+    none = _build(
+        HarnessInstrumentation(
+            tracer_provider=tracer_provider,
+            trace_content=HarnessTraceContent.NONE,
+        )
+    )
     standard = _build(
         HarnessInstrumentation(
             tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.STANDARD,
             trace_content=HarnessTraceContent.STANDARD,
         )
     )
     full = _build(
         HarnessInstrumentation(
             tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.VERBOSE,
             trace_content=HarnessTraceContent.FULL,
         )
     )
 
+    none_settings = _instrumentation_capabilities(none)[0].settings
     standard_settings = _instrumentation_capabilities(standard)[0].settings
     full_settings = _instrumentation_capabilities(full)[0].settings
-    assert standard_settings.version == full_settings.version == 5
+    assert none_settings.version == standard_settings.version == full_settings.version == 5
+    assert none_settings.include_content is False
+    assert none_settings.include_binary_content is False
+    assert none_settings.include_model_request_parameters is False
     assert standard_settings.include_content is True
     assert standard_settings.include_binary_content is False
     assert standard_settings.include_model_request_parameters is False
@@ -306,7 +377,7 @@ async def test_stream_construction_is_observation_inert() -> None:
     assert run_span.attributes["a13n.run.outcome"] == "cancelled"
 
 
-async def test_summary_trace_uses_current_host_parent_and_detaches_at_public_boundaries() -> None:
+async def test_enabled_trace_uses_current_host_parent_and_detaches_at_public_boundaries() -> None:
     tracer_provider, exporter, _, _ = _providers()
     model_span_ids: list[int] = []
     executable = _build(
@@ -323,11 +394,14 @@ async def test_summary_trace_uses_current_host_parent_and_detaches_at_public_bou
                 assert item.run_id == stream.run_id
 
     spans = exporter.get_finished_spans()
-    assert {span.name for span in spans} == {"host.root", "harness.run"}
     run_span = next(span for span in spans if span.name == "harness.run")
+    attempt_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "invoke_agent")
+    request_span = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "chat")
     assert run_span.parent is not None
     assert run_span.parent.span_id == host_span.get_span_context().span_id
-    assert model_span_ids == [run_span.context.span_id]
+    assert attempt_span.parent is not None and attempt_span.parent.span_id == run_span.context.span_id
+    assert request_span.parent is not None and request_span.parent.span_id == attempt_span.context.span_id
+    assert model_span_ids == [request_span.context.span_id]
     assert run_span.attributes["a13n.run.outcome"] == "completed"
     assert run_span.status.status_code is StatusCode.UNSET
 
@@ -367,7 +441,6 @@ async def test_observation_context_enriches_only_the_logical_run_span() -> None:
     executable = _build(
         HarnessInstrumentation(
             tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.STANDARD,
         )
     )
     observation = HarnessObservationContext(
@@ -417,7 +490,6 @@ async def test_identity_and_lineage_use_only_the_bounded_attribute_registry() ->
     executable = _build(
         HarnessInstrumentation(
             tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.STANDARD,
         )
     )
 
@@ -502,7 +574,7 @@ class _ObservedUsageModel(TestModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
         run_context: RunContext[object] | None = None,
-    ) -> AsyncIterator[StreamedResponse]:
+    ) -> AsyncGenerator[StreamedResponse]:
         async with super().request_stream(
             messages,
             model_settings,
@@ -530,7 +602,6 @@ async def test_model_span_uses_native_usage_and_bounded_custom_cost_enrichment()
     executable = HarnessBuilder(
         instrumentation=HarnessInstrumentation(
             tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.STANDARD,
         )
     ).build(
         AgentSpec(name="usage-observation-agent"),
@@ -569,45 +640,35 @@ async def test_model_span_uses_native_usage_and_bounded_custom_cost_enrichment()
     assert not any(key.startswith("a13n.usage.") for key in attempt_span.attributes)
 
 
-async def test_custom_pricing_does_not_leak_without_a_pydantic_model_span() -> None:
-    tracer_provider, exporter, _, _ = _providers()
+async def test_custom_pricing_does_not_leak_without_a_recording_pydantic_model_span() -> None:
+    tracer_provider, exporter, meter_provider, _ = _providers()
     host_tracer = tracer_provider.get_tracer("test-host")
-    disabled = HarnessBuilder(instrumentation=None).build(
-        AgentSpec(name="disabled-cost-observation-agent"),
-        output_type=str,
-        model=_ObservedUsageModel(custom_output_text="done", model_name="disabled-cost-model"),
-        capabilities=(_ObservedFixedCostCapability(),),
-    )
 
-    with host_tracer.start_as_current_span("host.root"):
-        disabled_result = await disabled.run("hello", bindings=RunBindings.embedded())
-    assert disabled_result.status == "completed"
-    host_span = next(span for span in exporter.get_finished_spans() if span.name == "host.root")
-    assert "gen_ai.usage.cost" not in host_span.attributes
-    assert not any(key.startswith("a13n.usage.") for key in host_span.attributes)
+    for name, instrumentation in (
+        ("disabled", None),
+        ("metrics-only", HarnessInstrumentation(meter_provider=meter_provider)),
+    ):
+        executable = HarnessBuilder(instrumentation=instrumentation).build(
+            AgentSpec(name=f"{name}-cost-observation-agent"),
+            output_type=str,
+            model=_ObservedUsageModel(custom_output_text="done", model_name=f"{name}-cost-model"),
+            capabilities=(_ObservedFixedCostCapability(),),
+        )
+        with host_tracer.start_as_current_span(f"host.{name}"):
+            result = await executable.run("hello", bindings=RunBindings.embedded())
+        assert result.status == "completed"
 
-    exporter.clear()
-    summary = HarnessBuilder(instrumentation=HarnessInstrumentation(tracer_provider=tracer_provider)).build(
-        AgentSpec(name="summary-cost-observation-agent"),
-        output_type=str,
-        model=_ObservedUsageModel(custom_output_text="done", model_name="summary-cost-model"),
-        capabilities=(_ObservedFixedCostCapability(),),
-    )
-    summary_result = await summary.run("hello", bindings=RunBindings.embedded())
-    assert summary_result.status == "completed"
-    run_span = next(span for span in exporter.get_finished_spans() if span.name == "harness.run")
-    assert "gen_ai.usage.cost" not in run_span.attributes
-    assert not any(key.startswith("gen_ai.usage.") for key in run_span.attributes)
-    assert not any(key.startswith("a13n.usage.") for key in run_span.attributes)
+    for span in exporter.get_finished_spans():
+        assert "gen_ai.usage.cost" not in span.attributes
+        assert not any(key.startswith("a13n.usage.") for key in span.attributes)
 
 
-async def test_standard_trace_uses_native_pydantic_spans_and_attempt_correlation() -> None:
+async def test_enabled_trace_uses_native_pydantic_spans_and_attempt_correlation() -> None:
     tracer_provider, exporter, _, _ = _providers()
     bindings = RunBindings.embedded()
     executable = _build(
         HarnessInstrumentation(
             tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.STANDARD,
         )
     )
 
@@ -624,7 +685,7 @@ async def test_standard_trace_uses_native_pydantic_spans_and_attempt_correlation
     assert attempt_span.attributes["a13n.agent.instance.id"] == bindings.instance.agent_instance_id
     assert attempt_span.attributes["gen_ai.conversation.id"] == result.thread_id
     assert str(attempt_span.attributes["gen_ai.agent.call.id"]).startswith("model-attempt-")
-    assert "hello" not in str(attempt_span.attributes)
+    assert "hello" in str(attempt_span.attributes)
 
 
 async def test_verbose_trace_omits_routine_state_and_plugin_operations() -> None:
@@ -632,7 +693,6 @@ async def test_verbose_trace_omits_routine_state_and_plugin_operations() -> None
     executable = _build(
         HarnessInstrumentation(
             tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.VERBOSE,
         )
     )
 
@@ -696,7 +756,6 @@ async def test_recovery_attempts_share_one_run_and_record_attempt_count() -> Non
         instrumentation=HarnessInstrumentation(
             tracer_provider=tracer_provider,
             meter_provider=meter_provider,
-            trace_level=HarnessTraceLevel.VERBOSE,
         )
     ).build(
         AgentSpec(name="recovery-agent"),

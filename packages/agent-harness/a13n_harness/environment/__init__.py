@@ -33,7 +33,12 @@ from .extension_factories import (
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
-from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
+from .extensions import (
+    EnvironmentRunCallback,
+    EnvironmentRunCallbacks,
+    EnvironmentRunExtension,
+    EnvironmentRunExtensionContext,
+)
 from .files import (
     FileCopyResult,
     FileEntriesResult,
@@ -145,6 +150,8 @@ __all__ = [
     "EnvironmentPath",
     "EnvironmentPermissionSet",
     "EnvironmentReadinessRequirement",
+    "EnvironmentRunCallback",
+    "EnvironmentRunCallbacks",
     "EnvironmentRunExtension",
     "EnvironmentRunExtensionContext",
     "EnvironmentRunExtensionFactory",

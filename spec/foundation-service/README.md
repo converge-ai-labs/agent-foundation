@@ -135,8 +135,9 @@ These roots are boundaries, not a requirement that every capability become a sub
 
 - Python-like schemas are conceptual unless explicitly declared as API or storage formats.
 - An `AgentPresetVersion` is immutable; changing materialized Agent content,
-  `model_id`, native model settings, or a managed-resource reference creates
-  another Version. Editing a ModelConfig affects only newly accepted Turns.
+  `model_id`, concrete Harness model characteristics, native model settings, or
+  a managed-resource reference creates another Version. Editing a ModelConfig
+  affects only newly accepted Turns.
 - `Ref` values identify entities or revisions and grant no authority.
 - Process-local objects are reconstructed and never become durable payloads.
 - Domain schemas, repositories, queue messages, and events live in their owning domain rather than the generic storage substrate.

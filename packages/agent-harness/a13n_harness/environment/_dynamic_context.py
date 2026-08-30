@@ -31,7 +31,7 @@ from .providers import BoundEnvironment
 @dataclass(frozen=True, slots=True)
 class _BindingFence:
     binding_id: str
-    binding_revision: int
+    binding_version: int
     observed_generation: str
 
 
@@ -177,12 +177,12 @@ class _DynamicEnvironmentContext:
     ) -> CanonicalResource:
         selected = context.environment.resolve_path(path, alias=alias)
         binding = next(item for item in context.environment.topology.bindings if item.binding_id == selected.binding_id)
-        self._record_fence(binding.binding_id, binding.binding_revision, binding.descriptor.generation)
+        self._record_fence(binding.binding_id, binding.binding_version, binding.descriptor.generation)
         return CanonicalResource(
             namespace="environment",
             kind="file",
             identifier=(
-                f"{selected.binding_id}:{selected.binding_revision}:{binding.descriptor.generation}:{selected.path}"
+                f"{selected.binding_id}:{selected.binding_version}:{binding.descriptor.generation}:{selected.path}"
             ),
         )
 
@@ -200,17 +200,17 @@ class _DynamicEnvironmentContext:
                 "The selected Environment binding is unavailable.",
                 code="environment_selection_invalid",
             )
-        self._record_fence(binding.binding_id, binding.binding_revision, binding.descriptor.generation)
+        self._record_fence(binding.binding_id, binding.binding_version, binding.descriptor.generation)
         return CanonicalResource(
             namespace="environment",
             kind="binding",
-            identifier=f"{binding.binding_id}:{binding.binding_revision}:{binding.descriptor.generation}",
+            identifier=f"{binding.binding_id}:{binding.binding_version}:{binding.descriptor.generation}",
         )
 
-    def _record_fence(self, binding_id: str, binding_revision: int, generation: str) -> None:
+    def _record_fence(self, binding_id: str, binding_version: int, generation: str) -> None:
         builder = self._fence_builder.get()
         if builder is not None:
-            builder.append(_BindingFence(binding_id, binding_revision, generation))
+            builder.append(_BindingFence(binding_id, binding_version, generation))
 
     def _assert_authorized_fence(self) -> None:
         fence = self._authorization_fence.get()
@@ -229,7 +229,7 @@ class _DynamicEnvironmentContext:
             binding = current.get(expected.binding_id)
             if (
                 binding is None
-                or binding.binding_revision != expected.binding_revision
+                or binding.binding_version != expected.binding_version
                 or binding.descriptor.generation != expected.observed_generation
             ):
                 raise EnvironmentError(

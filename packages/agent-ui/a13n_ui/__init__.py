@@ -1,4 +1,4 @@
-"""Local Host boundary for Agent Foundation WebUI and TUI surfaces."""
+"""Stable local Host boundary for Agent Foundation WebUI and CLI surfaces."""
 
 from importlib.metadata import version
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import OrderedDict
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -169,7 +169,7 @@ class ProcessManager:
         self._closed = False
 
     @asynccontextmanager
-    async def active_run(self, ctx: RunContext[AgentContext]) -> AsyncIterator[None]:
+    async def active_run(self, ctx: RunContext[AgentContext]) -> AsyncGenerator[None]:
         """Bind AgentContext State and enable Turn-scoped completion notices."""
         if self._closed:
             raise RuntimeError("ProcessManager is closed")

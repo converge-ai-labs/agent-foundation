@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from decimal import Decimal
@@ -42,7 +42,6 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessState,
     HarnessTraceContent,
-    HarnessTraceLevel,
     ModelCostInput,
     ModelCostQuote,
     RunBindings,
@@ -83,10 +82,8 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RequestUsage, UsageLimits
 
 Scenario = Literal["summary", "compaction", "view", "subagent"]
-Profile = Literal["summary", "verbose"]
 
 _SCENARIOS: tuple[Scenario, ...] = ("summary", "compaction", "view", "subagent")
-_PROFILES: tuple[Profile, ...] = ("summary", "verbose")
 _PROJECT_ID = "agent-foundation-local"
 _IMAGE_BYTES = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
@@ -147,7 +144,7 @@ class _ObservationPresentationProcessor(SpanProcessor):
                         ensure_ascii=False,
                         allow_nan=False,
                     )
-            fields["langfuse.version"] = "observation-demo-v3"
+            fields["langfuse.version"] = "observation-demo-v4"
             fields["langfuse.release"] = "local-validation-2026-08"
             fields["langfuse.environment"] = "local"
             with self._lock:
@@ -204,7 +201,7 @@ class _UsageFunctionModel(FunctionModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
         run_context: RunContext[object] | None = None,
-    ) -> AsyncIterator[StreamedResponse]:
+    ) -> AsyncGenerator[StreamedResponse]:
         async with super().request_stream(
             messages,
             model_settings,
@@ -372,16 +369,9 @@ def _compaction_state() -> HarnessState:
     )
 
 
-def _instrumentation(profile: Profile, tracer_provider: TracerProvider) -> HarnessInstrumentation:
-    if profile == "summary":
-        return HarnessInstrumentation(
-            tracer_provider=tracer_provider,
-            trace_level=HarnessTraceLevel.SUMMARY,
-            trace_content=HarnessTraceContent.NONE,
-        )
+def _instrumentation(tracer_provider: TracerProvider) -> HarnessInstrumentation:
     return HarnessInstrumentation(
         tracer_provider=tracer_provider,
-        trace_level=HarnessTraceLevel.VERBOSE,
         trace_content=HarnessTraceContent.STANDARD,
     )
 
@@ -408,7 +398,7 @@ def _local_environment(root: Path):
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="observation-demo-binding",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -563,27 +553,23 @@ def _prompt(scenario: Scenario) -> str:
     }[scenario]
 
 
-def _observation_context(profile: Profile, scenario: Scenario) -> HarnessObservationContext:
+def _observation_context(scenario: Scenario) -> HarnessObservationContext:
     return HarnessObservationContext(
-        name=f"observation-{profile}-{scenario}",
-        session_id=f"observation-{profile}-2026-08",
-        labels=("agent-harness", "observation-demo", f"profile:{profile}", f"scenario:{scenario}"),
+        name=f"observation-{scenario}",
+        session_id="observation-demo-2026-08",
+        labels=("agent-harness", "observation-demo", f"scenario:{scenario}"),
         metadata={
             "scenario": scenario,
-            "profile": profile,
             "evaluation": "synthetic-pass",
             "synthetic": True,
-            "matrix_revision": 3,
+            "demo_revision": 4,
             "string_boolean": "true",
             "string_number": "3",
         },
     )
 
 
-def _configure_internal_agent_observation(profile: Profile, tracer_provider: TracerProvider) -> None:
-    if profile == "summary":
-        Agent.instrument_all(False)
-        return
+def _configure_internal_agent_observation(tracer_provider: TracerProvider) -> None:
     Agent.instrument_all(
         InstrumentationSettings(
             tracer_provider=tracer_provider,
@@ -598,15 +584,14 @@ def _configure_internal_agent_observation(profile: Profile, tracer_provider: Tra
 
 async def _run_scenario(
     scenario: Scenario,
-    profile: Profile,
     tracer_provider: TracerProvider,
     presentation: _ObservationPresentationProcessor,
 ) -> ScenarioResult:
-    _configure_internal_agent_observation(profile, tracer_provider)
-    instrumentation = _instrumentation(profile, tracer_provider)
+    _configure_internal_agent_observation(tracer_provider)
+    instrumentation = _instrumentation(tracer_provider)
     previous_state = _compaction_state() if scenario == "compaction" else None
     prompt = _prompt(scenario)
-    observation = _observation_context(profile, scenario)
+    observation = _observation_context(scenario)
     context_events: list[str] = []
     terminal: HarnessRunResult[str] | None = None
     workspace: TemporaryDirectory[str] | None = None
@@ -682,22 +667,15 @@ async def _run_scenario(
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the Agent Harness Observation matrix against local Langfuse.")
+    parser = argparse.ArgumentParser(description="Run complete Agent Harness traces against local Langfuse.")
     parser.add_argument(
         "scenario",
         choices=(*_SCENARIOS, "all"),
         nargs="?",
         default="all",
     )
-    parser.add_argument(
-        "--profile",
-        choices=(*_PROFILES, "matrix"),
-        default="matrix",
-        help="summary emits only harness.run; verbose adds Pydantic and material Harness-operation spans.",
-    )
     args = parser.parse_args()
     scenarios: tuple[Scenario, ...] = _SCENARIOS if args.scenario == "all" else (args.scenario,)
-    profiles: tuple[Profile, ...] = _PROFILES if args.profile == "matrix" else (args.profile,)
 
     provider = trace.get_tracer_provider()
     if not isinstance(provider, TracerProvider):
@@ -706,17 +684,15 @@ async def main() -> None:
     provider.add_span_processor(presentation)
 
     base_url = os.environ.get("LANGFUSE_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
-    for profile in profiles:
-        for scenario in scenarios:
-            observed = await _run_scenario(scenario, profile, provider, presentation)
-            print(f"profile={profile}")
-            print(f"scenario={scenario}")
-            print(f"trace_id={observed.trace_id}")
-            print(f"output={observed.result.output_or_raise()}")
-            print(f"context_events={','.join(observed.context_events)}")
-            print(f"usage_records={len(observed.result.usage_records)}")
-            print(f"trace_url={base_url}/project/{_PROJECT_ID}/traces/{observed.trace_id}")
-            print()
+    for scenario in scenarios:
+        observed = await _run_scenario(scenario, provider, presentation)
+        print(f"scenario={scenario}")
+        print(f"trace_id={observed.trace_id}")
+        print(f"output={observed.result.output_or_raise()}")
+        print(f"context_events={','.join(observed.context_events)}")
+        print(f"usage_records={len(observed.result.usage_records)}")
+        print(f"trace_url={base_url}/project/{_PROJECT_ID}/traces/{observed.trace_id}")
+        print()
 
     if not provider.force_flush(timeout_millis=10_000):
         raise RuntimeError("OpenTelemetry traces did not flush within 10 seconds")

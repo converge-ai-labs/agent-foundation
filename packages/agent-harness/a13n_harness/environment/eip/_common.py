@@ -65,7 +65,7 @@ def convert_receipt(
     *,
     environment_id: str,
     binding_id: str,
-    binding_revision: int,
+    binding_version: int,
     generation: str,
 ) -> EnvironmentOperationReceipt:
     if receipt.environment_id != environment_id or str(receipt.generation) != generation:
@@ -76,7 +76,7 @@ def convert_receipt(
         )
     return EnvironmentOperationReceipt(
         binding_id=binding_id,
-        binding_revision=binding_revision,
+        binding_version=binding_version,
         observed_generation=generation,
         operation_id=receipt.operation_id,
         stage=receipt.stage.value,
