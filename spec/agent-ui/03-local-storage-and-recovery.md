@@ -70,7 +70,7 @@ Conceptual table groups are:
 | Group                         | Representative facts                                                                                | Authority                                                                         |
 | ----------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Configuration index           | accepted generation, resource IDs/digests, source provenance, diagnostics                           | Generation selection and diagnostics; resource content remains file-backed        |
-| Sessions and Threads          | identity, title, archive/pin/order, lineage, Agent/Environment snapshot refs, control revisions     | SQLite-owned                                                                      |
+| Sessions and Threads          | identity, title, archive/pin/order, lineage, Agent/Environment snapshot refs, control versions      | SQLite-owned                                                                      |
 | Turns and checkpoints         | acceptance, state, base/selected checkpoint refs, Run correlation, terminal outcome                 | SQLite-owned lifecycle and selection; state payload file-owned                    |
 | Environment resources         | provider spec ref, lifecycle state, operation fence, provider-state ref, cleanup status             | SQLite-owned lifecycle; provider payload file-owned                               |
 | Async-subagent jobs and input | accepted work, exact child node, process generation, steering, terminal outcome, and delivery state | SQLite-owned lifecycle and selection; terminal child state payload file-owned     |
@@ -78,16 +78,16 @@ Conceptual table groups are:
 | Item and search projection    | messages, tools, child observations, previews, bounded searchable text                              | Rebuildable from AG-UI event files                                                |
 | Store maintenance             | schema version, leases, and recovery/quarantine records                                             | SQLite-owned control state                                                        |
 
-A single integer does not pretend to serialize every concern. The store uses distinct revisions:
+A single integer does not pretend to serialize every concern. The store uses distinct versions:
 
 - `configuration_generation` for accepted resource catalogs;
-- `session_control_revision` for title, archive, pin, Agent/Environment selection, and lineage operations;
-- `thread_commit_revision` for accepted Turn and selected checkpoint advancement;
-- `job_revision` for async-subagent job outcome/delivery changes;
+- `session_control_version` for title, archive, pin, Agent/Environment selection, and lineage operations;
+- `thread_commit_version` for accepted Turn and selected checkpoint advancement;
+- `job_version` for async-subagent job outcome/delivery changes;
 - `presentation_sequence` and `retention_generation` for AG-UI replay;
 - `projection_watermark` for rebuildable indexing.
 
-A command declares the exact expected revision it protects. Renaming a Session does not conflict with an unrelated live event projection, while two stale Turn submissions cannot both advance one Thread checkpoint.
+A command declares the exact expected version it protects. Renaming a Session does not conflict with an unrelated live event projection, while two stale Turn submissions cannot both advance one Thread checkpoint.
 
 ## Immutable Object Contract
 
@@ -155,9 +155,9 @@ class StoredHarnessState(BaseModel):
 
 The payload contains the complete exported public `HarnessState`, including its Thread identity and Capability namespaces. It never contains model clients, provider credentials, live Environment bindings, plugin objects, tasks, locks, or presentation cursors.
 
-Writing a state object does not select it. For a root Turn, the authoritative selected checkpoint is the SQLite checkpoint/Thread transition that references the verified object. Root terminal commit writes the object first, then uses one short SQLite transaction to validate the expected Thread revision, register and select the checkpoint, complete the Turn, and advance the Thread.
+Writing a state object does not select it. For a root Turn, the authoritative selected checkpoint is the SQLite checkpoint/Thread transition that references the verified object. Root terminal commit writes the object first, then uses one short SQLite transaction to validate the expected Thread commit version, register and select the checkpoint, complete the Turn, and advance the Thread.
 
-For an async child, the authoritative selected checkpoint is the SQLite terminal job transition under `job_revision`. A terminal child boundary writes the object first, then registers and selects it together with the terminal job outcome. Selecting child state never advances or replaces the root Thread checkpoint. Active child jobs retain no resumable intermediate checkpoint or waiting state.
+For an async child, the authoritative selected checkpoint is the SQLite terminal job transition under `job_version`. A terminal child boundary writes the object first, then registers and selects it together with the terminal job outcome. Selecting child state never advances or replaces the root Thread checkpoint. Active child jobs retain no resumable intermediate checkpoint or waiting state.
 
 A database failure after file publication leaves the prior root or child checkpoint selected. External model, tool, and Environment effects remain unknown where applicable; the Host never infers rollback from the unselected object.
 
@@ -188,7 +188,7 @@ class StoredDeferredRequests(BaseModel):
 
 `request_digest` covers the canonical complete request value, including the exact distinction and identities of deferred calls and approvals. `tool_surface_lock` identifies the resolved Agent/tool/plugin/Capability surface required to interpret those requests; it contains no live tool or authority. The object is continuation input but is not itself `HarnessState`, an AG-UI projection, or proof that a response has been authorized.
 
-The SQLite root waiting transition atomically selects the verified checkpoint and deferred-request objects, records their digests, preserves the request as unconsumed, and advances the Thread revision. A response command verifies both objects, exact root Turn owner and pending identities, pinned root Agent node and snapshots, codec compatibility, and unconsumed status. Before dispatch it records one consuming `run_id` and transitions the Turn to `running`; process loss after possible dispatch becomes interrupted and never reuses the request automatically. A later suspended root result publishes and selects a new complete request object.
+The SQLite root waiting transition atomically selects the verified checkpoint and deferred-request objects, records their digests, preserves the request as unconsumed, and advances the Thread commit version. A response command verifies both objects, exact root Turn owner and pending identities, pinned root Agent node and snapshots, codec compatibility, and unconsumed status. Before dispatch it records one consuming `run_id` and transitions the Turn to `running`; process loss after possible dispatch becomes interrupted and never reuses the request automatically. A later suspended root result publishes and selects a new complete request object.
 
 ## Provider State and Resolved Snapshots
 
@@ -301,7 +301,7 @@ The database and its WAL/SHM sidecars are quarantined together when corruption r
 
 One stable `AgentUiHost` process owns write coordination for a selected data root. A store lease records an unguessable process generation and heartbeat in SQLite, with platform process-liveness evidence where available. A second CLI or WebUI process either attaches through an explicitly supported local client path or reports the active owner; it does not start another writer silently. Replaceable runtime Runners do not acquire this lease and can overlap during restart.
 
-Within the application process, one Thread has at most one advancing foreground Turn. Expected Thread revisions are verified in SQLite before dispatch and at terminal selection. Independent Sessions can run concurrently subject to Host limits. Filesystem publication can occur concurrently for distinct digests, while SQLite transactions remain short and retry bounded busy conflicts.
+Within the application process, one Thread has at most one advancing foreground Turn. Expected Thread commit versions are verified in SQLite before dispatch and at terminal selection. Independent Sessions can run concurrently subject to Host limits. Filesystem publication can occur concurrently for distinct digests, while SQLite transactions remain short and retry bounded busy conflicts.
 
 Reclaiming an abandoned lease authorizes recovery inspection. It does not prove prior model, tool, Environment, or provider work stopped without side effects.
 

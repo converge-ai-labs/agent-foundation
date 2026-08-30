@@ -6,7 +6,7 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 
 1. normalized code-first semantic input visible to Harness middleware;
 2. developer-facing native Model inference and deterministic patch composition;
-3. input-only convenience layers that immediately materialize selected model-configuration and model-settings aliases;
+3. input-only convenience layers that immediately materialize selected model-characteristics and model-settings aliases;
 4. optional fresh run-scoped resolution of a logical model ID;
 5. one automatic request-correlation header derived from the active Thread;
 6. optional exact one-shot provider-history self-healing;
@@ -135,7 +135,7 @@ Resolution follows these rules:
 3. With a `RunModelResolver`, the resolver calls the async callable directly and requires a native `Model`; an invalid value or exception becomes `ModelResolutionError`.
 4. Without a resolver, the thin Capability calls Harness `infer_model()` with the builder's optional `gateway_provider_factory`. This makes Harness compatibility aliases and `gateway@` routing the default string path rather than delegating to a separate Pydantic inference call.
 
-Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Harness `infer_model()`. The Harness has no second provider profile, provider settings, registry, or route envelope. Harness-owned `AgentSpec.model_configuration` contains only explicit lifecycle and behavior characteristics, including native media-understanding capabilities; it does not copy or infer provider profile fields. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises. The builder-level gateway factory is construction policy shared by every recursively built child; current-run credentials or authorization remain in `RunModelResolver`.
+Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Harness `infer_model()`. The Harness has no second provider profile, provider settings, registry, or route envelope. Harness-owned `AgentSpec.model_characteristics` contains only explicit lifecycle and behavior characteristics, including native media-understanding capabilities; it does not copy or infer provider profile fields. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises. The builder-level gateway factory is construction policy shared by every recursively built child; current-run credentials or authorization remain in `RunModelResolver`.
 
 `RunBindings` supplies a fresh resolver for each logical Harness run. The same resolver and `AgentContext` are shared by all internal recovery attempts. Pydantic's `ModelResolutionContext` carries the effective Agent dependencies and native resolution semantics. Freshness applies to current-run authority, credentials, policy, and affinity; the callable may reference a Host-owned concurrency-safe provider client whose lifecycle is broader than the run.
 
@@ -168,21 +168,21 @@ Pydantic AI retains the complete layering:
 - `ModelSettings` expresses request intent and tuning;
 - native Model/provider settings merge under upstream rules;
 - `Model.profile` and provider adapters own provider compatibility and rendering facts;
-- Harness `AgentSpec.model_configuration` owns explicit Harness lifecycle and feature characteristics that must be stable across providers, including native image, video, and audio understanding;
+- Harness `AgentSpec.model_characteristics` owns explicit Harness lifecycle and feature characteristics that must be stable across providers, including native image, video, and audio understanding;
 - Capabilities own reusable Agent-loop behavior.
 
-For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle configuration and native provider request settings:
+For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle characteristics and native provider request settings:
 
 ```python
-type ModelConfigurationTransform = Callable[[ModelConfiguration], ModelConfiguration]
+type ModelCharacteristicsTransform = Callable[[HarnessModelCharacteristics], HarnessModelCharacteristics]
 type ModelSettingsTransform = Callable[[ModelSettings], ModelSettings]
 
 
 @dataclass(frozen=True, slots=True)
-class ModelConfigurationAlias:
+class ModelCharacteristicsAlias:
     key: str
     provider: str
-    transform: ModelConfigurationTransform
+    transform: ModelCharacteristicsTransform
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,23 +192,23 @@ class ModelSettingsAlias:
     transform: ModelSettingsTransform
 
 
-class ModelConfigurationAliasCatalog(Mapping[str, ModelConfigurationAlias]): ...
+class ModelCharacteristicsAliasCatalog(Mapping[str, ModelCharacteristicsAlias]): ...
 
 class ModelSettingsAliasCatalog(Mapping[str, ModelSettingsAlias]): ...
 
 
-def get_model_configuration_alias_catalog() -> ModelConfigurationAliasCatalog: ...
+def get_model_characteristics_alias_catalog() -> ModelCharacteristicsAliasCatalog: ...
 
 def get_model_settings_alias_catalog() -> ModelSettingsAliasCatalog: ...
 
 
-def resolve_model_configuration(
+def resolve_model_characteristics(
     model: str,
     *,
     aliases: Sequence[str] = (),
-    overrides: ModelConfiguration | None = None,
-    catalog: ModelConfigurationAliasCatalog | None = None,
-) -> ModelConfiguration | None: ...
+    overrides: HarnessModelCharacteristics | None = None,
+    catalog: ModelCharacteristicsAliasCatalog | None = None,
+) -> HarnessModelCharacteristics | None: ...
 
 
 def resolve_model_settings(
@@ -220,13 +220,13 @@ def resolve_model_settings(
 ) -> ModelSettings: ...
 ```
 
-The release-pinned default configuration catalog is deliberately small:
+The release-pinned default characteristics catalog is deliberately small:
 
-| Alias                    | Concrete `ModelConfiguration` effect |
-| ------------------------ | ------------------------------------ |
-| `anthropic:context-200k` | `context_window=200_000`             |
-| `anthropic:context-400k` | `context_window=400_000`             |
-| `anthropic:context-1m`   | `context_window=1_000_000`           |
+| Alias                    | Concrete `HarnessModelCharacteristics` effect |
+| ------------------------ | --------------------------------------------- |
+| `anthropic:context-200k` | `context_window=200_000`                      |
+| `anthropic:context-400k` | `context_window=400_000`                      |
+| `anthropic:context-1m`   | `context_window=1_000_000`                    |
 
 These context values are Harness lifecycle budgets used to derive proactive summarization and compaction thresholds. They do not select a provider context variant, add a beta header, change native `ModelSettings`, or widen the selected model's actual capability. The authoring integration remains responsible for choosing a compatible model and provider route.
 
@@ -246,12 +246,12 @@ Resolution follows these rules:
 
 1. A non-empty alias sequence requires a provider-qualified model string. Direct `anthropic:model` and explicit gateway `gateway@anthropic:model` forms are compatible with the initial aliases; a Host-logical model ID is not, because its provider integration must be selected first.
 2. Alias transforms apply synchronously in declaration order to a detached value in their own plane. Unknown aliases, provider mismatch, malformed model references, or transforms returning the wrong concrete type fail immediately.
-3. Concrete `overrides` are copied and applied last. Settings overrides shallowly update the native settings dictionary. Configuration overrides replace only fields explicitly set by the caller. Neither resolver mutates caller values, infers provider defaults, or validates whether a particular model version supports the selected budget or request setting.
-4. `resolve_model_configuration()` returns `None` when neither aliases nor overrides supply configuration; otherwise it returns concrete `ModelConfiguration`. `resolve_model_settings()` always returns concrete native `ModelSettings`, including an empty dictionary when no input is supplied.
-5. Callers place the concrete results in `AgentSpec.model_configuration` and native `AgentSpec.model_settings`, pass them through ordinary Pydantic construction, or persist them under Host-owned concrete schemas. Alias names never enter `AgentSpec`, `AgentDefinition`, `HarnessBuilder`, `RunBindings`, `HarnessState`, a Host revision, or a worker reconstruction record.
+3. Concrete `overrides` are copied and applied last. Settings overrides shallowly update the native settings dictionary. Characteristics overrides replace only fields explicitly set by the caller. Neither resolver mutates caller values, infers provider defaults, or validates whether a particular model version supports the selected budget or request setting.
+4. `resolve_model_characteristics()` returns `None` when neither aliases nor overrides supply characteristics; otherwise it returns concrete `HarnessModelCharacteristics`. `resolve_model_settings()` always returns concrete native `ModelSettings`, including an empty dictionary when no input is supplied.
+5. Callers place the concrete results in `AgentSpec.model_characteristics` and native `AgentSpec.model_settings`, pass them through ordinary Pydantic construction, or persist them under Host-owned concrete schemas. Alias names never enter `AgentSpec`, `AgentDefinition`, `HarnessBuilder`, `RunBindings`, `HarnessState`, a Host revision, or a worker reconstruction record.
 6. A Host may construct immutable catalogs containing additional deployment-specific aliases, but resolves them only at its authoring or integration input boundary. Durable and process-local core contracts still contain concrete values. The Harness catalogs have no inheritance, dynamic discovery, environment loading, pricing coupling, or provider registry role.
 
-The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. Explicit `ModelConfiguration.capabilities` are independent Harness facts and never derive from profile keys or a model name. A hosted model integration may retain durable gateway and provider configuration and use Harness `infer_model()` as its shared construction boundary. It supplies a Host-owned gateway provider factory or ordinary provider factory, composes required patches, and returns the native Model directly or through `RunModelResolver`.
+The Harness does not serialize `ModelProfile`, merge profile keys, copy provider settings into a Host schema, or translate `AgentSpec` field by field. Explicit `HarnessModelCharacteristics.capabilities` are independent Harness facts and never derive from profile keys or a model name. A hosted model integration may retain durable gateway and provider configuration and use Harness `infer_model()` as its shared construction boundary. It supplies a Host-owned gateway provider factory or ordinary provider factory, composes required patches, and returns the native Model directly or through `RunModelResolver`.
 
 An enterprise gateway integration remains explicit model construction, not another Capability or an ambient inference registry. It may select OAuth or WebSocket transport, attach provider profiles and bounded retry configuration, and reuse a Host-owned async client through its provider factory or patches. Harness-owned compatibility normalization and `RequestHeadersModel` provide the shared behavior that embedded applications, Agent UI, and Foundation Service would otherwise duplicate. The integration still owns credential handling, client lifecycle, provider compatibility, and route authorization; the Harness does not infer those facts from process environment.
 

@@ -190,7 +190,7 @@ class EnvironmentService:
                 requests.append(
                     EnvironmentBindingRequest(
                         binding_id=binding.binding_name,
-                        binding_revision=1,
+                        binding_version=1,
                         alias=binding.model_alias,
                         permission_ceiling=_permissions(binding),
                         default_working_directory="/",

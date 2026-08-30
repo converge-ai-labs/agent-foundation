@@ -163,7 +163,7 @@ def _binding(root: Path):
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-1",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="local",
                     permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                     default_working_directory="/",
@@ -189,7 +189,7 @@ def _replacement_request(root: Path) -> EnvironmentTopologyRequest:
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=2,
+                binding_version=2,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",

@@ -15,15 +15,15 @@ from a13n_harness.models.request_headers import (
 )
 from a13n_harness.models.self_healing import ModelRecoveryRule, SelfHealingModel
 from a13n_harness.models.settings import (
-    ModelConfigurationAlias,
-    ModelConfigurationAliasCatalog,
-    ModelConfigurationTransform,
+    ModelCharacteristicsAlias,
+    ModelCharacteristicsAliasCatalog,
+    ModelCharacteristicsTransform,
     ModelSettingsAlias,
     ModelSettingsAliasCatalog,
     ModelSettingsTransform,
-    get_model_configuration_alias_catalog,
+    get_model_characteristics_alias_catalog,
     get_model_settings_alias_catalog,
-    resolve_model_configuration,
+    resolve_model_characteristics,
     resolve_model_settings,
 )
 from a13n_harness.models.transport import (
@@ -39,9 +39,9 @@ __all__ = [
     "MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV",
     "MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV",
     "GatewayModelProviderFactory",
-    "ModelConfigurationAlias",
-    "ModelConfigurationAliasCatalog",
-    "ModelConfigurationTransform",
+    "ModelCharacteristicsAlias",
+    "ModelCharacteristicsAliasCatalog",
+    "ModelCharacteristicsTransform",
     "ModelHttpRetryConfig",
     "ModelPatch",
     "ModelProviderFactory",
@@ -54,9 +54,9 @@ __all__ = [
     "SelfHealingModel",
     "SelfHealingModelCapability",
     "create_model_http_client",
-    "get_model_configuration_alias_catalog",
+    "get_model_characteristics_alias_catalog",
     "get_model_settings_alias_catalog",
     "infer_model",
-    "resolve_model_configuration",
+    "resolve_model_characteristics",
     "resolve_model_settings",
 ]

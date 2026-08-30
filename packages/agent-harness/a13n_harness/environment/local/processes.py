@@ -185,7 +185,7 @@ class LocalProcessManager:
         provider_type: str,
         environment_id: str,
         binding_id: str,
-        binding_revision: int,
+        binding_version: int,
         generation: str,
     ) -> None:
         self._files = files
@@ -202,7 +202,7 @@ class LocalProcessManager:
         self._provider_type = provider_type
         self._environment_id = environment_id
         self._binding_id = binding_id
-        self._binding_revision = binding_revision
+        self._binding_version = binding_version
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
         self._slots = asyncio.Semaphore(policy.max_concurrent_processes)
@@ -297,7 +297,7 @@ class LocalProcessManager:
             token = token_hex(16)
             handle = BoundProcessHandle(
                 binding_id=self._binding_id,
-                binding_revision=self._binding_revision,
+                binding_version=self._binding_version,
                 identity=ProcessIdentity(
                     provider_type=self._provider_type,
                     environment_id=self._environment_id,
@@ -690,7 +690,7 @@ class LocalProcessManager:
     def _record(self, handle: BoundProcessHandle) -> _ProcessRecord:
         if (
             handle.binding_id != self._binding_id
-            or handle.binding_revision != self._binding_revision
+            or handle.binding_version != self._binding_version
             or handle.observed_generation != self._generation
         ):
             raise EnvironmentError("Process handle is foreign or stale.", code="environment_stale_binding")
@@ -738,7 +738,7 @@ class LocalProcessManager:
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             binding_id=self._binding_id,
-            binding_revision=self._binding_revision,
+            binding_version=self._binding_version,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

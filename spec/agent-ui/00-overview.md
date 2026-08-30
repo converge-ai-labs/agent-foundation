@@ -136,7 +136,7 @@ The schemas, precedence, credential boundary, and reload lifecycle are owned by 
 
 ## Local Persistence
 
-Agent UI uses SQLite for mutable metadata, control state, references, query projection, search, queueing, and revision conflicts. Complete managed Skill packages, `HarnessState`, pending `DeferredToolRequests`, provider resource state, resolved Agent/Environment snapshots, and retained AG-UI events are stored as immutable Zstandard-compressed JSON/JSONL files.
+Agent UI uses SQLite for mutable metadata, control state, references, query projection, search, queueing, and version conflicts. Complete managed Skill packages, `HarnessState`, pending `DeferredToolRequests`, provider resource state, resolved Agent/Environment snapshots, and retained AG-UI events are stored as immutable Zstandard-compressed JSON/JSONL files.
 
 Files publish before SQLite references. No cross-store ACID transaction is claimed. Published unreferenced files are cleanup-safe and startup removes them after the configured orphan-retention period; a missing referenced state fails closed. AG-UI projection can lag event files and rebuild, while SQLite-owned control facts are not guessed from presentation history.
 
@@ -147,7 +147,7 @@ OpenTelemetry and ordinary logs are separate diagnostic outputs and never determ
 A Session pins one exact Agent snapshot, one exact Environment snapshot, and one validated root/child Skill-exposure map. It owns:
 
 - one root Thread and zero or more async-child Threads;
-- Thread commit revisions and complete checkpoint selection;
+- Thread commit versions and complete checkpoint selection;
 - Environment assignments to Host resource records, whose shared operation fences and selected provider-state objects remain Host-owned;
 - foreground Turns and queued submissions;
 - async-subagent job, steering, terminal result-retention, and parent-delivery records;
@@ -173,7 +173,7 @@ sequenceDiagram
     participant AGUI as AG-UI observer
     participant Files as Compressed files
 
-    Surface->>Host: submit input with Session Thread and expected revision
+    Surface->>Host: submit input with Session Thread and expected Thread commit version
     Host->>Runner: preflight pinned snapshots checkpoint and fresh bindings
     Host->>DB: accept Turn in short transaction
     Host->>Runner: execute accepted Run

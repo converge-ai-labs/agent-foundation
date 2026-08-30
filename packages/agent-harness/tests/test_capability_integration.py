@@ -140,7 +140,7 @@ def _environment(root: Path):
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-1",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="local",
                     permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                     default_working_directory="/",

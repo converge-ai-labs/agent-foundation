@@ -193,13 +193,13 @@ def _binding_request(
     provider: _Binding | None,
     *,
     binding_id: str,
-    revision: int,
+    version: int,
     alias: str,
     default_working_directory: str | None = "/",
 ) -> EnvironmentBindingRequest:
     return EnvironmentBindingRequest(
         binding_id=binding_id,
-        binding_revision=revision,
+        binding_version=version,
         alias=alias,
         permission_ceiling=EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_STAT})),
         default_working_directory=default_working_directory,
@@ -211,7 +211,7 @@ def _request(*bindings: _Binding) -> EnvironmentTopologyRequest:
     entries = tuple(
         EnvironmentBindingRequest(
             binding_id=f"binding-{index}",
-            binding_revision=1,
+            binding_version=1,
             alias=f"workspace-{index}",
             permission_ceiling=EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_STAT})),
             default_working_directory="/",
@@ -285,7 +285,7 @@ async def test_environment_run_extensions_follow_aggregate_lifecycle_and_remain_
         retained = _binding_request(
             None,
             binding_id="binding-1",
-            revision=1,
+            version=1,
             alias="workspace-1",
         )
         await binding.controller.apply(
@@ -782,7 +782,7 @@ async def test_state_callbacks_require_exact_effective_actions() -> None:
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-state",
-                binding_revision=1,
+                binding_version=1,
                 alias="state",
                 permission_ceiling=EnvironmentPermissionSet(),
                 default_working_directory=None,
@@ -830,7 +830,7 @@ async def test_state_provider_type_is_rejected_before_provider_readiness() -> No
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-state",
-                    binding_revision=1,
+                    binding_version=1,
                     alias="state",
                     permission_ceiling=EnvironmentPermissionSet(
                         operations=frozenset({EnvironmentAction.STATE_RESTORE})
@@ -875,7 +875,7 @@ async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None
             _binding_request(
                 provider,
                 binding_id="binding-dynamic",
-                revision=1,
+                version=1,
                 alias="dynamic",
             ),
         ),
@@ -900,7 +900,7 @@ async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None
                 _binding_request(
                     None,
                     binding_id="binding-dynamic",
-                    revision=1,
+                    version=1,
                     alias="dynamic",
                 ),
             ),
@@ -914,7 +914,7 @@ async def test_dynamic_topology_add_replay_conflict_and_observer_chain() -> None
                 _binding_request(
                     None,
                     binding_id="binding-dynamic",
-                    revision=1,
+                    version=1,
                     alias="other",
                 ),
             ),
@@ -944,7 +944,7 @@ async def test_dynamic_topology_preserves_historical_alias_and_default_ownership
     initial = _Binding("owner")
     initial_request = EnvironmentTopologyRequest(
         topology_version=1,
-        bindings=(_binding_request(initial, binding_id="binding-owner", revision=1, alias="owner"),),
+        bindings=(_binding_request(initial, binding_id="binding-owner", version=1, alias="owner"),),
         default_binding_id="binding-owner",
     )
     aggregate = create_environment_run_binding(
@@ -963,7 +963,7 @@ async def test_dynamic_topology_preserves_historical_alias_and_default_ownership
             await aggregate.controller.apply(
                 EnvironmentTopologyRequest(
                     topology_version=3,
-                    bindings=(_binding_request(alias_thief, binding_id="binding-thief", revision=1, alias="owner"),),
+                    bindings=(_binding_request(alias_thief, binding_id="binding-thief", version=1, alias="owner"),),
                     default_binding_id=None,
                 )
             )
@@ -979,7 +979,7 @@ async def test_dynamic_topology_preserves_historical_alias_and_default_ownership
                         _binding_request(
                             default_thief,
                             binding_id="binding-thief",
-                            revision=1,
+                            version=1,
                             alias="thief",
                         ),
                     ),
@@ -993,12 +993,12 @@ async def test_dynamic_topology_preserves_historical_alias_and_default_ownership
         restored = await aggregate.controller.apply(
             EnvironmentTopologyRequest(
                 topology_version=3,
-                bindings=(_binding_request(refreshed, binding_id="binding-owner", revision=2, alias="owner"),),
+                bindings=(_binding_request(refreshed, binding_id="binding-owner", version=2, alias="owner"),),
                 default_binding_id="binding-owner",
             )
         )
         assert restored.bindings[0].kind == "added"
-        assert environment.topology.bindings[0].binding_revision == 2
+        assert environment.topology.bindings[0].binding_version == 2
 
 
 async def test_dynamic_prepare_failure_is_atomic_and_cleans_every_candidate() -> None:
@@ -1006,7 +1006,7 @@ async def test_dynamic_prepare_failure_is_atomic_and_cleans_every_candidate() ->
     aggregate = create_environment_run_binding(
         initial_topology=EnvironmentTopologyRequest(
             topology_version=1,
-            bindings=(_binding_request(initial, binding_id="binding-initial", revision=1, alias="initial"),),
+            bindings=(_binding_request(initial, binding_id="binding-initial", version=1, alias="initial"),),
             default_binding_id="binding-initial",
         ),
         topology_limits=EnvironmentTopologyLimits(max_bindings=4, max_committed_changes=4),
@@ -1022,10 +1022,10 @@ async def test_dynamic_prepare_failure_is_atomic_and_cleans_every_candidate() ->
                 EnvironmentTopologyRequest(
                     topology_version=2,
                     bindings=(
-                        _binding_request(None, binding_id="binding-initial", revision=1, alias="initial"),
-                        _binding_request(valid, binding_id="binding-valid", revision=1, alias="valid"),
-                        _binding_request(invalid, binding_id="binding-invalid", revision=1, alias="invalid"),
-                        _binding_request(later, binding_id="binding-later", revision=1, alias="later"),
+                        _binding_request(None, binding_id="binding-initial", version=1, alias="initial"),
+                        _binding_request(valid, binding_id="binding-valid", version=1, alias="valid"),
+                        _binding_request(invalid, binding_id="binding-invalid", version=1, alias="invalid"),
+                        _binding_request(later, binding_id="binding-later", version=1, alias="later"),
                     ),
                     default_binding_id="binding-initial",
                 )
@@ -1039,7 +1039,7 @@ async def test_dynamic_prepare_failure_is_atomic_and_cleans_every_candidate() ->
     assert later.discarded == 1
 
 
-async def test_removed_scope_retires_only_after_accepted_revision_operation_drains() -> None:
+async def test_removed_scope_retires_only_after_accepted_version_operation_drains() -> None:
     started = asyncio.Event()
     release = asyncio.Event()
 
@@ -1053,7 +1053,7 @@ async def test_removed_scope_retires_only_after_accepted_revision_operation_drai
     aggregate = create_environment_run_binding(
         initial_topology=EnvironmentTopologyRequest(
             topology_version=1,
-            bindings=(_binding_request(provider, binding_id="binding-retire", revision=1, alias="retire"),),
+            bindings=(_binding_request(provider, binding_id="binding-retire", version=1, alias="retire"),),
             default_binding_id="binding-retire",
         ),
         topology_limits=EnvironmentTopologyLimits(max_bindings=2, max_committed_changes=2),
@@ -1116,7 +1116,7 @@ async def test_cancelled_queued_apply_discards_its_transferred_candidates() -> N
             aggregate.controller.apply(
                 EnvironmentTopologyRequest(
                     topology_version=1,
-                    bindings=(_binding_request(slow, binding_id="binding-slow", revision=1, alias="slow"),),
+                    bindings=(_binding_request(slow, binding_id="binding-slow", version=1, alias="slow"),),
                     default_binding_id="binding-slow",
                 )
             )
@@ -1126,7 +1126,7 @@ async def test_cancelled_queued_apply_discards_its_transferred_candidates() -> N
             aggregate.controller.apply(
                 EnvironmentTopologyRequest(
                     topology_version=2,
-                    bindings=(_binding_request(queued, binding_id="binding-queued", revision=1, alias="queued"),),
+                    bindings=(_binding_request(queued, binding_id="binding-queued", version=1, alias="queued"),),
                     default_binding_id="binding-queued",
                 )
             )
@@ -1191,7 +1191,7 @@ async def test_cleanup_timeout_supervises_provider_exit_after_operation_drains(
     assert provider.exited == 1
 
 
-async def test_readiness_timeout_cancels_an_unowned_worker_and_releases_its_revision() -> None:
+async def test_readiness_timeout_cancels_an_unowned_worker_and_releases_its_version() -> None:
     readiness_started = asyncio.Event()
     readiness_cancelled = asyncio.Event()
 
@@ -1305,7 +1305,7 @@ async def test_reused_candidate_rejection_discards_fresh_peers_without_identity_
         await aggregate.controller.apply(
             EnvironmentTopologyRequest(
                 topology_version=1,
-                bindings=(_binding_request(active, binding_id="binding-active", revision=1, alias="active"),),
+                bindings=(_binding_request(active, binding_id="binding-active", version=1, alias="active"),),
                 default_binding_id="binding-active",
             )
         )
@@ -1314,8 +1314,8 @@ async def test_reused_candidate_rejection_discards_fresh_peers_without_identity_
                 EnvironmentTopologyRequest(
                     topology_version=2,
                     bindings=(
-                        _binding_request(active, binding_id="binding-active", revision=1, alias="active"),
-                        _binding_request(fresh, binding_id="binding-fresh", revision=1, alias="fresh"),
+                        _binding_request(active, binding_id="binding-active", version=1, alias="active"),
+                        _binding_request(fresh, binding_id="binding-fresh", version=1, alias="fresh"),
                     ),
                     default_binding_id="binding-active",
                 )
@@ -1355,8 +1355,8 @@ async def test_candidate_discard_deadline_is_hard_and_does_not_block_later_candi
                 EnvironmentTopologyRequest(
                     topology_version=1,
                     bindings=(
-                        _binding_request(stubborn, binding_id="binding-a", revision=1, alias="duplicate"),
-                        _binding_request(later, binding_id="binding-b", revision=1, alias="duplicate"),
+                        _binding_request(stubborn, binding_id="binding-a", version=1, alias="duplicate"),
+                        _binding_request(later, binding_id="binding-b", version=1, alias="duplicate"),
                     ),
                     default_binding_id="binding-a",
                 )
@@ -1367,7 +1367,7 @@ async def test_candidate_discard_deadline_is_hard_and_does_not_block_later_candi
         await asyncio.wait_for(finished.wait(), timeout=0.2)
 
 
-async def test_provider_bound_artifacts_must_match_selected_revision() -> None:
+async def test_provider_bound_artifacts_must_match_selected_version() -> None:
     class WrongReceiptFiles:
         async def write_text(self, path: str, text: str, **kwargs: Any) -> FileWriteResult:
             del text, kwargs
@@ -1376,7 +1376,7 @@ async def test_provider_bound_artifacts_must_match_selected_revision() -> None:
                 bytes_written=1,
                 receipt=EnvironmentOperationReceipt(
                     binding_id="another-binding",
-                    binding_revision=99,
+                    binding_version=99,
                     observed_generation="another-generation",
                     operation_id="operation-1",
                     stage="completed",
@@ -1394,7 +1394,7 @@ async def test_provider_bound_artifacts_must_match_selected_revision() -> None:
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="workspace",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_WRITE_TEXT})),
                 default_working_directory="/",
@@ -1436,7 +1436,7 @@ async def test_dynamic_validation_and_scope_cleanup_errors_are_both_preserved() 
             await aggregate.controller.apply(
                 EnvironmentTopologyRequest(
                     topology_version=1,
-                    bindings=(_binding_request(candidate, binding_id="binding-1", revision=1, alias="invalid"),),
+                    bindings=(_binding_request(candidate, binding_id="binding-1", version=1, alias="invalid"),),
                     default_binding_id="binding-1",
                 )
             )
@@ -1462,7 +1462,7 @@ class _IdempotentProcessOperations:
     def _receipt() -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             binding_id="binding-1",
-            binding_revision=1,
+            binding_version=1,
             observed_generation="generation-processes",
             operation_id="operation-1",
             stage="completed",
@@ -1507,7 +1507,7 @@ def _process_test_binding() -> tuple[Any, _IdempotentProcessOperations, tuple[Bo
     handles = tuple(
         BoundProcessHandle(
             binding_id="binding-1",
-            binding_revision=1,
+            binding_version=1,
             identity=ProcessIdentity(
                 provider_type="test.provider",
                 environment_id="environment:processes",
@@ -1537,7 +1537,7 @@ def _process_test_binding() -> tuple[Any, _IdempotentProcessOperations, tuple[Bo
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="processes",
                 permission_ceiling=EnvironmentPermissionSet(
                     operations=frozenset(
@@ -1582,7 +1582,7 @@ async def test_process_rebind_selects_environment_instance_identity_instead_of_c
     )
     handle = BoundProcessHandle(
         binding_id="binding-a",
-        binding_revision=1,
+        binding_version=1,
         identity=identity,
         observed_generation="generation-a",
         handle=OpaqueProcessHandle._from_payload("bound-process-a"),
@@ -1611,7 +1611,7 @@ async def test_process_rebind_selects_environment_instance_identity_instead_of_c
     retarget_operations = RebindOperations(
         BoundProcessHandle(
             binding_id="binding-b",
-            binding_revision=1,
+            binding_version=1,
             identity=ProcessIdentity(
                 provider_type="test.provider",
                 environment_id="environment:b",
@@ -1640,7 +1640,7 @@ async def test_process_rebind_selects_environment_instance_identity_instead_of_c
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-a",
-                binding_revision=1,
+                binding_version=1,
                 alias="original",
                 permission_ceiling=EnvironmentPermissionSet(operations=permissions),
                 default_working_directory="/",
@@ -1648,7 +1648,7 @@ async def test_process_rebind_selects_environment_instance_identity_instead_of_c
             ),
             EnvironmentBindingRequest(
                 binding_id="binding-b",
-                binding_revision=1,
+                binding_version=1,
                 alias="target",
                 permission_ceiling=EnvironmentPermissionSet(operations=permissions),
                 default_working_directory="/",
@@ -1697,7 +1697,7 @@ async def test_process_rebind_keeps_unattached_and_changed_generation_failures_d
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-current",
-                binding_revision=1,
+                binding_version=1,
                 alias="current",
                 permission_ceiling=EnvironmentPermissionSet(operations=permissions),
                 default_working_directory="/",
@@ -1755,7 +1755,7 @@ async def test_authoritative_process_loss_releases_the_topology_handle_fence() -
         assert (await aggregate.controller.apply(removal)).current_version == 2
 
 
-async def test_duplicate_idempotent_process_release_does_not_underflow_revision_fence() -> None:
+async def test_duplicate_idempotent_process_release_does_not_underflow_version_fence() -> None:
     aggregate, _, _ = _process_test_binding()
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await environment.activate()
@@ -1773,7 +1773,7 @@ async def test_duplicate_idempotent_process_release_does_not_underflow_revision_
         assert (await aggregate.controller.apply(removal)).current_version == 2
 
 
-async def test_process_result_cannot_substitute_another_same_revision_handle() -> None:
+async def test_process_result_cannot_substitute_another_same_version_handle() -> None:
     aggregate, operations, handles = _process_test_binding()
     async with aggregate.bind(run_id="run-1", instance=_instance()) as environment:
         await environment.activate()

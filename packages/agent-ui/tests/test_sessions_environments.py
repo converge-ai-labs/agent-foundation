@@ -219,7 +219,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
             assert during.resources[0].selected_provider_state_digest is not None
         updated = await application.update_session(
             created.session_id,
-            expected_revision=created.control_revision,
+            expected_version=created.control_version,
             update=SessionUpdate(title="Renamed"),
         )
         session_id = created.session_id
@@ -276,7 +276,7 @@ async def test_foreground_turn_persists_checkpoint_and_agui_replay_across_restar
         turn = await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="hello",
         )
         replay = await application.session_events(created.session_id)
@@ -319,7 +319,7 @@ async def test_waiting_turn_resumes_from_exact_deferred_object(tmp_path: Path) -
         waiting = await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="clarify",
         )
 
@@ -334,7 +334,7 @@ async def test_waiting_turn_resumes_from_exact_deferred_object(tmp_path: Path) -
         completed = await application.resume_session_turn(
             created.session_id,
             turn_id=waiting.turn_id,
-            expected_thread_revision=(await application.session(created.session_id)).root.commit_revision,
+            expected_thread_version=(await application.session(created.session_id)).root.commit_version,
             results=requests.build_results(
                 calls={
                     call_id: {
@@ -371,7 +371,7 @@ async def test_event_subscription_has_gap_free_replay_to_live_cutover(tmp_path: 
         await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="first",
         )
 
@@ -384,7 +384,7 @@ async def test_event_subscription_has_gap_free_replay_to_live_cutover(tmp_path: 
             second = await application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=retained.root.commit_revision,
+                expected_thread_version=retained.root.commit_version,
                 input_value="second",
             )
             live = []
@@ -421,7 +421,7 @@ async def test_startup_recovers_file_first_event_segment(tmp_path: Path) -> None
         await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="recover",
         )
         before = await application.session_events(created.session_id)
@@ -480,7 +480,7 @@ async def test_terminal_commit_failure_closes_running_turn(tmp_path: Path, monke
             await application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=created.root.commit_revision,
+                expected_thread_version=created.root.commit_version,
                 input_value="fail commit",
             )
 
@@ -604,7 +604,7 @@ async def test_delete_failure_retains_assignments_for_cleanup_retry(
         with pytest.raises(RuntimeError, match="synthetic destroy"):
             await application.delete_session(
                 created.session_id,
-                expected_revision=created.control_revision,
+                expected_version=created.control_version,
             )
 
         pending = await application.session(created.session_id)
@@ -614,7 +614,7 @@ async def test_delete_failure_retains_assignments_for_cleanup_retry(
         monkeypatch.setattr(application._environments, "destroy", original_destroy)
         await application.delete_session(
             created.session_id,
-            expected_revision=pending.control_revision,
+            expected_version=pending.control_version,
         )
         with pytest.raises(SessionError) as raised:
             await application.session(created.session_id)
@@ -635,7 +635,7 @@ async def test_hard_delete_removes_baseline_checkpoint_and_assignments(tmp_path:
         )
         await application.delete_session(
             created.session_id,
-            expected_revision=created.control_revision,
+            expected_version=created.control_version,
         )
         async with transaction(application._store.database.sessions) as database_session:
             checkpoint_count = int(
@@ -694,7 +694,7 @@ async def test_startup_blocks_session_with_unreadable_selected_checkpoint(tmp_pa
         with pytest.raises(StoreIntegrityError):
             await restarted.retry_session_provisioning(
                 session_id,
-                expected_revision=retained.control_revision,
+                expected_version=retained.control_version,
             )
         assert (await restarted.session(session_id)).lifecycle_state is SessionLifecycleState.blocked
 
@@ -774,7 +774,7 @@ async def test_external_task_cancellation_re_raises_after_durable_run_cleanup(tm
             application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=created.root.commit_revision,
+                expected_thread_version=created.root.commit_version,
                 input_value="cancel",
             )
         )
@@ -807,7 +807,7 @@ async def test_startup_blocks_waiting_turn_with_unreadable_deferred_authority(tm
         waiting = await application.run_session_turn(
             created.session_id,
             thread_id=created.root.thread_id,
-            expected_thread_revision=created.root.commit_revision,
+            expected_thread_version=created.root.commit_version,
             input_value="wait",
         )
         pending = waiting.pending_deferred
@@ -899,7 +899,7 @@ async def test_anyio_cancellation_restores_environment_borrow_invariants(tmp_pat
             await application.run_session_turn(
                 created.session_id,
                 thread_id=created.root.thread_id,
-                expected_thread_revision=created.root.commit_revision,
+                expected_thread_version=created.root.commit_version,
                 input_value="cancel scope",
             )
 
@@ -958,7 +958,7 @@ async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
         with pytest.raises(StoreIntegrityError, match="Synthetic destroy completion"):
             await application.delete_session(
                 created.session_id,
-                expected_revision=created.control_revision,
+                expected_version=created.control_version,
             )
         pending = await application.session(created.session_id)
         availability = await application.session_environment(created.session_id)
@@ -973,7 +973,7 @@ async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
         )
         await application.delete_session(
             created.session_id,
-            expected_revision=pending.control_revision,
+            expected_version=pending.control_version,
         )
         with pytest.raises(SessionError) as raised:
             await application.session(created.session_id)

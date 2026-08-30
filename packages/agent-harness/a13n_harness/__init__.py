@@ -276,9 +276,9 @@ from a13n_harness.models import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
     MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
     GatewayModelProviderFactory,
-    ModelConfigurationAlias,
-    ModelConfigurationAliasCatalog,
-    ModelConfigurationTransform,
+    ModelCharacteristicsAlias,
+    ModelCharacteristicsAliasCatalog,
+    ModelCharacteristicsTransform,
     ModelHttpRetryConfig,
     ModelPatch,
     ModelProviderFactory,
@@ -291,10 +291,10 @@ from a13n_harness.models import (
     SelfHealingModel,
     SelfHealingModelCapability,
     create_model_http_client,
-    get_model_configuration_alias_catalog,
+    get_model_characteristics_alias_catalog,
     get_model_settings_alias_catalog,
     infer_model,
-    resolve_model_configuration,
+    resolve_model_characteristics,
     resolve_model_settings,
 )
 from a13n_harness.observation import (
@@ -350,7 +350,7 @@ from a13n_harness.pricing import (
 )
 from a13n_harness.recovery import ModelRecoveryPolicy, RecoveryPromptFactory
 from a13n_harness.result import HarnessRunResult, SafeFailure
-from a13n_harness.spec import AgentSpec, ModelCapability, ModelConfiguration
+from a13n_harness.spec import AgentSpec, HarnessModelCharacteristics, ModelCapability
 from a13n_harness.state import (
     AgentContextState,
     AgentContextStateSnapshot,
@@ -572,6 +572,7 @@ __all__ = [
     "HarnessEventEmitter",
     "HarnessExtensionEvent",
     "HarnessInstrumentation",
+    "HarnessModelCharacteristics",
     "HarnessObservationContext",
     "HarnessPluginConfiguration",
     "HarnessPluginConfigurationEntry",
@@ -611,10 +612,9 @@ __all__ = [
     "MediaUnderstandingResult",
     "MessageIntegrityFilterCapability",
     "ModelCapability",
-    "ModelConfiguration",
-    "ModelConfigurationAlias",
-    "ModelConfigurationAliasCatalog",
-    "ModelConfigurationTransform",
+    "ModelCharacteristicsAlias",
+    "ModelCharacteristicsAliasCatalog",
+    "ModelCharacteristicsTransform",
     "ModelContextBlock",
     "ModelContextInputOrigin",
     "ModelContextMiddleware",
@@ -769,11 +769,11 @@ __all__ = [
     "discover_harness_plugin_factory_references",
     "emit_tool_event",
     "get_default_pricing_catalog",
-    "get_model_configuration_alias_catalog",
+    "get_model_characteristics_alias_catalog",
     "get_model_settings_alias_catalog",
     "get_official_model",
     "get_official_model_catalog",
     "infer_model",
-    "resolve_model_configuration",
+    "resolve_model_characteristics",
     "resolve_model_settings",
 ]

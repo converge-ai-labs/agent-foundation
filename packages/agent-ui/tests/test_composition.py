@@ -590,7 +590,7 @@ async def test_skill_materializer_replaces_stale_tree_and_handles_concurrent_pub
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-main",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
 

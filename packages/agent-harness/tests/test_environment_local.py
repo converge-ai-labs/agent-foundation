@@ -137,7 +137,7 @@ async def test_host_manager_attachment_path_supports_sequential_harness_runs(tmp
                     bindings=(
                         EnvironmentBindingRequest(
                             binding_id="binding-1",
-                            binding_revision=1,
+                            binding_version=1,
                             alias="local",
                             permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                             default_working_directory="/",
@@ -189,7 +189,7 @@ def _two_binding_aggregate(source: Path, destination: Path):
         bindings=tuple(
             EnvironmentBindingRequest(
                 binding_id=f"binding-{alias}",
-                binding_revision=1,
+                binding_version=1,
                 alias=alias,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -227,7 +227,7 @@ def _aggregate(
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-1",
-                binding_revision=1,
+                binding_version=1,
                 alias="local",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -341,7 +341,7 @@ async def test_file_only_binding_does_not_advertise_or_create_output_operations(
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         assert entered.operations.outputs is None
         assert "outputs" not in entered.descriptor.operation_families
@@ -362,7 +362,7 @@ async def test_read_only_binding_advertises_only_effective_file_permissions(tmp_
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         permissions = entered.descriptor.permissions.operations
         assert EnvironmentAction.FILE_READ_TEXT in permissions
@@ -395,7 +395,7 @@ async def test_direct_local_read_race_returns_environment_error(
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         files = entered.operations.files
         assert files is not None
@@ -458,7 +458,7 @@ async def test_cancelled_spool_allocation_is_joined_and_removed(
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     )
     entering = asyncio.create_task(scope.__aenter__())
     assert await asyncio.to_thread(started.wait, 5)
@@ -502,7 +502,7 @@ async def test_binding_teardown_attempts_spool_cleanup_and_preserves_shared_root
             run_id="run-1",
             instance=_instance(),
             binding_id="binding-1",
-            binding_revision=1,
+            binding_version=1,
         ):
             pass
 
@@ -524,7 +524,7 @@ async def test_direct_local_requires_and_preserves_shared_root(tmp_path: Path) -
         bindings=(
             EnvironmentBindingRequest(
                 binding_id="binding-shared",
-                binding_revision=1,
+                binding_version=1,
                 alias="shared",
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 default_working_directory="/",
@@ -991,7 +991,7 @@ async def test_query_and_search_share_provider_conformance_and_use_one_worker_ea
         read_only=True,
         policy=local_binding_module._DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
 
@@ -1016,7 +1016,7 @@ async def test_search_fails_explicitly_when_eligible_file_limit_hides_candidates
         read_only=True,
         policy=local_binding_module._DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
         generation="generation-1",
     )
 
@@ -1046,7 +1046,7 @@ async def test_local_retention_is_bounded_readable_and_released(tmp_path: Path) 
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         store = entered.operations.outputs
         assert store is not None
@@ -1076,7 +1076,7 @@ async def test_retention_stops_capturing_after_the_first_quota_gap(tmp_path: Pat
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         store = entered.operations.outputs
         assert store is not None
@@ -1107,7 +1107,7 @@ async def test_retained_read_serializes_with_release(
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         store = entered.operations.outputs
         assert store is not None
@@ -1150,7 +1150,7 @@ async def test_retention_accounts_actual_bytes_and_refunds_release(tmp_path: Pat
         run_id="run-1",
         instance=_instance(),
         binding_id="binding-1",
-        binding_revision=1,
+        binding_version=1,
     ) as entered:
         store = entered.operations.outputs
         assert store is not None

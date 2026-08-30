@@ -387,7 +387,7 @@ class FileContextCapability(AbstractModelContextCapability):
                 if explicit:
                     failures.append(f"{path}: {exc.code}")
                 continue
-            resolved_key = (resolved.binding_id, resolved.binding_revision, resolved.path)
+            resolved_key = (resolved.binding_id, resolved.binding_version, resolved.path)
             if resolved_key in loaded_paths:
                 continue
             remaining = self.configuration.max_bytes - used_bytes
@@ -681,7 +681,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             return existing
         if self.policy is None:
             raise DefinitionError(
-                "Compaction requires a policy or a model configuration with a context window.",
+                "Compaction requires a policy or a model characteristics with a context window.",
                 code="compaction_policy_unresolved",
             )
         replacement = CompactionCapability(self.policy)

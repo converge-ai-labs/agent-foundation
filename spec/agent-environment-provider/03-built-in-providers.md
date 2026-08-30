@@ -411,7 +411,7 @@ E2B advertises `resource_allocation=MULTIPLE_FROM_SPEC` and `attachment_concurre
 
 `pause(mode=FULL)` preserves the sandbox filesystem, memory, and running processes. External network connections still close. On resume, the in-sandbox `agent-envd` process and daemon generation can remain, but the Host obtains a fresh endpoint and establishes a fresh readiness-confirmed Session. No HTTP request, transfer, or EIP Session survives pause.
 
-`pause(mode=FILESYSTEM)` preserves the sandbox filesystem while discarding memory and processes. Resume reboots from disk, the template startup contract launches a new `agent-envd` process, and the daemon generation changes. Every previous operation receipt, process handle, output reference, transfer, and session is fenced. The Harness receives a fresh binding revision before operations resume.
+`pause(mode=FILESYSTEM)` preserves the sandbox filesystem while discarding memory and processes. Resume reboots from disk, the template startup contract launches a new `agent-envd` process, and the daemon generation changes. Every previous operation receipt, process handle, output reference, transfer, and session is fenced. The Harness receives a fresh binding version before operations resume.
 
 `destroy()` kills the exact sandbox ID. A killed or expired sandbox is successful absence only when E2B reports that state authoritatively. Sandbox timeout and connect behavior follow the SDK contract: connect can extend an expiring running sandbox but does not silently shorten a longer current timeout; exact timeout changes use the SDK's explicit timeout operation.
 
@@ -427,7 +427,7 @@ E2B persistence does not replace Harness Environment state:
 | --------------------------- | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------ |
 | Connect to running sandbox  | Same sandbox                  | Same when daemon remained running | Fresh attachment, binding, and EIP session                               |
 | Full pause and resume       | Same sandbox, memory restored | Can remain the same               | Fresh external connection/session; no transfer resume                    |
-| Filesystem pause and resume | Same sandbox, rebooted        | Changes                           | Fresh binding revision; every daemon selector fenced                     |
+| Filesystem pause and resume | Same sandbox, rebooted        | Changes                           | Fresh binding version; every daemon selector fenced                      |
 | Kill or expiry              | Resource absent               | Absent                            | Resume fails; Host explicitly decides whether to create another resource |
 
 Files written in the sandbox can survive both pause modes as provider-native resource state. EIP 1.0 still exports no `EnvironmentBindingState`. If the Host also selects a portable Harness workspace codec, that codec remains a separate explicit import/export mechanism and is not inferred from E2B pause.

@@ -36,11 +36,11 @@ flowchart LR
     Builder --> Executable[ExecutableAgent]
 ```
 
-The Host revision stores only Host-owned serializable values and exact dependencies. It can include logical model IDs, concrete model configuration, concrete model settings, plugin/provider configuration, tool declarations, output schema, and artifact locks under Host-owned schemas. A Host authoring surface may accept Harness or deployment-specific aliases in either model plane, but it resolves them before revision materialization; the immutable revision and worker adapter never receive alias names. The revision does not store a Harness compiler document, alias catalog, Python class, plugin instance, Model, Toolset, Capability, callable, credential, or live client.
+The Host revision stores only Host-owned serializable values and exact dependencies. It can include logical model IDs, concrete Harness model characteristics, concrete native model settings, plugin/provider configuration, tool declarations, output schema, and artifact locks under Host-owned schemas. A Host authoring surface may accept Harness or deployment-specific aliases in either model plane, but it resolves them before revision materialization; the immutable revision and worker adapter never receive alias names. The revision does not store a Harness compiler document, alias catalog, Python class, plugin instance, Model, Toolset, Capability, callable, credential, or live client.
 
 At execution time trusted installed adapters create:
 
-- native `AgentSpec` containing only concrete `ModelConfiguration`, concrete native `ModelSettings`, and, for code-first output, a process-local `OutputSpec`;
+- native `AgentSpec` containing only concrete `HarnessModelCharacteristics`, concrete native `ModelSettings`, and, for code-first output, a process-local `OutputSpec`;
 - optional Model or logical model name;
 - Agent-bound Capabilities that own all function tools, Toolsets, guidance, settings, and hooks;
 - optional direct concrete Harness plugin instances;

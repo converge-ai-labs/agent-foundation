@@ -1046,7 +1046,7 @@ def _model_supports_native_media(
     ctx: RunContext[AgentContext],
     kind: NativeInputMediaKind,
 ) -> bool:
-    configuration = ctx.deps.model_configuration
+    configuration = ctx.deps.model_characteristics
     if configuration is None:
         return False
     capability = ModelCapability(f"{kind}_understanding")
@@ -1167,7 +1167,7 @@ def _file_view_profile(context: AgentContext, file_path: str) -> _FileViewProfil
 
 
 def _is_within_environment_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:
-    if candidate.binding_id != root.binding_id or candidate.binding_revision != root.binding_revision:
+    if candidate.binding_id != root.binding_id or candidate.binding_version != root.binding_version:
         return False
     normalized_root = root.path.rstrip("/")
     prefix = f"{normalized_root}/" if normalized_root else "/"

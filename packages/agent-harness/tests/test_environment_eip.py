@@ -134,7 +134,7 @@ def test_eip_bound_provider_rechecks_live_readiness_on_every_request() -> None:
             session=cast(Any, session),
             environment_id="env-one",
             binding_id="binding-one",
-            binding_revision=1,
+            binding_version=1,
         )
 
         await provider.ensure_ready(frozenset())
@@ -189,7 +189,7 @@ def test_eip_file_search_pushes_down_the_complete_request_and_maps_inline_contex
         session=cast(Any, session),
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     request = FileTextSearchRequest(
@@ -282,7 +282,7 @@ def test_eip_output_cursor_cannot_widen_its_cumulative_projection_ceiling() -> N
             session=cast(Any, session),
             environment_id="env-one",
             binding_id="binding-one",
-            binding_revision=1,
+            binding_version=1,
             generation="1",
         )
         origin_policy = EnvironmentOutputPolicy(
@@ -337,7 +337,7 @@ def test_eip_fail_projection_is_local_and_does_not_change_raw_output() -> None:
         session=cast(Any, FakeSession(content, raw)),
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
 
@@ -368,7 +368,7 @@ def test_eip_truncate_projection_reports_raw_counts_without_a_reference() -> Non
         session=cast(Any, FakeSession(content, raw)),
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     capture = registry.capture(
@@ -441,7 +441,7 @@ def test_eip_process_registration_validates_identity_before_local_mutation() -> 
         provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
 
@@ -475,14 +475,14 @@ def test_eip_process_rebinds_portable_identity_through_a_fresh_adapter() -> None
                 session=cast(Any, session),
                 environment_id="env-one",
                 binding_id="binding-two",
-                binding_revision=2,
+                binding_version=2,
                 generation="1",
             ),
         ),
         provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-two",
-        binding_revision=2,
+        binding_version=2,
         generation="1",
     )
     operations = EIPProcessOperations(conversions)
@@ -507,7 +507,7 @@ def test_eip_process_rebinds_portable_identity_through_a_fresh_adapter() -> None
     assert session.client.handles == [eip.ProcessHandle("process-one")]
     assert rebound.handle.identity == identity
     assert rebound.handle.binding_id == "binding-two"
-    assert rebound.handle.binding_revision == 2
+    assert rebound.handle.binding_version == 2
 
 
 def test_eip_process_read_materializes_terminal_inline_output_without_a_reference() -> None:
@@ -523,7 +523,7 @@ def test_eip_process_read_materializes_terminal_inline_output_without_a_referenc
         session=cast(Any, session),
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     conversions = _ProcessConversions(
@@ -533,7 +533,7 @@ def test_eip_process_read_materializes_terminal_inline_output_without_a_referenc
         provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     bound = conversions.register(
@@ -579,7 +579,7 @@ def test_eip_public_output_release_is_retried_during_provider_cleanup() -> None:
         session=cast(Any, session),
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     capture = outputs.capture(
@@ -632,7 +632,7 @@ def test_eip_process_release_retries_only_remaining_hidden_output_cleanup() -> N
         session=cast(Any, session),
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     conversions = _ProcessConversions(
@@ -642,7 +642,7 @@ def test_eip_process_release_retries_only_remaining_hidden_output_cleanup() -> N
         provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     process = conversions.register(
@@ -708,7 +708,7 @@ def test_eip_process_start_cleans_up_when_local_projection_fails() -> None:
         session=cast(Any, session),
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     conversions = _ProcessConversions(
@@ -718,7 +718,7 @@ def test_eip_process_start_cleans_up_when_local_projection_fails() -> None:
         provider_type="test.eip",
         environment_id="env-one",
         binding_id="binding-one",
-        binding_revision=1,
+        binding_version=1,
         generation="1",
     )
     operations = EIPProcessOperations(conversions)

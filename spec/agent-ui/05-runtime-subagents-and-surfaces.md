@@ -61,7 +61,7 @@ class AgentUiHost(Protocol):
     runtime: RuntimeGenerationApplicationService
 ```
 
-Commands carry stable resource selectors, expected revisions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, `EnvironmentProvider`, Environment attachment, credential, task, lock, or raw `HarnessState`.
+Commands carry stable resource selectors, expected versions, bounded content, and explicit operation intent. Queries return detached safe projections. No application value exposes a SQLite connection, filesystem path as authority, `HarnessRunStream`, native Model, plugin object, `EnvironmentProvider`, Environment attachment, credential, task, lock, or raw `HarnessState`.
 
 The runtime Runner constructs process-local Model resolvers and other execution collaborators from the exact Host-selected snapshot and fresh current authority before every attempted root or child Run. The default execution boundary fails explicitly with `model_resolver_unavailable`; an invalid collaborator fails before Harness dispatch. Configuration, Session, Environment, runtime-management, and replay operations remain available without a Model resolver, and no native resolver or credential is persisted or reconstructed from ambient state.
 
@@ -185,7 +185,7 @@ Artifact resolution and probe failure occur before provider or Harness dispatch.
 
 ## Foreground Run Flow
 
-The `SubmitTurn` command names a Session, Thread, expected Thread revision, and bounded input. The coordinator performs one canonical flow:
+The `SubmitTurn` command names a Session, Thread, expected Thread commit version, and bounded input. The coordinator performs one canonical flow:
 
 ```mermaid
 sequenceDiagram
@@ -198,7 +198,7 @@ sequenceDiagram
     participant Observer as AG-UI observer
     participant Files as Compressed object/event files
 
-    Surface->>App: SubmitTurn(session, thread, expected revision, input)
+    Surface->>App: SubmitTurn(session, thread, expected version, input)
     App->>Resolver: preflight pinned snapshots checkpoint executable and fresh Model resolver
     Resolver-->>App: executable and fresh resolver
     App->>DB: accept Turn under short transaction
@@ -231,13 +231,13 @@ The coordinator is the sole `HarnessRunStream` consumer. It routes every item to
 
 Model resolution, credential reads, Host run Capabilities, Plugin run binding, Session-read collaboration, async-subagent collaboration, exact Skill selection, Environment attachments, Identity, usage, and policy are fresh for every root and child Run. The embedding Host supplies the application-lifetime `RunModelResolverFactory`; the coordinator invokes it for each Run with the exact pinned Agent snapshot and passes its fresh resolver through public `RunBindings`. The default boundary is explicitly unavailable rather than ambient or synthetic. Pinned snapshots can narrow current authority but cannot restore it.
 
-Input acceptance, Environment availability, Harness start, event-file registration, live event delivery, Harness terminal result, checkpoint selection, Environment pause, OTel export, and surface rendering are independent facts. Event fan-out follows successful durable registration, but neither delivery fact establishes the Harness or Turn outcome. A surface disconnect does not cancel work. Explicit cancellation requests ordinary Harness cancellation, drains the same entered stream, and records its actual outcome. Accepted or waiting work with no active stream can be cancelled directly under the expected Thread revision; cancellation never selects partial state.
+Input acceptance, Environment availability, Harness start, event-file registration, live event delivery, Harness terminal result, checkpoint selection, Environment pause, OTel export, and surface rendering are independent facts. Event fan-out follows successful durable registration, but neither delivery fact establishes the Harness or Turn outcome. A surface disconnect does not cancel work. Explicit cancellation requests ordinary Harness cancellation, drains the same entered stream, and records its actual outcome. Accepted or waiting work with no active stream can be cancelled directly under the expected Thread commit version; cancellation never selects partial state.
 
 The fresh root bindings include the Agent UI async-subagent run Capability only when the pinned Agent node selects the behavior Capability. It is scoped to the exact Session, parent Thread, Turn, Run, Agent node, process generation, and current policy. Possession of the built child collection, a job ID, or a prior run Capability does not authorize submission.
 
 ## Deferred Input and Approval
 
-A suspended Harness result keeps the same Host Turn in `waiting`. The coordinator publishes the complete selected `HarnessState`, the separate exact public `DeferredToolRequests` object returned by the Harness, and pending event segments, then atomically commits the `waiting` transition, both object references, unconsumed status, and Thread revision in SQLite. A valid waiting Turn survives process restart. Surfaces render the corresponding safe projection and submit one typed response command bound to the Session, Thread, Turn, expected revision, and exact deferred identifiers.
+A suspended Harness result keeps the same Host Turn in `waiting`. The coordinator publishes the complete selected `HarnessState`, the separate exact public `DeferredToolRequests` object returned by the Harness, and pending event segments, then atomically commits the `waiting` transition, both object references, unconsumed status, and Thread commit version in SQLite. A valid waiting Turn survives process restart. Surfaces render the corresponding safe projection and submit one typed response command bound to the Session, Thread, Turn, expected version, and exact deferred identifiers.
 
 The Host loads and validates the complete pending request object, combines the authorized responses with that exact value in `DeferredToolResume`, records one consuming `run_id` before dispatch, directs the selected Runner to create fresh Model/Environment/Host bindings, and appends the Run to the same Turn. AG-UI replay and identifiers alone never reconstruct or satisfy deferred state. Stale, duplicate, mismatched, already-consumed, corrupt, or incompatible responses conflict before another Harness dispatch.
 
@@ -265,7 +265,7 @@ Environment application commands provide full local product control:
 
 Every effectful operation commits a fence before calling the `EnvironmentProvider` and commits returned state only under the same fence. The Host never exposes arbitrary vendor API passthrough. Provider credentials enter through fresh runtime collaborators and are absent from commands, SQLite payload columns, AG-UI, model context, and default logs/telemetry.
 
-When a Run is active, its Harness topology is fixed by the complete fresh attachment set entered for that invocation except where the public Harness topology controller explicitly supports a higher complete revision. Host topology change cannot add a Dynamic Environment Capability or Toolset absent from the Agent snapshot. Environment attachment and provider resource lifecycle remain independent from Agent configuration reload.
+When a Run is active, its Harness topology is fixed by the complete fresh attachment set entered for that invocation except where the public Harness topology controller explicitly supports a higher complete version. Host topology change cannot add a Dynamic Environment Capability or Toolset absent from the Agent snapshot. Environment attachment and provider resource lifecycle remain independent from Agent configuration reload.
 
 ## Async Subagent Capability
 
@@ -402,7 +402,7 @@ Delivery into an active Run, delivery in a later Run, explicit result inspection
 
 ## Cancellation and Unknown Outcomes
 
-Foreground cancellation of an active Run is a process-local request to that exact `HarnessRunStream`; the cancellation command returns the current Turn projection, while the sole coordinator drains the same entered stream and commits the observed terminal outcome. An accepted or waiting foreground Turn with no active stream can commit `cancelled` directly under the expected Thread revision. Neither path selects partial state. Async-child cancellation records intent for the exact job before requesting its live coordinator task. Edge `lifetime="parent_scope"` requests child cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` does not couple ordinary parent-scope completion or cancellation to the child. Session deletion fences and cancels every nonterminal child regardless of edge lifetime.
+Foreground cancellation of an active Run is a process-local request to that exact `HarnessRunStream`; the cancellation command returns the current Turn projection, while the sole coordinator drains the same entered stream and commits the observed terminal outcome. An accepted or waiting foreground Turn with no active stream can commit `cancelled` directly under the expected Thread commit version. Neither path selects partial state. Async-child cancellation records intent for the exact job before requesting its live coordinator task. Edge `lifetime="parent_scope"` requests child cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` does not couple ordinary parent-scope completion or cancellation to the child. Session deletion fences and cancels every nonterminal child regardless of edge lifetime.
 
 Cancellation does not roll back provider, tool, Environment, or external effects. If cleanup or external dispatch outcome is uncertain, the Turn/job/resource remains `interrupted` or `unknown` with bounded reconciliation evidence. Repeated cancel of a terminal job returns the same terminal projection. Duplicate event notification, surface reconnect, status query, or completion wake-up never duplicates execution or parent delivery. A stale run Capability cannot submit, steer, cancel, or claim delivery after its Run closes; a later fresh Capability must independently authorize the exact scope.
 
@@ -493,7 +493,7 @@ Agent UI releases independently and pins one exact compatible Harness release gr
 | Failure                                                                        | Outcome                                                                                                                                       |
 | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Configuration edit or manifest fails validation                                | Application-owned transaction manifest is not selected; prior generation remains active                                                       |
-| Stale command revision                                                         | Conflict before affected dispatch or mutation                                                                                                 |
+| Stale command version                                                          | Conflict before affected dispatch or mutation                                                                                                 |
 | Model or credential resolution fails                                           | Run fails before model use; pinned snapshot remains unchanged                                                                                 |
 | Required Environment cannot become available                                   | Run does not enter Harness; provider lifecycle retains exact failure/unknown state                                                            |
 | Local Sandbox artifact, version, probe, or Provider integration is unavailable | No provider/Harness dispatch and no Direct Local or ambient-executable fallback                                                               |

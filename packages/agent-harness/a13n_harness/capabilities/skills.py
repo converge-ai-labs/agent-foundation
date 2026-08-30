@@ -72,7 +72,7 @@ class SkillCatalogItem(BaseModel):
 
 
 class BoundSkillCatalogItem(BaseModel):
-    """One catalog item resolved to an exact Environment binding revision."""
+    """One catalog item resolved to an exact Environment binding version."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -124,12 +124,12 @@ class BoundSkillCatalog(BaseModel):
                 or document != item.document
             ):
                 raise DefinitionError(
-                    "A bound skill catalog no longer matches the current Environment binding revision.",
+                    "A bound skill catalog no longer matches the current Environment binding version.",
                     code="skill_catalog_stale",
                     details={
                         "skill": item.name,
                         "binding_id": item.document.binding_id,
-                        "binding_revision": item.document.binding_revision,
+                        "binding_version": item.document.binding_version,
                     },
                 )
 
@@ -291,7 +291,7 @@ class _PinnedSkillFileOperator:
         provider_path = f"{base}/{relative}" if relative else (base or "/")
         return EnvironmentPath(
             binding_id=route.selection.resolved_path.binding_id,
-            binding_revision=route.selection.resolved_path.binding_revision,
+            binding_version=route.selection.resolved_path.binding_version,
             path=provider_path,
         )
 
@@ -632,7 +632,7 @@ class SkillManager:
                             code="skill_catalog_stale",
                             details={
                                 "binding_id": selection.resolved_path.binding_id,
-                                "binding_revision": selection.resolved_path.binding_revision,
+                                "binding_version": selection.resolved_path.binding_version,
                             },
                         ) from exc
                     unavailable[root] = exc.code
@@ -729,7 +729,7 @@ class _SkillsRunCapability(SkillsCapability):
                     directory=item.directory,
                 )
             )
-            keys[(item.document.binding_id, item.document.binding_revision, item.document.path)] = item
+            keys[(item.document.binding_id, item.document.binding_version, item.document.path)] = item
         self._access_keys = MappingProxyType(keys)
         context.skill_paths.publish(SKILLS_CAPABILITY_ID, skill_paths)
 
@@ -804,7 +804,7 @@ class _SkillsRunCapability(SkillsCapability):
             selected = ctx.deps.environment.resolve_path(path)
         except EnvironmentError:
             return result
-        item = self._access_keys.get((selected.binding_id, selected.binding_revision, selected.path))
+        item = self._access_keys.get((selected.binding_id, selected.binding_version, selected.path))
         if item is None:
             return result
         await ctx.deps.events.emit(
@@ -867,7 +867,7 @@ def _is_path_within_root(candidate: str, root: str) -> bool:
 
 
 def _is_within_root(candidate: EnvironmentPath, root: EnvironmentPath) -> bool:
-    if candidate.binding_id != root.binding_id or candidate.binding_revision != root.binding_revision:
+    if candidate.binding_id != root.binding_id or candidate.binding_version != root.binding_version:
         return False
     normalized_root = root.path.rstrip("/")
     prefix = f"{normalized_root}/" if normalized_root else "/"
@@ -896,7 +896,7 @@ def _require_skill_scan_roots_current(
                 details={
                     "root": root,
                     "binding_id": captured.resolved_path.binding_id,
-                    "binding_revision": captured.resolved_path.binding_revision,
+                    "binding_version": captured.resolved_path.binding_version,
                 },
             )
     for root, previous_code in initially_unresolved.items():
@@ -946,7 +946,7 @@ def _bind_skill_catalog(
                 code="skill_path_unavailable",
                 details={"skill": item.name},
             )
-        key = (document.binding_id, document.binding_revision, document.path)
+        key = (document.binding_id, document.binding_version, document.path)
         previous = resolved_documents.setdefault(key, item.name)
         if previous != item.name:
             raise DefinitionError(

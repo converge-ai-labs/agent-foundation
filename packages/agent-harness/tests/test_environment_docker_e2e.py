@@ -57,14 +57,14 @@ def _operation(action: EnvironmentManagementAction, suffix: str) -> EnvironmentO
     )
 
 
-def _run_binding(attachment: EIPEnvironmentAttachment, *, revision: int):
+def _run_binding(attachment: EIPEnvironmentAttachment, *, version: int):
     return create_environment_run_binding(
         initial_topology=EnvironmentTopologyRequest(
-            topology_version=revision,
+            topology_version=version,
             bindings=(
                 EnvironmentBindingRequest(
                     binding_id="binding-docker",
-                    binding_revision=revision,
+                    binding_version=version,
                     alias="workspace",
                     permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                     default_working_directory="/",
@@ -110,7 +110,7 @@ def test_docker_provider_runs_harness_eip_lifecycle(tmp_path: Path) -> None:
         try:
             async with resource:
                 async with resource.acquire_attachment() as attachment:
-                    binding = _run_binding(attachment, revision=1)
+                    binding = _run_binding(attachment, version=1)
                     async with binding.bind(run_id="run-docker-1", instance=instance) as environment:
                         await environment.activate()
                         await environment.files.write_text(
@@ -181,7 +181,7 @@ def test_docker_provider_runs_harness_eip_lifecycle(tmp_path: Path) -> None:
             state = resumed.state
             async with resumed:
                 async with resumed.acquire_attachment() as attachment:
-                    binding = _run_binding(attachment, revision=2)
+                    binding = _run_binding(attachment, version=2)
                     async with binding.bind(run_id="run-docker-2", instance=instance) as environment:
                         await environment.activate()
                         message = await environment.files.read_text("/workspace/message.txt")

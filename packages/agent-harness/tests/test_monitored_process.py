@@ -64,7 +64,7 @@ class _Processes:
     def __init__(
         self,
         *,
-        binding_revision: int = 1,
+        binding_version: int = 1,
         rebind_error: str | None = None,
         terminal_on_start: bool = False,
     ) -> None:
@@ -74,7 +74,7 @@ class _Processes:
             generation="generation-1",
             process_id="provider-process-1",
         )
-        self.binding_revision = binding_revision
+        self.binding_version = binding_version
         self.handle = self._new_handle()
         self.rebind_error = rebind_error
         self.terminal_on_start = terminal_on_start
@@ -90,21 +90,21 @@ class _Processes:
     def _new_handle(self) -> BoundProcessHandle:
         return BoundProcessHandle(
             binding_id="binding-1",
-            binding_revision=self.binding_revision,
+            binding_version=self.binding_version,
             identity=self.identity,
-            handle=OpaqueProcessHandle._from_payload(f"bound-{self.binding_revision}"),
+            handle=OpaqueProcessHandle._from_payload(f"bound-{self.binding_version}"),
             observed_generation=self.identity.generation,
         )
 
     def refresh_binding(self) -> None:
-        self.binding_revision += 1
+        self.binding_version += 1
         self.handle = self._new_handle()
 
     @staticmethod
-    def _receipt(binding_revision: int = 1) -> EnvironmentOperationReceipt:
+    def _receipt(binding_version: int = 1) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             binding_id="binding-1",
-            binding_revision=binding_revision,
+            binding_version=binding_version,
             observed_generation="generation-1",
             operation_id="operation-1",
             stage="completed",
@@ -146,7 +146,7 @@ class _Processes:
 
     async def start(self, request: CommandRequest, *, alias: str | None = None) -> ProcessStartResult:
         del request, alias
-        return ProcessStartResult(process=self.info(), receipt=self._receipt(self.binding_revision))
+        return ProcessStartResult(process=self.info(), receipt=self._receipt(self.binding_version))
 
     async def rebind(
         self,
@@ -186,12 +186,12 @@ class _Processes:
         self.kill_calls += 1
         self.completed = True
         self.completion.set()
-        return ProcessControlResult(process=self.info(), receipt=self._receipt(self.binding_revision))
+        return ProcessControlResult(process=self.info(), receipt=self._receipt(self.binding_version))
 
     async def release(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
         assert handle == self.handle
         self.release_calls += 1
-        return self._receipt(self.binding_revision)
+        return self._receipt(self.binding_version)
 
 
 class _UnavailableProcesses(_Processes):
@@ -268,7 +268,7 @@ async def test_restored_process_rebinds_to_a_fresh_binding_without_alias_retarge
     state = AgentContextState()
     original, first_manager = await _seed_running_process(state)
     await first_manager.close()
-    restored = _Processes(binding_revision=2)
+    restored = _Processes(binding_version=2)
     second_manager = _manager(restored)
     run = _RunContext(state)
 
@@ -478,7 +478,7 @@ async def test_terminal_release_detaches_process_before_output_and_retries_parti
             info = super().info()
             reference = BoundOutputReference(
                 binding_id="binding-1",
-                binding_revision=self.binding_revision,
+                binding_version=self.binding_version,
                 observed_generation=self.identity.generation,
                 reference=OpaqueOutputReference._from_payload("stdout-1"),
             )
@@ -498,7 +498,7 @@ async def test_terminal_release_detaches_process_before_output_and_retries_parti
             self.release_calls += 1
             if self.release_calls > 1:
                 raise EnvironmentError("already released", code="environment_not_found")
-            return self._receipt(self.binding_revision)
+            return self._receipt(self.binding_version)
 
     class RetryOutputs(_Outputs):
         def __init__(self) -> None:

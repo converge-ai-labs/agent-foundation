@@ -91,12 +91,12 @@ async def test_embedded_task_cell_linearizes_claims_dependencies_and_allocator()
     second = await root.create(CreateTask(subject="Second", description="Second task", blocked_by=(first.id,)))
 
     with pytest.raises(TaskStateError) as blocked:
-        await child.claim(second.id, second.revision)
+        await child.claim(second.id, second.version)
     assert blocked.value.code == "task_blocked"
 
     current_first = (await root.snapshot()).tasks[first.id]
-    claimed = await root.claim(first.id, current_first.revision)
-    repeated = await root.claim(first.id, current_first.revision)
+    claimed = await root.claim(first.id, current_first.version)
+    repeated = await root.claim(first.id, current_first.version)
     assert repeated == claimed
     assert repeated.owner == "root"
 
@@ -107,17 +107,17 @@ async def test_embedded_task_cell_linearizes_claims_dependencies_and_allocator()
     completed = await root.update(
         first.id,
         TaskMutation(status="completed"),
-        expected_revision=claimed.revision,
+        expected_version=claimed.version,
     )
     with pytest.raises(TaskStateError) as cycle:
         await root.update(
             first.id,
             TaskMutation(add_blocked_by=(second.id,)),
-            expected_revision=completed.revision,
+            expected_version=completed.version,
         )
     assert cycle.value.code == "task_dependency_invalid"
 
-    child_claim = await child.claim(second.id, second.revision)
+    child_claim = await child.claim(second.id, second.version)
     assert child_claim.owner == "child-1"
     assert child_claim.status == "in_progress"
 
@@ -127,7 +127,7 @@ async def test_embedded_task_cell_linearizes_claims_dependencies_and_allocator()
     detached = snapshot.tasks
     detached.pop(first.id)
     assert first.id in (await root.snapshot()).tasks
-    assert changed[-1].revision == (await root.snapshot()).revision
+    assert changed[-1].version == (await root.snapshot()).version
 
 
 async def test_embedded_task_cell_mutation_is_atomic_and_owner_bound() -> None:
@@ -148,19 +148,19 @@ async def test_embedded_task_cell_mutation_is_atomic_and_owner_bound() -> None:
         await root.mutate(
             first.id,
             TaskMutation(status="completed", add_blocked_by=(second.id,)),
-            before_invalid.tasks[first.id].revision,
+            before_invalid.tasks[first.id].version,
             claim=True,
         )
     assert invalid.value.code == "task_dependency_invalid"
     assert await root.snapshot() == before_invalid
 
-    claimed = await root.claim(first.id, before_invalid.tasks[first.id].revision)
+    claimed = await root.claim(first.id, before_invalid.tasks[first.id].version)
     before_owner_conflict = await root.snapshot()
     with pytest.raises(TaskStateError) as owner_conflict:
         await child.update(
             first.id,
             TaskMutation(description="cross-owner mutation"),
-            claimed.revision,
+            claimed.version,
         )
     assert owner_conflict.value.code == "task_owner_conflict"
     assert await root.snapshot() == before_owner_conflict
@@ -170,7 +170,7 @@ async def test_embedded_task_cell_mutation_is_atomic_and_owner_bound() -> None:
         await root.mutate(
             first.id,
             TaskMutation(status="completed", description="must roll back"),
-            claimed.revision,
+            claimed.version,
             claim=True,
         )
     assert await root.snapshot() == before_owner_conflict
@@ -190,7 +190,7 @@ async def test_embedded_task_cell_rolls_back_when_state_observer_fails() -> None
         await cell.create(CreateTask(subject="First", description="First task"))
 
     snapshot = await cell.snapshot()
-    assert snapshot.revision == 0
+    assert snapshot.version == 1
     assert snapshot.next_task_sequence == 1
     assert snapshot.tasks == {}
     assert calls == 1
@@ -211,7 +211,7 @@ async def test_working_state_tools_persist_and_refresh_bounded_context() -> None
         if not returns:
             task_update = next(tool for tool in info.function_tools if tool.name == "task_update")
             assert "owner" not in task_update.parameters_json_schema["properties"]
-            assert "expected_revision" not in task_update.parameters_json_schema["properties"]
+            assert "expected_version" not in task_update.parameters_json_schema["properties"]
             assert "clear_active_form" not in task_update.parameters_json_schema["properties"]
             assert "task_claim" not in {tool.name for tool in info.function_tools}
             yield {
@@ -400,10 +400,10 @@ async def test_working_state_context_has_hard_utf8_budget() -> None:
     )
     assert len(projected.encode("utf-8")) <= 1024
     assert "tasks-omitted" in projected
-    assert "revision=" not in projected
+    assert "version=" not in projected
 
 
-async def test_task_list_and_task_results_hide_internal_revisions() -> None:
+async def test_task_list_and_task_results_hide_internal_versions() -> None:
     observed: list[dict[str, Any]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -444,9 +444,9 @@ async def test_task_list_and_task_results_hide_internal_revisions() -> None:
     result = await executable.run("Coordinate", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
-    assert "revision" not in observed[0]["task"]
-    assert "revision" not in observed[1]
-    assert "revision" not in observed[1]["tasks"][0]
+    assert "version" not in observed[0]["task"]
+    assert "version" not in observed[1]
+    assert "version" not in observed[1]["tasks"][0]
 
 
 async def test_working_state_tools_normalize_internal_validation_errors() -> None:
@@ -527,7 +527,7 @@ async def test_provider_mode_requires_fresh_binding_and_discards_mismatched_curs
                         provider_cursor=ProviderTaskCursor(
                             provider_type="old-provider",
                             state_version="old-version",
-                            observed_revision=9,
+                            observed_version=9,
                         ),
                     ).model_dump(mode="json"),
                 )
@@ -562,7 +562,7 @@ async def test_provider_mode_requires_fresh_binding_and_discards_mismatched_curs
     assert restored.provider_cursor == ProviderTaskCursor(
         provider_type="current-provider",
         state_version="2",
-        observed_revision=0,
+        observed_version=1,
     )
 
 

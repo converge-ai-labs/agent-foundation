@@ -331,8 +331,8 @@ def _environment_topology_event(change: EnvironmentTopologyChange) -> HarnessExt
         {
             "kind": item.kind,
             "binding_id": item.binding_id,
-            "previous_revision": item.previous_revision,
-            "current_revision": item.current_revision,
+            "previous_version": item.previous_version,
+            "current_version": item.current_version,
             "previous_alias": item.previous_alias,
             "current_alias": item.current_alias,
         }
@@ -565,27 +565,29 @@ def _reconcile_system_prompt(
     return tuple(reconciled)
 
 
-def _resolve_model_configured_capabilities(
+def _resolve_model_characteristics_capabilities(
     agent: AgentSpec,
     capabilities: tuple[AbstractCapability[AgentContext], ...],
 ) -> tuple[AbstractCapability[AgentContext], ...]:
-    model_configuration = agent.model_configuration if isinstance(agent, HarnessAgentSpec) else None
+    model_characteristics = agent.model_characteristics if isinstance(agent, HarnessAgentSpec) else None
     resolved: list[AbstractCapability[AgentContext]] = []
     for capability in capabilities:
         if isinstance(capability, CompactionCapability) and capability.policy is None:
-            trigger_tokens = model_configuration.compaction_trigger_tokens if model_configuration is not None else None
+            trigger_tokens = (
+                model_characteristics.compaction_trigger_tokens if model_characteristics is not None else None
+            )
             if trigger_tokens is None:
                 raise DefinitionError(
-                    "Automatic compaction requires AgentSpec.model_config.context_window.",
+                    "Automatic compaction requires AgentSpec.model_characteristics.context_window.",
                     code="compaction_policy_unresolved",
                 )
             resolved.append(CompactionCapability(CompactionPolicy(trigger_tokens=trigger_tokens)))
             continue
-        if isinstance(capability, HandoffCapability) and model_configuration is not None:
+        if isinstance(capability, HandoffCapability) and model_characteristics is not None:
             configuration = capability.configuration
             threshold_fields = {"include_summary_reminder", "summary_reminder_tokens"}
             if not threshold_fields.intersection(configuration.model_fields_set):
-                proactive_threshold = model_configuration.proactive_context_management_threshold
+                proactive_threshold = model_characteristics.proactive_context_management_threshold
                 if proactive_threshold is None:
                     configuration = configuration.model_copy(
                         update={"include_summary_reminder": False},
@@ -593,8 +595,8 @@ def _resolve_model_configured_capabilities(
                     )
                     resolved.append(HandoffCapability(configuration))
                     continue
-                if model_configuration.context_window is not None:
-                    reminder_tokens = model_configuration.summary_reminder_tokens
+                if model_characteristics.context_window is not None:
+                    reminder_tokens = model_characteristics.summary_reminder_tokens
                     assert reminder_tokens is not None
                     configuration = configuration.model_copy(
                         update={"summary_reminder_tokens": reminder_tokens},
@@ -785,7 +787,7 @@ class HarnessBuilder:
         configured_plugins = self._create_configured_plugins()
         plugins, plugin_capabilities = bind_agent_plugins((*definition.plugins, *configured_plugins))
         _validate_capability_source(plugin_capabilities, source="plugin")
-        authored_capabilities = _resolve_model_configured_capabilities(
+        authored_capabilities = _resolve_model_characteristics_capabilities(
             definition.agent,
             (*definition.capabilities, *plugin_capabilities),
         )
@@ -1304,8 +1306,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 state=context_state,
                 environment=environment,
                 model_resolver=self._bindings.model_resolver,
-                model_configuration=(
-                    self._executable.definition.agent.model_configuration
+                model_characteristics=(
+                    self._executable.definition.agent.model_characteristics
                     if isinstance(self._executable.definition.agent, HarnessAgentSpec)
                     else None
                 ),

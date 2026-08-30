@@ -27,7 +27,7 @@ class AgentRevisionRef:
 Resolving an Agent ID and version returns this exact reference or fails; it never manufactures a different identity. The complete revision contains only Foundation-owned serializable data and exact references, including:
 
 - logical Agent instructions and typed input/output declarations;
-- one exact `model_id` plus concrete Harness model configuration and native model settings;
+- one exact `model_id` plus concrete Harness model characteristics and native model settings;
 - Capability, Tool, Connector, and Environment declarations under their owning
   Foundation schemas plus exact managed Skill revision locks and exposure under
   [Foundation Skill Management](27-skill-management.md#agent-revision-selection);
@@ -176,7 +176,7 @@ work. It validates the Turn's effective Skill names against the selected
 AgentRevision, verifies the corresponding exact revisions and package objects, then
 uses the [Skill Worker materialization contract](27-skill-management.md#worker-materialization-and-harness-use)
 to populate explicit Environment-backed roots and construct the run override
-before Harness model exposure. It reconstructs Harness `ModelConfiguration` and
+before Harness model exposure. It reconstructs Harness `HarnessModelCharacteristics` and
 native `ModelSettings` from the revision's concrete behavior settings and the
 Turn's model snapshot, without alias or current-configuration lookup. After
 claim and before Harness entry, it ensures that every managed plugin lock is
