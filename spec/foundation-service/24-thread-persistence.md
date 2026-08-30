@@ -5,9 +5,9 @@
 Foundation persists every hosted `Thread` as an independent versioned
 relational resource. The Thread row is the authority for Session membership,
 Thread origin, the most recently accepted Turn, the selected continuation
-head, and compare-and-swap serialization of accepted advancement. A Thread is
-not a grouping inferred from Turn timestamps or a `thread_id` copied into
-otherwise unrelated rows.
+head, compare-and-swap serialization of accepted advancement, and an
+independent queue revision. A Thread is not a grouping inferred from Turn
+timestamps or a `thread_id` copied into otherwise unrelated rows.
 
 The shared [Platform Interaction Model](../interaction-model.md) owns the
 cross-platform meaning of Thread. The Harness owns creation and preservation of
@@ -20,24 +20,26 @@ own status rather than another stored Thread pointer.
 
 Foundation never creates an empty Thread. Root, fork, and child acceptance each
 create one Thread together with its first Turn, initial complete Turn state,
-idempotency evidence, lifecycle facts, and outbox intents. Later bounded-input
-submission, authenticated feedback, and retry acceptance create another Turn
-and advance the existing Thread under its current version.
+idempotency evidence, lifecycle facts, and outbox intents. Later immediate
+submission, queued-submission consumption, authenticated feedback, and retry
+acceptance create another Turn and advance the existing Thread under its
+current version; queue-only admission does not.
 
 ## Boundaries
 
-| Concern                                                                   | Owner                                                                               | Contract                                                                                                                                    |
-| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                                   | [Platform Interaction Model](../interaction-model.md)                               | Defines identity and cross-platform relationships                                                                                           |
-| `thread_id` creation, preservation, and fork transformation               | [Harness State](../agent-harness/10-snapshot-and-resume.md)                         | Supplies one stable ID inside complete continuation state                                                                                   |
-| Durable Thread resource, version, origin, current Turn, and selected head | This contract                                                                       | Serializes Foundation Thread advancement and supplies read authority                                                                        |
-| Persisted Session membership and root selection                           | This contract                                                                       | Requires one existing Session container and exactly one retained root Thread; other Session product metadata remains outside the Thread row |
-| Turn row, state object, parent edge, scheduling, and outcome              | [Durable Turn State](14-turn-persistence.md)                                        | Owns one accepted advancement and its resumable state                                                                                       |
-| TurnAttempt lease, generation, and stale-writer fence                     | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                  | Authorizes worker mutation of the current Turn while it is active                                                                           |
-| Agent invocation and advancement commands                                 | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) | Accepts start, existing-Thread continuation, atomic waiting feedback, fork, and retry                                                       |
-| Thread inbox entries, steer, interrupt, and control wakeups               | [Agent Control: Active Execution](35-agent-control-active-execution.md)             | Persists kind-owned inbound work separately from the Thread row and keeps Redis cursors outside relational state                            |
-| Public resource catalog and wire read models                              | [Management API](21-management-api.md)                                              | Exposes authorized Thread reads and common API behavior                                                                                     |
-| Agent-facing history retrieval                                            | [Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                    | Projects authorized Thread and Turn data without becoming authority                                                                         |
+| Concern                                                                    | Owner                                                                               | Contract                                                                                                                                    |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                                    | [Platform Interaction Model](../interaction-model.md)                               | Defines identity and cross-platform relationships                                                                                           |
+| `thread_id` creation, preservation, and fork transformation                | [Harness State](../agent-harness/10-snapshot-and-resume.md)                         | Supplies one stable ID inside complete continuation state                                                                                   |
+| Durable Thread resource, versions, origin, current Turn, and selected head | This contract                                                                       | Serializes Foundation Thread advancement and queued-submission mutation and supplies read authority                                         |
+| Persisted Session membership and root selection                            | This contract                                                                       | Requires one existing Session container and exactly one retained root Thread; other Session product metadata remains outside the Thread row |
+| Turn row, state object, parent edge, scheduling, and outcome               | [Durable Turn State](14-turn-persistence.md)                                        | Owns one accepted advancement and its resumable state                                                                                       |
+| TurnAttempt lease, generation, and stale-writer fence                      | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                  | Authorizes worker mutation of the current Turn while it is active                                                                           |
+| Agent invocation and advancement commands                                  | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) | Accepts start, existing-Thread continuation, atomic waiting feedback, fork, and retry                                                       |
+| Queue-if-busy ordinary input                                               | [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md)         | Owns immediate-versus-queued admission, queue rows, ordering, editing, and atomic consumption into a Turn                                   |
+| Thread inbox entries, steer, interrupt, and control wakeups                | [Agent Control: Active Execution](35-agent-control-active-execution.md)             | Persists kind-owned inbound work separately from the Thread row and keeps Redis cursors outside relational state                            |
+| Public resource catalog and wire read models                               | [Management API](21-management-api.md)                                              | Exposes authorized Thread reads and common API behavior                                                                                     |
+| Agent-facing history retrieval                                             | [Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                    | Projects authorized Thread and Turn data without becoming authority                                                                         |
 
 A Thread row contains no message history, Thread inbox payload, Harness state,
 Item payload, provider state, credential, worker lease, queue entry, Redis
@@ -57,6 +59,7 @@ type ThreadOriginKind = Literal["new", "fork", "child"]
 class Thread:
     id: str
     version: int
+    queue_version: int
     tenant_id: str
     session_id: str
 
@@ -82,7 +85,18 @@ when the Thread and first Turn commit and increases by one for every accepted
 Thread advancement and every transition that seals the current Turn. Idempotent
 replay resolves before comparing an expected version. Claim, execution, and
 worker recovery inside the same current Turn use the Turn's own version and do
-not change the Thread version.
+not change the Thread version. A state-first combined completion and queued
+successor acceptance applies both logically ordered changes in one transaction
+and therefore increments `version` by two.
+
+`queue_version` is a non-negative revision of the Thread's queued-submission
+collection. It starts at `0` and increases for every add, edit, delete, reorder,
+or consume mutation. Queue-only mutation does not change `version`,
+`current_turn_id`, or `head_turn_id`. Consuming an entry increments both
+`queue_version` and `version` because the same transaction changes the queue and
+accepts another Turn. When that consumption is combined with completion of the
+prior current Turn, `queue_version` still increments once while `version`
+increments twice: once for the seal and once for the advancement.
 
 `session_id`, `role`, origin fields, and `created_at` are immutable. Exactly one
 Thread with `role="root"` belongs to a retained Session. A child Thread remains
@@ -125,18 +139,32 @@ sole active Turn. A current Turn in `waiting`, `completed`, `failed`, or
 separate status or active-Turn pointer. Intermediate claim and recovery
 transitions remain Turn lifecycle facts and do not advance the Thread version.
 
-Acceptance sets `current_turn_id` to the new Turn and preserves the prior head.
+Existing-Thread acceptance sets `current_turn_id` to the new Turn. Ordinary
+Continue, Feedback, Retry, and queued-submission consumption preserve the prior
+head. When that head is null after a failed or cancelled current Turn, Continue
+or queue consumption can accept a root-like Turn and preserve the null head
+until the successor seals. Continue From instead sets `head_turn_id` to its
+explicit completed source in the same transaction that creates the new Turn;
+ordinary Continue and Feedback already use the selected head, so applying the
+same rule would not change their visible head selection.
 A `waiting` or `completed` outcome requires that the sealing Turn is still
-current, retains it as `current_turn_id`, selects it as `head_turn_id`, and
-advances the Thread version in the same short transaction that seals the Turn.
-A `failed` or `cancelled` outcome likewise requires the current Turn, retains it
-as `current_turn_id`, preserves the prior head, and advances the Thread version.
+current at transaction entry and selects it as `head_turn_id`. An ordinary seal
+also retains it as `current_turn_id` and advances the Thread version once. A
+completed outcome using the queued-submission contract's [state-first combined
+handoff](36-agent-control-queued-submissions.md#completion-time-combined-handoff)
+instead inserts an already-state-backed successor, leaves the completed source
+as head, selects the successor as current, advances the Thread version twice,
+and advances the queue version once in the same transaction. A `failed` or
+`cancelled` outcome likewise requires the current Turn, retains it as
+`current_turn_id`, preserves the prior head, and advances the Thread version.
 
 `head_turn_id` selects an eligible frozen state base, not a generic permission
-to submit any input. A completed head can serve ordinary continuation. A
-waiting head can serve only the exact authenticated feedback or other operation
-allowed by its pending-state contract. Authorization, consumed pending facts,
-compatibility, and operation-specific policy remain independently required.
+to submit any input. A completed head can serve ordinary continuation. A null
+head after a failed or cancelled current Turn permits root-like acceptance with
+empty state in the same Thread. A waiting head can serve only the exact
+authenticated feedback or other operation allowed by its pending-state
+contract. Authorization, consumed pending facts, compatibility, and
+operation-specific policy remain independently required.
 
 This separation lets the [terminal-intent retry
 contract](34-agent-control-input-and-continuation.md#retry-of-terminal-intent)
@@ -150,12 +178,12 @@ have no local head. The terminal source never becomes an eligible parent.
 The conceptual model materializes as one row in `threads`. Supported relational
 backends preserve the same validation and query semantics.
 
-| Column group       | Columns                                                     | Relational contract                                                                                     |
-| ------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Identity and scope | `id`, `version`, `tenant_id`, `session_id`                  | `id` is the primary key; version is positive; Session membership is immutable                           |
-| Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_turn_id` | Immutable validated provenance; origin references can cross Session only for an authorized Session fork |
-| Advancement        | `head_turn_id`, `current_turn_id`                           | Same-Thread Turn references updated only by accepted advancement or outcome commit                      |
-| Time               | `created_at`, `updated_at`                                  | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                   |
+| Column group       | Columns                                                     | Relational contract                                                                                                      |
+| ------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Identity and scope | `id`, `version`, `queue_version`, `tenant_id`, `session_id` | `id` is the primary key; advancement version is positive; queue version is non-negative; Session membership is immutable |
+| Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_turn_id` | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
+| Advancement        | `head_turn_id`, `current_turn_id`                           | Same-Thread Turn references updated only by accepted advancement or outcome commit                                       |
+| Time               | `created_at`, `updated_at`                                  | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
 
 The relational contract preserves these constraints:
 
@@ -175,6 +203,9 @@ The relational contract preserves these constraints:
    cross-tenant origins are rejected.
 7. A committed Thread row and its first Turn always exist together. Neither
    becomes independently visible without the other.
+8. `queue_version` starts at zero, is non-negative, and changes only under the
+   queued-submission mutation contract; consumption updates it in the same
+   transaction that advances the Thread.
 
 The accepted access paths are:
 
@@ -183,6 +214,7 @@ The accepted access paths are:
 | Exact Thread read and version lock | Unique `(tenant_id, id)`                                                  |
 | Session Thread listing             | `(tenant_id, session_id, created_at, id)`                                 |
 | Updated Thread listing             | `(tenant_id, session_id, updated_at, id)`                                 |
+| Queue mutation lock                | Unique `(tenant_id, id)` plus `queue_version`                             |
 | Current or head Turn join          | Same-tenant unique Turn references stored on the Thread                   |
 | Origin traversal                   | `(tenant_id, origin_turn_id, id)` and `(tenant_id, origin_thread_id, id)` |
 | One root Thread per Session        | Partial unique `(tenant_id, session_id)` for root role                    |
@@ -233,8 +265,9 @@ rolls back, published objects are non-authoritative cleanup candidates.
 ## Reads and History Selection
 
 An exact Thread read comes from `threads` under current authorization. It
-returns safe identity, version, Session, role, currently authorized origin
-references, the head and current Turn references, and timestamps. A concealed
+returns safe identity, advancement and queue versions, Session, role, currently
+authorized origin references, the head and current Turn references, and
+timestamps. A concealed
 origin reference is omitted rather than exposing another Session or Turn by
 possession.
 A Session Thread listing pages authorized Thread rows directly and can join
@@ -253,8 +286,8 @@ projections and cannot repair or advance Thread state.
 
 Foundation exposes no independent hard-delete mutation for a Thread. Session and
 interaction-retention policy can remove a Thread only after no retained Turn,
-state object, Thread inbox entry, Item, event, usage record, child relationship,
-fork origin, or idempotency evidence requires it. Expiry of the Thread's Redis
+state object, queued submission, Thread inbox entry, Item, event, usage record,
+child relationship, fork origin, or idempotency evidence requires it. Expiry of the Thread's Redis
 control Stream and consumer group does not remove the Thread or its inbox.
 Removing presentation detail never removes the Thread row or changes its head.
 
@@ -265,7 +298,7 @@ complete.
 
 ## Security and Authorization
 
-Every create, read, advance, fork, retry, feedback, and retention operation
+Every create, read, advance, queue mutation, fork, retry, feedback, and retention operation
 authorizes the Thread through its current tenant, Session, Workspace policy, and
 action. Origin and Turn references grant no access by possession. A concealed
 Thread returns the same bounded not-found behavior as another concealed
@@ -279,21 +312,23 @@ the new state.
 
 ## Failure Semantics
 
-| Failure                                                             | Durable outcome                                                 | Retry or reconciliation                                                  |
-| ------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Authorization, origin, parent, or version validation fails          | No Thread or Turn mutation                                      | Caller refreshes authority or resource version                           |
-| Initial state publication fails                                     | No Thread or Turn is accepted                                   | Retry with the same idempotency key                                      |
-| State publishes but relational creation or advancement rolls back   | Existing Thread is unchanged; new objects are non-authoritative | Same-key retry or orphan cleanup after ownership proof                   |
-| Response is lost after commit                                       | Thread and Turn may already exist                               | Repeat the same idempotency key and canonical request                    |
-| Concurrent advancement wins                                         | Losing request changes nothing                                  | Read the current Thread and decide against its new version and head      |
-| Current Turn seals while another command uses an older version      | Sealing wins and increments Thread version                      | Stale command conflicts and rereads the Thread                           |
-| Referenced head or current Turn is missing or mismatched            | Thread fails closed as relational corruption                    | Readiness or repair restores a verified consistent relational state      |
-| Stale TurnAttempt tries to seal a non-current Turn or select a head | Mutation is fenced and rejected                                 | Current TurnAttempt or transactional Worker takeover owns the transition |
+| Failure                                                                | Durable outcome                                                 | Retry or reconciliation                                                        |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Authorization, origin, parent, or version validation fails             | No Thread or Turn mutation                                      | Caller refreshes authority or resource version                                 |
+| Initial state publication fails                                        | No Thread or Turn is accepted                                   | Retry with the same idempotency key                                            |
+| State publishes but relational creation or advancement rolls back      | Existing Thread is unchanged; new objects are non-authoritative | Same-key retry or orphan cleanup after ownership proof                         |
+| Response is lost after commit                                          | Thread and Turn may already exist                               | Repeat the same idempotency key and canonical request                          |
+| Concurrent advancement wins                                            | Losing request changes nothing                                  | Read the current Thread and decide against its new version and head            |
+| Current Turn seals while another command uses an older version         | Sealing wins and increments Thread version                      | Stale command conflicts and rereads the Thread                                 |
+| Combined completion and queued acceptance loses any final precondition | No part of that combined transaction mutates the Thread         | Re-evaluate ordinary completion; later terminal recovery can consume the queue |
+| Referenced head or current Turn is missing or mismatched               | Thread fails closed as relational corruption                    | Readiness or repair restores a verified consistent relational state            |
+| Stale TurnAttempt tries to seal a non-current Turn or select a head    | Mutation is fenced and rejected                                 | Current TurnAttempt or transactional Worker takeover owns the transition       |
 
 ## Compatibility
 
-Thread identity, Session membership, role, origin meaning, version semantics,
-and the meanings of the head and current Turn references are durable API
+Thread identity, Session membership, role, origin meaning, advancement and
+queue-version semantics, and the meanings of the head and current Turn
+references are durable API
 compatibility facts. Changing any of those meanings requires an incompatible API
 contract and a reviewed relational migration.
 
@@ -321,14 +356,27 @@ mutable selector rather than another transcript or checkpoint store.
 04. Exactly one retained root Thread belongs to a Session; child and fork histories use distinct Thread IDs.
 05. `current_turn_id` always names the most recently accepted Turn and is never inferred from time or event order; it is the sole active Turn exactly while its status is `accepted` or `running`.
 06. `head_turn_id` is null until the Thread selects a sealed waiting or completed Turn and never names a failed or cancelled Turn.
-07. Thread version changes on accepted advancement and whenever the current Turn seals; claim, execution, and worker recovery inside one Turn do not change it.
+07. Thread version changes once on accepted advancement and once whenever the current Turn seals; a combined completed seal and queued acceptance applies both increments in one transaction, while claim, execution, worker recovery, and queue-only mutation do not change it.
 08. Ordinary continuation uses the exact selected completed head as
-    `parent_turn_id`; feedback uses the exact waiting head, retry copies its
-    terminal source's eligible state-parent edge, and fork and child creation
-    apply their explicit owning contracts.
+    `parent_turn_id`, except that a null head after a failed or cancelled
+    current Turn permits root-like acceptance with no parent; Continue From
+    atomically reselects its exact completed historical source as head while
+    creating the successor; feedback uses the exact waiting head, retry copies
+    its terminal source's eligible state-parent edge, and fork and child
+    creation apply their explicit owning contracts.
 09. Idempotency replay resolves before `expected_thread_version`, and a losing concurrency check changes neither Thread nor Turn state.
 10. No Thread mutation transaction spans Harness execution, object I/O, provider calls, Redis, streaming, sleeps, or other external work.
 11. Thread identity, origin, Turn references, cursors, and object locators grant no authority by possession.
 12. Turn state, Items, events, provider state, and presentation history never substitute for the durable Thread row.
 13. Thread inbox rows and Redis control-group cursors remain separate from the
     Thread resource; neither changes current-Turn or continuation-head meaning.
+14. `queue_version` changes on every queued-submission mutation; consuming an
+    entry atomically increments the queue version and creates one accepted
+    Turn. It increments the advancement version once, or twice when the same
+    transaction also seals the completed source; no queue-only mutation creates
+    a Turn.
+15. A state-first combined handoff can atomically select a completed source as
+    head and an accepted queued successor as current. If that path is
+    unavailable, terminal Thread state and a non-empty queue can coexist until
+    recovery drain or while consumption validation is blocked; direct Continue
+    never bypasses that queue.

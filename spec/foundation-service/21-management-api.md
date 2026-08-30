@@ -12,8 +12,8 @@ deferred work, Environment configuration, events, and raw usage. The API follows
 [Identity and Access Management contract](10-identity-and-access-management.md);
 this document owns the Foundation resource catalog, common command boundaries,
 read models, and cross-resource mutation behavior. Agent invocation,
-continuation, deferred feedback, and active control routes are owned by their
-dedicated control contracts.
+continuation, queued submission, deferred feedback, and active control routes
+are owned by their dedicated control contracts.
 
 Workspace Skill route bodies, ZIP staging, GitHub selectors, revision receipts,
 authorization, and error codes are owned in detail by [Foundation Skill
@@ -46,50 +46,51 @@ Workspace collections return only resources visible under current policy. A conc
 
 The following paths are relative to `/api/v1` and are the owning collection and command surfaces. Child reads can also return canonical links to their top-level resource representation; aliases do not create another identity.
 
-| Resource                  | Core routes                                                                                                                                 | Notes                                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Authentication            | `/auth/login`, `/auth/logout`, `/auth/password-reset`, `/auth/password-reset/complete`                                                      | Local password and browser-session boundary; no public signup                                      |
-| Current User and sessions | `/users/me`, `/users/me/auth-sessions`                                                                                                      | Self profile and browser-session lifecycle                                                         |
-| Organizations             | `/organizations`, `/organizations/{organization_id}`                                                                                        | OSS reads its singleton and updates safe settings; no create, delete, transfer, or switch          |
-| Organization RoleBindings | `/organizations/{organization_id}/role-bindings`                                                                                            | Canonical Organization grants; `/members` is an authorized User projection                         |
-| Organization invitations  | `/organizations/{organization_id}/invitations`                                                                                              | Email invitation with one or more validated grants                                                 |
-| Workspaces                | `/organizations/{organization_id}/workspaces`, `/workspaces/{workspace_id}`                                                                 | Organization-owned collaboration and resource-isolation boundary                                   |
-| Workspace RoleBindings    | `/workspaces/{workspace_id}/role-bindings`                                                                                                  | Canonical Workspace grants; `/members` is an authorized User projection                            |
-| Workspace invitations     | `/workspaces/{workspace_id}/invitations`                                                                                                    | Workspace Admin invitation with automatic Organization Member grant                                |
-| Service Accounts          | `/workspaces/{workspace_id}/service-accounts`, `/service-accounts/{service_account_id}`                                                     | Workspace-owned non-human Principal lifecycle                                                      |
-| Personal API keys         | `/workspaces/{workspace_id}/personal-api-keys`, `/api-keys/{api_key_id}`                                                                    | Current User's Workspace-bound keys; safe Admin metadata projection                                |
-| Service Account API keys  | `/service-accounts/{service_account_id}/api-keys`, `/api-keys/{api_key_id}`                                                                 | Admin-managed Workspace-bound keys                                                                 |
-| Agent Presets             | `/workspaces/{workspace_id}/agent-presets`, `/agent-presets/{agent_preset_id}`                                                              | Mutable authoring configuration and active-Version pointer                                         |
-| Agent Preset Versions     | `/agent-presets/{agent_preset_id}/versions`, `/agent-preset-versions/{agent_preset_version_id}`                                             | Immutable paginated collection and exact Version read; no in-place mutation                        |
-| Plugins                   | `/plugins`, `/plugins/{plugin_id}`                                                                                                          | Deployment-level stable identity; active-Version pointer is runner-profile-only                    |
-| Plugin Versions           | `/plugins/{plugin_id}/versions`, `/plugin-versions/{plugin_version_id}`                                                                     | Immutable artifact metadata; no in-place mutation                                                  |
-| Skill uploads             | `/workspaces/{workspace_id}/skill-uploads`, `/skill-uploads/{upload_id}`                                                                    | Expiring bounded ZIP staging receipts; not Agent or package authority                              |
-| Skills                    | `/workspaces/{workspace_id}/skills`, `/skills/{skill_id}`                                                                                   | Stable Workspace resources with versioned display/head selection                                   |
-| Skill revisions           | `/skills/{skill_id}/revisions`, `/skill-revisions/{skill_revision_id}`, `/skill-revisions/{skill_revision_id}/content`                      | Immutable normalized packages; binary content download is separately authorized                    |
-| Model Providers           | `/model-providers`                                                                                                                          | Read-only trusted Provider registry; not an installation API                                       |
-| Models                    | `/workspaces/{workspace_id}/models`, `/workspaces/{workspace_id}/models/{model_id}`                                                         | Mutable current ModelConfig resources with strong ETag concurrency                                 |
-| Connector Providers       | `/connector-providers`, `/connector-providers/{provider_key}`                                                                               | Read-only catalog of deployment-trusted Provider metadata; not an installation API                 |
-| Connectors                | `/workspaces/{workspace_id}/connectors`, `/connectors/{connector_id}`                                                                       | Stable Workspace resources; create atomically includes revision `1`                                |
-| Connector revisions       | `/connectors/{connector_id}/revisions`, `/connector-revisions/{connector_revision_id}`                                                      | Immutable create/read configuration revisions                                                      |
-| Connections               | `/workspaces/{workspace_id}/connections`, `/connections/{connection_id}`                                                                    | Safe account and lifecycle projection; credentials and Provider state remain private               |
-| Triggers                  | `/workspaces/{workspace_id}/triggers`, `/triggers/{trigger_id}`                                                                             | Mutable schedule or Connector-event source targeting one stable AgentPreset                        |
-| Sessions                  | `/workspaces/{workspace_id}/sessions`                                                                                                       | Hosted interaction tree and product/presentation scope                                             |
-| Threads                   | `/sessions/{session_id}/threads`, `/threads/{thread_id}`                                                                                    | Independently versioned advancing histories within one Session                                     |
-| Turns                     | `/workspaces/{workspace_id}/turns`, `/threads/{thread_id}/turns`, `/turns/{turn_id}`, `/turns/{turn_id}/lineage`                            | Root or continued Host-accepted advancement and exact ancestor lineage                             |
-| Steer receipts            | `/turns/{turn_id}/steers/{steer_id}`                                                                                                        | Exact authorized acceptance and consumption status for one submitted active-Turn steer             |
-| Items                     | `/turns/{turn_id}/items`                                                                                                                    | Ordered user-visible semantic records                                                              |
-| TurnAttempts              | `/turns/{turn_id}/attempts`, `/turn-attempts/{turn_attempt_id}`                                                                             | Read-only operational history; workers mutate internally                                           |
-| Pending actions           | `/turns/{turn_id}/pending-actions`                                                                                                          | Read-only projections of one waiting Turn's frozen pending set                                     |
-| Environment Providers     | `/environment-providers`, `/workspaces/{workspace_id}/environment-providers/{provider_key}`                                                 | Read-only trusted catalog plus exact Workspace provider selection                                  |
-| Environments              | `/workspaces/{workspace_id}/environments`, `/environments/{environment_id}`                                                                 | Stable named connection configuration and current immutable revision                               |
-| Environment revisions     | `/environments/{environment_id}/revisions`, `/environment-revisions/{environment_revision_id}`                                              | Immutable connection configuration, credential references, permissions, and connector lock         |
-| Secrets                   | Routes owned by [Secret Management](11-secret-management.md)                                                                                | Workspace and User ownership with metadata-only reads and write-only values                        |
-| Security audit            | `/organizations/{organization_id}/security-audit-events`, `/workspaces/{workspace_id}/security-audit-events`, `/users/me/security-activity` | IAM-owned bounded security projections                                                             |
-| Lifecycle events          | `/workspaces/{workspace_id}/events`, `/turns/{turn_id}/events`, `/turn-attempts/{turn_attempt_id}/events`                                   | Workspace cursor replay plus resource-sequence gap recovery                                        |
-| Turn stream               | `GET /turns/{turn_id}/stream`                                                                                                               | Detailed Turn SSE with bounded replay and live cutover                                             |
-| Native notifications      | `WS /notifications`                                                                                                                         | Explicit Thread or Workspace subscriptions; best-effort wake-ups without replay                    |
-| Hook subscriptions        | `/workspaces/{workspace_id}/hook-subscriptions`, `/hook-subscriptions/{hook_subscription_id}`                                               | Long-lived creation plus management of every durable subscription, including Turn-inline resources |
-| Usage records             | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                                     |
+| Resource                     | Core routes                                                                                                                                 | Notes                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Authentication               | `/auth/login`, `/auth/logout`, `/auth/password-reset`, `/auth/password-reset/complete`                                                      | Local password and browser-session boundary; no public signup                                      |
+| Current User and sessions    | `/users/me`, `/users/me/auth-sessions`                                                                                                      | Self profile and browser-session lifecycle                                                         |
+| Organizations                | `/organizations`, `/organizations/{organization_id}`                                                                                        | OSS reads its singleton and updates safe settings; no create, delete, transfer, or switch          |
+| Organization RoleBindings    | `/organizations/{organization_id}/role-bindings`                                                                                            | Canonical Organization grants; `/members` is an authorized User projection                         |
+| Organization invitations     | `/organizations/{organization_id}/invitations`                                                                                              | Email invitation with one or more validated grants                                                 |
+| Workspaces                   | `/organizations/{organization_id}/workspaces`, `/workspaces/{workspace_id}`                                                                 | Organization-owned collaboration and resource-isolation boundary                                   |
+| Workspace RoleBindings       | `/workspaces/{workspace_id}/role-bindings`                                                                                                  | Canonical Workspace grants; `/members` is an authorized User projection                            |
+| Workspace invitations        | `/workspaces/{workspace_id}/invitations`                                                                                                    | Workspace Admin invitation with automatic Organization Member grant                                |
+| Service Accounts             | `/workspaces/{workspace_id}/service-accounts`, `/service-accounts/{service_account_id}`                                                     | Workspace-owned non-human Principal lifecycle                                                      |
+| Personal API keys            | `/workspaces/{workspace_id}/personal-api-keys`, `/api-keys/{api_key_id}`                                                                    | Current User's Workspace-bound keys; safe Admin metadata projection                                |
+| Service Account API keys     | `/service-accounts/{service_account_id}/api-keys`, `/api-keys/{api_key_id}`                                                                 | Admin-managed Workspace-bound keys                                                                 |
+| Agent Presets                | `/workspaces/{workspace_id}/agent-presets`, `/agent-presets/{agent_preset_id}`                                                              | Mutable authoring configuration and active-Version pointer                                         |
+| Agent Preset Versions        | `/agent-presets/{agent_preset_id}/versions`, `/agent-preset-versions/{agent_preset_version_id}`                                             | Immutable paginated collection and exact Version read; no in-place mutation                        |
+| Plugins                      | `/plugins`, `/plugins/{plugin_id}`                                                                                                          | Deployment-level stable identity; active-Version pointer is runner-profile-only                    |
+| Plugin Versions              | `/plugins/{plugin_id}/versions`, `/plugin-versions/{plugin_version_id}`                                                                     | Immutable artifact metadata; no in-place mutation                                                  |
+| Skill uploads                | `/workspaces/{workspace_id}/skill-uploads`, `/skill-uploads/{upload_id}`                                                                    | Expiring bounded ZIP staging receipts; not Agent or package authority                              |
+| Skills                       | `/workspaces/{workspace_id}/skills`, `/skills/{skill_id}`                                                                                   | Stable Workspace resources with versioned display/head selection                                   |
+| Skill revisions              | `/skills/{skill_id}/revisions`, `/skill-revisions/{skill_revision_id}`, `/skill-revisions/{skill_revision_id}/content`                      | Immutable normalized packages; binary content download is separately authorized                    |
+| Model Providers              | `/model-providers`                                                                                                                          | Read-only trusted Provider registry; not an installation API                                       |
+| Models                       | `/workspaces/{workspace_id}/models`, `/workspaces/{workspace_id}/models/{model_id}`                                                         | Mutable current ModelConfig resources with strong ETag concurrency                                 |
+| Connector Providers          | `/connector-providers`, `/connector-providers/{provider_key}`                                                                               | Read-only catalog of deployment-trusted Provider metadata; not an installation API                 |
+| Connectors                   | `/workspaces/{workspace_id}/connectors`, `/connectors/{connector_id}`                                                                       | Stable Workspace resources; create atomically includes revision `1`                                |
+| Connector revisions          | `/connectors/{connector_id}/revisions`, `/connector-revisions/{connector_revision_id}`                                                      | Immutable create/read configuration revisions                                                      |
+| Connections                  | `/workspaces/{workspace_id}/connections`, `/connections/{connection_id}`                                                                    | Safe account and lifecycle projection; credentials and Provider state remain private               |
+| Triggers                     | `/workspaces/{workspace_id}/triggers`, `/triggers/{trigger_id}`                                                                             | Mutable schedule or Connector-event source targeting one stable AgentPreset                        |
+| Sessions                     | `/workspaces/{workspace_id}/sessions`                                                                                                       | Hosted interaction tree and product/presentation scope                                             |
+| Threads                      | `/sessions/{session_id}/threads`, `/threads/{thread_id}`                                                                                    | Independently versioned advancing histories within one Session                                     |
+| Thread submissions and queue | `/threads/{thread_id}/submissions`, `/threads/{thread_id}/queued-submissions`, `/queued-submissions/{queued_submission_id}`                 | Queue-if-busy input plus editable ordered queued resources; a queued entry is not a Turn           |
+| Turns                        | `/workspaces/{workspace_id}/turns`, `/threads/{thread_id}/turns`, `/turns/{turn_id}`, `/turns/{turn_id}/lineage`                            | Root or continued Host-accepted advancement and exact ancestor lineage                             |
+| Steer receipts               | `/turns/{turn_id}/steers/{steer_id}`                                                                                                        | Exact authorized acceptance and consumption status for one submitted active-Turn steer             |
+| Items                        | `/turns/{turn_id}/items`                                                                                                                    | Ordered user-visible semantic records                                                              |
+| TurnAttempts                 | `/turns/{turn_id}/attempts`, `/turn-attempts/{turn_attempt_id}`                                                                             | Read-only operational history; workers mutate internally                                           |
+| Pending actions              | `/turns/{turn_id}/pending-actions`                                                                                                          | Read-only projections of one waiting Turn's frozen pending set                                     |
+| Environment Providers        | `/environment-providers`, `/workspaces/{workspace_id}/environment-providers/{provider_key}`                                                 | Read-only trusted catalog plus exact Workspace provider selection                                  |
+| Environments                 | `/workspaces/{workspace_id}/environments`, `/environments/{environment_id}`                                                                 | Stable named connection configuration and current immutable revision                               |
+| Environment revisions        | `/environments/{environment_id}/revisions`, `/environment-revisions/{environment_revision_id}`                                              | Immutable connection configuration, credential references, permissions, and connector lock         |
+| Secrets                      | Routes owned by [Secret Management](11-secret-management.md)                                                                                | Workspace and User ownership with metadata-only reads and write-only values                        |
+| Security audit               | `/organizations/{organization_id}/security-audit-events`, `/workspaces/{workspace_id}/security-audit-events`, `/users/me/security-activity` | IAM-owned bounded security projections                                                             |
+| Lifecycle events             | `/workspaces/{workspace_id}/events`, `/turns/{turn_id}/events`, `/turn-attempts/{turn_attempt_id}/events`                                   | Workspace cursor replay plus resource-sequence gap recovery                                        |
+| Turn stream                  | `GET /turns/{turn_id}/stream`                                                                                                               | Detailed Turn SSE with bounded replay and live cutover                                             |
+| Native notifications         | `WS /notifications`                                                                                                                         | Explicit Thread or Workspace subscriptions; best-effort wake-ups without replay                    |
+| Hook subscriptions           | `/workspaces/{workspace_id}/hook-subscriptions`, `/hook-subscriptions/{hook_subscription_id}`                                               | Long-lived creation plus management of every durable subscription, including Turn-inline resources |
+| Usage records                | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                                     |
 
 The selected [distribution](02-distribution-composition-and-extensions.md) registers exactly the routes for its supported capabilities. An EE or Cloud capability can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
 
@@ -99,21 +100,28 @@ Collection fields, filters, order, and payload limits are defined by the owning 
 
 [Agent Input](33-agent-input.md) owns the versioned `AgentInput` protocol.
 [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)
-owns start and existing-Thread continuation, fork, retry, and atomic waiting
-feedback. [Agent Control: Active
+owns start, selected-head and explicit historical same-Thread continuation,
+fork, retry, and atomic waiting feedback. [Agent Control: Active
 Execution](35-agent-control-active-execution.md) owns the Thread inbox plus the
 Turn steer, exact steer-status read, and interrupt routes. The Thread inbox
 remains an internal persistence model rather than a generic public resource.
-These operations follow the common API,
-authorization, idempotency, and durable mutation conventions referenced by this
-catalog. The owning contracts define the exact AgentPresetVersion and
-Runtime-lock selection, input validation, Thread advancement, inbox receipt,
-and acceptance receipt rather than duplicating those schemas here.
+[Agent Control: Queued
+Submissions](36-agent-control-queued-submissions.md) owns queued-submission
+resources, queue-if-busy Thread submission, ordering, editing, state-first
+completion handoff, terminal recovery drain, and atomic consumption into a
+Turn.
+These operations follow the common API, authorization, idempotency, and durable
+mutation conventions referenced by this catalog. The owning contracts define
+the exact AgentPresetVersion and Runtime-lock selection, input validation,
+Thread advancement, inbox receipt, and acceptance receipt rather than
+duplicating those schemas here.
 
-Every command that accepts a new Turn can additionally create one exact
-Turn-scoped HookSubscription inline. The command normalizes that input into the
-same resource exposed by the Hook-subscription routes and returns its ID in the
-Turn acceptance receipt. [Hook
+Every direct new-Turn command owned by the input-and-continuation contract can
+additionally create one exact Turn-scoped HookSubscription inline. The
+queue-if-busy submission command cannot carry one because its commit-time
+outcome may be queue admission rather than Turn acceptance. The direct command
+normalizes Hook input into the same resource exposed by the Hook-subscription
+routes and returns its ID in the Turn acceptance receipt. [Hook
 Notifications](20a-hook-notifications.md#durable-hook-subscriptions) owns the
 input, authorization, transaction, and delivery semantics.
 
@@ -132,6 +140,7 @@ The exact read and each collection item have this conceptual wire shape:
 class ThreadResource:
     thread_id: str
     version: int
+    queue_version: int
     session_id: str
     role: Literal["root", "child"]
     origin_kind: Literal["new", "fork", "child"]
@@ -175,6 +184,11 @@ Commands are subordinate to the resource whose state they mutate:
 | Test candidate ModelConfig     | `POST /workspaces/{workspace_id}/models/test`                | Synchronous candidate test using Secret references; creates no health resource                                                                                                                                                                                  |
 | Test Environment revision      | `POST /environment-revisions/{environment_revision_id}/test` | Synchronously connects the exact revision with current credentials; creates no resource, lease, or retained health state                                                                                                                                        |
 | Copy ModelConfig               | `POST /workspaces/{workspace_id}/models/{model_id}/copy`     | Idempotency key; creates a new ModelConfig and copies no Secret value                                                                                                                                                                                           |
+| Submit Thread input            | `POST /threads/{thread_id}/submissions`                      | Idempotency key and `AgentInput`; accepts an immediate default continuation or null-head root-like Turn when eligible, otherwise appends a queued submission without bypassing existing entries                                                                 |
+| Continue existing Thread       | `POST /threads/{thread_id}/turns`                            | Empty queue, expected Thread version, and idempotency key; uses the completed head or accepts a null-head root-like Turn after failed/cancelled current work; a waiting head conflicts                                                                          |
+| Continue from completed Turn   | `POST /turns/{turn_id}/continue`                             | Source can be any retained readable completed Turn in its Thread; expected Thread version and idempotency key; atomically selects the source as head and creates its successor                                                                                  |
+| Reorder queued submissions     | `POST /threads/{thread_id}/queued-submissions/reorder`       | Expected queue version and the exact ordered set of currently queued IDs; changes no Turn or Thread advancement version                                                                                                                                         |
+| Consume queued submission      | `POST /threads/{thread_id}/queued-submissions/consume`       | Expected Thread and queue versions plus idempotency key; atomically marks one entry consumed and accepts a continuation from the completed head or a root-like Turn when the failed/cancelled current Turn has a null head                                      |
 | Steer running Turn             | `POST /turns/{turn_id}/steer`                                | Idempotency key, current authorization, and canonical `AgentInput`; appends one target-Turn-ordered pending inbox entry without creating another Turn                                                                                                           |
 | Interrupt active Turn          | `POST /turns/{turn_id}/interrupt`                            | Idempotency key and current authorization; seals the active Turn as cancelled, supersedes its pending steer entries, and wakes the owning Worker best-effort                                                                                                    |
 | Retry failed or cancelled Turn | `POST /turns/{turn_id}/retry`                                | Target must be the Thread's current failed or cancelled Turn; expected Thread version and idempotency key; copies its accepted input kind, state-parent edge, Preset Version, Runtime lock, Skill selection, and Environment configuration without reopening it |
@@ -202,7 +216,10 @@ OAuth redirects terminate at `GET /api/v1/connector-callbacks/{provider_key}` an
 Public resources expose stable product fields and safe references, not ORM objects or provider-private state. Read models follow these boundaries:
 
 - Session, Thread, Turn, and Item use the shared interaction meanings;
-- Thread exposes its stored version, Session membership, origin, current Turn, continuation head, and timestamps; current-Turn status supplies the latest execution/result projection and determines whether the Thread is active;
+- Thread exposes its stored advancement and queue versions, Session membership, origin, current Turn, continuation head, and timestamps; current-Turn status supplies the latest execution/result projection and determines whether the Thread is active;
+- QueuedSubmission exposes authorized submitted input, queue order while
+  queued, and its accepted Turn correlation after consumption; it exposes no
+  execution lease, attempt, failure state, or object-store locator;
 - an exact steer receipt read exposes only authorized safe steer identity,
   target, status, consumption correlation, and timestamps; it exposes neither
   the submitted payload nor an object-store locator;
@@ -289,6 +306,12 @@ Turn WebSocket.
 Routes identify which mutable resources require `expected_version`, which
 intentionally non-versioned representations require a strong `ETag` and
 `If-Match`, and which retryable creates or commands require `Idempotency-Key`.
+Thread advancement compares `expected_thread_version`; queue-wide reorder and
+consumption compare the independent `expected_queue_version`; an entry edit or
+delete compares that entry's `expected_version`.
+Queue-if-busy submission intentionally accepts either immediate Turn acceptance
+or queue admission at commit-time state and therefore requires neither expected
+version; its idempotency evidence preserves the selected result.
 Their shared wire behavior follows
 [Platform API Conventions](../api-conventions.md#mutations-and-retries), and
 their evidence and atomic commit follow
@@ -321,3 +344,10 @@ The API uses the shared bounded errors and stable codes enforced by the [HTTP in
     have separate envelopes, continuation behavior, and replay guarantees.
 12. A Turn request selects a stable AgentPreset; acceptance pins one exact active AgentPresetVersion and internal Runtime lock.
 13. A Plugin command receipt is a bounded queryable command result, not a general-purpose product resource.
+14. Queue-only mutation creates no Turn and changes no Thread advancement
+    reference; queue consumption atomically changes the queue and accepts one
+    Turn.
+15. Direct Continue cannot bypass queued submissions. Queue-if-busy submission
+    preserves their order. A completed source can seal together with first-entry
+    consumption and successor acceptance after state-first preparation;
+    otherwise terminal recovery drain remains independently repeatable.

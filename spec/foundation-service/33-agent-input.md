@@ -4,8 +4,8 @@
 
 `AgentInput` is Foundation's versioned JSON submission and accepted-value
 protocol for one unit of ordinary semantic Agent input. Root invocation,
-continuation, fork, active-Turn steering, managed Trigger acceptance, and
-asynchronous child submission use the same protocol. Control preconditions,
+continuation, queued submission, fork, active-Turn steering, managed Trigger
+acceptance, and asynchronous child submission use the same protocol. Control preconditions,
 Agent, Skill, and Environment selection, authorization, and trigger metadata
 remain outside it.
 
@@ -15,8 +15,9 @@ deterministic mapping to the Harness native input boundary. [Agent Control:
 Input and Continuation](34-agent-control-input-and-continuation.md) owns Turn
 acceptance, lineage, retry, and deferred feedback; [Agent Control: Active
 Execution](35-agent-control-active-execution.md) owns durable steering through
-the Thread inbox and interrupt of already accepted work. Neither control
-contract defines another ordinary input protocol.
+the Thread inbox and interrupt of already accepted work; [Agent Control: Queued
+Submissions](36-agent-control-queued-submissions.md) owns editable future input
+before Turn acceptance. None defines another ordinary input protocol.
 
 ## Boundaries
 
@@ -238,16 +239,17 @@ lock; an unavailable or incompatible adapter fails before model or tool work.
 
 ## Use by Control Operation
 
-| Operation             | Behavior                                                                                                       |
-| --------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Root invocation       | Stores new accepted input on the root Turn.                                                                    |
-| Ordinary continuation | Stores new accepted input on the successor Turn.                                                               |
-| Fork                  | Stores new accepted input on the new Thread's first Turn.                                                      |
-| Managed Trigger       | Places bounded machine data in `structured_content`, validating its optional protocol schema.                  |
-| Asynchronous child    | Stores parent- or Host-supplied input on the child Turn.                                                       |
-| Active steer          | Stores accepted input in the target Thread inbox without creating a Turn.                                      |
-| Retry                 | Copies the source Turn's accepted input and reacquires any needed binary source for the new Turn.              |
-| Waiting feedback      | Uses the separate [atomic feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction). |
+| Operation          | Behavior                                                                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Root invocation    | Stores new accepted input on the root Turn.                                                                                         |
+| Continuation       | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                 |
+| Thread submission  | Accepts input immediately when the Thread is eligible; otherwise stores it as editable queue data until consumption accepts a Turn. |
+| Fork               | Stores new accepted input on the new Thread's first Turn.                                                                           |
+| Managed Trigger    | Places bounded machine data in `structured_content`, validating its optional protocol schema.                                       |
+| Asynchronous child | Stores parent- or Host-supplied input on the child Turn.                                                                            |
+| Active steer       | Stores accepted input in the target Thread inbox without creating a Turn.                                                           |
+| Retry              | Copies the source Turn's accepted input and reacquires any needed binary source for the new Turn.                                   |
+| Waiting feedback   | Uses the separate [atomic feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction).                      |
 
 ## Failure Semantics
 
@@ -273,7 +275,7 @@ same protocol.
 
 ## Invariants
 
-1. `AgentInput` is the single ordinary semantic-input protocol for root invocation, continuation, fork, active steering, managed Trigger input, and asynchronous child input.
+1. `AgentInput` is the single ordinary semantic-input protocol for root invocation, continuation, queued submission, fork, active steering, managed Trigger input, and asynchronous child input.
 2. Accepted binary input persists only a normalized caller URL or authorized Environment-path description; Foundation does not own or promise stable source bytes.
 3. `structured_content` is bounded JSON, follows the optional frozen protocol schema when non-null, carries no authority, and never becomes implicit model JSON.
 4. Harness mapping uses the pinned Version and Runtime lock and fails closed rather than substituting input representation.

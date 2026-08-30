@@ -3,9 +3,10 @@
 ## Design Position
 
 Foundation accepts every new semantic unit of Agent work as a durable Turn
-belonging to exactly one Session and Thread. Start, continue, waiting feedback,
-fork, and retry are distinct acceptance forms over that same boundary. Every
-successful form creates a new Turn; none reopens or mutates a sealed Turn.
+belonging to exactly one Session and Thread. Start, continue, continue from an
+explicit historical Turn, waiting feedback, fork, and retry are distinct
+acceptance forms over that same boundary. Every successful form creates a new
+Turn; none reopens or mutates a sealed Turn.
 
 This contract owns those acceptance forms, their public command surfaces, and
 deferred-interaction feedback. Adjacent input, Thread, Turn, TurnAttempt, and
@@ -15,36 +16,39 @@ outside this contract.
 
 ## Boundaries
 
-| Concern                                              | Owner                                                                                                                                             | Relationship                                                                     |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning              | [Platform Interaction Model](../interaction-model.md)                                                                                             | Supplies the shared interaction identities                                       |
-| Ordinary semantic Agent input                        | [Agent Input](33-agent-input.md)                                                                                                                  | Supplies the versioned `AgentInput` accepted by input-bearing commands           |
-| Start, continue, fork, retry, and waiting feedback   | This contract                                                                                                                                     | Accepts one new Turn or rejects the operation without advancing the Thread       |
-| Thread version, current Turn, and selected head      | [Durable Thread Persistence](24-thread-persistence.md)                                                                                            | Supplies the exact advancement precondition and commits selected Turn references |
-| Turn state, lineage, accepted intent, and outcome    | [Durable Turn State](14-turn-persistence.md)                                                                                                      | Persists the complete accepted input and its deterministic state key             |
-| Worker claim and recovery inside one Turn            | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) and [Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md) | Creates replacement TurnAttempts without accepting another Turn                  |
-| Asynchronous child acceptance and retained delivery  | [Async Subagents](18-async-subagents.md)                                                                                                          | Supplies Host-owned child-result facts without redefining native deferred calls  |
-| Common Thread inbox persistence                      | [Agent Control: Active Execution](35-agent-control-active-execution.md#thread-inbox)                                                              | Stores available async-subagent results and their later consumption evidence     |
-| Public API conventions and durable mutation evidence | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                        | Own shared version, idempotency, retry, and unknown-commit behavior              |
+| Concern                                                           | Owner                                                                                                                                             | Relationship                                                                                 |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                           | [Platform Interaction Model](../interaction-model.md)                                                                                             | Supplies the shared interaction identities                                                   |
+| Ordinary semantic Agent input                                     | [Agent Input](33-agent-input.md)                                                                                                                  | Supplies the versioned `AgentInput` accepted by input-bearing commands                       |
+| Start, continue, continue from, fork, retry, and waiting feedback | This contract                                                                                                                                     | Accepts one new Turn or rejects the operation without advancing the Thread                   |
+| Queue-if-busy ordinary input                                      | [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md)                                                                       | Chooses immediate acceptance or stores editable input whose later consumption creates a Turn |
+| Thread version, current Turn, and selected head                   | [Durable Thread Persistence](24-thread-persistence.md)                                                                                            | Supplies the exact advancement precondition and commits selected Turn references             |
+| Turn state, lineage, accepted intent, and outcome                 | [Durable Turn State](14-turn-persistence.md)                                                                                                      | Persists the complete accepted input and its deterministic state key                         |
+| Worker claim and recovery inside one Turn                         | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) and [Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md) | Creates replacement TurnAttempts without accepting another Turn                              |
+| Asynchronous child acceptance and retained delivery               | [Async Subagents](18-async-subagents.md)                                                                                                          | Supplies Host-owned child-result facts without redefining native deferred calls              |
+| Common Thread inbox persistence                                   | [Agent Control: Active Execution](35-agent-control-active-execution.md#thread-inbox)                                                              | Stores available async-subagent results and their later consumption evidence                 |
+| Public API conventions and durable mutation evidence              | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                        | Own shared version, idempotency, retry, and unknown-commit behavior                          |
 
 ## Acceptance and Lineage
 
 The accepted operation determines the new Turn identity, state source, input
 protocol, and explicit retry correlation:
 
-| Operation | Public command                                  | Thread effect                                                | State and lineage                                                                                         | Accepted Turn input                                    |
-| --------- | ----------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Start     | `POST /api/v1/workspaces/{workspace_id}/turns`  | Creates a root Thread with its first Turn                    | `lineage_kind="root"`, `parent_turn_id=null`                                                              | New `AgentInput`                                       |
-| Continue  | `POST /api/v1/threads/{thread_id}/turns`        | Advances the existing Thread                                 | `lineage_kind="continue"`, parent is the exact completed head                                             | New `AgentInput`                                       |
-| Feedback  | `POST /api/v1/turns/{waiting_turn_id}/feedback` | Advances the existing Thread                                 | `lineage_kind="continue"`, parent is the exact waiting Turn                                               | Complete normalized `WaitingTurnFeedback`              |
-| Fork      | `POST /api/v1/turns/{turn_id}/fork`             | Creates an independent in-Session Thread with its first Turn | `lineage_kind="fork"`, parent is the exact completed source Turn                                          | New `AgentInput`                                       |
-| Retry     | `POST /api/v1/turns/{turn_id}/retry`            | Advances the existing Thread                                 | Copies the failed or cancelled source Turn's lineage and state-source edge and records `retry_of_turn_id` | Copies the source Turn's accepted input kind and value |
+| Operation     | Public command                                  | Thread effect                                                    | State and lineage                                                                                                                                                  | Accepted Turn input                                    |
+| ------------- | ----------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| Start         | `POST /api/v1/workspaces/{workspace_id}/turns`  | Creates a root Thread with its first Turn                        | `lineage_kind="root"`, `parent_turn_id=null`                                                                                                                       | New `AgentInput`                                       |
+| Continue      | `POST /api/v1/threads/{thread_id}/turns`        | Advances an idle existing Thread                                 | Completed head: `lineage_kind="continue"` and exact head parent; null head after failed/cancelled current Turn: root-like with `lineage_kind="root"` and no parent | New `AgentInput`                                       |
+| Continue From | `POST /api/v1/turns/{source_turn_id}/continue`  | Re-selects one completed historical Turn and advances its Thread | `lineage_kind="continue"`, parent is the exact completed source Turn                                                                                               | New `AgentInput`                                       |
+| Feedback      | `POST /api/v1/turns/{waiting_turn_id}/feedback` | Advances the existing Thread                                     | `lineage_kind="continue"`, parent is the exact waiting Turn                                                                                                        | Complete normalized `WaitingTurnFeedback`              |
+| Fork          | `POST /api/v1/turns/{turn_id}/fork`             | Creates an independent in-Session Thread with its first Turn     | `lineage_kind="fork"`, parent is the exact completed source Turn                                                                                                   | New `AgentInput`                                       |
+| Retry         | `POST /api/v1/turns/{turn_id}/retry`            | Advances the existing Thread                                     | Copies the failed or cancelled source Turn's lineage and state-source edge and records `retry_of_turn_id`                                                          | Copies the source Turn's accepted input kind and value |
 
-Start, continue, feedback, and fork have `retry_of_turn_id=null`. Retry never
-uses the failed or cancelled source as `parent_turn_id`: that field continues to
-name only the exact sealed state source. A retry of a failed root therefore has
-no parent; a retry of a failed continue, feedback, or fork copies the source
-Turn's exact `parent_turn_id` and `lineage_kind`.
+Start, continue, continue from, feedback, and fork have
+`retry_of_turn_id=null`. Retry never uses the failed or cancelled source as
+`parent_turn_id`: that field continues to name only the exact sealed state
+source. A retry of a failed root therefore has no parent; a retry of a failed
+continue, continue from, feedback, or fork copies the source Turn's exact
+`parent_turn_id` and `lineage_kind`.
 
 Turn acceptance authenticates and authorizes the caller or internal principal,
 validates the selected Session and Thread, resolves or preserves the exact
@@ -87,7 +91,7 @@ sequenceDiagram
     participant DB as Relational database
     participant Worker
 
-    Caller->>Control: start, continue, fork, retry, or feedback
+    Caller->>Control: start, continue, continue from, fork, retry, or feedback
     Control->>DB: authenticate, authorize, read evidence and candidate state
     DB-->>Control: detached versions, selectors, and source references
     Control->>Objects: acquire or verify input, read parent, publish new state
@@ -103,9 +107,10 @@ every authority, version, current/head, source, digest, and idempotency
 precondition needed by the operation. Objects published before a losing or
 rolled-back transaction are non-authoritative cleanup candidates.
 
-Every new-Turn command can carry the optional inline `hook_subscription` owned
-by [Hook Notifications](20a-hook-notifications.md#durable-hook-subscriptions).
-It participates in the canonical command request, commits atomically with the
+Every direct acceptance command in this contract can carry the optional inline
+`hook_subscription` owned by [Hook
+Notifications](20a-hook-notifications.md#durable-hook-subscriptions). It
+participates in the canonical command request, commits atomically with the
 accepted Turn, and returns its ID in the receipt, but it is neither Agent input
 nor an invocation option and cannot affect execution. Hook shape,
 authorization, scope, delivery, and idempotency semantics remain with that
@@ -113,7 +118,7 @@ owner.
 
 ## Input-Bearing Operations
 
-Start and continue requests carry an
+Start, continue, and continue-from requests carry an
 [`AgentInput`](33-agent-input.md#agent-input-protocol), a selected stable
 AgentPreset when permitted, an optional active-Version precondition, optional
 `selected_skill_names`, an optional policy-permitted tuple of
@@ -129,10 +134,11 @@ contract](27-skill-management.md#agentpresetversion-selection). Acceptance
 stores its normalized effective selection in `state.json`; that effective value
 participates in the canonical request digest.
 
-Only start, continue, fork, and equivalent Host-owned initial Turn submission
-can supply ordinary invocation options. Feedback and retry accept no
-AgentPreset, Version, Skill, Environment, or input override; they preserve the
-exact selections and accepted intent required by their source Turn.
+Only start, continue, continue from, fork, and equivalent Host-owned initial
+Turn submission can supply ordinary invocation options. Feedback and retry
+accept no AgentPreset, Version, Skill, Environment, or input override; they
+preserve the exact selections and accepted intent required by their source
+Turn.
 
 ### Start and Continue
 
@@ -162,18 +168,77 @@ Idempotency-Key: opaque-caller-key
 The request carries `expected_thread_version`, one `AgentInput`, an optional
 stable `agent_preset_id`, and an optional active-Version precondition.
 Foundation locks the Thread, requires no current `accepted` or `running` Turn,
-requires `head_turn_id` to name an exact completed Turn, and never infers a
-parent from timestamps. A waiting head is eligible only for feedback. The
-selected Preset defaults to the parent's stable Preset. Acceptance resolves its
-current active Version and Runtime lock, rejects incompatible parent-state or
-input migration, initializes a new Turn-owned state from the completed parent,
-sets `current_turn_id` to the new Turn, preserves the head until the successor
-seals, increments Thread version, and commits the Turn and its related durable
-facts.
+and requires the queued-submission collection to be empty. A non-empty queue
+conflicts so direct input cannot bypass an earlier queued submission.
+
+When `head_turn_id` names an exact completed Turn, Foundation never infers a
+parent from timestamps. The selected Preset defaults to that parent's stable
+Preset. Acceptance resolves its current active Version and Runtime lock,
+rejects incompatible parent-state or input migration, initializes a new
+Turn-owned state from the completed parent, creates the Turn with
+`lineage_kind="continue"`, sets `current_turn_id` to it, preserves the head
+until the successor seals, increments Thread version, and commits the Turn and
+its related durable facts.
+
+When `head_turn_id=null` and the current Turn is `failed` or `cancelled`, the
+same route performs root-like acceptance in the existing Thread. The new Turn
+has `lineage_kind="root"`, `parent_turn_id=null`, and
+`retry_of_turn_id=null`. A trusted Foundation state adapter constructs a
+complete empty Harness state carrying the existing Thread's exact `thread_id`;
+it does not call `HarnessState.new()`, which would create another Thread ID.
+When omitted, the stable Preset defaults to the current failed or cancelled
+Turn's stable Preset; acceptance resolves its current active Version and the
+ordinary policy-permitted selections. The acceptance transaction selects the
+new Turn as current, leaves the head null until a waiting or completed outcome
+seals, and increments Thread version. This is new input rather than Retry of the
+failed or cancelled intent.
+
+A waiting head is not equivalent to an absent head and is eligible only for
+Feedback, Retry of an already accepted failed/cancelled feedback successor, or
+an explicit operation such as Continue From that selects another completed
+source. Ordinary Continue conflicts without accepting a Turn.
 
 Schedules, Webhooks, service requests, managed Triggers, and Host-managed
 asynchronous children use the same Turn-acceptance application boundary even
 when their owning ingress is not one of these public routes.
+
+### Continue From an Explicit Turn
+
+Continue From accepts another same-Thread continuation from one caller-selected
+historical state:
+
+```http
+POST /api/v1/turns/{source_turn_id}/continue
+Idempotency-Key: opaque-caller-key
+```
+
+The request has the same `expected_thread_version`, `AgentInput`, Preset,
+Version-precondition, Skill, Environment, and optional Hook fields as ordinary
+Continue. The source must be a retained, readable `completed` Turn in the
+target Thread, but it need not be that Thread's current Turn or selected head.
+Foundation also requires that the Thread have no current `accepted` or
+`running` Turn.
+
+Acceptance initializes state from the exact source and creates a same-Thread
+Turn with `lineage_kind="continue"` and
+`parent_turn_id=source_turn_id`. In the final short transaction it sets
+`current_turn_id` to the new Turn, sets `head_turn_id` to the selected source,
+increments the Thread version, and commits the accepted Turn and related facts.
+If the successor later seals as `waiting` or `completed`, it becomes the new
+head. If it seals as `failed` or `cancelled`, the selected source remains the
+head.
+
+Selecting a source other than the prior head intentionally abandons that prior
+branch as the Thread's active continuation selection. In particular, a
+historical waiting Turn that is no longer both current and head is not eligible
+for Feedback. The operation does not synthesize rejection or no-response values
+for that abandoned pending set; the sealed Turn remains retained history.
+
+Several retained successors can therefore share the same completed parent over
+time. The single-active-Turn constraint serializes execution, while
+`parent_turn_id` preserves every accepted branch. Continue From preserves the
+Thread ID and is distinct from Fork, which creates another Thread, and from
+automatic recovery, which creates no Turn.
 
 ### Fork
 
@@ -447,26 +512,28 @@ content cannot race the accepted successor.
 
 ## Persistence Impact
 
-The only relational schema changes introduced by this acceptance model are on
-`turns`. Related persistence integration is:
+Related persistence integration is:
 
 | Persistence owner        | Required contract                                                                                                                                                                                                                                                                |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `turns`                  | Stores `input_kind` to distinguish `agent_input` from `waiting_feedback`, and nullable `retry_of_turn_id` to correlate exact terminal intent without changing the state-parent edge. Existing inline or object-backed JSON columns store the complete accepted descriptor value. |
+| Turn lineage constraints | Permit several retained same-Thread successors to share one completed `parent_turn_id`; only the partial unique constraint for one `accepted` or `running` Turn per Thread serializes active advancement.                                                                        |
 | Waiting pending data     | No `pending_actions` table. The waiting Turn row stores only `pending_json`; its sealed state stores exact native and Host requests.                                                                                                                                             |
 | Async child delivery     | The child relationship and common `thread_inbox` entry remain authoritative; explicit selection consumes the exact entry while batch feedback never turns it into a native deferred call.                                                                                        |
 | Inline Hook delivery     | Optional creation commits atomically under [Hook Notifications](20a-hook-notifications.md); no Turn column stores callback configuration.                                                                                                                                        |
 | Durable command evidence | Existing idempotency, lifecycle, Item, and outbox records commit with the accepted Turn under their owning contracts.                                                                                                                                                            |
 
-`input_kind`, `retry_of_turn_id`, the exact parent edge, and the source Turn's
-status make every acceptance form queryable without adding an
-`agent_control_operations` table or another execution resource.
+`input_kind`, `retry_of_turn_id`, the exact parent edge, Thread head selection,
+and the source or current Turn's status make every acceptance form queryable
+without adding an `agent_control_operations` table or another execution
+resource.
 
 ## Failure Semantics
 
 | Condition                                                                                    | Outcome                                                                                                                  |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Start, continue, fork, retry, or feedback validation fails before commit                     | No Thread or Turn advancement occurs                                                                                     |
+| Start, continue, continue from, fork, retry, or feedback validation fails before commit      | No Thread or Turn advancement occurs                                                                                     |
+| Continue finds an earlier queued submission or a waiting selected head                       | Continue conflicts without creating or consuming a Turn                                                                  |
 | Concurrent Thread advancement or sealing wins                                                | The stale command conflicts and changes nothing                                                                          |
 | Retry target is not the current failed or cancelled Turn                                     | Retry conflicts without creating a Turn                                                                                  |
 | Feedback contains a duplicate, unknown, wrong-action, invalid-result, stale, or expired call | No feedback Turn is created; the waiting parent remains unchanged                                                        |
@@ -477,11 +544,13 @@ status make every acceptance form queryable without adding an
 
 ## Invariants
 
-1. Start, continue, feedback, fork, and terminal retry accept another Turn; acceptance returns before later Worker claim, TurnAttempt allocation, or Harness execution.
-2. Continue preserves the Thread ID; fork creates a distinct Thread ID.
-3. Retry accepts no new input or invocation option, copies the exact accepted intent and state-source edge, and records `retry_of_turn_id`.
-4. Ordinary Agent work uses `AgentInput`; waiting feedback uses the separate complete normalized `WaitingTurnFeedback` protocol.
-5. Feedback finalizes the complete eligible pending set; omitted approvals reject and omitted non-approval calls record no response.
-6. A waiting Turn is sealed and holds no TurnAttempt lease; feedback creates a new Turn whose `parent_turn_id` names it.
-7. Native deferred values remain exactly correlated, Host-owned child delivery never impersonates a native deferred call, and approval, external effect, and child completion remain independent facts.
-8. Pending actions are immutable projections of one waiting Turn, not independently mutable resources or relational rows.
+01. Start, continue, continue from, feedback, fork, and terminal retry accept another Turn; acceptance returns before later Worker claim, TurnAttempt allocation, or Harness execution.
+02. Continue and Continue From preserve the Thread ID; Fork creates a distinct Thread ID. Continue with a null head initializes empty state under that existing ID rather than calling `HarnessState.new()`.
+03. Retry accepts no new input or invocation option, copies the exact accepted intent and state-source edge, and records `retry_of_turn_id`.
+04. Ordinary Agent work uses `AgentInput`; waiting feedback uses the separate complete normalized `WaitingTurnFeedback` protocol.
+05. Feedback finalizes the complete eligible pending set; omitted approvals reject and omitted non-approval calls record no response.
+06. A waiting Turn is sealed and holds no TurnAttempt lease; feedback creates a new Turn whose `parent_turn_id` names it.
+07. Native deferred values remain exactly correlated, Host-owned child delivery never impersonates a native deferred call, and approval, external effect, and child completion remain independent facts.
+08. Pending actions are immutable projections of one waiting Turn, not independently mutable resources or relational rows.
+09. Continue From accepts any retained and readable completed Turn in the same Thread, atomically selects it as head while creating its successor, and does not require that source to be the prior current Turn or head.
+10. Direct Continue never bypasses a queued submission; with an empty queue it uses the exact completed head or, only after a failed or cancelled current Turn with `head_turn_id=null`, accepts a root-like Turn with no parent.

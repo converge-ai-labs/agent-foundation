@@ -314,7 +314,7 @@ owning protocol: `agent_input` stores the accepted
 [`AgentInput`](33-agent-input.md#agent-input-protocol), while
 `waiting_feedback` stores the complete normalized
 [`WaitingTurnFeedback`](34-agent-control-input-and-continuation.md#deferred-interaction).
-Start, continue, and fork use `agent_input`; feedback uses
+Start, continue, continue from, and fork use `agent_input`; feedback uses
 `waiting_feedback`; retry copies the source Turn's exact kind and value.
 `retry_of_turn_id` is present only for retry and names the same-Thread failed or
 cancelled Turn that was current when its accepted intent was copied. It is
@@ -436,6 +436,7 @@ Continuation](34-agent-control-input-and-continuation.md#acceptance-and-lineage)
 ```mermaid
 flowchart LR
     T0["Turn T0<br/>Thread A<br/>completed"] --> T1["Turn T1<br/>Thread A<br/>waiting"]
+    T0 --> C1["Turn C1<br/>Thread A<br/>continue from T0"]
     T1 --> T2["Turn T2<br/>Thread A<br/>feedback"]
     T1 --> R2["Turn R2<br/>Thread A<br/>retry of failed feedback T2"]
     T0 --> F1["Turn F1<br/>Thread B<br/>fork"]
@@ -444,11 +445,17 @@ flowchart LR
 
 The lineage rules are:
 
-1. A root Turn has `parent_turn_id=null`, `lineage_kind=root`, and a Turn-owned
-   state initialized with `HarnessState.new()`.
-2. An ordinary continuation has `lineage_kind=continue`, uses a completed
-   parent in the same Thread, and initializes its state from the parent's frozen
-   state while preserving `thread_id`.
+1. A root Turn has `parent_turn_id=null` and `lineage_kind=root`. The first Turn
+   of a new Thread initializes state with `HarnessState.new()`. A root-like Turn
+   accepted later in an existing Thread is permitted only while
+   `head_turn_id=null` after the current Turn failed or was cancelled; its
+   trusted Host transformation constructs empty state while preserving that
+   Thread's exact Harness-owned `thread_id`.
+2. A continuation has `lineage_kind=continue`, uses a completed parent in the
+   same Thread, and initializes its state from the parent's frozen state while
+   preserving `thread_id`. Ordinary Continue selects the current completed
+   head; Continue From can explicitly reselect any retained and readable
+   completed historical Turn in that Thread.
 3. Authenticated feedback has `lineage_kind=continue`, uses the exact waiting
    parent, initializes its state from that parent's frozen deferred state, and
    preserves `thread_id`.
@@ -465,13 +472,13 @@ The lineage rules are:
    not add a DAG node.
 8. Failed and cancelled Turns remain queryable but are not eligible parents.
 
-The independent Thread row serializes every accepted advancement. At most one
-Turn with a given `(thread_id, parent_turn_id)` can be active or seal as
-`waiting` or `completed`; failed and cancelled siblings do not block a later
-accepted advancement from the same eligible parent. Acceptance locks the
-Thread, verifies its exact version, current selection, and continuation head,
-then advances it atomically with the new Turn. An explicit fork creates a new
-Thread row and first Turn in the same transaction.
+The independent Thread row serializes every accepted advancement. Several
+retained Turns can share the same `(thread_id, parent_turn_id)` and represent
+historical sibling continuations, but at most one Turn in the Thread can be
+`accepted` or `running`. Acceptance locks the Thread, verifies its exact
+version and operation-specific current/head selection, then advances it
+atomically with the new Turn. An explicit fork creates a new Thread row and
+first Turn in the same transaction.
 
 A lineage read follows `parent_turn_id` from an explicitly selected head. It is
 tenant-scoped, cycle-safe, and bounded. Created time and event order are not
@@ -632,16 +639,16 @@ freezes its accepted Environment execution configuration.
 
 ### State Initialization Matrix
 
-| Concern                              | Start                                                    | Continue                                                                | Feedback                                                           | Fork                                                                       |
-| ------------------------------------ | -------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Turn and state identity              | Allocate a Turn and deterministic Turn-owned state key   | Allocate a Turn and key; name the exact completed head                  | Allocate a Turn and key; name the exact waiting Turn               | Allocate a Turn, Thread, and key; name the completed source                |
-| Harness state                        | Create `HarnessState.new()`                              | Copy frozen parent state and preserve `thread_id`                       | Copy frozen waiting state and preserve `thread_id`                 | Apply `HarnessState.fork()` and use its new `thread_id`                    |
-| Host deferred continuation           | Start empty                                              | Start empty after clearing the parent outcome                           | Retain exact pending requests until complete feedback is applied   | Clear source outcome and deferred data                                     |
-| Accepted input                       | Store new `AgentInput` as pending                        | Store new `AgentInput` as pending                                       | Store complete `WaitingTurnFeedback` as pending                    | Store new `AgentInput` as pending                                          |
-| Environment execution configuration  | Resolve and freeze accepted topology                     | Resolve and freeze the new Turn's accepted topology                     | Copy the waiting parent's exact configuration and reauthorize it   | Resolve and freeze the accepted topology                                   |
-| Effective managed Skill selection    | Resolve request override or Version default              | Resolve request override or Version default and validate portable state | Copy the waiting parent's exact tuple and validate inherited state | Resolve request override or Version default and validate portable state    |
-| Definition and integration           | Resolve active Version and profile-selected Runtime lock | Resolve active selections and validate compatibility                    | Preserve the waiting parent's exact Version and Runtime lock       | Preserve source selection unless an explicit compatible Preset is selected |
-| Current authority and live resources | Resolve fresh                                            | Resolve fresh                                                           | Resolve fresh                                                      | Resolve fresh                                                              |
+| Concern                              | Start                                                    | Continue                                                                                | Feedback                                                           | Fork                                                                       |
+| ------------------------------------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Turn and state identity              | Allocate a Turn and deterministic Turn-owned state key   | Allocate a Turn and key; name the completed head, or no parent under the null-head rule | Allocate a Turn and key; name the exact waiting Turn               | Allocate a Turn, Thread, and key; name the completed source                |
+| Harness state                        | Create `HarnessState.new()`                              | Copy the frozen parent, or construct empty state preserving the existing `thread_id`    | Copy frozen waiting state and preserve `thread_id`                 | Apply `HarnessState.fork()` and use its new `thread_id`                    |
+| Host deferred continuation           | Start empty                                              | Start empty after clearing the parent outcome, or empty with no parent                  | Retain exact pending requests until complete feedback is applied   | Clear source outcome and deferred data                                     |
+| Accepted input                       | Store new `AgentInput` as pending                        | Store new `AgentInput` as pending                                                       | Store complete `WaitingTurnFeedback` as pending                    | Store new `AgentInput` as pending                                          |
+| Environment execution configuration  | Resolve and freeze accepted topology                     | Resolve and freeze the new Turn's accepted topology                                     | Copy the waiting parent's exact configuration and reauthorize it   | Resolve and freeze the accepted topology                                   |
+| Effective managed Skill selection    | Resolve request override or Version default              | Resolve request override or Version default and validate portable state                 | Copy the waiting parent's exact tuple and validate inherited state | Resolve request override or Version default and validate portable state    |
+| Definition and integration           | Resolve active Version and profile-selected Runtime lock | Resolve active selections and validate compatibility                                    | Preserve the waiting parent's exact Version and Runtime lock       | Preserve source selection unless an explicit compatible Preset is selected |
+| Current authority and live resources | Resolve fresh                                            | Resolve fresh                                                                           | Resolve fresh                                                      | Resolve fresh                                                              |
 
 Initialization of a new Turn always writes a complete Turn-owned envelope with
 `checkpoint_seq=0`. It does not reference the parent state as a base, retain the
@@ -846,7 +853,8 @@ Checkpoint writes do not create a Turn row, attempt row, lifecycle transition,
 or historical checkpoint selector. A failed or unknown put is reconciled by
 `stat` and exact body validation before any retry.
 
-A waiting or completed outcome commits in this order:
+A waiting outcome and a completed outcome without a prepared queued successor
+commit in this order:
 
 1. publish any immutable object-backed output;
 2. conditionally replace `state.json` with a complete matching outcome
@@ -861,6 +869,34 @@ A waiting or completed outcome commits in this order:
    snapshot, seal it, select it as the continuation head, and increment the
    Thread version;
 4. after commit, reject every later write to the state key.
+
+A completed outcome with queued input can instead use the [state-first combined
+handoff](36-agent-control-queued-submissions.md#completion-time-combined-handoff).
+After publishing the source completed candidate, Foundation performs bounded
+detached preflight, builds and create-only publishes the queued successor's
+complete initial state and any object-backed input, then opens one short
+transaction. That transaction starts with the source Turn still current and
+running, repeats the exact TurnAttempt fence, active-control, queue-order,
+version, state, selection, and authority checks, and atomically:
+
+1. seals the source as `completed` and selects its exact completed candidate;
+2. terminalizes its current TurnAttempt and charges known usage;
+3. consumes the first queued submission and records the successor correlation;
+4. inserts the already-state-backed successor as `accepted` with the completed
+   source as `parent_turn_id`;
+5. selects the completed source as Thread head and the accepted successor as
+   Thread current; and
+6. advances the Thread version once for sealing and once for acceptance, plus
+   the queue version once for consumption.
+
+The combined commit has the same result as an ordinary completed seal followed
+by queue consumption, but exposes no intermediate relational state. If
+successor preflight, object publication, or any final combined precondition
+fails, no queue or successor mutation commits. Foundation re-enters the
+ordinary source-outcome path under the active-control race rules; the completed
+Turn can seal independently and the queue remains editable for later recovery
+drain. Prepared successor objects that no accepted Turn selects are
+non-authoritative cleanup candidates.
 
 Every other transaction that seals a Turn as failed or cancelled also clears
 the model execution snapshot while retaining the safe model observation and
@@ -900,8 +936,8 @@ constraints:
    sequences, sizes, and recovery counters satisfy their positive or
    non-negative field bounds.
 3. Input has exactly one inline or object-backed representation and matches
-   `input_kind`. `retry_of_turn_id` is null for start, continue, feedback, and
-   fork and otherwise names a same-Thread failed or cancelled Turn that was
+   `input_kind`. `retry_of_turn_id` is null for start, continue, continue from,
+   feedback, and fork and otherwise names a same-Thread failed or cancelled Turn that was
    current at retry acceptance and whose accepted kind and value match the
    retry. Outcome fields satisfy their
    status-specific nullability, and output exists only for `completed`.
@@ -915,27 +951,28 @@ constraints:
    exist only for `running`. A `running` Turn may omit it during bounded retry
    backoff. Active updates require expected Turn version; attempt-originated
    updates also require the current attempt, fence, and lease.
-6. Continue and fork require a completed parent. Waiting feedback requires the
-   exact waiting parent and consumes one complete normalized batch. Retry
-   copies the terminal source's eligible state-parent edge; failed and cancelled
-   Turns are never themselves eligible parents.
+6. Continue uses the completed head when present; only a null-head Continue
+   after a failed or cancelled current Turn can have no parent and use root
+   lineage. Continue From and fork require a completed parent. Waiting feedback
+   requires the exact waiting parent and consumes one complete normalized
+   batch. Retry copies the terminal source's eligible state-parent edge; failed
+   and cancelled Turns are never themselves eligible parents.
 7. `attempts_started` does not exceed `max_attempts`; attempt, deadline, and
    usage limits remain Turn-owned recovery authority.
 
 The accepted access paths are:
 
-| Access path                          | Index or uniqueness contract                                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Worker claim and retry scan          | `(tenant_id, queue_name, status, available_at, priority, created_at, id)` for `accepted` and current-attempt-free `running` Turns     |
-| Idempotent acceptance                | Unique `(tenant_id, idempotency_key)` when the key exists                                                                             |
-| Session activity                     | `(tenant_id, session_id, created_at, id)`                                                                                             |
-| Thread activity and stable paging    | `(tenant_id, thread_id, created_at, id)`                                                                                              |
-| DAG successor traversal              | `(tenant_id, parent_turn_id, id)`                                                                                                     |
-| Retry correlation                    | `(tenant_id, retry_of_turn_id, id)`                                                                                                   |
-| DAG ancestor traversal               | Unique `(tenant_id, id)` parent lookup at each recursive step                                                                         |
-| One active Turn per Thread           | Partial unique `(tenant_id, thread_id)` for `accepted` and `running`                                                                  |
-| One winning successor per state edge | Partial unique `(tenant_id, thread_id, parent_turn_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is non-null |
-| One root history per Thread          | Partial unique `(tenant_id, thread_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is null                     |
+| Access path                               | Index or uniqueness contract                                                                                                      |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Worker claim and retry scan               | `(tenant_id, queue_name, status, available_at, priority, created_at, id)` for `accepted` and current-attempt-free `running` Turns |
+| Idempotent acceptance                     | Unique `(tenant_id, idempotency_key)` when the key exists                                                                         |
+| Session activity                          | `(tenant_id, session_id, created_at, id)`                                                                                         |
+| Thread activity and stable paging         | `(tenant_id, thread_id, created_at, id)`                                                                                          |
+| DAG successor traversal                   | `(tenant_id, parent_turn_id, id)`                                                                                                 |
+| Retry correlation                         | `(tenant_id, retry_of_turn_id, id)`                                                                                               |
+| DAG ancestor traversal                    | Unique `(tenant_id, id)` parent lookup at each recursive step                                                                     |
+| One active Turn per Thread                | Partial unique `(tenant_id, thread_id)` for `accepted` and `running`                                                              |
+| One live or selected root Turn per Thread | Partial unique `(tenant_id, thread_id)` for `accepted`, `running`, `waiting`, and `completed` when parent is null                 |
 
 ## Security and Protection
 
@@ -961,25 +998,26 @@ attached by generic fallback.
 
 ## Failure and Recovery Semantics
 
-| Failure or interruption                                                    | Durable outcome                                                 | Recovery rule                                                                                                                                     |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Initial state or input publication fails                                   | No Turn is accepted                                             | Retry under the acceptance idempotency contract                                                                                                   |
-| Initial objects publish but relational acceptance fails                    | Objects are non-authoritative orphans                           | Cleanup removes them after proving no accepted Turn owns the key                                                                                  |
-| Conditional state write conflicts                                          | Existing complete state remains visible                         | Re-read Turn and object versions; stale writers stop                                                                                              |
-| State write response is lost                                               | Replacement effect is unknown                                   | Reconcile by deterministic key, metadata, and opaque version before retrying                                                                      |
-| Terminal candidate writes but relational seal fails                        | Turn remains active; candidate is a resumable prepared state    | Current or later authorized attempt can retry exact sealing after reconciliation                                                                  |
-| State containing inbox receipts writes but row consumption does not commit | The object is prepared but inbox consumption is not yet durable | Follow the [active-control race and reconciliation contract](35-agent-control-active-execution.md#completion-and-control-races)                   |
-| Stale `TurnAttempt` writes lifecycle, usage, pending data, or outcome      | Relational write is rejected by Turn fencing                    | Current attempt continues; stale work is cancelled best-effort                                                                                    |
-| A state write prepared before sealing reaches storage after the seal       | The object outcome can be unknown but is not selected           | The sealed relational outcome remains authoritative; no inbox or continuation fact adopts the object-only write                                   |
-| Worker disappears after a committed checkpoint                             | Latest state remains at the same key                            | After lease expiry, a Worker's transactional takeover creates a later fenced attempt that reconstructs fresh bindings and resumes                 |
-| Worker disappears after uncheckpointed work                                | Only the prior checkpoint is recoverable                        | The replacement attempt projects unmatched durable Agent tool dispatches as `unknown_outcome` before resuming                                     |
-| Recovery budget is exhausted                                               | Turn seals as `failed`                                          | The sealed Turn receives no later attempt; see the [allocation boundary](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary) |
-| Required state, schema, or codec is permanently incompatible               | No model or tool work starts                                    | Apply an explicit compatible reader or fail the Turn                                                                                              |
-| Frozen artifact or dependency is temporarily unavailable                   | Selected state remains unchanged                                | Apply bounded backoff only when policy classifies the condition retryable and budget remains                                                      |
-| State object is confirmed missing or fails integrity validation            | Turn seals as `failed` without selecting invalid state bytes    | Freeze the exact deterministic key, record a bounded failure, and never substitute listing results                                                |
-| Waiting feedback is invalid or mismatches frozen deferred requests         | Waiting Turn remains unchanged                                  | Reject input; do not create a new Turn                                                                                                            |
-| Parent is absent, unauthorized, unsealed, ineligible, or advanced          | Turn acceptance fails                                           | Caller re-reads authorized history or requests an explicit fork                                                                                   |
-| Write is initiated after Turn sealing                                      | Frozen state and outcome remain unchanged                       | Reject before object I/O even if the caller has process-local bytes or a stale object version                                                     |
+| Failure or interruption                                                    | Durable outcome                                                                                          | Recovery rule                                                                                                                                     |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial state or input publication fails                                   | No Turn is accepted                                                                                      | Retry under the acceptance idempotency contract                                                                                                   |
+| Initial objects publish but relational acceptance fails                    | Objects are non-authoritative orphans                                                                    | Cleanup removes them after proving no accepted Turn owns the key                                                                                  |
+| Queued successor state publishes but combined completion rolls back        | Source remains active under its existing outcome candidate; queue remains queued and no successor exists | Retry ordinary source completion under current race rules; clean or reuse only objects whose ownership can be proved                              |
+| Conditional state write conflicts                                          | Existing complete state remains visible                                                                  | Re-read Turn and object versions; stale writers stop                                                                                              |
+| State write response is lost                                               | Replacement effect is unknown                                                                            | Reconcile by deterministic key, metadata, and opaque version before retrying                                                                      |
+| Terminal candidate writes but relational seal fails                        | Turn remains active; candidate is a resumable prepared state                                             | Current or later authorized attempt can retry exact sealing after reconciliation                                                                  |
+| State containing inbox receipts writes but row consumption does not commit | The object is prepared but inbox consumption is not yet durable                                          | Follow the [active-control race and reconciliation contract](35-agent-control-active-execution.md#completion-and-control-races)                   |
+| Stale `TurnAttempt` writes lifecycle, usage, pending data, or outcome      | Relational write is rejected by Turn fencing                                                             | Current attempt continues; stale work is cancelled best-effort                                                                                    |
+| A state write prepared before sealing reaches storage after the seal       | The object outcome can be unknown but is not selected                                                    | The sealed relational outcome remains authoritative; no inbox or continuation fact adopts the object-only write                                   |
+| Worker disappears after a committed checkpoint                             | Latest state remains at the same key                                                                     | After lease expiry, a Worker's transactional takeover creates a later fenced attempt that reconstructs fresh bindings and resumes                 |
+| Worker disappears after uncheckpointed work                                | Only the prior checkpoint is recoverable                                                                 | The replacement attempt projects unmatched durable Agent tool dispatches as `unknown_outcome` before resuming                                     |
+| Recovery budget is exhausted                                               | Turn seals as `failed`                                                                                   | The sealed Turn receives no later attempt; see the [allocation boundary](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary) |
+| Required state, schema, or codec is permanently incompatible               | No model or tool work starts                                                                             | Apply an explicit compatible reader or fail the Turn                                                                                              |
+| Frozen artifact or dependency is temporarily unavailable                   | Selected state remains unchanged                                                                         | Apply bounded backoff only when policy classifies the condition retryable and budget remains                                                      |
+| State object is confirmed missing or fails integrity validation            | Turn seals as `failed` without selecting invalid state bytes                                             | Freeze the exact deterministic key, record a bounded failure, and never substitute listing results                                                |
+| Waiting feedback is invalid or mismatches frozen deferred requests         | Waiting Turn remains unchanged                                                                           | Reject input; do not create a new Turn                                                                                                            |
+| A required parent is absent, unauthorized, unsealed, or ineligible         | Turn acceptance fails                                                                                    | Caller re-reads authorized history and chooses an eligible operation                                                                              |
+| Write is initiated after Turn sealing                                      | Frozen state and outcome remain unchanged                                                                | Reject before object I/O even if the caller has process-local bytes or a stale object version                                                     |
 
 Cancellation before durable acceptance creates no Turn. Interrupt after
 acceptance seals the Turn without selecting in-flight state and does not make
@@ -1030,8 +1068,9 @@ cannot make external effects exactly once; unresolved calls follow the
 01. The Turn is Foundation's durable Agent-work and recovery boundary; each Turn
     owns one deterministic state key and no base, result, or selectable
     checkpoint-history object.
-02. Start, continue, feedback, fork, and retry initialize a complete Turn-owned
-    state without mutating or aliasing the parent key.
+02. Start, continue, continue from, feedback, fork, and retry initialize a complete Turn-owned
+    state without mutating or aliasing the parent key. A null-head root-like
+    Continue initializes empty state under the existing Thread ID.
 03. Only the current leased and fenced `TurnAttempt` can conditionally replace
     active state; `checkpoint_seq` and expected object versions prevent stale
     overwrite.
@@ -1058,3 +1097,14 @@ cannot make external effects exactly once; unresolved calls follow the
 11. `accepted` exists only before the first Attempt. Replacement Attempts and
     retry backoff keep the same Turn `running`; a `failed` Turn is sealed and
     never returns to `accepted`.
+12. Several retained same-Thread Turns can share one completed parent; only the
+    Thread's selected head and current Turn determine the active continuation
+    branch, and at most one Turn in that Thread is active.
+13. Before a Thread has selected any waiting or completed head, several failed
+    or cancelled root-lineage Turns can precede another root-like acceptance;
+    at most one root-lineage Turn can be active or selected as waiting or
+    completed.
+14. A completed source Turn, first queued submission, and already-state-backed
+    successor can commit as one combined handoff; the final Thread head names
+    the completed source, the current Turn names the accepted successor, and no
+    accepted successor can lack its complete initial state.

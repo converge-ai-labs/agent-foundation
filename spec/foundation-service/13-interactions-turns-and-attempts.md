@@ -4,7 +4,7 @@
 
 Foundation implements the shared [`Session`, `Thread`, `Turn`, and `Item`](../interaction-model.md) interaction model directly as its durable Agent-work model. A `Turn` is one accepted scheduling, recovery, state, and terminal-outcome boundary. A `TurnAttempt` is one replaceable fenced worker generation for that Turn. Foundation defines no separate durable `Execution` or `ExecutionAttempt` resource.
 
-Every Foundation-managed AgentPreset invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Acceptance pins one exact immutable AgentPresetVersion and internal Plugin Runtime lock. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn without re-resolving either selection. Atomic authenticated feedback for a waiting Turn, an explicit continuation, a fork, and retry of terminal intent create another Turn rather than reopening the sealed parent.
+Every Foundation-managed AgentPreset invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Acceptance pins one exact immutable AgentPresetVersion and internal Plugin Runtime lock. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn without re-resolving either selection. Atomic authenticated feedback for a waiting Turn, an explicit continuation, consumption of queued input, a fork, and retry of terminal intent create another Turn rather than reopening the sealed parent.
 
 [Durable Thread Persistence](24-thread-persistence.md) owns the independent Thread row, Session membership, origin, version, current Turn, and selected continuation head. [Durable Turn State](14-turn-persistence.md) owns Turn fields, lifecycle, state-object publication, sealing, lineage, and recovery budget. [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) owns TurnAttempt fields, leases, fences, dispatch evidence, and attempt outcomes. This document owns only the interaction-to-runtime mapping and the boundaries that those detailed contracts must preserve.
 
@@ -12,6 +12,9 @@ Every Foundation-managed AgentPreset invocation, including an interactive reques
 owns start, ordinary continuation, atomic waiting feedback, fork, and retry.
 [Agent Control: Active Execution](35-agent-control-active-execution.md) owns the
 Thread inbox, active steering, interrupt, and their Agent-work semantics.
+[Agent Control: Queued Submissions](36-agent-control-queued-submissions.md) owns
+queue-if-busy submission, editable future input, and its atomic conversion into
+an accepted continuation or root-like Turn.
 
 ## Relationships
 
@@ -41,12 +44,14 @@ The diagram shows identity and lineage, not live object containment. Every Turn 
 
 Items and replay data are projections of a Turn and never become continuation
 state. A Thread inbox entry is durable inbound work but never becomes another
-Turn or TurnAttempt identity. A Harness Run, model request, Redis entry, Item,
-or delivery cursor never replaces Turn or TurnAttempt identity.
+Turn or TurnAttempt identity. A queued submission likewise creates neither
+identity until its consumption transaction accepts a Turn. A Harness Run,
+model request, Redis entry, Item, or delivery cursor never replaces Turn or
+TurnAttempt identity.
 
 ## Turn and TurnAttempt Lifecycle Boundary
 
-A Turn begins as `accepted`. A Worker's first successful claim creates a new TurnAttempt, selects it as the current generation, and moves the Turn to `running`. A replacement Worker's short transaction marks an expired prior Attempt `failed`, creates and selects the next generation within budget, and leaves the same Turn `running`. A retryable Attempt failure can temporarily leave that running Turn without a current Attempt until `available_at`. A waiting or completed Harness outcome first publishes a complete matching state candidate and then atomically verifies that the Turn remains the Thread's current Turn, seals it, selects it as the Thread head, and increments the Thread version. Failed or cancelled sealing leaves that Turn current and preserves the prior head.
+A Turn begins as `accepted`. A Worker's first successful claim creates a new TurnAttempt, selects it as the current generation, and moves the Turn to `running`. A replacement Worker's short transaction marks an expired prior Attempt `failed`, creates and selects the next generation within budget, and leaves the same Turn `running`. A retryable Attempt failure can temporarily leave that running Turn without a current Attempt until `available_at`. A waiting or completed Harness outcome first publishes a complete matching state candidate and then atomically verifies that the Turn remains the Thread's current Turn, seals it, and selects it as the Thread head. A completed outcome can additionally prepublish a queued successor's complete initial state and, in the same sealing transaction, consume the first queued submission, accept that successor, and select it as Thread current. Failed or cancelled sealing leaves that Turn current and preserves the prior head.
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed Turn outcomes. They are never returned to `accepted` or `running`. Pending feedback does not reopen a waiting Turn: once the full feedback set is authenticated and accepted, Foundation accepts a new Turn whose `parent_turn_id` names that waiting Turn and leaves the parent unchanged.
 
@@ -96,7 +101,7 @@ Bounded connector transport retries and internal Harness recovery remain within 
 03. Turn owns accepted schedulable Agent work, exact AgentPresetVersion and Runtime-lock selection, lineage, state, recovery budget, and durable outcome.
 04. TurnAttempt owns one replaceable fenced worker generation and starts at most one Harness Run.
 05. Foundation defines no separate durable Execution or ExecutionAttempt resource.
-06. Waiting feedback, continuation, fork, and terminal retry create another Turn rather than reopening a sealed Turn.
+06. Waiting feedback, continuation, queued-submission consumption, fork, and terminal retry create another Turn rather than reopening a sealed Turn.
 07. Only the current TurnAttempt can conditionally publish state or commit a Turn transition.
 08. The current TurnAttempt durably binds its immutable Harness Run identity before the first live observation is published.
 09. Every Agent tool invocation is recorded durably under the current fence before dispatch.
@@ -112,3 +117,11 @@ Bounded connector transport retries and internal Harness recovery remain within 
 16. Active steering remains inside one running Turn and becomes consumed only
     through a fenced complete-state checkpoint; interrupt seals that Turn as
     cancelled.
+17. A queued submission owns no execution state or lease; only its atomic
+    consumption creates the Turn whose later TurnAttempts own execution.
+18. A completed outcome can use state-first preparation and one combined
+    transaction to seal the source, consume the first queued submission, and
+    accept its successor. Preparation or validation failure never blocks source
+    completion: the queue remains durable for terminal recovery scanning.
+    Waiting state blocks drain until feedback, retry, or explicit branch
+    selection progresses the Thread.

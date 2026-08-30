@@ -35,6 +35,7 @@ flowchart LR
         Interaction[Session, Thread, Turn, and Item]
         Lifecycle[Turn lifecycle]
         Feedback[Deferred feedback]
+        Queue[Queued submissions]
         ActiveControl[Thread inbox, steer, and interrupt]
         Publisher[Outbox publisher]
     end
@@ -61,8 +62,8 @@ flowchart LR
     Client --> Gateway
     Gateway --> Native & Agui & A2A
     Native & Agui & A2A --> Auth
-    Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & ActiveControl
-    Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & ActiveControl --> Database
+    Auth --> Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & Queue & ActiveControl
+    Authoring & Interaction & Lifecycle & ConnectorControl & Feedback & Queue & ActiveControl --> Database
     ActiveControl -. best-effort wakeup .-> ControlBus --> Runtime
     Runtime -->|scan, preflight, claim, and takeover| Database
     Runtime --> Reconstruct --> Harness
@@ -75,8 +76,8 @@ flowchart LR
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, Thread version
-and head selection, the durable Thread inbox, Turns, current TurnAttempt
+PostgreSQL is the distributed authority for accepted resources, Thread
+advancement and queue versions, head selection, queued submissions, the durable Thread inbox, Turns, current TurnAttempt
 generations, Agent tool dispatch evidence, waiting pending summaries,
 Environment configuration, and terminal outcomes. Each Worker discovers claim,
 takeover, and pending-inbox work directly from that durable state. Redis carries
@@ -88,7 +89,8 @@ conditionally replaced state, including exact pending requests, consumed inbox
 receipts, immutable replay snapshot, and bounded large content. The detailed
 authorities belong to [Durable Thread Persistence](24-thread-persistence.md),
 [Durable Turn State](14-turn-persistence.md), [Agent Control: Active
-Execution](35-agent-control-active-execution.md), [Environment Configuration
+Execution](35-agent-control-active-execution.md), [Agent Control: Queued
+Submissions](36-agent-control-queued-submissions.md), [Environment Configuration
 and Runtime Bindings](19-environment-management.md), [Lifecycle and Stream
 Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction
 Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
@@ -105,6 +107,7 @@ Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 | Managed Harness plugin artifacts and Runtime locks                          | Foundation control plane and Worker runtime                   | Preflights on demand or stages exact trusted Runner environments               |
 | Durable Thread resource                                                     | Foundation                                                    | Owns Session membership, origin, current Turn, continuation head, and version  |
 | Turn and TurnAttempt                                                        | Foundation                                                    | Own durable scheduling, state, fencing, recovery, and outcome                  |
+| Queue-if-busy ordinary input                                                | [Queued Submissions](36-agent-control-queued-submissions.md)  | Accepts immediately when eligible or remains editable outside the Turn DAG     |
 | Thread inbox, steer, and interrupt                                          | [Active Execution](35-agent-control-active-execution.md)      | Persists inbound active control and uses Redis only for expiring wakeups       |
 | Environment, EnvironmentRevision, and Turn execution configuration          | [Environment Configuration](19-environment-management.md)     | Freezes an exact connection target in Turn state                               |
 | Process-local Agent composition and loop                                    | Harness                                                       | Built by a trusted Foundation reconstruction adapter                           |
@@ -215,3 +218,8 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
 09. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
 10. Public protocol adapters share application and authorization authority but
     retain independent wire identities, errors, and delivery contracts.
+11. A queued submission owns no execution lease or outcome; only atomic
+    consumption accepts the Turn that later owns scheduling and recovery. A
+    state-first completed handoff can combine source sealing, first-entry
+    consumption, and successor acceptance in one short transaction; otherwise
+    terminal relational state remains sufficient for recovery scanning.

@@ -7,8 +7,8 @@ This directory defines `foundation-service`, the optional durable Host that embe
 Foundation owns managed Secrets, ModelConfigs, resource authorization,
 serializable AgentPreset authoring resources, immutable AgentPresetVersions,
 Workspace Skill resources and immutable package revisions, trusted Harness
-plugin artifacts and Runtime locks, durable Threads, Turns, and TurnAttempts,
-scheduling, the durable Thread inbox, waiting pending summaries and exact
+plugin artifacts and Runtime locks, durable Threads, editable queued
+submissions, Turns, and TurnAttempts, scheduling, the durable Thread inbox, waiting pending summaries and exact
 Turn-state requests, Environment connection configuration in Turn state,
 lifecycle events, raw usage records, and the public management API.
 The control surface also owns the Foundation Service Protocol Gateway, which
@@ -70,17 +70,18 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [31 A2A](31-a2a.md)                                                                                   | A2A 1.0 HTTP+JSON discovery, Context/Task projection, streaming, Artifacts, push notifications, and security                                |
 | [32 Service SDKs and Clients](32-service-sdks-and-clients.md)                                         | Python, Go, Rust, and TypeScript SDK parity plus Foundation Web and remote CLI boundaries                                                   |
 | [33 Agent Input](33-agent-input.md)                                                                   | Versioned Agent input, binary acquisition and delivery, accepted canonicalization, adapter configuration, and Harness mapping               |
-| [34 Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                | Start, existing-Thread continuation, atomic waiting feedback, fork, and retry                                                               |
+| [34 Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                | Start, selected-head, null-head root-like, or explicit historical same-Thread continuation, atomic waiting feedback, fork, and retry        |
 | [35 Agent Control: Active Execution](35-agent-control-active-execution.md)                            | Thread inbox, durable steer and interrupt commands, state-coupled consumption, Redis control wakeups, and outcome races                     |
+| [36 Agent Control: Queued Submissions](36-agent-control-queued-submissions.md)                        | Queue-if-busy Thread submission, editable ordered input, state-first completed handoff, terminal recovery drain, and atomic consumption     |
 
 Read `00`, `01`, and `02` before changing process startup, roles, or distribution
 contents. Read `03`, `04`, and `06` before introducing a durable capability.
 Read `05`, `10`, and `21` before changing public ingress. Read `24` before `13`
 through `17` when changing Thread or Turn persistence, recovery, or reads. Read
 `12`, `14`, `19`, and `25` before `33` when changing Agent input. Read
-`14` and `15` before `34` or `35` when changing Agent invocation,
-continuation, atomic waiting feedback, fork, retry, steer, interrupt, or durable
-control state.
+`14` and `15` before `34`, `35`, or `36` when changing Agent invocation,
+continuation, queued submission, atomic waiting feedback, fork, retry, steer,
+interrupt, or durable control state.
 Read `18` before changing async subagents.
 Read `06`, `17`, `20`, and `20a` before changing Hook names,
 subscriptions, replay, Webhook delivery, or live notification
@@ -131,6 +132,9 @@ These roots are boundaries, not a requirement that every capability become a sub
   fenced `TurnAttempt` leases, performs recovery checks, and invokes Harness. It
   exposes no additional product API and never runs migrations.
 - PostgreSQL is authoritative for accepted lifecycle state and fencing. Real Redis is required for distributed data flow and coordination; each owning domain defines its Redis retention and replay semantics, and Redis delivery alone never proves a relational transition.
+- Queued input remains a separate editable relational resource until one short
+  consumption transaction accepts its Turn. Queue rows own no Worker lease,
+  retry, or outcome state.
 - The artifact's distribution descriptor explicitly composes the complete configuration, routers, role components, authorization contributions, metadata, and migration graph; installed packages never change the service implicitly.
 - Foundation records contain only Foundation-owned serializable data. They contain no Python class, plugin instance, native Model, Toolset, Capability, callable, client, credential, provider attachment, or live controller.
 - The worker verifies exact locks and uses trusted installed adapters to reconstruct a process-local Harness `AgentDefinition` and fresh `RunBindings`.
