@@ -21,11 +21,11 @@ DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS = 600.0
 DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS = 600.0
 
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_ALIAS_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
+_MOUNT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 
 
 class EnvironmentError(HarnessError):
-    """Environment binding, operation, or lifecycle failed."""
+    """Environment mount, operation, or lifecycle failed."""
 
 
 class EnvironmentAction(StrEnum):
@@ -118,9 +118,9 @@ def _require_identifier(value: str, name: str) -> str:
     return value
 
 
-def _require_alias(value: str) -> str:
-    if not _ALIAS_PATTERN.fullmatch(value):
-        raise ValueError("alias must match ^[a-z][a-z0-9-]{0,62}$")
+def _require_mount_name(value: str) -> str:
+    if not _MOUNT_NAME_PATTERN.fullmatch(value):
+        raise ValueError("mount name must match ^[a-z][a-z0-9-]{0,62}$")
     return value
 
 
@@ -140,18 +140,17 @@ def _thaw_json(value: JsonValue) -> JsonValue:
     return value
 
 
-class EnvironmentTopologyLimits(BaseModel):
+class EnvironmentRuntimeLimits(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    max_bindings: Annotated[int, Field(gt=0, le=1024)] = 32
-    max_committed_changes: Annotated[int, Field(gt=0, le=100_000)] = 1024
+    max_mounts: Annotated[int, Field(gt=0, le=1024)] = 32
 
 
 class EnvironmentStateLimits(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    max_binding_entries: Annotated[int, Field(gt=0, le=1024)] = 32
-    max_binding_encoded_bytes: Annotated[int, Field(gt=0)] = 1_048_576
+    max_mount_entries: Annotated[int, Field(gt=0, le=1024)] = 32
+    max_mount_encoded_bytes: Annotated[int, Field(gt=0)] = 1_048_576
     max_aggregate_encoded_bytes: Annotated[int, Field(gt=0)] = 4_194_304
     export_timeout_seconds: float = 600.0
     restore_timeout_seconds: float = 600.0
@@ -237,101 +236,69 @@ class EnvironmentAvailability(BaseModel):
         return None if value is None else _require_identifier(value, "reason_code")
 
 
-@dataclass(frozen=True, slots=True)
-class EnvironmentBindingRequest:
-    binding_id: str
-    binding_version: int
-    alias: str
-    permission_ceiling: EnvironmentPermissionSet
-    default_working_directory: str | None
-    provider_binding: Any | None
-
-    def __post_init__(self) -> None:
-        _require_identifier(self.binding_id, "binding_id")
-        if self.binding_version <= 0:
-            raise ValueError("binding_version must be positive")
-        _require_alias(self.alias)
-        if self.default_working_directory is not None and "\x00" in self.default_working_directory:
-            raise ValueError("default_working_directory contains NUL")
-
-
-@dataclass(frozen=True, slots=True)
-class EnvironmentTopologyRequest:
-    topology_version: int
-    bindings: tuple[EnvironmentBindingRequest, ...]
-    default_binding_id: str | None
-
-    def __post_init__(self) -> None:
-        if self.topology_version <= 0:
-            raise ValueError("topology_version must be positive")
-        object.__setattr__(self, "bindings", tuple(self.bindings))
-        if self.default_binding_id is not None:
-            _require_identifier(self.default_binding_id, "default_binding_id")
-
-
-class EnvironmentBinding(BaseModel):
+class EnvironmentMountInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    binding_id: str
-    binding_version: Annotated[int, Field(gt=0)]
-    alias: str
+    name: str
     provider_type: str
     descriptor: EnvironmentDescriptor
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
 
-    @field_validator("binding_id", "provider_type")
+    @field_validator("name")
     @classmethod
-    def _valid_id(cls, value: str, info: Any) -> str:
-        return _require_identifier(value, info.field_name)
+    def _valid_name(cls, value: str) -> str:
+        return _require_mount_name(value)
 
-    @field_validator("alias")
+    @field_validator("provider_type")
     @classmethod
-    def _valid_alias(cls, value: str) -> str:
-        return _require_alias(value)
+    def _valid_provider_type(cls, value: str) -> str:
+        return _require_identifier(value, "provider_type")
 
 
-class EnvironmentBindingObservation(BaseModel):
+class EnvironmentMountObservation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    binding: EnvironmentBinding
+    mount: EnvironmentMountInfo
     availability: EnvironmentAvailability
 
 
-class EnvironmentTopology(BaseModel):
+class EnvironmentSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    topology_version: Annotated[int, Field(gt=0)]
-    bindings: tuple[EnvironmentBinding, ...]
-    default_binding_id: str | None
+    mounts: tuple[EnvironmentMountInfo, ...]
+    default_mount: str | None
+
+    @field_validator("default_mount")
+    @classmethod
+    def _valid_default_mount(cls, value: str | None) -> str | None:
+        return None if value is None else _require_mount_name(value)
 
 
 class EnvironmentReadinessRequirement(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     operations: frozenset[EnvironmentOperationFamily]
-    binding_ids: frozenset[str] | None = None
+    mounts: frozenset[str] | None = None
     timeout_seconds: float | None = None
 
     @model_validator(mode="after")
     def _non_empty(self) -> EnvironmentReadinessRequirement:
         if not self.operations:
             raise ValueError("operations must not be empty")
-        if self.binding_ids is not None and not self.binding_ids:
-            raise ValueError("binding_ids must not be empty")
+        if self.mounts is not None and not self.mounts:
+            raise ValueError("mounts must not be empty")
         if self.timeout_seconds is not None:
             _positive_finite(self.timeout_seconds, "timeout_seconds")
         return self
 
 
-class EnvironmentBindingState(BaseModel):
+class EnvironmentMountState(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     provider_type: str
     state_version: str
-    resource_compatibility: Literal["same_logical_resource", "portable"]
-    observed_generation: str | None = None
-    data: JsonValue
+    state: JsonValue
 
     @field_validator("provider_type", "state_version")
     @classmethod
@@ -342,64 +309,61 @@ class EnvironmentBindingState(BaseModel):
 class EnvironmentState(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
-    observed_topology_version: Annotated[int, Field(gt=0)]
-    bindings: Mapping[str, EnvironmentBindingState] = Field(default_factory=dict)
+    mounts: Mapping[str, EnvironmentMountState] = Field(default_factory=dict)
 
-    @field_validator("bindings", mode="after")
+    @field_validator("mounts", mode="after")
     @classmethod
-    def _immutable_bindings(
+    def _immutable_mounts(
         cls,
-        value: Mapping[str, EnvironmentBindingState],
-    ) -> Mapping[str, EnvironmentBindingState]:
-        return MappingProxyType({_require_identifier(key, "binding_id"): item for key, item in value.items()})
+        value: Mapping[str, EnvironmentMountState],
+    ) -> Mapping[str, EnvironmentMountState]:
+        return MappingProxyType({_require_mount_name(key): item for key, item in value.items()})
 
-    @field_serializer("bindings")
-    def _serialize_bindings(
+    @field_serializer("mounts")
+    def _serialize_mounts(
         self,
-        value: Mapping[str, EnvironmentBindingState],
-    ) -> dict[str, EnvironmentBindingState]:
+        value: Mapping[str, EnvironmentMountState],
+    ) -> dict[str, EnvironmentMountState]:
         return dict(value)
 
 
 class EnvironmentOperationReceipt(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    binding_id: str
-    binding_version: Annotated[int, Field(gt=0)]
+    mount_id: str
     observed_generation: str
     operation_id: str
     stage: Literal["accepted", "dispatched", "exec_confirmed", "completed", "unknown"]
     outcome: Literal["succeeded", "failed", "cancelled", "timed_out", "unknown"] | None
 
+    @field_validator("mount_id")
+    @classmethod
+    def _valid_mount_id(cls, value: str) -> str:
+        return _require_identifier(value, "mount_id")
+
 
 class EnvironmentPath(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    binding_id: str
-    binding_version: Annotated[int, Field(gt=0)]
+    mount_id: str
     path: str
 
-    @field_validator("binding_id")
+    @field_validator("mount_id")
     @classmethod
-    def _valid_binding_id(cls, value: str) -> str:
-        return _require_identifier(value, "binding_id")
+    def _valid_mount_id(cls, value: str) -> str:
+        return _require_identifier(value, "mount_id")
 
 
-class EnvironmentTopologyBindingChange(BaseModel):
+class EnvironmentChange(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["added", "removed", "refreshed"]
-    binding_id: str
-    previous_version: Annotated[int, Field(gt=0)] | None
-    current_version: Annotated[int, Field(gt=0)] | None
-    previous_alias: str | None
-    current_alias: str | None
+    sequence: Annotated[int, Field(gt=0)]
+    kind: Literal["mounted", "replaced", "unmounted", "default_changed"]
+    name: str | None = None
+    previous_default: str | None = None
+    current_default: str | None = None
 
-
-class EnvironmentTopologyChange(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    previous_version: Annotated[int, Field(gt=0)]
-    current_version: Annotated[int, Field(gt=0)]
-    request_digest: str
-    bindings: tuple[EnvironmentTopologyBindingChange, ...]
+    @field_validator("name", "previous_default", "current_default")
+    @classmethod
+    def _valid_mount_name(cls, value: str | None) -> str | None:
+        return None if value is None else _require_mount_name(value)

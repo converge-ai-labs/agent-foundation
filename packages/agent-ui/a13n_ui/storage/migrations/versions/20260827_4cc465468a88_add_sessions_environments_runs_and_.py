@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("provider_key", sa.String(length=128), nullable=False),
         sa.Column("provider_schema_version", sa.String(length=64), nullable=False),
         sa.Column("provider_spec_digest", sa.String(length=64), nullable=False),
-        sa.Column("binding_parameters_json", sa.Text(), nullable=False),
+        sa.Column("provider_parameters_json", sa.Text(), nullable=False),
         sa.Column("resource_allocation", sa.String(length=32), nullable=False),
         sa.Column("lifecycle_state", sa.String(length=32), nullable=False),
         sa.Column("operation_fence", sa.Integer(), nullable=False),
@@ -168,10 +168,9 @@ def upgrade() -> None:
         "session_environment_assignment",
         sa.Column("assignment_id", sa.String(length=80), nullable=False),
         sa.Column("session_id", sa.String(length=80), nullable=False),
-        sa.Column("binding_name", sa.String(length=128), nullable=False),
+        sa.Column("mount_name", sa.String(length=128), nullable=False),
         sa.Column("model_alias", sa.String(length=63), nullable=False),
         sa.Column("permission_ceiling_json", sa.Text(), nullable=False),
-        sa.Column("required", sa.Boolean(), nullable=False),
         sa.Column("scope_key", sa.String(length=128), nullable=False),
         sa.Column("host_resource_id", sa.String(length=80), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -188,7 +187,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("assignment_id", name=op.f("pk_session_environment_assignment")),
-        sa.UniqueConstraint("session_id", "binding_name", "scope_key", name="scope_binding"),
+        sa.UniqueConstraint("session_id", "mount_name", "scope_key", name="scope_mount"),
     )
     with op.batch_alter_table("session_environment_assignment", schema=None) as batch_op:
         batch_op.create_index(

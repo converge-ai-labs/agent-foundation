@@ -96,7 +96,7 @@ Idempotency-Key: opaque-caller-key
 
 The request carries `expected_thread_version`, bounded input, an optional stable
 `agent_preset_id`, an optional active-Version precondition,
-`selected_skill_names`, a policy-permitted Environment topology selection, and
+`selected_skill_names`, an optional policy-permitted desired Environment mount selection, and
 policy-supported metadata. Foundation reads the independent Thread row, requires
 the current Turn not to be `accepted` or `running`, selects its exact completed
 `head_turn_id` as the parent, and never infers a parent from Turn timestamps. The
@@ -107,7 +107,7 @@ Version and lock. Acceptance atomically sets `current_turn_id` to the new accept
 Turn, preserves the head, increments Thread version, and creates the Turn, first
 user Item, lifecycle events, idempotency evidence, and outbox intents.
 
-Each Environment topology entry can select an `EnvironmentId`, an exact
+Each desired Environment mount can select an `EnvironmentId`, an exact
 `EnvironmentRevisionId`, or a policy-permitted inline connection configuration
 as defined by [Environment Configuration](19-environment-management.md#environment-selection-and-turn-state).
 Acceptance resolves references and stores the complete exact configuration in
@@ -140,8 +140,7 @@ Idempotency-Key: opaque-caller-key
 Root submission accepts an Agent invocation that does not continue an existing
 Thread. The request names one stable `agent_preset_id` and can carry
 `agent_preset_version_id` only as an active-Version precondition, plus bounded
-input, optional `selected_skill_names`, an optional policy-permitted Environment
-topology using the same reference or inline forms, and declared trigger metadata.
+input, optional `selected_skill_names`, an optional policy-permitted desired Environment mount selection using the same reference or inline forms, and declared trigger metadata.
 Acceptance resolves that Preset's current active Version and internal Runtime
 lock, validates every selection, then selects or creates one Session and its root
 Thread under current policy.

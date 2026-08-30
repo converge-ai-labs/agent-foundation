@@ -18,7 +18,7 @@ from a13n_harness import (
     RunError,
     RuntimeContextCapability,
 )
-from a13n_harness.environment.advanced import NoopEnvironmentRunBinding
+from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from a13n_harness.tools import (
     ClientToolDefinition,
     ClientToolsCapability,
@@ -101,7 +101,7 @@ def _child_bindings() -> RunBindings:
             parent_agent_instance_id="parent-1",
             delegation_id="delegation-1",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
     )
 
 

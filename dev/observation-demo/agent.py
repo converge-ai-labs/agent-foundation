@@ -49,12 +49,11 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EmptyEnvironmentRuntime,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    NoopEnvironmentRunBinding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from a13n_harness.tools import (
@@ -393,23 +392,16 @@ def _local_environment(root: Path):
             root=DirectLocalRootConfiguration(path=root),
         )
     )
-    request = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="observation-demo-binding",
-                binding_version=1,
-                alias="local",
+    return create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="observation-demo-binding",
-    )
-    return create_environment_run_binding(
-        initial_topology=request,
-        topology_limits=EnvironmentTopologyLimits(),
+                working_directory="/",
+            )
+        },
+        default_mount="local",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -527,7 +519,7 @@ async def _subagent_bindings() -> RunBindings:
                 delegation_id=child_instance_id,
                 actor="observation-demo-parent",
             ),
-            environment=NoopEnvironmentRunBinding(),
+            environment=EmptyEnvironmentRuntime(),
         )
 
     return RunBindings(
@@ -536,7 +528,7 @@ async def _subagent_bindings() -> RunBindings:
             agent_instance_id=parent_instance_id,
             actor="observation-demo-host",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
         capabilities=(
             InvocationPolicyCapability(evaluator=_AllowInvocations(), max_dispatch_retries=0),
             DelegationRunCapability(binder=bind_child),
@@ -631,7 +623,7 @@ async def _run_scenario(
                 agent_instance_id=f"observation-{scenario}-instance",
                 actor="observation-demo-host",
             ),
-            environment=NoopEnvironmentRunBinding(),
+            environment=EmptyEnvironmentRuntime(),
             observation=observation,
         )
 

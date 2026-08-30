@@ -40,12 +40,11 @@ from a13n_harness import (
 )
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
-    EnvironmentBindingRequest,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from anyio import CancelScope, Event, Lock, current_time, move_on_after, to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -879,7 +878,7 @@ async def _open_environment(
 ) -> tuple[BoundEnvironment, SkillManager, tuple[FileSkillSource, ...]]:
     directories = {item.directory_id: item.path for item in settings.local_directories}
     factory_catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
-    bindings: list[EnvironmentBindingRequest] = []
+    mounts: dict[str, EnvironmentRuntimeMount] = {}
     harness_sources: list[FileSkillSource] = []
     alias_by_directory: dict[str, str] = {}
     for source in sources:
@@ -912,15 +911,10 @@ async def _open_environment(
             entered = await stack.enter_async_context(managed)
             attachment = await stack.enter_async_context(entered.acquire_attachment())
             provider_binding = create_environment_provider_binding(attachment)
-            bindings.append(
-                EnvironmentBindingRequest(
-                    binding_id=f"skill-binding-{len(alias_by_directory)}",
-                    binding_version=1,
-                    alias=alias,
-                    permission_ceiling=_READ_PERMISSIONS,
-                    default_working_directory="/",
-                    provider_binding=provider_binding,
-                )
+            mounts[alias] = EnvironmentRuntimeMount(
+                binding=provider_binding,
+                permission_ceiling=_READ_PERMISSIONS,
+                working_directory="/",
             )
         roots = tuple(f"/environment/{alias}{root if root != '/' else ''}" for root in source.roots)
         harness_sources.append(
@@ -931,17 +925,13 @@ async def _open_environment(
                 max_entries_per_root=source.max_entries_per_root,
             )
         )
-    run_binding = create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=tuple(bindings),
-            default_binding_id=None,
-        ),
-        topology_limits=EnvironmentTopologyLimits(max_bindings=max(1, len(bindings))),
+    runtime = create_environment_runtime(
+        mounts=mounts,
+        runtime_limits=EnvironmentRuntimeLimits(max_mounts=max(1, len(mounts))),
         state_limits=EnvironmentStateLimits(),
     )
     environment = await stack.enter_async_context(
-        run_binding.bind(
+        runtime.bind(
             run_id=f"skill-scan-{uuid4().hex}",
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-ui", subject="skill-management"),

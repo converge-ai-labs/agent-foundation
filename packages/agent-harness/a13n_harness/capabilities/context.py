@@ -376,7 +376,7 @@ class FileContextCapability(AbstractModelContextCapability):
             return existing
 
         sections: list[tuple[str, str]] = []
-        loaded_paths: set[tuple[str, int, str]] = set()
+        loaded_paths: set[tuple[str, str]] = set()
         used_bytes = 0
         failures: list[str] = []
         selected_paths = _file_context_paths(self.configuration)
@@ -387,7 +387,7 @@ class FileContextCapability(AbstractModelContextCapability):
                 if explicit:
                     failures.append(f"{path}: {exc.code}")
                 continue
-            resolved_key = (resolved.binding_id, resolved.binding_version, resolved.path)
+            resolved_key = (resolved.mount_id, resolved.path)
             if resolved_key in loaded_paths:
                 continue
             remaining = self.configuration.max_bytes - used_bytes

@@ -141,14 +141,12 @@ class LocalRetentionStore:
         self,
         *,
         root: Path,
-        binding_id: str,
-        binding_version: int,
+        mount_id: str,
         generation: str,
         max_spool_bytes: int,
     ) -> None:
         self._root = root
-        self._binding_id = binding_id
-        self._binding_version = binding_version
+        self._mount_id = mount_id
         self._generation = generation
         self._max_spool_bytes = max_spool_bytes
         self._records: dict[str, _Record] = {}
@@ -213,8 +211,7 @@ class LocalRetentionStore:
                 dropped_bytes=dropped_bytes,
             )
         return BoundOutputReference(
-            binding_id=self._binding_id,
-            binding_version=self._binding_version,
+            mount_id=self._mount_id,
             observed_generation=self._generation,
             reference=OpaqueOutputReference._from_payload(token),
         )
@@ -226,12 +223,8 @@ class LocalRetentionStore:
             await self._refund(written)
 
     def _validate_reference(self, reference: BoundOutputReference) -> str:
-        if (
-            reference.binding_id != self._binding_id
-            or reference.binding_version != self._binding_version
-            or reference.observed_generation != self._generation
-        ):
-            raise EnvironmentError("Retained-output reference is foreign or stale.", code="environment_stale_binding")
+        if reference.mount_id != self._mount_id or reference.observed_generation != self._generation:
+            raise EnvironmentError("Retained-output reference is foreign or stale.", code="environment_stale_mount")
         return _unwrap_opaque(reference.reference, OpaqueOutputReference)
 
     async def read(
@@ -246,12 +239,8 @@ class LocalRetentionStore:
             raise EnvironmentError("Specify cursor or start_offset, not both.", code="environment_request_invalid")
         token = self._validate_reference(reference)
         if cursor is not None:
-            if (
-                cursor.binding_id != self._binding_id
-                or cursor.binding_version != self._binding_version
-                or cursor.observed_generation != self._generation
-            ):
-                raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_binding")
+            if cursor.mount_id != self._mount_id or cursor.observed_generation != self._generation:
+                raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_mount")
             raw = _unwrap_opaque(cursor.cursor, OpaqueOutputCursor)
             try:
                 cursor_token, raw_offset = raw.split(":", 1)
@@ -279,8 +268,7 @@ class LocalRetentionStore:
         next_cursor = None
         if not complete:
             next_cursor = BoundOutputCursor(
-                binding_id=self._binding_id,
-                binding_version=self._binding_version,
+                mount_id=self._mount_id,
                 observed_generation=self._generation,
                 cursor=OpaqueOutputCursor._from_payload(f"{token}:{end}"),
             )
@@ -319,12 +307,8 @@ class LocalRetentionStore:
             token = self._validate_reference(reference)
         else:
             assert cursor is not None
-            if (
-                cursor.binding_id != self._binding_id
-                or cursor.binding_version != self._binding_version
-                or cursor.observed_generation != self._generation
-            ):
-                raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_binding")
+            if cursor.mount_id != self._mount_id or cursor.observed_generation != self._generation:
+                raise EnvironmentError("Output cursor is foreign or stale.", code="environment_stale_mount")
             raw = _unwrap_opaque(cursor.cursor, OpaqueOutputCursor)
             token, separator, raw_offset = raw.partition(":")
             if not separator or not raw_offset.isdigit():
@@ -340,8 +324,7 @@ class LocalRetentionStore:
 
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
-            binding_id=self._binding_id,
-            binding_version=self._binding_version,
+            mount_id=self._mount_id,
             observed_generation=self._generation,
             operation_id=f"operation-{next(self._operations)}",
             stage="completed",

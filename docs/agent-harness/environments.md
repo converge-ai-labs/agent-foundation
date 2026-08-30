@@ -1,6 +1,6 @@
 # Environments
 
-An Environment is the Harness run-scoped boundary for files, commands, processes, retained output, and ports. Most applications supply an Environment provider or an already entered resource directly to `run()` or `stream()`; they do not assemble attachments, bindings, or topologies.
+An Environment is the Harness run-scoped boundary for files, commands, processes, retained output, and ports. Most applications supply an Environment provider or an already entered resource directly to `run()` or `stream()`; they do not assemble attachments, runtime mounts, or an `EnvironmentRuntime`.
 
 Environment lifecycle is separate from model-facing tools:
 
@@ -10,7 +10,7 @@ Environment lifecycle is separate from model-facing tools:
 
 ## Start without an Environment
 
-Environment input is optional. Ordinary embedded runs need no `RunBindings` value and receive an empty Environment topology:
+Environment input is optional. Ordinary embedded runs need no `RunBindings` value and receive a zero-mount Environment runtime:
 
 ```python
 result = await executable.run("Answer without using a workspace")
@@ -110,7 +110,7 @@ finally:
     )
 ```
 
-The Resource must already be inside its single-entry async scope when passed to the Harness. An unentered or closed Resource fails when the stream enters. Each Harness run receives a fresh attachment, so live attachments and bindings are never reused as continuation state.
+The Resource must already be inside its single-entry async scope when passed to the Harness. An unentered or closed Resource fails when the stream enters. Each Harness run receives a fresh attachment and a fresh runtime mount, so live attachments and entered providers are never reused as continuation state.
 
 `HarnessState` and `EnvironmentProviderResourceState` solve different problems:
 
@@ -140,14 +140,14 @@ result = await executable.run(
 
 The routing rules are deterministic:
 
-| Input                                             | Alias and binding ID                  | Default route |
-| ------------------------------------------------- | ------------------------------------- | ------------- |
-| `environment=source`                              | `workspace`, `environment-workspace`  | `workspace`   |
-| one `environments` entry                          | supplied alias, `environment-{alias}` | that entry    |
-| several entries with `default_environment="name"` | supplied aliases                      | named entry   |
-| several entries without `default_environment`     | supplied aliases                      | none          |
+| Input                                             | Mount name(s)  | Default route |
+| ------------------------------------------------- | -------------- | ------------- |
+| `environment=source`                              | `workspace`    | `workspace`   |
+| one `environments` entry                          | supplied name  | that entry    |
+| several entries with `default_environment="name"` | supplied names | named entry   |
+| several entries without `default_environment`     | supplied names | none          |
 
-A default binding serves `/workspace`. Every named binding is always addressable at `/environment/{alias}`:
+The default mount serves `/workspace`. Every named mount is always addressable at `/environment/{name}`:
 
 ```python
 async def prepare(context):
@@ -178,7 +178,7 @@ result = await executable.run(
 # Use /environment/left/... and /environment/right/...
 ```
 
-Setup is atomic. The Harness does not publish a partial topology. If a later source fails to enter, already entered Provider-owned sources are released and destroyed in reverse order, while borrowed Resources remain under Host ownership.
+Setup is atomic. The Harness does not publish a partial initial mount set. If a later source fails to enter, already entered Provider-owned sources are released and destroyed in reverse order, while borrowed Resources remain under Host ownership.
 
 ## Restrict a mount
 
@@ -223,7 +223,7 @@ Three decisions remain separate:
 
 1. the Agent definition exposes a file or shell tool;
 2. current run policy authorizes the invocation for the current identity and arguments;
-3. the selected Environment binding and provider permit the operation.
+3. the selected Environment mount and provider permit the operation.
 
 Provider denial always narrows a Harness allow decision. Provider availability never grants authorization.
 
@@ -248,9 +248,9 @@ The shell surface is deliberately context-safe:
 - foreground overflow can use the shared spill disclosure, while retained background output stays in the provider and is pulled repeatedly instead of being copied into another file;
 - completion enqueue and `ProcessEventHook` values carry status hints only and never inject stdout or stderr into model context.
 
-A background start returns an opaque `process-N` ID. The Harness stores its portable mapping and independent next-unread stdout/stderr offsets in `AgentContextState`, so the same reference can survive a compatible continuation of the same Thread. Output reads advance offsets only after bytes are delivered to the model; `shell_status` never consumes output. Once a terminal process is tree-cleaned and all retained bytes are delivered, the Harness returns the final output page first, then releases provider resources during the next non-output reconciliation or Toolset close and removes the mapping. This avoids losing a delivered-offset page to cancellation during cleanup; the compact ID then becomes invalid and its suffix is never reused.
+A background start returns an opaque `process-N` ID. The Harness stores its portable mapping and independent next-unread stdout/stderr offsets in `AgentContextState`, so the same reference can survive continuation of the same Thread when the fresh mount reauthorizes its exact provider identity. Output reads advance offsets only after bytes are delivered to the model; `shell_status` never consumes output. Once a terminal process is tree-cleaned and all retained bytes are delivered, the Harness returns the final output page first, then releases provider resources during the next non-output reconciliation or Toolset close and removes the mapping. This avoids losing a delivered-offset page to cancellation during cleanup; the compact ID then becomes invalid and its suffix is never reused.
 
-`background=True` is available only through the selected Environment provider's real process operations. Portable state stores the exact `(provider_type, environment_id, generation, provider process ID)` plus observations; it stores no live handle, callback, provider cursor, output reference, credential, or authority. A fresh manager lazily rebinds only that exact identity through the current Environment. It never follows an alias, default binding, saved routing hint, or ambient process list. If the matching Environment is not attached, the reference remains unavailable and is preserved. A generation change or an authoritative not-found response for the matching Environment becomes `backend_lost`.
+`background=True` is available only through the selected Environment provider's real process operations. Portable state stores the exact `(provider_type, environment_id, generation, provider process ID)` plus observations; it stores no live handle, callback, provider cursor, output reference, credential, or authority. A fresh manager lazily rebinds only that exact identity through the current Environment. It never follows a mount name, current default mount, saved routing hint, or ambient process list. If the matching Environment is not attached, the reference remains unavailable and is preserved. A generation change or an authoritative not-found response for the matching Environment becomes `backend_lost`.
 
 While a root or child Toolset Turn is active, the Harness supervises the provider's real `wait(condition="tree_cleaned")` operation. Completion can enqueue one bounded native hint so the Agent calls `shell_wait`; an observation gap tells it to call `shell_status` or `shell_wait`. Hints never consume output or replace provider status. Ending the Turn cancels only Harness observation and does not terminate a committed background process.
 
@@ -295,7 +295,7 @@ For a process to remain usable across Turns, a Host follows both continuation tr
 
 Do not persist `BoundProcessHandle`, retain a Harness wait task or hook as lifecycle authority, or rebuild a mapping from alias or native PID. `ProcessManager` is public for custom Toolset composition, but a Host should treat each instance as a recreatable operator over current `AgentContextState` and Environment ports rather than retain it across Runs.
 
-The built-in Direct Local binding tears down its process manager at binding close, so it does not preserve managed processes across separate Harness Runs or a Host restart. An EIP-backed resource can preserve one across a new Harness Run, process, or client session only while the same `agent-envd` Environment generation and retained output remain alive. If the provider does not preserve both, the Host must treat the process as lost rather than retarget it.
+The built-in Direct Local entered provider tears down its process manager when its scope closes, so it does not preserve managed processes across separate Harness Runs or a Host restart. An EIP-backed resource can preserve one across a new Harness Run, process, or client session only while the same `agent-envd` Environment generation and retained output remain alive. If the provider does not preserve both, the Host must treat the process as lost rather than retarget it.
 
 ```mermaid
 sequenceDiagram
@@ -400,21 +400,31 @@ When `create()`, `resume()`, `pause()`, or `destroy()` reports `EnvironmentProvi
 
 ## Advanced Host route
 
-Most applications should use `environment=` or `environments=`. Hosts that need exact permission sets, custom binding IDs, live topology mutation, provider-binding adapters, or aggregate extensions can use the explicit advanced module:
+Most applications should use `environment=` or `environments=`. Hosts that need exact permission sets, live mount mutation, provider-binding adapters, or runtime-wide extensions can use the explicit advanced module:
 
 ```python
-from a13n_harness import RunBindings
+from a13n_harness import EnvironmentPermissionSet, RunBindings
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
-    EnvironmentTopologyRequest,
+    EnvironmentRuntimeMount,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
+
+workspace_mount = EnvironmentRuntimeMount(
+    binding=create_environment_provider_binding(workspace_attachment),
+    permission_ceiling=EnvironmentPermissionSet(operations=allowed_actions),
+    working_directory="/",
+)
+runtime = create_environment_runtime(
+    mounts={"workspace": workspace_mount},
+    default_mount="workspace",
+)
+run_bindings = RunBindings.embedded(environment=runtime)
 ```
 
-The advanced route constructs one single-use `EnvironmentRunBinding` and places it in `RunBindings.embedded(environment=...)` or in a directly constructed `RunBindings` with a Host-issued `AgentInstanceContext`. Retain `environment_binding.controller` before transferring the binding when live topology changes are required.
+The advanced route constructs one single-use `EnvironmentRuntime` and places it in `RunBindings.embedded(environment=...)` or in a directly constructed `RunBindings` with a Host-issued `AgentInstanceContext`. The Host retains the runtime while the run is active and may call its linearizable `mount()`, `replace()`, `unmount()`, and `set_default()` methods. New or replacement candidates are entered before commit; a failed candidate leaves the current mount set unchanged. `mount(..., make_default=True)` commits both changes atomically, `replace()` preserves default selection, and unmounting the default clears it.
 
-High-level Environment arguments and `RunBindings.environment` are mutually exclusive. They normalize into the same aggregate coordinator and operation engine; there is no second lifecycle implementation.
+High-level Environment arguments and `RunBindings.environment` are mutually exclusive. They normalize into the same runtime and operation engine; there is no second lifecycle implementation.
 
 ## Direct Local boundary
 
@@ -423,6 +433,6 @@ High-level Environment arguments and `RunBindings.environment` are mutually excl
 - the Host creates, selects, retains, backs up, shares, and removes the directory;
 - Direct Local validates it and issues fresh attachments;
 - `destroy()` detaches the logical provider resource but never deletes the directory;
-- `read_only` constrains binding operations but is not an OS sandbox against an allowed child process.
+- `read_only` constrains mounted provider operations but is not an OS sandbox against an allowed child process.
 
 Use Local Envd or an implemented third-party isolated EIP provider when untrusted code needs a real sandbox boundary. Docker and E2B are extension architectures, not current built-in Providers.

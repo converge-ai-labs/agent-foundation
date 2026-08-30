@@ -153,7 +153,7 @@ class StoredHarnessState(BaseModel):
     exported_at: datetime
 ```
 
-The payload contains the complete exported public `HarnessState`, including its Thread identity and Capability namespaces. It never contains model clients, provider credentials, live Environment bindings, plugin objects, tasks, locks, or presentation cursors.
+The payload contains the complete exported public `HarnessState`, including its Thread identity and Capability namespaces. It never contains model clients, provider credentials, provider attachments, an `EnvironmentRuntime`, plugin objects, tasks, locks, or presentation cursors.
 
 Writing a state object does not select it. For a root Turn, the authoritative selected checkpoint is the SQLite checkpoint/Thread transition that references the verified object. Root terminal commit writes the object first, then uses one short SQLite transaction to validate the expected Thread commit version, register and select the checkpoint, complete the Turn, and advance the Thread.
 

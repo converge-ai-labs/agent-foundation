@@ -32,7 +32,7 @@ flowchart TB
     Agent[Resolved Agent snapshot]
 
     Provider[Environment Provider specs]
-    Policy[Topology and lifecycle policy]
+    Policy[Desired mounts and lifecycle policy]
     Environment[Resolved Environment snapshot]
 
     Session[Session]
@@ -46,27 +46,27 @@ flowchart TB
     Session --> Runtime --> Harness
 ```
 
-An Agent is the exact composition of Model, Prompt, Plugin, available Skill, default Skill exposure, Capability, output, async-subagent policy, and child-Agent revisions. An Environment is an independent exact composition of provider specifications, topology, permissions, and lifecycle policy. A Session pins one of each plus validated root/child exact Skill exposure, owns assignments to Host-managed provider resources and one interaction tree, and supplies fresh current authority for every Harness invocation. Local discovery sources populate managed Skill revisions but are never ambient runtime authority.
+An Agent is the exact composition of Model, Prompt, Plugin, available Skill, default Skill exposure, Capability, output, async-subagent policy, and child-Agent revisions. An Environment is an independent exact composition of desired mount definitions, provider specifications, permissions, and lifecycle policy. A Session pins one of each plus validated root/child exact Skill exposure, owns assignments to Host-managed provider resources and one interaction tree, and supplies fresh current authority for every Harness invocation. Local discovery sources populate managed Skill revisions but are never ambient runtime authority.
 
 ## Boundaries
 
-| Concern                                                               | Owner                              | Agent UI relationship                                                                                       |
-| --------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Desired product definitions                                           | Reloadable Agent UI files          | Models, Prompts, Plugins, local Skill sources/packages, Agents, and Environments accepted as one generation |
-| Immutable resolved composition                                        | Agent UI snapshot resolver         | Publishes content-addressed Agent and Environment snapshots                                                 |
-| Native Agent construction and loop                                    | Harness and Pydantic AI            | Calls public build/stream APIs with fresh bindings                                                          |
-| Provider specification and lifecycle implementation                   | Environment Provider package       | Uses selected factory, Provider, Resource state, and fresh attachment contracts                             |
-| Local Sandbox envd artifact selection                                 | Agent UI Host                      | Exact release/target manifest, lazy verified cache, override validation, and availability diagnostics       |
-| Session/Turn/resource control state                                   | Agent UI SQLite metadata           | Owns revisions, selections, lifecycle, queues, jobs, and indexes                                            |
-| Harness/provider/snapshot/Skill payloads                              | Agent UI compressed object store   | Stores verified immutable files referenced by SQLite                                                        |
-| Presentation event history                                            | Agent UI compressed AG-UI segments | Stores processed events and rebuilds query projections                                                      |
-| Harness-to-AG-UI conversion                                           | Agent Stream Protocol              | One observer and Agent UI processor per exposed Run                                                         |
-| Web and terminal rendering                                            | Surface adapters                   | Consume Host queries/events and submit typed commands                                                       |
-| Identity, credentials, Model, Environment attachments, current policy | Fresh Host collaborators           | Reauthorized for every root and child invocation                                                            |
-| OpenTelemetry                                                         | Repository observability boundary  | Exported independently; absent from SQLite and Session files                                                |
-| Stable lifetime, routing, and durable execution authority             | `AgentUiHost`                      | Owns the data-root lease, accepted work, runtime selection, persistence, and commit semantics               |
-| Process-local Agent execution                                         | Runtime Runner                     | Uses exact Harness-built Agents and children; active streams never migrate between Runner generations       |
-| Distributed durable execution                                         | Foundation Service                 | Not emulated by local Sessions or process tasks                                                             |
+| Concern                                                            | Owner                              | Agent UI relationship                                                                                       |
+| ------------------------------------------------------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Desired product definitions                                        | Reloadable Agent UI files          | Models, Prompts, Plugins, local Skill sources/packages, Agents, and Environments accepted as one generation |
+| Immutable resolved composition                                     | Agent UI snapshot resolver         | Publishes content-addressed Agent and Environment snapshots                                                 |
+| Native Agent construction and loop                                 | Harness and Pydantic AI            | Calls public build/stream APIs with fresh bindings                                                          |
+| Provider specification and lifecycle implementation                | Environment Provider package       | Uses selected factory, Provider, Resource state, and fresh attachment contracts                             |
+| Local Sandbox envd artifact selection                              | Agent UI Host                      | Exact release/target manifest, lazy verified cache, override validation, and availability diagnostics       |
+| Session/Turn/resource control state                                | Agent UI SQLite metadata           | Owns revisions, selections, lifecycle, queues, jobs, and indexes                                            |
+| Harness/provider/snapshot/Skill payloads                           | Agent UI compressed object store   | Stores verified immutable files referenced by SQLite                                                        |
+| Presentation event history                                         | Agent UI compressed AG-UI segments | Stores processed events and rebuilds query projections                                                      |
+| Harness-to-AG-UI conversion                                        | Agent Stream Protocol              | One observer and Agent UI processor per exposed Run                                                         |
+| Web and terminal rendering                                         | Surface adapters                   | Consume Host queries/events and submit typed commands                                                       |
+| Identity, credentials, Model, provider attachments, current policy | Fresh Host collaborators           | Reauthorized for every root and child invocation                                                            |
+| OpenTelemetry                                                      | Repository observability boundary  | Exported independently; absent from SQLite and Session files                                                |
+| Stable lifetime, routing, and durable execution authority          | `AgentUiHost`                      | Owns the data-root lease, accepted work, runtime selection, persistence, and commit semantics               |
+| Process-local Agent execution                                      | Runtime Runner                     | Uses exact Harness-built Agents and children; active streams never migrate between Runner generations       |
+| Distributed durable execution                                      | Foundation Service                 | Not emulated by local Sessions or process tasks                                                             |
 
 ## Architecture
 
@@ -154,7 +154,7 @@ A Session pins one exact Agent snapshot, one exact Environment snapshot, and one
 - retained presentation sequence and Item/search projections;
 - fork lineage, title, archive, pin, ordering, and other local control metadata.
 
-Environment provider resources can outlive individual Runs and process connections, but every Run receives fresh current credentials, a fresh provider runtime, fresh single-use attachments, fresh Harness bindings, and fresh Host Capabilities. `HarnessState` restores Agent continuation only; provider resource state restores provider resources only. Neither substitutes for the other.
+Environment provider resources can outlive individual Runs and process connections, but every Run receives fresh current credentials, fresh provider collaborators, fresh single-use attachments, one single-use Host-retained `EnvironmentRuntime`, and fresh Host Capabilities. The Session snapshot supplies desired mount definitions; the runtime owns only that Run's current mount set. `HarnessState` restores Agent continuation only, and provider resource state restores provider resources only. Neither restores an `EnvironmentRuntime`, its current mounts, or current authority.
 
 Dynamic configuration never changes a Session. Selecting different Agent or Environment behavior for existing history creates an explicit fork. [Sessions, Environments, and State](04-sessions-environments-and-state.md) owns lifecycle and failure semantics.
 
@@ -169,6 +169,7 @@ sequenceDiagram
     participant DB as SQLite metadata
     participant Runner as Selected runtime Runner
     participant Provider as Environment Provider
+    participant Runtime as EnvironmentRuntime
     participant Harness
     participant AGUI as AG-UI observer
     participant Files as Compressed files
@@ -179,7 +180,8 @@ sequenceDiagram
     Host->>Runner: execute accepted Run
     Runner->>Provider: create/resume fenced resources and acquire fresh attachments
     Provider-->>Runner: current resource state and attachments
-    Runner->>Harness: stream input checkpoint and fresh RunBindings
+    Runner->>Runtime: create initial current mount set
+    Runner->>Harness: stream input state and RunBindings.environment=runtime
     loop non-terminal stream items
         Harness-->>Runner: public Harness item
         Runner->>AGUI: observe once
@@ -198,7 +200,9 @@ sequenceDiagram
         Host->>Files: publish terminal AG-UI segment and state object
         Host->>DB: commit Turn terminal outcome and selected checkpoint
     end
-    Runner->>Provider: close attachments then retain pause or disconnect by policy
+    Harness->>Runtime: close after terminal fence and cleanup
+    Runtime->>Provider: release retired/current attachments
+    Runner->>Provider: retain pause or disconnect by policy
     Host-->>Surface: durable Session projection
 ```
 
@@ -208,7 +212,7 @@ Input acceptance, provider operation, Harness start, Harness result, durable AG-
 
 One stable process owns one `AgentUiHost` instance and one selected data-root lease. Startup opens and recovers storage, accepts a complete configuration generation, validates selected state and root pending-deferred references, rebuilds required projections, marks prior-process active root Runs and async-child jobs interrupted, and preserves only validated waiting root Turns before commands are accepted.
 
-Only one foreground Turn advances one Thread at a time. Independent Sessions execute concurrently under configured limits. Model, plugin, provider, observer, and executable caches live in runtime Runners and contain no Session authority. Host-side configuration and snapshot caches remain detached from executable runtime objects.
+Only one foreground Turn advances one Thread at a time. Independent Sessions execute concurrently under configured limits. Model, plugin, provider, AG-UI processor, and executable caches live in runtime Runners and contain no Session authority. Host-side configuration and snapshot caches remain detached from executable runtime objects.
 
 Shutdown stops command acceptance, closes surface subscriptions, requests cancellation, drains root Harness streams and async-subagent tasks, seals event segments, applies Environment lifecycle policy, records interrupted/unknown outcomes, closes executables/providers, and then releases storage. It never reports success merely because a process object disappeared.
 
@@ -275,7 +279,7 @@ Shared commands, lifecycle, runtime routing, and AG-UI prevent terminal and brow
 03. Dynamic configuration reload publishes complete generations and never mutates active or pinned composition.
 04. SQLite owns mutable local metadata/control; compressed immutable files own snapshots, managed Skill packages, state/deferred payloads, provider-state payloads, and AG-UI events.
 05. `HarnessState` is the only Agent state authority; a waiting root Turn also requires its exact pending `DeferredToolRequests`, async-child jobs never own deferred requests, and provider state, AG-UI, identifiers, SQLite Items, or telemetry can replace neither.
-06. Every root and child invocation receives fresh model, credential, Environment, Identity, exact Skill selection, policy, and Host bindings.
+06. Every root and child invocation receives a fresh Model resolver, current credentials, fresh provider attachments, one single-use Host-retained `EnvironmentRuntime`, fresh Identity, exact Skill selection, policy, and Host collaboration.
 07. Agent UI uses only Host-owned async subagent jobs over Harness-built children and never enables Harness blocking inline delegation.
 08. CLI runs entirely in the stable Host process; WebUI is a thin transport over the same Host operations.
 09. No surface, event subscriber, file path, database row, or local identifier grants runtime authority by possession alone.

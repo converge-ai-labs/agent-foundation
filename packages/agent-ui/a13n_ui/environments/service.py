@@ -1,4 +1,4 @@
-"""Host-owned lifecycle and Harness binding service for Session Environments."""
+"""Host-owned lifecycle and Harness runtime service for Session Environments."""
 
 from __future__ import annotations
 
@@ -31,18 +31,17 @@ from a13n_harness.environment import (
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
-    EnvironmentRunBinding,
+    EnvironmentRuntime,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from anyio import CancelScope, Event, Lock
 from pydantic import ValidationError
 
-from a13n_ui.composition import ResolvedEnvironmentBinding, ResolvedEnvironmentSnapshot
+from a13n_ui.composition import ResolvedEnvironmentMountDefinition, ResolvedEnvironmentSnapshot
 from a13n_ui.errors import AgentUiError, EnvironmentLifecycleError, RuntimeResolutionError, StoreIntegrityError
 from a13n_ui.storage.objects import ObjectKind, ObjectRef
 from a13n_ui.storage.runtime import LocalStore
@@ -64,7 +63,7 @@ class _LiveResource:
 
 
 class EnvironmentService:
-    """Fence provider effects and lend fresh complete run bindings."""
+    """Fence provider effects and lend fresh single-use Environment runtimes."""
 
     def __init__(
         self,
@@ -165,49 +164,42 @@ class EnvironmentService:
         return await self._repository.availability(session_id)
 
     @asynccontextmanager
-    async def run_binding(
+    async def run_environment(
         self,
         *,
         session_id: str,
         snapshot: ResolvedEnvironmentSnapshot,
-    ) -> AsyncGenerator[EnvironmentRunBinding]:
-        """Keep fresh attachment scopes open for the complete Harness run cleanup."""
+    ) -> AsyncGenerator[EnvironmentRuntime]:
+        """Keep fresh attachment scopes open through complete Harness runtime cleanup."""
 
         availability = await self.provision(session_id)
-        assignment_by_name = {item.binding_name: item for item in availability.assignments}
-        snapshot_by_name = {item.binding_name: item for item in snapshot.bindings}
+        assignment_by_name = {item.mount_name: item for item in availability.assignments}
+        snapshot_by_name = {item.mount_name: item for item in snapshot.mounts}
         if set(assignment_by_name) != set(snapshot_by_name):
             raise StoreIntegrityError(
-                "Session Environment assignments differ from the pinned topology.",
+                "Session Environment assignments differ from the pinned desired mounts.",
                 code="environment_assignment_mismatch",
             )
-        requests: list[EnvironmentBindingRequest] = []
+        runtime_mounts: dict[str, EnvironmentRuntimeMount] = {}
         async with AsyncExitStack() as attachments:
-            for binding in snapshot.bindings:
-                assignment = assignment_by_name[binding.binding_name]
+            for mount in snapshot.mounts:
+                assignment = assignment_by_name[mount.mount_name]
                 attachment = await attachments.enter_async_context(self._borrow_attachment(assignment.host_resource_id))
                 provider_binding = create_environment_provider_binding(attachment)
-                requests.append(
-                    EnvironmentBindingRequest(
-                        binding_id=binding.binding_name,
-                        binding_version=1,
-                        alias=binding.model_alias,
-                        permission_ceiling=_permissions(binding),
-                        default_working_directory="/",
-                        provider_binding=provider_binding,
-                    )
+                runtime_mounts[mount.model_alias] = EnvironmentRuntimeMount(
+                    binding=provider_binding,
+                    permission_ceiling=_permissions(mount),
+                    working_directory="/",
                 )
-            default_name = snapshot.definition.default_binding
-            run_binding = create_environment_run_binding(
-                initial_topology=EnvironmentTopologyRequest(
-                    topology_version=1,
-                    bindings=tuple(requests),
-                    default_binding_id=default_name,
-                ),
-                topology_limits=EnvironmentTopologyLimits(max_bindings=max(1, len(requests))),
+            desired_default = snapshot.definition.default_mount
+            default_mount = snapshot_by_name[desired_default].model_alias if desired_default is not None else None
+            environment = create_environment_runtime(
+                mounts=runtime_mounts,
+                default_mount=default_mount,
+                runtime_limits=EnvironmentRuntimeLimits(max_mounts=max(1, len(runtime_mounts))),
                 state_limits=EnvironmentStateLimits(),
             )
-            yield run_binding
+            yield environment
 
     async def apply_idle_policy(self, session_id: str, snapshot: ResolvedEnvironmentSnapshot) -> None:
         mode = snapshot.definition.lifecycle.idle
@@ -667,9 +659,9 @@ class EnvironmentService:
             return lock
 
 
-def _permissions(binding: ResolvedEnvironmentBinding) -> EnvironmentPermissionSet:
+def _permissions(mount: ResolvedEnvironmentMountDefinition) -> EnvironmentPermissionSet:
     operations: set[EnvironmentAction] = set()
-    for value in binding.permission_ceiling:
+    for value in mount.permission_ceiling:
         family_matches = {
             action for action, dispatch in ENVIRONMENT_ACTION_DISPATCH.items() if dispatch.family == value
         }

@@ -13,7 +13,7 @@ from a13n_ui.configuration import (
     AgentDefinitionDocument,
     ConfigurationSettings,
     DefinitionRootSettings,
-    EnvironmentBindingDefinition,
+    EnvironmentMountDefinition,
     LocalDirectorySettings,
     LocalSkillDiscoverySettings,
     ModelDefinition,
@@ -120,8 +120,8 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
             "environment_id": "environment-main",
             "display_name": "Empty Environment",
             "description": None,
-            "bindings": [],
-            "default_binding": None,
+            "mounts": [],
+            "default_mount": None,
             "lifecycle": {
                 "provision": "on_first_run",
                 "idle": "keep_running",
@@ -444,15 +444,14 @@ def test_literal_credentials_are_rejected_from_generic_resource_configuration() 
             strict=True,
         )
     with pytest.raises(ValidationError):
-        EnvironmentBindingDefinition.model_validate(
+        EnvironmentMountDefinition.model_validate(
             {
-                "binding_name": "binding-main",
+                "mount_name": "mount-main",
                 "model_alias": "workspace",
                 "provider_key": "a13n.direct-local",
                 "provider_schema_version": "1",
                 "provider_parameters": {"accessToken": "literal-secret"},
                 "permission_ceiling": [],
-                "required": True,
             },
             strict=True,
         )

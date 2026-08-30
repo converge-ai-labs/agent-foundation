@@ -309,7 +309,7 @@ Agent authoring accepts this value per Agent node:
 ```python
 class FoundationAgentSkillSelectionRequest:
     available_revision_ids: tuple[SkillRevisionId, ...]
-    materialization_binding: str | None
+    materialization_mount: str | None
     default_mode: Literal["all", "exact"]
     default_names: tuple[str, ...]
 
@@ -322,7 +322,7 @@ class FoundationSkillRevisionLock:
 
 class FoundationAgentSkillSelection:
     available: tuple[FoundationSkillRevisionLock, ...]
-    materialization_binding: str | None
+    materialization_mount: str | None
     default_mode: Literal["all", "exact"]
     default_names: tuple[str, ...]
 ```
@@ -331,12 +331,12 @@ The request selects immutable revision IDs, including an authorized retained
 non-current revision. It accepts no `latest`, upload receipt, GitHub selector, object
 URL, or source path. AgentPreset Publish resolves and copies the complete locks.
 
-`materialization_binding` is absent exactly when no Skills are available. `all`
+`materialization_mount` is absent exactly when no Skills are available. `all`
 exposes the complete unique-name catalog and has empty `default_names`; `exact`
 exposes the exact possibly-empty set. Publication rejects inaccessible or deleted
 Skills, duplicate final names, unknown exact names, a catalog over the service limit,
-and an Environment binding without list, stat, read, write, create, and remove file
-operations. Later Skill publication or deletion never mutates the AgentPresetVersion or
+and an Environment mount whose permission ceiling lacks list, stat, read, write,
+create, and remove file operations. Later Skill publication or deletion never mutates the AgentPresetVersion or
 an accepted Turn.
 
 Root, ordinary continuation, fork, and equivalent Host-owned initial Turn
@@ -345,7 +345,7 @@ AgentPresetVersion's `default_mode` and `default_names`; a present JSON array is
 selection for that Turn, including an empty array that selects no Skills. JSON `null`
 is invalid. The array contains at most 512 distinct names, and every name must occur
 in the AgentPresetVersion's `available` locks. The override can choose any subset of that
-locked catalog but cannot add a revision, change a digest or materialization binding,
+locked catalog but cannot add a revision, change a digest or materialization mount,
 or select a source or mutable Skill head. Waiting feedback and explicit retry
 preserve the source Turn's effective tuple: those operations continue frozen deferred
 work or accepted intent rather than accepting a new run override.

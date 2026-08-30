@@ -36,12 +36,11 @@ from a13n_harness import (
     OpaqueOutputReference,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
     create_environment_provider_binding,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError
@@ -132,23 +131,16 @@ async def test_host_manager_attachment_path_supports_sequential_harness_runs(tmp
         async with managed:
             async with managed.acquire_attachment() as attachment:
                 provider = create_environment_provider_binding(attachment)
-                request = EnvironmentTopologyRequest(
-                    topology_version=1,
-                    bindings=(
-                        EnvironmentBindingRequest(
-                            binding_id="binding-1",
-                            binding_version=1,
-                            alias="local",
+                binding = create_environment_runtime(
+                    mounts={
+                        "local": EnvironmentRuntimeMount(
+                            binding=provider,
                             permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                            default_working_directory="/",
-                            provider_binding=provider,
-                        ),
-                    ),
-                    default_binding_id="binding-1",
-                )
-                binding = create_environment_run_binding(
-                    initial_topology=request,
-                    topology_limits=EnvironmentTopologyLimits(),
+                            working_directory="/",
+                        )
+                    },
+                    default_mount="local",
+                    runtime_limits=EnvironmentRuntimeLimits(),
                     state_limits=EnvironmentStateLimits(),
                 )
                 async with binding.bind(run_id=f"run-{attempt}", instance=_instance()) as environment:
@@ -184,24 +176,18 @@ def _two_binding_aggregate(source: Path, destination: Path):
             )
         ),
     )
-    request = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=tuple(
-            EnvironmentBindingRequest(
-                binding_id=f"binding-{alias}",
-                binding_version=1,
-                alias=alias,
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            )
-            for alias, provider in zip(("source", "destination"), providers, strict=True)
-        ),
-        default_binding_id="binding-source",
-    )
-    return create_environment_run_binding(
-        initial_topology=request,
-        topology_limits=EnvironmentTopologyLimits(),
+    mounts = {
+        name: EnvironmentRuntimeMount(
+            binding=provider,
+            permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+            working_directory="/",
+        )
+        for name, provider in zip(("source", "destination"), providers, strict=True)
+    }
+    return create_environment_runtime(
+        mounts=mounts,
+        default_mount="source",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -222,23 +208,16 @@ def _aggregate(
             max_value_bytes=max_value_bytes,
         )
     )
-    request = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_version=1,
-                alias="local",
+    return create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="binding-1",
-    )
-    return create_environment_run_binding(
-        initial_topology=request,
-        topology_limits=EnvironmentTopologyLimits(),
+                working_directory="/",
+            )
+        },
+        default_mount="local",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -273,7 +252,7 @@ async def test_exact_dot_selects_the_default_working_directory_without_allowing_
     binding = _aggregate(tmp_path)
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
         selected = environment.resolve_path(".")
-        assert selected.binding_id == "binding-1"
+        assert selected.mount_id.startswith("mount-")
         assert selected.path == "/"
 
         for invalid in ("./note.txt", "..", "nested/../note.txt"):
@@ -340,8 +319,7 @@ async def test_file_only_binding_does_not_advertise_or_create_output_operations(
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         assert entered.operations.outputs is None
         assert "outputs" not in entered.descriptor.operation_families
@@ -361,8 +339,7 @@ async def test_read_only_binding_advertises_only_effective_file_permissions(tmp_
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         permissions = entered.descriptor.permissions.operations
         assert EnvironmentAction.FILE_READ_TEXT in permissions
@@ -394,8 +371,7 @@ async def test_direct_local_read_race_returns_environment_error(
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         files = entered.operations.files
         assert files is not None
@@ -457,8 +433,7 @@ async def test_cancelled_spool_allocation_is_joined_and_removed(
     scope = provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     )
     entering = asyncio.create_task(scope.__aenter__())
     assert await asyncio.to_thread(started.wait, 5)
@@ -501,8 +476,7 @@ async def test_binding_teardown_attempts_spool_cleanup_and_preserves_shared_root
         async with provider.bind(
             run_id="run-1",
             instance=_instance(),
-            binding_id="binding-1",
-            binding_version=1,
+            mount_id="mount-1",
         ):
             pass
 
@@ -519,23 +493,16 @@ async def test_direct_local_requires_and_preserves_shared_root(tmp_path: Path) -
             root=DirectLocalRootConfiguration(path=shared),
         )
     )
-    request = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-shared",
-                binding_version=1,
-                alias="shared",
+    binding = create_environment_runtime(
+        mounts={
+            "shared": EnvironmentRuntimeMount(
+                binding=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="binding-shared",
-    )
-    binding = create_environment_run_binding(
-        initial_topology=request,
-        topology_limits=EnvironmentTopologyLimits(),
+                working_directory="/",
+            )
+        },
+        default_mount="shared",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -990,8 +957,7 @@ async def test_query_and_search_share_provider_conformance_and_use_one_worker_ea
         root=tmp_path,
         read_only=True,
         policy=local_binding_module._DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
 
@@ -1015,8 +981,7 @@ async def test_search_fails_explicitly_when_eligible_file_limit_hides_candidates
         root=tmp_path,
         read_only=True,
         policy=local_binding_module._DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
         generation="generation-1",
     )
 
@@ -1045,8 +1010,7 @@ async def test_local_retention_is_bounded_readable_and_released(tmp_path: Path) 
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         store = entered.operations.outputs
         assert store is not None
@@ -1075,8 +1039,7 @@ async def test_retention_stops_capturing_after_the_first_quota_gap(tmp_path: Pat
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         store = entered.operations.outputs
         assert store is not None
@@ -1106,8 +1069,7 @@ async def test_retained_read_serializes_with_release(
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         store = entered.operations.outputs
         assert store is not None
@@ -1149,8 +1111,7 @@ async def test_retention_accounts_actual_bytes_and_refunds_release(tmp_path: Pat
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         store = entered.operations.outputs
         assert store is not None

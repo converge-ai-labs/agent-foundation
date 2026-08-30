@@ -46,11 +46,10 @@ from a13n_harness import (
     WebSearchResult,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
@@ -157,46 +156,31 @@ def _binding(root: Path):
             root=DirectLocalRootConfiguration(path=root),
         )
     )
-    return create_environment_run_binding(
-        initial_topology=EnvironmentTopologyRequest(
-            topology_version=1,
-            bindings=(
-                EnvironmentBindingRequest(
-                    binding_id="binding-1",
-                    binding_version=1,
-                    alias="local",
-                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                    default_working_directory="/",
-                    provider_binding=provider,
-                ),
-            ),
-            default_binding_id="binding-1",
-        ),
-        topology_limits=EnvironmentTopologyLimits(),
+    return create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider,
+                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                working_directory="/",
+            )
+        },
+        default_mount="local",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
 
-def _replacement_request(root: Path) -> EnvironmentTopologyRequest:
+def _replacement_mount(root: Path) -> EnvironmentRuntimeMount:
     provider = DirectLocalEnvironmentProviderBinding(
         DirectLocalProviderConfiguration(
             environment_id="content-capabilities-test",
             root=DirectLocalRootConfiguration(path=root),
         )
     )
-    return EnvironmentTopologyRequest(
-        topology_version=2,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_version=2,
-                alias="local",
-                permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="binding-1",
+    return EnvironmentRuntimeMount(
+        binding=provider,
+        permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+        working_directory="/",
     )
 
 
@@ -609,7 +593,7 @@ async def test_documents_rejects_stale_revision_before_publication(tmp_path: Pat
     class RefreshingConverter:
         async def convert(self, request: DocumentConversionRequest) -> DocumentConversionResult:
             assert request.source_bytes == b"revision-a"
-            await binding.controller.apply(_replacement_request(root_b))
+            await binding.replace("local", _replacement_mount(root_b))
             return DocumentConversionResult(
                 markdown="# Revision A",
                 total_pages=1,
@@ -647,7 +631,7 @@ async def test_documents_rejects_stale_revision_before_publication(tmp_path: Pat
     assert result.output_or_raise() == "done"
     tool_result = next(item for item in _tool_contents(seen) if isinstance(item, dict))
     assert tool_result["ok"] is False
-    assert tool_result["error"]["code"] == "environment_stale_binding"
+    assert tool_result["error"]["code"] == "environment_stale_mount"
     assert len(resources) == 1
     assert resources[0].kind == "file"
     assert not list(root_a.glob("export_*"))
@@ -664,7 +648,7 @@ async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path
     class RefreshingClient:
         async def request(self, request: WebRequest, *, policy) -> WebResponse:
             del request, policy
-            await binding.controller.apply(_replacement_request(root_b))
+            await binding.replace("local", _replacement_mount(root_b))
             return WebResponse(
                 status_code=200,
                 final_url="https://example.com/file.txt",
@@ -706,7 +690,7 @@ async def test_web_download_rejects_stale_revision_before_writing(tmp_path: Path
     assert result.output_or_raise() == "done"
     tool_result = next(item for item in _tool_contents(seen) if isinstance(item, list))
     assert tool_result[0]["ok"] is False
-    assert tool_result[0]["error"]["code"] == "environment_stale_binding"
+    assert tool_result[0]["error"]["code"] == "environment_stale_mount"
     assert len(resources) == 1
     assert resources[0].kind == "file"
     assert list((root_a / "downloads").iterdir()) == []

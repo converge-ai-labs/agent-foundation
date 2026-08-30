@@ -91,9 +91,9 @@ def _write_composition(definitions: Path, *, system_prompt: str = "Be concise.")
             "schema_version": "1",
             "environment_id": "environment-main",
             "display_name": "Main Environment",
-            "bindings": [
+            "mounts": [
                 {
-                    "binding_name": "binding-main",
+                    "mount_name": "mount-main",
                     "model_alias": "workspace",
                     "provider_key": "a13n.direct-local",
                     "provider_schema_version": "1",
@@ -105,10 +105,9 @@ def _write_composition(definitions: Path, *, system_prompt: str = "Be concise.")
                         },
                     },
                     "permission_ceiling": ["files"],
-                    "required": True,
                 },
             ],
-            "default_binding": "binding-main",
+            "default_mount": "mount-main",
             "lifecycle": {
                 "provision": "on_first_run",
                 "idle": "keep_running",
@@ -147,11 +146,11 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         assert agent.adapter_locks[0].distribution_name == "a13n-ui"
         assert agent.adapter_locks[0].distribution_version
         assert environment.environment_revision.resource_id == "environment-main"
-        assert environment.bindings[0].normalized_parameters["root"] == {
+        assert environment.mounts[0].normalized_parameters["root"] == {
             "path": str(workspace),
             "read_only": False,
         }
-        assert environment.bindings[0].lifecycle_capabilities.model_dump(mode="json") == {
+        assert environment.mounts[0].lifecycle_capabilities.model_dump(mode="json") == {
             "pause_modes": [],
             "resource_allocation": "single_from_spec",
             "attachment_concurrency": "shared",
@@ -368,13 +367,13 @@ async def test_skill_reconstruction_uses_the_selected_environment_alias(tmp_path
     agent = yaml.safe_load(agent_path.read_text())
     agent["skills"] = {
         "available": [{"kind": "skill", "resource_id": "skill-demo"}],
-        "materialization_binding": "binding-main",
+        "materialization_mount": "mount-main",
         "default_selection": {"mode": "exact", "names": ["demo"]},
     }
     agent["environment"] = {
-        "bindings": [
+        "mounts": [
             {
-                "binding_name": "binding-main",
+                "mount_name": "mount-main",
                 "required_operations": ["files"],
             },
         ],
@@ -449,9 +448,9 @@ async def test_compatibility_rejects_a_missing_required_binding(tmp_path: Path) 
     agent_path = definitions / "agents/agent-main.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent["environment"] = {
-        "bindings": [
+        "mounts": [
             {
-                "binding_name": "binding-missing",
+                "mount_name": "mount-missing",
                 "required_operations": ["files"],
             },
         ],
@@ -540,7 +539,7 @@ async def test_child_environment_policy_uses_provider_lifecycle_capabilities(
             "name": "child-worker",
             "description": "Run child work.",
             "agent": {"kind": "agent", "resource_id": "agent-child"},
-            "environment": {"mode": mode, "bindings": ["binding-main"]},
+            "environment": {"mode": mode, "mounts": ["mount-main"]},
         }
     ]
     _write_yaml(agent_path, agent)
@@ -589,8 +588,7 @@ async def test_skill_materializer_replaces_stale_tree_and_handles_concurrent_pub
         root=tmp_path,
         read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        binding_id="binding-main",
-        binding_version=1,
+        mount_id="mount-main",
         generation="generation-1",
     )
 

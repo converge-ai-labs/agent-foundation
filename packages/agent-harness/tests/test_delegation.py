@@ -44,7 +44,7 @@ from a13n_harness import (
 from a13n_harness.capabilities.delegation import DELEGATION_CAPABILITY_ID
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
 from a13n_harness.environment.advanced import (
-    NoopEnvironmentRunBinding,
+    EmptyEnvironmentRuntime,
 )
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
@@ -212,7 +212,7 @@ def _bindings_factory(
                 parent_agent_instance_id=parent_instance_id,
                 delegation_id=child_instance_id,
             ),
-            environment=NoopEnvironmentRunBinding(),
+            environment=EmptyEnvironmentRuntime(),
         )
 
     return RunBindings(
@@ -220,7 +220,7 @@ def _bindings_factory(
             identity=AgentIdentityRef(issuer="test", subject="parent"),
             agent_instance_id=parent_instance_id,
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
         capabilities=(
             InvocationPolicyCapability(evaluator=_allow),
             DelegationRunCapability(binder=binder, usage_limits=host_limits),
@@ -705,7 +705,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
                     parent_agent_instance_id=parent_instance_id,
                     delegation_id=child_instance_id,
                 ),
-                environment=NoopEnvironmentRunBinding(),
+                environment=EmptyEnvironmentRuntime(),
                 capabilities=tuple(capabilities),
             )
 
@@ -717,7 +717,7 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
             identity=AgentIdentityRef(issuer="test", subject="parent"),
             agent_instance_id="parent-1",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
         capabilities=(
             InvocationPolicyCapability(evaluator=_allow),
             DelegationRunCapability(binder=nested_binder("parent-1")),
@@ -990,7 +990,7 @@ async def test_inline_delegation_retains_new_id_after_handled_dispatch_rejection
             identity=AgentIdentityRef(issuer="test", subject="parent"),
             agent_instance_id="parent-1",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
         capabilities=(
             InvocationPolicyCapability(evaluator=_allow),
             DelegationRunCapability(binder=rejecting_binder),
@@ -1133,7 +1133,7 @@ async def test_inline_delegation_rejects_invalid_child_lineage_before_model_work
             identity=AgentIdentityRef(issuer="test", subject="parent"),
             agent_instance_id="parent-1",
         ),
-        environment=NoopEnvironmentRunBinding(),
+        environment=EmptyEnvironmentRuntime(),
         capabilities=(
             InvocationPolicyCapability(evaluator=_allow),
             DelegationRunCapability(binder=bad_binder),

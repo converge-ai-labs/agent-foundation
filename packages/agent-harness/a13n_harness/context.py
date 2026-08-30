@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import BoundEnvironment as Environment
-    from a13n_harness.environment.providers import EnvironmentRunBinding
+    from a13n_harness.environment.providers import EnvironmentRuntime
     from a13n_harness.events import HarnessEventEmitter
     from a13n_harness.execution import AgentDefinition, ExecutableAgent, SubagentDefinition
     from a13n_harness.model_context import (
@@ -120,7 +120,7 @@ class RunBindings:
     """Fresh trusted authority and optional advanced integrations supplied by the caller."""
 
     instance: AgentInstanceContext
-    environment: EnvironmentRunBinding | None = None
+    environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
@@ -146,7 +146,7 @@ class RunBindings:
         cls,
         *,
         identity: AgentIdentityRef | None = None,
-        environment: EnvironmentRunBinding | None = None,
+        environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
         model_context: ModelContextMiddleware | None = None,

@@ -54,14 +54,14 @@ sequenceDiagram
     Durable->>Durable: validate exact waiting parent and complete pending set
     Durable->>Durable: initialize and accept new Turn with waiting parent
     NextWorker->>Durable: claim new Turn's first TurnAttempt
-    NextWorker->>Harness: fresh bindings, new Turn state, DeferredToolResume
+    NextWorker->>Harness: fresh RunBindings and EnvironmentRuntime, new Turn state, DeferredToolResume
 ```
 
 Suspension first conditionally publishes the complete waiting state candidate at the Turn's deterministic state key. One fenced relational transition then verifies that the Turn remains current, seals it, terminalizes the source TurnAttempt, copies the bounded pending summary to the Turn row, selects the exact state digest and checkpoint sequence, retains the waiting Turn as current, selects it as the Thread head, increments Thread version, and commits lifecycle facts. The worker closes Harness, Environment connector, credential, socket, and database resources; connector keep-alive stops with that scope.
 
 Feedback authenticates the responder, authorizes every exact pending action in the frozen request set, checks expiration and the expected Thread and pending-action versions, and applies an idempotency key. The waiting parent remains immutable. Once the complete set is resolved, Foundation initializes a new Turn in the same Thread from the parent's sealed state and, in one short transaction, revalidates the Thread's waiting head, current Turn, and version, sets `parent_turn_id` to that waiting Turn, records the consumed pending identities, selects the new Turn as current, increments Thread version, accepts the new Turn, and associates any response Items with it. Its `accepted` status makes it the sole active Turn.
 
-The replacement worker reconstructs the exact AgentPresetVersion and tool surface, supplies fresh bindings, and passes the authoritative request and complete results through native `DeferredToolResume`. Approval and external execution remain separate facts: approval does not prove the client effect occurred, and client success does not retroactively prove approval.
+The replacement worker reconstructs the exact AgentPresetVersion and tool surface, supplies fresh `RunBindings`, Environment attachments, runtime mounts, and `EnvironmentRuntime`, and passes the authoritative request and complete results through native `DeferredToolResume`. Approval and external execution remain separate facts: approval does not prove the client effect occurred, and client success does not retroactively prove approval.
 
 Invalid, incomplete, stale, expired, or unauthorized feedback creates no new Turn and leaves the waiting parent unchanged.
 

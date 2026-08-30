@@ -152,9 +152,9 @@ def _write_composition(
             "schema_version": "1",
             "environment_id": "environment-main",
             "display_name": "Main Environment",
-            "bindings": [
+            "mounts": [
                 {
-                    "binding_name": "binding-main",
+                    "mount_name": "mount-main",
                     "model_alias": "workspace",
                     "provider_key": "a13n.direct-local",
                     "provider_schema_version": "1",
@@ -163,10 +163,9 @@ def _write_composition(
                         "root": {"directory_id": "directory-workspace", "read_only": False},
                     },
                     "permission_ceiling": ["files"],
-                    "required": True,
                 }
             ],
-            "default_binding": "binding-main",
+            "default_mount": "mount-main",
             "lifecycle": {
                 "provision": provision,
                 "idle": "keep_running",
@@ -210,7 +209,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
         before = await application.session_environment(created.session_id)
         assert before.ready is False
         snapshot = await application.environment_snapshot(environment)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -234,7 +233,7 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
         availability = await restarted.session_environment(session_id)
         assert availability.ready is True
         snapshot = await restarted.environment_snapshot(retained.environment_snapshot)
-        async with restarted._environments.run_binding(session_id=session_id, snapshot=snapshot):
+        async with restarted._environments.run_environment(session_id=session_id, snapshot=snapshot):
             assert (await restarted.session_environment(session_id)).ready is True
 
 
@@ -521,7 +520,7 @@ async def test_provider_dispatch_then_host_commit_failure_is_unknown(
         )
 
         with pytest.raises(StoreIntegrityError, match="Synthetic state commit"):
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -530,7 +529,7 @@ async def test_provider_dispatch_then_host_commit_failure_is_unknown(
         availability = await application.session_environment(created.session_id)
         assert availability.resources[0].lifecycle_state.value == "unknown"
         with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -552,7 +551,7 @@ async def test_pause_waits_for_active_environment_attachment(tmp_path: Path, mon
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
         pause_task: asyncio.Task[object]
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -589,7 +588,7 @@ async def test_delete_failure_retains_assignments_for_cleanup_retry(
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -712,7 +711,7 @@ async def test_startup_marks_unreadable_selected_provider_state_unknown(tmp_path
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -843,7 +842,7 @@ async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_p
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):
@@ -856,7 +855,7 @@ async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_p
         failed = await application.session_environment(created.session_id)
         assert failed.resources[0].lifecycle_state.value == "failed"
         with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_binding(
+            async with application._environments.run_environment(
                 session_id=created.session_id,
                 snapshot=snapshot,
             ):
@@ -938,7 +937,7 @@ async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
             environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
         )
         snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_binding(
+        async with application._environments.run_environment(
             session_id=created.session_id,
             snapshot=snapshot,
         ):

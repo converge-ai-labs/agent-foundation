@@ -19,10 +19,10 @@ from a13n_environment_provider import (
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
-    EnvironmentBindingState,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentMountDescriptor,
+    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
 )
@@ -136,11 +136,11 @@ class _BoundDirectLocalProvider(BoundEnvironmentProvider):
         if not operations <= self._descriptor.operation_families:
             raise EnvironmentError("Direct Local operation family is unsupported.", code="environment_unsupported")
 
-    async def export_state(self, *, max_bytes: int) -> EnvironmentBindingState | None:
+    async def export_state(self, *, max_bytes: int) -> EnvironmentMountState | None:
         del max_bytes
         return None
 
-    async def restore_state(self, state: EnvironmentBindingState) -> None:
+    async def restore_state(self, state: EnvironmentMountState) -> None:
         del state
         raise EnvironmentError("Direct Local has no portable state entry.", code="environment_state_invalid")
 
@@ -167,12 +167,13 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
         *,
         run_id: str,
         instance,
-        binding_id: str,
-        binding_version: int,
+        mount_id: str,
     ) -> AsyncGenerator[BoundEnvironmentProvider]:
         del run_id, instance
         if self._used or self._discarded:
-            raise EnvironmentError("Direct Local provider binding is single-use.", code="environment_binding_reused")
+            raise EnvironmentError(
+                "Direct Local provider binding is single-use.", code="environment_provider_binding_reused"
+            )
         self._used = True
         configured = self.configuration.root_path
         root: Path | None = None
@@ -186,8 +187,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                 root=root,
                 read_only=self.configuration.read_only,
                 policy=self.configuration.files,
-                binding_id=binding_id,
-                binding_version=binding_version,
+                mount_id=mount_id,
                 generation=generation,
             )
             process_enabled = bool(
@@ -197,8 +197,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                 retention_root = await _create_retention_root()
                 retention = LocalRetentionStore(
                     root=retention_root,
-                    binding_id=binding_id,
-                    binding_version=binding_version,
+                    mount_id=mount_id,
                     generation=generation,
                     max_spool_bytes=self.configuration.outputs.max_spool_bytes,
                 )
@@ -210,8 +209,7 @@ class DirectLocalEnvironmentProviderBinding(EnvironmentProviderBinding):
                     shell_profiles=self.configuration.shell_profiles,
                     provider_type=self.provider_type,
                     environment_id=self.configuration.environment_id,
-                    binding_id=binding_id,
-                    binding_version=binding_version,
+                    mount_id=mount_id,
                     generation=generation,
                 )
             shell = LocalShell(processes) if processes is not None else None

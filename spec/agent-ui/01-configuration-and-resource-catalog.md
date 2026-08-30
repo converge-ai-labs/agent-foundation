@@ -117,7 +117,7 @@ class ResourceRevision(BaseModel):
 
 `content_digest` covers the canonical normalized content and all behavior-affecting dependency references owned by the revision. Source path, modification time, UI display ordering, diagnostics, and accepted generation do not change the digest unless they change normalized behavior.
 
-A revision stores no credential, native provider object, live plugin, imported module object, Environment attachment, `HarnessState`, or process authority. Exact immutable snapshot persistence is owned by [Local Storage and Recovery](03-local-storage-and-recovery.md).
+A revision stores no credential, native provider object, live plugin, imported module object, provider attachment, `EnvironmentRuntime`, `HarnessState`, or process authority. Exact immutable snapshot persistence is owned by [Local Storage and Recovery](03-local-storage-and-recovery.md).
 
 ## Resource Documents
 
@@ -198,9 +198,9 @@ class LocalSkillDiscoverySettings(BaseModel):
     max_skills: int
 ```
 
-Every `ordered_sources` entry names a `skill_source` resource exactly once. `directory` is a credential-free local directory selector authorized by current Host policy. Each configured existing directory is entered through a shared Direct Local Environment binding; `roots` are normalized beneath that binding and exposed as `/environment/{source-alias}/...` logical paths. Agent UI then constructs explicit ordered Harness `FileSkillSource` values and calls `SkillManager.scan_environment(environment=...)` against the entered topology. That operation captures every configured root, scans and materializes through exact version-pinned `FileOperator` scopes, and reselects every configured root before returning a `BoundSkillCatalog`. The catalog carries exact binding versions and observed provider generations for its discovered items; Agent UI calls `require_current()` before consuming a bound logical path. It never reads a native path through a second Skill scanner.
+Every `ordered_sources` entry names a `skill_source` resource exactly once. `directory` is a credential-free local directory selector authorized by current Host policy. Agent UI acquires one fresh Direct Local provider attachment for each configured existing directory, adapts the attachments into a single-use `EnvironmentRuntime`, and gives every source a unique mount name used by `/environment/{source-alias}/...` logical paths. `roots` are normalized beneath that mount. Agent UI then constructs explicit ordered Harness `FileSkillSource` values and calls `SkillManager.scan_environment(environment=...)` against the current mount set. That operation captures every configured root, scans and materializes through exact mount-incarnation-pinned `FileOperator` scopes, and reselects every configured root before returning a `BoundSkillCatalog`. The catalog carries exact bound paths and observed provider generations for its discovered items; Agent UI calls `require_current()` before consuming a bound logical path. It never reads a native path through a second Skill scanner.
 
-`BoundSkillCatalog`, `BoundSkillCatalogItem`, their bound `EnvironmentPath` values, observed generations, and topology version are process-local evidence about one entered Environment. Agent UI never persists them as package, resource-revision, snapshot, or Session authority. Only the copied package manifest, payloads, and content digest become durable Agent UI authority; safe source provenance retained for refresh remains a non-authoritative hint.
+`BoundSkillCatalog`, `BoundSkillCatalogItem`, their bound `EnvironmentPath` values, captured mount incarnations, and observed provider generations are process-local evidence about one entered Environment. Agent UI never persists them as package, resource-revision, snapshot, or Session authority. Only the copied package manifest, payloads, and content digest become durable Agent UI authority; safe source provenance retained for refresh remains a non-authoritative hint.
 
 The scan uses the Harness contract exactly: each declared root can itself contain `SKILL.md`, each immediate child directory can contain one `SKILL.md`, and discovery does not recurse further. Source order and `conflict` select the final name catalog before import preview. `required=False` skips each individually missing, unroutable, or unsupported root; permission denial, invalid paths, malformed content, provider failure, catalog overflow, and every failure from a required root remain explicit diagnostics.
 
@@ -228,10 +228,10 @@ class SkillDefinition(BaseModel):
 
 Import follows one explicit pipeline:
 
-1. enter the selected local sources through Direct Local Environment bindings;
+1. acquire fresh Direct Local provider attachments for the selected sources and enter one single-use `EnvironmentRuntime` with the corresponding named mounts;
 2. use `SkillManager.scan_environment(environment=...)` to produce a conflict-resolved revision-bound metadata catalog;
 3. select one exact `BoundSkillCatalogItem`, call `catalog.require_current(environment)`, and call `environment.select_files(item.path)`;
-4. verify that the selection's `resolved_path` and `observed_generation` equal the bound item's directory and generation, enter `environment.open_files(selection)`, and keep that exact version-pinned scope open while enumerating and copying the package's bounded regular files;
+4. verify that the selection's `resolved_path` and `observed_generation` equal the bound item's directory and generation, enter `environment.open_files(selection)`, and keep that exact mount-incarnation-pinned scope open while enumerating and copying the package's bounded regular files;
 5. reject path escape, symlink escape, unsupported file kinds, duplicate normalized paths, and package limits, then copy the package into an application-managed source transaction;
 6. validate the copied package again and publish a new immutable Skill revision and package object.
 
@@ -357,7 +357,7 @@ Separating credential values from revision content allows safe rotation and reau
 05. Dynamic reload never mutates an active Run, built executable, or existing Session snapshot.
 06. Every behavior-affecting resource revision has immutable normalized content and a digest.
 07. A source path, package installation, resource ID, or credential reference grants no runtime authority.
-08. Local Skill discovery uses explicit accepted sources and the Harness Environment-aware `scan_environment()` version-pinned boundary; Agent UI performs no ambient, direct-`scan(files=...)`, or native-path bypass scan.
+08. Local Skill discovery uses explicit accepted sources and the Harness Environment-aware `scan_environment()` mount-incarnation-pinned boundary; Agent UI performs no ambient, direct-`scan(files=...)`, or native-path bypass scan.
 09. Imported Skill revisions own copied immutable package content and never depend on continued access to their discovery source.
 10. Credentials and live provider values never enter resource snapshots, Session history, AG-UI files, or default telemetry.
 11. Restart-bound settings are never partially applied to already-open infrastructure.

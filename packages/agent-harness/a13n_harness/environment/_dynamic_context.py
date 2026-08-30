@@ -29,21 +29,20 @@ from .providers import BoundEnvironment
 
 
 @dataclass(frozen=True, slots=True)
-class _BindingFence:
-    binding_id: str
-    binding_version: int
+class _MountFence:
+    mount_id: str
     observed_generation: str
 
 
 @dataclass(frozen=True, slots=True)
 class _AuthorizationFence:
-    topology_version: int
-    bindings: tuple[_BindingFence, ...]
+    change_sequence: int
+    mounts: tuple[_MountFence, ...]
     unresolved: bool = False
 
 
 class _DynamicEnvironmentContext:
-    """Run-local topology projection and authorization fence shared by Toolsets."""
+    """Run-local mount projection and authorization fence shared by Toolsets."""
 
     def __init__(
         self,
@@ -57,7 +56,7 @@ class _DynamicEnvironmentContext:
         self._run_id = run_id
         self._environment = environment
         self._resolve_process_identity = resolve_process_identity
-        self._pending_version: int | None = None
+        self._pending_sequence: int | None = None
         self._notice_pending = False
         self._active_context: RunContext[AgentContext] | None = None
         self._observer_task: asyncio.Task[None] | None = None
@@ -65,7 +64,7 @@ class _DynamicEnvironmentContext:
             f"environment_authorization_fence_{run_id}",
             default=None,
         )
-        self._fence_builder: ContextVar[list[_BindingFence] | None] = ContextVar(
+        self._fence_builder: ContextVar[list[_MountFence] | None] = ContextVar(
             f"environment_fence_builder_{run_id}",
             default=None,
         )
@@ -76,8 +75,8 @@ class _DynamicEnvironmentContext:
             *,
             context: AgentContext,
         ) -> tuple[CanonicalResource, ...]:
-            topology_version = context.environment.topology.topology_version
-            fences: list[_BindingFence] = []
+            change_sequence = context.environment._change_sequence
+            fences: list[_MountFence] = []
             token = self._fence_builder.set(fences)
             try:
                 resources = self._resolve_resources(tool_id, arguments, context)
@@ -97,15 +96,15 @@ class _DynamicEnvironmentContext:
                 }:
                     raise
                 self._authorization_fence.set(
-                    _AuthorizationFence(topology_version=topology_version, bindings=(), unresolved=True)
+                    _AuthorizationFence(change_sequence=change_sequence, mounts=(), unresolved=True)
                 )
                 return ()
             finally:
                 self._fence_builder.reset(token)
             self._authorization_fence.set(
                 _AuthorizationFence(
-                    topology_version=topology_version,
-                    bindings=tuple(dict.fromkeys(fences)),
+                    change_sequence=change_sequence,
+                    mounts=tuple(dict.fromkeys(fences)),
                     unresolved=(tool_id.startswith("environment.process_") and tool_id != "environment.process_status"),
                 )
             )
@@ -175,66 +174,50 @@ class _DynamicEnvironmentContext:
         *,
         alias: str | None = None,
     ) -> CanonicalResource:
-        selected = context.environment.resolve_path(path, alias=alias)
-        binding = next(item for item in context.environment.topology.bindings if item.binding_id == selected.binding_id)
-        self._record_fence(binding.binding_id, binding.binding_version, binding.descriptor.generation)
+        logical_path = path
+        if alias is not None and not path.startswith("/"):
+            logical_path = f"/environment/{alias}/{path}" if path != "." else f"/environment/{alias}"
+        selection = context.environment.select_files(logical_path)
+        selected = selection.resolved_path
+        self._record_fence(selected.mount_id, selection.observed_generation)
         return CanonicalResource(
             namespace="environment",
             kind="file",
-            identifier=(
-                f"{selected.binding_id}:{selected.binding_version}:{binding.descriptor.generation}:{selected.path}"
-            ),
+            identifier=f"{selected.mount_id}:{selection.observed_generation}:{selected.path}",
         )
 
     def _binding_resource(self, context: AgentContext, alias: str | None) -> CanonicalResource:
-        topology = context.environment.topology
-        if alias is None:
-            binding = next(
-                (item for item in topology.bindings if item.binding_id == topology.default_binding_id),
-                None,
-            )
-        else:
-            binding = next((item for item in topology.bindings if item.alias == alias), None)
-        if binding is None:
-            raise EnvironmentError(
-                "The selected Environment binding is unavailable.",
-                code="environment_selection_invalid",
-            )
-        self._record_fence(binding.binding_id, binding.binding_version, binding.descriptor.generation)
+        logical_path = "." if alias is None else f"/environment/{alias}"
+        selection = context.environment.select_files(logical_path)
+        selected = selection.resolved_path
+        self._record_fence(selected.mount_id, selection.observed_generation)
         return CanonicalResource(
             namespace="environment",
-            kind="binding",
-            identifier=f"{binding.binding_id}:{binding.binding_version}:{binding.descriptor.generation}",
+            kind="mount",
+            identifier=f"{selected.mount_id}:{selection.observed_generation}",
         )
 
-    def _record_fence(self, binding_id: str, binding_version: int, generation: str) -> None:
+    def _record_fence(self, mount_id: str, generation: str) -> None:
         builder = self._fence_builder.get()
         if builder is not None:
-            builder.append(_BindingFence(binding_id, binding_version, generation))
+            builder.append(_MountFence(mount_id, generation))
 
     def _assert_authorized_fence(self) -> None:
         fence = self._authorization_fence.get()
         if fence is None:
             return
-        topology = self._environment.topology
         if fence.unresolved:
-            if topology.topology_version != fence.topology_version:
+            if self._environment._change_sequence != fence.change_sequence:
                 raise EnvironmentError(
-                    "Environment topology changed after managed resource authorization.",
-                    code="environment_stale_binding",
+                    "Environment mounts changed after managed resource authorization.",
+                    code="environment_stale_mount",
                 )
             return
-        current = {item.binding_id: item for item in topology.bindings}
-        for expected in fence.bindings:
-            binding = current.get(expected.binding_id)
-            if (
-                binding is None
-                or binding.binding_version != expected.binding_version
-                or binding.descriptor.generation != expected.observed_generation
-            ):
+        for expected in fence.mounts:
+            if not self._environment._is_mount_current(expected.mount_id, expected.observed_generation):
                 raise EnvironmentError(
-                    "Environment binding changed after managed resource authorization.",
-                    code="environment_stale_binding",
+                    "Environment mount changed after managed resource authorization.",
+                    code="environment_stale_mount",
                 )
 
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Any) -> Any:
@@ -254,37 +237,36 @@ class _DynamicEnvironmentContext:
     ) -> ModelContextProjection:
         projection = await handler(request)
         if request.kind is ModelContextRequestKind.INPUT:
-            topology_version = ctx.deps.environment.topology.topology_version
-            if self._pending_version is not None and self._pending_version <= topology_version:
-                self._pending_version = None
+            change_sequence = ctx.deps.environment._change_sequence
+            if self._pending_sequence is not None and self._pending_sequence <= change_sequence:
+                self._pending_sequence = None
             self._notice_pending = False
         return projection
 
     def _ensure_observer(self, ctx: RunContext[AgentContext]) -> None:
         if self._observer_task is not None:
             return
-        self._observer_task = asyncio.create_task(self._observe_topology(ctx.deps))
+        self._observer_task = asyncio.create_task(self._observe_changes(ctx.deps))
         self._observer_task.add_done_callback(_consume_task_result)
 
-    async def _observe_topology(self, context: AgentContext) -> None:
-        observer = context.environment.topology_observer
-        cursor = observer.initial_topology_version
+    async def _observe_changes(self, context: AgentContext) -> None:
+        cursor = 0
         while True:
             try:
-                changes = await observer.read(after_version=cursor, wait=True)
+                changes = await context.environment._read_changes(after_sequence=cursor, wait=True)
             except EnvironmentError as exc:
                 if exc.code == "environment_closed":
                     return
                 raise
             if not changes:
                 return
-            cursor = changes[-1].current_version
-            self._pending_version = cursor
+            cursor = changes[-1].sequence
+            self._pending_sequence = cursor
             active = self._active_context
             if active is not None and not self._notice_pending:
                 self._notice_pending = True
                 active.enqueue(
-                    "The Environment topology changed. A fresh bounded topology snapshot is attached to this request.",
+                    "The Environment mounts changed. A fresh bounded mount snapshot is attached to this request.",
                     priority="asap",
                 )
 

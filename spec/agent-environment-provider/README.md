@@ -4,7 +4,7 @@
 
 This directory defines `agent-environment-provider`, distributed as `a13n-environment-provider`. It is the shared Python contract and built-in implementation package for Environment provider definitions, resource management, provider resource state, and fresh runtime attachments.
 
-Hosts and `a13n-harness` consume the same provider keys and configuration schemas. The package performs no durable storage and owns no Harness run, Agent loop, model-facing tool, or provider-neutral Environment operation. A Host chooses whether and how to persist desired provider specifications and resource state; the Harness converts fresh runtime attachments into single-use Environment bindings.
+Hosts and `a13n-harness` consume the same provider keys and configuration schemas. The package performs no durable storage and owns no Harness run, Agent loop, model-facing tool, or provider-neutral Environment operation. A Host chooses whether and how to persist desired provider specifications and resource state; the Harness adapts fresh runtime attachments into provider bindings for run-local mounts.
 
 ## Document Catalog
 
@@ -39,7 +39,7 @@ Read `01` and `02`. A third-party factory uses the same provider-specification, 
 - The provider package owns provider-specific schema validation, resource-management behavior, and bounded exact-operation reconciliation but no durable record.
 - A bound provider resource owns live provider clients, maintenance, and fresh attachment issuance for one Host scope.
 - A runtime attachment carries fresh process-local access material; it is not durable state and is transferred at most once.
-- The Harness owns provider-neutral Environment bindings, topology, operations, state restoration, and run-local cleanup.
+- The Harness owns the current mount set, provider-neutral operations, state restoration, and run-local cleanup.
 - Local Envd, Docker, and E2B use EIP for all Environment operations. Local Envd owns only the exact Host-resolved daemon process/private runtime; Docker and E2B vendor SDKs own only outer provider-resource lifecycle.
 - Direct Local and EIP are the only Environment operation backends.
 

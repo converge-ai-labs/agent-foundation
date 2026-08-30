@@ -1,53 +1,44 @@
-"""Advanced Environment binding and dynamic-topology construction API.
+"""Advanced Environment runtime construction API.
 
 Most embedded applications should pass an EnvironmentProvider or entered
 EnvironmentResource directly to ExecutableAgent.run() or stream(). This module
-exists for Hosts and provider integrations that need to construct or replace
-run-scoped topology explicitly.
+exists for Hosts and provider integrations that need explicit control over a
+run-scoped mount set.
 """
 
 from .attachments import create_environment_provider_binding
 from .coordinator import (
     CompositeBoundEnvironment,
-    CompositeEnvironmentRunBinding,
+    EmptyEnvironmentRuntime,
+    ManagedEnvironmentRuntime,
     NoopBoundEnvironment,
-    NoopEnvironmentRunBinding,
-    create_environment_run_binding,
-    create_noop_environment_run_binding,
+    create_empty_environment_runtime,
+    create_environment_runtime,
 )
-from .models import (
-    EnvironmentBindingRequest,
-    EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-)
+from .models import EnvironmentRuntimeLimits, EnvironmentStateLimits
 from .providers import (
     BoundEnvironment,
     BoundEnvironmentProvider,
     EnvironmentProviderBinding,
     EnvironmentProviderOperations,
-    EnvironmentRunBinding,
-    EnvironmentTopologyController,
-    EnvironmentTopologyObserver,
+    EnvironmentRuntime,
+    EnvironmentRuntimeMount,
 )
 
 __all__ = [
     "BoundEnvironment",
     "BoundEnvironmentProvider",
     "CompositeBoundEnvironment",
-    "CompositeEnvironmentRunBinding",
-    "EnvironmentBindingRequest",
+    "EmptyEnvironmentRuntime",
     "EnvironmentProviderBinding",
     "EnvironmentProviderOperations",
-    "EnvironmentRunBinding",
+    "EnvironmentRuntime",
+    "EnvironmentRuntimeLimits",
+    "EnvironmentRuntimeMount",
     "EnvironmentStateLimits",
-    "EnvironmentTopologyController",
-    "EnvironmentTopologyLimits",
-    "EnvironmentTopologyObserver",
-    "EnvironmentTopologyRequest",
+    "ManagedEnvironmentRuntime",
     "NoopBoundEnvironment",
-    "NoopEnvironmentRunBinding",
+    "create_empty_environment_runtime",
     "create_environment_provider_binding",
-    "create_environment_run_binding",
-    "create_noop_environment_run_binding",
+    "create_environment_runtime",
 ]

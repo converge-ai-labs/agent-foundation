@@ -28,11 +28,10 @@ from a13n_harness import (
     ShellCommand,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentBindingRequest,
+    EnvironmentRuntimeLimits,
+    EnvironmentRuntimeMount,
     EnvironmentStateLimits,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
-    create_environment_run_binding,
+    create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
 
@@ -76,23 +75,16 @@ def _binding(
             allowed_ports=ports or frozenset(),
         )
     )
-    request = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_version=1,
-                alias="local",
+    return create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider,
                 permission_ceiling=EnvironmentPermissionSet(operations=permissions),
-                default_working_directory="/",
-                provider_binding=provider,
-            ),
-        ),
-        default_binding_id="binding-1",
-    )
-    return create_environment_run_binding(
-        initial_topology=request,
-        topology_limits=EnvironmentTopologyLimits(),
+                working_directory="/",
+            )
+        },
+        default_mount="local",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
 
@@ -268,23 +260,16 @@ async def test_binding_refresh_cannot_split_exec_from_output_materialization(
             )
         )
 
-    initial = EnvironmentTopologyRequest(
-        topology_version=1,
-        bindings=(
-            EnvironmentBindingRequest(
-                binding_id="binding-1",
-                binding_version=1,
-                alias="local",
+    binding = create_environment_runtime(
+        mounts={
+            "local": EnvironmentRuntimeMount(
+                binding=provider("local-refresh", tmp_path),
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                default_working_directory="/",
-                provider_binding=provider("local-refresh", tmp_path),
-            ),
-        ),
-        default_binding_id="binding-1",
-    )
-    binding = create_environment_run_binding(
-        initial_topology=initial,
-        topology_limits=EnvironmentTopologyLimits(),
+                working_directory="/",
+            )
+        },
+        default_mount="local",
+        runtime_limits=EnvironmentRuntimeLimits(),
         state_limits=EnvironmentStateLimits(),
     )
     read_started = asyncio.Event()
@@ -310,25 +295,17 @@ async def test_binding_refresh_cannot_split_exec_from_output_materialization(
     )
 
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
-        await environment.activate()
+        await binding._activate()
         execution = asyncio.create_task(environment.shell.exec_captured(request))
         await asyncio.wait_for(read_started.wait(), timeout=1)
         refresh = asyncio.create_task(
-            binding.controller.apply(
-                EnvironmentTopologyRequest(
-                    topology_version=2,
-                    bindings=(
-                        EnvironmentBindingRequest(
-                            binding_id="binding-1",
-                            binding_version=2,
-                            alias="local",
-                            permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
-                            default_working_directory="/",
-                            provider_binding=provider("local-refresh", replacement_root),
-                        ),
-                    ),
-                    default_binding_id="binding-1",
-                )
+            binding.replace(
+                "local",
+                EnvironmentRuntimeMount(
+                    binding=provider("local-refresh", replacement_root),
+                    permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+                    working_directory="/",
+                ),
             )
         )
         await asyncio.sleep(0)
@@ -451,8 +428,7 @@ async def test_cancelled_foreground_exec_releases_unreachable_retained_output(tm
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         shell = entered.operations.shell
         store = entered.operations.outputs
@@ -505,8 +481,7 @@ async def test_cancelled_second_output_reservation_releases_the_first(
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         processes = entered.operations.processes
         store = entered.operations.outputs
@@ -628,8 +603,7 @@ async def test_process_manager_closes_active_processes_concurrently(
     async with provider.bind(
         run_id="run-1",
         instance=_instance(),
-        binding_id="binding-1",
-        binding_version=1,
+        mount_id="mount-1",
     ) as entered:
         processes = entered.operations.processes
         assert processes is not None
@@ -858,11 +832,11 @@ async def test_command_wall_timeout_is_provider_owned_and_finite(tmp_path: Path)
 
 
 @requires_posix_processes
-async def test_active_process_handle_fences_topology_retirement(tmp_path: Path) -> None:
+async def test_active_process_handle_keeps_retired_mount_available(tmp_path: Path) -> None:
     executable = Path(sys.executable).resolve()
     binding = _binding(tmp_path, executables=frozenset({executable}))
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:
-        await environment.activate()
+        await binding._activate()
         started = await environment.processes.start(
             CommandRequest(
                 command=ArgvCommand(
@@ -873,17 +847,12 @@ async def test_active_process_handle_fences_topology_retirement(tmp_path: Path) 
                 output_policy=_output_policy(),
             )
         )
-        removal = EnvironmentTopologyRequest(topology_version=2, bindings=(), default_binding_id=None)
-        with pytest.raises(EnvironmentError) as in_use:
-            await binding.controller.apply(removal)
-        assert in_use.value.code == "topology_in_use"
-        assert environment.topology.topology_version == 1
+        change = await binding.unmount("local")
+        assert change.kind == "unmounted"
+        assert environment.snapshot.mounts == ()
 
         await environment.processes.kill(started.process.handle)
         await environment.processes.release(started.process.handle)
-        change = await binding.controller.apply(removal)
-        assert change.current_version == 2
-        assert environment.topology.bindings == ()
 
 
 async def test_loopback_port_observation_is_explicitly_allowlisted(tmp_path: Path) -> None:

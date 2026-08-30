@@ -47,29 +47,29 @@ async def seed_environment_assignments(
 ) -> None:
     """Create root assignments and resource authority in the Session transaction."""
 
-    for binding in snapshot.bindings:
+    for mount in snapshot.mounts:
         spec_digest = canonical_digest(
             {
-                "provider_key": binding.provider_key,
-                "schema_version": binding.provider_schema_version,
-                "parameters": binding.normalized_parameters,
+                "provider_key": mount.provider_key,
+                "schema_version": mount.provider_schema_version,
+                "parameters": mount.normalized_parameters,
             }
         )
-        if binding.lifecycle_capabilities.resource_allocation == "single_from_spec":
+        if mount.lifecycle_capabilities.resource_allocation == "single_from_spec":
             host_resource_id = f"resource-{spec_digest[:24]}"
         else:
             host_resource_id = f"resource-{uuid4().hex}"
         existing = await database_session.get(HostEnvironmentResourceRecord, host_resource_id)
-        parameters_json = _json(binding.normalized_parameters)
+        parameters_json = _json(mount.normalized_parameters)
         if existing is None:
             database_session.add(
                 HostEnvironmentResourceRecord(
                     host_resource_id=host_resource_id,
-                    provider_key=binding.provider_key,
-                    provider_schema_version=binding.provider_schema_version,
+                    provider_key=mount.provider_key,
+                    provider_schema_version=mount.provider_schema_version,
                     provider_spec_digest=spec_digest,
-                    binding_parameters_json=parameters_json,
-                    resource_allocation=binding.lifecycle_capabilities.resource_allocation,
+                    provider_parameters_json=parameters_json,
+                    resource_allocation=mount.lifecycle_capabilities.resource_allocation,
                     lifecycle_state=HostResourceLifecycleState.unprovisioned.value,
                     operation_fence=0,
                     selected_provider_state_digest=None,
@@ -81,11 +81,11 @@ async def seed_environment_assignments(
                 )
             )
         elif (
-            existing.provider_key != binding.provider_key
-            or existing.provider_schema_version != binding.provider_schema_version
+            existing.provider_key != mount.provider_key
+            or existing.provider_schema_version != mount.provider_schema_version
             or existing.provider_spec_digest != spec_digest
-            or existing.binding_parameters_json != parameters_json
-            or existing.resource_allocation != binding.lifecycle_capabilities.resource_allocation
+            or existing.provider_parameters_json != parameters_json
+            or existing.resource_allocation != mount.lifecycle_capabilities.resource_allocation
         ):
             raise StoreIntegrityError(
                 "A canonical Host Environment resource has conflicting provider identity.",
@@ -95,10 +95,9 @@ async def seed_environment_assignments(
             SessionEnvironmentAssignmentRecord(
                 assignment_id=f"assignment-{uuid4().hex}",
                 session_id=session_id,
-                binding_name=binding.binding_name,
-                model_alias=binding.model_alias,
-                permission_ceiling_json=_json(sorted(binding.permission_ceiling)),
-                required=binding.required,
+                mount_name=mount.mount_name,
+                model_alias=mount.model_alias,
+                permission_ceiling_json=_json(sorted(mount.permission_ceiling)),
                 scope_key="root",
                 host_resource_id=host_resource_id,
                 created_at=created_at,
@@ -119,7 +118,7 @@ class EnvironmentRepository:
                     await database_session.execute(
                         select(SessionEnvironmentAssignmentRecord)
                         .where(SessionEnvironmentAssignmentRecord.session_id == session_id)
-                        .order_by(SessionEnvironmentAssignmentRecord.binding_name)
+                        .order_by(SessionEnvironmentAssignmentRecord.mount_name)
                     )
                 ).scalars()
             )
@@ -139,11 +138,8 @@ class EnvironmentRepository:
         resource_by_id = {item.host_resource_id: item for item in resources}
         assignments = tuple(_assignment_view(row) for row in assignment_rows)
         ready = all(
-            not assignment.required
-            or (
-                resource_by_id.get(assignment.host_resource_id) is not None
-                and resource_by_id[assignment.host_resource_id].lifecycle_state is HostResourceLifecycleState.available
-            )
+            resource_by_id.get(assignment.host_resource_id) is not None
+            and resource_by_id[assignment.host_resource_id].lifecycle_state is HostResourceLifecycleState.available
             for assignment in assignments
         )
         return EnvironmentAvailability(
@@ -174,7 +170,7 @@ class EnvironmentRepository:
                 "The selected Host Environment resource does not exist.",
                 code="environment_resource_missing",
             )
-        parameters = _load_json(row.binding_parameters_json)
+        parameters = _load_json(row.provider_parameters_json)
         if not isinstance(parameters, dict):
             raise StoreIntegrityError(
                 "Stored Environment provider parameters have the wrong shape.",
@@ -431,10 +427,9 @@ def _assignment_view(row: SessionEnvironmentAssignmentRecord) -> SessionEnvironm
         return SessionEnvironmentAssignment(
             assignment_id=row.assignment_id,
             session_id=row.session_id,
-            binding_name=row.binding_name,
+            mount_name=row.mount_name,
             model_alias=row.model_alias,
             permission_ceiling=permission_names,
-            required=row.required,
             scope_key=row.scope_key,
             host_resource_id=row.host_resource_id,
             created_at=row.created_at,

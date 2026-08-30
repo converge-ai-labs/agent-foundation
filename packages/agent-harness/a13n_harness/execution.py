@@ -115,12 +115,8 @@ from a13n_harness.environment.dynamic import (
     DynamicEnvironmentCapability,
     FileMediaUnderstandingRunCapability,
 )
-from a13n_harness.environment.models import EnvironmentError, EnvironmentTopologyChange
-from a13n_harness.environment.providers import (
-    BoundEnvironment,
-    EnvironmentRunBinding,
-    EnvironmentTopologyController,
-)
+from a13n_harness.environment.models import EnvironmentChange, EnvironmentError
+from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime
 from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
 from a13n_harness.errors import (
     DefinitionError,
@@ -240,12 +236,12 @@ class _ResponsePumpTerminal:
 
 
 @dataclass(slots=True)
-class _TopologyEventDrain:
+class _EnvironmentChangeDrain:
     requested: asyncio.Event = field(default_factory=asyncio.Event)
     drained: asyncio.Event = field(default_factory=asyncio.Event)
     progress: asyncio.Event = field(default_factory=asyncio.Event)
     cursor: int | None = None
-    terminal_version: int | None = None
+    terminal_sequence: int | None = None
 
 
 def _consume_finished_task(task: asyncio.Task[Any]) -> None:
@@ -265,29 +261,29 @@ async def _stop_environment_event_task(task: asyncio.Task[None]) -> None:
     if pending:
         task.add_done_callback(_consume_finished_task)
         raise RunError(
-            "Environment topology event adapter did not stop before cleanup deadline.",
+            "Environment change event adapter did not stop before cleanup deadline.",
             code="event_adapter_cleanup_timeout",
         )
     if task in done and not task.cancelled():
         task.result()
 
 
-async def _emit_environment_topology_events(
+async def _emit_environment_change_events(
     context: AgentContext,
-    drain: _TopologyEventDrain,
+    drain: _EnvironmentChangeDrain,
 ) -> None:
-    """Adapt the non-draining Environment journal through the logical terminal fence."""
-    observer = context.environment.topology_observer
-    cursor = observer.initial_topology_version
+    """Adapt the run-local Environment journal through the logical terminal fence."""
+    environment = context.environment
+    cursor = 0
     drain.cursor = cursor
     while True:
-        terminal_version = drain.terminal_version
-        if terminal_version is not None and cursor >= terminal_version:
+        terminal_sequence = drain.terminal_sequence
+        if terminal_sequence is not None and cursor >= terminal_sequence:
             drain.drained.set()
             drain.progress.set()
             return
 
-        read_task = asyncio.create_task(observer.read(after_version=cursor, wait=True))
+        read_task = asyncio.create_task(environment._read_changes(after_sequence=cursor, wait=True))
         terminal_task = asyncio.create_task(drain.requested.wait())
         try:
             done, _ = await asyncio.wait({read_task, terminal_task}, return_when=asyncio.FIRST_COMPLETED)
@@ -295,13 +291,13 @@ async def _emit_environment_topology_events(
                 if not read_task.done():
                     read_task.cancel()
                     await asyncio.gather(read_task, return_exceptions=True)
-                changes = await observer.read(after_version=cursor, wait=False)
+                changes = await environment._read_changes(after_sequence=cursor, wait=False)
             else:
                 changes = read_task.result()
         except EnvironmentError as exc:
             if exc.code == "environment_closed":
-                terminal_version = drain.terminal_version
-                if terminal_version is not None and cursor >= terminal_version:
+                terminal_sequence = drain.terminal_sequence
+                if terminal_sequence is not None and cursor >= terminal_sequence:
                     drain.drained.set()
                     drain.progress.set()
                 return
@@ -314,38 +310,26 @@ async def _emit_environment_topology_events(
 
         for change in changes:
             try:
-                await context.events.emit(_environment_topology_event(change))
+                await context.events.emit(_environment_change_event(change))
             except RunError as exc:
                 if exc.code in {"event_emitter_closed", "event_consumer_stopped"}:
                     return
                 raise
-            cursor = change.current_version
+            cursor = change.sequence
             progress = drain.progress
             drain.cursor = cursor
             drain.progress = asyncio.Event()
             progress.set()
 
 
-def _environment_topology_event(change: EnvironmentTopologyChange) -> HarnessExtensionEvent:
-    projected: list[dict[str, JsonValue]] = [
-        {
-            "kind": item.kind,
-            "binding_id": item.binding_id,
-            "previous_version": item.previous_version,
-            "current_version": item.current_version,
-            "previous_alias": item.previous_alias,
-            "current_alias": item.current_alias,
-        }
-        for item in change.bindings[:128]
-    ]
+def _environment_change_event(change: EnvironmentChange) -> HarnessExtensionEvent:
     payload: dict[str, JsonValue] = {
-        "type": "environment_topology_changed",
-        "previous_version": change.previous_version,
-        "current_version": change.current_version,
-        "request_digest": change.request_digest,
-        "binding_change_count": len(change.bindings),
-        "bindings": cast(JsonValue, projected),
-        "bindings_truncated": len(projected) < len(change.bindings),
+        "type": "environment_changed",
+        "sequence": change.sequence,
+        "kind": change.kind,
+        "name": change.name,
+        "previous_default": change.previous_default,
+        "current_default": change.current_default,
     }
     return HarnessExtensionEvent(kind="context", payload=payload)
 
@@ -1175,7 +1159,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         input: RunInputValue | None,
         input_factory: RunInputFactory | None,
         bindings: RunBindings,
-        environment_binding: EnvironmentRunBinding,
+        environment_binding: EnvironmentRuntime,
         previous_state: HarnessState | None,
         deferred_resume: DeferredToolResume | None,
         run_reserved_capability_ids: frozenset[str],
@@ -1209,7 +1193,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._response_ids: set[int] = set()
         self._closed_response_ids: set[int] = set()
         self._pydantic_events: AgentRunEvents[OutputT | DeferredToolRequests] | None = None
-        self._topology_event_drain = _TopologyEventDrain()
+        self._environment_change_drain = _EnvironmentChangeDrain()
         self._environment_event_task: asyncio.Task[None] | None = None
         self._response_pump_task: asyncio.Task[None] | None = None
         self._response_queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=1)
@@ -1251,11 +1235,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     def usage(self) -> RunUsage:
         """Return the live Pydantic AI usage accumulator."""
         return self._usage
-
-    @property
-    def environment_controller(self) -> EnvironmentTopologyController:
-        """Return the advanced topology controller for this run."""
-        return self._environment_binding.controller
 
     def _bind_parent_event_forwarder(self, parent: HarnessEventEmitter) -> _ChildEventForwarder:
         """Bind this exact stream as a validated child of one active parent emitter."""
@@ -1366,7 +1345,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             ) as environment:
                 if self._previous_state.environment_state is not None:
                     await environment.restore_state(self._previous_state.environment_state)
-                await environment.activate()
+                await self._environment_binding._activate()
                 if not ready.done():
                     ready.set_result(environment)
                 await self._environment_close_requested.wait()
@@ -1556,18 +1535,18 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             return
         self._logical_events_started = True
         self._emitter.start_consuming()
-        self._topology_event_drain.cursor = self.context.environment.topology_observer.initial_topology_version
+        self._environment_change_drain.cursor = 0
         self._environment_event_task = asyncio.create_task(
-            _emit_environment_topology_events(self.context, self._topology_event_drain)
+            _emit_environment_change_events(self.context, self._environment_change_drain)
         )
         self._response_pump_task = asyncio.create_task(self._pump_response())
 
     def _install_terminal_fence(self) -> None:
-        drain = self._topology_event_drain
-        if drain.terminal_version is not None:
+        drain = self._environment_change_drain
+        if drain.terminal_sequence is not None:
             return
-        self._environment_binding.controller.begin_close()
-        drain.terminal_version = self.context.environment.topology.topology_version
+        self._environment_binding._begin_close()
+        drain.terminal_sequence = self.context.environment._change_sequence
         drain.requested.set()
 
     async def _pump_response(self) -> None:
@@ -1866,8 +1845,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 self._install_terminal_fence()
                 await self.context.usage_attribution._flush(reason="terminal")
                 item = self._validate_result_candidate(item.replace(usage_records=self.context.usage_records))
-            target_version = self.context.environment.topology.topology_version
-            async for event in self._drain_emitter_through(target_version, terminal=terminal):
+            target_sequence = self.context.environment._change_sequence
+            async for event in self._drain_emitter_through(target_sequence, terminal=terminal):
                 yield event
             if terminal:
                 self._emitter.close()
@@ -1876,7 +1855,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
     async def _drain_emitter_through(
         self,
-        target_version: int,
+        target_sequence: int,
         *,
         terminal: bool,
     ) -> AsyncGenerator[HarnessEvent]:
@@ -1896,17 +1875,19 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     self._environment_event_task = None
                     adapter_task.result()
                     adapter_task = None
-                    if not terminal or not self._topology_event_drain.drained.is_set():
+                    if not terminal or not self._environment_change_drain.drained.is_set():
                         raise RunError(
-                            "Environment topology event adapter stopped before the terminal journal fence.",
+                            "Environment change event adapter stopped before the terminal journal fence.",
                             code="event_adapter_stopped",
                         )
 
-                progress = self._topology_event_drain.progress
-                cursor = self._topology_event_drain.cursor
+                progress = self._environment_change_drain.progress
+                cursor = self._environment_change_drain.cursor
                 adapter_complete = adapter_task is None or adapter_task.done()
-                terminal_complete = not terminal or (self._topology_event_drain.drained.is_set() and adapter_complete)
-                if cursor is not None and cursor >= target_version and self._emitter.empty() and terminal_complete:
+                terminal_complete = not terminal or (
+                    self._environment_change_drain.drained.is_set() and adapter_complete
+                )
+                if cursor is not None and cursor >= target_sequence and self._emitter.empty() and terminal_complete:
                     if emitter_task is not None and not emitter_task.done():
                         emitter_task.cancel()
                         await asyncio.gather(emitter_task, return_exceptions=True)
@@ -1924,7 +1905,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 done, _ = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
                 if deadline_task is not None and deadline_task in done:
                     raise RunError(
-                        "Environment topology event adapter did not drain before cleanup deadline.",
+                        "Environment change event adapter did not drain before cleanup deadline.",
                         code="event_adapter_cleanup_timeout",
                     )
                 if progress_task in done:
@@ -1995,7 +1976,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     self._environment_event_task = None
                     adapter_task.result()
                     raise RunError(
-                        "Environment topology event adapter stopped before the logical terminal fence.",
+                        "Environment change event adapter stopped before the logical terminal fence.",
                         code="event_adapter_stopped",
                     )
                 if emitter_task in done:
@@ -2026,8 +2007,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 emitter_task.cancel()
                                 await asyncio.gather(emitter_task, return_exceptions=True)
                                 emitter_task = None
-                        target_version = self.context.environment.topology.topology_version
-                        async for event in self._drain_emitter_through(target_version, terminal=False):
+                        target_sequence = self.context.environment._change_sequence
+                        async for event in self._drain_emitter_through(target_sequence, terminal=False):
                             yield event
                         yield pending_result
                         return
@@ -2425,7 +2406,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
         fence_failure: BaseException | None = None
         try:
-            self._environment_binding.controller.begin_close()
+            self._environment_binding._begin_close()
         except BaseException as exc:
             fence_failure = exc
 

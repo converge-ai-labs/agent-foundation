@@ -29,14 +29,12 @@ class EIPFileOperator:
         *,
         session: EIPSession,
         environment_id: str,
-        binding_id: str,
-        binding_version: int,
+        mount_id: str,
         generation: str,
     ) -> None:
         self._session = session
         self._environment_id = environment_id
-        self._binding_id = binding_id
-        self._binding_version = binding_version
+        self._mount_id = mount_id
         self._generation = generation
         self._mounts = tuple(sorted(session.descriptor.mounts, key=lambda mount: len(mount.logical_root), reverse=True))
         self._mount_by_id = {mount.mount_id: mount for mount in self._mounts}
@@ -370,7 +368,6 @@ class EIPFileOperator:
         return convert_receipt(
             receipt,
             environment_id=self._environment_id,
-            binding_id=self._binding_id,
-            binding_version=self._binding_version,
+            mount_id=self._mount_id,
             generation=self._generation,
         )

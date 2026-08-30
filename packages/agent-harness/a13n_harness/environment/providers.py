@@ -28,19 +28,19 @@ from .commands import (
 from .files import FileOperator
 from .models import (
     EnvironmentAvailability,
-    EnvironmentBindingObservation,
-    EnvironmentBindingState,
+    EnvironmentChange,
     EnvironmentDescriptor,
+    EnvironmentMountObservation,
+    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentOperationReceipt,
     EnvironmentPath,
+    EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
+    EnvironmentRuntimeLimits,
+    EnvironmentSnapshot,
     EnvironmentState,
     EnvironmentStateLimits,
-    EnvironmentTopology,
-    EnvironmentTopologyChange,
-    EnvironmentTopologyLimits,
-    EnvironmentTopologyRequest,
 )
 from .retention import (
     BoundOutputCursor,
@@ -76,7 +76,7 @@ class FileScopeSelection:
 
 
 class FileScopeProvider(Protocol):
-    """Select and hold one binding-version-pinned FileOperator for compound operations."""
+    """Select and hold one mount-incarnation-pinned FileOperator for compound operations."""
 
     def select_files(self, path: str) -> FileScopeSelection: ...
 
@@ -89,7 +89,7 @@ class BoundShellOperations(Protocol):
     async def exec(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult: ...
 
     async def exec_captured(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
-        """Execute and materialize output under one exact binding-version lease."""
+        """Execute and materialize output under one exact mount-incarnation lease."""
         ...
 
 
@@ -202,9 +202,9 @@ class BoundEnvironmentProvider(Protocol):
 
     async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None: ...
 
-    async def export_state(self, *, max_bytes: int) -> EnvironmentBindingState | None: ...
+    async def export_state(self, *, max_bytes: int) -> EnvironmentMountState | None: ...
 
-    async def restore_state(self, state: EnvironmentBindingState) -> None: ...
+    async def restore_state(self, state: EnvironmentMountState) -> None: ...
 
 
 class EnvironmentProviderBinding(ABC):
@@ -236,35 +236,38 @@ class EnvironmentProviderBinding(ABC):
         *,
         run_id: str,
         instance: AgentInstanceContext,
-        binding_id: str,
-        binding_version: int,
+        mount_id: str,
     ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
-        """Enter this candidate exactly once."""
+        """Enter this candidate exactly once under a Harness-generated mount identity."""
 
     @abstractmethod
     async def discard(self) -> None:
         """Idempotently dispose a candidate that did not enter successfully."""
 
 
-class EnvironmentTopologyObserver(Protocol):
-    @property
-    def initial_topology_version(self) -> int: ...
+@dataclass(frozen=True, slots=True)
+class EnvironmentRuntimeMount:
+    """One trusted provider candidate and its run-local mount policy."""
 
-    async def read(
-        self,
-        *,
-        after_version: int,
-        wait: bool = False,
-    ) -> tuple[EnvironmentTopologyChange, ...]: ...
+    binding: EnvironmentProviderBinding
+    permission_ceiling: EnvironmentPermissionSet
+    working_directory: str | None = "/"
 
-
-class EnvironmentTopologyController(Protocol):
-    async def wait_until_active(self) -> None: ...
-
-    async def apply(self, request: EnvironmentTopologyRequest) -> EnvironmentTopologyChange: ...
-
-    def begin_close(self) -> None:
-        """Install the logical-run terminal fence without awaiting provider cleanup."""
+    def __post_init__(self) -> None:
+        if not isinstance(self.binding, EnvironmentProviderBinding):
+            raise TypeError("binding must be an EnvironmentProviderBinding")
+        if not isinstance(self.permission_ceiling, EnvironmentPermissionSet):
+            raise TypeError("permission_ceiling must be an EnvironmentPermissionSet")
+        directory = self.working_directory
+        if directory is not None and (
+            not isinstance(directory, str)
+            or not directory.startswith("/")
+            or "\x00" in directory
+            or "//" in directory
+            or (directory != "/" and directory.endswith("/"))
+            or any(segment in {".", ".."} for segment in directory.split("/"))
+        ):
+            raise ValueError("working_directory must be a canonical absolute path")
 
 
 class BoundEnvironment(ABC):
@@ -272,15 +275,7 @@ class BoundEnvironment(ABC):
 
     @property
     @abstractmethod
-    def topology(self) -> EnvironmentTopology: ...
-
-    @property
-    @abstractmethod
-    def restored_state_topology_version(self) -> int | None: ...
-
-    @property
-    @abstractmethod
-    def topology_observer(self) -> EnvironmentTopologyObserver: ...
+    def snapshot(self) -> EnvironmentSnapshot: ...
 
     @property
     @abstractmethod
@@ -288,11 +283,11 @@ class BoundEnvironment(ABC):
 
     @abstractmethod
     def select_files(self, path: str) -> FileScopeSelection:
-        """Capture one exact binding version for a logical file path."""
+        """Capture one exact mount incarnation for a logical file path."""
 
     @abstractmethod
     def open_files(self, selection: FileScopeSelection) -> AbstractAsyncContextManager[FileOperator]:
-        """Hold the selected binding version and route all scoped paths through it."""
+        """Hold the selected mount incarnation and route all scoped paths through it."""
 
     @property
     @abstractmethod
@@ -312,21 +307,17 @@ class BoundEnvironment(ABC):
 
     @abstractmethod
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
-        """Resolve a model-facing selector into one captured internal binding path."""
+        """Resolve a model-facing selector into one captured internal mount path."""
 
     @abstractmethod
     async def project_model_context(
         self,
         request: ModelContextProjectionRequest,
     ) -> ModelContextProjection:
-        """Project the current provider-neutral topology without editing messages."""
+        """Project the current provider-neutral mount set without editing messages."""
 
     @abstractmethod
-    async def activate(self) -> None:
-        """Publish controller activation after initial state restore completes."""
-
-    @abstractmethod
-    async def describe(self, binding_id: str) -> EnvironmentBindingObservation: ...
+    async def describe(self, name: str) -> EnvironmentMountObservation: ...
 
     @abstractmethod
     async def ensure_ready(self, requirement: EnvironmentReadinessRequirement) -> None: ...
@@ -337,17 +328,31 @@ class BoundEnvironment(ABC):
     @abstractmethod
     async def restore_state(self, state: EnvironmentState) -> None: ...
 
+    @property
+    @abstractmethod
+    def _change_sequence(self) -> int:
+        """Return the current run-local change sequence for Harness event fencing."""
 
-class EnvironmentRunBinding(ABC):
-    """Single-use aggregate paired with one Host-retained topology controller."""
+    @abstractmethod
+    def _is_mount_current(self, mount_id: str, observed_generation: str) -> bool:
+        """Check one opaque mount incarnation for internal authorization fencing."""
+
+    @abstractmethod
+    async def _read_changes(
+        self,
+        *,
+        after_sequence: int,
+        wait: bool = False,
+    ) -> tuple[EnvironmentChange, ...]:
+        """Read run-local mount changes for Harness event adaptation."""
+
+
+class EnvironmentRuntime(ABC):
+    """Single-use Host authority for one run's Environment mount set."""
 
     @property
     @abstractmethod
-    def controller(self) -> EnvironmentTopologyController: ...
-
-    @property
-    @abstractmethod
-    def topology_limits(self) -> EnvironmentTopologyLimits: ...
+    def runtime_limits(self) -> EnvironmentRuntimeLimits: ...
 
     @property
     @abstractmethod
@@ -361,6 +366,40 @@ class EnvironmentRunBinding(ABC):
         instance: AgentInstanceContext,
     ) -> AbstractAsyncContextManager[BoundEnvironment]:
         """Bind and enter the aggregate for exactly one run."""
+
+    @abstractmethod
+    async def wait_until_active(self) -> None:
+        """Wait until initial entry, state restore, and run-extension activation complete."""
+
+    @abstractmethod
+    async def mount(
+        self,
+        name: str,
+        mount: EnvironmentRuntimeMount,
+        *,
+        make_default: bool = False,
+    ) -> EnvironmentChange:
+        """Prepare and atomically publish one new mount."""
+
+    @abstractmethod
+    async def replace(self, name: str, mount: EnvironmentRuntimeMount) -> EnvironmentChange:
+        """Prepare and atomically replace one existing mount."""
+
+    @abstractmethod
+    async def unmount(self, name: str) -> EnvironmentChange:
+        """Atomically remove one mount and retire its provider scope."""
+
+    @abstractmethod
+    async def set_default(self, name: str | None) -> EnvironmentChange:
+        """Atomically select or clear the default mount."""
+
+    @abstractmethod
+    async def _activate(self) -> None:
+        """Activate the entered aggregate after optional state restoration."""
+
+    @abstractmethod
+    def _begin_close(self) -> None:
+        """Install the terminal mutation fence before result delivery."""
 
 
 class RawEnvironmentReader(Protocol):

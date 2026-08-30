@@ -13,7 +13,7 @@ from a13n_harness import (
     RunError,
     UserInteractionCapability,
 )
-from a13n_harness.environment.advanced import NoopEnvironmentRunBinding
+from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -117,7 +117,7 @@ async def test_structured_question_is_not_exposed_to_child_runs() -> None:
                 parent_agent_instance_id="parent-1",
                 delegation_id="delegation-1",
             ),
-            environment=NoopEnvironmentRunBinding(),
+            environment=EmptyEnvironmentRuntime(),
         ),
     )
 
