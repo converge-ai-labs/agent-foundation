@@ -23,9 +23,7 @@ from a13n_harness import (
 )
 from a13n_harness.environment.advanced import (
     EnvironmentProviderBinding,
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_environment_provider_binding,
     create_environment_runtime,
 )
@@ -114,8 +112,6 @@ async def _run_environment_demo(
                     "docs": _runtime_mount(docs),
                 },
                 default_mount="source",
-                runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-                state_limits=EnvironmentStateLimits(max_mount_entries=2),
             )
             run_bindings = RunBindings.embedded(environment=environment_runtime)
 

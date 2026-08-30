@@ -28,9 +28,7 @@ from a13n_harness import (
     ShellCommand,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
@@ -84,8 +82,6 @@ def _binding(
             )
         },
         default_mount="local",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 
@@ -269,8 +265,6 @@ async def test_binding_refresh_cannot_split_exec_from_output_materialization(
             )
         },
         default_mount="local",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
     read_started = asyncio.Event()
     continue_read = asyncio.Event()

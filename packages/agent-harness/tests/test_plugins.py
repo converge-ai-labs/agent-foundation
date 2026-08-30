@@ -28,7 +28,6 @@ from a13n_harness import (
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
     EnvironmentRuntime,
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
     create_empty_environment_runtime,
 )
@@ -656,14 +655,6 @@ class TaskAffineEnvironment(EnvironmentRuntime):
         self.delegate = create_empty_environment_runtime()
         self.closed = asyncio.Event()
 
-    @property
-    def runtime_limits(self):
-        return self.delegate.runtime_limits
-
-    @property
-    def state_limits(self):
-        return self.delegate.state_limits
-
     async def wait_until_active(self) -> None:
         await self.delegate.wait_until_active()
 
@@ -908,7 +899,7 @@ async def test_early_close_installs_mount_mutation_fence_before_plugin_cleanup()
         started=cleanup_started,
         release=release_cleanup,
     )
-    environment = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=1))
+    environment = create_empty_environment_runtime()
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,

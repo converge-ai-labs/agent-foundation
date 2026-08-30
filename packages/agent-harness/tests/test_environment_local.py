@@ -36,9 +36,7 @@ from a13n_harness import (
     OpaqueOutputReference,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_environment_provider_binding,
     create_environment_runtime,
 )
@@ -140,8 +138,6 @@ async def test_host_manager_attachment_path_supports_sequential_harness_runs(tmp
                         )
                     },
                     default_mount="local",
-                    runtime_limits=EnvironmentRuntimeLimits(),
-                    state_limits=EnvironmentStateLimits(),
                 )
                 async with binding.bind(run_id=f"run-{attempt}", instance=_instance()) as environment:
                     if attempt == 1:
@@ -187,8 +183,6 @@ def _two_binding_aggregate(source: Path, destination: Path):
     return create_environment_runtime(
         mounts=mounts,
         default_mount="source",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 
@@ -217,8 +211,6 @@ def _aggregate(
             )
         },
         default_mount="local",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 
@@ -502,8 +494,6 @@ async def test_direct_local_requires_and_preserves_shared_root(tmp_path: Path) -
             )
         },
         default_mount="shared",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
     async with binding.bind(run_id="run-1", instance=_instance()) as environment:

@@ -40,9 +40,7 @@ from a13n_harness import (
 )
 from a13n_harness.environment.advanced import (
     EnvironmentRuntime,
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_environment_runtime,
 )
 from a13n_harness.environment.local.binding import (
@@ -181,8 +179,6 @@ def _binding(root: Path) -> EnvironmentRuntime:
     return create_environment_runtime(
         mounts={"local": _runtime_mount(root)},
         default_mount="local",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 
@@ -193,8 +189,6 @@ def _multi_binding(default_root: Path, shared_root: Path) -> EnvironmentRuntime:
             "shared": _runtime_mount(shared_root, environment_id="skills-shared"),
         },
         default_mount="default",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 

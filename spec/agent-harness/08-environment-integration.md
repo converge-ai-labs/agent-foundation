@@ -80,8 +80,6 @@ def create_environment_runtime(
     *,
     mounts: Mapping[str, EnvironmentRuntimeMount],
     default_mount: str | None = None,
-    runtime_limits: EnvironmentRuntimeLimits | None = None,
-    state_limits: EnvironmentStateLimits | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
 ) -> EnvironmentRuntime: ...
 ```
@@ -334,9 +332,9 @@ class EnvironmentMountState(BaseModel):
 
 The provider-defined `state_version` describes only the provider's portable state codec. It is not mount identity and grants no authority.
 
-Export captures the current mount set under the aggregate operation fence, exports only mounts whose permission ceiling permits state export, validates finite JSON and configured entry/byte/deadline limits, and returns one complete value. Failure aborts the complete export.
+Export captures the current mount set under the aggregate operation fence, exports only mounts whose permission ceiling permits state export, validates canonical JSON, and returns one complete value. Failure aborts the complete export. The Host owns admission and storage limits for the resulting state.
 
-Restore occurs after fresh provider entry and before runtime activation. It matches saved entries by mount name and provider type. Unknown saved names are ignored. A provider-type mismatch for a current mount fails the restore. Permission, deadline, and size checks apply before provider state is accepted.
+Restore occurs after fresh provider entry and before runtime activation. It matches saved entries by mount name and provider type. Unknown saved names are ignored. A provider-type mismatch for a current mount fails the restore. Permission checks apply before provider state is accepted; the Host owns state-size admission before starting the run.
 
 State does not contain the default mount, opaque mount IDs, provider generations, attachments, handles, operation leases, pending mutations, change sequence, credentials, policy, or desired mounts.
 
@@ -389,7 +387,7 @@ File media understanding is an optional collaborator of `FileToolset`. It pins a
 
 ## Failure Surface
 
-`EnvironmentError` carries a stable code, bounded model-safe details, and optional retry hint. Core codes include invalid selection, denial, unsupported operation, unavailable dependency, not found, conflict, stale mount, mount limit, invalid state, provider failure, activation failure, and closed runtime.
+`EnvironmentError` carries a stable code, bounded model-safe details, and optional retry hint. Core codes include invalid selection, denial, unsupported operation, unavailable dependency, not found, conflict, stale mount, invalid state, provider failure, activation failure, and closed runtime.
 
 Provider-native messages, credentials, mount IDs, generations, filesystem paths outside the logical root, and backend handles are removed from model-facing error projection unless a specific safe field is part of the public tool contract.
 

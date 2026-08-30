@@ -136,8 +136,7 @@ class _BoundDirectLocalProvider(BoundEnvironmentProvider):
         if not operations <= self._descriptor.operation_families:
             raise EnvironmentError("Direct Local operation family is unsupported.", code="environment_unsupported")
 
-    async def export_state(self, *, max_bytes: int) -> EnvironmentMountState | None:
-        del max_bytes
+    async def export_state(self) -> EnvironmentMountState | None:
         return None
 
     async def restore_state(self, state: EnvironmentMountState) -> None:

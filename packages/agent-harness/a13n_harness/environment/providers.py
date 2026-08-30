@@ -37,10 +37,8 @@ from .models import (
     EnvironmentPath,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
-    EnvironmentRuntimeLimits,
     EnvironmentSnapshot,
     EnvironmentState,
-    EnvironmentStateLimits,
 )
 from .retention import (
     BoundOutputCursor,
@@ -202,7 +200,7 @@ class BoundEnvironmentProvider(Protocol):
 
     async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None: ...
 
-    async def export_state(self, *, max_bytes: int) -> EnvironmentMountState | None: ...
+    async def export_state(self) -> EnvironmentMountState | None: ...
 
     async def restore_state(self, state: EnvironmentMountState) -> None: ...
 
@@ -349,14 +347,6 @@ class BoundEnvironment(ABC):
 
 class EnvironmentRuntime(ABC):
     """Single-use Host authority for one run's Environment mount set."""
-
-    @property
-    @abstractmethod
-    def runtime_limits(self) -> EnvironmentRuntimeLimits: ...
-
-    @property
-    @abstractmethod
-    def state_limits(self) -> EnvironmentStateLimits: ...
 
     @abstractmethod
     def bind(

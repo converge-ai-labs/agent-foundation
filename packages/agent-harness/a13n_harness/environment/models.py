@@ -140,28 +140,6 @@ def _thaw_json(value: JsonValue) -> JsonValue:
     return value
 
 
-class EnvironmentRuntimeLimits(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    max_mounts: Annotated[int, Field(gt=0, le=1024)] = 32
-
-
-class EnvironmentStateLimits(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    max_mount_entries: Annotated[int, Field(gt=0, le=1024)] = 32
-    max_mount_encoded_bytes: Annotated[int, Field(gt=0)] = 1_048_576
-    max_aggregate_encoded_bytes: Annotated[int, Field(gt=0)] = 4_194_304
-    export_timeout_seconds: float = 600.0
-    restore_timeout_seconds: float = 600.0
-
-    @model_validator(mode="after")
-    def _validate_timeouts(self) -> EnvironmentStateLimits:
-        _positive_finite(self.export_timeout_seconds, "export_timeout_seconds")
-        _positive_finite(self.restore_timeout_seconds, "restore_timeout_seconds")
-        return self
-
-
 class EnvironmentPermissionSet(BaseModel):
     model_config = ConfigDict(frozen=True)
 

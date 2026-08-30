@@ -52,10 +52,8 @@ from .models import (
     EnvironmentPath,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
-    EnvironmentRuntimeLimits,
     EnvironmentSnapshot,
     EnvironmentState,
-    EnvironmentStateLimits,
 )
 from .providers import (
     BoundEnvironment,
@@ -548,8 +546,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         snapshot: EnvironmentSnapshot,
         entered: Mapping[str, _EnteredMount],
         owned_scopes: Mapping[_MountKey, _OwnedProviderScope],
-        runtime_limits: EnvironmentRuntimeLimits,
-        state_limits: EnvironmentStateLimits,
         journal: EnvironmentChangeJournal,
         runtime: ManagedEnvironmentRuntime,
         extensions: tuple[tuple[str, EnvironmentRunExtension], ...],
@@ -560,8 +556,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._entered = dict(entered)
         self._entered_by_id = {item.mount_id: item for item in entered.values()}
         self._owned_scopes = dict(owned_scopes)
-        self._runtime_limits = runtime_limits
-        self._state_limits = state_limits
         self._journal = journal
         self._runtime = runtime
         self._extensions = extensions
@@ -817,8 +811,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
             self._assert_mutable()
             if name in self._entered:
                 raise EnvironmentError("Environment mount already exists.", code="environment_conflict")
-            if len(self._entered) >= self._runtime_limits.max_mounts:
-                raise EnvironmentError("Environment mount limit is exhausted.", code="environment_mount_limit")
             owned = await self._prepare_runtime_mount(name, mount)
             previous_default = self._snapshot.default_mount
             current_default = name if make_default else previous_default
@@ -1701,50 +1693,30 @@ class CompositeBoundEnvironment(BoundEnvironment):
             if "state" in entered.public.descriptor.operation_families
             and EnvironmentAction.STATE_EXPORT in entered.public.permission_ceiling.operations
         ]
-        if len(eligible) > self._state_limits.max_mount_entries:
-            raise EnvironmentError("Environment state has too many entries.", code="state_too_large")
         entries: dict[str, EnvironmentMountState] = {}
-        remaining = self._state_limits.max_aggregate_encoded_bytes
         try:
-            async with asyncio.timeout(self._state_limits.export_timeout_seconds):
-                for entered in eligible:
-                    async with self._operation_lease(
-                        entered,
-                        EnvironmentAction.STATE_EXPORT,
-                        "state",
-                        timeout_seconds=self._state_limits.export_timeout_seconds,
-                        timeout_code="state_timeout",
-                    ):
-                        budget = min(self._state_limits.max_mount_encoded_bytes, remaining)
-                        state = await entered.provider.export_state(max_bytes=budget)
-                        if state is None:
-                            continue
-                        if state.provider_type != entered.public.provider_type:
-                            raise EnvironmentError(
-                                "Provider state has an incompatible provider type.",
-                                code="state_invalid",
-                            )
-                        raw = dump_json_bytes(state.model_dump(mode="json"), sort_keys=True)
-                        if len(raw) > budget:
-                            raise EnvironmentError(
-                                "Provider state exceeds its encoded byte limit.",
-                                code="state_too_large",
-                            )
-                        entries[entered.public.name] = EnvironmentMountState.model_validate(json.loads(raw))
-                        remaining -= len(raw)
-        except TimeoutError as exc:
-            raise EnvironmentError("Environment state export timed out.", code="state_timeout") from exc
+            for entered in eligible:
+                async with self._operation_lease(
+                    entered,
+                    EnvironmentAction.STATE_EXPORT,
+                    "state",
+                    timeout_code="state_timeout",
+                ):
+                    state = await entered.provider.export_state()
+                    if state is None:
+                        continue
+                    if state.provider_type != entered.public.provider_type:
+                        raise EnvironmentError(
+                            "Provider state has an incompatible provider type.",
+                            code="state_invalid",
+                        )
+                    raw = dump_json_bytes(state.model_dump(mode="json"), sort_keys=True)
+                    entries[entered.public.name] = EnvironmentMountState.model_validate(json.loads(raw))
         except EnvironmentError:
             raise
         except (TypeError, ValueError) as exc:
             raise EnvironmentError("Provider state is not canonical JSON.", code="state_invalid") from exc
-        result = EnvironmentState(mounts=entries)
-        if (
-            len(dump_json_bytes(result.model_dump(mode="json"), sort_keys=True))
-            > self._state_limits.max_aggregate_encoded_bytes
-        ):
-            raise EnvironmentError("Environment state exceeds aggregate limit.", code="state_too_large")
-        return result
+        return EnvironmentState(mounts=entries)
 
     async def restore_state(self, state: EnvironmentState) -> None:
         self._assert_open()
@@ -1760,14 +1732,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
             detached = EnvironmentState.model_validate(json.loads(raw_state))
         except (TypeError, ValueError) as exc:
             raise EnvironmentError("Environment state is not canonical JSON.", code="state_invalid") from exc
-        if len(detached.mounts) > self._state_limits.max_mount_entries:
-            raise EnvironmentError("Environment state has too many entries.", code="state_too_large")
-        if len(raw_state) > self._state_limits.max_aggregate_encoded_bytes:
-            raise EnvironmentError("Environment state exceeds aggregate limit.", code="state_too_large")
-        for entry in detached.mounts.values():
-            encoded = dump_json_bytes(entry.model_dump(mode="json"), sort_keys=True)
-            if len(encoded) > self._state_limits.max_mount_encoded_bytes:
-                raise EnvironmentError("Environment state entry exceeds its limit.", code="state_too_large")
         matched: list[tuple[EnvironmentMountState, _EnteredMount]] = []
         for name, entry in detached.mounts.items():
             entered = self._entered.get(name)
@@ -1780,19 +1744,14 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     details={"name": name},
                 )
             matched.append((entry, entered))
-        try:
-            async with asyncio.timeout(self._state_limits.restore_timeout_seconds):
-                for entry, entered in matched:
-                    async with self._operation_lease(
-                        entered,
-                        EnvironmentAction.STATE_RESTORE,
-                        "state",
-                        timeout_seconds=self._state_limits.restore_timeout_seconds,
-                        timeout_code="state_timeout",
-                    ):
-                        await entered.provider.restore_state(entry)
-        except TimeoutError as exc:
-            raise EnvironmentError("Environment state restore timed out.", code="state_timeout") from exc
+        for entry, entered in matched:
+            async with self._operation_lease(
+                entered,
+                EnvironmentAction.STATE_RESTORE,
+                "state",
+                timeout_code="state_timeout",
+            ):
+                await entered.provider.restore_state(entry)
         self._state_restored = True
 
 
@@ -1806,8 +1765,6 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
 
     _initial_mounts: tuple[_MountRequest, ...]
     _default_mount: str | None
-    _runtime_limits: EnvironmentRuntimeLimits
-    _state_limits: EnvironmentStateLimits
     _extensions: tuple[tuple[str, EnvironmentRunExtension], ...] = ()
     _noop: bool = False
     _used: bool = field(default=False, init=False, repr=False)
@@ -1816,14 +1773,6 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     _activation_error: BaseException | None = field(default=None, init=False, repr=False)
     _accepting_mutations: bool = field(default=False, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
-
-    @property
-    def runtime_limits(self) -> EnvironmentRuntimeLimits:
-        return self._runtime_limits
-
-    @property
-    def state_limits(self) -> EnvironmentStateLimits:
-        return self._state_limits
 
     async def wait_until_active(self) -> None:
         await self._activation_changed.wait()
@@ -1944,8 +1893,6 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
                 snapshot=snapshot,
                 entered=entered,
                 owned_scopes=owned_scopes,
-                runtime_limits=self._runtime_limits,
-                state_limits=self._state_limits,
                 journal=journal,
                 runtime=self,
                 extensions=self._extensions,
@@ -1996,17 +1943,10 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
 class EmptyEnvironmentRuntime(ManagedEnvironmentRuntime):
     """Empty aggregate that can receive mounts after activation."""
 
-    def __init__(
-        self,
-        *,
-        runtime_limits: EnvironmentRuntimeLimits | None = None,
-        state_limits: EnvironmentStateLimits | None = None,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__(
             _initial_mounts=(),
             _default_mount=None,
-            _runtime_limits=(runtime_limits or EnvironmentRuntimeLimits()).model_copy(deep=True),
-            _state_limits=(state_limits or EnvironmentStateLimits()).model_copy(deep=True),
             _extensions=(),
             _noop=True,
         )
@@ -2015,10 +1955,7 @@ class EmptyEnvironmentRuntime(ManagedEnvironmentRuntime):
 def _validate_initial_mounts(
     mounts: tuple[_MountRequest, ...],
     default_mount: str | None,
-    limits: EnvironmentRuntimeLimits,
 ) -> None:
-    if len(mounts) > limits.max_mounts:
-        raise EnvironmentError("Environment mount set exceeds max_mounts.", code="environment_mount_limit")
     names = [item.name for item in mounts]
     candidate_ids = [id(item.candidate) for item in mounts]
     if len(names) != len(set(names)):
@@ -2348,13 +2285,9 @@ def create_environment_runtime(
     *,
     mounts: Mapping[str, EnvironmentRuntimeMount],
     default_mount: str | None = None,
-    runtime_limits: EnvironmentRuntimeLimits | None = None,
-    state_limits: EnvironmentStateLimits | None = None,
     extensions: Sequence[EnvironmentRunExtension] = (),
 ) -> EnvironmentRuntime:
     """Capture one atomic initial mount set in a fresh single-use runtime."""
-    limits = runtime_limits or EnvironmentRuntimeLimits()
-    state = state_limits or EnvironmentStateLimits()
     try:
         captured = tuple(
             _MountRequest(
@@ -2368,23 +2301,14 @@ def create_environment_runtime(
     except (AttributeError, TypeError, ValueError) as exc:
         raise EnvironmentError("Environment mounts are invalid.", code="environment_request_invalid") from exc
     captured_extensions = _normalize_environment_run_extensions(extensions)
-    _validate_initial_mounts(captured, default_mount, limits)
+    _validate_initial_mounts(captured, default_mount)
     return ManagedEnvironmentRuntime(
         _initial_mounts=captured,
         _default_mount=default_mount,
-        _runtime_limits=limits.model_copy(deep=True),
-        _state_limits=state.model_copy(deep=True),
         _extensions=captured_extensions,
     )
 
 
-def create_empty_environment_runtime(
-    *,
-    runtime_limits: EnvironmentRuntimeLimits | None = None,
-    state_limits: EnvironmentStateLimits | None = None,
-) -> EnvironmentRuntime:
+def create_empty_environment_runtime() -> EnvironmentRuntime:
     """Create the empty runtime used by embedded runs without initial mounts."""
-    return EmptyEnvironmentRuntime(
-        runtime_limits=runtime_limits,
-        state_limits=state_limits,
-    )
+    return EmptyEnvironmentRuntime()

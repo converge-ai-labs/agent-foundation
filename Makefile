@@ -51,6 +51,8 @@ examples-test: examples-sync ## Run focused example tests
 
 .PHONY: examples-smoke
 examples-smoke: examples-sync ## Run every offline example path
+	@(cd examples/plugins && uv run --locked plugin-example-capability-agent-spec)
+	@(cd examples/plugins && uv run --locked plugin-example-capability-code)
 	@(cd examples/plugins && uv run --locked plugin-example-environment-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-environment-code)
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-entrypoint)

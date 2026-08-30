@@ -227,8 +227,7 @@ class _BoundEIPProvider:
         if first_error is not None:
             raise first_error
 
-    async def export_state(self, *, max_bytes: int) -> EnvironmentMountState | None:
-        del max_bytes
+    async def export_state(self) -> EnvironmentMountState | None:
         return None
 
     async def restore_state(self, state: EnvironmentMountState) -> None:

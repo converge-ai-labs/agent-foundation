@@ -43,9 +43,7 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeLimits,
     EnvironmentRuntimeMount,
-    EnvironmentStateLimits,
     create_empty_environment_runtime,
     create_environment_runtime,
 )
@@ -307,8 +305,6 @@ def _local_binding(root: Path, *, process_output: bool = False):
     return create_environment_runtime(
         mounts={"local": _local_mount(root, process_output=process_output)},
         default_mount="local",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 
@@ -333,8 +329,6 @@ def _two_local_bindings(
             ),
         },
         default_mount="local",
-        runtime_limits=EnvironmentRuntimeLimits(),
-        state_limits=EnvironmentStateLimits(),
     )
 
 
@@ -348,10 +342,7 @@ async def test_dynamic_mount_change_emits_an_independent_harness_context_event(t
         await finish.wait()
         yield "done"
 
-    aggregate = create_empty_environment_runtime(
-        runtime_limits=EnvironmentRuntimeLimits(max_mounts=2),
-        state_limits=EnvironmentStateLimits(),
-    )
+    aggregate = create_empty_environment_runtime()
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
@@ -1956,7 +1947,7 @@ async def test_environment_change_event_adapter_survives_model_recovery_boundary
             raise RuntimeError("recoverable failure")
         yield "done"
 
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
@@ -1986,7 +1977,7 @@ async def test_environment_change_event_adapter_survives_model_recovery_boundary
 
 
 async def test_mount_from_result_middleware_drains_before_terminal_result(tmp_path: Path) -> None:
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
     plugin = _MountAfterResultPlugin(aggregate, _local_mount(tmp_path))
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -2049,7 +2040,7 @@ class _TransformEnvironmentChangeEventsPlugin(AbstractHarnessPlugin):
 
 
 async def test_environment_change_events_pass_through_plugin_middleware(tmp_path: Path) -> None:
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
     transform_plugin = _TransformEnvironmentChangeEventsPlugin()
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -2076,7 +2067,7 @@ async def test_environment_change_events_pass_through_plugin_middleware(tmp_path
 
 async def test_terminal_drains_mount_change_burst_larger_than_emitter_capacity(tmp_path: Path) -> None:
     change_count = 65
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=1))
+    aggregate = create_empty_environment_runtime()
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
@@ -2118,7 +2109,7 @@ async def test_terminal_waits_for_delayed_environment_change_adapter_drain(
         await original_adapter(context, drain)
 
     monkeypatch.setattr(execution_module, "_emit_environment_change_events", delayed_adapter)
-    aggregate = create_empty_environment_runtime(runtime_limits=EnvironmentRuntimeLimits(max_mounts=2))
+    aggregate = create_empty_environment_runtime()
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
