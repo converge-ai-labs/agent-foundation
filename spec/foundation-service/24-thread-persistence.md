@@ -201,7 +201,8 @@ sequenceDiagram
     participant Objects as Object storage
     participant DB as Relational database
 
-    Control->>Control: Authorize Session, origin, and Agent revision
+    Control->>Control: Authorize Session, origin, and stable AgentPreset
+    Control->>Control: Resolve or retain exact Preset Version and Runtime lock
     Control->>Harness: Create new or forked HarnessState
     Harness-->>Control: Complete state with thread_id
     Control->>Objects: Publish initial Turn state create-only

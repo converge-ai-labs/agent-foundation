@@ -61,7 +61,7 @@ Suspension first conditionally publishes the complete waiting state candidate at
 
 Feedback authenticates the responder, authorizes every exact pending action in the frozen request set, checks expiration and the expected Thread and pending-action versions, and applies an idempotency key. The waiting parent remains immutable. Once the complete set is resolved, Foundation initializes a new Turn in the same Thread from the parent's sealed state and, in one short transaction, revalidates the Thread's waiting head, current Turn, and version, sets `parent_turn_id` to that waiting Turn, records the consumed pending identities, selects the new Turn as current, increments Thread version, accepts the new Turn, and associates any response Items with it. Its `accepted` status makes it the sole active Turn.
 
-The replacement worker reconstructs the exact Agent revision and tool surface, supplies fresh bindings, and passes the authoritative request and complete results through native `DeferredToolResume`. Approval and external execution remain separate facts: approval does not prove the client effect occurred, and client success does not retroactively prove approval.
+The replacement worker reconstructs the exact AgentPresetVersion and tool surface, supplies fresh bindings, and passes the authoritative request and complete results through native `DeferredToolResume`. Approval and external execution remain separate facts: approval does not prove the client effect occurred, and client success does not retroactively prove approval.
 
 Invalid, incomplete, stale, expired, or unauthorized feedback creates no new Turn and leaves the waiting parent unchanged.
 
@@ -125,7 +125,15 @@ class ChildResultDelivery:
 
 A Host-managed spawn is an ordinary completed parent tool operation. Its retained Item names the accepted child Thread and Turn. It is not a deferred request, and child completion never fills the original spawn tool-call ID.
 
-Child acceptance verifies the current parent Turn and TurnAttempt generation, authorizes the exact declared child definition, intersects delegation and run grants, selects the child Agent revision, creates a versioned child Thread under the same Session, initializes the child Turn state, and records the relationship. Acceptance atomically commits the child Thread, its first Turn, and the relationship under the parent's idempotent operation identity even when acknowledgement is lost. The Thread row and advancement semantics follow [Durable Thread Persistence](24-thread-persistence.md).
+Child acceptance verifies the current parent Turn and TurnAttempt generation,
+authorizes the stable child AgentPreset declared by the parent Version, intersects
+delegation and run grants, selects the exact child AgentPresetVersion already
+resolved in that parent Version, and pins the parent Turn's Runtime lock. It then
+creates a versioned child Thread under the same Session, initializes the child Turn
+state, and records the relationship. Acceptance atomically commits the child
+Thread, its first Turn, and the relationship under the parent's idempotent
+operation identity even when acknowledgement is lost. The Thread row and
+advancement semantics follow [Durable Thread Persistence](24-thread-persistence.md).
 
 Parent termination never silently cancels an independently continuing child. The relationship explicitly owns cancellation propagation, result visibility, retention, and delivery policy.
 

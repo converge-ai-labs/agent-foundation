@@ -4,7 +4,7 @@
 
 Foundation implements the shared [`Session`, `Thread`, `Turn`, and `Item`](../interaction-model.md) interaction model directly as its durable Agent-work model. A `Turn` is one accepted scheduling, recovery, state, and terminal-outcome boundary. A `TurnAttempt` is one replaceable fenced worker generation for that Turn. Foundation defines no separate durable `Execution` or `ExecutionAttempt` resource.
 
-Every Foundation-managed Agent invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn. Authenticated feedback for a waiting Turn, an explicit continuation, a fork, and retry of terminal intent create another Turn rather than reopening the sealed parent.
+Every Foundation-managed AgentPreset invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Acceptance pins one exact immutable AgentPresetVersion and internal Plugin Runtime lock. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn without re-resolving either selection. Authenticated feedback for a waiting Turn, an explicit continuation, a fork, and retry of terminal intent create another Turn rather than reopening the sealed parent.
 
 [Durable Thread Persistence](24-thread-persistence.md) owns the independent Thread row, Session membership, origin, version, current Turn, and selected continuation head. [Durable Turn State](14-turn-persistence.md) owns Turn fields, lifecycle, state-object publication, sealing, lineage, and recovery budget. [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) owns TurnAttempt fields, leases, fences, dispatch evidence, and attempt outcomes. This document owns only the interaction-to-runtime mapping and the boundaries that those detailed contracts must preserve.
 
@@ -39,7 +39,9 @@ Items and replay data are projections of a Turn and never become continuation st
 ## Acceptance and Lineage
 
 Turn acceptance authenticates and authorizes the caller or internal principal,
-validates the selected Session and Thread, resolves exact revisions and policy,
+validates the selected Session and Thread, resolves the stable AgentPreset's
+active Version and its profile-selected internal Runtime lock or preserves an exact
+source-owned selection where required, resolves other exact revisions and policy,
 freezes the current enabled ModelConfig as a non-secret execution snapshot,
 applies the scoped idempotency contract, publishes the initial Turn state, and
 atomically creates or advances the versioned Thread together with the accepted
@@ -113,7 +115,7 @@ Exactly one legal generation-fenced transition wins a cancellation, waiting, or 
 
 01. Session, Thread, Turn, and Item retain the shared platform meanings.
 02. Every hosted Thread is an independent versioned relational resource whose current Turn and continuation head are never inferred from Turn timestamps; current-Turn status determines whether the Thread has active work.
-03. Turn owns accepted schedulable Agent work, lineage, state, recovery budget, and durable outcome.
+03. Turn owns accepted schedulable Agent work, exact AgentPresetVersion and Runtime-lock selection, lineage, state, recovery budget, and durable outcome.
 04. TurnAttempt owns one replaceable fenced worker generation and starts at most one Harness Run.
 05. Foundation defines no separate durable Execution or ExecutionAttempt resource.
 06. Waiting feedback, continuation, fork, and terminal retry create another Turn rather than reopening a sealed Turn.

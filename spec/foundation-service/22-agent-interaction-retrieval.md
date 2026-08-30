@@ -24,7 +24,7 @@ no relational table, object type, lifecycle state, or public route.
 
 ## Definition Policy and Run Grant
 
-An immutable Agent revision can contain this conceptual policy:
+An immutable AgentPresetVersion can contain this conceptual policy:
 
 ```python
 class InteractionReadPolicy:
@@ -201,7 +201,7 @@ or cross-tenant existence signals.
 
 Policy version `1`, tool names and arguments, and result semantics form one
 model-visible compatibility line. Breaking changes require a new policy version
-and immutable Agent revision. Additive result fields are compatible only
+and immutable AgentPresetVersion. Additive result fields are compatible only
 when readers ignore unknown fields. Internal reader and repository code can
 change without a version when observable behavior and authority stay the same.
 

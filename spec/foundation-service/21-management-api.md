@@ -24,12 +24,11 @@ exposes Hosted AG-UI and A2A as separate standard protocol surfaces; they call
 the same application authority but are not `/api/v1` aliases. SDKs map this
 contract and do not invent another lifecycle, retry policy, or HTTP client
 semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and
-external webhook payloads retain their own contracts. The
-deployment-authenticated [Harness plugin artifact operator
-API](26-harness-plugin-artifacts-and-runtime-loading.md#internal-operator-api)
-and [Environment connector package operator
-API](19-environment-management.md#provider-catalog-and-workspace-selection) are
-deliberately outside `/api/v1` and are not added to public clients.
+external webhook payloads retain their own contracts. Plugin artifact
+validation, on-demand import, and Runner materialization are internal execution
+boundaries behind the public Plugin resources and commands. The
+deployment-authenticated Environment connector package operator API remains
+outside `/api/v1` and is not added to public clients.
 
 ## Scope and Authorization
 
@@ -54,8 +53,10 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Service Accounts          | `/workspaces/{workspace_id}/service-accounts`, `/service-accounts/{service_account_id}`                                                     | Workspace-owned non-human Principal lifecycle                                              |
 | Personal API keys         | `/workspaces/{workspace_id}/personal-api-keys`, `/api-keys/{api_key_id}`                                                                    | Current User's Workspace-bound keys; safe Admin metadata projection                        |
 | Service Account API keys  | `/service-accounts/{service_account_id}/api-keys`, `/api-keys/{api_key_id}`                                                                 | Admin-managed Workspace-bound keys                                                         |
-| Presets and Agents        | `/workspaces/{workspace_id}/presets`, `/workspaces/{workspace_id}/agents`                                                                   | Mutable authoring heads and immutable selected revisions                                   |
-| Agent revisions           | `/agents/{agent_id}/revisions`                                                                                                              | Immutable create/read collection; no in-place revision mutation                            |
+| Agent Presets             | `/workspaces/{workspace_id}/agent-presets`, `/agent-presets/{agent_preset_id}`                                                              | Mutable authoring configuration and active-Version pointer                                 |
+| Agent Preset Versions     | `/agent-presets/{agent_preset_id}/versions`, `/agent-preset-versions/{agent_preset_version_id}`                                             | Immutable paginated collection and exact Version read; no in-place mutation                |
+| Plugins                   | `/plugins`, `/plugins/{plugin_id}`                                                                                                          | Deployment-level stable identity; active-Version pointer is runner-profile-only            |
+| Plugin Versions           | `/plugins/{plugin_id}/versions`, `/plugin-versions/{plugin_version_id}`                                                                     | Immutable artifact metadata; no in-place mutation                                          |
 | Skill uploads             | `/workspaces/{workspace_id}/skill-uploads`, `/skill-uploads/{upload_id}`                                                                    | Expiring bounded ZIP staging receipts; not Agent or package authority                      |
 | Skills                    | `/workspaces/{workspace_id}/skills`, `/skills/{skill_id}`                                                                                   | Stable Workspace resources with versioned display/head selection                           |
 | Skill revisions           | `/skills/{skill_id}/revisions`, `/skill-revisions/{skill_revision_id}`, `/skill-revisions/{skill_revision_id}/content`                      | Immutable normalized packages; binary content download is separately authorized            |
@@ -65,7 +66,7 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Connectors                | `/workspaces/{workspace_id}/connectors`, `/connectors/{connector_id}`                                                                       | Stable Workspace resources; create atomically includes revision `1`                        |
 | Connector revisions       | `/connectors/{connector_id}/revisions`, `/connector-revisions/{connector_revision_id}`                                                      | Immutable create/read configuration revisions                                              |
 | Connections               | `/workspaces/{workspace_id}/connections`, `/connections/{connection_id}`                                                                    | Safe account and lifecycle projection; credentials and Provider state remain private       |
-| Triggers                  | `/workspaces/{workspace_id}/triggers`, `/triggers/{trigger_id}`                                                                             | Mutable schedule or Connector-event source targeting one exact Agent revision              |
+| Triggers                  | `/workspaces/{workspace_id}/triggers`, `/triggers/{trigger_id}`                                                                             | Mutable schedule or Connector-event source targeting one stable AgentPreset                |
 | Sessions                  | `/workspaces/{workspace_id}/sessions`                                                                                                       | Hosted interaction tree and product/presentation scope                                     |
 | Threads                   | `/sessions/{session_id}/threads`, `/threads/{thread_id}`                                                                                    | Independently versioned advancing histories within one Session                             |
 | Turns                     | `/workspaces/{workspace_id}/turns`, `/threads/{thread_id}/turns`, `/turns/{turn_id}`, `/turns/{turn_id}/lineage`                            | Root or continued Host-accepted advancement and exact ancestor lineage                     |
@@ -93,15 +94,18 @@ POST /api/v1/threads/{thread_id}/turns
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries `expected_thread_version`, bounded input, selected Agent
-authoring reference when permitted, optional `selected_skill_names`, an optional
-policy-permitted Environment topology selection, and optional policy-supported
-metadata. Foundation reads the independent Thread row, requires the current Turn
-not to be `accepted` or `running`, selects its exact completed `head_turn_id` as the
-parent, and never infers a parent from Turn timestamps. Acceptance atomically sets
-`current_turn_id` to the new accepted Turn, preserves the head, increments Thread
-version, and creates the Turn, first user Item, lifecycle events, idempotency
-evidence, and outbox intents.
+The request carries `expected_thread_version`, bounded input, an optional stable
+`agent_preset_id`, an optional active-Version precondition,
+`selected_skill_names`, a policy-permitted Environment topology selection, and
+policy-supported metadata. Foundation reads the independent Thread row, requires
+the current Turn not to be `accepted` or `running`, selects its exact completed
+`head_turn_id` as the parent, and never infers a parent from Turn timestamps. The
+selected Preset defaults to the parent's stable Preset. Acceptance resolves its
+current active Version and Runtime lock and rejects incompatible parent-state
+migration; an explicit retry command instead retains the source Turn's exact
+Version and lock. Acceptance atomically sets `current_turn_id` to the new accepted
+Turn, preserves the head, increments Thread version, and creates the Turn, first
+user Item, lifecycle events, idempotency evidence, and outbox intents.
 
 Each Environment topology entry can select an `EnvironmentId`, an exact
 `EnvironmentRevisionId`, or a policy-permitted inline connection configuration
@@ -110,12 +114,12 @@ Acceptance resolves references and stores the complete exact configuration in
 the new Turn's `state.json`.
 
 `selected_skill_names` follows the
-[Foundation Skill selection contract](27-skill-management.md#agent-revision-selection).
+[Foundation Skill selection contract](27-skill-management.md#agentpresetversion-selection).
 It is an optional JSON array of at most 512 distinct Skill names; JSON `null` is
-invalid. An absent field uses the selected AgentRevision default, an empty array
+invalid. An absent field uses the selected AgentPresetVersion default, an empty array
 selects no Skills, and a non-empty array selects those exact names within the
-AgentRevision's locked available catalog. Acceptance stores the resolved names
-in AgentRevision catalog order in `state.json`. That normalized effective array,
+AgentPresetVersion's locked available catalog. Acceptance stores the resolved names
+in AgentPresetVersion catalog order in `state.json`. That normalized effective array,
 rather than whether the caller omitted the field or supplied the same names
 explicitly, participates in the canonical request digest.
 
@@ -134,14 +138,17 @@ Idempotency-Key: opaque-caller-key
 ```
 
 Root submission accepts an Agent invocation that does not continue an existing
-Thread. It selects an immutable Agent revision, bounded input, optional
-`selected_skill_names`, an optional policy-permitted Environment topology using the
-same reference or inline forms, and declared trigger metadata, then selects or
-creates one Session and its root Thread under current policy.
+Thread. The request names one stable `agent_preset_id` and can carry
+`agent_preset_version_id` only as an active-Version precondition, plus bounded
+input, optional `selected_skill_names`, an optional policy-permitted Environment
+topology using the same reference or inline forms, and declared trigger metadata.
+Acceptance resolves that Preset's current active Version and internal Runtime
+lock, validates every selection, then selects or creates one Session and its root
+Thread under current policy.
 Acceptance initializes that Thread's root state and atomically commits the
-version `1` Thread row, one root Turn, lifecycle events, idempotency evidence,
-and outbox intents. Foundation exposes no standalone empty-Thread create
-operation.
+version `1` Thread row, one root Turn pinned to the exact Preset Version and
+Runtime lock, lifecycle events, idempotency evidence, and outbox intents.
+Foundation exposes no standalone empty-Thread create operation.
 
 The `202` response returns the exact Session, Thread, and Turn references. Schedules, webhooks, service requests, and Host-managed asynchronous children use the same Turn acceptance application contract even when their owning ingress is not this public route. Foundation never creates work outside Session, Thread, and Turn identity merely because the invocation is non-interactive.
 
@@ -192,12 +199,14 @@ Idempotency-Key: opaque-caller-key
 ```
 
 The request carries bounded new input, an optional policy-permitted compatible
-Agent revision selection, optional `selected_skill_names`, and fork metadata.
+stable AgentPreset selection, optional `selected_skill_names`, and fork metadata.
 Foundation authorizes the source Turn and Session, verifies the source's frozen
 state, applies `HarnessState.fork()`, and atomically creates a child-role Thread
 with `origin_kind="fork"` plus its first accepted Turn. The first Turn's
-`parent_turn_id` names the source Turn. The response is the same Session, Thread,
-and Turn acceptance receipt used by root and continuation submission.
+`parent_turn_id` names the source Turn. Acceptance resolves the selected Preset's
+current active Version and Runtime lock; omitting the selection reuses the source
+Turn's exact Preset Version and Runtime lock. The response is the same Session,
+Thread, and Turn acceptance receipt used by root and continuation submission.
 
 Fork idempotency is scoped to the source Turn, principal, and canonical request.
 Repeating the same key returns the original Thread and Turn. A Session fork that
@@ -208,25 +217,45 @@ operation and is never implied by this route.
 
 Commands are subordinate to the resource whose state they mutate:
 
-| Command                        | Route                                                        | Required mutation contract                                                                                                                                                                           |
-| ------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accept invitation              | `POST /invitations/{invitation_id}/accept`                   | Exact single-use token; atomically creates User credentials and RoleBindings                                                                                                                         |
-| Resend invitation              | `POST /invitations/{invitation_id}/resend`                   | Current authorization; rotates the token under the same Invitation ID                                                                                                                                |
-| Revoke invitation              | `POST /invitations/{invitation_id}/revoke`                   | Current authorization; terminal for the current invitation                                                                                                                                           |
-| Rotate API key                 | `POST /api-keys/{api_key_id}/rotate`                         | Authorized owner or Service Account Admin; same key ID and immediate cutover                                                                                                                         |
-| Revoke API key                 | `POST /api-keys/{api_key_id}/revoke`                         | Idempotently sets permanent revocation without deleting metadata                                                                                                                                     |
-| Test candidate ModelConfig     | `POST /workspaces/{workspace_id}/models/test`                | Synchronous candidate test using Secret references; creates no health resource                                                                                                                       |
-| Test Environment revision      | `POST /environment-revisions/{environment_revision_id}/test` | Synchronously connects the exact revision with current credentials; creates no resource, lease, or retained health state                                                                             |
-| Copy ModelConfig               | `POST /workspaces/{workspace_id}/models/{model_id}/copy`     | Idempotency key; creates a new ModelConfig and copies no Secret value                                                                                                                                |
-| Cancel active Turn             | `POST /turns/{turn_id}/cancel`                               | Idempotency key and current authorization; seals the active Turn                                                                                                                                     |
-| Retry failed or cancelled Turn | `POST /turns/{turn_id}/retry`                                | Target must be the Thread's current failed or cancelled Turn; expected Thread version and idempotency key; preserves its effective Skill selection and advances the same Thread without reopening it |
-| Fork completed Turn            | `POST /turns/{turn_id}/fork`                                 | Idempotency key; creates an independent Thread and first Turn from exact frozen source state                                                                                                         |
-| Approve pending action         | `POST /pending-actions/{pending_action_id}/approve`          | Expected pending and Thread versions plus idempotency key                                                                                                                                            |
-| Reject pending action          | `POST /pending-actions/{pending_action_id}/reject`           | Expected pending and Thread versions plus idempotency key                                                                                                                                            |
-| Submit client-tool result      | `POST /pending-actions/{pending_action_id}/complete`         | Expected Thread version, exact native result envelope, and idempotency key                                                                                                                           |
-| Supply structured user input   | `POST /pending-actions/{pending_action_id}/respond`          | Expected Thread version, schema-valid bounded response, and idempotency key                                                                                                                          |
+| Command                        | Route                                                        | Required mutation contract                                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accept invitation              | `POST /invitations/{invitation_id}/accept`                   | Exact single-use token; atomically creates User credentials and RoleBindings                                                                                                                              |
+| Resend invitation              | `POST /invitations/{invitation_id}/resend`                   | Current authorization; rotates the token under the same Invitation ID                                                                                                                                     |
+| Revoke invitation              | `POST /invitations/{invitation_id}/revoke`                   | Current authorization; terminal for the current invitation                                                                                                                                                |
+| Rotate API key                 | `POST /api-keys/{api_key_id}/rotate`                         | Authorized owner or Service Account Admin; same key ID and immediate cutover                                                                                                                              |
+| Revoke API key                 | `POST /api-keys/{api_key_id}/revoke`                         | Idempotently sets permanent revocation without deleting metadata                                                                                                                                          |
+| Publish Agent Preset           | `POST /agent-presets/{agent_preset_id}/publish`              | Idempotency key; creates and activates one immutable Version from the current config                                                                                                                      |
+| Roll back Agent Preset         | `POST /agent-presets/{agent_preset_id}/rollback`             | Idempotency key and exact source Version; creates and activates a new immutable Version                                                                                                                   |
+| Duplicate Agent Preset         | `POST /agent-presets/{agent_preset_id}/duplicate`            | Idempotency key; creates an independent enabled custom Preset and Version 1                                                                                                                               |
+| Change AgentPreset lifecycle   | `POST /agent-presets/{agent_preset_id}/{action}`             | `enable`, `disable`, `archive`, or `unarchive` with expected resource version                                                                                                                             |
+| Upload Plugin Version          | `POST /plugins`, `POST /plugins/{plugin_id}/versions`        | Idempotency key; first upload creates Plugin and Version, later uploads add an immutable Version                                                                                                          |
+| Activate Plugin Version        | `POST /plugin-versions/{plugin_version_id}/activate`         | Runner only: idempotency key; succeeds only after every serviceable Worker can run the candidate Runtime lock; on-demand returns `plugin_runtime_mode_unsupported`                                        |
+| Deactivate Plugin              | `POST /plugins/{plugin_id}/deactivate`                       | Runner only: idempotency key and active transitive-reference check; on-demand returns `plugin_runtime_mode_unsupported`                                                                                   |
+| Change Plugin lifecycle        | `POST /plugins/{plugin_id}/{action}`                         | `archive` or `unarchive`; archive requires an inactive uploaded Plugin                                                                                                                                    |
+| Test candidate ModelConfig     | `POST /workspaces/{workspace_id}/models/test`                | Synchronous candidate test using Secret references; creates no health resource                                                                                                                            |
+| Test Environment revision      | `POST /environment-revisions/{environment_revision_id}/test` | Synchronously connects the exact revision with current credentials; creates no resource, lease, or retained health state                                                                                  |
+| Copy ModelConfig               | `POST /workspaces/{workspace_id}/models/{model_id}/copy`     | Idempotency key; creates a new ModelConfig and copies no Secret value                                                                                                                                     |
+| Cancel active Turn             | `POST /turns/{turn_id}/cancel`                               | Idempotency key and current authorization; seals the active Turn                                                                                                                                          |
+| Retry failed or cancelled Turn | `POST /turns/{turn_id}/retry`                                | Target must be the Thread's current failed or cancelled Turn; expected Thread version and idempotency key; preserves its Preset Version, Runtime lock, and effective Skill selection without reopening it |
+| Fork completed Turn            | `POST /turns/{turn_id}/fork`                                 | Idempotency key; creates an independent Thread and first Turn from exact frozen source state                                                                                                              |
+| Approve pending action         | `POST /pending-actions/{pending_action_id}/approve`          | Expected pending and Thread versions plus idempotency key                                                                                                                                                 |
+| Reject pending action          | `POST /pending-actions/{pending_action_id}/reject`           | Expected pending and Thread versions plus idempotency key                                                                                                                                                 |
+| Submit client-tool result      | `POST /pending-actions/{pending_action_id}/complete`         | Expected Thread version, exact native result envelope, and idempotency key                                                                                                                                |
+| Supply structured user input   | `POST /pending-actions/{pending_action_id}/respond`          | Expected Thread version, schema-valid bounded response, and idempotency key                                                                                                                               |
 
 A command returns the mutated resource or a durable receipt. `202` means accepted, not completed. Unknown outcome after possible dispatch is reconciled by repeating the same idempotency key or reading the returned resource; clients never generate a new key merely because acknowledgement was lost.
+
+Successful runner-profile Plugin runtime commands return a thin receipt containing `operation_id`,
+`status` in `running`, `succeeded`, or `failed`, resulting resource references,
+and bounded failure evidence. `GET /api/v1/operations/{operation_id}` reads a
+known receipt. Foundation exposes no operation collection, update, deletion, or
+independent business lifecycle; this route is only the query boundary for an
+asynchronous command result.
+
+The route catalog is stable across Plugin Runtime profiles so SDKs expose one
+surface. In `on_demand`, Upload, List, Get, Archive, and exact Preset bindings
+remain available, while Activate and Deactivate fail before dispatch with
+`409 plugin_runtime_mode_unsupported` and create no operation receipt.
 
 OAuth redirects terminate at `GET /api/v1/connector-callbacks/{provider_key}` and Connector event delivery terminates at `POST /api/v1/connector-events/{trigger_id}`. These are bounded external ingress protocols, not management resources. The callback requires the exact expiring setup state; the event route requires Provider verification and a stable Provider event identity. Path identifiers grant no authority. Success means setup committed, or the event occurrence was accepted or already known; it never waits for Agent execution.
 
@@ -241,7 +270,7 @@ Public resources expose stable product fields and safe references, not ORM objec
   manifest, content digest, source kind, resolved GitHub commit when applicable,
   and actor metadata; it exposes no staged object, Secret selector, credential,
   native path, or object-store key;
-- Turn exposes lifecycle, wait reason, selected revisions, effective Skill names, safe model observation, interaction lineage, trigger and retry correlation, cancellation intent, and timestamps;
+- Turn exposes lifecycle, wait reason, its stable AgentPreset, exact AgentPresetVersion and Runtime-lock selection, effective Skill names, safe model observation, interaction lineage, trigger and retry correlation, cancellation intent, and timestamps;
 - TurnAttempt exposes generation, worker-safe status, safe model observation, lease timing, Harness correlation, bounded Agent tool dispatch evidence, and bounded failure evidence, but no credential or process-private value;
 - Environment exposes safe metadata and its current immutable revision; an authorized EnvironmentRevision detail exposes its protected non-secret connection configuration, connector lock, credential requirements, and permission ceiling without Secret values or provider state;
 - LifecycleEvent reads preserve event type, schema version, owning-resource sequence, subject, actor when applicable, TurnAttempt attribution, resource version, bounded payload, and commit time;
@@ -325,7 +354,7 @@ versions. ModelConfig is the non-versioned exception defined by
 
 ## Errors and Compatibility
 
-The API uses the shared bounded errors and stable codes enforced by the [HTTP ingress contract](05-http-ingress-and-request-contract.md#errors-and-diagnostics). Owning domains add safe details such as `current_version`, `wait_reason`, `pending_kind`, or `replay_gap`; they never expose traceback, SQL, provider payload, Secret value, credential, attachment, private path, or raw model/tool content. Turn submission returns `400` with `skill_selection_invalid` when an explicit Skill selection is null, too large, duplicate, or outside the selected AgentRevision catalog and creates no Turn.
+The API uses the shared bounded errors and stable codes enforced by the [HTTP ingress contract](05-http-ingress-and-request-contract.md#errors-and-diagnostics). Owning domains add safe details such as `current_version`, `wait_reason`, `pending_kind`, or `replay_gap`; they never expose traceback, SQL, provider payload, Secret value, credential, attachment, private path, or raw model/tool content. A command unavailable under the deployment's durable Plugin Runtime profile returns `409 plugin_runtime_mode_unsupported`. Turn submission returns `400` with `skill_selection_invalid` when an explicit Skill selection is null, too large, duplicate, or outside the selected AgentPresetVersion catalog and creates no Turn.
 
 `/api/v1` evolves additively. Removing or repurposing a field, changing a command side-effect boundary, weakening authorization, changing idempotency scope, or changing resource identity requires an incompatible API version. First-party SDK releases can add idiomatic convenience methods but preserve the same resources, receipts, errors, and retry boundaries.
 
@@ -345,3 +374,5 @@ The API uses the shared bounded errors and stable codes enforced by the [HTTP in
     Connection, or model selections.
 11. Workspace lifecycle events, Turn SSE, and Native WebSocket notifications
     have separate envelopes, continuation behavior, and replay guarantees.
+12. A Turn request selects a stable AgentPreset; acceptance pins one exact active AgentPresetVersion and internal Runtime lock.
+13. A Plugin command receipt is a bounded queryable command result, not a general-purpose product resource.

@@ -28,7 +28,7 @@ operation.
 | SDK, CLI, and browser consumption                     | [Service SDKs and Clients](32-service-sdks-and-clients.md)                                           | Clients consume public protocols only                                             |
 | Durable acceptance and lifecycle                      | [Interactions](13-interactions-turns-and-attempts.md)                                                | Protocol responses report but never replace durable facts                         |
 | Stream sources and retained projection                | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                           | Protocol delivery reads authorized projections                                    |
-| Agent protocol metadata and policy                    | [Agent Revisions](12-agent-revisions-and-reconstruction.md)                                          | Acceptance freezes the selected revision and protocol configuration               |
+| Agent protocol metadata and policy                    | [Agent Management](12-agent-management.md#protocol-configuration)                                    | Acceptance freezes the selected Preset Version and protocol configuration         |
 | External Environment lifecycle                        | [Environment Management](19-environment-management.md) and the shared Environment Provider contracts | Gateway can expose owning management APIs but owns no Provider resource lifecycle |
 
 The Gateway never calls ORM repositories, Redis keys, object keys, Worker
@@ -41,15 +41,16 @@ mutation, and subscription selection.
 Only `control` and `all` roles expose product protocols. A `worker` exposes no
 Native, AG-UI, A2A, browser, or product-stream route.
 
-| Surface      | Namespace                                                  | Availability                                                               | Primary callers                                  |
-| ------------ | ---------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------ |
-| Native API   | `/api/v1`                                                  | Always present on `control` and `all`                                      | SDKs, Foundation Web, and remote CLI             |
-| Hosted AG-UI | `/ag-ui/v1`                                                | Always present on `control` and `all`                                      | Standard AG-UI clients and third-party frontends |
-| A2A          | direct `/a2a/v1/agents/{agent_id}` plus hostname discovery | Controlled only by deployment-wide `a2a_enabled`, which defaults to `true` | Remote Agents and Agent platforms                |
+| Surface      | Namespace                                                                | Availability                                                               | Primary callers                                  |
+| ------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------ |
+| Native API   | `/api/v1`                                                                | Always present on `control` and `all`                                      | SDKs, Foundation Web, and remote CLI             |
+| Hosted AG-UI | `/ag-ui/v1`                                                              | Always present on `control` and `all`                                      | Standard AG-UI clients and third-party frontends |
+| A2A          | direct `/a2a/v1/agent-presets/{agent_preset_id}` plus hostname discovery | Controlled only by deployment-wide `a2a_enabled`, which defaults to `true` | Remote Agents and Agent platforms                |
 
-There is no Agent-level enable switch for Native, AG-UI, or A2A. Every Agent
-has Native and Hosted AG-UI surfaces. When `a2a_enabled=true`, every Agent also
-has a direct A2A base URL and direct Agent Card URL. Agent protocol
+There is no AgentPreset-level enable switch for Native, AG-UI, or A2A. Every
+callable AgentPreset has Native and Hosted AG-UI surfaces. When
+`a2a_enabled=true`, every callable AgentPreset also has a direct A2A base URL
+and direct Agent Card URL. Preset protocol
 configuration controls bounded metadata, input schema, client tool surface,
 visibility, media modes, and limits; it does not turn a protocol on or off.
 
@@ -107,11 +108,12 @@ authorizes the owning action. Every subscription attachment and continuation
 reauthorizes its current scope. A persisted external binding narrows lookup but
 does not preserve an earlier authorization decision.
 
-Turn acceptance freezes the exact `AgentRevisionId`, Agent protocol
-configuration digest, normalized client tool surface, and other owning-domain
-inputs required by the selected protocol. Later Agent edits do not rewrite an
-accepted Run or Task. Worker replacement changes TurnAttempt and Harness Run
-identity without changing the accepted protocol correlation.
+Turn acceptance freezes the exact `agent_preset_version_id`, whose content
+includes the normalized protocol configuration, plus the normalized client
+tool surface and other owning-domain inputs required by the selected protocol.
+Later Preset edits or publication do not rewrite an accepted Run or Task.
+Worker replacement changes TurnAttempt and Harness Run identity without
+changing the accepted protocol correlation.
 
 ## Security and Admission
 
@@ -179,8 +181,8 @@ configuration; OpenAPI, Agent Card, SDK, and runtime behavior cannot disagree.
 2. Native, Hosted AG-UI, and A2A adapters call the same Foundation application
    commands, queries, and subscriptions.
 3. Native and Hosted AG-UI are always present on `control` and `all`; A2A has
-   exactly one deployment-wide switch, defaults on, and has no Agent-level
-   enable switch.
+   exactly one deployment-wide switch, defaults on, and has no
+   AgentPreset-level enable switch.
 4. External IDs, cursors, URLs, and protocol receipts grant no authority.
 5. Transport delivery, durable acceptance, execution, and terminal commitment
    remain independent facts.

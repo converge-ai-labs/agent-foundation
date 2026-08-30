@@ -2,26 +2,27 @@
 
 ## Design Position
 
-Foundation Service hosts an AG-UI HTTP/SSE adapter for every Agent. The adapter
-accepts standard `RunAgentInput`, maps it to the existing Foundation
-Session/Thread/Turn application contract, and delivers standard AG-UI
-`BaseEvent` values derived from the selected Harness release group and durable
-Foundation facts. It is not another Agent runtime or lifecycle authority.
+Foundation Service hosts an AG-UI HTTP/SSE adapter for every callable
+AgentPreset. The adapter accepts standard `RunAgentInput`, maps it to the
+existing Foundation Session/Thread/Turn application contract, and delivers
+standard AG-UI `BaseEvent` values derived from the selected Harness release
+group and durable Foundation facts. It is not another Agent runtime or lifecycle
+authority.
 
 Hosted AG-UI is always present on `control` and `all` roles. It has no deployment
-or Agent-level enable switch and does not require a Foundation SDK. A standard
-AG-UI client can call it using the wire profile defined here.
+or AgentPreset-level enable switch and does not require a Foundation SDK. A
+standard AG-UI client can call it using the wire profile defined here.
 
 ## Boundaries
 
-| Concern                                                                              | Owner                                                                                                 |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| Standard AG-UI input and event models                                                | Pinned upstream AG-UI dependency selected by the Foundation-compatible Harness release group          |
-| Harness-to-AG-UI observation                                                         | [`HarnessAguiObserver`](../agent-stream-protocol/00-overview.md)                                      |
-| Durable Turn acceptance, waiting, cancellation, and outcome                          | Foundation interaction owners                                                                         |
-| Hosted external bindings, input validation, lifecycle projection, retention, and SSE | This document                                                                                         |
-| Current Principal and Agent authorization                                            | [Foundation IAM](10-identity-and-access-management.md)                                                |
-| Agent-specific schemas, visibility, and limits                                       | [Agent protocol configuration](12-agent-revisions-and-reconstruction.md#agent-protocol-configuration) |
+| Concern                                                                              | Owner                                                                                        |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Standard AG-UI input and event models                                                | Pinned upstream AG-UI dependency selected by the Foundation-compatible Harness release group |
+| Harness-to-AG-UI observation                                                         | [`HarnessAguiObserver`](../agent-stream-protocol/00-overview.md)                             |
+| Durable Turn acceptance, waiting, cancellation, and outcome                          | Foundation interaction owners                                                                |
+| Hosted external bindings, input validation, lifecycle projection, retention, and SSE | This document                                                                                |
+| Current Principal and AgentPreset authorization                                      | [Foundation IAM](10-identity-and-access-management.md)                                       |
+| Preset-specific schemas, visibility, and limits                                      | [Protocol configuration](12-agent-management.md#protocol-configuration)                      |
 
 The adapter never reconstructs AG-UI events from Native notification envelopes
 and never implements a second Harness event converter.
@@ -29,16 +30,16 @@ and never implements a second Harness event converter.
 ## HTTP Surface
 
 ```http
-POST /ag-ui/v1/agents/{agent_id}/runs
+POST /ag-ui/v1/agent-presets/{agent_preset_id}/runs
 Content-Type: application/json
 Accept: text/event-stream
 Last-Event-ID: <hosted-agui-cursor>
 ```
 
 The request body is one standard `RunAgentInput` under the pinned AG-UI schema.
-Its `agent_id` comes only from the route. No body field, `context`, or
-`forwardedProps` value can select another Foundation Agent, Workspace, Model,
-Secret, Connection, or Principal.
+Its `agent_preset_id` comes only from the route. No body field, `context`, or
+`forwardedProps` value can select another Foundation AgentPreset, Workspace,
+Model, Secret, Connection, or Principal.
 
 The response is SSE. Each AG-UI event is serialized as one standard JSON
 `BaseEvent` in a `data` field. Foundation can add an SSE `id` for retained
@@ -49,14 +50,14 @@ exclusively after the last completely applied hosted event.
 The adapter also exposes explicit durable cancellation:
 
 ```http
-POST /ag-ui/v1/agents/{agent_id}/cancel
+POST /ag-ui/v1/agent-presets/{agent_preset_id}/cancel
 Content-Type: application/json
 ```
 
 The body names the external `threadId` and `runId`. Cancellation resolves their
-persisted binding, reauthorizes the current Agent and Turn, and invokes the same
-durable Turn cancellation command used by Native clients. Closing the run SSE
-does not call this command.
+persisted binding, reauthorizes the current AgentPreset and Turn, and invokes
+the same durable Turn cancellation command used by Native clients. Closing the
+run SSE does not call this command.
 
 ## External Binding
 
@@ -65,7 +66,7 @@ Hosted AG-UI persists a binding with this conceptual meaning:
 ```python
 class AguiThreadBinding:
     client_identity: str
-    agent_id: AgentId
+    agent_preset_id: str
     external_thread_id: str
     session_id: SessionId
     root_thread_id: ThreadId
@@ -74,25 +75,25 @@ class AguiThreadBinding:
 
 class AguiRunBinding:
     client_identity: str
-    agent_id: AgentId
+    agent_preset_id: str
+    agent_preset_version_id: str
     external_thread_id: str
     external_run_id: str
     turn_id: TurnId
-    protocol_configuration_digest: str
 ```
 
 The schemas are conceptual durable records, not another public resource model.
 External IDs are opaque bounded correlation chosen by the client. They grant no
 read, continuation, cancellation, or stream authority.
 
-The first accepted run for a previously unbound `(client identity, agent, threadId)` creates a Session, root Thread, and root Turn through the ordinary
+The first accepted run for a previously unbound `(client identity, AgentPreset, threadId)` creates a Session, root Thread, and root Turn through the ordinary
 application contract. A later run continues the binding's current active
 Thread. `parentRunId` equal to the active completed Run is an ordinary
 continuation; an authorized earlier completed Run creates an explicit
 Foundation fork and atomically selects that fork as the binding's active
-Thread. Cross-Agent, cross-client, incomplete, or concealed sources fail.
+Thread. Cross-Preset, cross-client, incomplete, or concealed sources fail.
 
-`runId` is the idempotency identity within one client, Agent, and external
+`runId` is the idempotency identity within one client, AgentPreset, and external
 Thread. Repeating the same `runId` and canonical accepted input returns or
 reattaches to the original Turn. Reuse with different input conflicts. A lost
 HTTP response never causes the client to invent another `runId` for the same
@@ -117,13 +118,13 @@ is a separate Native operation with its own authority and validation.
 Standard `state`, `context`, and `tools` plus Foundation extensions are bounded
 untrusted inputs:
 
-| Input                   | Accepted meaning                                                                                            |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| empty or absent `state` | Always valid                                                                                                |
-| non-empty `state`       | Product context validated by the Agent's public JSON schema; never `HarnessState` or a resource mutation    |
-| `context`               | Bounded semantic context validated by Agent policy; never authentication or resource selection              |
-| `tools`                 | Client-executable tool declarations validated against the Agent client-tool policy and frozen at acceptance |
-| `forwardedProps.a13n`   | Versioned Foundation extension object containing only fields declared below                                 |
+| Input                   | Accepted meaning                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| empty or absent `state` | Always valid                                                                                                        |
+| non-empty `state`       | Product context validated by the selected Version's public JSON schema; never `HarnessState` or a resource mutation |
+| `context`               | Bounded semantic context validated by the selected Version's policy; never authentication or resource selection     |
+| `tools`                 | Client-executable tool declarations validated against the selected Version's policy and frozen at acceptance        |
+| `forwardedProps.a13n`   | Versioned Foundation extension object containing only fields declared below                                         |
 
 `forwardedProps.a13n` can contain a structured `resume` array. Each element
 names one pending call, its exact kind, and a native bounded result or
@@ -132,8 +133,8 @@ once and calls the same pending-action feedback command as Native input. It
 accepts a new child Turn and never reopens the waiting parent. Unknown
 Foundation extension fields fail validation.
 
-The normalized client tool surface and protocol configuration digest are
-frozen with the accepted Turn. A feedback run reuses the waiting Task's exact
+The normalized client tool surface and exact `agent_preset_version_id` are
+frozen with the accepted Turn. A feedback run reuses the waiting Turn's exact
 surface; it cannot change tool names, schemas, or pending-call identity.
 
 ## Lifecycle Projection
@@ -185,7 +186,7 @@ source exists:
 - text message lifecycle; and
 - client-visible tool-call and tool-result lifecycle.
 
-The Agent protocol configuration can select supported state, message snapshot,
+The selected Version's ProtocolConfig can select supported state, message snapshot,
 activity, subagent, and safe reasoning-summary projections from the Gateway's
 registered allowlist. It cannot expose raw chain-of-thought, encrypted reasoning
 values, raw provider frames, internal tool payloads, or Foundation execution
@@ -201,7 +202,7 @@ delivered. The stable Foundation custom registry initially contains only:
 | `a13n.foundation.artifact`    | Stable authorized result or content-reference projection                               |
 | `a13n.foundation.replay_gap`  | Hosted delivery history is unavailable and client reconciliation is required           |
 
-Each custom `value` contains its own `schema_version`. Agent configuration can
+Each custom `value` contains its own `schema_version`. ProtocolConfig can
 select from this finite registry but cannot invent an event name or schema.
 
 ## Replay and Failure

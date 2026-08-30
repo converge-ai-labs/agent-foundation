@@ -30,7 +30,7 @@ flowchart TB
     subgraph Service[foundation-service]
         Gateway[Protocol Gateway]
         Control[Control plane]
-        Definitions[Agent and Skill revisions, ModelConfigs]
+        Definitions[AgentPresetVersions, Skill revisions, and ModelConfigs]
         Lifecycle[Durable Turns and TurnAttempts]
         Worker[Worker]
         Reconstruct[Trusted reconstruction adapters]
@@ -109,18 +109,18 @@ Dependency direction is one-way: Hosts embed the Harness and can use the shared 
 
 ## Component Responsibilities
 
-| Component                    | Owns                                                                                                                                                                                                                                      | Does not own                                                                                                             |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                                                 | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                  |
-| `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                                                 | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                       |
-| `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                               | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                 |
-| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, hybrid Sessions, stable Host authority, replaceable runtime Runners, root execution, async-only subagent jobs, WebUI, and CLI                        | Distributed execution, multi-tenant authorization, or another Agent loop                                                 |
-| `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                              | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle |
-| `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                            | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                         |
-| Foundation SDKs              | Language-typed access to the public Foundation Service Native `/api` contract, including streams and notifications                                                                                                                        | Service internals, standard-protocol replacement, product policy, or durable lifecycle authority                         |
-| `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                                                    | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control             |
-| `foundation-service`         | Managed Secrets, ModelConfigs, Skill/Agent/Connector/Environment revisions, Presets, Harness plugin artifacts, reconstruction locks, durable Turns/TurnAttempts, Protocol Gateway, events, raw usage records, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, or provider resource lifecycle and state          |
-| Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                                                               | Harness internals and provider implementation                                                                            |
+| Component                    | Owns                                                                                                                                                                                                                                                                   | Does not own                                                                                                             |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `agent-harness`              | Process-local Agent construction, narrow plugin configuration/loading, trusted plugins, run context, recovery, execution, results, and continuation state                                                                                                              | Provider resource management, durable Agent schemas, local sessions, presentation, delivery, or billing                  |
+| `agent-environment-provider` | Provider specifications, catalogs, create/resume/pause/destroy/reconcile Providers, Direct Local/Local Envd/Docker/E2B built-ins, resource state, and runtime attachments                                                                                              | Harness operations, Agent execution, durable storage, Host policy, or product APIs                                       |
+| `agent-stream-protocol`      | Standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and source-history reconstruction                                                                                                            | Agent execution, lifecycle invention, Host acceptance, durable history or replay, HTTP/SSE, or rendering                 |
+| `agent-ui`                   | Reloadable local Model/Prompt/Plugin/Skill-source/Skill/Agent/Environment resources, hybrid Sessions, stable Host authority, replaceable runtime Runners, root execution, async-only subagent jobs, WebUI, and CLI                                                     | Distributed execution, multi-tenant authorization, or another Agent loop                                                 |
+| `agent-envd-client`          | Generated EIP control/data models, codecs, stubs, async file transfer, and bounded transport/session runtime                                                                                                                                                           | Harness routing, product-user authorization, executable discovery/download/launch, provider provisioning, Host lifecycle |
+| `agent-envd`                 | Client-neutral EIP Environment hosting, raw file transfer, operations, receipts, disk-backed command output, daemon generation, and native command containment                                                                                                         | Agent loop, browser/product authentication, arbitrary URL fetch, durable execution, model policy                         |
+| Foundation SDKs              | Language-typed access to the public Foundation Service Native `/api` contract, including streams and notifications                                                                                                                                                     | Service internals, standard-protocol replacement, product policy, or durable lifecycle authority                         |
+| `agent-foundation`           | Cross-platform command-line interaction with public Foundation Service operations through the Rust SDK                                                                                                                                                                 | A second HTTP client, service process management, persistence, queues, migrations, or infrastructure control             |
+| `foundation-service`         | Managed Secrets, ModelConfigs, AgentPresets and immutable AgentPresetVersions, Skill/Connector/Environment revisions, managed Harness plugin artifacts and Runtime locks, durable Turns/TurnAttempts, Protocol Gateway, events, raw usage, and optional web projection | Pydantic Agent loop, Python object serialization, client-side effects, or provider resource lifecycle and state          |
+| Product                      | Caller authentication, business policy, user experience, and final delivery                                                                                                                                                                                            | Harness internals and provider implementation                                                                            |
 
 ## Harness Foundation
 
@@ -193,25 +193,27 @@ Foundation Service adds durability without changing Harness execution semantics:
 ```mermaid
 flowchart LR
     Ingress[API or webhook] --> Control[Control plane]
-    Control --> Durable[Agent revisions and Turns]
-    Durable --> Worker[Workers periodically scan and claim]
+    Control --> Durable[AgentPresetVersions and Turns]
+    Durable --> Worker[Profile-selected Workers periodically scan and claim]
     Worker --> Reconstruct[Trusted adapters]
     Reconstruct --> Harness[agent-harness]
     Harness --> Candidate[Events, result, state, usage]
     Candidate --> Durable
 ```
 
-Foundation Agent revisions are Host-owned serializable documents, not Harness
-`AgentDefinition` wire values. A worker verifies their exact dependency and
-artifact locks, reconstructs native Pydantic/Harness objects, resolves current
-authorized Connections, Secrets, permissions, and operator-approved Environment
-providers, and supplies fresh providers from the Turn's exact Environment
-snapshot. Harness owns each provider's bounded ephemeral resource and attachment
-lifecycle for that run. Foundation stores no selected provider resource state
-and does not resume or reconcile a Sandbox from an earlier TurnAttempt.
+Foundation AgentPresetVersions are Host-owned serializable documents, not Harness
+`AgentDefinition` wire values. Turn acceptance pins the Preset-owned on-demand
+lock or the active runner-profile lock. The selected Worker execution loop verifies that exact lock and the Version's exact
+managed-resource references, reconstructs native Pydantic/Harness objects,
+resolves current authorized Connections, Secrets, permissions, and
+operator-approved Environment connectors, and supplies fresh connections from
+the Turn's exact Environment configuration. Harness owns each connector's
+bounded ephemeral resource and attachment lifecycle for that run. Foundation
+stores no selected provider resource state and does not resume or reconcile a
+Sandbox from an earlier TurnAttempt.
 
 Workspace Skills are stable authoring resources with immutable ZIP- or
-GitHub-imported revisions in shared object storage. Each Agent revision locks exact
+GitHub-imported revisions in shared object storage. Each AgentPresetVersion locks exact
 Skill revisions, names, and content digests. The worker supplies an explicit
 `SkillManager`, exact Host materializer, and fresh selection. After Harness
 enters the fresh Environment and before model exposure, `SkillsCapability`
@@ -378,6 +380,7 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 | Foundation scheduling and recovery     | [foundation-service/16-scheduling-workers-and-recovery.md](foundation-service/16-scheduling-workers-and-recovery.md)                                 |
 | Foundation lifecycle and Turn streams  | [foundation-service/17-lifecycle-and-stream-persistence.md](foundation-service/17-lifecycle-and-stream-persistence.md)                               |
 | Foundation public API                  | [foundation-service/21-management-api.md](foundation-service/21-management-api.md)                                                                   |
+| Foundation Agent management            | [foundation-service/12-agent-management.md](foundation-service/12-agent-management.md)                                                               |
 | Foundation model management            | [foundation-service/25-model-management.md](foundation-service/25-model-management.md)                                                               |
 | Foundation managed Harness plugins     | [foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md](foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md)       |
 | Foundation Skill management            | [foundation-service/27-skill-management.md](foundation-service/27-skill-management.md)                                                               |

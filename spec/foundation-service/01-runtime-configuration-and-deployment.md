@@ -8,15 +8,16 @@ Runtime owns process behavior, not domain behavior. It loads the distribution fi
 
 ## Boundaries
 
-| Concern                                                             | Owner                                                                     | Relationship                                                        |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                   | Produces one immutable effective configuration                      |
-| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md) | Supplies the explicit application composition fixed by the artifact |
-| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                  | Constructs the selected typed clients and roots                     |
-| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                              | Prepares or verifies the final distribution schema before readiness |
-| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                   | Exposes only the surfaces owned by the selected role                |
-| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                 | Declare role ownership and durable failure semantics                |
-| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                | Supplies external resources without changing service semantics      |
+| Concern                                                             | Owner                                                                        | Relationship                                                        |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                      | Produces one immutable effective configuration                      |
+| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md)    | Supplies the explicit application composition fixed by the artifact |
+| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                     | Constructs the selected typed clients and roots                     |
+| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                 | Prepares or verifies the final distribution schema before readiness |
+| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                      | Exposes only the surfaces owned by the selected role                |
+| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                    | Declare role ownership and durable failure semantics                |
+| Plugin Runtime profile and loading behavior                         | [Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Defines on-demand import or Supervisor/Runner execution             |
+| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                   | Supplies external resources without changing service semantics      |
 
 The runtime does not define a general plugin loader, dependency-injection container, process manager, or dynamic configuration service. Domain code does not read process environment variables, choose a deployment role, run migrations, or start unowned background tasks.
 
@@ -57,6 +58,9 @@ root = "/var/lib/foundation"
 a2a_enabled = true
 
 [worker]
+
+[plugin_runtime]
+mode = "on_demand"
 ```
 
 The example defines section ownership, not an exhaustive setting catalog. The executable package documents concrete fields and environment names. An environment variable maps to its section and field under the `FOUNDATION_` prefix. Unknown TOML sections and fields are rejected; a misspelled or distribution-unsupported setting never disappears silently.
@@ -87,24 +91,30 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 ## Process Roles
 
-`control` and `worker` are the two independently deployable roles. `all` is their exact in-process composition.
+`control` and `worker` are the two independently deployable roles. `all` is
+their exact process composition. The default `on_demand` Plugin Runtime profile
+runs Turn scan, compatibility preflight, claim, leases, plugin code, and Harness
+execution in the Worker process. The optional `runner` profile gives each Worker
+a stable Supervisor that owns Runtime-lock discovery, claim gating, and
+child-process lifecycle; lock-scoped Runner children own the execution loop.
 
-| Capability                                | `control` | `worker` | `all` |
-| ----------------------------------------- | --------: | -------: | ----: |
-| Product API and browser application       |       Yes |       No |   Yes |
-| Native and Hosted AG-UI Gateway surfaces  |       Yes |       No |   Yes |
-| A2A Gateway surface when enabled          |       Yes |       No |   Yes |
-| Authentication and authorization ingress  |       Yes |       No |   Yes |
-| Domain-owned control reconcilers          |       Yes |       No |   Yes |
-| Outbox publication                        |       Yes |       No |   Yes |
-| Turn scan, claim, takeover, and lease     |        No |      Yes |   Yes |
-| Harness and Environment invocation        |        No |      Yes |   Yes |
-| Operational liveness and readiness probes |       Yes |      Yes |   Yes |
-| Automatic migration when enabled          |       Yes |    Never |   Yes |
+| Capability                                | `control` | `worker` |   `all` |
+| ----------------------------------------- | --------: | -------: | ------: |
+| Product API and browser application       |       Yes |       No |     Yes |
+| Native and Hosted AG-UI Gateway surfaces  |       Yes |       No |     Yes |
+| A2A Gateway surface when enabled          |       Yes |       No |     Yes |
+| Authentication and authorization ingress  |       Yes |       No |     Yes |
+| Domain-owned control reconcilers          |       Yes |       No |     Yes |
+| Outbox publication                        |       Yes |       No |     Yes |
+| Profile-selected Worker execution runtime |        No |      Yes |     Yes |
+| Turn scan, claim, takeover, and lease     |        No |  Runtime | Runtime |
+| Harness and Environment invocation        |        No |  Runtime | Runtime |
+| Operational liveness and readiness probes |       Yes |      Yes |     Yes |
+| Automatic migration when enabled          |       Yes |    Never |     Yes |
 
 Every background component has exactly one role owner. `all` installs the union once; it does not start a second application, duplicate a router, or construct another copy of shared process resources. Rolling overlap is safe only when the owning domain makes the component leased, fenced, or idempotent.
 
-One service process runs one ASGI worker. A deployment scales by adding service processes or container replicas rather than forking several independent role runtimes behind one process boundary.
+One service process runs one ASGI worker. A deployment scales by adding service processes or container replicas rather than forking several independent role runtimes behind one process boundary. Runner-profile child processes are an internal Worker execution boundary, not additional service replicas or independently addressable Worker resources.
 
 ## Startup Lifecycle
 
@@ -132,8 +142,10 @@ Startup performs these ordered gates:
 3. configure process logging once;
 4. apply or verify the final relational schema;
 5. construct required storage and external clients;
-6. start the selected role components under one supervised lifespan;
-7. report readiness only after every preceding gate succeeds.
+6. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
+7. start the selected role components under one supervised lifespan;
+8. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
+9. report readiness only after every preceding gate succeeds.
 
 A container entrypoint delegates to this lifecycle and does not own another migration, role, or fallback policy. A worker verifies the expected schema head and never mutates it. A control or all-in-one process can apply migrations under the schema contract when automatic migration is enabled; a deployment using a dedicated migration job disables replica migration.
 
@@ -149,7 +161,8 @@ Readiness succeeds only when:
 - the database is reachable and at the expected final distribution schema head;
 - required Redis operations are reachable;
 - the selected object store and required filesystem roots passed their bounded capability checks;
-- every selected critical role component started successfully.
+- every selected critical role component started successfully; and
+- a Worker can scan work through a healthy on-demand loop or the healthy Runner required by its configured profile.
 
 An enabled A2A surface contributes its required push and delivery components to
 readiness. A disabled A2A surface contributes no route, component, or readiness
@@ -163,7 +176,13 @@ Probe responses expose only bounded status, role, build identity, and safe depen
 
 Drain makes readiness fail before the process stops accepting new work.
 
-A control process rejects new product mutations and streaming connections, then stops ingress, domain-owned reconcilers, and publishers in an order that preserves committed state. A Worker stops its periodic Turn scan, continues active work only until the configured drain deadline, and then commits an authoritative Attempt decision or stops renewing so another Worker can take over after lease expiry. Shutdown never extends a lease indefinitely or reports unfinished work as successful.
+A control process rejects new product mutations and streaming connections, then
+stops ingress, domain-owned reconcilers, and publishers in an order that
+preserves committed state. An on-demand Worker stops its periodic scan; a runner
+Supervisor gates every Runner scan. The selected runtime drains active work only
+until the configured deadline and then commits an authoritative Attempt decision
+or stops renewing so another Worker can take over after lease expiry. Shutdown
+never extends a lease indefinitely or reports unfinished work as successful.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 
@@ -183,12 +202,14 @@ No failure causes an implicit switch to a local backend, another distribution, o
 
 ## Compatibility
 
-Role values, configuration precedence, stable TOML section names, and supported deployment profiles are operational compatibility contracts. New optional fields and new distribution-owned namespaces can be added. Reinterpreting an existing field, changing precedence, making an accepted profile unsafe, or changing a role's ownership requires an explicit compatibility change.
+Role values, configuration precedence, stable TOML section names, Plugin Runtime mode, and supported deployment profiles are operational compatibility contracts. New optional fields and new distribution-owned namespaces can be added. Reinterpreting an existing field, changing precedence, making an accepted profile unsafe, or changing a role's ownership requires an explicit compatibility change.
 
 The `gateway.a2a_enabled` field is a common operational compatibility contract;
 its absence has the release-default meaning `true`.
 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
+
+`plugin_runtime.mode` defaults to `on_demand`. Control persists the selected value when initializing a deployment and may replace it only while no Plugin, AgentPresetVersion, or Turn exists. Every role verifies the resulting value before readiness. A non-empty mode mismatch never performs an in-place migration or starts with weaker semantics.
 
 ## Invariants
 
@@ -203,5 +224,5 @@ The effective configuration is deployment input, not a durable product resource 
 09. Drain stops new work before bounded component and resource cleanup.
 10. Runtime failure never selects a weaker backend, role, or distribution automatically.
 11. Runtime configuration never selects a distribution or arbitrary code target; the build artifact fixes one trusted distribution descriptor.
-12. Native and Hosted AG-UI are always present on control-capable roles; A2A is
-    controlled only by the default-on deployment-wide setting.
+12. Every deployment durably fixes one Plugin Runtime mode; `on_demand` executes in the Worker interpreter, while `runner` keeps Plugin code and Harness execution out of the stable Supervisor.
+13. Native and Hosted AG-UI are always present on control-capable roles; A2A is controlled only by the default-on deployment-wide setting.
