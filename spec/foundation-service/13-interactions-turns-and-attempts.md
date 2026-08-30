@@ -4,9 +4,14 @@
 
 Foundation implements the shared [`Session`, `Thread`, `Turn`, and `Item`](../interaction-model.md) interaction model directly as its durable Agent-work model. A `Turn` is one accepted scheduling, recovery, state, and terminal-outcome boundary. A `TurnAttempt` is one replaceable fenced worker generation for that Turn. Foundation defines no separate durable `Execution` or `ExecutionAttempt` resource.
 
-Every Foundation-managed Agent invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn. Authenticated feedback for a waiting Turn, an explicit continuation, a fork, and retry of terminal intent create another Turn rather than reopening the sealed parent.
+Every Foundation-managed Agent invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn.
 
 [Durable Thread Persistence](24-thread-persistence.md) owns the independent Thread row, Session membership, origin, version, current Turn, and selected continuation head. [Durable Turn State](14-turn-persistence.md) owns Turn fields, lifecycle, state-object publication, sealing, lineage, and recovery budget. [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) owns TurnAttempt fields, leases, fences, dispatch evidence, and attempt outcomes. This document owns only the interaction-to-runtime mapping and the boundaries that those detailed contracts must preserve.
+
+[Agent Control: Input and Continuation](28b-agent-control-input-and-continuation.md)
+owns root invocation, ordinary continuation, waiting feedback, fork, and retry.
+[Agent Control: Active Execution](28c-agent-control-active-execution.md) owns cancellation commands and
+their Agent-work semantics.
 
 ## Relationships
 
@@ -35,26 +40,6 @@ flowchart TB
 The diagram shows identity and lineage, not live object containment. Every Turn belongs to exactly one Session and Thread. A Turn can own zero or more immutable TurnAttempts over its lifetime, but at most one leased generation can authorize worker mutation at a time. One TurnAttempt starts at most one Harness Run; one Harness Run can contain several process-local `ModelAttempt` values.
 
 Items and replay data are projections of a Turn and never become continuation state. A Harness Run, model request, Redis entry, Item, or delivery cursor never replaces Turn or TurnAttempt identity.
-
-## Acceptance and Lineage
-
-Turn acceptance authenticates and authorizes the caller or internal principal,
-validates the selected Session and Thread, resolves exact revisions and policy,
-freezes the current enabled ModelConfig as a non-secret execution snapshot,
-applies the scoped idempotency contract, publishes the initial Turn state, and
-atomically creates or advances the versioned Thread together with the accepted
-Turn and its lifecycle publication intent. The Turn becomes schedulable only
-after the complete initial state object is durably available.
-
-The accepted operation chooses exactly one lineage form:
-
-- a root invocation creates a root Turn for a selected or newly created Session and Thread;
-- ordinary continuation accepts a new Turn that preserves `thread_id`, selects the Thread's exact completed `head_turn_id` as `parent_turn_id`, and initializes state from that parent;
-- authenticated feedback accepts a new Turn that sets `parent_turn_id` to the exact sealed waiting Turn and consumes its complete pending set;
-- fork atomically accepts a new Turn and independent Thread row, sets `parent_turn_id` to the selected completed source Turn, and applies the Harness fork contract; and
-- retry of terminal intent requires the failed or cancelled Turn to remain the Thread's current Turn, creates an explicit successor Turn, advances the same Thread under its version, and never mutates the terminal record.
-
-The same principal, scope, idempotency key, and canonical request return the original acceptance receipt. Reuse with different content conflicts. A lost response after possible acceptance remains unknown until the caller repeats the same key or reads authoritative Turn state.
 
 ## Turn and TurnAttempt Lifecycle Boundary
 
@@ -101,14 +86,6 @@ As soon as the Harness supplies its Run identity and before the worker publishes
 
 Bounded connector transport retries and internal Harness recovery remain within the Harness Run and do not allocate another TurnAttempt. Conversely, durable worker replacement always allocates another TurnAttempt and another Harness Run.
 
-## Cancellation and Unknown Outcomes
-
-Cancellation is durable intent followed by cooperative enforcement. A worker checks cancellation before expensive or effectful boundaries and attempts a fenced outcome commit. Cancellation never claims rollback of model, tool, child, external Environment, keep-alive, provider, or client effects.
-
-A stale TurnAttempt cannot publish Turn state, mutate Thread current/head selection, publish pending work, retain Items, commit lifecycle transitions, or select terminal outcomes. Late immutable usage evidence can retain its original attempt attribution under the usage contract, but it cannot mutate Turn lifecycle.
-
-Exactly one legal generation-fenced transition wins a cancellation, waiting, or completion race. A losing local result remains diagnostic only.
-
 ## Invariants
 
 01. Session, Thread, Turn, and Item retain the shared platform meanings.
@@ -116,16 +93,13 @@ Exactly one legal generation-fenced transition wins a cancellation, waiting, or 
 03. Turn owns accepted schedulable Agent work, lineage, state, recovery budget, and durable outcome.
 04. TurnAttempt owns one replaceable fenced worker generation and starts at most one Harness Run.
 05. Foundation defines no separate durable Execution or ExecutionAttempt resource.
-06. Waiting feedback, continuation, fork, and terminal retry create another Turn rather than reopening a sealed Turn.
-07. Only the current TurnAttempt can conditionally publish state or commit a Turn transition.
-08. The current TurnAttempt durably binds its immutable Harness Run identity before the first live observation is published.
-09. Every Agent tool invocation is recorded durably under the current fence before dispatch.
-10. Absence of a receipt, event, or telemetry signal never proves Agent tool-call failure.
-11. Foundation resumes from complete Turn state, projects unmatched Agent tool calls as `unknown_outcome`, and never automatically replays them.
-12. Terminal Turn and TurnAttempt records are immutable; retry and feedback create explicit successor records.
-13. Cancellation records intent and never implies rollback of external effects.
-14. A new Turn freezes current model configuration once; replacement
+06. Only the current TurnAttempt can conditionally publish state or commit a Turn transition.
+07. The current TurnAttempt durably binds its immutable Harness Run identity before the first live observation is published.
+08. Every Agent tool invocation is recorded durably under the current fence before dispatch.
+09. Absence of a receipt, event, or telemetry signal never proves Agent tool-call failure.
+10. Foundation resumes from complete Turn state, projects unmatched Agent tool calls as `unknown_outcome`, and never automatically replays them.
+11. A new Turn freezes current model configuration once; replacement
     TurnAttempts reuse that snapshot and resolve only fresh credential values.
-15. A replacement TurnAttempt reuses the exact Environment execution
+12. A replacement TurnAttempt reuses the exact Environment execution
     configuration in Turn state, opens fresh connector attachments, and creates
     no Environment connection lease.

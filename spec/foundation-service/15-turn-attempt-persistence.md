@@ -40,7 +40,8 @@ under the same Turn.
 
 ## Turn and TurnAttempt Allocation Boundary
 
-A new `Turn` records acceptance of a new input-driven advancement of one
+A new `Turn` records acceptance under the [Agent control input and continuation
+contract](28b-agent-control-input-and-continuation.md) of a new input-driven advancement of one
 Thread. A new `TurnAttempt` records a worker generation authorized to advance
 an already accepted, unsealed Turn. Creating a Turn therefore does not create
 an attempt in the same transaction: the Turn first becomes `accepted`, and a

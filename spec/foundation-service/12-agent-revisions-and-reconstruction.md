@@ -26,7 +26,7 @@ class AgentRevisionRef:
 
 Resolving an Agent ID and version returns this exact reference or fails; it never manufactures a different identity. The complete revision contains only Foundation-owned serializable data and exact references, including:
 
-- logical Agent instructions and typed input/output declarations;
+- logical Agent instructions, one exact [Agent input declaration](28a-agent-input.md#agent-input-declaration-and-harness-mapping), and the typed output declaration;
 - one exact `model_id` plus concrete Harness model configuration and native model settings;
 - Capability, Tool, Connector, and Environment declarations under their owning
   Foundation schemas plus exact managed Skill revision locks and exposure under
@@ -45,6 +45,14 @@ the current enabled configuration and freezes its non-secret
 requested output limits, reasoning effort, tool choice, and structured-output
 policy. The ModelConfig owns provider, endpoint, model name, credential
 requirement, and advisory capabilities.
+
+The Agent input declaration, its `AgentInput` schema version, structured-content
+JSON Schema digest, content and delivery bounds, and trusted input-adapter key are
+owned by [Agent Input](28a-agent-input.md#agent-input-protocol).
+The AgentRevision stores that complete declaration together with exact adapter
+dependency and package locks. It does not copy a second input schema or accept a
+process-local callable. Changing the declaration, adapter key, or adapter lock
+creates another AgentRevision.
 
 An AgentRevision's Environment declaration follows
 [Environment Management](19-environment-management.md#environment-selection-and-turn-state):

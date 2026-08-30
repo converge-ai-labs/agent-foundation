@@ -4,6 +4,8 @@
 
 Foundation owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Turn authority. [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Turn-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `TurnReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and observability consequences of those records.
 
+[Foundation Hook Notifications](20a-hook-notifications.md) owns the public hook-name registry, subscription matching, channel eligibility, and end-to-end notification flows. Hook routing reuses the records and delivery envelope defined here rather than creating another event log or transport authority.
+
 Harness observations follow the accepted Agent Stream Protocol path. Foundation consumes `HarnessAguiObserver` output and does not implement another Harness-to-AG-UI mapping. A live message or delivered envelope becomes authoritative only through the owning Turn, lifecycle-event, retained-Item, or usage commit.
 
 ## Record Layers
@@ -59,26 +61,34 @@ Lifecycle ordering is monotonic within its owning resource stream, not globally.
 
 External webhook and authorized-sink delivery specialize the shared outbox. One source has a separate destination record for each destination because delivery completes independently from source commitment and from other destinations. A bounded destination policy can exhaust retries and dead-letter its own record without changing the source lifecycle event, Turn Stream, retained snapshot, or Turn outcome.
 
+Durable Hook subscription delivery is limited to committed lifecycle events and immutable retained Items. Live-only Turn Stream entries use authorized SSE or WebSocket delivery and never create Outbox intents merely because a subscriber selected their Hook names.
+
 The delivery envelope is conceptually:
 
 ```python
 class FoundationDeliveryEnvelope:
     delivery_id: DeliveryId
+    hook_name: str
+    hook_schema_version: str
     source_kind: Literal[
         "lifecycle_event",
         "turn_stream_entry",
         "retained_item",
     ]
     source_id: str
+    workspace_id: WorkspaceId
+    session_id: SessionId | None
+    thread_id: ThreadId | None
     turn_id: TurnId | None
     turn_attempt_id: TurnAttemptId | None
     harness_run_id: HarnessRunId | None
     stream_cursor: str | None
     retained: bool
+    occurred_at: datetime
     payload: BoundedSafePayload
 ```
 
-The schema is conceptual. A live Turn Stream envelope carries its Redis entry ID as `stream_cursor` and `retained=false`. A retained Item read from the immutable snapshot uses stable Item identity and `retained=true`. A lifecycle event carries its stable relational identity and omits a Turn cursor when it belongs to another resource.
+The schema is conceptual. `hook_name` is one exact name from the Hook registry, and `hook_schema_version` versions that Hook payload independently from the source storage and transport schemas. A live Turn Stream envelope carries its Redis entry ID as `stream_cursor` and `retained=false`. A retained Item read from the immutable snapshot uses stable Item identity and `retained=true`. A lifecycle event carries its stable relational identity and omits a Turn cursor when it belongs to another resource. Optional correlation is absent rather than inferred when the source does not own it.
 
 Re-delivery of the same source to the same destination preserves `delivery_id`. Source commitment, Turn Stream append, retained-snapshot publication, destination acknowledgement, and client receipt are separate facts.
 
@@ -152,3 +162,6 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
 08. Late stale-TurnAttempt usage cannot change lifecycle state.
 09. Object references and signed delivery URLs grant no product authority.
 10. Telemetry observes the system and never acts as durable lifecycle authority.
+11. Live-only Turn Stream entries never create durable Hook-delivery intents;
+    durable subscriptions select committed lifecycle events or immutable
+    retained Items only.

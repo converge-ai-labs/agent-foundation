@@ -125,7 +125,7 @@ sequenceDiagram
     DB-->>Caller: retained interaction and lifecycle delivery
 ```
 
-The same `running` Turn can receive another TurnAttempt after an Attempt fails or its lease expires. The takeover transaction marks an expired old Attempt `failed`; Foundation defines no Attempt `lost` state. A new Attempt always creates fresh process-local objects and a fresh Harness Run. A waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names the waiting Turn. The new Turn receives fresh state and later its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
+The same `running` Turn can receive another TurnAttempt after an Attempt fails or its lease expires. The takeover transaction marks an expired old Attempt `failed`; Foundation defines no Attempt `lost` state. A new Attempt always creates fresh process-local objects and a fresh Harness Run. Under the [Agent control input and continuation contract](28b-agent-control-input-and-continuation.md), a waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and later its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
 
 Schedules, webhooks, service requests, and asynchronous children accept Turns and follow the same Worker scan, TurnAttempt, dispatch, Harness, state, and outcome contracts as interactive work.
 

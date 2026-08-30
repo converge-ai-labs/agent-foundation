@@ -288,10 +288,14 @@ it resolves the current ModelConfig again.
 
 Exactly one of `input` and `input_object` is present. At most one of `output`
 and `output_object` is present, and neither is present before a completed
-outcome. Inline values are bounded structured data suitable for direct Turn
+outcome. The `JsonValue` annotation is the storage encoding, not an open input
+schema. Ordinary Agent work stores the accepted [`AgentInput`](28a-agent-input.md#agent-input-protocol);
+waiting-action continuation stores the exact typed feedback value defined by
+that same control contract, and retry copies the source Turn's exact accepted
+input kind. Inline values are bounded structured data suitable for direct Turn
 reads. Oversized payloads use immutable objects. `input_text` and `output_text`
-are optional bounded derived projections and never replace exact data or the
-complete message history.
+are optional bounded derived projections and never replace exact data, binary
+content objects, or the complete message history.
 
 `waiting` is a sealed Turn outcome. It contains a bounded `pending` summary;
 the frozen Turn state contains the authoritative deferred requests and effective
@@ -379,7 +383,7 @@ backends preserve the same validation and query semantics.
 | Model selection      | `model_execution_snapshot_json`, `model_execution_observation_json`                                                                                                                                                                             | Active non-secret execution snapshot plus retained safe observation                                                     |
 | Connector acceptance | `connector_selections_json`, `accepted_trigger_json`                                                                                                                                                                                            | Bounded immutable Connector selections and optional exact Trigger occurrence                                            |
 | Lifecycle            | `status`, `wait_reason`, `pending_json`                                                                                                                                                                                                         | Enum-constrained state; bounded pending summary exists exactly for `waiting`                                            |
-| Input                | `input_json`, `input_object_key`, `input_object_digest_sha256`, `input_object_size_bytes`, `input_object_content_type`, `input_object_schema_version`, `input_text`                                                                             | Exactly one inline JSON value or immutable object reference; optional text projection                                   |
+| Input                | `input_json`, `input_object_key`, `input_object_digest_sha256`, `input_object_size_bytes`, `input_object_content_type`, `input_object_schema_version`, `input_text`                                                                             | Exactly one protocol-valid accepted input as inline JSON or an immutable object reference; optional text projection     |
 | Output               | `output_json`, `output_object_key`, `output_object_digest_sha256`, `output_object_size_bytes`, `output_object_content_type`, `output_object_schema_version`, `output_text`                                                                      | Exactly one representation for completed Turns; absent otherwise                                                        |
 | Failure              | `failure_json`                                                                                                                                                                                                                                  | Bounded safe structured failure only; no raw exception                                                                  |
 | Sealed state         | `sealed_state_digest_sha256`, `sealed_state_size_bytes`, `sealed_state_content_type`, `sealed_state_envelope_schema_version`, `sealed_state_harness_schema_version`, `sealed_state_checkpoint_seq`, `sealed_state_committed_by_turn_attempt_id` | Exact frozen state identity for waiting/completed and valid failure snapshots; object key is derived rather than stored |
@@ -391,7 +395,9 @@ before relational mutation; object keys and digests grant no authority.
 ## Git-Like Turn DAG
 
 `parent_turn_id` names the exact sealed Turn whose frozen state initialized the
-new Turn. It is the sole interaction-history edge.
+new Turn. It is the sole interaction-history edge. The operation-specific
+acceptance rules are owned by [Agent Control: Input and
+Continuation](28b-agent-control-input-and-continuation.md#acceptance-and-lineage).
 
 ```mermaid
 flowchart LR
@@ -671,14 +677,19 @@ class TurnPayloadEnvelope:
     payload: JsonValue
 ```
 
+For `payload_kind="input"`, `payload_schema_version` is the exact owning
+`AgentInput` or waiting-feedback schema version and `payload` is that protocol's
+complete accepted JSON value. It is not an independent extensible payload schema.
+
 The object key is content-addressed beneath the Turn:
 
 ```text
 tenants/{tenant_id}/turns/{turn_id}/payloads/{payload_kind}/{digest_sha256}.json
 ```
 
-Attachments and file bodies remain separate artifact objects referenced by the
-structured payload.
+[`BinaryContent`](28a-agent-input.md#binary-source-and-delivery)
+bodies remain separate immutable content objects referenced by the structured
+payload; they never become inline Turn-payload base64.
 
 ### Retention
 

@@ -10,15 +10,17 @@ deferred work, Environment configuration, events, and raw usage. The API follows
 [HTTP ingress contract](05-http-ingress-and-request-contract.md), the shared
 [durable operation contract](06-durable-operations-and-outbox.md), and the
 [Identity and Access Management contract](10-identity-and-access-management.md);
-this document owns Foundation resource routes, command boundaries, read models,
-and cross-resource mutation behavior.
+this document owns the Foundation resource catalog, common command boundaries,
+read models, and cross-resource mutation behavior. Agent invocation,
+continuation, deferred feedback, and active control routes are owned by their
+dedicated control contracts.
 
 Workspace Skill route bodies, ZIP staging, GitHub selectors, revision receipts,
 authorization, and error codes are owned in detail by [Foundation Skill
 Management](27-skill-management.md#public-management-api); this catalog does not
 redefine them.
 
-The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, provider APIs, and external webhook payloads retain their own contracts. The deployment-authenticated [Harness plugin artifact operator API](26-harness-plugin-artifacts-and-runtime-loading.md#internal-operator-api) and [Environment connector package operator API](19-environment-management.md#provider-catalog-and-workspace-selection) are deliberately outside `/api/v1` and are not added to public clients.
+The API is the public boundary consumed by Foundation SDKs and the remote `agent-foundation` CLI. SDKs map this contract and do not invent another lifecycle, retry policy, or HTTP client semantics. Harness Python APIs, Agent Stream Protocol, EIP, and provider APIs retain their own contracts; [Foundation Hook Notifications](20a-hook-notifications.md) owns Hook subscriptions, channel eligibility, and external notification semantics. The deployment-authenticated [Harness plugin artifact operator API](26-harness-plugin-artifacts-and-runtime-loading.md#internal-operator-api) and [Environment connector package operator API](19-environment-management.md#provider-catalog-and-workspace-selection) are deliberately outside `/api/v1` and are not added to public clients.
 
 ## Scope and Authorization
 
@@ -68,70 +70,22 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Security audit            | `/organizations/{organization_id}/security-audit-events`, `/workspaces/{workspace_id}/security-audit-events`, `/users/me/security-activity` | IAM-owned bounded security projections                                                     |
 | Lifecycle events          | `/workspaces/{workspace_id}/events` and resource-scoped event collections                                                                   | Durable replay, not ordinary pagination                                                    |
 | Delivery stream           | `GET /workspaces/{workspace_id}/stream`, `WS /workspaces/{workspace_id}/stream`                                                             | SSE or WebSocket over the same retained and live delivery-envelope contract                |
+| Hook subscriptions        | `/workspaces/{workspace_id}/hook-subscriptions`, `/hook-subscriptions/{hook_subscription_id}`                                               | Exact Hook-name filters and an authorized immutable webhook or sink destination reference  |
 | Usage records             | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                             |
 
 The selected [distribution](02-distribution-composition-and-extensions.md) registers exactly the routes for its supported capabilities. An EE or Cloud capability can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
 
 Collection fields, filters, order, and payload limits are defined by the owning resource document. All ordinary collections use the shared cursor shape. Lifecycle replay uses its own monotonic cursor and explicit retention-gap response.
 
-## Interactive Submission
+## Agent Invocation and Control
 
-```http
-POST /api/v1/threads/{thread_id}/turns
-Idempotency-Key: opaque-caller-key
-```
-
-The request carries `expected_thread_version`, bounded input, selected Agent
-authoring reference when permitted, optional `selected_skill_names`, an optional
-policy-permitted Environment topology selection, and optional policy-supported
-metadata. Foundation reads the independent Thread row, requires the current Turn
-not to be `accepted` or `running`, selects its exact completed `head_turn_id` as the
-parent, and never infers a parent from Turn timestamps. Acceptance atomically sets
-`current_turn_id` to the new accepted Turn, preserves the head, increments Thread
-version, and creates the Turn, first user Item, lifecycle events, idempotency
-evidence, and outbox intents.
-
-Each Environment topology entry can select an `EnvironmentId`, an exact
-`EnvironmentRevisionId`, or a policy-permitted inline connection configuration
-as defined by [Environment Configuration](19-environment-management.md#environment-selection-and-turn-state).
-Acceptance resolves references and stores the complete exact configuration in
-the new Turn's `state.json`.
-
-`selected_skill_names` follows the
-[Foundation Skill selection contract](27-skill-management.md#agent-revision-selection).
-It is an optional JSON array of at most 512 distinct Skill names; JSON `null` is
-invalid. An absent field uses the selected AgentRevision default, an empty array
-selects no Skills, and a non-empty array selects those exact names within the
-AgentRevision's locked available catalog. Acceptance stores the resolved names
-in AgentRevision catalog order in `state.json`. That normalized effective array,
-rather than whether the caller omitted the field or supplied the same names
-explicitly, participates in the canonical request digest.
-
-Only root, ordinary continuation, fork, and equivalent Host-owned initial Turn
-submission can supply this field. Waiting-action response commands and explicit
-retry accept no Skill override; they preserve the source Turn's effective Skill
-selection.
-
-The `202` response is an acceptance receipt containing the Session, Thread, and Turn references plus the resource versions committed by that acceptance. It does not wait for a Worker or Harness result. Later Turn lifecycle transitions can advance Thread version. Repeating the same key and canonical request returns the original receipt; different content conflicts.
-
-## Root Turn Submission
-
-```http
-POST /api/v1/workspaces/{workspace_id}/turns
-Idempotency-Key: opaque-caller-key
-```
-
-Root submission accepts an Agent invocation that does not continue an existing
-Thread. It selects an immutable Agent revision, bounded input, optional
-`selected_skill_names`, an optional policy-permitted Environment topology using the
-same reference or inline forms, and declared trigger metadata, then selects or
-creates one Session and its root Thread under current policy.
-Acceptance initializes that Thread's root state and atomically commits the
-version `1` Thread row, one root Turn, lifecycle events, idempotency evidence,
-and outbox intents. Foundation exposes no standalone empty-Thread create
-operation.
-
-The `202` response returns the exact Session, Thread, and Turn references. Schedules, webhooks, service requests, and Host-managed asynchronous children use the same Turn acceptance application contract even when their owning ingress is not this public route. Foundation never creates work outside Session, Thread, and Turn identity merely because the invocation is non-interactive.
+[Agent Input](28a-agent-input.md) owns the versioned `AgentInput` protocol.
+[Agent Control: Input and Continuation](28b-agent-control-input-and-continuation.md)
+owns root and existing-Thread submission, fork, retry, and pending-action
+response routes. [Agent Control: Active
+Execution](28c-agent-control-active-execution.md) owns the Turn cancellation
+route. These operations follow the common API, authorization, idempotency, and
+durable mutation conventions referenced by this catalog.
 
 ## Thread Reads
 
@@ -169,50 +123,20 @@ PATCH or independent hard-delete route. Origin references are present only when
 the caller can currently read their source; otherwise both source identifiers
 are omitted without weakening authorization for the current Thread.
 
-## Thread Fork
-
-Foundation exposes an explicit in-Session Thread fork from one selected
-completed Turn:
-
-```http
-POST /api/v1/turns/{turn_id}/fork
-Idempotency-Key: opaque-caller-key
-```
-
-The request carries bounded new input, an optional policy-permitted compatible
-Agent revision selection, optional `selected_skill_names`, and fork metadata.
-Foundation authorizes the source Turn and Session, verifies the source's frozen
-state, applies `HarnessState.fork()`, and atomically creates a child-role Thread
-with `origin_kind="fork"` plus its first accepted Turn. The first Turn's
-`parent_turn_id` names the source Turn. The response is the same Session, Thread,
-and Turn acceptance receipt used by root and continuation submission.
-
-Fork idempotency is scoped to the source Turn, principal, and canonical request.
-Repeating the same key returns the original Thread and Turn. A Session fork that
-creates a new Session and root Thread remains a distinct Session-domain
-operation and is never implied by this route.
-
 ## Commands
 
 Commands are subordinate to the resource whose state they mutate:
 
-| Command                        | Route                                                        | Required mutation contract                                                                                                                                                                           |
-| ------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Accept invitation              | `POST /invitations/{invitation_id}/accept`                   | Exact single-use token; atomically creates User credentials and RoleBindings                                                                                                                         |
-| Resend invitation              | `POST /invitations/{invitation_id}/resend`                   | Current authorization; rotates the token under the same Invitation ID                                                                                                                                |
-| Revoke invitation              | `POST /invitations/{invitation_id}/revoke`                   | Current authorization; terminal for the current invitation                                                                                                                                           |
-| Rotate API key                 | `POST /api-keys/{api_key_id}/rotate`                         | Authorized owner or Service Account Admin; same key ID and immediate cutover                                                                                                                         |
-| Revoke API key                 | `POST /api-keys/{api_key_id}/revoke`                         | Idempotently sets permanent revocation without deleting metadata                                                                                                                                     |
-| Test candidate ModelConfig     | `POST /workspaces/{workspace_id}/models/test`                | Synchronous candidate test using Secret references; creates no health resource                                                                                                                       |
-| Test Environment revision      | `POST /environment-revisions/{environment_revision_id}/test` | Synchronously connects the exact revision with current credentials; creates no resource, lease, or retained health state                                                                             |
-| Copy ModelConfig               | `POST /workspaces/{workspace_id}/models/{model_id}/copy`     | Idempotency key; creates a new ModelConfig and copies no Secret value                                                                                                                                |
-| Cancel active Turn             | `POST /turns/{turn_id}/cancel`                               | Idempotency key and current authorization; seals the active Turn                                                                                                                                     |
-| Retry failed or cancelled Turn | `POST /turns/{turn_id}/retry`                                | Target must be the Thread's current failed or cancelled Turn; expected Thread version and idempotency key; preserves its effective Skill selection and advances the same Thread without reopening it |
-| Fork completed Turn            | `POST /turns/{turn_id}/fork`                                 | Idempotency key; creates an independent Thread and first Turn from exact frozen source state                                                                                                         |
-| Approve pending action         | `POST /pending-actions/{pending_action_id}/approve`          | Expected pending and Thread versions plus idempotency key                                                                                                                                            |
-| Reject pending action          | `POST /pending-actions/{pending_action_id}/reject`           | Expected pending and Thread versions plus idempotency key                                                                                                                                            |
-| Submit client-tool result      | `POST /pending-actions/{pending_action_id}/complete`         | Expected Thread version, exact native result envelope, and idempotency key                                                                                                                           |
-| Supply structured user input   | `POST /pending-actions/{pending_action_id}/respond`          | Expected Thread version, schema-valid bounded response, and idempotency key                                                                                                                          |
+| Command                    | Route                                                        | Required mutation contract                                                                                               |
+| -------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Accept invitation          | `POST /invitations/{invitation_id}/accept`                   | Exact single-use token; atomically creates User credentials and RoleBindings                                             |
+| Resend invitation          | `POST /invitations/{invitation_id}/resend`                   | Current authorization; rotates the token under the same Invitation ID                                                    |
+| Revoke invitation          | `POST /invitations/{invitation_id}/revoke`                   | Current authorization; terminal for the current invitation                                                               |
+| Rotate API key             | `POST /api-keys/{api_key_id}/rotate`                         | Authorized owner or Service Account Admin; same key ID and immediate cutover                                             |
+| Revoke API key             | `POST /api-keys/{api_key_id}/revoke`                         | Idempotently sets permanent revocation without deleting metadata                                                         |
+| Test candidate ModelConfig | `POST /workspaces/{workspace_id}/models/test`                | Synchronous candidate test using Secret references; creates no health resource                                           |
+| Test Environment revision  | `POST /environment-revisions/{environment_revision_id}/test` | Synchronously connects the exact revision with current credentials; creates no resource, lease, or retained health state |
+| Copy ModelConfig           | `POST /workspaces/{workspace_id}/models/{model_id}/copy`     | Idempotency key; creates a new ModelConfig and copies no Secret value                                                    |
 
 A command returns the mutated resource or a durable receipt. `202` means accepted, not completed. Unknown outcome after possible dispatch is reconciled by repeating the same idempotency key or reading the returned resource; clients never generate a new key merely because acknowledgement was lost.
 
@@ -233,6 +157,7 @@ Public resources expose stable product fields and safe references, not ORM objec
 - TurnAttempt exposes generation, worker-safe status, safe model observation, lease timing, Harness correlation, bounded Agent tool dispatch evidence, and bounded failure evidence, but no credential or process-private value;
 - Environment exposes safe metadata and its current immutable revision; an authorized EnvironmentRevision detail exposes its protected non-secret connection configuration, connector lock, credential requirements, and permission ceiling without Secret values or provider state;
 - LifecycleEvent reads preserve event type, schema version, owning-resource sequence, subject, actor when applicable, TurnAttempt attribution, resource version, bounded payload, and commit time;
+- HookSubscription reads preserve version, active or paused status, exact Hook names, bounded resource filters, destination kind, safe immutable destination reference, and timestamps without endpoint credentials or signing Secret values;
 - UsageRecord reads preserve immutable identity and attribution.
 
 An Item read never substitutes for lifecycle event replay, and an event read never expands private Item or object-backed content without separate authorization.

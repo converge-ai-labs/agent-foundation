@@ -26,16 +26,17 @@ and advance the existing Thread under its current version.
 
 ## Boundaries
 
-| Concern                                                                   | Owner                                                              | Contract                                                                                                                                    |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                                   | [Platform Interaction Model](../interaction-model.md)              | Defines identity and cross-platform relationships                                                                                           |
-| `thread_id` creation, preservation, and fork transformation               | [Harness State](../agent-harness/10-snapshot-and-resume.md)        | Supplies one stable ID inside complete continuation state                                                                                   |
-| Durable Thread resource, version, origin, current Turn, and selected head | This contract                                                      | Serializes Foundation Thread advancement and supplies read authority                                                                        |
-| Persisted Session membership and root selection                           | This contract                                                      | Requires one existing Session container and exactly one retained root Thread; other Session product metadata remains outside the Thread row |
-| Turn row, state object, parent edge, scheduling, and outcome              | [Durable Turn State](14-turn-persistence.md)                       | Owns one accepted advancement and its resumable state                                                                                       |
-| TurnAttempt lease, generation, and stale-writer fence                     | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) | Authorizes worker mutation of the current Turn while it is active                                                                           |
-| Public routes and wire read models                                        | [Management API](21-management-api.md)                             | Exposes authorized Thread reads, advancement, and fork commands                                                                             |
-| Agent-facing history retrieval                                            | [Agent Interaction Retrieval](22-agent-interaction-retrieval.md)   | Projects authorized Thread and Turn data without becoming authority                                                                         |
+| Concern                                                                   | Owner                                                                                | Contract                                                                                                                                    |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning                                   | [Platform Interaction Model](../interaction-model.md)                                | Defines identity and cross-platform relationships                                                                                           |
+| `thread_id` creation, preservation, and fork transformation               | [Harness State](../agent-harness/10-snapshot-and-resume.md)                          | Supplies one stable ID inside complete continuation state                                                                                   |
+| Durable Thread resource, version, origin, current Turn, and selected head | This contract                                                                        | Serializes Foundation Thread advancement and supplies read authority                                                                        |
+| Persisted Session membership and root selection                           | This contract                                                                        | Requires one existing Session container and exactly one retained root Thread; other Session product metadata remains outside the Thread row |
+| Turn row, state object, parent edge, scheduling, and outcome              | [Durable Turn State](14-turn-persistence.md)                                         | Owns one accepted advancement and its resumable state                                                                                       |
+| TurnAttempt lease, generation, and stale-writer fence                     | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                   | Authorizes worker mutation of the current Turn while it is active                                                                           |
+| Agent invocation and advancement commands                                 | [Agent Control: Input and Continuation](28b-agent-control-input-and-continuation.md) | Accepts root and existing-Thread work, waiting feedback, fork, and retry                                                                    |
+| Public resource catalog and wire read models                              | [Management API](21-management-api.md)                                               | Exposes authorized Thread reads and common API behavior                                                                                     |
+| Agent-facing history retrieval                                            | [Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                     | Projects authorized Thread and Turn data without becoming authority                                                                         |
 
 A Thread row contains no message history, Harness state, Item payload, provider
 state, credential, worker lease, queue entry, replay cursor, or live process
@@ -135,13 +136,11 @@ waiting head can serve only the exact authenticated feedback or other operation
 allowed by its pending-state contract. Authorization, consumed pending facts,
 compatibility, and operation-specific policy remain independently required.
 
-This separation lets an explicit retry require the current failed or cancelled
-Turn as its terminal source while starting from the selected sealed head,
-rather than pretending that the terminal Turn is an eligible state parent. The
-retry operation records that source separately, reuses the exact accepted intent
-under the retry contract, and advances the Thread like any other accepted Turn.
-If the Thread has no head because its initial Turn failed, retry initializes
-another root Turn from the same accepted root intent and no parent state.
+This separation lets the [terminal-intent retry
+contract](28b-agent-control-input-and-continuation.md#retry-of-terminal-intent)
+use the current failed or cancelled Turn as its terminal source while selecting
+the sealed head as its state base, rather than pretending that the terminal Turn
+is an eligible state parent.
 
 ## Relational Thread Table
 

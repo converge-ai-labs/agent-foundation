@@ -29,7 +29,7 @@ the selected continuation head, and optimistic concurrency for accepted
 advancement; Turn rows remain the durable work and state DAG. Whether the
 current Turn is active derives from its status.
 
-A non-terminal Turn can span several process-local Harness Runs when Worker takeover creates another TurnAttempt. A waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and, when claimed, its own TurnAttempt, bindings, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
+A non-terminal Turn can span several process-local Harness Runs when Worker takeover creates another TurnAttempt. Under [Agent Control: Input and Continuation](28b-agent-control-input-and-continuation.md), a waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and, when claimed, its own TurnAttempt, bindings, and Harness Run. One `TurnAttempt` starts at most one Harness Run; internal Harness `ModelAttempt` values are not durable worker generations. Neither `turn_attempt_id` nor `run_id` replaces `turn_id` or `thread_id`.
 
 ## Specification Catalog
 
@@ -45,27 +45,38 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [10 Identity and Access Management](10-identity-and-access-management.md)                             | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit          |
 | [11 Secret Management](11-secret-management.md)                                                       | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls           |
 | [12 Agent Revisions and Reconstruction](12-agent-revisions-and-reconstruction.md)                     | Agent Presets, immutable Agent revisions, model selection, dependency locks, and trusted process-local reconstruction               |
-| [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                         | Interaction-to-runtime mapping, Agent tool dispatch evidence, Harness Run binding, cancellation, and unknown outcomes               |
+| [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                         | Interaction-to-runtime mapping, Agent tool dispatch evidence, Harness Run binding, and unknown outcomes                             |
 | [14 Durable Turn State](14-turn-persistence.md)                                                       | Turn identity, lifecycle, lineage, deterministic state object, conditional checkpoints, sealing, recovery budget, and retention     |
 | [15 Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                                 | TurnAttempt allocation, relational shape, leases, fences, dispatch evidence, transactional takeover, recovery, and Attempt outcomes |
 | [16 Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md)                         | Worker scans, claims, expired-lease takeover, post-claim checks, stale-worker rejection, retry, and shutdown                        |
 | [17 Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                         | Lifecycle-event persistence, stable Turn Redis Stream, bounded live replay, Items, and immutable replay snapshots                   |
-| [18 Deferred Actions and Children](18-deferred-actions-and-children.md)                               | Approval, client tools, user input, sealed waiting Turns, asynchronous child Turns, result delivery, and cancellation               |
+| [18 Async Subagents](18-async-subagents.md)                                                           | Independent child Threads and Turns, durable relationships, result delivery, and cancellation policy                                |
 | [19 Environment Configuration and Runtime Bindings](19-environment-management.md)                     | Connection revisions, state-owned Turn configuration, connector selection, active-run keep-alive, and envd boundary                 |
 | [20 Events, Usage, and Delivery](20-events-usage-and-delivery.md)                                     | Harness observation, AG-UI and Item projection, lifecycle events, delivery, raw usage, large content, and telemetry                 |
-| [21 Management API](21-management-api.md)                                                             | Public resource routes, existing-Thread and root Turn submission, commands, read models, replay, and compatibility                  |
+| [20a Hook Notifications](20a-hook-notifications.md)                                                   | Hook architecture, source registry, subscriptions, notification flows, channel eligibility, and blocking semantics                  |
+| [21 Management API](21-management-api.md)                                                             | Public resource catalog, common command boundaries, read models, replay, and compatibility                                          |
 | [22 Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                                   | Agent-facing authorized retrieval of retained Turn lineage and interaction projections                                              |
 | [23 Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)                 | Trusted Provider discovery, Connector revisions, account Connections, managed tools, and Trigger occurrence acceptance              |
 | [24 Durable Thread Persistence](24-thread-persistence.md)                                             | Thread relational identity, Session membership, origin, version, current Turn, continuation head, creation, advancement, and reads  |
 | [25 Model Management](25-model-management.md)                                                         | Workspace ModelConfigs, trusted provider registry, credentials, testing, lifecycle, and Turn-time execution snapshots               |
 | [26 Harness Plugin Artifacts and Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Internal trusted wheel publication, one-plugin packaging, exact artifact locks, and process-local on-demand loading                 |
 | [27 Skill Management](27-skill-management.md)                                                         | Workspace Skills, ZIP/GitHub import, immutable revisions, public APIs, object storage, Agent locks, and Worker materialization      |
+| [28a Agent Input](28a-agent-input.md)                                                                 | Versioned Agent input, binary acquisition and delivery, accepted canonicalization, declaration, and Harness mapping                 |
+| [28b Agent Control: Input and Continuation](28b-agent-control-input-and-continuation.md)              | Root and existing-Thread invocation, waiting feedback, fork, and retry                                                              |
+| [28c Agent Control: Active Execution](28c-agent-control-active-execution.md)                          | Durable cancellation command, cooperative enforcement, fencing, terminal outcome, and retry boundary                                |
 
 Read `00`, `01`, and `02` before changing process startup, roles, or distribution
 contents. Read `03`, `04`, and `06` before introducing a durable capability.
 Read `05`, `10`, and `21` before changing public ingress. Read `24` before `13`
-through `17` when changing Thread or Turn acceptance, persistence, recovery, or
-reads. Read `18` before changing waiting feedback or asynchronous children.
+through `17` when changing Thread or Turn persistence, recovery, or reads. Read
+`12`, `14`, `19`, and `25` before `28a` when changing Agent input. Read
+`14` and `15` before `28b` or `28c` when changing Agent invocation,
+continuation, waiting feedback, fork, retry, cancellation, or durable control
+state.
+Read `18` before changing async subagents.
+Read `06`, `17`, `20`, and `20a` before changing Hook names,
+subscriptions, replay, webhook or sink delivery, or live notification
+semantics.
 Read `23` before changing Connector Providers, Connections, managed Connector
 tools, or Trigger ingress. Read `25` before changing ModelConfigs, Model
 Providers, model credentials, or Turn-time model selection. Read `26` with `12`

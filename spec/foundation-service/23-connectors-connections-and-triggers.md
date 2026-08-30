@@ -14,7 +14,7 @@ An Agent revision selects exact Connector revisions and freezes its complete
 model-visible tool contract. A Turn fixes every resolved Connection identity,
 while each TurnAttempt obtains current authorization and credential use. A
 Trigger submits one unique schedule or Connector-event occurrence through the
-common root [Turn acceptance](13-interactions-turns-and-attempts.md#acceptance-and-lineage)
+common root [Turn acceptance](28b-agent-control-input-and-continuation.md#acceptance-and-lineage)
 contract. That contract selects or creates the Session and root Thread; Trigger
 does not own another Agent runtime, queue, or retry lifecycle.
 
@@ -564,10 +564,13 @@ arbitrary expressions are not supported. Connector-event templates can select
 `{{ event.occurred_at }}`. Schedule templates can select `{{ scheduled_at }}`.
 
 Foundation compiles the template at Trigger creation or update and validates the
-possible expanded structure against the exact AgentRevision input schema. It
-revalidates the bounded expanded value at occurrence acceptance. Provider event
-data is untrusted Agent input and cannot add a tool, Connection, Secret, Principal,
-policy, or run grant.
+possible expanded structure against the exact AgentRevision
+[`structured_content` schema](28a-agent-input.md#agent-input-declaration-and-harness-mapping).
+At occurrence acceptance it revalidates the bounded expanded value and constructs
+an `AgentInput` with empty `content` and that value in `structured_content`.
+Provider event data is untrusted Agent input and cannot add a content block,
+binary source, delivery preference, tool, Connection, Secret, Principal, policy,
+or run grant.
 
 Each Provider-normalized event contains a stable external `event_id`, type,
 optional occurrence time, receipt time, and bounded data. Webhook admission bounds

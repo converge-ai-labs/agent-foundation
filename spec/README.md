@@ -225,7 +225,7 @@ preparation decision. It does not inspect or reconcile the prior Sandbox. Every
 Turn owns one deterministic state key; Foundation replaces that key at complete
 checkpoints and exposes no separate base, result, or checkpoint-history object.
 
-Client-side tools use native Pydantic deferred values. Foundation seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. Asynchronous children use independent Threads and Turns rather than Pydantic deferred spawn calls.
+Client-side tools use native Pydantic deferred values. Foundation's [Agent control input and continuation contract](foundation-service/28b-agent-control-input-and-continuation.md) seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. [Async subagents](foundation-service/18-async-subagents.md) use independent Threads and Turns rather than Pydantic deferred spawn calls.
 
 Foundation's [Thread persistence](foundation-service/24-thread-persistence.md)
 owns one independent versioned relational Thread resource, its Session
@@ -363,7 +363,11 @@ Turn acceptance, ModelAttempt completion, Harness terminal delivery, Host Turn c
 | Foundation TurnAttempt persistence     | [foundation-service/15-turn-attempt-persistence.md](foundation-service/15-turn-attempt-persistence.md)                                               |
 | Foundation scheduling and recovery     | [foundation-service/16-scheduling-workers-and-recovery.md](foundation-service/16-scheduling-workers-and-recovery.md)                                 |
 | Foundation lifecycle and Turn streams  | [foundation-service/17-lifecycle-and-stream-persistence.md](foundation-service/17-lifecycle-and-stream-persistence.md)                               |
+| Foundation Hook notifications          | [foundation-service/20a-hook-notifications.md](foundation-service/20a-hook-notifications.md)                                                         |
 | Foundation public API                  | [foundation-service/21-management-api.md](foundation-service/21-management-api.md)                                                                   |
 | Foundation model management            | [foundation-service/25-model-management.md](foundation-service/25-model-management.md)                                                               |
 | Foundation managed Harness plugins     | [foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md](foundation-service/26-harness-plugin-artifacts-and-runtime-loading.md)       |
 | Foundation Skill management            | [foundation-service/27-skill-management.md](foundation-service/27-skill-management.md)                                                               |
+| Foundation Agent input                 | [foundation-service/28a-agent-input.md](foundation-service/28a-agent-input.md)                                                                       |
+| Foundation Agent control input         | [foundation-service/28b-agent-control-input-and-continuation.md](foundation-service/28b-agent-control-input-and-continuation.md)                     |
+| Foundation active Agent control        | [foundation-service/28c-agent-control-active-execution.md](foundation-service/28c-agent-control-active-execution.md)                                 |
