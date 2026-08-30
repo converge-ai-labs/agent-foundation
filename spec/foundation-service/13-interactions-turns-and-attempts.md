@@ -4,14 +4,14 @@
 
 Foundation implements the shared [`Session`, `Thread`, `Turn`, and `Item`](../interaction-model.md) interaction model directly as its durable Agent-work model. A `Turn` is one accepted scheduling, recovery, state, and terminal-outcome boundary. A `TurnAttempt` is one replaceable fenced worker generation for that Turn. Foundation defines no separate durable `Execution` or `ExecutionAttempt` resource.
 
-Every Foundation-managed AgentPreset invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Acceptance pins one exact immutable AgentPresetVersion and internal Plugin Runtime lock. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn without re-resolving either selection. Authenticated feedback for a waiting Turn, an explicit continuation, a fork, and retry of terminal intent create another Turn rather than reopening the sealed parent.
+Every Foundation-managed AgentPreset invocation, including an interactive request, schedule, webhook, service request, or asynchronous child, accepts a Turn before work is claimable. Acceptance pins one exact immutable AgentPresetVersion and internal Plugin Runtime lock. Worker loss and recoverable infrastructure failure create later TurnAttempts under the same non-terminal Turn without re-resolving either selection. Atomic authenticated feedback for a waiting Turn, an explicit continuation, a fork, and retry of terminal intent create another Turn rather than reopening the sealed parent.
 
 [Durable Thread Persistence](24-thread-persistence.md) owns the independent Thread row, Session membership, origin, version, current Turn, and selected continuation head. [Durable Turn State](14-turn-persistence.md) owns Turn fields, lifecycle, state-object publication, sealing, lineage, and recovery budget. [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) owns TurnAttempt fields, leases, fences, dispatch evidence, and attempt outcomes. This document owns only the interaction-to-runtime mapping and the boundaries that those detailed contracts must preserve.
 
 [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)
-owns root invocation, ordinary continuation, waiting feedback, fork, and retry.
-[Agent Control: Active Execution](35-agent-control-active-execution.md) owns cancellation commands and
-their Agent-work semantics.
+owns start, ordinary continuation, atomic waiting feedback, fork, and retry.
+[Agent Control: Active Execution](35-agent-control-active-execution.md) owns the
+Thread inbox, active steering, interrupt, and their Agent-work semantics.
 
 ## Relationships
 
@@ -39,7 +39,10 @@ flowchart TB
 
 The diagram shows identity and lineage, not live object containment. Every Turn belongs to exactly one Session and Thread. A Turn can own zero or more immutable TurnAttempts over its lifetime, but at most one leased generation can authorize worker mutation at a time. One TurnAttempt starts at most one Harness Run; one Harness Run can contain several process-local `ModelAttempt` values.
 
-Items and replay data are projections of a Turn and never become continuation state. A Harness Run, model request, Redis entry, Item, or delivery cursor never replaces Turn or TurnAttempt identity.
+Items and replay data are projections of a Turn and never become continuation
+state. A Thread inbox entry is durable inbound work but never becomes another
+Turn or TurnAttempt identity. A Harness Run, model request, Redis entry, Item,
+or delivery cursor never replaces Turn or TurnAttempt identity.
 
 ## Turn and TurnAttempt Lifecycle Boundary
 
@@ -106,3 +109,6 @@ Bounded connector transport retries and internal Harness recovery remain within 
 15. A replacement TurnAttempt reuses the exact Environment execution
     configuration in Turn state, opens fresh connector attachments, and creates
     no Environment connection lease.
+16. Active steering remains inside one running Turn and becomes consumed only
+    through a fenced complete-state checkpoint; interrupt seals that Turn as
+    cancelled.

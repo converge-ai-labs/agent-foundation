@@ -235,7 +235,7 @@ preparation decision. It does not inspect or reconcile the prior Sandbox. Every
 Turn owns one deterministic state key; Foundation replaces that key at complete
 checkpoints and exposes no separate base, result, or checkpoint-history object.
 
-Client-side tools use native Pydantic deferred values. Foundation's [Agent control input and continuation contract](foundation-service/34-agent-control-input-and-continuation.md) seals the waiting Turn with its pending call or approval, authenticates external feedback, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. [Async subagents](foundation-service/18-async-subagents.md) use independent Threads and Turns rather than Pydantic deferred spawn calls.
+Client-side tools use native Pydantic deferred values. Foundation's [Agent control input and continuation contract](foundation-service/34-agent-control-input-and-continuation.md) seals the waiting Turn with its complete pending set, atomically normalizes authenticated feedback into a full reject, no-response, or supplied-result batch, and accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn starts a later run with fresh bindings. [Active Agent control](foundation-service/35-agent-control-active-execution.md) persists steering and asynchronous results in a durable Thread inbox, couples steer consumption to complete Turn state, and uses an expiring Thread Redis Stream only for Worker wakeups. Interrupt seals the active Turn as cancelled. [Async subagents](foundation-service/18-async-subagents.md) use independent Threads and Turns rather than Pydantic deferred spawn calls and deliver terminal results through the parent Thread inbox.
 
 Foundation's [Thread persistence](foundation-service/24-thread-persistence.md)
 owns one independent versioned relational Thread resource, its Session
@@ -247,8 +247,9 @@ persistence](foundation-service/15-turn-attempt-persistence.md) owns the
 `turn_attempts` table, worker leases, and fences. [Lifecycle and stream
 persistence](foundation-service/17-lifecycle-and-stream-persistence.md) owns
 one lifecycle-event table and Redis Agent-message transport with object-backed
-retained replay; pending calls, Items, stream entries, and generic provider
-receipts do not receive separate relational tables.
+retained replay. Active Agent control separately owns the `thread_inbox` table
+and expiring Thread control signal Stream; pending calls, Items, stream entries,
+and generic provider receipts do not receive separate relational tables.
 
 The hosted service boundary is defined in [Foundation Service](foundation-service/README.md).
 

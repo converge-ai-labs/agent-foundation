@@ -34,13 +34,15 @@ and advance the existing Thread under its current version.
 | Persisted Session membership and root selection                           | This contract                                                                       | Requires one existing Session container and exactly one retained root Thread; other Session product metadata remains outside the Thread row |
 | Turn row, state object, parent edge, scheduling, and outcome              | [Durable Turn State](14-turn-persistence.md)                                        | Owns one accepted advancement and its resumable state                                                                                       |
 | TurnAttempt lease, generation, and stale-writer fence                     | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                  | Authorizes worker mutation of the current Turn while it is active                                                                           |
-| Agent invocation and advancement commands                                 | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) | Accepts root and existing-Thread work, waiting feedback, fork, and retry                                                                    |
+| Agent invocation and advancement commands                                 | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md) | Accepts start, existing-Thread continuation, atomic waiting feedback, fork, and retry                                                       |
+| Thread inbox entries, steer, interrupt, and control wakeups               | [Agent Control: Active Execution](35-agent-control-active-execution.md)             | Persists kind-owned inbound work separately from the Thread row and keeps Redis cursors outside relational state                            |
 | Public resource catalog and wire read models                              | [Management API](21-management-api.md)                                              | Exposes authorized Thread reads and common API behavior                                                                                     |
 | Agent-facing history retrieval                                            | [Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                    | Projects authorized Thread and Turn data without becoming authority                                                                         |
 
-A Thread row contains no message history, Harness state, Item payload, provider
-state, credential, worker lease, queue entry, replay cursor, or live process
-object. Those values retain their owning stores and lifecycles.
+A Thread row contains no message history, Thread inbox payload, Harness state,
+Item payload, provider state, credential, worker lease, queue entry, Redis
+consumer-group cursor, replay cursor, or live process object. Those values
+retain their owning stores and lifecycles.
 
 ## Durable Thread Model
 
@@ -138,9 +140,10 @@ compatibility, and operation-specific policy remain independently required.
 
 This separation lets the [terminal-intent retry
 contract](34-agent-control-input-and-continuation.md#retry-of-terminal-intent)
-use the current failed or cancelled Turn as its terminal source while selecting
-the sealed head as its state base, rather than pretending that the terminal Turn
-is an eligible state parent.
+use the current failed or cancelled Turn as its intent source while copying that
+Turn's exact eligible `parent_turn_id` and lineage transformation. The selected
+head normally names that same state base; an initial failed root or fork can
+have no local head. The terminal source never becomes an eligible parent.
 
 ## Relational Thread Table
 
@@ -250,9 +253,10 @@ projections and cannot repair or advance Thread state.
 
 Foundation exposes no independent hard-delete mutation for a Thread. Session and
 interaction-retention policy can remove a Thread only after no retained Turn,
-state object, Item, event, usage record, child relationship, fork origin, or
-idempotency evidence requires it. Removing presentation detail never removes
-the Thread row or changes its head.
+state object, Thread inbox entry, Item, event, usage record, child relationship,
+fork origin, or idempotency evidence requires it. Expiry of the Thread's Redis
+control Stream and consumer group does not remove the Thread or its inbox.
+Removing presentation detail never removes the Thread row or changes its head.
 
 A retained origin reference keeps the minimum safe source identity required by
 lineage policy. Retention can redact inaccessible content without rewriting
@@ -318,8 +322,13 @@ mutable selector rather than another transcript or checkpoint store.
 05. `current_turn_id` always names the most recently accepted Turn and is never inferred from time or event order; it is the sole active Turn exactly while its status is `accepted` or `running`.
 06. `head_turn_id` is null until the Thread selects a sealed waiting or completed Turn and never names a failed or cancelled Turn.
 07. Thread version changes on accepted advancement and whenever the current Turn seals; claim, execution, and worker recovery inside one Turn do not change it.
-08. Ordinary continuation uses the exact selected head as `parent_turn_id`; feedback, retry, fork, and child creation apply their explicit owning contracts.
+08. Ordinary continuation uses the exact selected completed head as
+    `parent_turn_id`; feedback uses the exact waiting head, retry copies its
+    terminal source's eligible state-parent edge, and fork and child creation
+    apply their explicit owning contracts.
 09. Idempotency replay resolves before `expected_thread_version`, and a losing concurrency check changes neither Thread nor Turn state.
 10. No Thread mutation transaction spans Harness execution, object I/O, provider calls, Redis, streaming, sleeps, or other external work.
 11. Thread identity, origin, Turn references, cursors, and object locators grant no authority by possession.
 12. Turn state, Items, events, provider state, and presentation history never substitute for the durable Thread row.
+13. Thread inbox rows and Redis control-group cursors remain separate from the
+    Thread resource; neither changes current-Turn or continuation-head meaning.

@@ -2,40 +2,35 @@
 
 ## Design Position
 
-`AgentInput` is Foundation's versioned wire and accepted-value protocol for one
-unit of ordinary semantic Agent input. Root invocation, continuation, fork,
-managed Trigger acceptance, and asynchronous child submission use the same
-protocol rather than defining operation-specific input shapes.
+`AgentInput` is Foundation's versioned JSON submission and accepted-value
+protocol for one unit of ordinary semantic Agent input. Root invocation,
+continuation, fork, active-Turn steering, managed Trigger acceptance, and
+asynchronous child submission use the same protocol. Control preconditions,
+Agent, Skill, and Environment selection, authorization, and trigger metadata
+remain outside it.
 
 This contract owns content blocks, structured content, binary acquisition and
-delivery, accepted canonicalization, the AgentPresetVersion input declaration,
-and deterministic mapping to the Harness native input boundary. [Agent Control:
+delivery, accepted canonicalization, input adapter configuration, and
+deterministic mapping to the Harness native input boundary. [Agent Control:
 Input and Continuation](34-agent-control-input-and-continuation.md) owns Turn
 acceptance, lineage, retry, and deferred feedback; [Agent Control: Active
-Execution](35-agent-control-active-execution.md) owns durable cancellation of
-already accepted work. Neither control contract defines another ordinary input
-protocol.
+Execution](35-agent-control-active-execution.md) owns durable steering through
+the Thread inbox and interrupt of already accepted work. Neither control
+contract defines another ordinary input protocol.
 
 ## Boundaries
 
-| Concern                                                 | Owner                                                                                                                                                       | Relationship                                                                                                        |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `AgentInput`, content blocks, sources, and delivery     | This contract                                                                                                                                               | Defines the stable submission and accepted-value protocol                                                           |
-| Agent input declaration and adapter contract            | This contract and [Agent Management](12-agent-management.md)                                                                                                | This contract defines the declaration; AgentPresetConfig stores it and each immutable AgentPresetVersion freezes it |
-| Accepted input persistence and binary object references | [Durable Turn State](14-turn-persistence.md)                                                                                                                | Persists the complete accepted value and immutable payload references                                               |
-| Environment binding and path materialization            | [Environment Configuration](19-environment-management.md)                                                                                                   | Supplies authorized bindings and fresh runtime attachments                                                          |
-| Native process-local input                              | [Harness Input, Model, and Output](../agent-harness/16-input-model-and-output.md) and [Harness Public API](../agent-harness/14-public-api-and-packaging.md) | Receives native `RunInputValue` after the Foundation adapter resolves durable input                                 |
-| Turn acceptance, retry, and waiting feedback            | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                                                                         | Determines when input creates a Turn and when correlated feedback is a distinct protocol                            |
-| Durable cancellation of already accepted work           | [Agent Control: Active Execution](35-agent-control-active-execution.md)                                                                                     | Owns cancellation ordering, fencing, and durable outcome independently of input content                             |
-| Idempotency evidence and unknown acceptance             | [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                                                                                        | Owns request evidence and reconciliation around accepted input                                                      |
+| Concern                                            | Owner                                                                                                                                                       | Relationship                                                                                                                               |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Input wire, blocks, sources, delivery, and adapter | This contract and [Agent Management](12-agent-management.md)                                                                                                | Defines the protocol and adapter contract; AgentPresetConfig stores adapter configuration and each immutable AgentPresetVersion freezes it |
+| Accepted input and source-descriptor persistence   | [Durable Turn State](14-turn-persistence.md) and [Agent Control: Active Execution](35-agent-control-active-execution.md)                                    | Persists initial Turn input or an accepted Thread inbox steer, including binary source descriptions but not source file bodies             |
+| Environment binding and path materialization       | [Environment Configuration](19-environment-management.md)                                                                                                   | Supplies authorized bindings and fresh runtime attachments                                                                                 |
+| Native process-local input                         | [Harness Input, Model, and Output](../agent-harness/16-input-model-and-output.md) and [Harness Public API](../agent-harness/14-public-api-and-packaging.md) | Receives native `RunInputValue` after the Foundation adapter resolves durable input                                                        |
+| Turn acceptance, retry, and waiting feedback       | [Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                                                                         | Determines when input creates a Turn and when correlated feedback is a distinct protocol                                                   |
+| Steering and interrupt of already accepted work    | [Agent Control: Active Execution](35-agent-control-active-execution.md)                                                                                     | Owns Thread inbox acceptance, consumption, interruption ordering, fencing, and durable outcome                                             |
+| Idempotency evidence and unknown acceptance        | [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                                                                                        | Owns request evidence and reconciliation around accepted input                                                                             |
 
 ## Agent Input Protocol
-
-`AgentInput` is Foundation's versioned JSON wire format for one unit of
-user-authored or caller-authored semantic Agent input. It is independent of the
-command that carries it. Control preconditions, Agent selection, Skill selection,
-Environment selection, authorization, and trigger metadata remain outside
-`AgentInput`.
 
 The following definitions are the serialized wire schema. JSON arrays represent
 the tuple fields. Unknown fields, unknown discriminators, an unsupported
@@ -65,18 +60,7 @@ class BinaryContent:
     delivery: BinaryContentDelivery = "auto"
 
 
-type BinaryContentSource = (
-    InlineBinarySource
-    | UrlBinarySource
-    | UploadBinarySource
-    | PathBinarySource
-    | ContentObjectBinarySource
-)
-
-
-class InlineBinarySource:
-    type: Literal["inline"]
-    data: Base64Bytes
+type BinaryContentSource = UrlBinarySource | PathBinarySource
 
 
 class UrlBinarySource:
@@ -84,26 +68,10 @@ class UrlBinarySource:
     url: str
 
 
-class UploadBinarySource:
-    type: Literal["upload"]
-    upload_id: UploadId
-
-
 class PathBinarySource:
     type: Literal["path"]
     environment_binding: str
     path: str
-
-
-class ContentObjectRef:
-    object_key: str
-    digest_sha256: str
-    size_bytes: int
-
-
-class ContentObjectBinarySource:
-    type: Literal["content_object"]
-    content_ref: ContentObjectRef
 
 
 type BinaryContentDelivery = Literal[
@@ -114,41 +82,11 @@ type BinaryContentDelivery = Literal[
 ]
 ```
 
-The source union covers submission and accepted-value phases. Public callers can
-submit only `inline`, `url`, `upload`, or `path`; `content_object` is the
-Foundation-managed normalized form and is rejected as caller-supplied storage
-authority. This phase restriction is part of the wire contract even though both
-forms share the same `BinaryContent` block shape.
-
-For example, one request can combine direct text, a URL-backed binary, and
-Agent-specific structured data without turning source or control metadata into
-message roles:
-
-```json
-{
-  "schema_version": "1",
-  "content": [
-    {
-      "type": "text",
-      "text": "Summarize the report in Chinese."
-    },
-    {
-      "type": "binary",
-      "source": {
-        "type": "url",
-        "url": "https://example.com/report.pdf"
-      },
-      "filename": "report.pdf",
-      "media_type": "application/pdf",
-      "delivery": "model_content"
-    }
-  ],
-  "structured_content": {
-    "language": "zh-CN",
-    "style": "executive"
-  }
-}
-```
+The same source union is used for submission and the accepted value. Foundation
+does not accept inline binary bodies, upload them into managed storage, or
+replace a caller source with an internal object reference. A caller that owns
+local bytes publishes them through an authorized Environment path or an
+independent file service and submits the resulting `path` or `url`.
 
 `content` is an ordered sequence representing one user-authored message boundary;
 it never accepts system, assistant, or tool roles. A `TextContent.text` value is
@@ -157,225 +95,187 @@ is the independent Agent-specific machine-readable channel. It is not a JSON
 content block, cannot carry control or authority fields, and enters model context
 only through the selected AgentPresetVersion's locked input adapter.
 
-An input can contain only text, only structured content, only binary content, or
-any combination permitted by the selected AgentPresetVersion. An empty `content`
-together with null `structured_content` is valid only when that Version declares
-`allow_empty=true`.
+Text, structured content, and binary content are independently optional and can
+appear in any combination, including an empty input. AgentPresetVersions do not
+enable or disable `AgentInput` block types, media types, sources, or deliveries.
+Foundation-wide hard limits and content policy still apply.
 
-`filename` is bounded display metadata and is never interpreted as an object key
-or Environment path. A submitted `media_type` is only a hint. Foundation derives
-and freezes the accepted canonical media type from verified content bytes; a
-filename extension or caller claim is never authoritative. Images, audio, video,
-PDFs, archives, source files, and other byte sequences all remain
-`BinaryContent`; their media type and delivery policy determine later handling.
+`filename` is bounded display metadata, never an object key or Environment path.
+Every byte sequence remains `BinaryContent`; media type and delivery determine
+later handling.
+
+`media_type` is an extensible MIME media-type essence, not a closed enum or a
+snapshot of the IANA registry. A submitted non-null value must match the MIME
+`type/subtype` token grammar and contain no parameters or wildcards. Foundation
+lowercases it during acceptance. Registry membership can inform policy and
+observability, but absence from the current registry is not by itself invalid;
+vendor, personal, and mutually agreed private types remain representable.
+
+Foundation can validate that syntax deterministically, but it cannot prove every
+media type from bytes alone. When the Worker reads bytes for `model_content` or
+`environment_path`, it applies bounded signature or format detection when a
+reliable detector exists and rejects a positive conflict with the submitted
+hint. An unidentified value is treated as `application/octet-stream` for that
+execution. Detection is process-local and does not rewrite the accepted input.
+The direct `url` plus `model_url` case requires an explicit syntactically valid
+`media_type` because Foundation never reads its bytes; the Model provider owns
+byte/type agreement. Content policy, the frozen Model snapshot, selected
+delivery, and deployment policy can each narrow the usable set.
 
 ## Binary Source and Delivery
 
 `source` and `delivery` are independent axes:
 
-| Axis       | Question answered                                | Values                                                                          |
-| ---------- | ------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `source`   | Where does Foundation acquire the exact bytes?   | inline data, URL import, upload, Sandbox or Environment path, or managed object |
-| `delivery` | How does the Worker expose accepted bytes later? | native model content, model URL, or an Environment path                         |
+| Axis       | Question answered                                  | Values                                                              |
+| ---------- | -------------------------------------------------- | ------------------------------------------------------------------- |
+| `source`   | Where can execution obtain the content?            | Caller URL or authorized Sandbox/Environment path                   |
+| `delivery` | How does the Worker expose accepted content later? | Native model content, model URL, or a default-Environment file path |
 
 Source forms have these contracts:
 
-| Source           | Submission contract                                                                                                                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inline`         | `data` is bounded canonical RFC 4648 base64 without line breaks. Foundation bounds the encoded body before decoding and the decoded bytes afterward.                                               |
-| `url`            | `url` is a credential-free absolute HTTP(S) URL. Foundation imports it through bounded egress policy, validates every redirect and resolved destination, and accepts no caller headers.            |
-| `upload`         | `upload_id` names an authorized, complete, immutable upload in the same tenant scope. The reference grants no authority and is revalidated at acceptance.                                          |
-| `path`           | `environment_binding` selects an authorized configured Sandbox or Environment binding and `path` is a normalized relative POSIX path. Foundation snapshots exact bytes before accepting the input. |
-| `content_object` | Accepted durable form only. `content_ref` identifies the exact immutable bytes and is the only source retained in an accepted `AgentInput`; it is not caller-supplied object-store authority.      |
+| Source | Contract                                                                                                                                                                                                                                                                                                                                                               |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`  | A credential-free absolute HTTP(S) URL with no caller headers. Acceptance validates syntax and permitted destination policy. A Worker fetch additionally bounds redirects, resolved destinations, time, and response size. Authenticated content uses its Connector or another authorized ingress. `model_url` is the only mode in which Foundation does not fetch it. |
+| `path` | A normalized relative POSIX path under an authorized Sandbox or Environment binding, never a Worker host path. Acceptance validates binding authority and rejects absolute paths or traversal. A Worker read additionally rejects symlink escape, directories, unsupported file kinds, inaccessible bindings, and oversize content.                                    |
 
-URL acquisition rejects credential-bearing URLs, disallowed schemes, unsafe
-destinations, unsafe redirects, excessive response bodies, and content that
-changes while its verified representation is being imported. Content requiring
-remote authentication is imported through its owning Connector or another
-authorized content-ingress operation rather than by adding credentials to
-`AgentInput`.
-
-A submitted `path` is relative to the named Foundation binding, never a Worker
-host path or an unscoped Sandbox path. Resolution rejects absolute paths,
-traversal, symlink escape, directories, unsupported file kinds, inaccessible
-bindings, and files that cannot be snapshotted consistently. An operation cannot
-accept a path source merely because a process-local worker can see it;
-acceptance requires an immutable byte snapshot that another TurnAttempt can
-materialize after worker loss.
+Acquisition and delivery are separate phases. Acceptance retains the normalized
+source description and resolves `auto` without reading the file body. A Worker
+later reads a `url` or `path` only when the selected delivery needs bytes.
+Foundation creates no managed copy, digest reference, or retention timer for
+the source file.
 
 Delivery forms have these contracts:
 
-| Delivery           | Worker behavior                                                                                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `model_content`    | Reads the immutable object and supplies native media content to the Harness. Provider encoding, upload, or transport remains with the selected native Model adapter.                             |
-| `model_url`        | Mints a short-lived, audience-restricted URL for the immutable object and supplies the matching native image, audio, video, or document URL type. The generated URL is never durable Turn input. |
-| `environment_path` | Materializes the immutable object under the selected Environment binding and supplies the adapter-defined stable logical path reference; the model uses the Environment's authorized file tools. |
+| Delivery           | Worker behavior                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model_content`    | Reads the accepted `url` or `path` into bounded Worker-owned memory or private staging, detects and validates its media type when possible, constructs native Pydantic `BinaryContent`, and adds it to Harness `RunInputValue`. It never writes the content into an Environment. Provider encoding, upload, or transport remains with the selected native Model adapter. |
+| `model_url`        | Requires `source.type="url"` and passes that exact caller URL directly to the matching native Model URL value. Foundation neither downloads it nor mints another URL, and it never writes an Environment file.                                                                                                                                                           |
+| `environment_path` | Requires a writable default Environment binding. The Worker reads the accepted `url` or authorized source `path` into a bounded Worker-local staging file, then writes it through the active default Environment attachment's authorized `FileOperator.write_bytes_stream` interface. Only the resulting logical path enters Harness `RunInputValue`.                    |
 
-`auto` is a submission preference, not an accepted delivery value. Acceptance
-resolves it to one concrete delivery using the exact AgentPresetVersion declaration,
-frozen Model execution snapshot, selected Environment configuration, media type,
-size, and current policy. A caller-requested concrete delivery is accepted only
-when those same constraints permit it. A replacement TurnAttempt uses the frozen
-delivery mode and does not silently choose another mode. A fresh signed URL or
-physical Environment path is process-local materialization of that mode, not a
-change to accepted input.
+The canonical `environment_path` is
+`/workspace/.a13n/inputs/{input_instance_id}/content-{block_index}`, where
+`input_instance_id` is the already existing owning Turn ID for Turn input or
+Thread-inbox entry ID for active steer, and `block_index` is the binary block's
+zero-based position in `AgentInput.content`.
+`/workspace/.a13n/inputs` is reserved for Foundation input materialization. The
+Worker creates missing parent directories, replaces the deterministic target
+with one complete file, and removes its private staging file after the transfer
+finishes. A Worker host path never enters Agent input. The accepted `filename`
+and `media_type` remain separate metadata and do not influence the sandbox path.
 
-```mermaid
-flowchart LR
-    Inline[Inline bytes] --> Acquire[Authorize, acquire, and verify]
-    URL[URL] --> Acquire
-    Upload[Upload] --> Acquire
-    Path[Sandbox or Environment path] --> Acquire
-    Existing[Content object] --> Acquire
-    Acquire --> Object[Immutable content object and digest]
-    Object --> Accept[Accepted AgentInput]
-    Accept --> ModelContent[Native model content]
-    Accept --> ModelURL[Short-lived model URL]
-    Accept --> EnvironmentPath[Environment path]
-```
+`auto` is submission-only. Acceptance resolves it using the source form,
+submitted media type, frozen Model execution snapshot, selected Environment
+configuration, and current policy; an explicit delivery must satisfy the same
+constraints. Byte-dependent limits are enforced when a Worker reads the source.
+Every replacement TurnAttempt reuses the frozen mode.
+
+`model_content` and `model_url` stop after constructing model-native input; they
+never materialize a sandbox file. `environment_path` selects no temporary or
+persistent retention class. The materialized file is non-authoritative execution
+data whose lifetime follows the already-running Environment. Materialization
+neither creates nor resumes a Sandbox and adds no file-specific lifecycle
+management; any run-scoped keep-alive remains part of the independent
+[Environment binding
+contract](19-environment-management.md#turnattempt-runtime-binding).
+
+For initial Turn input, a replacement Attempt derives materialization behavior
+from existing durable model-request usage. If the Turn's charged prior-attempt
+`model_requests` total is zero, it reads the source and replaces every
+`environment_path` target again before Harness execution. If the total is
+positive, it assumes the deterministic target was already written and does not
+read or rewrite it. This is a runtime decision, not a stored input flag. A
+pending active steer is handled independently: its source is read and its target
+is materialized until the existing inbox receipt makes that steer `consumed`.
+
+Because Foundation retains only the source description, it does not guarantee
+that a URL or Environment path yields identical bytes across acceptance, Worker
+replacement, or explicit Retry. Each read revalidates current source authority,
+safety, type, and bounds and fails closed if the source is unavailable or no
+longer valid.
 
 ## Accepted Input and Canonicalization
 
-Before durable Turn acceptance, Foundation resolves every submitted binary source
-to a `ContentObjectBinarySource`, replaces every media-type hint with the verified
-canonical media type, resolves `delivery="auto"`, and verifies that every exact
-object remains authorized and retained. The resulting accepted `AgentInput` has
-the same `schema_version`, `ContentBlock` ordering, text, structured content, and
-`type` discriminators as the submission, but every `BinaryContent` has:
+Before durable Turn or steer acceptance, Foundation resolves `delivery="auto"`,
+normalizes the source description and any submitted media type, and freezes one
+concrete delivery. `model_url` additionally requires a URL source and non-null
+media type. Acceptance does not fetch source bytes or infer a media type from
+them.
 
-- `source.type="content_object"` with exact digest and size;
-- a non-null verified `media_type`; and
-- one concrete delivery other than `auto`.
+Foundation canonicalizes the complete accepted value as UTF-8 RFC 8785 JSON. It
+stores that JSON directly in the owning Turn or inbox row, or in an immutable
+[Turn payload object](14-turn-persistence.md#turn-payload-object) when it exceeds
+the inline JSON bound. The accepted JSON contains only the URL or
+Environment-path description for each binary block, never inline file bytes or
+a Foundation-managed binary object reference. The canonical JSON supplies
+durable accepted-descriptor integrity. Idempotency evidence and final acceptance
+follow [Durable Operations and
+Outbox](06-durable-operations-and-outbox.md).
 
-`ContentObjectRef.object_key` is an internal durable locator, not a public
-download URL, credential, or authorization token. API reads disclose binary
-metadata and authorized content access through their owning read surface rather
-than treating the stored object key as caller authority.
+## Input Adapter and Harness Mapping
 
-The accepted value is immutable. A Worker never re-fetches a submitted URL,
-re-reads a submitted path, re-resolves an upload, or decodes submitted inline
-bytes. Retry and replacement TurnAttempts reuse the exact accepted content
-objects. Missing or digest-mismatched content fails closed rather than falling
-back to the original source.
+Every `AgentPresetConfig` stores one trusted input adapter key and bounded
+configuration. Publish validates them against the selected Plugin Runtime
+profile and freezes them in the immutable AgentPresetVersion. The Version does
+not carry an input-type declaration or per-input limits.
 
-Foundation canonicalizes the complete accepted value as UTF-8 RFC 8785 JSON. A
-bounded value can remain inline on the Turn; a larger value uses the immutable
-[Turn payload object](14-turn-persistence.md#turn-payload-object). Binary bodies
-always remain separate content objects referenced by that JSON. The canonical
-submitted command supplies the idempotency request fingerprint; the canonical
-accepted value and referenced byte digests supply durable input integrity. Source
-acquisition or object creation before the final short acceptance transaction does
-not prove that a Turn was accepted, and unreferenced prepared objects are eligible
-for bounded cleanup.
+[Agent Management](12-agent-management.md#protocol-configuration) can define an
+optional `ProtocolConfig.input_data_schema` for non-null `structured_content`.
+Absent structured content remains valid, and the schema does not restrict text or
+binary blocks, media types, sources, or deliveries. Acceptance validates the
+wire, Foundation hard limits, source authority, content policy, delivery
+feasibility, and any applicable structured-content schema.
 
-## Agent Input Declaration and Harness Mapping
+The immutable AgentPresetVersion freezes the trusted adapter key and
+configuration; the Turn pins that Version and one compatible Runtime lock. After
+verifying both, the Worker preserves block order, maps `TextContent` to native
+user text, applies the delivery table above to binary content, and lets only the
+locked adapter incorporate `structured_content` into Harness `RunInputValue`.
 
-Every `AgentPresetConfig` stores one declaration governed by this contract, and
-Publish freezes that declaration in the immutable AgentPresetVersion:
-
-```python
-class AgentInputDeclaration:
-    schema_version: Literal["1"]
-    agent_input_schema_version: Literal["1"]
-    allow_empty: bool
-    allow_text: bool
-    allowed_media_types: tuple[str, ...]
-    allowed_deliveries: tuple[Literal[
-        "model_content",
-        "model_url",
-        "environment_path",
-    ], ...]
-    max_content_blocks: int
-    max_total_text_bytes: int
-    max_binary_items: int
-    max_total_binary_bytes: int
-    max_structured_content_bytes: int
-    structured_content_schema: JsonObject | None
-    structured_content_schema_digest_sha256: str | None
-    input_adapter_key: str
-    input_adapter_config: JsonObject
-```
-
-Media entries are normalized exact media types or type wildcards such as
-`image/*`. `max_content_blocks` is positive; binary item and byte bounds are
-non-negative so a declaration can reject all binary content. No declaration can
-exceed Foundation hard limits. When `structured_content_schema` is absent,
-`structured_content` must be null and its digest is null. Otherwise Foundation
-validates it using self-contained JSON Schema Draft 2020-12 with no remote
-references, stores the canonical schema digest, and requires it to match.
-`allow_text=false` rejects every `TextContent`; empty media and delivery tuples
-reject every `BinaryContent`. Publishing an AgentPresetVersion validates the
-complete declaration. Turn acceptance enforces its exact text, binary,
-structured-content, and aggregate bounds and revalidates the actual structured
-value against that exact schema.
-
-The AgentPreset's `ProtocolConfig.input_modes` can only narrow the text and media
-modes admitted by this declaration. When
-`ProtocolConfig.input_data_schema` is present, it is the same normalized schema
-as `structured_content_schema`; Publish rejects a divergent schema or digest.
-The Protocol Gateway therefore projects this input contract without becoming a
-second validation authority.
-
-The immutable AgentPresetVersion stores the exact trusted adapter key and
-configuration. The Turn pins that Version and one compatible Runtime lock as
-defined by [Agent Management](12-agent-management.md). The Worker verifies both
-before mapping the complete accepted `AgentInput` to the Harness
-`RunInputValue`. It preserves content-block order and applies these delivery
-semantics:
-
-- `TextContent` becomes native user text content;
-- `model_content` becomes native Pydantic `BinaryContent` with verified media type;
-- `model_url` becomes the matching native image, audio, video, or document URL value;
-- `environment_path` becomes the adapter-defined user-visible logical path after exact materialization; and
-- `structured_content` is incorporated only by the locked adapter, never by an implicit generic JSON dump.
-
-The adapter returns `None` only for an accepted empty input. It carries no
-credential or ambient authority and cannot widen the accepted AgentPresetVersion,
-Model, Environment, Skill, Connector, or content policy. A replacement Worker
-uses the same accepted input, exact AgentPresetVersion, and Runtime lock;
-incompatible or unavailable adapters fail before model or tool work rather than
-changing the input representation.
+The adapter returns `None` only for accepted empty input. It receives no
+credential or ambient authority and cannot widen frozen execution or content
+policy. Replacement Workers use the same accepted input, Version, and Runtime
+lock; an unavailable or incompatible adapter fails before model or tool work.
 
 ## Use by Control Operation
 
-| Operation                         | Ordinary `AgentInput` behavior                                                                                                    |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Root invocation                   | Caller supplies input; acceptance stores its normalized accepted form on the root Turn.                                           |
-| Ordinary continuation             | Caller supplies input; acceptance stores it on the successor Turn.                                                                |
-| Fork                              | Caller supplies input; the new Thread's first Turn stores it after validation against the selected compatible AgentPresetVersion. |
-| Managed Trigger                   | The Trigger constructs the same protocol, placing its schema-validated machine-readable value in `structured_content`.            |
-| Asynchronous child                | The authorized parent or Host supplies the same protocol for the child Turn.                                                      |
-| Retry                             | Caller supplies no new input; the successor reuses the source Turn's exact accepted input and content references.                 |
-| Waiting-action response or result | Uses the [correlated typed feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction), not `AgentInput`. |
+| Operation             | Behavior                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Root invocation       | Stores new accepted input on the root Turn.                                                                    |
+| Ordinary continuation | Stores new accepted input on the successor Turn.                                                               |
+| Fork                  | Stores new accepted input on the new Thread's first Turn.                                                      |
+| Managed Trigger       | Places bounded machine data in `structured_content`, validating its optional protocol schema.                  |
+| Asynchronous child    | Stores parent- or Host-supplied input on the child Turn.                                                       |
+| Active steer          | Stores accepted input in the target Thread inbox without creating a Turn.                                      |
+| Retry                 | Copies the source Turn's accepted input and reacquires any needed binary source for the new Turn.              |
+| Waiting feedback      | Uses the separate [atomic feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction). |
 
 ## Failure Semantics
 
-| Condition                                                         | Outcome                                                                                |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Invalid input schema, content block, bound, or declaration        | Request is rejected before Turn acceptance                                             |
-| Binary source is absent, unauthorized, unsafe, or changes         | Request is rejected without retaining an accepted source or exposing private existence |
-| Binary acquisition succeeds but command acceptance fails          | No command is accepted; unreferenced prepared content is eligible for bounded cleanup  |
-| Requested or resolved delivery is incompatible                    | Request is rejected rather than relying on Worker fallback                             |
-| Accepted content is later absent or digest-mismatched             | Execution fails before model or tool work; Worker never re-fetches submitted source    |
-| Locked input adapter is missing, incompatible, or rejects mapping | Execution fails before model or tool work; Worker does not substitute another adapter  |
+| Condition                                                      | Outcome                                                                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Invalid schema, MIME syntax, source description, or delivery   | Request is rejected before Turn or steer acceptance                                                   |
+| Source binding or URL destination is unauthorized              | Request is rejected without exposing private existence                                                |
+| Runtime source is absent, unsafe, inaccessible, or oversize    | Execution fails before its model or Environment boundary                                              |
+| Detected bytes conflict with the submitted media-type hint     | Execution fails before the bytes are supplied to a model or Environment                               |
+| Direct model URL cannot be fetched or has incompatible content | The Model request fails through the selected provider's ordinary error mapping                        |
+| Environment staging or file writing fails                      | Execution fails before the model request; no Worker host path or partial Environment path is supplied |
+| Locked adapter is absent, incompatible, or rejects mapping     | Execution fails before model or tool work; Worker never substitutes another adapter                   |
 
 ## Compatibility
 
 `AgentInput.schema_version` versions the complete wire and accepted-value
-contract; public type names do not contain version suffixes. AgentPresetVersion input
-declarations pin one supported version, accepted values retain that version, and
-Workers never upgrade retained input during reconstruction. A new content block,
-source discriminator, delivery value, required field, canonicalization rule, or
-changed field meaning requires another schema version. Unknown versions and
-unknown discriminators fail closed. SDKs may expose convenience upload or import
-methods, but they serialize the same wire values and do not create another input
-protocol.
+contract; public type names have no version suffix. Accepted values retain their
+version, the pinned Runtime and adapter must support it, and Workers never
+upgrade stored input. A new block, discriminator, delivery, required field,
+canonicalization rule, or changed field meaning requires another version.
+Unknown versions and discriminators fail closed. SDK conveniences serialize the
+same protocol.
 
 ## Invariants
 
-1. `AgentInput` is the single ordinary semantic-input protocol for root invocation, continuation, fork, managed Trigger input, and asynchronous child input.
-2. Input-source acquisition and model delivery are independent; every accepted binary source is immutable and every accepted delivery is concrete.
-3. Accepted binary content retains verified bytes, digest, media type, order, and delivery without retaining inline data, submitted URLs, uploads, or mutable paths as runtime dependencies.
-4. `structured_content` is Agent-specific data validated by the exact AgentPresetVersion and never carries authority or becomes implicit model JSON.
-5. Retry accepts no new `AgentInput` and reuses the exact accepted value.
-6. Waiting-action feedback and client-tool results are correlated typed values, not ordinary `AgentInput`.
+1. `AgentInput` is the single ordinary semantic-input protocol for root invocation, continuation, fork, active steering, managed Trigger input, and asynchronous child input.
+2. Accepted binary input persists only a normalized caller URL or authorized Environment-path description; Foundation does not own or promise stable source bytes.
+3. `structured_content` is bounded JSON, follows the optional frozen protocol schema when non-null, carries no authority, and never becomes implicit model JSON.
+4. Harness mapping uses the pinned Version and Runtime lock and fails closed rather than substituting input representation.
+5. Only `environment_path` writes binary input into an Environment, always below the reserved default-workspace input root and only through the Environment file interface.
+6. Same-Turn Environment-file rematerialization is derived from existing model-request usage, while pending steer rematerialization is derived from existing inbox consumption evidence; neither adds a materialization field.

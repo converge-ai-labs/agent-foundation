@@ -376,6 +376,26 @@ Managed Skill materialization is Host preparation, not an Agent tool call. It is
 content-addressed, writes a completion manifest last, and may be repeated after
 reconnecting without exposing a partial catalog.
 
+[`environment_path` Agent input
+delivery](33-agent-input.md#binary-source-and-delivery) requires a writable
+default binding. The Worker reads the accepted URL or authorized source binding
+path into private local staging and transfers it through the active default
+attachment's authorized file-write interface to the deterministic logical path
+below `/workspace/.a13n/inputs/`. Only that Environment path enters Agent input;
+the Worker staging path is never exposed. Foundation assigns no temporary or
+persistent retention class to the materialized Environment file, does not manage
+the external Environment lifecycle because of it, and never treats the path as
+durable input authority.
+
+A replacement TurnAttempt reconnects to the configured Environment and derives
+whether to rewrite the path from the Turn's existing charged model-request
+usage. Zero prior model requests causes another bounded source read and
+deterministic replacement; a positive total assumes that input preparation
+already wrote the path and performs no file inspection or rewrite. Foundation
+stores no separate materialization status. A pending steer follows its existing
+inbox status and receipt instead: it can be reacquired and rewritten until
+consumption commits, while a consumed steer is not materialized again.
+
 ## E2B Connector
 
 The E2B connector accepts an existing Sandbox ID and an E2B API key resolved

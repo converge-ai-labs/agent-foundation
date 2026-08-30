@@ -569,13 +569,13 @@ arbitrary expressions are not supported. Connector-event templates can select
 
 Foundation compiles the template at Trigger creation or update and validates the
 possible expanded structure against the target Preset's current active Version
-[`structured_content` schema](33-agent-input.md#agent-input-declaration-and-harness-mapping).
-At occurrence acceptance it resolves the then-active AgentPresetVersion and
-Runtime lock, revalidates the bounded expanded value against that exact Version,
-and constructs an `AgentInput` with empty `content` and that value in
-`structured_content`. Provider event data is untrusted Agent input and cannot add
-a content block, binary source, delivery preference, tool, Connection, Secret,
-Principal, policy, or run grant.
+[`ProtocolConfig.input_data_schema`](12-agent-management.md#protocol-configuration)
+when present. At occurrence acceptance it resolves the then-active
+AgentPresetVersion and Runtime lock, revalidates the bounded expanded value
+against that frozen optional schema, and constructs an `AgentInput` with empty
+`content` and that value in `structured_content`. Provider event data is
+untrusted Agent input and cannot add a content block, binary source, delivery
+preference, tool, Connection, Secret, Principal, policy, or run grant.
 
 Each Provider-normalized event contains a stable external `event_id`, type,
 optional occurrence time, receipt time, and bounded data. Webhook admission bounds

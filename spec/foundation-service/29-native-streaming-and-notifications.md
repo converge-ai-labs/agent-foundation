@@ -42,6 +42,12 @@ Turn Stream entry and replay begins exclusively after it. A client does not
 place the cursor in an authorization header, query filter, or Foundation
 resource ID.
 
+The client owns this consumption checkpoint. It records the `id` only after its
+local processing completely applies the event and sends the recorded value as
+`Last-Event-ID` on reconnect. A client that needs recovery across process or
+device restarts persists the checkpoint outside the SSE connection; merely
+receiving an event does not advance it.
+
 Each data event uses canonical SSE framing:
 
 ```text
@@ -110,9 +116,61 @@ the retained floor returns `409 lifecycle_replay_gap` with the safe current
 floor and high watermark. Resource filters never mix detailed Turn token,
 reasoning, tool-argument, or message deltas into this collection.
 
+Pagination accepts only the opaque starting `cursor` and bounded `limit`; there
+is no end-cursor parameter. The client continues with `next_cursor` and stops at
+its desired checkpoint or the reported high watermark.
+
 Clients use this collection to reconcile background lifecycle and management
 changes after a notification disconnect. It does not replace resource reads or
 the detailed Turn SSE.
+
+## Resource Lifecycle Event Collections
+
+Webhook consumers recover a resource-local sequence gap through the owning
+resource collection:
+
+```http
+GET /api/v1/turns/{turn_id}/events?after_resource_seq=10&limit=50
+GET /api/v1/turn-attempts/{turn_attempt_id}/events?after_resource_seq=10&limit=50
+```
+
+The response is ordered by the positive contiguous `resource_seq` owned by the
+lifecycle-event contract:
+
+```python
+class ResourceLifecycleEventPage:
+    resource_type: Literal["turn", "turn_attempt"]
+    resource_id: str
+    items: tuple[LifecycleEventResource, ...]
+    next_resource_seq: int
+    retained_resource_seq_floor: int
+    high_watermark_resource_seq: int
+```
+
+`after_resource_seq` is the last resource event durably applied by the caller;
+`0` begins before the first event when that history remains retained. Each page
+contains every authorized retained lifecycle event after that value through its
+bounded page limit. The caller continues with `next_resource_seq` until it
+reaches its desired recovery target, or the reported
+`high_watermark_resource_seq` for general catch-up. Every
+`LifecycleEventResource` item includes the stable source event identity,
+resource identity, `resource_seq`, resource version, event type, and bounded
+payload. Hook-name filters do not remove events from this recovery collection:
+a consumer may ignore an event for its business projection only after advancing
+through its `resource_seq`.
+
+The request accepts `after_resource_seq` plus bounded `limit`; it does not
+accept an end sequence. For Webhook gap recovery, the received `resource_seq` is
+the caller's local target, and the caller stops paging after it has consumed
+through that sequence.
+
+If `after_resource_seq + 1 < retained_resource_seq_floor`, the requested next
+event is no longer retained. The API returns
+`409 lifecycle_resource_replay_gap` with the floor, high watermark, and an
+authorized current-resource link. The caller then reboots its projection from
+current resource state and records that historical event-complete recovery was
+not possible. A resource sequence, resource ID, or response link grants no
+authority; every page reauthorizes the resource.
 
 ## Notification WebSocket
 
@@ -165,12 +223,12 @@ safe code and leaves subscription state unchanged.
 
 The stable topic registry is:
 
-| Topic                    | Thread scope | Workspace scope | Meaning                                                    |
-| ------------------------ | -----------: | --------------: | ---------------------------------------------------------- |
-| `thread.updated`         |          Yes |             Yes | Thread version, current Turn, or head may have changed     |
-| `turn.updated`           |          Yes |             Yes | A correlated Turn lifecycle or summary may have changed    |
-| `pending_action.updated` |          Yes |             Yes | Authorized pending-action state may require reconciliation |
-| `session.updated`        |           No |             Yes | Session list or summary may have changed                   |
+| Topic                    | Thread scope | Workspace scope | Meaning                                                               |
+| ------------------------ | -----------: | --------------: | --------------------------------------------------------------------- |
+| `thread.updated`         |          Yes |             Yes | Thread version, current Turn, or head may have changed                |
+| `turn.updated`           |          Yes |             Yes | A correlated Turn lifecycle or summary may have changed               |
+| `pending_action.updated` |          Yes |             Yes | Authorized waiting-Turn pending projection may require reconciliation |
+| `session.updated`        |           No |             Yes | Session list or summary may have changed                              |
 
 Adding a topic is additive. Clients ignore an unknown notification topic only
 after negotiating a profile that permits additive topics; they never interpret
@@ -234,6 +292,7 @@ and does not create a WebSocket.
 | SSE cursor is outside retained history     | Read current resources and reattach from an available boundary | None             |
 | SSE delivery disconnects                   | Reconnect with last fully applied event ID                     | None             |
 | Workspace lifecycle cursor expires         | Reconcile current resources and restart at returned floor      | None             |
+| Resource lifecycle predecessor expires     | Rebootstrap current resource state at the returned boundary    | None             |
 | Notification connection drops or overflows | Reconnect, resubscribe, and reconcile                          | None             |
 | Subscription authorization is revoked      | Subscription is denied or removed; safe error/close follows    | None             |
 | Service drains                             | Reconnect to another ready replica                             | None             |
@@ -242,15 +301,19 @@ and does not create a WebSocket.
 
 SSE event schemas and Turn Stream cursor compatibility belong to the Turn Stream
 owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event
-owner. `foundation.notifications.v1` versions the WebSocket frame contract;
-breaking frame or subscription changes require another subprotocol.
+owner. Resource lifecycle API compatibility includes the resource-sequence
+domain, contiguity, and explicit retention-gap response.
+`foundation.notifications.v1` versions the WebSocket frame contract; breaking
+frame or subscription changes require another subprotocol.
 
 1. Detailed Turn observations use SSE only.
 2. Durable Workspace lifecycle replay uses a bounded JSON collection only.
-3. Native WebSocket notifications are best effort and have no cursor or replay.
-4. A notification contains wake-up metadata, never detailed interaction
+3. Resource lifecycle recovery is ordered by `resource_seq` and never infers a
+   missing event from the Workspace cursor.
+4. Native WebSocket notifications are best effort and have no cursor or replay.
+5. A notification contains wake-up metadata, never detailed interaction
    content or a domain command.
-5. A new WebSocket connection has no subscriptions.
-6. Every subscription is explicitly authorized, bounded, and removed on
+6. A new WebSocket connection has no subscriptions.
+7. Every subscription is explicitly authorized, bounded, and removed on
    disconnect.
-7. Disconnecting any Native transport never cancels or seals a Turn.
+8. Disconnecting any Native transport never cancels or seals a Turn.

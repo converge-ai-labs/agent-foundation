@@ -8,7 +8,8 @@ Foundation owns managed Secrets, ModelConfigs, resource authorization,
 serializable AgentPreset authoring resources, immutable AgentPresetVersions,
 Workspace Skill resources and immutable package revisions, trusted Harness
 plugin artifacts and Runtime locks, durable Threads, Turns, and TurnAttempts,
-scheduling, pending actions, Environment connection configuration in Turn state,
+scheduling, the durable Thread inbox, waiting pending summaries and exact
+Turn-state requests, Environment connection configuration in Turn state,
 lifecycle events, raw usage records, and the public management API.
 The control surface also owns the Foundation Service Protocol Gateway, which
 maps Native, Hosted AG-UI, and A2A callers into the same application authority.
@@ -47,15 +48,15 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [10 Identity and Access Management](10-identity-and-access-management.md)                             | Organization and Workspace tenancy, User and Service Account identity, credentials, RoleBindings, authorization, and audit                  |
 | [11 Secret Management](11-secret-management.md)                                                       | Managed Secret identity, ownership, metadata-only API, encrypted persistence, mutation, deletion, and disclosure controls                   |
 | [12 Agent Management](12-agent-management.md)                                                         | AgentPreset identity, immutable Versions, lifecycle, invocation, Plugin management, and reconstruction                                      |
-| [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                         | Interaction-to-runtime mapping, Agent tool dispatch evidence, Harness Run binding, cancellation, and unknown outcomes                       |
+| [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                         | Interaction-to-runtime mapping, Agent tool dispatch evidence, Harness Run binding, active control, and unknown outcomes                     |
 | [14 Durable Turn State](14-turn-persistence.md)                                                       | Turn identity, lifecycle, lineage, deterministic state object, conditional checkpoints, sealing, recovery budget, and retention             |
 | [15 Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                                 | TurnAttempt allocation, relational shape, leases, fences, dispatch evidence, transactional takeover, recovery, and Attempt outcomes         |
 | [16 Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md)                         | Worker scans, claims, expired-lease takeover, post-claim checks, stale-worker rejection, retry, and shutdown                                |
-| [17 Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                         | Lifecycle-event persistence, stable Turn Redis Stream, bounded live replay, Items, and immutable replay snapshots                           |
+| [17 Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                         | Lifecycle-event persistence, stable Turn presentation Stream, control-Stream separation, bounded live replay, Items, and replay snapshots   |
 | [18 Async Subagents](18-async-subagents.md)                                                           | Independent child Threads and Turns, durable relationships, result delivery, and cancellation policy                                        |
 | [19 Environment Configuration and Runtime Bindings](19-environment-management.md)                     | Connection revisions, state-owned Turn configuration, connector selection, active-run keep-alive, and envd boundary                         |
 | [20 Events, Usage, and Delivery](20-events-usage-and-delivery.md)                                     | Harness observation, AG-UI and Item projection, lifecycle events, delivery, raw usage, large content, and telemetry                         |
-| [20a Hook Notifications](20a-hook-notifications.md)                                                   | Hook registry, durable subscriptions, webhook and sink delivery, channel eligibility, and blocking semantics                                |
+| [20a Hook Notifications](20a-hook-notifications.md)                                                   | Hook registry, durable subscriptions, Webhook delivery, channel eligibility, and blocking semantics                                         |
 | [21 Management API](21-management-api.md)                                                             | Public resource catalog, common command boundaries, read models, replay, and compatibility                                                  |
 | [22 Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                                   | Agent-facing authorized retrieval of retained Turn lineage and interaction projections                                                      |
 | [23 Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)                 | Trusted Provider discovery, Connector revisions, account Connections, managed tools, and Trigger occurrence acceptance                      |
@@ -68,9 +69,9 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [30 Hosted AG-UI](30-hosted-ag-ui.md)                                                                 | AG-UI input authority, external bindings, Turn mapping, event visibility, SSE replay, and cancellation                                      |
 | [31 A2A](31-a2a.md)                                                                                   | A2A 1.0 HTTP+JSON discovery, Context/Task projection, streaming, Artifacts, push notifications, and security                                |
 | [32 Service SDKs and Clients](32-service-sdks-and-clients.md)                                         | Python, Go, Rust, and TypeScript SDK parity plus Foundation Web and remote CLI boundaries                                                   |
-| [33 Agent Input](33-agent-input.md)                                                                   | Versioned Agent input, binary acquisition and delivery, accepted canonicalization, declaration, and Harness mapping                         |
-| [34 Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                | Root and existing-Thread invocation, waiting feedback, fork, and retry                                                                      |
-| [35 Agent Control: Active Execution](35-agent-control-active-execution.md)                            | Durable cancellation command, cooperative enforcement, fencing, terminal outcome, and retry boundary                                        |
+| [33 Agent Input](33-agent-input.md)                                                                   | Versioned Agent input, binary acquisition and delivery, accepted canonicalization, adapter configuration, and Harness mapping               |
+| [34 Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                | Start, existing-Thread continuation, atomic waiting feedback, fork, and retry                                                               |
+| [35 Agent Control: Active Execution](35-agent-control-active-execution.md)                            | Thread inbox, durable steer and interrupt commands, state-coupled consumption, Redis control wakeups, and outcome races                     |
 
 Read `00`, `01`, and `02` before changing process startup, roles, or distribution
 contents. Read `03`, `04`, and `06` before introducing a durable capability.
@@ -78,11 +79,11 @@ Read `05`, `10`, and `21` before changing public ingress. Read `24` before `13`
 through `17` when changing Thread or Turn persistence, recovery, or reads. Read
 `12`, `14`, `19`, and `25` before `33` when changing Agent input. Read
 `14` and `15` before `34` or `35` when changing Agent invocation,
-continuation, waiting feedback, fork, retry, cancellation, or durable control
-state.
+continuation, atomic waiting feedback, fork, retry, steer, interrupt, or durable
+control state.
 Read `18` before changing async subagents.
 Read `06`, `17`, `20`, and `20a` before changing Hook names,
-subscriptions, replay, webhook or sink delivery, or live notification
+subscriptions, replay, Webhook delivery, or live notification
 semantics.
 Read `23` before changing Connector Providers, Connections, managed Connector
 tools, or Trigger ingress. Read `25` before changing ModelConfigs, Model

@@ -14,8 +14,9 @@ dispatch queue.
 Adding Worker processes or replicas adds competing consumers of the same
 relational contract. Row locking or equivalent compare-and-swap plus monotonic
 Attempt numbers and fences allows only one Worker to create the next generation.
-Redis remains available for domain-owned live data flow such as the Turn stream,
-but no Redis value discovers, creates, transfers, or completes a TurnAttempt.
+Redis remains available for domain-owned live data flow such as the Turn stream
+and Thread control wakeups, but no Redis value discovers, creates, transfers, or
+completes a TurnAttempt or consumes a Thread inbox entry.
 
 Workers are container-role loops, not durable product owners. Under the [Plugin
 Runtime contract](26-harness-plugin-artifacts-and-runtime-loading.md), the
@@ -129,7 +130,7 @@ Fencing applies to:
 - Attempt preparation, state, heartbeat, and outcome;
 - Turn state-object conditional replacement and sealing;
 - lifecycle events and retained Item publication;
-- pending-action acceptance;
+- waiting-state sealing and feedback incorporation;
 - child acceptance and result incorporation; and
 - terminal Turn outcomes and their atomic Thread current/head update.
 
@@ -237,6 +238,28 @@ replacement creates a fresh Attempt, Harness Run, connector scope, attachment,
 clients, credentials, and bindings. It never restores another process's task,
 session, socket, attachment, Sandbox, or stream subscriber.
 
+## Thread Inbox and Control Reconciliation
+
+The execution loop owns one process-local control dispatcher for every active
+TurnAttempt. It registers the current `(turn_attempt_id, fence)` with the live
+`HarnessRunStream` and joins the owning Thread's Redis control Stream consumer
+group under its Worker identity and generation. Claim, takeover, Redis wakeup,
+and every mandatory execution boundary invoke the complete
+[steer-consumption and reconciliation
+contract](35-agent-control-active-execution.md#steer-consumption-and-state-commitment);
+this scheduling contract does not define another inbox ordering, delivery, or
+completion flow.
+
+A claim or takeover reconciles PostgreSQL before relying on the Redis group and
+can then reclaim deliveries from a prior Worker generation. Every signal means
+only that the dispatcher must re-read the Thread's durable state. Missing,
+trimmed, expired, duplicated, stale, or already acknowledged signals never
+change the decision made from PostgreSQL.
+
+Worker shutdown unregisters process-local run controls and stops group
+consumption. Redis acknowledgement, consumer replacement, and dispatcher
+cleanup do not advance an inbox or Turn domain status.
+
 ## Retry Semantics
 
 Retries remain owned by the layer that knows the failed boundary:
@@ -245,6 +268,9 @@ Retries remain owned by the layer that knows the failed boundary:
   connector;
 - Harness semantic recovery creates another ModelAttempt inside one Harness
   Run;
+- a pending steer that can no longer enter the current native Run follows the
+  [active-control recovery
+  rule](35-agent-control-active-execution.md#steer-consumption-and-state-commitment);
 - Foundation creates another TurnAttempt only after the prior Attempt has
   failed or its lease has expired, and only under the same Turn budget;
 - retrying sealed terminal intent creates a successor Turn rather than reopening
@@ -287,7 +313,7 @@ through leases, fencing, and transactional claims.
 | Preparation finds a retryable dependency outage                  | The claimed Attempt fails; the Turn remains `running` with bounded `available_at` while budget remains.             |
 | Preparation finds permanent incompatibility or revoked authority | The claimed Attempt and Turn fail; no Harness model or tool work starts.                                            |
 | Managed Skill materialization stops                              | No partial catalog reaches Harness; the Attempt follows ordinary retry and budget rules.                            |
-| Redis live data flow is unavailable                              | Relational ownership remains intact; no Redis delivery can replace or repair a claim.                               |
+| Redis live data flow is unavailable                              | Relational ownership and Thread inbox remain intact; safe-point reconciliation replaces no claim or domain fact.    |
 
 ## Invariants
 
@@ -295,7 +321,8 @@ through leases, fencing, and transactional claims.
     claim/takeover contract through its configured Runtime profile; Foundation
     has no separate Turn Scheduler or recovery controller.
 02. PostgreSQL owns Turn eligibility and TurnAttempt state; Redis never creates,
-    completes, or transfers a TurnAttempt.
+    completes, or transfers a TurnAttempt and never consumes a Thread inbox
+    entry.
 03. At most one selected Attempt exists for a Turn, and only its unexpired
     matching lease authorizes Worker mutation.
 04. Expired-lease takeover atomically fails the old Attempt and creates at most
@@ -321,3 +348,5 @@ through leases, fencing, and transactional claims.
 14. An on-demand Worker claims only after exact additive compatibility preflight,
     and a Runner claims only an equal lock digest; no preparation or recovery
     path substitutes another Runtime.
+15. Every Attempt owner follows the active-control reconciliation contract;
+    Redis consumer-group progress is only a wakeup optimization.

@@ -3,136 +3,179 @@
 ## Design Position
 
 Foundation accepts every new semantic unit of Agent work as a durable Turn
-belonging to exactly one Session and Thread. Root invocation, ordinary
-continuation, authenticated waiting feedback, fork, and retry of terminal
-intent are distinct acceptance forms over that same boundary. None reopens or
-mutates a sealed Turn.
+belonging to exactly one Session and Thread. Start, continue, waiting feedback,
+fork, and retry are distinct acceptance forms over that same boundary. Every
+successful form creates a new Turn; none reopens or mutates a sealed Turn.
 
 This contract owns those acceptance forms, their public command surfaces, and
-deferred-interaction feedback. [Agent Input](33-agent-input.md) owns the
-ordinary semantic input carried by those commands. [Durable Thread
-Persistence](24-thread-persistence.md) owns Thread identity, version,
-current-Turn selection, and continuation-head selection; [Durable Turn
-State](14-turn-persistence.md) owns the resulting Turn row, state object, parent
-edge, and sealing; [Durable Turn Attempt
-Persistence](15-turn-attempt-persistence.md) owns later worker generations.
-Worker takeover and automatic checkpoint recovery do not accept another
-semantic unit of work and remain outside this contract.
+deferred-interaction feedback. Adjacent input, Thread, Turn, TurnAttempt, and
+recovery concerns remain with the owners below. Worker takeover and automatic
+checkpoint recovery do not accept another semantic unit of work and remain
+outside this contract.
 
 ## Boundaries
 
-| Concern                                                     | Owner                                                                                                                                             | Relationship                                                                     |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Session, Thread, Turn, and Item meaning                     | [Platform Interaction Model](../interaction-model.md)                                                                                             | Supplies the shared interaction identities                                       |
-| Ordinary semantic Agent input                               | [Agent Input](33-agent-input.md)                                                                                                                  | Supplies the versioned `AgentInput` accepted by input-bearing commands           |
-| Invocation, continuation, fork, retry, and waiting feedback | This contract                                                                                                                                     | Accepts one new Turn or rejects the operation without advancing the Thread       |
-| Thread version, current Turn, and selected head             | [Durable Thread Persistence](24-thread-persistence.md)                                                                                            | Supplies the exact advancement precondition and commits selected Turn references |
-| Turn state, lineage, input persistence, and outcome         | [Durable Turn State](14-turn-persistence.md)                                                                                                      | Persists the complete accepted input and its deterministic state key             |
-| Worker claim and recovery inside one Turn                   | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) and [Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md) | Creates replacement TurnAttempts without accepting another Turn                  |
-| Public API conventions and mutation evidence                | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                        | Own shared version, idempotency, retry, and unknown-commit behavior              |
+| Concern                                              | Owner                                                                                                                                             | Relationship                                                                     |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Session, Thread, Turn, and Item meaning              | [Platform Interaction Model](../interaction-model.md)                                                                                             | Supplies the shared interaction identities                                       |
+| Ordinary semantic Agent input                        | [Agent Input](33-agent-input.md)                                                                                                                  | Supplies the versioned `AgentInput` accepted by input-bearing commands           |
+| Start, continue, fork, retry, and waiting feedback   | This contract                                                                                                                                     | Accepts one new Turn or rejects the operation without advancing the Thread       |
+| Thread version, current Turn, and selected head      | [Durable Thread Persistence](24-thread-persistence.md)                                                                                            | Supplies the exact advancement precondition and commits selected Turn references |
+| Turn state, lineage, accepted intent, and outcome    | [Durable Turn State](14-turn-persistence.md)                                                                                                      | Persists the complete accepted input and its deterministic state key             |
+| Worker claim and recovery inside one Turn            | [Durable Turn Attempt Persistence](15-turn-attempt-persistence.md) and [Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md) | Creates replacement TurnAttempts without accepting another Turn                  |
+| Asynchronous child acceptance and retained delivery  | [Async Subagents](18-async-subagents.md)                                                                                                          | Supplies Host-owned child-result facts without redefining native deferred calls  |
+| Common Thread inbox persistence                      | [Agent Control: Active Execution](35-agent-control-active-execution.md#thread-inbox)                                                              | Stores available async-subagent results and their later consumption evidence     |
+| Public API conventions and durable mutation evidence | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md)                        | Own shared version, idempotency, retry, and unknown-commit behavior              |
 
 ## Acceptance and Lineage
 
+The accepted operation determines the new Turn identity, state source, input
+protocol, and explicit retry correlation:
+
+| Operation | Public command                                  | Thread effect                                                | State and lineage                                                                                         | Accepted Turn input                                    |
+| --------- | ----------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Start     | `POST /api/v1/workspaces/{workspace_id}/turns`  | Creates a root Thread with its first Turn                    | `lineage_kind="root"`, `parent_turn_id=null`                                                              | New `AgentInput`                                       |
+| Continue  | `POST /api/v1/threads/{thread_id}/turns`        | Advances the existing Thread                                 | `lineage_kind="continue"`, parent is the exact completed head                                             | New `AgentInput`                                       |
+| Feedback  | `POST /api/v1/turns/{waiting_turn_id}/feedback` | Advances the existing Thread                                 | `lineage_kind="continue"`, parent is the exact waiting Turn                                               | Complete normalized `WaitingTurnFeedback`              |
+| Fork      | `POST /api/v1/turns/{turn_id}/fork`             | Creates an independent in-Session Thread with its first Turn | `lineage_kind="fork"`, parent is the exact completed source Turn                                          | New `AgentInput`                                       |
+| Retry     | `POST /api/v1/turns/{turn_id}/retry`            | Advances the existing Thread                                 | Copies the failed or cancelled source Turn's lineage and state-source edge and records `retry_of_turn_id` | Copies the source Turn's accepted input kind and value |
+
+Start, continue, feedback, and fork have `retry_of_turn_id=null`. Retry never
+uses the failed or cancelled source as `parent_turn_id`: that field continues to
+name only the exact sealed state source. A retry of a failed root therefore has
+no parent; a retry of a failed continue, feedback, or fork copies the source
+Turn's exact `parent_turn_id` and `lineage_kind`.
+
 Turn acceptance authenticates and authorizes the caller or internal principal,
-validates the selected Session and Thread, resolves the stable AgentPreset's
-active AgentPresetVersion and its profile-selected internal Runtime lock or
-preserves an exact source-owned selection where required, resolves other exact
-revisions and policy, freezes the current enabled ModelConfig as a non-secret
-execution snapshot under [Model Management](25-model-management.md), applies the
-scoped idempotency contract, publishes the initial Turn state, and atomically
-creates or advances the versioned Thread together with the accepted Turn and its
-lifecycle publication intent. The Turn becomes schedulable only after the
-complete initial state object is durably available.
+validates the selected Session and Thread, resolves or preserves the exact
+AgentPresetVersion and profile-compatible Runtime lock required by the
+operation, resolves other exact revisions and current authority, freezes the
+new Turn's non-secret model execution snapshot under [Model
+Management](25-model-management.md), applies scoped idempotency, publishes the
+complete initial Turn state, and atomically creates or advances the Thread
+together with the accepted Turn and its lifecycle publication intent. The Turn
+becomes schedulable only after the complete initial state object is durably
+available.
 
-The accepted operation chooses exactly one lineage form:
+Every successful command returns `202` with the same conceptual receipt:
 
-- a root invocation creates a root Turn for a selected or newly created Session and Thread;
-- ordinary continuation accepts a new Turn that preserves `thread_id`, selects the Thread's exact completed `head_turn_id` as `parent_turn_id`, and initializes state from that parent;
-- authenticated feedback accepts a new Turn that sets `parent_turn_id` to the exact sealed waiting Turn and consumes its complete pending set;
-- fork atomically accepts a new Turn and independent Thread row, sets `parent_turn_id` to the selected completed source Turn, and applies the Harness fork contract; and
-- retry of terminal intent requires the failed or cancelled Turn to remain the Thread's current Turn, creates an explicit successor Turn, advances the same Thread under its version, and never mutates the terminal record.
+```python
+class TurnAcceptanceReceipt:
+    schema_version: Literal["1"]
+    session_id: SessionId
+    thread_id: ThreadId
+    thread_version: int
+    turn_id: TurnId
+    turn_version: int
+    status: Literal["accepted"]
+    hook_subscription_id: HookSubscriptionId | None
+```
 
-The same principal, scope, idempotency key, and canonical request return the
-original acceptance receipt. Reuse with different content conflicts. A lost
-response after possible acceptance remains unknown until the caller repeats the
-same key or reads authoritative Turn state.
+The response does not wait for Worker claim or Harness completion. The same
+principal, operation kind, resource scope, idempotency key, and canonical
+semantic request return the original receipt. Reuse with different content
+conflicts. A lost response after possible acceptance remains unknown until the
+caller repeats the same key or reads authoritative Turn state.
 
-## Invocation Options
+### Common Acceptance Flow
 
-Root and ordinary continuation requests carry an
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant Control
+    participant Objects as Object storage
+    participant DB as Relational database
+    participant Worker
+
+    Caller->>Control: start, continue, fork, retry, or feedback
+    Control->>DB: authenticate, authorize, read evidence and candidate state
+    DB-->>Control: detached versions, selectors, and source references
+    Control->>Objects: acquire or verify input, read parent, publish new state
+    Control->>DB: commit optional HookSubscription + Turn + facts + evidence + Outbox
+    DB-->>Control: committed acceptance receipt
+    Control-->>Caller: 202 TurnAcceptanceReceipt
+    Worker->>DB: later scan and claim
+```
+
+No relational transaction spans input acquisition, object storage, Harness
+state transformation, or Worker execution. The final short transaction repeats
+every authority, version, current/head, source, digest, and idempotency
+precondition needed by the operation. Objects published before a losing or
+rolled-back transaction are non-authoritative cleanup candidates.
+
+Every new-Turn command can carry the optional inline `hook_subscription` owned
+by [Hook Notifications](20a-hook-notifications.md#durable-hook-subscriptions).
+It participates in the canonical command request, commits atomically with the
+accepted Turn, and returns its ID in the receipt, but it is neither Agent input
+nor an invocation option and cannot affect execution. Hook shape,
+authorization, scope, delivery, and idempotency semantics remain with that
+owner.
+
+## Input-Bearing Operations
+
+Start and continue requests carry an
 [`AgentInput`](33-agent-input.md#agent-input-protocol), a selected stable
 AgentPreset when permitted, an optional active-Version precondition, optional
-`selected_skill_names`, an optional
-policy-permitted Environment topology selection, and optional policy-supported
-metadata. Root submission additionally carries declared trigger metadata. The
-fields other than `AgentInput` are command options and never enter its content or
-`structured_content`.
+`selected_skill_names`, an optional policy-permitted tuple of
+[`EnvironmentSelectionEntry`](19-environment-management.md#environment-selection-and-turn-state),
+and, for start, an optional Session selector. Fork accepts the same ordinary
+input and policy-permitted selections against its source. Managed trigger
+provenance is supplied only by its trusted ingress, not as caller-declared
+metadata on the public start command. Fields other than `AgentInput` are
+command options and never enter its `content` or `structured_content`.
 
-The accepted Environment topology forms, reference resolution, and exact
-`state.json` representation are owned by [Environment
-Configuration](19-environment-management.md#environment-selection-and-turn-state).
-
-`selected_skill_names` follows the
-[Foundation Skill selection contract](27-skill-management.md#agentpresetversion-selection).
-It is an optional JSON array of at most 512 distinct Skill names; JSON `null` is
-invalid. An absent field uses the selected AgentPresetVersion default, an empty
-array selects no Skills, and a non-empty array selects those exact names within
-the Version's locked available catalog. Acceptance stores the resolved names in
-catalog order in `state.json`. That normalized effective array, rather than
-whether the caller omitted the field or supplied the same names explicitly,
+`selected_skill_names` follows the [Foundation Skill selection
+contract](27-skill-management.md#agentpresetversion-selection). Acceptance
+stores its normalized effective selection in `state.json`; that effective value
 participates in the canonical request digest.
 
-Only root, ordinary continuation, fork, and equivalent Host-owned initial Turn
-submission can supply `selected_skill_names`. Waiting-action response commands
-and explicit retry accept no Skill override; they preserve the source Turn's
-effective Skill selection.
+Only start, continue, fork, and equivalent Host-owned initial Turn submission
+can supply ordinary invocation options. Feedback and retry accept no
+AgentPreset, Version, Skill, Environment, or input override; they preserve the
+exact selections and accepted intent required by their source Turn.
 
-## Root and Ordinary Continuation
+### Start and Continue
 
-Root submission accepts an Agent invocation that does not continue an existing
-Thread:
+Start accepts Agent work that does not continue an existing Thread:
 
 ```http
 POST /api/v1/workspaces/{workspace_id}/turns
 Idempotency-Key: opaque-caller-key
 ```
 
-The request names one stable `agent_preset_id` and can carry
-`agent_preset_version_id` only as an active-Version precondition. Acceptance
-resolves the Preset's current active Version and internal Runtime lock, validates
-the supplied `AgentInput` and every other selection against that exact Version,
-then selects or creates one Session and its root Thread under current policy.
-It initializes that Thread's root state and atomically commits the version `1`
-Thread row, one root Turn pinned to the exact Preset Version and Runtime lock,
-lifecycle events, idempotency evidence, and outbox intents. Foundation exposes
-no standalone empty-Thread create operation.
+The request names one stable `agent_preset_id`, can carry
+`agent_preset_version_id` only as an active-Version precondition, and supplies
+one `AgentInput`. Acceptance resolves the Preset's current active Version and
+Runtime lock, validates the complete request against that exact Version, then
+selects or creates one Session and creates its root Thread. It initializes
+`HarnessState.new()` and atomically commits the version `1` Thread row, its first
+root Turn, lifecycle facts, idempotency evidence, and Outbox records. Foundation
+exposes no standalone empty-Thread create operation.
 
-Ordinary continuation advances an existing Thread:
+Continue advances an existing Thread:
 
 ```http
 POST /api/v1/threads/{thread_id}/turns
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries `expected_thread_version`, an `AgentInput`, an optional
-stable `agent_preset_id`, and an optional active-Version precondition. Foundation
-reads the independent Thread row, requires the current Turn not to be `accepted`
-or `running`, selects its exact completed `head_turn_id` as the parent, and never
-infers a parent from Turn timestamps. The selected Preset defaults to the
-parent's stable Preset. Acceptance resolves its current active Version and
-Runtime lock, rejects incompatible parent-state or input migration, atomically
-sets `current_turn_id` to the new accepted Turn, preserves the head, increments
-Thread version, and creates the Turn, first user Item, lifecycle events,
-idempotency evidence, and outbox intents.
+The request carries `expected_thread_version`, one `AgentInput`, an optional
+stable `agent_preset_id`, and an optional active-Version precondition.
+Foundation locks the Thread, requires no current `accepted` or `running` Turn,
+requires `head_turn_id` to name an exact completed Turn, and never infers a
+parent from timestamps. A waiting head is eligible only for feedback. The
+selected Preset defaults to the parent's stable Preset. Acceptance resolves its
+current active Version and Runtime lock, rejects incompatible parent-state or
+input migration, initializes a new Turn-owned state from the completed parent,
+sets `current_turn_id` to the new Turn, preserves the head until the successor
+seals, increments Thread version, and commits the Turn and its related durable
+facts.
 
-Both routes return `202` with an acceptance receipt containing the exact
-Session, Thread, and Turn references plus the resource versions committed by
-acceptance. The response does not wait for a Worker or Harness result.
-Schedules, webhooks, service requests, and Host-managed asynchronous children
-use the same Turn acceptance application contract even when their owning ingress
-is not one of these public routes.
+Schedules, Webhooks, service requests, managed Triggers, and Host-managed
+asynchronous children use the same Turn-acceptance application boundary even
+when their owning ingress is not one of these public routes.
 
-## Fork
+### Fork
 
 Foundation exposes an explicit in-Session Thread fork from one selected
 completed Turn:
@@ -142,18 +185,19 @@ POST /api/v1/turns/{turn_id}/fork
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries an `AgentInput`, an optional policy-permitted compatible
-stable AgentPreset selection, optional `selected_skill_names`, and fork metadata.
-Foundation authorizes the source Turn and Session, verifies the source's frozen
-state, applies `HarnessState.fork()`, and atomically creates a child-role Thread
-with `origin_kind="fork"` plus its first accepted Turn. The first Turn's
-`parent_turn_id` names the source Turn. Acceptance resolves the selected Preset's
-current active Version and Runtime lock; omitting the selection reuses the source
-Turn's exact Preset Version and Runtime lock. The response is the same Session,
-Thread, and Turn acceptance receipt used by root and continuation submission.
+Any retained and readable completed Turn is eligible, including a historical
+Turn that is neither the source Thread's `current_turn_id` nor `head_turn_id`.
 
-Fork idempotency is scoped to the source Turn, principal, and canonical request.
-Repeating the same key returns the original Thread and Turn. A Session fork that
+The request carries an `AgentInput` and the compatible policy-permitted
+selections defined above. Foundation authorizes the source Turn and Session,
+verifies the source's exact frozen state, applies `HarnessState.fork()`, and
+atomically creates a `role="child"`, `origin_kind="fork"` Thread plus its first
+accepted Turn. The new Turn's `parent_turn_id` names the source Turn even though
+the Turn belongs to the new Thread. Omitting the Preset selection reuses the
+source Turn's exact Preset Version and Runtime lock; an explicit compatible
+selection resolves its current active Version under the fork policy.
+
+The source Turn is part of fork's common idempotency scope. A Session fork that
 creates a new Session and root Thread remains a distinct Session-domain
 operation and is never implied by this route.
 
@@ -164,68 +208,192 @@ POST /api/v1/turns/{turn_id}/retry
 Idempotency-Key: opaque-caller-key
 ```
 
-The target must be the Thread's current failed or cancelled Turn. The command
-carries the expected Thread version and no new `AgentInput`, preserves the source
-Turn's exact AgentPresetVersion, Runtime lock, effective Skill selection, and
-accepted input or feedback intent,
-advances the same Thread with an explicit successor Turn, and never reopens the
-terminal record. It never reacquires a submitted binary source. If the Thread
-has a selected sealed head, retry initializes from that state; if its initial
-Turn failed before any head existed, retry initializes another root Turn from
-the same accepted root intent and no parent state.
+The target must be the Thread's current failed or cancelled Turn. The request
+carries `expected_thread_version` and accepts no new `AgentInput` or invocation
+option. Acceptance copies the source Turn's `input_kind`, exact normalized
+accepted input or feedback value, `parent_turn_id`, `lineage_kind`,
+AgentPresetVersion, Runtime lock, effective Skill selection, and Environment
+execution configuration. The copied accepted input retains each binary URL or
+Environment-path source description; Retry acceptance reauthorizes that
+description but does not read or copy its file body. Acceptance records the
+source in `retry_of_turn_id`, reauthorizes every retained selector, creates a new
+Turn-owned state from the same eligible state source, and obtains fresh
+credentials, bindings, recovery authority, and model execution snapshot for the
+new Turn. Execution treats Retry as a new Turn with zero prior model requests
+and reacquires any binary bytes required by its frozen delivery.
+
+Retry never re-runs a client-side effect, changes an accepted feedback decision,
+or makes the failed source an eligible state parent. If the failed source was a
+root, the retry initializes another root state. Otherwise it repeats the source
+operation's state transformation from the same frozen parent. Once another Turn
+advances the Thread, the old terminal Turn is no longer retryable.
 
 ## Deferred Interaction
 
 Approval, client-tool execution, structured user input, and awaited child
 results are frozen pending facts inside one sealed waiting Turn and its complete
 state object. They are not independent mutable resources or relational rows.
+Provider-owned continuation can also seal a Turn as waiting, but it is resumed
+only when its owning internal integration supplies a complete provider result
+through the same new-Turn feedback acceptance boundary. It is not accepted by
+the public feedback command. A pending set containing `provider_continuation`
+is therefore ineligible for this route rather than being partially finalized
+around it.
 
-Pending kinds remain distinct:
+Feedback-eligible pending kinds remain distinct:
 
 - `approval` asks an authorized human or service to permit a proposed action;
-- `client_tool` asks an external client to perform a named effect and return its native result;
+- `client_tool` asks an external client to perform a named effect and return its declared result;
 - `user_input` requests structured information without authorizing another effect; and
 - `child_result` waits for the exact immutable outcome of one accepted asynchronous child Turn.
 
-The exact requests live in `TurnStateEnvelope.host.deferred`; the Turn row stores
-only the matching bounded `TurnPendingSummary` owned by
-[Durable Turn State](14-turn-persistence.md#turn-state-object). Feedback supplies
-resolutions against that immutable request set:
+The exact native deferred requests and Host-owned child wait requests live in
+`TurnStateEnvelope.host.deferred`; the Turn row stores only the matching bounded
+`TurnPendingSummary` owned by [Durable Turn
+State](14-turn-persistence.md#turn-state-object). The public route exposes those
+facts as read projections beneath the waiting Turn and accepts one atomic
+feedback command:
+
+```http
+POST /api/v1/turns/{waiting_turn_id}/feedback
+Idempotency-Key: opaque-caller-key
+```
+
+The submitted resolution union is a serialized wire schema:
 
 ```python
-class PendingResolution:
+class ApprovePendingResolution:
     call_id: str
-    kind: PendingCallKind
+    action: Literal["approve"]
+
+
+class RejectPendingResolution:
+    call_id: str
+    action: Literal["reject"]
+
+
+class CompletePendingResolution:
+    call_id: str
+    action: Literal["complete"]
     result: JsonValue
+
+
+class RespondPendingResolution:
+    call_id: str
+    action: Literal["respond"]
+    response: JsonValue
+
+
+type SubmittedPendingResolution = (
+    ApprovePendingResolution
+    | RejectPendingResolution
+    | CompletePendingResolution
+    | RespondPendingResolution
+)
+
+
+class WaitingTurnFeedbackRequest:
+    expected_thread_version: int
+    sealed_state_digest_sha256: str
+    resolutions: tuple[SubmittedPendingResolution, ...] = ()
+    hook_subscription: InlineHookSubscriptionInput | None = None
+```
+
+The frozen pending kind determines which action and result schema are legal:
+`approve` and `reject` apply only to approval, `complete` applies to an exact
+client-tool or authorized child-result request, and `respond` applies only to
+structured user input. `result` and `response` use the versioned JSON encoding
+declared by the exact pending request and its locked adapter. The request cannot
+repeat a call ID, name an unknown call, supply a mismatched action, or override
+the pending kind.
+
+Submitting this route finalizes the entire feedback-eligible pending set. The
+caller can supply any subset explicitly; Foundation expands every omitted call
+in frozen request order before acceptance:
+
+| Pending kind   | Explicit action       | Omitted outcome |
+| -------------- | --------------------- | --------------- |
+| `approval`     | `approve` or `reject` | `reject`        |
+| `client_tool`  | `complete`            | `no_response`   |
+| `user_input`   | `respond`             | `no_response`   |
+| `child_result` | authorized `complete` | `no_response`   |
+
+An empty `resolutions` tuple therefore rejects every approval and records no
+response for every other feedback-eligible call. This is fail-closed
+finalization, not a partial update. The principal or internal caller must be
+authorized to finalize every pending call because omission also changes the
+continuation result.
+
+The accepted Turn stores the complete normalized value, not only the submitted
+subset:
+
+```python
+type PendingResolutionOutcome = Literal[
+    "approve",
+    "reject",
+    "complete",
+    "respond",
+    "no_response",
+]
+
+
+class AcceptedPendingResolution:
+    call_id: str
+    kind: Literal[
+        "approval",
+        "client_tool",
+        "user_input",
+        "child_result",
+        "provider_continuation",
+    ]
+    outcome: PendingResolutionOutcome
+    result: JsonValue | None
 
 
 class WaitingTurnFeedback:
     schema_version: Literal["1"]
     waiting_turn_id: TurnId
     sealed_state_digest_sha256: str
-    resolutions: tuple[PendingResolution, ...]
+    resolutions: tuple[AcceptedPendingResolution, ...]
 ```
 
-The native deferred envelope preserves the complete request and suspended
-message/tool-surface identity. It carries no credential or ambient authority.
-Foundation separately authorizes who may inspect, approve, reject, execute,
-answer, or incorporate each call.
+Every accepted `WaitingTurnFeedback` covers its complete owning pending set
+exactly once and preserves frozen request order. For the public route that set
+contains only feedback-eligible kinds; an internal provider continuation
+supplies every exact provider-owned result without omission defaults.
+Foundation expands public defaults and validates the complete typed value
+before computing the canonical semantic request digest. Explicitly rejecting
+an approval is therefore equivalent to omitting it; non-approval `no_response`
+arises only through omission. The accepted feedback is the immutable input of
+the new Turn; the waiting parent and its pending summary never change.
 
-Feedback names the exact waiting Turn and sealed-state digest, covers every
-pending call exactly once under `resolution_policy="all"`, and uses the native
-result type required by that call kind. Approval denial is a native approval
-result, not a mutation of the parent pending summary. Expiration and cancellation
-create no successful resolution and no new Turn. Scoped idempotency maps repeated
-equivalent feedback to the same accepted new Turn; different content conflicts.
+### Harness and Child-Result Mapping
 
-The public response commands are:
+The Worker maps the accepted batch by owning boundary:
 
-| Command                      | Route                                                | Required mutation contract                                                  |
-| ---------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------- |
-| Approve pending action       | `POST /pending-actions/{pending_action_id}/approve`  | Expected pending and Thread versions plus idempotency key                   |
-| Reject pending action        | `POST /pending-actions/{pending_action_id}/reject`   | Expected pending and Thread versions plus idempotency key                   |
-| Submit client-tool result    | `POST /pending-actions/{pending_action_id}/complete` | Expected Thread version, exact native result envelope, and idempotency key  |
-| Supply structured user input | `POST /pending-actions/{pending_action_id}/respond`  | Expected Thread version, schema-valid bounded response, and idempotency key |
+| Pending kind            | Mapping                                                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `approval`              | Native `ToolApproved` or `ToolDenied`.                                                                                                                                       |
+| `client_tool`           | `complete` becomes the declared native result; `no_response` becomes an explicit failed external-call result, never a missing entry or successful `null`.                    |
+| `user_input`            | `respond` is validated against the exact request; `no_response` uses the locked interaction adapter's explicit representation.                                               |
+| `child_result`          | Enters through the Host-owned fresh-run input seam in [Async Subagents](18-async-subagents.md), never through `DeferredToolResume` or under the original spawn tool-call ID. |
+| `provider_continuation` | Enters through its owning Host/model integration and is never synthesized by the public omission policy.                                                                     |
+
+For native Pydantic requests, Foundation constructs one `DeferredToolResults`
+whose `calls` and `approvals` maps exactly cover the authoritative
+`DeferredToolRequests`, then passes both through the Harness
+[`DeferredToolResume`](../agent-harness/16-input-model-and-output.md#input)
+with the prior state and fresh bindings. Defaults are
+therefore explicit results by the time Harness preflight runs. A batch that also
+contains child-result feedback can supply its Host-owned fresh-run input at the
+same new Harness Run boundary without reinterpreting that result as a native
+deferred call.
+
+A child-result `no_response` closes this waiting batch but does not prove child
+cancellation, consume its Thread inbox entry, or discard an independently
+retained result. The child relationship and any available inbox entry continue
+under the asynchronous-child cancellation, retention, and later-incorporation
+policy.
 
 ## Suspension and Feedback Turn
 
@@ -235,70 +403,85 @@ sequenceDiagram
     participant Worker
     participant Durable as Database and object storage
     participant Responder
-    participant NextWorker as Replacement worker
+    participant NextWorker as Next worker
 
     Harness-->>Worker: suspended result, complete state, native requests
     Worker->>Durable: publish waiting state candidate
     Worker->>Durable: seal waiting Turn and pending summary
     Worker-->>Worker: close TurnAttempt resources and release lease
-    Responder->>Durable: authenticated idempotent feedback
-    Durable->>Durable: validate exact waiting parent and complete pending set
-    Durable->>Durable: initialize and accept new Turn with waiting parent
-    NextWorker->>Durable: claim new Turn's first TurnAttempt
-    NextWorker->>Harness: fresh bindings, new Turn state, DeferredToolResume
+    Responder->>Durable: idempotent feedback with explicit subset
+    Durable->>Durable: authorize all calls and expand omitted defaults
+    Durable->>Durable: accept complete feedback as a new Turn
+    NextWorker->>Durable: claim the new Turn's first TurnAttempt
+    NextWorker->>Harness: prior state, complete DeferredToolResume, optional Host child input
 ```
 
 Suspension first conditionally publishes the complete waiting state candidate at
-the Turn's deterministic state key. One fenced relational transition then
-verifies that the Turn remains current, seals it, terminalizes the source
-TurnAttempt, copies the bounded pending summary to the Turn row, selects the
-exact state digest and checkpoint sequence, retains the waiting Turn as current,
-selects it as the Thread head, increments Thread version, and commits lifecycle
-facts. The worker closes Harness, Environment connector, credential, socket, and
-database resources; connector keep-alive stops with that scope.
+the Turn's deterministic state key. One fenced relational transition verifies
+that the Turn remains current, seals it, terminalizes the source TurnAttempt,
+copies the bounded pending summary to the Turn row, selects the exact state
+digest and checkpoint sequence, retains the waiting Turn as current, selects it
+as the Thread head, increments Thread version, and commits lifecycle facts. The
+worker then closes Harness, Environment connector, credential, socket, and
+database resources.
 
-Feedback authenticates the responder, authorizes every exact pending action in
-the frozen request set, checks expiration and the expected Thread and
-pending-action versions, and applies an idempotency key. The waiting parent
-remains immutable. Once the complete set is resolved, Foundation initializes a
-new Turn in the same Thread from the parent's sealed state and, in one short
-transaction, revalidates the Thread's waiting head, current Turn, and version,
-sets `parent_turn_id` to that waiting Turn, records the consumed pending
-identities, selects the new Turn as current, increments Thread version, accepts
-the new Turn, and associates any response Items with it. Its `accepted` status
-makes it the sole active Turn.
+Feedback authenticates the responder, locks the Thread, requires both
+`current_turn_id` and `head_turn_id` to name the target waiting Turn, verifies
+the expected Thread version and sealed-state digest, authorizes the complete
+pending set, validates and expands the submitted subset, and applies scoped
+idempotency. After publishing the new Turn's complete initial state and any
+object-backed feedback, one short transaction repeats those preconditions,
+inserts a Turn with `input_kind="waiting_feedback"` and
+`parent_turn_id=waiting_turn_id`, selects it as current, increments Thread
+version, and commits lifecycle facts, idempotency evidence, response Items when
+applicable, and outbox intents. When an explicit child result is selected, that
+same transaction marks its exact Thread inbox entry consumed with the new Turn
+and initialized state digest at checkpoint zero. The accepted feedback itself
+records the exact consumed pending identities; no mutable pending-action row is
+updated.
 
-The next worker reconstructs the exact AgentPresetVersion and Runtime-locked
-tool surface, supplies fresh bindings, and passes the authoritative request and
-complete results through native `DeferredToolResume`. Approval and external
-execution remain separate facts: approval does not prove the client effect
-occurred, and client success does not retroactively prove approval.
+If the feedback Turn later fails or is cancelled, retry can only reaccept that
+same normalized feedback intent. The waiting parent remains frozen, but it is no
+longer the Thread's current Turn, so another feedback command with different
+content cannot race the accepted successor.
 
-Invalid, incomplete, stale, expired, or unauthorized feedback creates no new
-Turn and leaves the waiting parent unchanged.
+## Persistence Impact
+
+The only relational schema changes introduced by this acceptance model are on
+`turns`. Related persistence integration is:
+
+| Persistence owner        | Required contract                                                                                                                                                                                                                                                                |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `turns`                  | Stores `input_kind` to distinguish `agent_input` from `waiting_feedback`, and nullable `retry_of_turn_id` to correlate exact terminal intent without changing the state-parent edge. Existing inline or object-backed JSON columns store the complete accepted descriptor value. |
+| Waiting pending data     | No `pending_actions` table. The waiting Turn row stores only `pending_json`; its sealed state stores exact native and Host requests.                                                                                                                                             |
+| Async child delivery     | The child relationship and common `thread_inbox` entry remain authoritative; explicit selection consumes the exact entry while batch feedback never turns it into a native deferred call.                                                                                        |
+| Inline Hook delivery     | Optional creation commits atomically under [Hook Notifications](20a-hook-notifications.md); no Turn column stores callback configuration.                                                                                                                                        |
+| Durable command evidence | Existing idempotency, lifecycle, Item, and outbox records commit with the accepted Turn under their owning contracts.                                                                                                                                                            |
+
+`input_kind`, `retry_of_turn_id`, the exact parent edge, and the source Turn's
+status make every acceptance form queryable without adding an
+`agent_control_operations` table or another execution resource.
 
 ## Failure Semantics
 
-| Condition                                                         | Outcome                                                                                         |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Worker lost after waiting commit                                  | Waiting Turn remains sealed without worker ownership                                            |
-| Feedback duplicated                                               | Original feedback or the new Turn's acceptance receipt is returned                              |
-| Feedback targets stale or closed action                           | Request conflicts without changing the waiting Turn                                             |
-| Feedback responder unauthorized                                   | Request is denied without disclosing private pending content                                    |
-| Resume surface differs from suspended surface                     | New feedback Turn fails before Harness continuation                                             |
-| Parent is absent, unauthorized, unsealed, ineligible, or advanced | Turn acceptance fails without changing the Thread                                               |
-| Acceptance response is lost after commit                          | Repeating the same idempotency key and canonical submitted command returns the original receipt |
+| Condition                                                                                    | Outcome                                                                                                                  |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Start, continue, fork, retry, or feedback validation fails before commit                     | No Thread or Turn advancement occurs                                                                                     |
+| Concurrent Thread advancement or sealing wins                                                | The stale command conflicts and changes nothing                                                                          |
+| Retry target is not the current failed or cancelled Turn                                     | Retry conflicts without creating a Turn                                                                                  |
+| Feedback contains a duplicate, unknown, wrong-action, invalid-result, stale, or expired call | No feedback Turn is created; the waiting parent remains unchanged                                                        |
+| Feedback responder cannot finalize every pending call                                        | Request is denied without disclosing concealed pending content                                                           |
+| Native deferred requests and normalized results do not exactly cover one another             | Feedback is rejected before acceptance when detectable; otherwise the accepted feedback Turn fails before new model work |
+| Resume surface differs from the suspended surface                                            | The accepted feedback Turn fails before Harness continuation                                                             |
+| Child result is omitted                                                                      | The batch records `no_response`; child execution and retained delivery follow their independent policy                   |
 
 ## Invariants
 
-01. Root invocation, ordinary continuation, waiting feedback, fork, and terminal retry accept another Turn rather than reopening a sealed Turn.
-02. Public Turn acceptance returns before Worker claim or Harness completion.
-03. Ordinary continuation preserves the Thread ID; fork creates a distinct Thread ID.
-04. Retry accepts no new `AgentInput`, preserves terminal history, and creates an explicit successor record.
-05. Waiting-action feedback and client-tool results are correlated typed values, not ordinary `AgentInput`.
-06. Waiting for approval, client tools, user input, or child completion holds no TurnAttempt lease.
-07. A waiting Turn is sealed; feedback creates a new Turn whose `parent_turn_id` names that waiting Turn.
-08. Pending requests and feedback remain native typed values associated with one exact sealed waiting state.
-09. Every feedback continuation receives a fresh TurnAttempt and Harness Run under the new Turn.
-10. Approval and external client effect are independent facts.
-11. Every accepted Turn pins one exact AgentPresetVersion and compatible Runtime lock; replacement TurnAttempts never re-resolve either selection.
+1. Start, continue, feedback, fork, and terminal retry accept another Turn; acceptance returns before later Worker claim, TurnAttempt allocation, or Harness execution.
+2. Continue preserves the Thread ID; fork creates a distinct Thread ID.
+3. Retry accepts no new input or invocation option, copies the exact accepted intent and state-source edge, and records `retry_of_turn_id`.
+4. Ordinary Agent work uses `AgentInput`; waiting feedback uses the separate complete normalized `WaitingTurnFeedback` protocol.
+5. Feedback finalizes the complete eligible pending set; omitted approvals reject and omitted non-approval calls record no response.
+6. A waiting Turn is sealed and holds no TurnAttempt lease; feedback creates a new Turn whose `parent_turn_id` names it.
+7. Native deferred values remain exactly correlated, Host-owned child delivery never impersonates a native deferred call, and approval, external effect, and child completion remain independent facts.
+8. Pending actions are immutable projections of one waiting Turn, not independently mutable resources or relational rows.
