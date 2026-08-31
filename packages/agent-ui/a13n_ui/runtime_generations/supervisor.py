@@ -597,6 +597,11 @@ class RuntimeGenerationService:
                         raise ControlProtocolError("Environment result does not match an active request")
                     command.result.set_result(result)
                     continue
+                if (
+                    message_type in {"DRAINED", "FORCE_CLOSED"}
+                    and runner.observation.state is RuntimeGenerationState.draining
+                ):
+                    continue
                 raise ControlProtocolError(f"unexpected Runner message: {message_type}")
         except BaseException as exc:
             error = exc
@@ -715,6 +720,23 @@ class RuntimeGenerationService:
                     "runtime_drain_failed",
                     "The runtime Runner did not complete graceful drain and shutdown.",
                 )
+                try:
+                    forced = await asyncio.wait_for(
+                        self._request(runner, "FORCE_CLOSE", "FORCE_CLOSED"),
+                        timeout=self._settings.command_timeout_seconds,
+                    )
+                    require_generation(forced, runner.generation_id)
+                    exiting = await asyncio.wait_for(
+                        self._request(runner, "SHUTDOWN", "EXITING"),
+                        timeout=self._settings.command_timeout_seconds,
+                    )
+                    require_generation(exiting, runner.generation_id)
+                except (TimeoutError, ControlProtocolError, OSError):
+                    self._record_diagnostic(
+                        runner.generation_id,
+                        "runtime_force_close_failed",
+                        "The runtime Runner did not complete manager force-close before process termination.",
+                    )
         await self._ensure_stopped(runner, RuntimeExitReason.graceful)
 
     async def _ensure_stopped(self, runner: _RunnerGeneration, graceful_reason: RuntimeExitReason) -> None:

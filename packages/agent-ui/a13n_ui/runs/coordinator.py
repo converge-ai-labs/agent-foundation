@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import cast
@@ -110,6 +112,20 @@ class ForegroundRunCoordinator:
         for request_id in request_ids:
             await self._runtime.cancel_root(request_id)
 
+    @asynccontextmanager
+    async def session_guard(
+        self,
+        session_id: str,
+        *,
+        cancel_active: bool = False,
+    ) -> AsyncGenerator[None]:
+        """Serialize one Host lifecycle decision with root and wake Runs for a Session."""
+        if cancel_active:
+            await self.cancel(session_id)
+        lock = await self._session_lock(session_id)
+        async with lock:
+            yield
+
     async def handle_async_work(self, event: RunnerAsyncWorkEvent) -> None:
         """Aggregate detached usage and wake an inactive Session from its latest continuation."""
 
@@ -122,7 +138,7 @@ class ForegroundRunCoordinator:
             if (
                 self._closed
                 or event.generation_id != active_generation_id
-                or event.parent_active
+                or (event.harness_active and event.session_id in self._active)
                 or event.session_id in self._wake_tasks
             ):
                 return
@@ -141,6 +157,18 @@ class ForegroundRunCoordinator:
         for value in values:
             total.incr(value)
         return total
+
+    async def forget_session(self, session_id: str) -> None:
+        """Discard process-local coordination state after durable Session deletion."""
+        async with self._registry_lock:
+            wake = self._wake_tasks.pop(session_id, None)
+            self._async_usage.pop(session_id, None)
+        if wake is not None:
+            wake.cancel()
+            await asyncio.gather(wake, return_exceptions=True)
+        async with self._registry_lock:
+            if session_id not in self._active:
+                self._session_locks.pop(session_id, None)
 
     async def close(self) -> None:
         async with self._registry_lock:

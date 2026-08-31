@@ -25,6 +25,7 @@ from a13n_ui.errors import (
 from a13n_ui.host import open_agent_ui_host
 from a13n_ui.runtime_generations.execution import _run_environment
 from a13n_ui.runtime_generations.wire import RunnerAsyncWorkEvent
+from a13n_ui.runtime_settings import RuntimeGenerationSettings
 from a13n_ui.sessions import SessionRunStatus, SessionUpdate
 from a13n_ui.settings import AgentUiSettings, EnvdRuntimeSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
@@ -65,7 +66,6 @@ def _write_composition(
     definitions: Path,
     *,
     provision: str = "on_first_run",
-    idle: str = "keep_running",
     user_interaction: bool = False,
     delayed_input: str | None = None,
 ) -> None:
@@ -131,7 +131,7 @@ def _write_composition(
                 }
             ],
             "default_mount": "mount-main",
-            "lifecycle": {"provision": provision, "idle": idle},
+            "provision": provision,
         },
     )
 
@@ -264,7 +264,7 @@ def _write_async_subagent_composition(
                 else []
             ),
             "default_mount": "mount-main" if shared_environment else None,
-            "lifecycle": {"provision": "on_first_run", "idle": "keep_running"},
+            "provision": "on_first_run",
         },
     )
 
@@ -443,6 +443,8 @@ async def test_environment_reopen_uses_latest_acknowledged_provider_state(
             provider = original_create_provider(self, spec, runtime=runtime)
             original_create = provider.create
             original_resume = provider.resume
+            original_pause = provider.pause
+            original_destroy = provider.destroy
 
             async def create(*, operation):
                 lifecycle_calls.append("create")
@@ -452,8 +454,18 @@ async def test_environment_reopen_uses_latest_acknowledged_provider_state(
                 lifecycle_calls.append("resume")
                 return await original_resume(state, operation=operation)
 
+            async def pause(environment, *, operation, mode):
+                lifecycle_calls.append("pause")
+                return await original_pause(environment, operation=operation, mode=mode)
+
+            async def destroy(state, *, operation):
+                lifecycle_calls.append("destroy")
+                return await original_destroy(state, operation=operation)
+
             monkeypatch.setattr(provider, "create", create)
             monkeypatch.setattr(provider, "resume", resume)
+            monkeypatch.setattr(provider, "pause", pause)
+            monkeypatch.setattr(provider, "destroy", destroy)
             return provider
 
         monkeypatch.setattr(type(catalog), "create_provider", create_provider)
@@ -493,6 +505,7 @@ async def test_environment_reopen_uses_latest_acknowledged_provider_state(
                 acknowledged_provider_states=acknowledged_provider_states,
             ):
                 assert lifecycle_calls == ["create", "resume"]
+        assert lifecycle_calls == ["create", "resume"]
 
 
 async def test_runner_executes_standard_async_subagent_end_to_end(tmp_path: Path) -> None:
@@ -567,13 +580,45 @@ async def test_background_shell_outlives_parent_and_wakes_from_latest_continuati
         assert any("process:async-shell-done" in str(message) for message in state.message_history)
 
 
+async def test_session_delete_closes_background_work_before_destroying_environment(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    _configure_background_shell(definitions, command="sleep 30; printf should-not-complete")
+    settings = _settings(tmp_path / "data", definitions, workspace, executable=Path("/bin/sh"))
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="start process")
+        assert result.output == "process-started:process-1"
+
+        await application.delete_session(created.session_id)
+
+        with pytest.raises(SessionError, match="Session does not exist"):
+            await application.session(created.session_id)
+        assert application._runs._wake_tasks == {}
+        assert created.session_id not in application._runs._async_usage
+
+
 async def test_background_shell_from_draining_generation_is_not_woken_or_restored(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     _write_composition(definitions)
-    _configure_background_shell(definitions, command="sleep 2; printf drained-shell")
+    _configure_background_shell(definitions, command="sleep 30; printf drained-shell")
     settings = _settings(tmp_path / "data", definitions, workspace, executable=Path("/bin/sh"))
+    settings = settings.model_copy(
+        update={
+            "runtime": RuntimeGenerationSettings(
+                startup_timeout_seconds=5,
+                command_timeout_seconds=2,
+                drain_timeout_seconds=0.1,
+                terminate_timeout_seconds=1,
+                kill_timeout_seconds=1,
+            )
+        }
+    )
 
     async with open_agent_ui_host(settings) as application:
         created = await _create_session(application)
@@ -589,13 +634,18 @@ async def test_background_shell_from_draining_generation_is_not_woken_or_restore
         await asyncio.wait_for(restart, timeout=5)
         await asyncio.sleep(0.1)
 
+        status = await application.runtime_status()
+        previous = next(item for item in status.generations if item.generation_id == previous_generation_id)
+        assert previous.exit_reason.value == "graceful"
+        assert any(item.code == "runtime_drain_failed" for item in status.diagnostics)
+        assert not any(item.code == "runtime_force_close_failed" for item in status.diagnostics)
         assert (await application.session(created.session_id)).continuation == started.continuation
         collected = await application.run_session(created.session_id, input_value="collect process")
         assert collected.output == "process-lost"
         assert (await application.runtime_status()).active_generation_id == new_generation_id
 
 
-async def test_completion_after_parent_terminal_queues_behind_request_cleanup(tmp_path: Path) -> None:
+async def test_harness_terminal_completion_queues_behind_host_request_cleanup(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -612,7 +662,7 @@ async def test_completion_after_parent_terminal_queues_behind_request_cleanup(tm
         event = RunnerAsyncWorkEvent(
             generation_id=generation_id,
             session_id=created.session_id,
-            parent_active=True,
+            harness_active=True,
             source="background_process",
             kind="completion",
             thread_id="thread-parent",
@@ -627,7 +677,9 @@ async def test_completion_after_parent_terminal_queues_behind_request_cleanup(tm
             await application._runs.handle_async_work(event)
             assert application._runs._wake_tasks == {}
 
-            await application._runs.handle_async_work(event.model_copy(update={"parent_active": False}))
+            await application._runs.handle_async_work(
+                event.model_copy(update={"harness_active": False, "reference": "process-2"})
+            )
             wake = application._runs._wake_tasks[created.session_id]
             await asyncio.sleep(0)
             assert wake.done() is False

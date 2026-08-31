@@ -106,7 +106,7 @@ A replacement uses direct activation:
 4. allow already admitted root Runs and generation-owned async work a bounded natural drain;
 5. force-close remaining child/process work and stop that Runner.
 
-The old Runner admits no new root Run after replacement. Its drain waits only work already owned by that generation and is bounded by the Host; expiry proceeds to process termination escalation. A root Run, child, detached process, or reopened Environment remains on the generation that admitted it and never migrates between interpreters.
+The old Runner admits no new root Run after replacement. Its drain waits only work already owned by that generation and is bounded by the Host. On expiry, the Host first requests bounded Manager force-close and Runner shutdown; only a failed or timed-out force-close proceeds to Runner process termination and kill. A root Run, child, detached process, or reopened Environment remains on the generation that admitted it and never migrates between interpreters.
 
 ```mermaid
 stateDiagram-v2
@@ -135,11 +135,11 @@ Provider state crosses the boundary only as detached updates. The Host publishes
 
 The Runner resolves each logical Model only from the pinned Agent snapshot and the installed adapter catalog. It obtains current credential material at Run time, constructs the native Model or resolver, and closes owned clients with the Run. Credentials and model clients are never persisted or sent to the Host.
 
-The Host owns desired Session Environment assignments and latest provider-state references. The Runner ensures the selected Resources are available, acquires fresh attachments, builds one single-use `EnvironmentRuntime`, and returns detached provider-state changes for Host publication.
+The Host owns desired Session Environment assignments, latest provider-state references, and every pause or destroy decision. The Runner ensures the selected Resources are available, acquires fresh attachments, builds one single-use `EnvironmentRuntime`, and returns detached provider-state changes for Host publication. Ordinary Run exit closes only fresh attachments and process-local Resource scopes. It never infers Session idleness and never pauses or destroys the logical provider resource.
 
 Foreground shell remains bound to the current Run Environment. Before admitting a root async child or background process, the Runner takes one detached admission-time snapshot of the exact pinned Environment definition and latest provider state whose Host publication has been acknowledged, then reopens from that snapshot with fresh runtime collaborators. This includes state first created or resumed earlier in the same root execution, so reopen does not repeat allocation from a stale request snapshot or combine mount states observed at different points during construction. The resulting child binding or managed process is self-contained after Manager acceptance. Reopen can share an underlying Direct Local directory, Local Envd workspace, Docker container, or E2B sandbox according to the selected provider; each provider owns concurrent reopen/session safety. The launcher never retains the parent Run's `BoundEnvironment`.
 
-Only the root Agent receives this background-capable operator. Every nested Agent reconstructs the standard foreground operator, so subagent processes are isolated inside that child's own fresh Environment and cannot create another detached-process tree.
+Only the root Agent receives this background-capable operator. Every nested Agent reconstructs the standard foreground operator, so subagent processes are isolated inside that child's own fresh Environment and cannot create another detached-process tree. A dedicated child explicitly selects the Provider's temporary automatic-destroy scope. Shared-root children and detached background processes reopen the Host-selected resource state and close only their independent process-local scopes.
 
 Local Sandbox resolves one exact package-selected `agent-envd` executable or one explicit validated override. Failure does not fall back to Direct Local. Executable cache state carries no Session or execution authority.
 
@@ -151,7 +151,7 @@ Each root or child execution opens fresh Identity, Model, Skill, Capability, and
 
 The Managers retain bounded child status/output/failure/usage and process status/output/control state in Runner memory. A later Run in the same Session and Runner generation can reconcile a compact ID. Completion emits one typed generation-local event containing a detached snapshot of the initiating instance's Host-only references. The Host deduplicates async child usage by child Thread identity and process events by compact reference; this aggregate is process-local and is never merged into parent Harness usage or continuation state.
 
-Before the correlated parent produces a terminal result, the stable Host hook is a no-op because active Harness steering owns observation. After the terminal boundary, including the short interval while that request is still cleaning up, the Host schedules at most one wake under the Session lock. The wake rechecks that the source generation is still active and the Session has no active request, reloads the latest selected continuation, and starts a normal input-less Run. There is no durable event queue. A completion from a draining generation records usage but cannot wake the replacement generation because its canonical Manager record cannot be rebound there.
+For every stable event, the Runner reports whether the correlated Harness parent is still active, while the stable Host independently checks whether that Session has an active request. The hook is a no-op only while both are active, because ordinary Harness steering owns observation. If either is inactive, including the interval after the Harness terminal result while Host request cleanup still holds the Session lock, the Host schedules at most one wake behind that lock. The wake rechecks that the source generation is still active and the Session has no active request, reloads the latest selected continuation, and starts a normal input-less Run. There is no durable event queue. A completion from a draining generation records usage but cannot wake the replacement generation because its canonical Manager record cannot be rebound there.
 
 ```mermaid
 sequenceDiagram
@@ -187,6 +187,8 @@ Root cancellation targets one current process-local Harness Run. Tool-authored c
 
 Parent Run and Environment exit never close generation Managers or their admitted work. Agent UI explicitly chooses generation shutdown as the Manager ownership boundary. At that boundary, Manager force-close rejects new work, cancels every live child, force-terminates every live process, releases independent Environment scopes, and waits only for owned cleanup and already-dispatched callbacks.
 
+An explicit Session pause, Environment destroy, or Session delete is a narrower Host lifecycle decision. Under the Session lock, the Runner first applies Manager `force_close_matching()` to the initiating `session_id`, then invokes the selected provider pause or destroy operation. This prevents a logical resource transition while same-Session background work still holds an independently reopened scope and leaves other Sessions and the generation Managers active.
+
 If cleanup exceeds the Host's bound, the runtime-generation service terminates and then kills the Runner process. Manager records, activity, successful output not yet collected, async usage, and retained Environment/process state disappear. Restart selects only the latest successfully stored Session continuation; prior compact IDs reconcile as lost and are never recovered, replayed, or retargeted.
 
 ## Live Presentation and Surfaces
@@ -200,7 +202,7 @@ CLI and WebUI are peers over `AgentUiHost`. Both use the same configuration, Ses
 01. The stable Host owns Session and continuation authority; a Runner owns only process-local execution for one generation.
 02. Root async subagents and background processes use standard generation-owned Harness Managers; nested children remain inline and foreground.
 03. Canonical async work can outlive its parent Run but never its owning Runner generation.
-04. Active-Run observation and inactive-Session wake are distinct; at most one generation-aware best-effort wake uses the latest selected continuation.
+04. Active Harness observation and Host Session activity are checked independently; only their overlap suppresses at most one generation-aware best-effort wake from the latest selected continuation.
 05. Async usage is deduplicated in Host memory and never changes parent Harness usage or state.
 06. Generation drain is bounded; force-close cancels children, terminates processes, and releases reopened Environments before process escalation.
 07. Restart or Runner loss never migrates or retargets Manager work; retained compact IDs become lost.

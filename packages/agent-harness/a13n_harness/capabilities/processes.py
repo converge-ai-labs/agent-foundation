@@ -424,26 +424,63 @@ class ProcessManager(ShellOperator):
         if error is not None:
             raise error
 
+    async def force_close_matching(self, host_refs: Mapping[str, str]) -> None:
+        """Force-close and forget work whose Host correlation contains every selected reference."""
+        if not host_refs:
+            raise ValueError("host_refs must select at least one Host reference")
+        selected = dict(host_refs)
+        async with self._lock:
+            records = tuple(
+                record
+                for record in self._records.values()
+                if all(record.parent_host_refs.get(key) == value for key, value in selected.items())
+            )
+        close_task = asyncio.create_task(
+            self._force_close_records(records),
+            name="process-manager-matching-force-close",
+        )
+        try:
+            cancelled, error = await _await_owned_task(close_task)
+        finally:
+            async with self._lock:
+                for record in records:
+                    if self._records.get(record.process.backend_id) is record:
+                        self._records.pop(record.process.backend_id, None)
+        if cancelled:
+            raise asyncio.CancelledError
+        if error is not None:
+            raise error
+
     async def _force_close_owned(self) -> None:
         async with self._lock:
             records = tuple(self._records.values())
-        results = await asyncio.gather(
-            *(record.process.force_close() for record in records),
-            return_exceptions=True,
-        )
-        errors = [result for result in results if isinstance(result, BaseException)]
+        cleanup_error: BaseException | None = None
+        try:
+            await self._force_close_records(records)
+        except BaseException as error:
+            cleanup_error = error
+        finally:
+            while self._delivery_tasks:
+                deliveries = tuple(self._delivery_tasks)
+                await asyncio.gather(*deliveries, return_exceptions=True)
+                self._delivery_tasks.difference_update(deliveries)
+            async with self._lock:
+                self._records.clear()
+        if cleanup_error is not None:
+            raise cleanup_error
+
+    async def _force_close_records(self, records: tuple[_CanonicalProcess, ...]) -> None:
         watchers = tuple(record.watcher for record in records if record.watcher is not None)
         if watchers:
             for watcher in watchers:
                 if not watcher.done():
                     watcher.cancel()
             await asyncio.gather(*watchers, return_exceptions=True)
-        while self._delivery_tasks:
-            deliveries = tuple(self._delivery_tasks)
-            await asyncio.gather(*deliveries, return_exceptions=True)
-            self._delivery_tasks.difference_update(deliveries)
-        async with self._lock:
-            self._records.clear()
+        results = await asyncio.gather(
+            *(record.process.force_close() for record in records),
+            return_exceptions=True,
+        )
+        errors = [result for result in results if isinstance(result, BaseException)]
         if errors:
             raise BaseExceptionGroup("Managed process cleanup failed.", errors)
 

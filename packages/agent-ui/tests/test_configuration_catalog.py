@@ -114,10 +114,7 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
             "description": None,
             "mounts": [],
             "default_mount": None,
-            "lifecycle": {
-                "provision": "on_first_run",
-                "idle": "keep_running",
-            },
+            "provision": "on_first_run",
         },
     }
     return {relative: _write_yaml(root / relative, value) for relative, value in documents.items()}
@@ -401,7 +398,7 @@ async def test_direct_local_shell_profiles_resolve_process_owned_executable_alia
                 }
             ],
             "default_mount": "mount-main",
-            "lifecycle": {"provision": "on_first_run", "idle": "keep_running"},
+            "provision": "on_first_run",
         },
     )
     base = _full_settings(tmp_path / "data", definitions, discovery).configuration

@@ -20,7 +20,7 @@ pytestmark = pytest.mark.anyio
 
 def _settings() -> RuntimeGenerationSettings:
     return RuntimeGenerationSettings(
-        startup_timeout_seconds=2.0,
+        startup_timeout_seconds=10.0,
         command_timeout_seconds=1.0,
         drain_timeout_seconds=1.0,
         terminate_timeout_seconds=1.0,
@@ -45,7 +45,7 @@ async def test_starts_with_distinct_process_and_runtime_readiness() -> None:
         assert active.state is RuntimeGenerationState.active
         assert active.process_id is not None
         assert active.readiness is not None
-        assert active.readiness.protocol_version == "3"
+        assert active.readiness.protocol_version == "1"
         assert status.active_generation_id == active.generation_id
         assert status.candidate_generation_id is None
 
@@ -138,12 +138,12 @@ asyncio.run(main())
         await service.close()
 
 
-async def test_drain_timeout_escalates_without_losing_new_active_runner() -> None:
+async def test_drain_timeout_force_closes_managers_without_losing_new_active_runner() -> None:
     fixture = Path(__file__).with_name("fixture_runtime_runner.py")
     service = RuntimeGenerationService(
         RuntimeGenerationSettings(
-            startup_timeout_seconds=2.0,
-            command_timeout_seconds=0.1,
+            startup_timeout_seconds=10.0,
+            command_timeout_seconds=1.0,
             drain_timeout_seconds=0.1,
             terminate_timeout_seconds=0.2,
             kill_timeout_seconds=0.2,
@@ -158,11 +158,39 @@ async def test_drain_timeout_escalates_without_losing_new_active_runner() -> Non
 
         retained = {item.generation_id: item for item in status.generations}
         assert status.active_generation_id == restarted.active.generation_id
+        assert retained[first.generation_id].exit_reason is RuntimeExitReason.graceful
+        assert any(item.code == "runtime_drain_failed" for item in status.diagnostics)
+        assert not any(item.code == "runtime_force_close_failed" for item in status.diagnostics)
+    finally:
+        await service.close()
+
+
+async def test_force_close_timeout_escalates_to_runner_termination() -> None:
+    fixture = Path(__file__).with_name("fixture_runtime_runner.py")
+    service = RuntimeGenerationService(
+        RuntimeGenerationSettings(
+            startup_timeout_seconds=10.0,
+            command_timeout_seconds=0.1,
+            drain_timeout_seconds=0.1,
+            terminate_timeout_seconds=0.2,
+            kill_timeout_seconds=0.2,
+        ),
+        command=(sys.executable, str(fixture)),
+        environment={"A13N_UI_TEST_RUNNER_BEHAVIOR": "stall_force_close"},
+    )
+    try:
+        first = await service.start()
+        restarted = await service.restart()
+        status = await service.status()
+
+        retained = {item.generation_id: item for item in status.generations}
+        assert status.active_generation_id == restarted.active.generation_id
         assert retained[first.generation_id].exit_reason in {
             RuntimeExitReason.terminated,
             RuntimeExitReason.killed,
         }
         assert any(item.code == "runtime_drain_failed" for item in status.diagnostics)
+        assert any(item.code == "runtime_force_close_failed" for item in status.diagnostics)
     finally:
         await service.close()
 

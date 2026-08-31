@@ -251,6 +251,7 @@ class _CanonicalSubagent:
     task: asyncio.Task[None] | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
     observer: _WeakObserver | None = None
+    notifications_enabled: bool = True
     activity_sequence: int = 0
     output_preview: str = ""
     output_truncated: bool = False
@@ -562,25 +563,63 @@ class SubagentManager(SubagentOperator):
         if error is not None:
             raise error
 
+    async def force_close_matching(self, host_refs: Mapping[str, str]) -> None:
+        """Force-close and forget work whose Host correlation contains every selected reference."""
+        if not host_refs:
+            raise ValueError("host_refs must select at least one Host reference")
+        selected = dict(host_refs)
+        async with self._lock:
+            records = tuple(
+                record
+                for record in self._records.values()
+                if all(record.parent_host_refs.get(key) == value for key, value in selected.items())
+            )
+        close_task = asyncio.create_task(
+            self._force_close_records(records),
+            name="subagent-manager-matching-force-close",
+        )
+        try:
+            cancelled, error = await _await_owned_task(close_task)
+        finally:
+            async with self._lock:
+                for record in records:
+                    if self._records.get(record.backend_id) is record:
+                        self._records.pop(record.backend_id, None)
+        if cancelled:
+            raise asyncio.CancelledError
+        if error is not None:
+            raise error
+
     async def _force_close_owned(self) -> None:
         async with self._lock:
             records = tuple(self._records.values())
-            closing_records = tuple(record for record in records if not record.done.is_set())
-            for record in records:
-                if not record.done.is_set():
-                    if record.stream is not None:
-                        record.stream.cancel()
-                    elif record.task is not None:
-                        record.task.cancel()
+        cleanup_error: BaseException | None = None
+        try:
+            await self._force_close_records(records)
+        except BaseException as error:
+            cleanup_error = error
+        finally:
+            while self._delivery_tasks:
+                deliveries = tuple(self._delivery_tasks)
+                await asyncio.gather(*deliveries, return_exceptions=True)
+                self._delivery_tasks.difference_update(deliveries)
+            async with self._lock:
+                self._records.clear()
+        if cleanup_error is not None:
+            raise cleanup_error
+
+    async def _force_close_records(self, records: tuple[_CanonicalSubagent, ...]) -> None:
+        closing_records = tuple(record for record in records if not record.done.is_set())
+        async with self._lock:
+            for record in closing_records:
+                record.notifications_enabled = False
+                if record.stream is not None:
+                    record.stream.cancel()
+                elif record.task is not None:
+                    record.task.cancel()
         tasks = tuple(record.task for record in records if record.task is not None)
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        while self._delivery_tasks:
-            deliveries = tuple(self._delivery_tasks)
-            await asyncio.gather(*deliveries, return_exceptions=True)
-            self._delivery_tasks.difference_update(deliveries)
-        async with self._lock:
-            self._records.clear()
         errors = [
             RuntimeError(record.cleanup_failure) for record in closing_records if record.cleanup_failure is not None
         ]
@@ -673,6 +712,8 @@ class SubagentManager(SubagentOperator):
             raise asyncio.CancelledError
 
     def _notify(self, record: _CanonicalSubagent, kind: SubagentEventKind) -> None:
+        if not record.notifications_enabled:
+            return
         observer = record.observer.get() if record.observer is not None else None
         if observer is not None:
             snapshot = record.snapshot()

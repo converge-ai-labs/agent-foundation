@@ -4,13 +4,13 @@
 
 The two main values are:
 
-- `EnvironmentProvider`: a resolved provider specification with create, resume, pause, destroy, reconciliation, and ephemeral-lifecycle operations;
-- `EnvironmentResource`: one identified provider resource with a single-entry process-local scope and fresh attachment acquisition.
+- `EnvironmentProvider`: a resolved provider specification with create, resume, pause, destroy, reconciliation, and optional automatic-destroy scopes;
+- `EnvironmentResource`: one identified provider resource with a single-entry process-local scope, explicit `close()`, and fresh attachment acquisition.
 
-Source type communicates ownership when these values are passed to Agent Harness:
+The input selected for one Harness call communicates only that call's cleanup behavior:
 
-- `executable.run(..., environment=provider)` gives the Harness ownership of one temporary Resource;
-- `executable.run(..., environment=entered_resource)` borrows the Host-owned Resource for one run attachment.
+- `executable.run(..., environment=provider)` explicitly selects one temporary create-through-destroy scope;
+- `executable.run(..., environment=entered_resource)` selects one run attachment and no pause or destroy action.
 
 ## High-level Harness flow
 
@@ -47,9 +47,9 @@ flowchart LR
     Binding --> Run[Logical Harness run]
 ```
 
-This path is appropriate only for resources that should be temporary. A suspended run also closes and destroys a Provider-owned Resource.
+This path is appropriate only for resources that should be temporary. A suspended run also closes and destroys the Provider-input Resource.
 
-## Host-owned reusable Resource
+## Host-managed reusable Resource
 
 A Host explicitly manages a Resource when it must survive across runs, restarts, or scheduling decisions:
 
@@ -89,19 +89,39 @@ finally:
     )
 ```
 
-The Resource must already be entered. The Harness acquires and releases one fresh attachment per run but does not exit, pause, or destroy a borrowed Resource. Exiting the Resource scope closes process-local clients and attachment admission only; provider `pause()` and `destroy()` remain explicit lifecycle operations.
+The Resource must already be entered. The Harness acquires and releases one fresh attachment per run but does not exit, pause, or destroy the Resource. `EnvironmentResource.close()` and ordinary context exit close process-local clients and attachment admission only; provider `pause()` and `destroy()` remain explicit lifecycle operations.
+
+If the Host knows at scope construction time that the selected resource is temporary, it can opt into automatic destruction and retain the exact lifecycle operation identity:
+
+```python
+destroy_operation = EnvironmentOperationContext(
+    operation_id="operation-destroy-temporary-workspace",
+    action=EnvironmentManagementAction.DESTROY,
+    resource_correlation=correlation,
+    attempt=1,
+)
+
+async with provider.resource_scope(
+    resource,
+    destroy_on_exit=True,
+    destroy_operation=destroy_operation,
+):
+    result = await executable.run("Use the temporary workspace", environment=resource)
+```
+
+`destroy_on_exit` defaults to `False`. The flag and exact destroy operation are supplied together; the package never infers ownership, reference counts, or Host-wide idleness.
 
 A later Harness run always receives a fresh attachment. Harness continuation restores `HarnessState`; provider `resume()` is a separate Host operation based on persisted `EnvironmentProviderResourceState`.
 
-## Lifecycle ownership
+## Lifecycle control
 
 Cleanup has three distinct layers:
 
-| Layer                          | Owner and trigger                                         | Effect                                                                              |
-| ------------------------------ | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Harness mount                  | Harness run close, unmount, or mount replacement          | Stops mount-local sessions, handles, retained output, and adapters                  |
-| Resource and attachment scopes | Harness for Provider input; Host around borrowed Resource | Closes process-local clients, admission, and attachment material                    |
-| Provider resource              | Harness through `ephemeral()` or explicit Host policy     | Creates, resumes, pauses, destroys, and reconciles the external or logical resource |
+| Layer                          | Owner and trigger                                | Effect                                                                              |
+| ------------------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| Harness mount                  | Harness run close, unmount, or mount replacement | Stops mount-local sessions, handles, retained output, and adapters                  |
+| Resource and attachment scopes | Current caller                                   | Closes process-local clients, admission, and attachment material                    |
+| Provider resource              | Explicit caller policy                           | Creates, resumes, pauses, destroys, and reconciles the external or logical resource |
 
 `EnvironmentProvider.ephemeral()` is the canonical temporary-resource helper. Its normal order is:
 

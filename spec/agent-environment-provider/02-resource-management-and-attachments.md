@@ -4,7 +4,7 @@
 
 An `EnvironmentProvider` is the small Host-facing management API for one resolved provider specification. It creates a resource, resumes an existing resource, pauses it when the provider supports suspension, destroys it, reconciles uncertain lifecycle operations, and exposes fresh runtime attachments while the resource is usable.
 
-The Provider encapsulates vendor lifecycle differences without becoming a durable store or a second Environment operation API. A Host chooses whether to retain the returned provider state and when to invoke each durable lifecycle action. The shared `ephemeral()` scope is the one convenience path for a caller that intentionally owns a temporary resource only for the duration of one use. The Harness consumes a Provider through that scope or borrows an already entered Resource, then continues to own the current mount set, file, shell, process, output, port, and portable Environment-state behavior.
+The Provider encapsulates vendor lifecycle differences without becoming a durable store or a second Environment operation API. A Host chooses whether to retain the returned provider state and when to invoke each durable lifecycle action. Resource-scope exit closes only current process-local responsibilities by default. `resource_scope(..., destroy_on_exit=True)` and `ephemeral()` are explicit convenience paths for callers that intentionally select automatic resource destruction. The Harness consumes a Provider through `ephemeral()` or attaches to an already entered Resource, then continues to own the current mount set, file, shell, process, output, port, and portable Environment-state behavior.
 
 ## Resource Model
 
@@ -121,6 +121,14 @@ class EnvironmentProvider(ABC):
         last_known_state: EnvironmentProviderResourceState | None,
     ) -> EnvironmentReconciliationResult: ...
 
+    def resource_scope(
+        self,
+        resource: EnvironmentResource,
+        *,
+        destroy_on_exit: bool = False,
+        destroy_operation: EnvironmentOperationContext | None = None,
+    ) -> AbstractAsyncContextManager[EnvironmentResource]: ...
+
     def ephemeral(
         self,
         *,
@@ -136,6 +144,8 @@ class EnvironmentResource(AbstractAsyncContextManager["EnvironmentResource"]):
     @property
     def is_entered(self) -> bool: ...
 
+    async def close(self) -> None: ...
+
     @abstractmethod
     def acquire_attachment(
         self,
@@ -148,7 +158,7 @@ Every Provider call requires a Host-generated `EnvironmentOperationContext`. For
 
 `create()` establishes the provider's resource for the resolved specification and returns a pre-entry `EnvironmentResource` whose current `state` is immediately available for Host fencing and persistence. An allocating provider provisions a resource; a deterministic non-allocating provider can validate and expose its one logical target without creating an external object. `resume()` takes provider-owned state for an existing resource and similarly returns a pre-entry Resource in a usable running form. If the resource is already running, resume attaches without replacing it; if it is suspended, resume performs the provider's restore/start operation. It never silently creates a different resource when the selected state is missing or incompatible.
 
-A returned `EnvironmentResource` is a single-entry process-local resource scope. Entry starts only live clients, maintenance, attachment issuance, and any Resource-local backend needed while the already identified logical provider resource is in use. A provider whose durable identity is configuration and correlation rather than an external allocation can therefore launch an entry-owned local process here; that process is not retroactively the resource identity returned by `create()` or `resume()`. When an EIP-backed Resource must prove daemon availability before issuing attachments, entry opens a provider-owned EIP Session, completes initialize plus the mandatory initial `environment.readiness` operation, and cleanly closes that Session; it does not use a provider-native command, filesystem marker, generic health route, or future attachment as readiness evidence. Exit closes those local responsibilities and Resource-local backends and does not pause, destroy, or rewrite the logical provider state. `state` remains the latest provider observation for that Resource. `acquire_attachment()` is valid only while the resource scope is entered.
+A returned `EnvironmentResource` is a single-entry process-local resource scope. Entry starts only live clients, maintenance, attachment issuance, and any Resource-local backend needed while the already identified logical provider resource is in use. A provider whose durable identity is configuration and correlation rather than an external allocation can therefore launch an entry-owned local process here; that process is not retroactively the resource identity returned by `create()` or `resume()`. When an EIP-backed Resource must prove daemon availability before issuing attachments, entry opens a provider-owned EIP Session, completes initialize plus the mandatory initial `environment.readiness` operation, and cleanly closes that Session; it does not use a provider-native command, filesystem marker, generic health route, or future attachment as readiness evidence. `close()` closes those local responsibilities and Resource-local backends and does not pause, destroy, or rewrite the logical provider state. `__aexit__` is its structured-scope shortcut and has the same default semantics. `state` remains the latest provider observation for that Resource. `acquire_attachment()` is valid only while the resource scope is entered.
 
 `pause()` requires the matching entered Resource after all attachment scopes have closed and returns updated state after the provider confirms suspension. `FULL` asks the provider to preserve its complete resumable runtime when supported. `FILESYSTEM` preserves the provider filesystem but permits processes and memory to be discarded. An unsupported mode fails before changing the resource. A successful pause makes that Resource scope unavailable for new attachments; the Host then exits it. `destroy()` is explicit and terminal, uses validated state only after live attachment/resource scopes have closed, and never acts through a stale `EnvironmentResource`. Leaving an `EnvironmentResource` context only disconnects local clients and maintenance tasks.
 
@@ -156,7 +166,9 @@ A returned `EnvironmentResource` is a single-entry process-local resource scope.
 
 For a provider that allocates one of several possible resources from the same specification, uncertain create reconciliation uses operation identity and resource correlation recorded in provider metadata to find the exact allocation or prove absence. A deterministic `SINGLE_FROM_SPEC` provider that performs no allocation can instead derive the one target from its exact resolved specification and inspect it directly; it does not manufacture resource tags merely to mirror an allocating provider. For actions with returned state, reconciliation validates that state and the operation correlation applicable to the provider's actual lifecycle effects.
 
-### Ephemeral ownership
+### Optional destruction on scope exit
+
+`resource_scope()` enters one already selected Resource and defaults `destroy_on_exit` to `False`. Normal exit, failure, cancellation, and Resource-entry failure therefore close or abandon only the current process-local scope. When the caller explicitly selects `destroy_on_exit=True`, it also supplies the exact `DESTROY` operation context; after local scope exit, the helper destroys the latest observed state with the same bounded exact-operation reconciliation used by `ephemeral()`. The flag and operation must be selected together. This convenience path does not infer ownership, reference counts, global idleness, or Host safety. A durable Host leaves it disabled and invokes `destroy()` later with its own persisted operation identity after its authorization, reference, lease, and fencing checks.
 
 `ephemeral()` creates one temporary Resource, enters it, yields it, exits it, and destroys its latest observed state. It generates one stable resource correlation when the caller does not supply one and distinct lifecycle operation IDs for create, resume when needed, and destroy. A retry of the same uncertain operation keeps its operation ID and increments only `attempt`.
 
@@ -164,7 +176,7 @@ If create has an unknown outcome, the scope reconciles that exact operation. Aut
 
 Resource entry failure, caller failure, normal return, and cancellation all trigger Resource exit when entry completed and then destroy. A caller failure and cleanup failure are both preserved. Cancellation remains the primary exception and records cleanup failure as secondary diagnostic information. The scope does not pause, persist state, or make a Resource reusable after it exits.
 
-This convenience scope is appropriate when the caller owns the complete temporary lifetime, including Harness-owned Provider inputs. Durable or reusable flows use explicit `create()` or `resume()`, enter the Resource outside one run, acquire a fresh attachment for each run, then explicitly pause or destroy after every attachment closes.
+These convenience scopes are appropriate only when the caller has explicitly selected complete temporary cleanup, including Harness Provider inputs. Durable or reusable flows use explicit `create()` or `resume()`, enter the Resource outside one run, acquire a fresh attachment for each run, close the current scope, then explicitly pause or destroy when Host policy permits it.
 
 A Provider exposes only lifecycle behavior shared well enough to be dependable. Provider-specific template authoring, account administration, image building, billing, unscoped listing, and arbitrary vendor API passthrough are not added to this interface. Reconciliation is exact-operation inspection, not a generic provider browser.
 
@@ -321,7 +333,7 @@ The async context returned by `acquire_attachment()` is the attachment concurren
 Provider plugins replace the complete management and attachment behavior through the abstract contracts above. Cleanup has three independent layers:
 
 1. the Harness closes or discards one transferred provider binding when a run ends or runtime mount replacement retires that binding;
-2. exiting `acquire_attachment()` releases its concurrency lease and any untransferred attachment material, while exiting `EnvironmentResource` closes process-local provider clients, maintenance tasks, and attachment admission;
+2. exiting `acquire_attachment()` releases its concurrency lease and any untransferred attachment material, while `EnvironmentResource.close()` or ordinary Resource-context exit closes process-local provider clients, maintenance tasks, and attachment admission;
 3. only the Host selects a later Provider `pause()` or `destroy()` operation for an external provider resource after its own reference, policy, and fencing checks.
 
 A plugin implements all Provider methods even when one action is a validated no-op or explicitly unsupported. Direct Local destroy is logical detach with no directory mutation. Local Envd Resource exit removes its entry-owned daemon/private runtime while destroy ends only the correlated logical lifecycle and preserves the Host workspace. Docker and E2B destroy their exact outer provider resource when the Host selects that action. Neither Harness cleanup nor Resource exit escalates into durable provider-resource reclamation. Replacing a binding inside one Harness run therefore never silently destroys the reusable logical provider resource from which it came.
@@ -455,16 +467,16 @@ Synchronous vendor SDK calls execute through a bounded worker-thread boundary su
 
 Provider configuration schema, Provider API, provider resource-state codec, lifecycle allocation/concurrency capabilities, attachment union, vendor SDK, EIP version, and Harness adapter are independent compatibility axes. The Harness release group aligns package APIs; provider and wire states retain their own versions.
 
-Making attachment values reusable, treating resource-context exit as pause/destroy, silently recreating on failed resume, using vendor operations as Harness file/process fallbacks, or storing provider resource state in `HarnessState` is incompatible.
+Making attachment values reusable, treating default resource-context exit as pause/destroy, silently recreating on failed resume, using vendor operations as Harness file/process fallbacks, or storing provider resource state in `HarnessState` is incompatible.
 
 ## Invariants
 
-01. The Provider API is limited to create, resume, pause, destroy, exact-operation reconciliation, and fresh attachment acquisition.
+01. The Provider API is limited to create, resume, pause, destroy, exact-operation reconciliation, process-local Resource scopes, and fresh attachment acquisition.
 02. A Host chooses lifecycle actions and optional storage; the provider package owns no durable resource registry.
 03. Resume returns the selected existing resource or fails; it never silently creates a replacement.
 04. Provider resource state is credential-free, provider-owned, and distinct from `HarnessState`.
 05. A Resource spans sequential runs, while every attachment, binding, and EIP session is fresh and single-use.
-06. Closing a binding, disconnecting a resource, pausing it, and destroying it are independent operations.
+06. Closing a binding, closing a process-local Resource scope, pausing a resource, and destroying it are independent operations; automatic destroy occurs only when the caller explicitly selects it.
 07. Pause modes, resource-allocation cardinality, and attachment concurrency are explicit capabilities rather than inferred from provider names.
 08. Local Envd, Docker, and E2B use EIP for all Harness Environment operations.
 09. Resume reestablishes provider and binding authority before portable Environment state restoration.

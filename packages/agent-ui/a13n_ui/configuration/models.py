@@ -806,11 +806,6 @@ class EnvironmentMountDefinition(StrictModel):
         return self
 
 
-class SessionEnvironmentLifecyclePolicy(StrictModel):
-    provision: Literal["eager", "on_first_run"] = "on_first_run"
-    idle: Literal["keep_running", "pause"] = "keep_running"
-
-
 class EnvironmentDefinitionDocument(StrictModel):
     schema_version: Literal["1"]
     environment_id: _ID
@@ -818,7 +813,7 @@ class EnvironmentDefinitionDocument(StrictModel):
     description: str | None = Field(default=None, max_length=16 * 1024)
     mounts: tuple[EnvironmentMountDefinition, ...] = Field(max_length=1024)
     default_mount: _ID | None = None
-    lifecycle: SessionEnvironmentLifecyclePolicy
+    provision: Literal["eager", "on_first_run"] = "on_first_run"
 
     @model_validator(mode="after")
     def _mount_consistency(self) -> Self:
@@ -1076,7 +1071,6 @@ __all__ = [
     "ResourceRevision",
     "ResourceRevisionRef",
     "SafeSourceRef",
-    "SessionEnvironmentLifecyclePolicy",
     "SkillCompatibility",
     "SkillDefinition",
     "SkillImportProvenance",

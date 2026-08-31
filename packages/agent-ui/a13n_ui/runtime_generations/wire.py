@@ -67,7 +67,7 @@ class RunnerAsyncWorkEvent(StrictModel):
 
     generation_id: str = Field(min_length=1, max_length=64)
     session_id: str = Field(pattern=r"^session-[0-9a-f]{16,64}$")
-    parent_active: bool
+    harness_active: bool
     source: Literal["async_subagent", "background_process"]
     kind: Literal["completion", "gap"]
     thread_id: str = Field(min_length=1, max_length=256)

@@ -156,19 +156,21 @@ The default Manager does not survive a Host process or Runner-generation restart
 
 ## Minimal vs. Production Host
 
-| Embedded application                            | Distributed Host                                   |
-| ----------------------------------------------- | -------------------------------------------------- |
-| Omit `bindings` or use `RunBindings.embedded()` | Explicit authenticated instance context            |
-| In-memory selected state                        | Durable immutable checkpoints and selection        |
-| No Environment or Harness-owned Provider        | Host-owned Resources and fresh per-run attachments |
-| Process-local policy collaborators              | Current tenant/user policy and credentials         |
-| Direct result handling                          | Fenced terminal commit and delivery lifecycle      |
-| Inline child execution                          | Optional durable child Execution lifecycle         |
+| Embedded application                             | Distributed Host                                     |
+| ------------------------------------------------ | ---------------------------------------------------- |
+| Omit `bindings` or use `RunBindings.embedded()`  | Explicit authenticated instance context              |
+| In-memory selected state                         | Durable immutable checkpoints and selection          |
+| No Environment or Provider-input temporary scope | Host-managed Resources and fresh per-run attachments |
+| Process-local policy collaborators               | Current tenant/user policy and credentials           |
+| Direct result handling                           | Fenced terminal commit and delivery lifecycle        |
+| Inline child execution                           | Optional durable child Execution lifecycle           |
 
 Start with the embedded path and add Host-owned durable boundaries only when the product requires them.
 
 ## Runnable Example
 
-The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, resumes the same Thread after application restart, and creates and destroys one Harness-owned Provider Resource per turn.
+The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) runs entirely offline and demonstrates the boundary before a full durable Host: it streams repeated turns, atomically stores the returned `HarnessState` only after successful completion, resumes the same Thread after application restart, and explicitly selects one temporary Provider lifecycle per turn.
+
+The [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both Resource-exit policies in one executable flow: the reusable source Resource exits without destruction and is later resumed and explicitly destroyed, while the temporary docs Resource supplies an exact destroy operation and selects `destroy_on_exit=True`.
 
 Its single state file is application teaching code, not an Execution ledger, lease, fence, or prescribed production persistence implementation. Add the Host-owned records described above when multiple workers, replacement attempts, side effects, or durable terminal delivery require them.

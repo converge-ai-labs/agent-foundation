@@ -17,7 +17,6 @@ from typing import Any, cast
 import yaml
 from a13n_environment_provider import (
     EnvironmentLifecycleCapabilities,
-    EnvironmentPauseMode,
     EnvironmentProviderSpec,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
@@ -202,8 +201,7 @@ async def load_catalog_candidate(
                 if lock is None:
                     raise _error("provider_factory_unavailable", "An Environment selects an unavailable provider.")
                 locks.append(lock)
-                capabilities = _validate_provider_mount(mount, settings)
-                _validate_environment_lifecycle(document.lifecycle.idle, capabilities)
+                _validate_provider_mount(mount, settings)
 
         package_payload: JsonValue | None = None
         normalized_value = cast(dict[str, JsonValue], canonical_json_value(document))
@@ -651,18 +649,6 @@ def _validate_provider_mount(
     except Exception as exc:
         raise _error("provider_spec_invalid", "An Environment provider specification is invalid.") from exc
     return resolved.lifecycle_capabilities
-
-
-def _validate_environment_lifecycle(
-    idle_policy: str,
-    capabilities: EnvironmentLifecycleCapabilities,
-) -> None:
-    required_pause_mode = EnvironmentPauseMode.FULL if idle_policy == "pause" else None
-    if required_pause_mode is not None and required_pause_mode not in capabilities.pause_modes:
-        raise _error(
-            "environment_lifecycle_incompatible",
-            "An Environment lifecycle policy is unsupported by a selected provider.",
-        )
 
 
 def _validate_graph(revisions: list[ResourceRevision], identities: set[tuple[str, str]]) -> None:

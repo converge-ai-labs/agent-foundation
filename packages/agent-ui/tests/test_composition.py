@@ -108,10 +108,7 @@ def _write_composition(definitions: Path, *, system_prompt: str = "Be concise.")
                 },
             ],
             "default_mount": "mount-main",
-            "lifecycle": {
-                "provision": "on_first_run",
-                "idle": "keep_running",
-            },
+            "provision": "on_first_run",
         },
     )
 
@@ -550,7 +547,7 @@ async def test_compatibility_rejects_a_missing_required_binding(tmp_path: Path) 
     assert incompatible.value.code == "agent_environment_incompatible"
 
 
-async def test_reload_rejects_unsupported_environment_lifecycle_and_accepts_async_tools(
+async def test_reload_rejects_unknown_environment_idle_policy_and_accepts_async_tools(
     tmp_path: Path,
 ) -> None:
     definitions = tmp_path / "definitions"
@@ -565,11 +562,11 @@ async def test_reload_rejects_unsupported_environment_lifecycle_and_accepts_asyn
 
         environment_path = definitions / "environments/environment-main.yaml"
         environment = yaml.safe_load(environment_path.read_text())
-        environment["lifecycle"]["idle"] = "pause"
+        environment["idle"] = "pause"
         _write_yaml(environment_path, environment)
         with pytest.raises(ConfigurationError) as lifecycle_error:
             await application.reload_configuration()
-        assert lifecycle_error.value.code == "environment_lifecycle_incompatible"
+        assert lifecycle_error.value.code == "configuration_document_invalid"
         assert await application.current_configuration() == accepted
 
         _write_composition(definitions)

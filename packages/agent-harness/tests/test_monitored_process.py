@@ -769,6 +769,29 @@ async def test_process_manager_force_close_stops_all_owned_detached_resources() 
     assert all(process.done.is_set() for process in launcher.created)
 
 
+async def test_process_manager_force_close_matching_releases_only_selected_host_work() -> None:
+    launcher = _Launcher()
+    operator = ProcessManager(launcher)
+    selected_projection = _ProcessRunManager(operator=operator)
+    retained_projection = _ProcessRunManager(operator=operator)
+    selected_run = _RunContext(AgentContextState())
+    retained_run = _RunContext(AgentContextState(), thread_id="thread-other", run_id="run-other")
+    retained_run.deps.instance.host_refs = {"session_id": "session-other"}
+
+    async with selected_projection.active_run(cast(Any, selected_run)):
+        await selected_projection.start(_request(), alias=None)
+    async with retained_projection.active_run(cast(Any, retained_run)):
+        await retained_projection.start(_request(), alias=None)
+
+    await operator.force_close_matching({"session_id": "session-parent"})
+
+    assert [process.close_calls for process in launcher.created] == [1, 0]
+    assert await operator.inspect(cast(Any, selected_run.deps), "backend-1") is None
+    assert await operator.inspect(cast(Any, retained_run.deps), "backend-2") is not None
+    await operator.force_close()
+    assert [process.close_calls for process in launcher.created] == [1, 1]
+
+
 async def test_process_manager_force_close_reports_failure_after_cleaning_every_process() -> None:
     class FailingForceCloseProcess(_DetachedProcess):
         async def force_close(self) -> None:

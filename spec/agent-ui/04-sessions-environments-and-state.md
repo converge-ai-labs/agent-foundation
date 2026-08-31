@@ -11,7 +11,7 @@ A live Run, its input, partial output, model client, provider attachment, `Envir
 | Concern                   | Owner                                   | Session relationship                                                                         |
 | ------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Agent composition         | Resolved Agent snapshot                 | Session pins one exact immutable revision graph                                              |
-| Desired Environment       | Resolved Environment snapshot           | Session pins exact desired mounts and lifecycle policy                                       |
+| Desired Environment       | Resolved Environment snapshot           | Session pins exact desired mounts and provisioning policy                                    |
 | Continuation              | Harness `HarnessState`                  | Stored in the selected continuation bundle without interpreting private Capability state     |
 | Suspended requests        | Harness `DeferredToolRequests`          | Stored beside `HarnessState` in the same selected continuation bundle                        |
 | Session selection         | Agent UI SQLite                         | Stores metadata and one current continuation reference                                       |
@@ -22,7 +22,7 @@ A live Run, its input, partial output, model client, provider attachment, `Envir
 
 ## Environment Definition
 
-An Environment definition describes desired mounts and simple Session lifecycle policy:
+An Environment definition describes desired mounts and initial provisioning policy:
 
 ```python
 class EnvironmentDefinitionDocument(BaseModel):
@@ -32,7 +32,7 @@ class EnvironmentDefinitionDocument(BaseModel):
     description: str | None
     mounts: tuple[EnvironmentMountDefinition, ...]
     default_mount: str | None
-    lifecycle: SessionEnvironmentLifecyclePolicy
+    provision: Literal["on_first_run", "eager"] = "on_first_run"
 
 
 class EnvironmentMountDefinition(BaseModel):
@@ -41,13 +41,9 @@ class EnvironmentMountDefinition(BaseModel):
     provider: EnvironmentProviderSpec
     access: Literal["read_only", "read_write", "full"] = "full"
 
-
-class SessionEnvironmentLifecyclePolicy(BaseModel):
-    provision: Literal["on_first_run", "eager"] = "on_first_run"
-    idle: Literal["keep_running", "pause"] = "keep_running"
 ```
 
-The default provisions on first use, keeps the resource available, and gives each mount `full` access. `read_only` permits model-facing file reads, `read_write` permits all file operations, and `full` permits every Agent-facing Environment capability offered by the Provider. `pause` is accepted only when the provider supports it. Session deletion requests provider destruction best effort. Agent UI does not retain a configurable cleanup workflow or orphan-resource policy.
+The default provisions on first use and gives each mount `full` access. `read_only` permits model-facing file reads, `read_write` permits all file operations, and `full` permits every Agent-facing Environment capability offered by the Provider. Agent UI defines no idle timer or automatic pause policy. Provider-native idle or auto-stop behavior belongs to validated provider parameters. Session pause is an explicit Host command, and Session deletion requests provider destruction best effort. Agent UI does not retain a configurable cleanup workflow or orphan-resource policy.
 
 Editing a mount's access creates a new immutable Environment revision and therefore a new resolved Environment snapshot. Existing Sessions continue to use their pinned snapshot; Agent UI never changes the access of an active or resumable Session in place. A user selects the new revision by creating or forking a Session through the ordinary snapshot-selection flow.
 
@@ -112,15 +108,16 @@ Partial messages, live AG-UI events, model-provider history, and Environment fil
 
 One process-local Run uses this flow:
 
-1. acquire the current Host's Session Run lock;
-2. read and validate the Session's latest continuation bundle and provider-state references;
-3. dispatch those exact immutable inputs to the selected runtime Runner;
-4. reconstruct fresh Model and Environment authority and execute one Harness stream in that Runner;
-5. forward live presentation best effort;
-6. publish and select each detached provider-state update before acknowledging its required lifecycle transition;
-7. on a complete or suspended result, publish one continuation bundle;
-8. update the Session's latest continuation reference;
-9. release runtime resources and the Session lock.
+01. acquire the current Host's Session Run lock;
+02. read and validate the Session's latest continuation bundle and provider-state references;
+03. dispatch those exact immutable inputs to the selected runtime Runner;
+04. reconstruct fresh Model and Environment authority and execute one Harness stream in that Runner;
+05. forward live presentation best effort;
+06. publish and select each detached provider-state update before acknowledging its required lifecycle transition;
+07. on a complete or suspended result, publish one continuation bundle;
+08. update the Session's latest continuation reference;
+09. close the current attachments and process-local Resource scopes without selecting provider pause or destroy;
+10. release the Session lock.
 
 No input row is committed before execution. If the process exits before the database update, the input and partial work are forgotten and the Session retains whichever continuation reference was last committed. If runtime cleanup fails after a continuation was selected, the Run reports that cleanup failure together with the selected continuation identity; cleanup failure does not roll back or obscure the successful selection.
 
@@ -163,7 +160,7 @@ class SessionEnvironmentResource(BaseModel):
     updated_at: datetime
 ```
 
-The provider owns the state payload and lifecycle behavior. The Host stores only the latest provider state needed to reconnect, pause, destroy, or report an unavailable resource. Before dispatch, it selects the current rows and exact state objects. During execution, the Runner returns detached state after each create, resume, pause, or destroy transition that changes durable provider state. The Host validates and publishes that object, replaces the corresponding row with an ordinary last-write-wins update, and then acknowledges the transition. The Runner does not continue a transition that requires persistence when the Host returns a publication or save failure. Transient operation status remains process-local; a lifecycle failure is reported and can mark the resource unavailable when the prior state is no longer usable.
+The provider owns the state payload and lifecycle behavior. The Host stores only the latest provider state needed to reconnect, pause, destroy, or report an unavailable resource. Before dispatch, it selects the current rows and exact state objects. During execution, the Runner returns detached state after each create, resume, explicit pause, or explicit destroy transition that changes durable provider state. The Host validates and publishes that object, replaces the corresponding row with an ordinary last-write-wins update, and then acknowledges the transition. Ordinary Run and Resource-scope exit publishes no lifecycle transition because it closes only process-local responsibilities. The Runner does not continue a transition that requires persistence when the Host returns a publication or save failure. Transient operation status remains process-local; a lifecycle failure is reported and can mark the resource unavailable when the prior state is no longer usable.
 
 - `unprovisioned` provisions on first use;
 - `available` acquires a fresh attachment for a Run;
@@ -217,12 +214,12 @@ The generation `SubagentManager` retains child state, status, bounded output or 
 
 A delegated child receives fresh Model, Identity, Skills, Capabilities, and Environment authority from its exact resolved definition. Nested reconstruction fixes subagents to inline execution and shell to foreground execution. Once a parent Run collects async output and selects a continuation, ordinary continuation persistence preserves the incorporated model/tool result, not the canonical Manager record.
 
-Stable Manager events carry Host-only correlation copied from the initiating `AgentInstanceContext`. Completion usage is deduplicated in generation memory. Before the parent produces a terminal result, ordinary Harness steering owns observation and the stable hook does not duplicate it. After that boundary, Agent UI schedules at most one best-effort wake under the Session lock and reloads the latest selected continuation, even if the original request is still finishing cleanup. A draining generation may publish usage but cannot wake or retarget the replacement generation.
+Stable Manager events carry Host-only correlation copied from the initiating `AgentInstanceContext`. Completion usage is deduplicated in generation memory. The Runner reports correlated Harness activity and the Host independently checks Session request activity; the stable hook is a no-op only while both remain active. Otherwise Agent UI schedules at most one best-effort wake behind the Session lock and reloads the latest selected continuation, including when Harness has terminated while the original Host request is still finishing cleanup. A draining generation may publish usage but cannot wake or retarget the replacement generation.
 
 There are no child Session rows, generic Job rows, durable process rows, steering ledgers, delivery identities, linked-successor fences, or retention dependencies. Forking never copies canonical Manager work, and the parent can start new work after resuming from its selected continuation.
 
 ## Delete and Cleanup
 
-Deleting a Session first stops its active root Run in the current Host, asks the selected Runner to destroy its Environment resources best effort, and removes the Session and resource rows. Runner-local child records disappear when their generation closes; Session deletion does not create a durable child cleanup workflow. A failed external Environment cleanup is reported but does not create a durable deletion workflow or cleanup-pending state machine.
+Deleting a Session first cancels its active root Run and acquires the same Session lock used by root and wake Runs. The selected Runner then force-closes only Manager records whose captured Host correlation names that Session, which cancels live children, terminates live processes, and releases their independent Environment scopes. After that local cleanup completes, the Runner destroys the Session's Environment resources best effort and the Host removes the Session and resource rows. This targeted cleanup does not close generation Managers or affect another Session. Session deletion creates no durable child cleanup workflow. A failed local or external Environment cleanup is reported but does not create a durable deletion workflow or cleanup-pending state machine.
 
 Unreferenced immutable objects are eligible for an explicit garbage-collection pass.

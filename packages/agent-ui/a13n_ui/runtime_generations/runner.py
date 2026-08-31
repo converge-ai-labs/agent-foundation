@@ -39,7 +39,6 @@ _ENV_MAX_MESSAGE = "A13N_UI_RUNNER_MAX_MESSAGE_BYTES"
 _ENV_STORAGE = "A13N_UI_RUNNER_STORAGE"
 _ENV_CONFIGURATION = "A13N_UI_RUNNER_CONFIGURATION"
 _ENV_ENVD_RUNTIME = "A13N_UI_RUNNER_ENVD_RUNTIME"
-_RUNTIME_PROTOCOL_VERSION = "3"
 
 
 def current_runtime_readiness() -> RuntimeReadiness:
@@ -53,7 +52,7 @@ def current_runtime_readiness() -> RuntimeReadiness:
         except PackageNotFoundError:
             provenance.append(f"{name}==unavailable")
     return RuntimeReadiness(
-        protocol_version=_RUNTIME_PROTOCOL_VERSION,
+        protocol_version="1",
         agent_ui_version=version("a13n-ui"),
         python_version=platform.python_version(),
         loaded_provenance=tuple(provenance),
@@ -192,7 +191,8 @@ async def run_runtime_runner() -> int:
                 await asyncio.gather(*tuple(executions.values()), return_exceptions=True)
             if executor is not None:
                 await executor.wait_idle()
-            await channel.send("DRAINED", generation_id=generation_id)
+            if state == "draining":
+                await channel.send("DRAINED", generation_id=generation_id)
 
         while True:
             message = await channel.receive()
@@ -238,7 +238,15 @@ async def run_runtime_runner() -> int:
             elif message_type == "DRAIN" and state == "active":
                 state = "draining"
                 drain_task = asyncio.create_task(finish_drain(), name=f"drain-{generation_id}")
-            elif message_type == "SHUTDOWN" and state in {"ready", "draining"} and not executions:
+            elif message_type == "FORCE_CLOSE" and state == "draining":
+                state = "force_closing"
+                if executor is not None:
+                    await executor.close()
+                if drain_task is not None:
+                    await drain_task
+                state = "force_closed"
+                await channel.send("FORCE_CLOSED", generation_id=generation_id)
+            elif message_type == "SHUTDOWN" and state in {"ready", "draining", "force_closed"} and not executions:
                 if drain_task is not None:
                     await drain_task
                 if executor is not None:

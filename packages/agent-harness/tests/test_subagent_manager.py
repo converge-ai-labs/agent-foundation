@@ -877,6 +877,41 @@ async def test_subagent_manager_force_close_reports_binding_cleanup_failure() ->
     assert bindings.exited.is_set()
 
 
+async def test_subagent_manager_force_close_matching_releases_only_selected_host_work() -> None:
+    runtime = _ChildRuntime()
+    selected_started, _selected_release = runtime.block("control")
+    retained_started, retained_release = runtime.block("closing")
+    bindings = _ChildScopeFactory()
+    operator = SubagentManager(bindings)
+    parent = _built_parent(runtime)
+    selected_projection = _AsyncSubagentProjection(operator=operator, children=parent.subagents)
+    retained_projection = _AsyncSubagentProjection(operator=operator, children=parent.subagents)
+    selected_run = _RunContext(AgentContextState())
+    retained_run = _RunContext(AgentContextState(), thread_id="thread-other", run_id="run-other")
+    retained_run.deps.instance.host_refs = {"session_id": "session-other"}
+
+    async with selected_projection.active_run(cast(Any, selected_run)):
+        await selected_projection.delegate(subagent_name="reviewer", prompt="control")
+    async with retained_projection.active_run(cast(Any, retained_run)):
+        await retained_projection.delegate(subagent_name="reviewer", prompt="closing")
+    await asyncio.wait_for(selected_started.wait(), 2)
+    await asyncio.wait_for(retained_started.wait(), 2)
+
+    await operator.force_close_matching({"session_id": "session-parent"})
+
+    selected_backend = bindings.entered[0][0]
+    retained_backend = bindings.entered[1][0]
+    assert await operator.snapshot(cast(Any, selected_run.deps), selected_backend) is None
+    retained = await operator.snapshot(cast(Any, retained_run.deps), retained_backend)
+    assert retained is not None
+    assert retained.status == "running"
+    assert bindings.exited == [selected_backend]
+
+    retained_release.set()
+    await operator.force_close()
+    assert set(bindings.exited) == {selected_backend, retained_backend}
+
+
 async def test_managed_subagent_state_accepts_full_operator_backend_id_bound() -> None:
     state = ManagedSubagentState(
         subagent_id="subagent-1",

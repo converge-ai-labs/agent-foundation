@@ -66,14 +66,11 @@ class EnvironmentResource(ABC):
         del exc_type, traceback
         if self._scope_status != "entered":
             return None
-        self._scope_status = "closing"
         cleanup_error: BaseException | None = None
         try:
-            await self._exit_scope()
+            await self.close()
         except BaseException as error:
             cleanup_error = error
-        finally:
-            self._scope_status = "closed"
 
         if cleanup_error is None:
             return None
@@ -90,6 +87,16 @@ class EnvironmentResource(ABC):
                 [exc_value, cleanup_error],
             ) from None
         raise cleanup_error
+
+    async def close(self) -> None:
+        """Close only this process-local resource scope."""
+        if self._scope_status != "entered":
+            return
+        self._scope_status = "closing"
+        try:
+            await self._exit_scope()
+        finally:
+            self._scope_status = "closed"
 
     @property
     @abstractmethod
@@ -175,6 +182,49 @@ class EnvironmentProvider(ABC):
     ) -> EnvironmentReconciliationResult: ...
 
     @asynccontextmanager
+    async def resource_scope(
+        self,
+        resource: EnvironmentResource,
+        *,
+        destroy_on_exit: bool = False,
+        destroy_operation: EnvironmentOperationContext | None = None,
+    ) -> AsyncGenerator[EnvironmentResource]:
+        """Enter one Resource and optionally destroy it after local scope exit."""
+        if destroy_on_exit != (destroy_operation is not None):
+            raise ValueError("destroy_on_exit and destroy_operation must be selected together")
+
+        state = resource.state
+        primary_error: BaseException | None = None
+        try:
+            try:
+                async with resource:
+                    yield resource
+            finally:
+                state = resource.state
+        except BaseException as exc:
+            primary_error = exc
+            raise
+        finally:
+            if destroy_on_exit:
+                assert destroy_operation is not None
+                try:
+                    await self._destroy_resource(state, destroy_operation)
+                except BaseException as cleanup_error:
+                    if isinstance(primary_error, asyncio.CancelledError):
+                        primary_error.add_note(f"Environment resource destruction also failed: {cleanup_error!r}")
+                    elif isinstance(cleanup_error, asyncio.CancelledError):
+                        if primary_error is not None:
+                            cleanup_error.add_note(f"Environment resource use also failed: {primary_error!r}")
+                        raise
+                    elif primary_error is not None:
+                        raise BaseExceptionGroup(
+                            "Environment resource use and destruction failed",
+                            [primary_error, cleanup_error],
+                        ) from None
+                    else:
+                        raise
+
+    @asynccontextmanager
     async def ephemeral(
         self,
         *,
@@ -194,35 +244,12 @@ class EnvironmentProvider(ABC):
             except BaseException as cleanup_error:
                 cancellation.add_note(f"Cancelled environment create reconciliation also failed: {cleanup_error!r}")
             raise cancellation from None
-        state = resource.state
-        primary_error: BaseException | None = None
-        try:
-            try:
-                async with resource:
-                    yield resource
-            finally:
-                state = resource.state
-        except BaseException as exc:
-            primary_error = exc
-            raise
-        finally:
-            destroy_operation = _new_operation(EnvironmentManagementAction.DESTROY, correlation)
-            try:
-                await self._destroy_ephemeral_resource(state, destroy_operation)
-            except BaseException as cleanup_error:
-                if isinstance(primary_error, asyncio.CancelledError):
-                    primary_error.add_note(f"Environment resource destruction also failed: {cleanup_error!r}")
-                elif isinstance(cleanup_error, asyncio.CancelledError):
-                    if primary_error is not None:
-                        cleanup_error.add_note(f"Environment resource use also failed: {primary_error!r}")
-                    raise
-                elif primary_error is not None:
-                    raise BaseExceptionGroup(
-                        "Environment resource use and destruction failed",
-                        [primary_error, cleanup_error],
-                    ) from None
-                else:
-                    raise
+        async with self.resource_scope(
+            resource,
+            destroy_on_exit=True,
+            destroy_operation=_new_operation(EnvironmentManagementAction.DESTROY, correlation),
+        ) as entered:
+            yield entered
 
     async def _create_ephemeral_resource(
         self,
@@ -265,7 +292,7 @@ class EnvironmentProvider(ABC):
             EnvironmentReconciliationPhase.PAUSED,
         }:
             assert reconciled.state is not None
-            await self._destroy_ephemeral_resource(
+            await self._destroy_resource(
                 reconciled.state,
                 _new_operation(
                     EnvironmentManagementAction.DESTROY,
@@ -299,7 +326,7 @@ class EnvironmentProvider(ABC):
             )
         except BaseException as primary_error:
             try:
-                await self._destroy_ephemeral_resource(
+                await self._destroy_resource(
                     state,
                     _new_operation(EnvironmentManagementAction.DESTROY, resource_correlation),
                 )
@@ -316,7 +343,7 @@ class EnvironmentProvider(ABC):
                 ) from None
             raise
 
-    async def _destroy_ephemeral_resource(
+    async def _destroy_resource(
         self,
         state: EnvironmentProviderResourceState,
         operation: EnvironmentOperationContext,

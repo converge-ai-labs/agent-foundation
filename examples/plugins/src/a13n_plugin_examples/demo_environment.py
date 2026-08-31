@@ -13,6 +13,7 @@ from a13n_environment_provider import (
     EnvironmentOperationContext,
     EnvironmentProviderFactoryCatalog,
     EnvironmentProviderSpec,
+    EnvironmentReconciliationPhase,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
@@ -97,9 +98,18 @@ async def _run_environment_demo(
     source_resource = await source_provider.create(operation=source_create)
     docs_resource = await docs_provider.create(operation=docs_create)
     source_state = source_resource.state
-    docs_state = docs_resource.state
+    docs_destroy = _operation(EnvironmentManagementAction.DESTROY, "workspace-docs")
 
-    async with source_resource, docs_resource:
+    # Default Resource exit closes only this process-local scope. The Host can
+    # reopen `source_resource` later and decide when to destroy it.
+    async with (
+        source_resource,
+        docs_provider.resource_scope(
+            docs_resource,
+            destroy_on_exit=True,
+            destroy_operation=docs_destroy,
+        ),
+    ):
         async with (
             source_resource.acquire_attachment() as source_attachment,
             docs_resource.acquire_attachment() as docs_attachment,
@@ -136,10 +146,8 @@ async def _run_environment_demo(
     source_destroy = _operation(EnvironmentManagementAction.DESTROY, "workspace-source")
     await source_provider.destroy(resumed_state, operation=source_destroy)
     destroyed = await source_provider.reconcile(source_destroy, last_known_state=resumed_state)
-    await docs_provider.destroy(
-        docs_state,
-        operation=_operation(EnvironmentManagementAction.DESTROY, "workspace-docs"),
-    )
+    docs_destroyed = await docs_provider.reconcile(docs_destroy, last_known_state=docs_resource.state)
+    assert docs_destroyed.phase is EnvironmentReconciliationPhase.ABSENT
 
     return EnvironmentDemoResult(
         selection_mode=selection_mode,

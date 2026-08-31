@@ -6,7 +6,7 @@ Environment lifecycle is separate from model-facing tools:
 
 - an Environment makes operations available to trusted application code through `AgentContext.environment`;
 - `DynamicEnvironmentCapability` optionally exposes selected Environment operations to the model;
-- source type determines who owns the provider resource lifecycle.
+- passing a Provider explicitly selects temporary automatic destruction, while passing an entered Resource selects attachment only.
 
 ## Start without an Environment
 
@@ -18,7 +18,7 @@ result = await executable.run("Answer without using a workspace")
 
 This is the simplest path for Agents that only need a model and non-Environment tools.
 
-## Let the Harness own a temporary resource
+## Select a temporary resource lifecycle
 
 Pass an `EnvironmentProvider` when one temporary resource should exist only for the logical run:
 
@@ -68,9 +68,9 @@ Provider destruction completes before `run()` returns or a terminal stream resul
 
 A Provider input is always ephemeral, including when a run returns `suspended`. Use a Host-owned Resource when continuation must retain the same external resource.
 
-## Keep and reuse a Host-owned resource
+## Keep and reuse a resource from a Host
 
-An entered `EnvironmentResource` is borrowed. The Host creates, enters, retains, exits, pauses, resumes, and destroys it; the Harness only acquires and releases one fresh attachment per run.
+For an entered `EnvironmentResource`, the Host creates, enters, retains, closes, pauses, resumes, and destroys it; the Harness only acquires and releases one fresh attachment per run. Resource context exit calls `close()` and never implies pause or destroy.
 
 ```python
 from a13n_environment_provider import (
@@ -112,6 +112,26 @@ finally:
 
 The Resource must already be inside its single-entry async scope when passed to the Harness. An unentered or closed Resource fails when the stream enters. Each Harness run receives a fresh attachment and a fresh runtime mount, so live attachments and entered providers are never reused as continuation state.
 
+When the Host knows at scope construction time that this exact resource is temporary, it can opt into automatic destruction while retaining the exact lifecycle operation identity:
+
+```python
+destroy_operation = EnvironmentOperationContext(
+    operation_id="operation-destroy-temporary-workspace",
+    action=EnvironmentManagementAction.DESTROY,
+    resource_correlation=correlation,
+    attempt=1,
+)
+
+async with provider.resource_scope(
+    resource,
+    destroy_on_exit=True,
+    destroy_operation=destroy_operation,
+):
+    result = await executable.run("Use the temporary workspace", environment=resource)
+```
+
+The default `async with resource` form is deliberately different: it closes only process-local clients and attachment admission. The Host can persist `resource.state`, reopen it in another process, and call `destroy()` only when its own policy permits cleanup.
+
 `HarnessState` and `EnvironmentProviderResourceState` solve different problems:
 
 - `HarnessState` continues Agent messages and bounded portable Environment values;
@@ -120,7 +140,7 @@ The Resource must already be inside its single-entry async scope when passed to 
 
 ## Use several Environments
 
-Pass `environments=` to name several sources. One mapping can mix Harness-owned Providers and Host-owned entered Resources:
+Pass `environments=` to name several sources. One mapping can mix temporary Provider inputs and Host-managed entered Resources:
 
 ```python
 from a13n_harness import (
@@ -181,7 +201,7 @@ result = await executable.run(
 # Use /environment/left/... and /environment/right/...
 ```
 
-Setup is atomic. The Harness does not publish a partial initial mount set. If a later source fails to enter, already entered Provider-owned sources are released and destroyed in reverse order, while borrowed Resources remain under Host ownership.
+Setup is atomic. The Harness does not publish a partial initial mount set. If a later source fails to enter, Provider-input temporary sources are released and destroyed in reverse order, while entered Resource inputs are only detached from their fresh run attachments.
 
 ## Restrict a mount
 

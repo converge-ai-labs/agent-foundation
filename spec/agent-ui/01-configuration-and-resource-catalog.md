@@ -225,7 +225,7 @@ The immutable package object contains a canonical manifest and digest over every
 
 ### Agents and Environments
 
-Agent documents reference exact resource identities in the candidate generation and are owned in detail by [Agent Composition and Snapshots](02-agent-composition-and-snapshots.md). Environment documents wrap one or more provider specifications and Session lifecycle policy and are owned by [Sessions, Environments, and State](04-sessions-environments-and-state.md).
+Agent documents reference exact resource identities in the candidate generation and are owned in detail by [Agent Composition and Snapshots](02-agent-composition-and-snapshots.md). Environment documents wrap one or more provider specifications and an initial provisioning policy and are owned by [Sessions, Environments, and State](04-sessions-environments-and-state.md).
 
 ## Accepted Configuration Generation
 

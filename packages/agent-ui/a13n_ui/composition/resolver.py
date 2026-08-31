@@ -281,7 +281,6 @@ class SnapshotResolver:
                 resource_allocation=resolved.lifecycle_capabilities.resource_allocation.value,
                 attachment_concurrency=resolved.lifecycle_capabilities.attachment_concurrency.value,
             )
-            _validate_environment_lifecycle(document.lifecycle.idle, lifecycle_capabilities)
             mounts.append(
                 ResolvedEnvironmentMountDefinition(
                     mount_name=mount.mount_name,
@@ -399,18 +398,6 @@ def validate_compatibility(
         agent_snapshot_digest=agent.logical_agent_digest,
         environment_snapshot_digest=environment.logical_environment_digest,
     )
-
-
-def _validate_environment_lifecycle(
-    idle_policy: str,
-    capabilities: ResolvedEnvironmentLifecycleCapabilities,
-) -> None:
-    required_pause_mode = "full" if idle_policy == "pause" else None
-    if required_pause_mode is not None and required_pause_mode not in capabilities.pause_modes:
-        raise CompositionError(
-            "An Environment lifecycle policy is unsupported by a selected provider.",
-            code="environment_lifecycle_incompatible",
-        )
 
 
 def _reject_data_root_overlap(value: JsonValue, data_root: Path, *, key: str | None = None) -> None:

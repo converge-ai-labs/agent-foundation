@@ -571,7 +571,7 @@ class RunnerExecutionService:
             RunnerAsyncWorkEvent(
                 generation_id=self._generation_id,
                 session_id=session_id,
-                parent_active=(
+                harness_active=(
                     event.agent_instance_id in self._parents and event.agent_instance_id not in self._terminal_parents
                 ),
                 source="async_subagent",
@@ -594,7 +594,7 @@ class RunnerExecutionService:
             RunnerAsyncWorkEvent(
                 generation_id=self._generation_id,
                 session_id=session_id,
-                parent_active=(
+                harness_active=(
                     event.agent_instance_id in self._parents and event.agent_instance_id not in self._terminal_parents
                 ),
                 source="background_process",
@@ -621,6 +621,8 @@ class RunnerExecutionService:
                 failure={"code": "runtime_generation_mismatch", "message": "The command selected another generation."},
             )
         try:
+            if request.action in {"pause", "destroy"}:
+                await self._force_close_session_work(request.session_id)
             snapshot = await self._objects.environment_snapshot(request.environment_snapshot)
             await _execute_environment_command(
                 request,
@@ -638,6 +640,16 @@ class RunnerExecutionService:
                 failure=_safe_exception(exc, code="environment_operation_failed"),
             )
         return RunnerEnvironmentResult(request_id=request.request_id)
+
+    async def _force_close_session_work(self, session_id: str) -> None:
+        results = await asyncio.gather(
+            self._subagents.force_close_matching({"session_id": session_id}),
+            self._processes.force_close_matching({"session_id": session_id}),
+            return_exceptions=True,
+        )
+        errors = [result for result in results if isinstance(result, BaseException)]
+        if errors:
+            raise BaseExceptionGroup("Session asynchronous work cleanup failed.", errors)
 
     def cancel(self, request_id: str, *, admitted: bool = False) -> bool:
         stream = self._streams.get(request_id)
@@ -969,7 +981,6 @@ async def _run_environment(
     persist_state: _StateCallback,
     acknowledged_provider_states: dict[str, EnvironmentProviderResourceState],
     mount_names: frozenset[str] | None = None,
-    apply_idle_policy: bool = True,
 ):
     provider_state_snapshot = {
         mount_name: state.model_copy(deep=True) for mount_name, state in acknowledged_provider_states.items()
@@ -987,9 +998,9 @@ async def _run_environment(
             "A child Environment policy selects an unknown mount.",
             code="environment_resource_mismatch",
         )
-    resources: list[tuple[ResolvedEnvironmentMountDefinition, Any, EnvironmentResource]] = []
+    resources: list[tuple[ResolvedEnvironmentMountDefinition, EnvironmentResource]] = []
+    resource_scopes = AsyncExitStack()
     attachments = AsyncExitStack()
-    entered = False
     try:
         for mount in mounts.values():
             item = selected[mount.mount_name]
@@ -1033,15 +1044,15 @@ async def _run_environment(
                 if provider_state is None
                 else await provider.resume(provider_state, operation=operation)
             )
-            await resource.__aenter__()
-            resources.append((mount, provider, resource))
+            await resource_scopes.enter_async_context(resource)
+            resources.append((mount, resource))
             await persist_state(
                 _state_update(request, resource_row, resource.state, EnvironmentResourceStatus.available)
             )
             acknowledged_provider_states[mount.mount_name] = resource.state.model_copy(deep=True)
 
         runtime_mounts: dict[str, EnvironmentRuntimeMount] = {}
-        for mount, _provider, resource in resources:
+        for mount, resource in resources:
             attachment = await attachments.enter_async_context(resource.acquire_attachment())
             runtime_mounts[mount.model_alias] = EnvironmentRuntimeMount(
                 binding=create_environment_provider_binding(attachment),
@@ -1050,29 +1061,12 @@ async def _run_environment(
             )
         default_name = snapshot.definition.default_mount
         default_mount = mounts[default_name].model_alias if default_name in mounts else None
-        entered = True
         yield create_environment_runtime(mounts=runtime_mounts, default_mount=default_mount)
     finally:
-        await attachments.aclose()
-        for mount, provider, resource in reversed(resources):
-            try:
-                if entered and apply_idle_policy and snapshot.definition.lifecycle.idle == "pause":
-                    state = await provider.pause(
-                        resource,
-                        operation=_operation(EnvironmentManagementAction.PAUSE, request.session_id, mount.mount_name),
-                        mode=EnvironmentPauseMode.FULL,
-                    )
-                    await persist_state(
-                        _state_update(
-                            request,
-                            selected[mount.mount_name].resource,
-                            state,
-                            EnvironmentResourceStatus.paused,
-                        )
-                    )
-                    acknowledged_provider_states[mount.mount_name] = state.model_copy(deep=True)
-            finally:
-                await resource.__aexit__(None, None, None)
+        try:
+            await attachments.aclose()
+        finally:
+            await resource_scopes.aclose()
 
 
 @asynccontextmanager
@@ -1102,7 +1096,6 @@ async def _child_environment(
             persist_state=persist_state,
             acknowledged_provider_states=acknowledged_provider_states,
             mount_names=mount_names,
-            apply_idle_policy=False,
         ) as runtime:
             yield runtime
         return
@@ -1132,7 +1125,8 @@ async def _dedicated_child_environment(
             "A child Environment policy selects an unknown mount.",
             code="environment_resource_mismatch",
         )
-    resources: list[tuple[ResolvedEnvironmentMountDefinition, Any, EnvironmentResource, str]] = []
+    resources: list[tuple[ResolvedEnvironmentMountDefinition, EnvironmentResource]] = []
+    resource_scopes = AsyncExitStack()
     attachments = AsyncExitStack()
     try:
         for mount in mounts.values():
@@ -1157,13 +1151,12 @@ async def _dedicated_child_environment(
                 runtime=runtime,
             )
             correlation = f"{mount.mount_name}:child-{uuid4().hex[:12]}"
-            resource = await provider.create(
-                operation=_operation(EnvironmentManagementAction.CREATE, request.session_id, correlation)
+            resource = await resource_scopes.enter_async_context(
+                provider.ephemeral(resource_correlation=f"{request.session_id}:{correlation}")
             )
-            await resource.__aenter__()
-            resources.append((mount, provider, resource, correlation))
+            resources.append((mount, resource))
         runtime_mounts: dict[str, EnvironmentRuntimeMount] = {}
-        for mount, _provider, resource, _correlation in resources:
+        for mount, resource in resources:
             attachment = await attachments.enter_async_context(resource.acquire_attachment())
             runtime_mounts[mount.model_alias] = EnvironmentRuntimeMount(
                 binding=create_environment_provider_binding(attachment),
@@ -1174,15 +1167,10 @@ async def _dedicated_child_environment(
         default_mount = mounts[default_name].model_alias if default_name in mounts else None
         yield create_environment_runtime(mounts=runtime_mounts, default_mount=default_mount)
     finally:
-        await attachments.aclose()
-        for _mount, provider, resource, correlation in reversed(resources):
-            try:
-                await provider.destroy(
-                    resource.state,
-                    operation=_operation(EnvironmentManagementAction.DESTROY, request.session_id, correlation),
-                )
-            finally:
-                await resource.__aexit__(None, None, None)
+        try:
+            await attachments.aclose()
+        finally:
+            await resource_scopes.aclose()
 
 
 async def _execute_environment_command(

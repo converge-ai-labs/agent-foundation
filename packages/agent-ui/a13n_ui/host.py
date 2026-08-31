@@ -275,13 +275,14 @@ class AgentUiHost:
 
     async def provision_session_environment(self, session_id: str) -> EnvironmentAvailability:
         async with self._operation():
-            for resource in await self._environments.resources(session_id):
-                await self._execute_environment_command(
-                    session_id,
-                    resource.mount_name,
-                    action="ensure_available",
-                )
-            return await self._environments.availability(session_id)
+            async with self._runs.session_guard(session_id):
+                for resource in await self._environments.resources(session_id):
+                    await self._execute_environment_command(
+                        session_id,
+                        resource.mount_name,
+                        action="ensure_available",
+                    )
+                return await self._environments.availability(session_id)
 
     async def retry_session_environment(
         self,
@@ -289,8 +290,9 @@ class AgentUiHost:
         mount_name: str,
     ) -> EnvironmentAvailability:
         async with self._operation():
-            await self._execute_environment_command(session_id, mount_name, action="ensure_available")
-            return await self._environments.availability(session_id)
+            async with self._runs.session_guard(session_id):
+                await self._execute_environment_command(session_id, mount_name, action="ensure_available")
+                return await self._environments.availability(session_id)
 
     async def pause_session_environment(
         self,
@@ -300,8 +302,9 @@ class AgentUiHost:
         mode: EnvironmentPauseMode = EnvironmentPauseMode.FILESYSTEM,
     ) -> EnvironmentAvailability:
         async with self._operation():
-            await self._execute_environment_command(session_id, mount_name, action="pause", pause_mode=mode)
-            return await self._environments.availability(session_id)
+            async with self._runs.session_guard(session_id):
+                await self._execute_environment_command(session_id, mount_name, action="pause", pause_mode=mode)
+                return await self._environments.availability(session_id)
 
     async def destroy_session_environment(
         self,
@@ -309,8 +312,9 @@ class AgentUiHost:
         mount_name: str,
     ) -> EnvironmentAvailability:
         async with self._operation():
-            await self._execute_environment_command(session_id, mount_name, action="destroy")
-            return await self._environments.availability(session_id)
+            async with self._runs.session_guard(session_id):
+                await self._execute_environment_command(session_id, mount_name, action="destroy")
+                return await self._environments.availability(session_id)
 
     async def run_session(
         self,
@@ -359,18 +363,19 @@ class AgentUiHost:
     async def delete_session(self, session_id: str) -> None:
         async with self._operation():
             await self._sessions.get(session_id)
-            await self._runs.cancel(session_id)
-            cleanup_error: Exception | None = None
-            for resource in await self._environments.resources(session_id):
-                try:
-                    await self._execute_environment_command(
-                        session_id,
-                        resource.mount_name,
-                        action="destroy",
-                    )
-                except Exception as exc:
-                    cleanup_error = exc
-            await self._sessions.delete(session_id)
+            async with self._runs.session_guard(session_id, cancel_active=True):
+                cleanup_error: Exception | None = None
+                for resource in await self._environments.resources(session_id):
+                    try:
+                        await self._execute_environment_command(
+                            session_id,
+                            resource.mount_name,
+                            action="destroy",
+                        )
+                    except Exception as exc:
+                        cleanup_error = exc
+                await self._sessions.delete(session_id)
+            await self._runs.forget_session(session_id)
             if cleanup_error is not None:
                 raise EnvironmentLifecycleError(
                     "The Session was deleted, but one or more Environment resources could not be destroyed.",
@@ -507,7 +512,7 @@ class AgentUiHost:
 
     async def _provision_eager_environment(self, session: LocalSession) -> LocalSession:
         snapshot = await self._composition.environment(session.environment_snapshot)
-        if snapshot.definition.lifecycle.provision == "eager":
+        if snapshot.definition.provision == "eager":
             for resource in await self._environments.resources(session.session_id):
                 await self._execute_environment_command(
                     session.session_id,

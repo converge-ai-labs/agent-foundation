@@ -65,7 +65,7 @@ The rules are:
 5. A mapping with several entries has no default unless `default_environment` is explicit. Mapping order never chooses authority.
 6. An empty mapping, invalid name, invalid mount policy, or high-level/advanced input conflict fails before provider effects.
 7. Omitting every Environment input creates a fresh empty runtime.
-8. Provider input delegates one ephemeral Resource lifetime to the Harness. Entered Resource input borrows the Resource and acquires one fresh attachment for the run.
+8. Provider input explicitly selects one ephemeral Resource lifetime. Entered Resource input selects one fresh attachment for the run and no pause or destroy action.
 
 The default mount serves `/workspace`. Every mount is also addressable at `/environment/{name}`. Without a default mount, `/workspace` is unavailable.
 
@@ -216,7 +216,7 @@ Run entry proceeds in this order:
 
 A failure before publication unwinds entered provider scopes in reverse order and discards remaining candidates. No partial initial mount set becomes observable.
 
-Run closure installs the terminal mutation fence before terminal result delivery. It then stops readiness and observation work, closes extension scopes in reverse order, waits for operation leases, releases provider scopes, destroys Harness-owned ephemeral Resources, and reports cleanup failure through the normal run cleanup boundary.
+Run closure installs the terminal mutation fence before terminal result delivery. It then stops readiness and observation work, closes extension scopes in reverse order, waits for operation leases, releases provider scopes, destroys only Provider-input ephemeral Resources, and reports cleanup failure through the normal run cleanup boundary. Closing an entered Resource input or advanced Host runtime never selects provider pause or destroy.
 
 ## Mount Mutation
 
@@ -504,7 +504,7 @@ Cancellation and timeout do not imply that an external mutation failed. Side-eff
 07. Provider entry and operation readiness are distinct; readiness is scoped to required operation families.
 08. Provider permissions and availability can narrow but never widen Harness authority.
 09. Portable Environment state restores data into already selected fresh mounts and never restores authority or desired mounts.
-10. Provider-owned ephemeral Resources are destroyed by the Harness; borrowed entered Resources remain Host-owned.
+10. The Provider-input convenience path explicitly destroys its ephemeral Resources; entered Resource and advanced Host-runtime paths never select pause or destroy.
 11. Operation leases keep retired provider scopes alive only for already authorized work.
 12. Model-facing tools and projections never expose Host mutation authority or provider credentials.
 13. Dynamic Environment Capability behavior is optional; Environment routing and lifecycle are not.

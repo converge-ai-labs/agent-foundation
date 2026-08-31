@@ -233,6 +233,69 @@ async def test_ephemeral_owns_create_entry_exit_and_destroy_in_order() -> None:
     assert destroy.action is EnvironmentManagementAction.DESTROY
 
 
+async def test_resource_scope_defaults_to_process_local_close_without_destroy() -> None:
+    provider = _Provider()
+    resource = await provider.create(
+        operation=EnvironmentOperationContext(
+            operation_id="operation-create-reusable",
+            action=EnvironmentManagementAction.CREATE,
+            resource_correlation="resource-reusable",
+            attempt=1,
+        )
+    )
+
+    async with provider.resource_scope(resource):
+        provider.events.append("body")
+
+    assert provider.events == ["create:1", "enter", "body", "exit"]
+    assert provider.destroy_operations == []
+
+
+async def test_resource_scope_can_explicitly_clean_up_resources_on_exit() -> None:
+    provider = _Provider()
+    resource = await provider.create(
+        operation=EnvironmentOperationContext(
+            operation_id="operation-create-auto-cleanup",
+            action=EnvironmentManagementAction.CREATE,
+            resource_correlation="resource-auto-cleanup",
+            attempt=1,
+        )
+    )
+
+    async with provider.resource_scope(
+        resource,
+        destroy_on_exit=True,
+        destroy_operation=EnvironmentOperationContext(
+            operation_id="operation-destroy-auto-cleanup",
+            action=EnvironmentManagementAction.DESTROY,
+            resource_correlation="resource-auto-cleanup",
+            attempt=1,
+        ),
+    ):
+        provider.events.append("body")
+
+    assert provider.events == ["create:1", "enter", "body", "exit", "destroy:1"]
+
+
+async def test_resource_close_only_exits_current_scope() -> None:
+    provider = _Provider()
+    resource = await provider.create(
+        operation=EnvironmentOperationContext(
+            operation_id="operation-create-close",
+            action=EnvironmentManagementAction.CREATE,
+            resource_correlation="resource-close",
+            attempt=1,
+        )
+    )
+    await resource.__aenter__()
+
+    await resource.close()
+
+    assert provider.events == ["create:1", "enter", "exit"]
+    assert resource.is_entered is False
+    assert provider.destroy_operations == []
+
+
 async def test_ephemeral_destroys_latest_state_observed_during_resource_exit() -> None:
     provider = _Provider(exit_state=_UPDATED_STATE)
 

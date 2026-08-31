@@ -148,6 +148,8 @@ The owning executable or Runner generation invokes `force_close()` on default Ma
 
 `ManagedProcess.force_close()` is the launcher-side contract that force-terminates a live process and releases its detached resources. `SubagentManager.force_close()` cancels each live stream or task. Neither operation is a graceful wait-all primitive.
 
+Both default Managers also expose `force_close_matching(host_refs)`. A non-empty Host-selected correlation subset matches canonical records whose captured `AgentInstanceContext.host_refs` contain every supplied pair. The Manager cancels or terminates those records, completes their owned cleanup, and forgets them without closing the Manager or affecting other records. Harness assigns no meaning to the keys and never invokes this operation from parent Run or Environment exit. It exists so a Host can make an explicit narrower lifecycle decision, such as deleting one Session, without force-closing a generation-wide Manager.
+
 Cancellation is cooperative but cleanup is owned. Once forced cleanup or compensation begins, repeated cancellation of the awaiting caller is remembered and propagated only after the owned cleanup reaches a terminal outcome. This rule prevents a cancelled waiter from abandoning the task that establishes whether canonical work still exists.
 
 A Host may apply its own timeout and kill the complete owner process if forced cleanup does not finish. Process termination loses default-Manager work and output. Harness does not synthesize completion, retry, or rollback after that loss.
@@ -247,7 +249,7 @@ In both takeover paths, the Harness continues to own standard tools, schemas, co
 07. Callback invocation and awaiting are isolated from canonical work and from other delivery paths.
 08. Projection lifecycle and produced-output observations never regress when stale updates race newer canonical snapshots.
 09. Owned cleanup and compensation reach a terminal outcome before repeated caller cancellation propagates.
-10. Manager `force_close()` cancels or terminates owned work immediately and waits only for forced cleanup, never natural completion.
+10. Manager `force_close()` and Host-selected `force_close_matching()` cancel or terminate selected work immediately and wait only for forced cleanup, never natural completion.
 11. Restart, generation loss, and Thread fork never retarget compact references; missing default records become lost.
 12. Default Managers provide process-local retention only and create no durable Job, Thread, process, output, or wake record.
 13. A complete Host takeover retains Harness-owned standard Toolsets and compact projections while the custom operator owns every stronger lifecycle guarantee.
