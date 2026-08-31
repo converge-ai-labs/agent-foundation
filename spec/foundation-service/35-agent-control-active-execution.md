@@ -239,6 +239,14 @@ model understood the input, that a model request included it, or that subsequent
 effects occurred exactly once. Foundation prefers possible duplicate delivery
 at the pre-checkpoint crash boundary to silently losing accepted user intent.
 
+A planned handoff does not supersede pending steer. An entry not yet delivered
+remains `pending` for the successor Attempt. An entry already represented by a
+complete state receipt remains eligible for the same receipt reconciliation
+after `yielded`, because the same Turn is still current and `running`; once
+relationally `consumed`, it is never delivered again. The safe handoff boundary
+cannot occur during `HarnessRunStream.steer()`, input materialization, state
+publication, or the consumption transaction.
+
 If a local Harness Run crosses its native terminal steering boundary before an
 accepted pending steer is incorporated, its candidate cannot seal the Turn.
 The owning Worker commits a retryable Attempt failure because that generation
@@ -331,27 +339,43 @@ authorize or perform a domain transition without the database read.
 
 ## Completion and Control Races
 
-Steer acceptance, interrupt, and Turn outcome selection serialize through the
-same canonical Thread and Turn mutation locks. No transaction spans Redis,
-object storage, Harness execution, model work, or tool work.
+Steer acceptance, interrupt, planned yield, and Turn outcome selection
+serialize through the same canonical Thread and Turn mutation locks;
+attempt-scoped mutations also lock or CAS the current TurnAttempt through its
+shared fence and lease authority. No transaction spans Redis, object storage,
+Harness execution, model work, or tool work.
 
 A Worker can seal a waiting or completed outcome only in a transaction that
 revalidates its current Attempt and fence and proves that no eligible `pending`
 steer targets that Turn. A failed or interrupt-driven `cancelled` transition
 instead marks remaining target steers `superseded` in its sealing transaction.
 Steer consumption uses the same locks when it changes pending entries to
-`consumed`. The checks and mutations occur in their owning transaction:
+`consumed`. Planned yield does not seal the Turn and therefore does not require
+pending steer to be absent or change its status. The checks and mutations occur
+in their owning transaction:
 
 - if outcome sealing commits first, a later steer observes a non-running Turn
   and is rejected without creating an inbox entry;
 - if steer acceptance commits first, outcome sealing observes the pending entry
   and cannot complete until it is consumed or becomes terminal under an owning
-  rule;
+  rule; planned yield may still commit without changing the pending entry, and
+  its successor must reconcile that entry;
 - if interrupt commits first, stale consumption, waiting, completion, and
-  failure commits are fenced out, while any object-only state preparation is
-  non-authoritative; and
+  failure or yield commits are fenced out, while any object-only state
+  preparation is non-authoritative;
 - if steer consumption commits first, a later interrupt can still cancel the
-  Turn but cannot rewrite the consumed entry or claim rollback.
+  Turn but cannot rewrite the consumed entry or claim rollback;
+- if yield commits first, later state, consumption, outcome, or control writes
+  from the old Attempt are fenced out, pending steer stays pending, and a new
+  steer can still be accepted against the same running Turn; and
+- if outcome or interrupt commits first, yield fails its Turn/Attempt CAS and
+  cannot replace the authoritative result.
+
+Between a committed yield and successor claim, interrupt can seal the running
+Turn even though `current_turn_attempt_id` is null. That transaction prevents
+all later claim, supersedes pending steer, and does not need to recreate or
+cancel the old process-local Run. A successor claim that wins first creates a
+fresh Attempt; ordinary fencing then governs any later interrupt.
 
 If `state.json` containing a steer receipt was written before interrupt but the
 consumption transaction had not committed, interrupt wins the durable race:
@@ -378,6 +402,9 @@ is insufficient.
 | Interrupt wins after state publication but before consumption commit | The steer becomes superseded; the object-only receipt is non-authoritative                         | No later Worker changes it to consumed                                           |
 | Turn becomes terminal before steer acceptance                        | No steer entry is accepted                                                                         | Caller starts or continues with a new Turn                                       |
 | Interrupt commits while local work continues                         | Turn is durably cancelled and the old Attempt is stale                                             | Redis or the next database boundary stops local work; no stale result can commit |
+| Yield commits while steer remains pending                            | Turn remains running, the old Attempt is terminal, and the steer remains pending                   | Successor Attempt consumes it under the ordinary checkpoint contract             |
+| State contains a steer receipt but yield wins before consumption     | Object receipt is valid while the relational entry can still appear pending                        | Successor reconciles the same-Turn receipt and does not enqueue the steer again  |
+| Outcome or interrupt races with yield                                | The shared locks and Attempt fence admit one authoritative transition                              | Loser observes committed state and cannot publish its stale candidate            |
 | External model, tool, child, or Environment effect exists            | Interrupt and steering do not roll it back; an interrupted or repeated boundary can remain unknown | Owning idempotency, receipt, or unknown-outcome contract governs reconciliation  |
 
 ## Compatibility and Trade-offs
@@ -409,3 +436,11 @@ Redis failure; mandatory database checks preserve correctness.
 10. A Redis control signal identifies only the Thread to reconcile; its loss, duplication, trimming, or expiry cannot change authoritative behavior.
 11. A replacement Worker reconciles the Thread inbox before relying on Redis delivery state.
 12. Async-subagent results can use the common inbox while retaining their own authorization, selection, retention, and payload semantics.
+13. Planned yield neither consumes nor supersedes pending steer; the successor
+    reconciles it from PostgreSQL before relying on Redis.
+14. A consumed steer is represented in complete same-Turn state before yield,
+    and receipt reconciliation remains valid across the yielded Attempt
+    boundary.
+15. Yield, interrupt, and outcome serialize through the current TurnAttempt
+    fence and canonical Thread/Turn locks, so only one authoritative result can
+    commit.

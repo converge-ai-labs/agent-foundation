@@ -58,6 +58,7 @@ root = "/var/lib/foundation"
 a2a_enabled = true
 
 [worker]
+handoff_preference_window = "30s"
 
 [plugin_runtime]
 mode = "on_demand"
@@ -68,6 +69,12 @@ The example defines section ownership, not an exhaustive setting catalog. The ex
 The artifact's fixed distribution descriptor supplies the complete typed configuration schema before values are parsed. No CLI option, TOML field, or environment variable selects a distribution or names an import target. Distribution-specific settings live in an explicit namespaced section and cannot reinterpret a common field. Secret-bearing values can come from the selected TOML file or environment. They remain redacted from representations, logs, traces, errors, probes, and generated configuration output. The deployment protects any file or environment source containing credentials.
 
 Configuration is immutable after startup. Changing a setting requires a new process. The service performs no partial or hot reload that could leave replicas or role components using different configuration generations.
+
+`worker.handoff_preference_window` is a finite positive internal scheduling
+duration used only for same-build claims after planned handoff. Its release
+default equals one TurnAttempt lease duration; an explicit value overrides that
+default but cannot be zero, negative, or unbounded. It does not delay initial
+claims, failure recovery, or lease-expiry takeover.
 
 `gateway.a2a_enabled` is the single protocol availability switch. It defaults
 to `true`. Native and Hosted AG-UI have no runtime enable setting. When false,
@@ -116,6 +123,31 @@ Every background component has exactly one role owner. `all` installs the union 
 
 One service process runs one ASGI worker. A deployment scales by adding service processes or container replicas rather than forking several independent role runtimes behind one process boundary. Runner-profile child processes are an internal Worker execution boundary, not additional service replicas or independently addressable Worker resources.
 
+## Worker Build Identity
+
+Every Foundation Service build artifact carries one immutable
+`worker_build_id`. Official images derive the value from the release version
+and source/build revision supplied by the existing `BUILD_VERSION` and
+`BUILD_REVISION` build inputs. Replicas of the same artifact therefore report
+the same build ID, while `worker_generation` remains unique to one Worker
+process lifetime. Runtime freezes both values at process startup and copies the
+build ID into every claimed `TurnAttempt`.
+
+The build ID comes only from trusted artifact metadata. It is not read from the
+database, Kubernetes API, tenant input, or claim candidate, and cannot change
+while the process runs. A distributed `worker` or `all` process with missing,
+malformed, or placeholder production build identity never becomes ready. A
+local development artifact may use an explicit documented development identity
+that still remains immutable for that process.
+
+`worker_build_id` records the actual Foundation Service build serving an
+Attempt. It is distinct from `PluginRuntimeLock.worker_release`, which is the
+historical Worker dependency baseline pinned when the Runtime lock is created.
+A newer build may restore an older Turn only after the scheduling preflight
+proves that it can read the state and serve the exact pinned lock; build
+identity never grants lease authority, selects a target Pod, or substitutes
+another Runtime lock.
+
 ## Startup Lifecycle
 
 ```mermaid
@@ -137,7 +169,8 @@ stateDiagram-v2
 
 Startup performs these ordered gates:
 
-1. load the artifact's fixed distribution descriptor and effective configuration;
+1. load the artifact's fixed distribution descriptor, Worker build identity,
+   and effective configuration;
 2. validate the role, distribution, and deployment profile as one unit;
 3. configure process logging once;
 4. apply or verify the final relational schema;
@@ -158,6 +191,8 @@ Liveness reports only that the process and event loop can answer a bounded probe
 Readiness succeeds only when:
 
 - startup completed and the process is not draining;
+- a distributed Worker-capable role has a valid immutable production
+  `worker_build_id`;
 - the database is reachable and at the expected final distribution schema head;
 - required Redis operations are reachable;
 - the selected object store and required filesystem roots passed their bounded capability checks;
@@ -179,24 +214,44 @@ Drain makes readiness fail before the process stops accepting new work.
 A control process rejects new product mutations and streaming connections, then
 stops ingress, domain-owned reconcilers, and publishers in an order that
 preserves committed state. An on-demand Worker stops its periodic scan; a runner
-Supervisor gates every Runner scan. The selected runtime drains active work only
-until the configured deadline and then commits an authoritative Attempt decision
-or stops renewing so another Worker can take over after lease expiry. Shutdown
-never extends a lease indefinitely or reports unfinished work as successful.
+Supervisor gates every Runner scan, including takeover scans. Runtime sets a
+process-local `yield_requested` flag for every active Attempt; this flag is not
+persisted and does not change lease authority. Each selected execution loop
+continues ordinary execution, heartbeat, and lease renewal while it waits for a
+safe boundary, publishes or reconciles complete state, quiesces its local Run,
+and prepares the planned-yield transaction.
+
+An Attempt stops renewal only after `yielded`, an ordinary outcome,
+cancellation, or failure commits, or when the configured drain deadline
+arrives. Readiness failure and one failed yield CAS never release the lease. If
+the deadline arrives first, the process fences local execution, stops renewal,
+and exits; another Worker remains forbidden from takeover until the recorded
+lease actually expires. Shutdown never extends a lease indefinitely, reports
+unfinished work as successful, or lets two Workers hold valid authority for one
+Turn.
+
+Rolling deployment starts and readies compatible new capacity before old
+capacity is terminated. A different compatible `worker_build_id` may claim a
+yielded Turn immediately; old-build replicas defer for the bounded
+`handoff_preference_window` and then become fallback capacity. Same-image
+restart therefore still recovers after the window. An incompatible upgrade
+must retain compatible old capacity or use a separately reviewed state or lock
+migration; handoff itself does not relax compatibility.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 
 ## Failure Semantics
 
-| Failure                                       | Observable outcome                              | Recovery                                                    |
-| --------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
-| Configuration is invalid or unknown           | Process exits before resource construction      | Correct the selected configuration                          |
-| Role and backend profile are incompatible     | Process exits before serving traffic            | Select one supported profile                                |
-| Schema is incompatible                        | Process remains unready and startup fails       | Apply the accepted final distribution history               |
-| Required dependency is unavailable at startup | Process does not become ready                   | Restore the configured dependency                           |
-| Required dependency disconnects after startup | Readiness fails and new dependent work stops    | Bounded reconnect restores readiness when safe              |
-| Critical component exits unexpectedly         | Process becomes unready and terminates          | Deployment replaces the process                             |
-| Drain deadline expires                        | Process stops without inventing successful work | Durable lease expiry and Worker takeover determine recovery |
+| Failure                                       | Observable outcome                              | Recovery                                                     |
+| --------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| Configuration is invalid or unknown           | Process exits before resource construction      | Correct the selected configuration                           |
+| Role and backend profile are incompatible     | Process exits before serving traffic            | Select one supported profile                                 |
+| Schema is incompatible                        | Process remains unready and startup fails       | Apply the accepted final distribution history                |
+| Required dependency is unavailable at startup | Process does not become ready                   | Restore the configured dependency                            |
+| Required dependency disconnects after startup | Readiness fails and new dependent work stops    | Bounded reconnect restores readiness when safe               |
+| Critical component exits unexpectedly         | Process becomes unready and terminates          | Deployment replaces the process                              |
+| Drain deadline expires                        | Process stops without inventing successful work | Durable lease expiry and Worker takeover determine recovery  |
+| Production Worker build identity is invalid   | Worker-capable process remains unready          | Correct the immutable build metadata and replace the process |
 
 No failure causes an implicit switch to a local backend, another distribution, or a weaker role.
 
@@ -226,3 +281,10 @@ The effective configuration is deployment input, not a durable product resource 
 11. Runtime configuration never selects a distribution or arbitrary code target; the build artifact fixes one trusted distribution descriptor.
 12. Every deployment durably fixes one Plugin Runtime mode; `on_demand` executes in the Worker interpreter, while `runner` keeps Plugin code and Harness execution out of the stable Supervisor.
 13. Native and Hosted AG-UI are always present on control-capable roles; A2A is controlled only by the default-on deployment-wide setting.
+14. Every production Worker-capable process has one immutable artifact-derived
+    `worker_build_id`; it is audit and preference metadata, not execution
+    authority or the pinned Runtime dependency baseline.
+15. Drain gates new claims immediately but active Attempts continue heartbeat
+    and lease renewal until a terminal commit or the drain deadline.
+16. Same-build planned-handoff deferral is finite, applies only after
+    `yielded`, and never weakens compatibility, lease, or fence checks.

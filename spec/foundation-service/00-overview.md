@@ -164,7 +164,20 @@ sequenceDiagram
     DB-->>Caller: retained interaction and lifecycle delivery
 ```
 
-The same `running` Turn can receive another TurnAttempt after an Attempt fails or its lease expires. The takeover transaction marks an expired old Attempt `failed`; Foundation defines no Attempt `lost` state. A new Attempt always creates fresh process-local objects and a fresh Harness Run. Under the [Agent control input and continuation contract](34-agent-control-input-and-continuation.md), a waiting Turn is sealed; authenticated feedback accepts a new Turn whose `parent_turn_id` names that waiting Turn. The new Turn receives fresh state and later its own TurnAttempt. Retrying terminal intent likewise creates a successor Turn rather than rewriting sealed records.
+The same `running` Turn can receive another TurnAttempt after an Attempt fails,
+yields at a complete graceful-handoff boundary, or its lease expires. A
+successful planned yield keeps heartbeat and lease renewal active until its
+transaction commits, terminalizes only the old Attempt, and resumes through a
+fresh Attempt and Harness Run from the same latest `state.json`. The stable Turn
+Stream stays open and emits no false protocol terminal result. The takeover
+transaction marks an expired old Attempt `failed`; Foundation defines no
+Attempt `lost` state. A new Attempt always creates fresh process-local objects
+and a fresh Harness Run. Under the [Agent control input and continuation
+contract](34-agent-control-input-and-continuation.md), a waiting Turn is sealed;
+authenticated feedback accepts a new Turn whose `parent_turn_id` names that
+waiting Turn. The new Turn receives fresh state and later its own TurnAttempt.
+Retrying terminal intent likewise creates a successor Turn rather than
+rewriting sealed records.
 
 Schedules, webhooks, service requests, and asynchronous children accept Turns and follow the same Worker scan, TurnAttempt, dispatch, Harness, state, and outcome contracts as interactive work.
 
@@ -225,3 +238,7 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
     state-first completed handoff can combine source sealing, first-entry
     consumption, and successor acceptance in one short transaction; otherwise
     terminal relational state remains sufficient for recovery scanning.
+12. Graceful drain gates new claims while every active Attempt keeps renewing
+    until an authoritative terminal commit or the drain deadline.
+13. Planned `yielded` handoff preserves the running Turn, state key, and stream,
+    but its successor always receives a fresh TurnAttempt and Harness Run.

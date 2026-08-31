@@ -144,7 +144,8 @@ class RecoveryUsageLimit:
 
 class RecoveryBudget:
     policy_version: str
-    max_attempts: int
+    max_recovery_attempts: int
+    max_handoffs: int
     recovery_deadline_at: datetime | None
     max_usage: RecoveryUsageLimit | None
 
@@ -193,6 +194,8 @@ class Turn:
 
     recovery_budget: RecoveryBudget
     attempts_started: int
+    recovery_attempts_started: int
+    handoffs_completed: int
     usage_charged: RecoveryUsage
 
     idempotency_key: str | None
@@ -286,14 +289,19 @@ lifetime, with at most one current and lease-authorized attempt. The
 [allocation contract](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary)
 owns when those attempts are created.
 
-`RecoveryBudget` is the accepted recovery-policy snapshot. `max_attempts`
-includes the first attempt. `recovery_deadline_at` is a fixed UTC deadline;
-`usage_charged` aggregates every attempt, including known usage from failed
-work. Every counter and limit is non-negative. A null limit is unbounded.
-Missing required usage is never treated as zero; if durable usage evidence is
-insufficient to prove that a configured ceiling remains, no new Attempt is
-admitted. The Turn row is the sole authority for whether another attempt may be
-created.
+`RecoveryBudget` is the accepted recovery-policy snapshot.
+`max_recovery_attempts` includes the first Attempt and every successor created
+after retryable failure or expired-lease takeover; a successor created after a
+planned handoff does not consume it. `max_handoffs` bounds successful planned
+handoffs independently. `attempts_started` counts every Attempt for audit,
+`recovery_attempts_started` counts only Attempts charged to the recovery budget,
+and `handoffs_completed` counts committed `yielded` transitions.
+`recovery_deadline_at` is a fixed UTC deadline, and `usage_charged` aggregates
+every Attempt, including known usage from yielded or failed work. Every counter
+and limit is non-negative. Missing required usage is never treated as zero; if
+durable usage evidence is insufficient to prove that a configured ceiling
+remains, no new Attempt is admitted. The Turn row is the sole authority for
+whether another Attempt or planned handoff is permitted.
 
 The exact `AgentPresetId`, `AgentPresetVersionId`, and internal Plugin Runtime
 lock digest are fixed at Turn acceptance. The selected immutable Version owns
@@ -364,10 +372,11 @@ Once the first Attempt is created, that Turn never returns to `accepted`. It is
 not a queued user-input entry, and Turn defines no `queued` state.
 
 `running` means execution of this Turn has begun and the Turn remains active. It
-normally selects one non-terminal `TurnAttempt`; during a retryable backoff it
-may temporarily have no current attempt, and an expired selected lease grants no
-worker authority while awaiting transactional takeover. `started_at` records
-the first Harness Run entry and never changes during recovery.
+normally selects one non-terminal `TurnAttempt`; during retryable backoff or
+after a planned handoff it can temporarily have no current Attempt. An expired
+selected lease grants no worker authority while awaiting transactional
+takeover. `started_at` records the first Harness Run entry and never changes
+during recovery or planned handoff.
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed outcomes.
 `sealed_at` and any available `sealed_state` are selected in the same relational
@@ -410,7 +419,7 @@ backends preserve the same validation and query semantics.
 | Identity             | `id`, `version`, `tenant_id`                                                                                                                                                                                                                    | Opaque text IDs and a positive integer CAS version; `id` is the primary key                                                            |
 | Interaction lineage  | `session_id`, `thread_id`, `parent_turn_id`, `retry_of_turn_id`, `lineage_kind`                                                                                                                                                                 | Immutable state-source edge plus optional same-Thread terminal-intent retry correlation                                                |
 | Scheduling           | `priority`, `queue_name`, `available_at`, `current_turn_attempt_id`, `next_attempt_fence`                                                                                                                                                       | Durable claim order and the sole current worker generation                                                                             |
-| Recovery budget      | `recovery_policy_version`, `max_attempts`, `recovery_deadline_at`, `max_usage_json`, `attempts_started`, `usage_charged_json`                                                                                                                   | Accepted finite limits and atomically charged consumption                                                                              |
+| Recovery budget      | `recovery_policy_version`, `max_recovery_attempts`, `max_handoffs`, `recovery_deadline_at`, `max_usage_json`, `attempts_started`, `recovery_attempts_started`, `handoffs_completed`, `usage_charged_json`                                       | Accepted finite limits, complete Attempt audit count, and atomically charged recovery, handoff, and usage consumption                  |
 | Idempotency          | `idempotency_key`, `request_fingerprint`                                                                                                                                                                                                        | Optional retry-safe acceptance identity and exact bounded request fingerprint                                                          |
 | Trigger correlation  | `trigger_type`, `trigger_entity_type`, `trigger_entity_id`, `parent_agent_instance_id`, `delegation_id`, `parent_tool_call_id`                                                                                                                  | Bounded typed correlation; never state-lineage authority                                                                               |
 | Agent selection      | `agent_preset_id`, `agent_preset_version_id`, `runtime_lock_digest`                                                                                                                                                                             | Stable Preset, exact immutable Version, and internal Plugin Runtime lock selected at acceptance                                        |
@@ -720,6 +729,11 @@ resumes:
   without repeating model or tool work when its relational outcome was not yet
   sealed.
 
+The same resume rule applies after a predecessor Attempt commits `yielded`.
+Recovery reads the latest valid complete value at the deterministic key; it does
+not require that value to have been written by the yield path or selected by a
+separate relational checkpoint reference.
+
 `input_disposition` governs only whether accepted semantic input crosses the
 Harness input boundary again. It is not evidence that an
 `environment_path` file should be rewritten. Same-Turn file rematerialization is
@@ -838,6 +852,19 @@ batch, an active inline child, a lease heartbeat, and elapsed time alone never
 trigger state publication. Adjacent progress triggers with no Harness or Host
 state change are coalesced rather than creating duplicate checkpoints.
 
+A process-local graceful-handoff request is observed at the same boundaries. It
+does not make an in-flight provider request, partial streamed response,
+incomplete tool batch, active inline child or sibling batch, or state
+publication safe. At the first boundary where no model, tool, nested execution,
+or state publication is in flight, all tool results are present in complete
+Harness message history, and the current Attempt still owns its Turn, lease,
+and fence, Foundation exports the complete Harness, Host, and portable
+Environment state and publishes the next progress checkpoint. If the already
+published state is byte-equivalent to that complete boundary, the Worker can
+reuse it without another replacement. If a waiting or completed outcome is
+already available, the Worker commits that ordinary outcome instead of
+yielding.
+
 During execution, a checkpoint operation:
 
 1. exports complete Harness state and builds bounded Host state;
@@ -855,6 +882,14 @@ write.
 Checkpoint writes do not create a Turn row, attempt row, lifecycle transition,
 or historical checkpoint selector. A failed or unknown put is reconciled by
 `stat` and exact body validation before any retry.
+
+A graceful handoff likewise creates no checkpoint identity or relational
+checkpoint selection. The Worker must confirm that the current complete safe
+boundary is present before it can commit `yielded`, but the yield transaction
+does not store or compare the state digest, size, schema, checkpoint sequence,
+or opaque object version. If publication cannot be confirmed, the Worker keeps
+its Attempt lease and retries until the drain deadline; lease-expiry recovery
+can still use the last earlier valid checkpoint.
 
 A waiting outcome and a completed outcome without a prepared queued successor
 commit in this order:
@@ -960,8 +995,10 @@ constraints:
    requires the exact waiting parent and consumes one complete normalized
    batch. Retry copies the terminal source's eligible state-parent edge; failed
    and cancelled Turns are never themselves eligible parents.
-7. `attempts_started` does not exceed `max_attempts`; attempt, deadline, and
-   usage limits remain Turn-owned recovery authority.
+7. `recovery_attempts_started` does not exceed `max_recovery_attempts`, and
+   `handoffs_completed` does not exceed `max_handoffs`; the total
+   `attempts_started` remains the complete audit count. Recovery, handoff,
+   deadline, and usage limits remain Turn-owned authority.
 
 The accepted access paths are:
 
@@ -1014,6 +1051,7 @@ attached by generic fallback.
 | A state write prepared before sealing reaches storage after the seal         | The object outcome can be unknown but is not selected                                                    | The sealed relational outcome remains authoritative; no inbox or continuation fact adopts the object-only write                                                       |
 | Worker disappears after a committed checkpoint                               | Latest state remains at the same key                                                                     | After lease expiry, a Worker's transactional takeover creates a later fenced attempt that reconstructs fresh `RunBindings` and Environment runtime mounts and resumes |
 | Worker disappears after uncheckpointed work                                  | Only the prior checkpoint is recoverable                                                                 | The replacement attempt projects unmatched durable Agent tool dispatches as `unknown_outcome` before resuming                                                         |
+| Handoff checkpoint commits but the yield transaction does not                | The new value remains the active Turn's latest complete checkpoint                                       | The current Attempt can retry yield while its lease remains valid; after process loss, ordinary lease-expiry recovery uses the same state                             |
 | Recovery budget is exhausted                                                 | Turn seals as `failed`                                                                                   | The sealed Turn receives no later attempt; see the [allocation boundary](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary)                     |
 | Required state, schema, or codec is permanently incompatible                 | No model or tool work starts                                                                             | Apply an explicit compatible reader or fail the Turn                                                                                                                  |
 | Frozen artifact or dependency is temporarily unavailable                     | Selected state remains unchanged                                                                         | Apply bounded backoff only when policy classifies the condition retryable and budget remains                                                                          |
@@ -1111,3 +1149,6 @@ cannot make external effects exactly once; unresolved calls follow the
     successor can commit as one combined handoff; the final Thread head names
     the completed source, the current Turn names the accepted successor, and no
     accepted successor can lack its complete initial state.
+15. Graceful Attempt handoff conditionally updates the same state key and adds
+    no checkpoint resource or selector; `yielded` releases execution authority
+    without sealing the Turn.

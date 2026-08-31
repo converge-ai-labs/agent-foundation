@@ -42,10 +42,29 @@ selected execution loop can consider:
 
 - an initial `accepted` Turn whose `available_at` has arrived and which has no
   current Attempt;
-- a `running` Turn whose prior retryable Attempt is terminal, which has no
-  current Attempt, and whose `available_at` has arrived; or
+- a `running` Turn whose highest-numbered prior Attempt is retryable `failed`,
+  which has no current Attempt, and whose `available_at` has arrived; or
+- a `running` Turn whose highest-numbered prior Attempt is `yielded`, which has
+  no current Attempt, and whose `available_at` has arrived; or
 - a `running` Turn whose selected `leased` or `running` Attempt has an expired
   lease.
+
+The yielded candidate has a bounded build preference in addition to ordinary
+Runtime and state compatibility preflight. A compatible claimant whose
+immutable `worker_build_id` differs from the yielded Attempt may claim
+immediately. A same-build claimant skips it until the finite positive
+`handoff_preference_window` has elapsed from `finished_at`, then may claim as a
+capacity fallback. The default window equals one TurnAttempt lease duration.
+This preference applies only after planned handoff: it does not delay initial
+claim, retryable-failure recovery, or expired-lease takeover. A draining Worker
+never claims any candidate.
+
+Build difference is neither authority nor compatibility proof. Every claimant
+must still pass the existing exact Runtime, state-schema, Harness, Plugin,
+Skill, Environment, and artifact compatibility checks, and the claim
+transaction must still win the Turn lease and fence. The preference chooses no
+Pod; it merely lets compatible new-build capacity win during ordinary rolling
+overlap while retaining bounded same-build fallback.
 
 The scan is only candidate discovery. The execution loop must revalidate the exact Turn,
 Thread selection, current Attempt, lease condition, and budget in the short
@@ -53,7 +72,14 @@ claim transaction. For an expired lease, that transaction marks the old Attempt
 `failed`, disables its lease, charges known usage, and either creates and selects
 one new `leased` Attempt or seals the Turn as `failed` when budget is exhausted.
 For an initial or backoff-ready Turn, the same transaction either creates the
-next Attempt or fails the Turn when its accepted budget no longer permits one.
+next Attempt or fails the Turn when its accepted recovery budget no longer
+permits one. For a yielded Turn, it creates a successor with
+`recovery_reason="planned_handoff"` only after build-preference eligibility is
+revalidated; the yield already consumed handoff budget, and this successor does
+not consume recovery budget. Every candidate, including a planned-handoff
+successor, remains subject to the fixed recovery deadline and aggregate usage
+ceilings; exhaustion seals the Turn instead of creating another Attempt. Every
+successful claim increments the complete `attempts_started` audit count.
 A direct budget failure also clears active selection and model snapshot, freezes
 the state key, retains the failed Turn as the Thread's current Turn, preserves
 the prior continuation head, increments the Thread version, and appends the
@@ -78,7 +104,7 @@ sequenceDiagram
     participant Harness
 
     loop bounded periodic scan
-        Executor->>DB: find compatible accepted, backoff-ready, or lease-expired Turn
+        Executor->>DB: find compatible accepted, yielded, backoff-ready, or lease-expired Turn
         Executor->>DB: short claim or takeover transaction
         alt transaction wins and budget permits
             DB-->>Executor: new leased Attempt, fence, and exact Turn metadata
@@ -140,6 +166,14 @@ lifetime, or make process memory recoverable. A renewal that cannot confirm
 current ownership causes the Worker to stop model and tool work and suppress
 authoritative publication.
 
+Readiness failure, drain, and Runner claim gating do not revoke an already
+selected Attempt. While an owner waits for a safe handoff boundary, publishes
+or reconciles checkpoint state, quiesces the local Run, and prepares the yield
+transaction, it continues the ordinary heartbeat and renewal cadence. Yield
+and renewal serialize through the same selected-Attempt CAS and fence. Only a
+committed Attempt terminal transition, or arrival of the drain deadline, lets
+that owner stop renewal; one failed yield CAS never does.
+
 Usage ingestion has the narrow exception defined by [Events, Usage, and
 Delivery](20-events-usage-and-delivery.md): immutable usage evidence for already
 incurred work can arrive later under its original TurnAttempt attribution, but
@@ -151,13 +185,16 @@ outcome that consumers could mistake for current product state.
 
 ## Recovery Trigger
 
-Replacement becomes eligible only when either:
+Replacement becomes eligible only when one of these conditions holds:
 
 - the selected Attempt lease expires, so another Worker's takeover transaction
-  can replace it; or
+  can replace it;
 - the owning Worker commits that its Attempt can no longer produce an
   authoritative Turn result, terminalizes that Attempt as `failed`, clears the
-  current selection, and schedules an in-budget retry through `available_at`.
+  current selection, and schedules an in-budget retry through `available_at`;
+- the owning Worker commits `yielded` from a complete safe checkpoint, clears
+  the current selection, and makes the still-running Turn immediately
+  available for a planned-handoff successor.
 
 The second case is the precise meaning of losing outcome certainty for an
 Attempt. It concerns the whole Attempt's ability to finish authoritatively. A
@@ -175,13 +212,13 @@ The newly created Attempt already owns the lease before recovery checks begin.
 Its Worker performs all object, artifact, and authority reads outside database
 transactions and then commits one short fenced preparation decision.
 
-| Check                       | What must be true                                                                                                                                                                                                                                                    |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| State                       | The deterministic `state.json` exists and its key metadata, tenant, Turn, Thread, digest, size, checkpoint sequence, outer schema, AgentPresetVersion, Runtime lock, and required Harness, Host, Capability, and Environment-state codecs validate exactly.          |
-| Unknown Agent tool outcomes | Every durable prior Agent tool dispatch absent from that exact complete state can be represented as bounded `unknown_outcome` context. The check reads no provider business state and never automatically replays a call.                                            |
-| Budget                      | The already-created Attempt remains within `max_attempts`, the fixed `recovery_deadline_at`, and every configured aggregate usage ceiling after all durable known usage charges. Unknown required usage cannot be assumed to be zero.                                |
-| Frozen compatibility        | The exact AgentPresetVersion, Runtime lock, model execution snapshot, managed Skill artifacts, Connector contracts, Environment connector locks, state-owned Environment configuration, and all other frozen dependencies are present, digest-valid, and compatible. |
-| Current authority           | Current Workspace and principal policy, RoleBindings, Connection eligibility, Environment provider selection, required Secret metadata, and intended credential uses still authorize reconstruction. Persisted references grant no authority by themselves.          |
+| Check                       | What must be true                                                                                                                                                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State                       | The deterministic `state.json` exists and its key metadata, tenant, Turn, Thread, digest, size, checkpoint sequence, outer schema, AgentPresetVersion, Runtime lock, and required Harness, Host, Capability, and Environment-state codecs validate exactly.                           |
+| Unknown Agent tool outcomes | Every durable prior Agent tool dispatch absent from that exact complete state can be represented as bounded `unknown_outcome` context. The check reads no provider business state and never automatically replays a call.                                                             |
+| Budget                      | The already-created Attempt remains within the applicable `max_recovery_attempts` or `max_handoffs` count, the fixed `recovery_deadline_at`, and every configured aggregate usage ceiling after all durable known usage charges. Unknown required usage cannot be assumed to be zero. |
+| Frozen compatibility        | The exact AgentPresetVersion, Runtime lock, model execution snapshot, managed Skill artifacts, Connector contracts, Environment connector locks, state-owned Environment configuration, and all other frozen dependencies are present, digest-valid, and compatible.                  |
+| Current authority           | Current Workspace and principal policy, RoleBindings, Connection eligibility, Environment provider selection, required Secret metadata, and intended credential uses still authorize reconstruction. Persisted references grant no authority by themselves.                           |
 
 The decision is complete:
 
@@ -201,6 +238,13 @@ or immutable-artifact unavailability can retry only under explicit policy and
 remaining budget. If the Worker itself disappears during these checks, no
 decision commits; lease expiry makes the same Turn eligible for another ordinary
 takeover.
+
+The same preparation contract applies to a planned-handoff successor. It reads
+the latest successfully committed complete value at the Turn's unchanged
+`state.json` key and does not require a handoff-specific checkpoint marker or
+infer `yielded` from object contents. It preserves the exact pinned Runtime lock
+and accepts a different Foundation Service build only when that build can read
+the state schemas and serve every frozen dependency named by the Turn.
 
 Recovery does not probe model reachability, inspect external tool or provider
 business state, validate or reconcile a previous Sandbox, or resume a previous
@@ -275,7 +319,8 @@ Retries remain owned by the layer that knows the failed boundary:
   [active-control recovery
   rule](35-agent-control-active-execution.md#steer-consumption-and-state-commitment);
 - Foundation creates another TurnAttempt only after the prior Attempt has
-  failed or its lease has expired, and only under the same Turn budget;
+  failed, yielded, or had its lease expire, and only under the applicable Turn
+  budget;
 - retrying sealed terminal intent creates a successor Turn rather than reopening
   the original;
 - a recovered Agent decision is an ordinary new tool call, not a replay command;
@@ -284,19 +329,29 @@ Retries remain owned by the layer that knows the failed boundary:
   across TurnAttempts.
 
 Backoff uses the Turn's exact durable `available_at`; Worker or process restart
-does not reset it. The Turn recovery budget counts TurnAttempts separately from
-Harness ModelAttempts and Connector retries.
+does not reset it. `attempts_started` counts all TurnAttempts separately from
+Harness ModelAttempts and Connector retries. The recovery and planned-handoff
+limits are independent within the same Turn-owned deadline and usage ceilings.
 
 ## Shutdown and Drain
 
 A control process stops accepting product mutations and streaming connections
 before stopping its publishers and other domain-owned control work. An
 on-demand Worker stops its scan; a runner Supervisor gates every child scan. The
-selected execution loop continues active Attempts only until the configured
-drain deadline. It either observes an
-authoritative outcome or failed-Attempt decision, or stops renewal so a later
-Worker can take over after lease expiry. Plugin activation itself adds no short
-drain deadline; complete role behavior is owned by [Runtime Configuration and
+selected execution loop sets a process-local handoff request on every active
+Attempt and continues ordinary execution, heartbeat, and lease renewal until a
+safe boundary. There it confirms complete state at the existing key, fences and
+closes local Run resources while continuing renewal, and attempts the short
+`yielded` transaction. A normal outcome, cancellation, or failure that commits
+first remains authoritative. Successful yield is the only voluntary release
+boundary and stops renewal only after commit.
+
+If handoff budget is exhausted, an active Attempt continues toward an ordinary
+outcome until the drain deadline. If the deadline arrives before any terminal
+decision commits, the execution loop fences local work, stops renewal, and
+exits; no other Worker may take over until the recorded lease actually expires.
+Plugin activation itself adds no shorter deadline. Complete role behavior is
+owned by [Runtime Configuration and
 Deployment](01-runtime-configuration-and-deployment.md#drain-and-shutdown).
 
 Shutdown never extends a lease indefinitely or marks unfinished work successful.
@@ -305,18 +360,24 @@ through leases, fencing, and transactional claims.
 
 ## Failure Semantics
 
-| Failure                                                          | Durable outcome                                                                                                     |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Concurrent Workers scan the same Turn                            | Exactly one claim or takeover transaction creates the next Attempt; losers create nothing.                          |
-| No compatible execution loop can serve the Turn's Runtime lock   | Turn remains eligible or the claimed Attempt follows bounded preparation failure; no Runtime is substituted.        |
-| Worker crashes before claim commit                               | The transaction commits no partial Attempt ownership.                                                               |
-| Worker crashes after claim or during preparation                 | Its lease expires; a later Worker's takeover marks it `failed` and creates at most one successor within budget.     |
-| Worker crashes after uncheckpointed Agent tool dispatch          | The successor compares durable dispatch records with exact state and projects unmatched calls as `unknown_outcome`. |
-| Heartbeat arrives after lease expiry or takeover                 | The old Worker is stale even if it reconnects; every authoritative write is rejected.                               |
-| Preparation finds a retryable dependency outage                  | The claimed Attempt fails; the Turn remains `running` with bounded `available_at` while budget remains.             |
-| Preparation finds permanent incompatibility or revoked authority | The claimed Attempt and Turn fail; no Harness model or tool work starts.                                            |
-| Managed Skill materialization stops                              | No partial catalog reaches Harness; the Attempt follows ordinary retry and budget rules.                            |
-| Redis live data flow is unavailable                              | Relational ownership and Thread inbox remain intact; safe-point reconciliation replaces no claim or domain fact.    |
+| Failure                                                            | Durable outcome                                                                                                     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Concurrent Workers scan the same Turn                              | Exactly one claim or takeover transaction creates the next Attempt; losers create nothing.                          |
+| No compatible execution loop can serve the Turn's Runtime lock     | Turn remains eligible or the claimed Attempt follows bounded preparation failure; no Runtime is substituted.        |
+| Worker crashes before claim commit                                 | The transaction commits no partial Attempt ownership.                                                               |
+| Worker crashes after claim or during preparation                   | Its lease expires; a later Worker's takeover marks it `failed` and creates at most one successor within budget.     |
+| Worker crashes after uncheckpointed Agent tool dispatch            | The successor compares durable dispatch records with exact state and projects unmatched calls as `unknown_outcome`. |
+| Worker drains while a model, tool batch, or inline child is active | It keeps renewing and waits for a complete safe boundary; no second Worker may execute the Turn.                    |
+| Checkpoint publication or object reconciliation spans heartbeats   | The selected Attempt keeps renewing throughout; the checkpoint operation does not release authority.                |
+| Yield races with heartbeat renewal                                 | The shared Attempt CAS serializes them; after yield commits, late renewal is rejected.                              |
+| Yield transaction fails while the old owner remains authoritative  | The owner keeps renewing and retries or commits another legal result; the failure alone causes no takeover.         |
+| Drain deadline arrives before yield                                | The owner stops renewal and exits; takeover remains forbidden until lease expiry.                                   |
+| Compatible new-build and old-build Workers see a yielded Turn      | New build may claim immediately; same build skips until the preference window elapses.                              |
+| Heartbeat arrives after lease expiry or takeover                   | The old Worker is stale even if it reconnects; every authoritative write is rejected.                               |
+| Preparation finds a retryable dependency outage                    | The claimed Attempt fails; the Turn remains `running` with bounded `available_at` while budget remains.             |
+| Preparation finds permanent incompatibility or revoked authority   | The claimed Attempt and Turn fail; no Harness model or tool work starts.                                            |
+| Managed Skill materialization stops                                | No partial catalog reaches Harness; the Attempt follows ordinary retry and budget rules.                            |
+| Redis live data flow is unavailable                                | Relational ownership and Thread inbox remain intact; safe-point reconciliation replaces no claim or domain fact.    |
 
 ## Invariants
 
@@ -353,3 +414,13 @@ through leases, fencing, and transactional claims.
     path substitutes another Runtime.
 15. Every Attempt owner follows the active-control reconciliation contract;
     Redis consumer-group progress is only a wakeup optimization.
+16. Drain gates claim and takeover scans but preserves every active Attempt's
+    heartbeat and lease authority until a terminal commit or drain deadline.
+17. A committed `yielded` transition releases the current selection without
+    sealing the Turn; its successor receives a fresh Attempt and Harness Run
+    from the same latest complete state key.
+18. Yield and heartbeat use one CAS/fence authority, so a CAS conflict cannot
+    create two valid owners or silently release the old lease.
+19. Build preference after planned handoff is bounded and advisory:
+    compatibility and the transactional lease claim remain mandatory, while a
+    same-build Worker becomes eligible after `handoff_preference_window`.

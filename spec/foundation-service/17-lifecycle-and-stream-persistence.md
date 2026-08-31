@@ -121,10 +121,10 @@ configured live projection starts `projected` with
 
 The supported event-type registry is finite and additive:
 
-| Entity      | Event types                                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Turn        | `turn.accepted`, `turn.running`, `turn.waiting`, `turn.completed`, `turn.failed`, `turn.cancelled`                       |
-| TurnAttempt | `turn_attempt.leased`, `turn_attempt.running`, `turn_attempt.succeeded`, `turn_attempt.failed`, `turn_attempt.cancelled` |
+| Entity      | Event types                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Turn        | `turn.accepted`, `turn.running`, `turn.waiting`, `turn.completed`, `turn.failed`, `turn.cancelled`                                               |
+| TurnAttempt | `turn_attempt.leased`, `turn_attempt.running`, `turn_attempt.succeeded`, `turn_attempt.yielded`, `turn_attempt.failed`, `turn_attempt.cancelled` |
 
 Adding an event type requires a schema-versioned payload and an owning state or
 observation rule. Consumers preserve unknown additive event types but never use
@@ -171,6 +171,13 @@ Every accepted Turn has one stable tenant-scoped Redis Stream shared by all its
 and each event identifies its own attempt and Harness Run. Checkpoint resume
 neither allocates another presentation stream nor uses a stream cursor as state
 input.
+
+A `turn_attempt.yielded` fact closes only that Attempt generation. It does not
+close the Turn Stream, emit another `turn.running`, reset its Redis replay
+cursor, or allocate a replacement stream. A planned-handoff successor appends
+observations under its fresh Attempt and Harness Run identities to the same
+open Turn Stream. Only the eventual Turn terminal outcome closes the stream and
+makes retained replay publication eligible.
 
 Each Redis entry contains one versioned JSON envelope:
 
@@ -296,14 +303,15 @@ execution, provider side effects, or Turn completion.
 
 ## Failure Semantics
 
-| Failure                                                         | Durable effect                                       | Recovery                                                                      |
-| --------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Owning state mutation cannot append its required lifecycle fact | Neither change commits                               | Retry the complete relational transaction                                     |
-| Lifecycle live projection fails                                 | Fact remains pending or retryable                    | Projector reclaims it without repeating the source mutation                   |
-| Redis presentation stream is lost while Turn is active          | Live observation is unavailable                      | Work continues from durable Turn and attempt state; no cursor becomes state   |
-| Redis Thread control Stream is trimmed, expires, or is lost     | Wakeup delivery and its group cursor are unavailable | Worker reconciles durable Thread inbox and Turn state at mandatory boundaries |
-| Replay snapshot publication fails                               | Turn outcome remains committed                       | Retry deterministic create-only publication while source stream is complete   |
-| Native notification is dropped or duplicated                    | Wake-up observation is incomplete                    | Client reconciles durable Workspace events and current resources              |
+| Failure                                                         | Durable effect                                                   | Recovery                                                                                        |
+| --------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Owning state mutation cannot append its required lifecycle fact | Neither change commits                                           | Retry the complete relational transaction                                                       |
+| Lifecycle live projection fails                                 | Fact remains pending or retryable                                | Projector reclaims it without repeating the source mutation                                     |
+| Yielded lifecycle projection is delayed or duplicated           | The Attempt remains durably yielded and the Turn remains running | Successor scheduling reads relational state; projection retry preserves the same event identity |
+| Redis presentation stream is lost while Turn is active          | Live observation is unavailable                                  | Work continues from durable Turn and attempt state; no cursor becomes state                     |
+| Redis Thread control Stream is trimmed, expires, or is lost     | Wakeup delivery and its group cursor are unavailable             | Worker reconciles durable Thread inbox and Turn state at mandatory boundaries                   |
+| Replay snapshot publication fails                               | Turn outcome remains committed                                   | Retry deterministic create-only publication while source stream is complete                     |
+| Native notification is dropped or duplicated                    | Wake-up observation is incomplete                                | Client reconciles durable Workspace events and current resources                                |
 
 ## Compatibility and Trade-offs
 
@@ -348,3 +356,5 @@ authority.
     within one lifecycle resource and is the sole numeric resource-gap signal.
 10. Thread control signal Streams, consumer-group cursors, and TTL expiry remain
     separate from Turn presentation replay and every durable domain cursor.
+11. Planned handoff appends `turn_attempt.yielded` without closing or replacing
+    the Turn Stream and without repeating `turn.running`.

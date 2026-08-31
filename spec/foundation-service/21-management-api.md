@@ -236,7 +236,10 @@ Public resources expose stable product fields and safe references, not ORM objec
   exact AgentPresetVersion and Runtime-lock selection, effective Skill names,
   safe model observation, interaction lineage, `retry_of_turn_id`, trigger
   correlation, cancellation intent, and timestamps;
-- TurnAttempt exposes generation, worker-safe status, safe model observation, lease timing, Harness correlation, bounded Agent tool dispatch evidence, and bounded failure evidence, but no credential or process-private value;
+- TurnAttempt exposes generation, worker-safe status, immutable Worker build
+  identity, safe model observation, lease timing, Harness correlation, bounded
+  Agent tool dispatch evidence, planned yield reason or bounded failure
+  evidence, but no credential or process-private value;
 - Environment exposes safe metadata and its current immutable revision; an authorized EnvironmentRevision detail exposes its protected non-secret connection configuration, connector lock, credential requirements, and permission ceiling without Secret values or provider state;
 - LifecycleEvent reads preserve event identity and type, schema version, owning-resource sequence, subject, actor when applicable, TurnAttempt attribution, resource version, bounded payload, and commit time;
 - HookSubscription reads preserve version, active or paused status, exact Hook names, bounded resource filters, callback URL, managed signing-Secret reference, signature profile, and timestamps without URL credentials or signing Secret values;

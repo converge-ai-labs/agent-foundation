@@ -39,7 +39,7 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | Document                                                                                              | Owning contract                                                                                                                             |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | [00 Overview](00-overview.md)                                                                         | Service shape, end-to-end flow, subsystem boundaries, dependency direction, and completion boundaries                                       |
-| [01 Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md)                 | Configuration precedence, deployment profiles, control and worker roles, startup, readiness, supervision, drain, and shutdown               |
+| [01 Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md)                 | Configuration precedence, deployment profiles, Worker build identity, roles, startup, readiness, graceful drain, and shutdown               |
 | [02 Distribution Composition and Extensions](02-distribution-composition-and-extensions.md)           | OSS, EE, and Cloud composition, dependency direction, contribution conflicts, configuration, and final schema assembly                      |
 | [03 Storage](03-storage.md)                                                                           | Relational, Redis-compatible, object, and mounted-filesystem capabilities and local/network semantics                                       |
 | [04 Relational Schema](04-relational-schema.md)                                                       | Final distribution metadata, migration authority, compatibility, application, and failure semantics                                         |
@@ -50,8 +50,8 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [12 Agent Management](12-agent-management.md)                                                         | AgentPreset identity, immutable Versions, lifecycle, invocation, Plugin management, and reconstruction                                      |
 | [13 Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                         | Interaction-to-runtime mapping, Agent tool dispatch evidence, Harness Run binding, active control, and unknown outcomes                     |
 | [14 Durable Turn State](14-turn-persistence.md)                                                       | Turn identity, lifecycle, lineage, deterministic state object, conditional checkpoints, sealing, recovery budget, and retention             |
-| [15 Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                                 | TurnAttempt allocation, relational shape, leases, fences, dispatch evidence, transactional takeover, recovery, and Attempt outcomes         |
-| [16 Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md)                         | Worker scans, claims, expired-lease takeover, post-claim checks, stale-worker rejection, retry, and shutdown                                |
+| [15 Durable Turn Attempt Persistence](15-turn-attempt-persistence.md)                                 | TurnAttempt allocation, leases, fences, graceful yield, dispatch evidence, takeover, recovery, and Attempt outcomes                         |
+| [16 Scheduling, Workers, and Recovery](16-scheduling-workers-and-recovery.md)                         | Worker scans, claims, planned-handoff preference, expired-lease takeover, recovery checks, fencing, retry, and drain                        |
 | [17 Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md)                         | Lifecycle-event persistence, stable Turn presentation Stream, control-Stream separation, bounded live replay, Items, and replay snapshots   |
 | [18 Async Subagents](18-async-subagents.md)                                                           | Independent child Threads and Turns, durable relationships, result delivery, and cancellation policy                                        |
 | [19 Environment Configuration and Runtime Mounts](19-environment-management.md)                       | Connection revisions, state-owned desired mounts, fresh attachments, Host-retained runtime, active-run keep-alive, and envd boundary        |
@@ -153,6 +153,11 @@ These roots are boundaries, not a requirement that every capability become a sub
   attachment or Harness-event models, and it owns no Environment resource state,
   lifecycle operation, connection lease, or reconciliation workflow.
 - A stale TurnAttempt cannot mutate Thread current/head selection, Turn lifecycle or state, pending work, retained Items, child delivery, or terminal outcome. A late immutable `UsageRecord` can still be ingested under its original TurnAttempt when record identity and content validate, but it cannot mutate lifecycle.
+- During graceful drain, active TurnAttempts keep heartbeat and lease renewal
+  until a safe checkpoint and `yielded` transaction, another authoritative
+  outcome, or the drain deadline. Planned handoff keeps the Turn and stream
+  running, then creates a fresh TurnAttempt and Harness Run from the same latest
+  complete `state.json`.
 - Before an Agent tool call is dispatched, the worker durably records its
   invocation identity and bounded request summary. After a replacement Attempt
   owns the lease, its Worker projects unmatched records as `unknown_outcome` and
