@@ -85,7 +85,7 @@ sequenceDiagram
         else candidate changed or another Worker won
             DB-->>Executor: no claim
         else budget exhausted
-            DB-->>Executor: old Attempt failed when present; Turn failed; no new Attempt
+            DB-->>Executor: old Attempt failed when present, Turn failed, and no new Attempt
         end
     end
     Executor->>Objects: outside transaction, read exact state and frozen artifacts
@@ -99,9 +99,9 @@ sequenceDiagram
         end
         Executor->>DB: fenced state, usage, and Turn outcome writes
     else retry later
-        DB-->>Executor: Attempt failed; Turn remains running with available_at
+        DB-->>Executor: Attempt failed, Turn remains running with available_at
     else fail Turn
-        DB-->>Executor: Attempt failed; Turn sealed failed
+        DB-->>Executor: Attempt failed, Turn sealed failed
     end
 ```
 
