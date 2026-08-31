@@ -18,6 +18,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import UsageLimits
 
 from a13n_harness._json import dump_json_bytes
+from a13n_harness.capabilities.subagents import _validate_child_lineage
 from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
 from a13n_harness.errors import DefinitionError, HarnessError, RunError, StateError
 from a13n_harness.events import (
@@ -35,13 +36,16 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOu
 from ._instructions import InstructionFunctionToolset, tool_instruction
 
 if TYPE_CHECKING:
-    from a13n_harness.capabilities.delegation import (
-        DelegationConfiguration,
-        DelegationState,
-    )
+    from a13n_harness.capabilities.subagents import InlineSubagentManagerState, SubagentOperator
 
 _SUBAGENT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,62}$")
 _JSON_ADAPTER = TypeAdapter(JsonValue)
+_INLINE_RESULT_POLICY = ToolOutputPolicy(
+    max_inline_bytes=256 * 1024,
+    max_output_bytes=4 * 1024 * 1024,
+    overflow="fail",
+    redact=True,
+)
 _LIMIT_FIELDS = (
     "cost_limit",
     "request_limit",
@@ -71,17 +75,17 @@ class DelegationToolset:
         *,
         owner: AbstractCapability[AgentContext],
         context: AgentContext,
-        configuration: DelegationConfiguration,
-        state: DelegationState,
+        operator: SubagentOperator,
+        state: InlineSubagentManagerState,
     ) -> None:
         self._owner = owner
         self._context = context
-        self._configuration = configuration.model_copy(deep=True)
+        self._operator = operator
         self._state = state.model_copy(deep=True)
         self._state_lock = asyncio.Lock()
         self._active_lock = asyncio.Lock()
         self._active_children: set[str] = set()
-        self._active_new_children: set[str] = set()
+        self._child_authority_ids: set[str] = set()
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         tool = HarnessTool(
@@ -91,12 +95,7 @@ class DelegationToolset:
                 effects=frozenset({"execute"}),
                 credential_audiences=(),
                 idempotency="none",
-                output_policy=ToolOutputPolicy(
-                    max_inline_bytes=min(256 * 1024, self._configuration.max_output_bytes),
-                    max_output_bytes=self._configuration.max_output_bytes,
-                    overflow="fail",
-                    redact=True,
-                ),
+                output_policy=_INLINE_RESULT_POLICY,
             ),
             name="delegate",
             description=(
@@ -151,47 +150,52 @@ class DelegationToolset:
                 reserved_id = child_instance_id
                 selected_state = record.state.model_copy(deep=True)
             else:
-                if len(self._state.children) + len(self._active_new_children) >= self._configuration.max_children:
-                    raise ToolFailed("Inline child state limit reached.")
                 reserved_id = self._allocate_child_id(subagent)
                 baseline = HarnessState.new()
                 selected_state = baseline.model_copy(deep=True)
-                self._active_new_children.add(reserved_id)
             self._active_children.add(reserved_id)
 
         try:
             try:
-                child_input = _build_child_input(ctx, child, task, self._configuration)
+                child_input = _build_child_input(ctx, child, task)
                 limits = _intersect_usage_limits(
                     ctx.usage_limits,
                     child.executable._fresh_definition_usage_limits(),
                     child.declaration.usage_limits,
-                    self._require_binding(ctx).usage_limits,
+                    self._operator.usage_limits,
                 )
                 with observe_operation(
                     "delegation",
                     capability_id=self._owner.id,
                     operation_id=invocation_id,
                 ):
-                    bindings = await self._require_binding(ctx).bind_inline(
+                    bindings_context = self._operator.open_child(
+                        self._context,
                         child,
                         child_input,
                         reserved_id,
                         continuation,
                         limits,
                     )
-                    _validate_child_lineage(self._context, bindings, reserved_id)
-                    bindings = await _finalize_child_bindings(ctx, child, bindings)
-                result = await self._run_child(
-                    ctx,
-                    child,
-                    child_input,
-                    reserved_id,
-                    invocation_id,
-                    bindings,
-                    selected_state,
-                    limits,
-                )
+                    async with bindings_context as bindings:
+                        if not isinstance(bindings, RunBindings):
+                            raise DefinitionError(
+                                "Subagent operator returned invalid child bindings.",
+                                code="subagent_binding_invalid",
+                            )
+                        _validate_child_lineage(self._context, bindings, reserved_id)
+                        await self._reserve_child_authority(bindings.instance.agent_instance_id)
+                        bindings = await _finalize_child_bindings(ctx, child, bindings)
+                        result = await self._run_child(
+                            ctx,
+                            child,
+                            child_input,
+                            reserved_id,
+                            invocation_id,
+                            bindings,
+                            selected_state,
+                            limits,
+                        )
             except asyncio.CancelledError:
                 raise
             except ToolFailed as exc:
@@ -250,7 +254,7 @@ class DelegationToolset:
                 )
                 raise ToolFailed(_child_failure_message(result, reserved_id))
             try:
-                output = _project_output(result.output_or_raise(), self._configuration.max_output_bytes)
+                output = _project_output(result.output_or_raise())
             except ToolFailed as exc:
                 await _emit_delegation_event(
                     ctx,
@@ -299,7 +303,15 @@ class DelegationToolset:
         finally:
             async with self._active_lock:
                 self._active_children.discard(reserved_id)
-                self._active_new_children.discard(reserved_id)
+
+    async def _reserve_child_authority(self, agent_instance_id: str) -> None:
+        async with self._active_lock:
+            if agent_instance_id in self._child_authority_ids:
+                raise DefinitionError(
+                    "Child bindings reused an existing authority identity.",
+                    code="delegation_lineage_invalid",
+                )
+            self._child_authority_ids.add(agent_instance_id)
 
     async def _run_child(
         self,
@@ -380,12 +392,12 @@ class DelegationToolset:
         child: BuiltSubagent,
         state: HarnessState,
     ) -> None:
-        from a13n_harness.capabilities.delegation import (
-            _DELEGATION_STATE_VERSION,
-            DELEGATION_CAPABILITY_ID,
-            DelegationState,
+        from a13n_harness.capabilities.subagents import (
+            _INLINE_SUBAGENT_STATE_VERSION,
+            SUBAGENT_CAPABILITY_ID,
+            InlineSubagentManagerState,
             InlineSubagentState,
-            _validate_delegation_state,
+            _validate_inline_subagent_state,
         )
 
         record = InlineSubagentState(
@@ -397,12 +409,12 @@ class DelegationToolset:
         async with self._state_lock:
             children = dict(self._state.children)
             children[child_instance_id] = record
-            candidate = DelegationState(children=children)
-            _validate_delegation_state(candidate, self._context, self._configuration)
+            candidate = InlineSubagentManagerState(children=children)
+            _validate_inline_subagent_state(candidate, self._context)
             await self._context.state.write(
-                DELEGATION_CAPABILITY_ID,
+                SUBAGENT_CAPABILITY_ID,
                 candidate,
-                version=_DELEGATION_STATE_VERSION,
+                version=_INLINE_SUBAGENT_STATE_VERSION,
             )
             self._state = candidate
 
@@ -418,46 +430,25 @@ class DelegationToolset:
         raise ToolFailed("Inline child ID space is exhausted.")
 
     def _require_context(self, ctx: RunContext[AgentContext]) -> None:
-        from a13n_harness.capabilities.delegation import DELEGATION_CAPABILITY_ID
+        from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID
 
         if ctx.deps is not self._context:
             raise DefinitionError(
                 "Delegation Toolset cannot cross logical runs.",
                 code="capability_scope_invalid",
             )
-        owner = ctx.capabilities.get(DELEGATION_CAPABILITY_ID)
+        owner = ctx.capabilities.get(SUBAGENT_CAPABILITY_ID)
         if owner is not self._owner:
             raise DefinitionError(
                 "The finalized Delegation owner has an incompatible identity.",
                 code="capability_scope_invalid",
             )
 
-    def _require_binding(self, ctx: RunContext[AgentContext]):
-        from a13n_harness.capabilities.delegation import (
-            DELEGATION_RUN_CAPABILITY_ID,
-            DelegationRunCapability,
-        )
-
-        self._require_context(ctx)
-        attachment = ctx.capabilities.get(DELEGATION_RUN_CAPABILITY_ID)
-        if type(attachment) is not DelegationRunCapability:
-            raise DefinitionError(
-                "DelegationCapability requires one fresh DelegationRunCapability.",
-                code="delegation_binding_missing",
-            )
-        if DELEGATION_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
-            raise DefinitionError(
-                "DelegationRunCapability must originate from RunBindings.",
-                code="capability_scope_invalid",
-            )
-        return attachment
-
 
 def _build_child_input(
     ctx: RunContext[AgentContext],
     child: BuiltSubagent,
     task: JsonValue,
-    configuration: DelegationConfiguration,
 ) -> str:
     policy = child.declaration.context
     payload: dict[str, JsonValue] = {
@@ -470,12 +461,8 @@ def _build_child_input(
         if summary:
             payload["parent_history_summary"] = summary
     elif policy.history == "selected":
-        selected = list(ctx.messages[-configuration.selected_history_messages :])
-        payload["parent_history"] = ModelMessagesTypeAdapter.dump_json(selected).decode("utf-8")
-    encoded = dump_json_bytes(payload, sort_keys=True)
-    if len(encoded) > configuration.max_input_bytes:
-        raise ToolFailed("Delegated context exceeds the configured input limit.")
-    return encoded.decode("utf-8")
+        payload["parent_history"] = ModelMessagesTypeAdapter.dump_json(ctx.messages).decode("utf-8")
+    return dump_json_bytes(payload, sort_keys=True).decode("utf-8")
 
 
 def _restored_summary_projection(messages: Sequence[ModelMessage]) -> str | None:
@@ -506,19 +493,6 @@ def _intersect_usage_limits(*values: UsageLimits | None) -> UsageLimits | None:
         fields[name] = min(ceilings) if ceilings else None
     fields["count_tokens_before_request"] = any(value.count_tokens_before_request for value in present)
     return UsageLimits(**fields)
-
-
-def _validate_child_lineage(parent: AgentContext, bindings: RunBindings, child_instance_id: str) -> None:
-    instance = bindings.instance
-    if (
-        instance.agent_instance_id == parent.instance.agent_instance_id
-        or instance.parent_agent_instance_id != parent.instance.agent_instance_id
-        or instance.delegation_id != child_instance_id
-    ):
-        raise DefinitionError(
-            "Inline child bindings do not reproduce the requested parent lineage.",
-            code="delegation_lineage_invalid",
-        )
 
 
 async def _finalize_child_bindings(
@@ -653,16 +627,12 @@ def _definition_working_state(child: BuiltSubagent):
     return matches[0] if matches else None
 
 
-def _project_output(value: Any, max_bytes: int) -> JsonValue:
+def _project_output(value: Any) -> JsonValue:
     try:
         projected = _JSON_ADAPTER.dump_python(value, mode="json", warnings="error")
-        validated = _JSON_ADAPTER.validate_python(projected, strict=True)
-        encoded = dump_json_bytes(validated, sort_keys=True)
+        return _JSON_ADAPTER.validate_python(projected, strict=True)
     except Exception as exc:
         raise ToolFailed("Inline child output is not JSON-compatible.") from exc
-    if len(encoded) > max_bytes:
-        raise ToolFailed("Inline child output exceeds the configured result limit.")
-    return validated
 
 
 def _child_failure_message(result: HarnessRunResult[Any], child_instance_id: str) -> str:

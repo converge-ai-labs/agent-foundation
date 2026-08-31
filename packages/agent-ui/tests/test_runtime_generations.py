@@ -45,7 +45,7 @@ async def test_starts_with_distinct_process_and_runtime_readiness() -> None:
         assert active.state is RuntimeGenerationState.active
         assert active.process_id is not None
         assert active.readiness is not None
-        assert active.readiness.protocol_version == "1"
+        assert active.readiness.protocol_version == "3"
         assert status.active_generation_id == active.generation_id
         assert status.candidate_generation_id is None
 

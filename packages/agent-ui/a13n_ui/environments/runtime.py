@@ -15,7 +15,12 @@ from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
 import httpx2
-from a13n_environment_provider import DirectLocalProviderRuntime, EnvironmentProviderRuntime
+from a13n_environment_provider import (
+    DirectLocalProviderRuntime,
+    EnvironmentProviderRuntime,
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+)
 from anyio import CancelScope, Lock, fail_after, to_thread
 from pydantic import JsonValue
 
@@ -58,7 +63,10 @@ class EnvdExecutableResolver:
     async def resolve(self) -> ResolvedEnvdExecutable:
         async with self._lock:
             if self._resolved is not None:
-                await self._verify_executable(self._resolved.path, self._selected_asset().executable_sha256)
+                if self._resolved.managed:
+                    await self._verify_executable(self._resolved.path, self._selected_asset().executable_sha256)
+                else:
+                    await self._validate_override(self._resolved.path)
                 return self._resolved
             manifest = self._required_manifest()
             asset = self._asset_for_current_target(manifest)
@@ -287,15 +295,33 @@ class EnvdExecutableResolver:
 
 
 class ProviderRuntimeResolver:
-    """Construct fresh provider-owned runtime collaborators without fallback."""
+    """Construct fresh Runner-owned provider runtime collaborators without fallback."""
+
+    def __init__(
+        self,
+        *,
+        layout: StorageLayout,
+        settings: EnvdRuntimeSettings,
+        executable_override: Path | None,
+    ) -> None:
+        self._envd = EnvdExecutableResolver(
+            layout=layout,
+            settings=settings,
+            executable_override=executable_override,
+        )
+        self._runtime_root = layout.runtimes
 
     async def resolve(self, provider_key: str) -> EnvironmentProviderRuntime:
         if provider_key == "a13n.direct-local":
             return DirectLocalProviderRuntime()
         if provider_key == "a13n.local-envd":
-            raise RuntimeResolutionError(
-                "The installed Environment Provider release does not implement a13n.local-envd.",
-                code="local_envd_provider_unavailable",
+            resolved = await self._envd.resolve()
+            return LocalEnvdProviderRuntime(
+                executable=resolved.path,
+                allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(
+                    parent=self._runtime_root,
+                    prefix="local-envd-",
+                ),
             )
         raise RuntimeResolutionError(
             "Agent UI does not support this Environment provider runtime.",

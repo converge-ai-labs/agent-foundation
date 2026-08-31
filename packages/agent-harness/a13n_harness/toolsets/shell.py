@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Annotated, Any, Literal, cast
 
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
+from a13n_harness.capabilities.processes import ShellOperator
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.commands import (
     CommandEnvironment,
@@ -17,11 +18,6 @@ from a13n_harness.environment.commands import (
     ShellCommand,
 )
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.environment.providers import (
-    BoundOutputOperations,
-    BoundProcessOperations,
-    BoundShellOperations,
-)
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness.tools.metadata import (
     HarnessTool,
@@ -39,9 +35,8 @@ from .output import (
     disclose_text_paths,
 )
 from .process_manager import (
-    ProcessEventHook,
-    ProcessManager,
     _capture_initial_bytes,
+    _ProcessRunManager,
     _project_capture,
     _project_status,
 )
@@ -72,38 +67,25 @@ class ShellToolset:
     def __init__(
         self,
         *,
-        shell: BoundShellOperations | None = None,
-        processes: BoundProcessOperations | None = None,
-        outputs: BoundOutputOperations | None = None,
-        max_reference_entries: int = 1_024,
-        process_event_hooks: Sequence[ProcessEventHook] = (),
+        operator: ShellOperator | None = None,
+        supports_background: bool | None = None,
         resource_resolver: Callable[[str], ToolResourceResolver] | None = None,
         execution_guard: Callable[[], None] | None = None,
     ) -> None:
-        if not 0 < max_reference_entries <= _MAX_REFERENCE_ENTRIES:
-            raise ValueError(f"max_reference_entries must be between 1 and {_MAX_REFERENCE_ENTRIES}")
-        if processes is not None and outputs is None:
-            raise ValueError("process tools require an output operations port")
-        if process_event_hooks and processes is None:
-            raise ValueError("process_event_hooks require a process operations port")
-        self._shell = shell
+        selected = operator or ShellOperator()
+        if not isinstance(selected, ShellOperator):
+            raise TypeError("operator must be a ShellOperator")
+        background = selected.supports_background if supports_background is None else supports_background
+        if type(background) is not bool:
+            raise TypeError("supports_background must be a boolean")
+        self._operator = selected
         self._resource_resolver = resource_resolver
         self._execution_guard = execution_guard
         self._process_manager = (
-            ProcessManager(
-                processes=processes,
-                outputs=cast(BoundOutputOperations, outputs),
-                max_reference_entries=max_reference_entries,
-                process_event_hooks=process_event_hooks,
-                execution_guard=execution_guard,
-            )
-            if processes is not None
-            else None
+            _ProcessRunManager(operator=selected, execution_guard=execution_guard) if background else None
         )
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
-        if self._shell is None:
-            return InstructionFunctionToolset(tools=[], id="a13n-shell-tools", instructions=[])
         arbitrary_command_effects: set[ToolEffect] = {
             "read",
             "write",
@@ -111,12 +93,14 @@ class ShellToolset:
             "execute",
             "external_communication",
         }
+        shell_callable = self.shell_exec if self._process_manager is not None else self.shell_exec_foreground
         tools: list[HarnessTool] = [
             self._tool(
-                self.shell_exec,
+                shell_callable,
                 "environment.shell_exec",
                 arbitrary_command_effects,
                 "none",
+                name="shell_exec",
             )
         ]
         if self._process_manager is not None:
@@ -152,14 +136,30 @@ class ShellToolset:
         async with self._process_manager.active_run(ctx):
             return await handler()
 
-    async def close(self) -> None:
-        """Cancel observation and finalize drained terminal processes."""
-        if self._process_manager is not None:
-            await self._process_manager.close()
+    def resolve_process_resource(self, process_id: str) -> str:
+        """Resolve a compact process ID to its private Host backend reference."""
+        return self._require_process_manager().resource_id(process_id)
 
-    def resolve_process_identity(self, process_id: str) -> Any:
-        """Resolve a compact process ID to its portable authorization identity."""
-        return self._require_process_manager().identity(process_id)
+    async def shell_exec_foreground(
+        self,
+        ctx: RunContext[AgentContext],
+        command: str,
+        *,
+        cwd: str | None = None,
+        environment: Mapping[str, str] | None = None,
+        timeout_seconds: _PositiveTimeout | None = None,
+        alias: str | None = None,
+    ) -> ShellExecToolResult:
+        """Execute one foreground command and return its captured result."""
+        return await self.shell_exec(
+            ctx,
+            command,
+            cwd=cwd,
+            environment=environment,
+            timeout_seconds=timeout_seconds,
+            background=False,
+            alias=alias,
+        )
 
     async def shell_exec(
         self,
@@ -186,7 +186,7 @@ class ShellToolset:
                 manager = self._require_process_manager()
                 projected = await manager.start(request, alias=alias)
                 return cast(ShellExecToolResult, {"ok": True, "background": True, **projected})
-            result = await self._require_shell().exec_captured(request, alias=alias)
+            result = await self._operator.execute(ctx.deps, request, alias)
             stdout = _project_capture(result.output.stdout, _capture_initial_bytes(result.output.stdout))
             stderr = _project_capture(result.output.stderr, _capture_initial_bytes(result.output.stderr))
             projected = cast(
@@ -314,9 +314,12 @@ class ShellToolset:
         tool_id: str,
         effects: set[ToolEffect],
         idempotency: Literal["none", "read_only"],
+        *,
+        name: str | None = None,
     ) -> HarnessTool:
         return HarnessTool(
             function,
+            name=name,
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,
                 effects=frozenset(effects),
@@ -365,12 +368,7 @@ class ShellToolset:
         if self._execution_guard is not None:
             self._execution_guard()
 
-    def _require_shell(self) -> BoundShellOperations:
-        if self._shell is None:
-            raise EnvironmentError("Shell operation facet is unavailable.", code="environment_unsupported")
-        return self._shell
-
-    def _require_process_manager(self) -> ProcessManager:
+    def _require_process_manager(self) -> _ProcessRunManager:
         if self._process_manager is None:
             raise EnvironmentError(
                 "Background process operations are unavailable.",

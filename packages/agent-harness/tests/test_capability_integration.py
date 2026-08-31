@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,7 @@ import pytest
 from a13n_environment_provider import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
 )
 from a13n_harness import (
     HarnessBuilder,
@@ -68,11 +70,6 @@ _EXPECTED_TOOLS = {
     "download",
     "edit",
     "shell_exec",
-    "shell_input",
-    "shell_kill",
-    "shell_signal",
-    "shell_status",
-    "shell_wait",
     "fetch",
     "glob",
     "grep",
@@ -133,6 +130,8 @@ def _environment(root: Path):
         DirectLocalProviderConfiguration(
             environment_id="capability-integration",
             root=DirectLocalRootConfiguration(path=root),
+            shell_profiles=(DirectLocalShellProfile(profile_id="default", executable=Path(sys.executable).resolve()),),
+            allowed_executables=frozenset({Path(sys.executable).resolve()}),
         )
     )
     return create_environment_runtime(
@@ -167,13 +166,7 @@ def _bindings(root: Path) -> RunBindings:
 def _definition_capabilities():
     skill_manager = SkillManager((FileSkillSource("workspace", ("/workspace/.agents/skills",)),))
     return (
-        DynamicEnvironmentCapability(
-            DynamicEnvironmentConfiguration(
-                file_tools=True,
-                shell_tools=True,
-                max_reference_entries=64,
-            )
-        ),
+        DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
         RuntimeContextCapability(RuntimeContextConfiguration(metadata_keys=("tenant",))),
         FileContextCapability(FileContextConfiguration(paths=("/workspace/AGENTS.md",), required=True)),
         HandoffCapability(),

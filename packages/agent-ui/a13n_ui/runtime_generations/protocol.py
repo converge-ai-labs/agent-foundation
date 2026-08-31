@@ -27,6 +27,7 @@ class ControlChannel:
         self._reader = reader
         self._writer = writer
         self._max_message_bytes = max_message_bytes
+        self._send_lock = asyncio.Lock()
 
     async def send(self, message_type: str, **fields: object) -> None:
         payload = {"version": CONTROL_PROTOCOL_VERSION, "type": message_type, **fields}
@@ -36,8 +37,9 @@ class ControlChannel:
             raise ControlProtocolError("control message is not serializable") from exc
         if len(encoded) + 1 > self._max_message_bytes:
             raise ControlProtocolError("control message exceeds the configured bound")
-        self._writer.write(encoded + b"\n")
-        await self._writer.drain()
+        async with self._send_lock:
+            self._writer.write(encoded + b"\n")
+            await self._writer.drain()
 
     async def receive(self, *, expected_type: str | None = None) -> dict[str, Any]:
         try:

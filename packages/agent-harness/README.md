@@ -20,13 +20,7 @@ from a13n_harness.environment import (
 from a13n_harness.models import SelfHealingModelCapability
 
 capabilities = (
-    DynamicEnvironmentCapability(
-        DynamicEnvironmentConfiguration(
-            file_tools=True,
-            shell_tools=True,
-            max_reference_entries=1_024,
-        )
-    ),
+    DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
     RuntimeContextCapability(),
     SelfHealingModelCapability(),
     HandoffCapability(),
@@ -37,7 +31,7 @@ capabilities = (
 
 Embedding code passes an `EnvironmentProvider` or entered `EnvironmentResource` directly through `run(..., environment=...)`, or supplies a named mixed mapping through `environments=...`. Source type defines ownership: the Harness owns a Provider through one complete ephemeral lifecycle, while it borrows one fresh attachment from an entered Host-owned Resource. Ordinary calls can omit `RunBindings`; an advanced `EnvironmentRuntime` and current provider collaborators use fresh `RunBindings.embedded()` values. General media URL reading, document conversion, and Web implementations stay behind typed run collaborators. Environment file multimedia understanding has built-in image, video, and audio Pydantic AI Agents selected by `A13N_HARNESS_*_UNDERSTANDING_MODEL`, with native support declared through the `model_characteristics` construction key and read from `AgentSpec.model_characteristics.capabilities`, plus a typed run collaborator available as an override. Static callers may import reusable Toolsets from `a13n_harness.toolsets`; their model-facing JSON results use named `TypedDict` contracts in the corresponding Toolset modules. Managed invocation policy and client-tool contracts are available from `a13n_harness.tools`.
 
-The shell Toolset exposes exactly `shell_exec`, `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, and `shell_kill`. `shell_exec(background=True)` uses a real Environment process and returns an opaque `process-N` reference; the Harness never simulates background execution with an in-process task. `ProcessManager` stores the exact portable provider process identity and unread output offsets in `AgentContextState`, so a compatible Thread continuation can lazily rebind the same process through a fresh current Environment. During every root or child Turn it waits on the real provider process, can enqueue a completion hint, and invokes optional `ProcessEventHook` values. Turn cleanup does not kill the process. The Host must separately preserve the provider resource and output, and must use provider events or polling to wake a later Run; aliases never retarget a restored process.
+The shell Toolset exposes exactly `shell_exec`, `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, and `shell_kill`. A background-capable `ShellOperator` adds `background=True` and the five process tools; the standard `ProcessManager` accepts a Host `ProcessLauncher` that returns one self-contained `ManagedProcess`. It owns that process after acceptance and can keep it alive after the parent Run closes. `AgentContextState` stores only `process-N`, one opaque backend ID, unread output offsets, and bounded observations. Stable Host hooks can wake a later Run; the default Manager is process-local, so restart makes retained references explicitly lost rather than recreating or retargeting a process.
 
 ## Model construction
 

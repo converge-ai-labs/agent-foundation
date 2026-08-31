@@ -102,14 +102,14 @@ When a model must name a resource in a later tool call, the owning Capability ex
 
 A compact model reference:
 
-- is unique only within an explicit owner scope, such as one logical Harness run, one Working State task scope, or one parent Agent instance's Delegation State;
+- is unique only within an explicit owner scope, such as one logical Harness run, one Working State task scope, or one parent Thread's Subagent Capability state;
 - maps through trusted code to the exact internal identity or opaque handle and is reauthorized on every use;
 - is a selector, never a bearer credential, idempotency identity, provider receipt, or substitute for a durable resource ID;
 - is allocated under the owning scope's mutation boundary with collision detection and a finite namespace limit;
 - is never reused or silently redirected after release, expiry, removal, incompatible restore, or mount replacement; and
 - fails explicitly when unknown, stale, exhausted, or no longer authorized rather than exposing a longer private identifier as fallback.
 
-The owner persists a compact reference only when its semantic continuation crosses runs. Environment mount, cursor, process, and retained-output projections are run-local and disappear with the run. Working State task references remain in their task scope, and inline child references remain in the parent Delegation State. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, `thread_id`, provider handles and cursors, receipts, operation IDs, and Host Execution or `ExecutionAttempt` IDs retain their owning opaque/full representations and are not rewritten by this projection rule. The Environment, Working State, and Delegation specifications own each concrete allocator and lifetime.
+The owner persists a compact reference only when its semantic continuation crosses runs. Environment mount, cursor, and provider retained-output projections are run-local. Background `process-N` references remain in Dynamic Environment state with one opaque operator backend ID; Working State task references remain in their task scope; inline child references remain in parent Subagent Capability state; and async `subagent-N` references remain only in that parent Agent's async projection. Harness run IDs, Pydantic tool-call IDs, `AgentInstanceRef`, `thread_id`, provider handles and cursors, operator backend identities, receipts, operation IDs, and Host Execution or `ExecutionAttempt` IDs retain their owning opaque/full representations and are not rewritten by this projection rule. The Environment, Working State, and Subagent specifications own each concrete allocator and lifetime.
 
 ## Process-local and Durable State
 

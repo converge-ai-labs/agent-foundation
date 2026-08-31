@@ -11,7 +11,6 @@ from typing import Any
 from pydantic_ai import RunContext
 
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.commands import ProcessIdentity
 from a13n_harness.environment.models import (
     EnvironmentError,
 )
@@ -50,12 +49,12 @@ class _DynamicEnvironmentContext:
         *,
         run_id: str,
         environment: BoundEnvironment,
-        resolve_process_identity: Callable[[str], ProcessIdentity],
+        resolve_process_resource: Callable[[str], str],
     ) -> None:
         self.configuration = configuration.model_copy(deep=True)
         self._run_id = run_id
         self._environment = environment
-        self._resolve_process_identity = resolve_process_identity
+        self._resolve_process_resource = resolve_process_resource
         self._pending_sequence: int | None = None
         self._notice_pending = False
         self._active_context: RunContext[AgentContext] | None = None
@@ -105,7 +104,7 @@ class _DynamicEnvironmentContext:
                 _AuthorizationFence(
                     change_sequence=change_sequence,
                     mounts=tuple(dict.fromkeys(fences)),
-                    unresolved=(tool_id.startswith("environment.process_") and tool_id != "environment.process_status"),
+                    unresolved=False,
                 )
             )
             return resources
@@ -148,12 +147,12 @@ class _DynamicEnvironmentContext:
         if tool_id == "environment.process_status":
             return ()
         if tool_id.startswith("environment.process_"):
-            identity = self._resolve_process_identity(_string_argument(arguments, "process_id"))
+            backend_id = self._resolve_process_resource(_string_argument(arguments, "process_id"))
             return (
                 CanonicalResource(
                     namespace="environment",
-                    kind="process",
-                    identifier=identity.model_dump_json(),
+                    kind="managed-process",
+                    identifier=backend_id,
                 ),
             )
         if tool_id.startswith("environment.port_"):

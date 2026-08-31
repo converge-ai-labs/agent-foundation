@@ -43,8 +43,11 @@ At execution time trusted installed adapters create:
 - native `AgentSpec` containing only concrete `HarnessModelCharacteristics`, concrete native `ModelSettings`, and, for code-first output, a process-local `OutputSpec`;
 - optional Model or logical model name;
 - Agent-bound Capabilities that own all function tools, Toolsets, guidance, settings, and hooks;
+- optional stable Host operator implementations passed to the exact Capabilities that own async subagent or background-process presentation;
 - optional direct concrete Harness plugin instances;
 - self-healing and semantic recovery policy.
+
+An operator is a trusted process-local interface object, not persisted Agent content or a Toolset contribution. The Capability fixes the model-visible mode and Toolset when the definition is reconstructed. The operator receives explicit current-run correlation on each call and owns canonical work without storing mutable current-run authority in the reusable Capability.
 
 Configured plugin instances are created by `HarnessBuilder` from an explicit `HarnessBuildContext` or the ambient source. The deployment switch remains false by default, while a trusted create-and-run or create-and-stream Host path can pass `configured_plugins_enabled=True` when constructing that operation's executable. They need not be reconstructed by a Host adapter, and the choice cannot change after Agent construction.
 
@@ -111,11 +114,15 @@ Native Pydantic `DeferredToolRequests` end the Harness run as `status="suspended
 
 External calls and approvals remain distinct. A Host reconstructs exact tool surfaces from its own revision and pending attachment and verifies their identity before resume; those surfaces and the resume envelope are not encoded in `HarnessState`.
 
-## Asynchronous Children
+## Async Operators
 
-The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. A Host-defined Capability can use a fresh typed service collaborator to accept independent child work. The Host owns child Execution and workload identity, `ExecutionAttempt` generations, checkpointing, cancellation, result retention, and delivery. Each child Harness State owns its Thread ID, which the Host preserves by selecting that State for continuation.
+The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. A first-party `SubagentCapability(execution="async", operator=...)` fixes the standard async Toolset and owns one parent Agent's compact references and portable projection. The configured `SubagentOperator` owns fresh child authority and canonical execution. The default `SubagentManager` retains tasks, streams, latest child state, steering, cancellation, and results in memory; a custom operator may map work to an independently managed real Thread.
 
-A successful asynchronous spawn is an ordinary tool result, not `DeferredToolRequests`. Child completion becomes later Host-selected semantic input and does not satisfy the original spawn tool call.
+A successful async spawn is an ordinary tool result, not `DeferredToolRequests`. While the parent Run is active, Harness enqueue tells the model to wait or inspect. Independently, the operator always dispatches stable Host hooks; after Run closure a Host may use the hook to wake the parent Thread. Completion does not satisfy the original spawn call, mutate an already selected continuation, or itself create another Harness Run. A later Run rebinds the opaque backend ID through the same operator or marks it lost. The parent projection stores no child `HarnessState`.
+
+`DynamicEnvironmentCapability` follows the same composition rule for shell work. Its configured `ShellOperator.supports_background` declaration fixes the shell Toolset. The default foreground operator uses the current Environment; `ProcessManager` owns detached in-memory background processes and stable hooks. No `RunBindings` field selects subagent mode, supplies either operator, or changes background shell availability.
+
+A Host requiring durable child or process executions, attempts, retries, checkpoints, result delivery, or wake-up owns those resources behind the operator interface. The Harness does not generalize them into a Job, Session child, or distributed workflow model.
 
 ## Events and Completion
 

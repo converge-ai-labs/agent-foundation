@@ -21,7 +21,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [08-environment-integration.md](08-environment-integration.md)                           | Environment runtime, provider mounts, run extensions, Host mutation, model projection, portable state, and enforcement           |
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, compaction, and memory boundary                  |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
-| [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, inline delegation, and Host asynchronous-child boundary                                                          |
+| [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, standard inline/async Toolsets, operator lifecycle, and durable Host boundary                                    |
 | [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Process-local events, mixed-source usage attribution, pricing catalogs, reporting, and accounting boundary                       |
 | [13-hosting-contract.md](13-hosting-contract.md)                                         | Host-owned schemas/reconstruction, fresh bindings, durable lifecycle, and completion mapping                                     |
 | [14-public-api-and-packaging.md](14-public-api-and-packaging.md)                         | Public Python API, package boundary, errors, and compatibility                                                                   |
@@ -30,6 +30,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                    |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch          |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
+| [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Shared async-component admission, observation, cleanup, loss, generation ownership, and complete Host takeover                   |
 
 ## Reading Paths
 
@@ -47,11 +48,11 @@ Read `06`, `10`, and `16`. Provider transport retry, exact history repair, `Mode
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`. `EnvironmentRuntime` is one run lifecycle resource with a Host-mutable current mount set; an `EnvironmentRunExtension` binds runtime-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
+Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`. For async subagents or detached processes, read `11` and `20`. `EnvironmentRuntime` is one run lifecycle resource with a Host-mutable current mount set; an `EnvironmentRunExtension` binds runtime-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
 
 ### Implement Hosting or Persistence
 
-Read `10`, `12`, `13`, and `14`, then the Foundation Service catalog.
+Read `10`, `12`, `13`, `14`, and `20`, then the Foundation Service catalog. A Host that takes over child or process execution must preserve the standard Harness Toolsets and compact projection contract while owning every stronger lifecycle guarantee.
 
 ### Integrate Observation
 

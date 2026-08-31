@@ -92,6 +92,22 @@ class _PreparedInvocation:
     typed_arguments: dict[str, Any]
 
 
+async def _allow_managed_invocation(
+    invocation: ToolInvocationContext,
+    metadata: HarnessToolMetadata,
+    *,
+    context: AgentContext,
+) -> InvocationPolicyDecision:
+    del invocation, metadata, context
+    return InvocationPolicyDecision.allow()
+
+
+_DEFAULT_INVOCATION_POLICY = InvocationPolicyCapability(
+    evaluator=_allow_managed_invocation,
+    max_dispatch_retries=0,
+)
+
+
 class ManagedToolProviderError(Exception):
     """Typed provider failure carrying only retry and outcome evidence."""
 
@@ -246,10 +262,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                 reject_non_json=False,
             )
         managed = normalize_harness_tool_metadata(raw_metadata)
-        policy = _resolve_policy(ctx)
-        if policy is None:
-            await _emit(ctx, managed, "denied", reason="policy_unavailable")
-            raise ToolFailed("Managed tool authorization is unavailable.")
+        policy = _resolve_policy(ctx) or _DEFAULT_INVOCATION_POLICY
 
         try:
             prepared = await _prepare_invocation(ctx, tool_def.name, tool_def.toolset_id, tool_args, managed)
@@ -569,13 +582,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         RuntimeContextCapability,
         _FileContextRunCapability,
     )
-    from a13n_harness.capabilities.delegation import (
-        DELEGATION_CAPABILITY_ID,
-        DELEGATION_RUN_CAPABILITY_ID,
-        DelegationCapability,
-        DelegationRunCapability,
-        _DelegationActiveCapability,
-    )
     from a13n_harness.capabilities.documents import (
         DOCUMENTS_CAPABILITY_ID,
         DOCUMENTS_RUN_CAPABILITY_ID,
@@ -600,6 +606,12 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         SKILLS_CAPABILITY_ID,
         SkillsCapability,
         _SkillsRunCapability,
+    )
+    from a13n_harness.capabilities.subagents import (
+        SUBAGENT_CAPABILITY_ID,
+        SubagentCapability,
+        _AsyncSubagentCapability,
+        _InlineSubagentCapability,
     )
     from a13n_harness.capabilities.web import (
         WEB_CAPABILITY_ID,
@@ -737,13 +749,13 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (TaskStateRunCapability,),
             provenance.run_ids,
         ),
-        DELEGATION_CAPABILITY_ID: (
-            (DelegationCapability, _DelegationActiveCapability),
+        SUBAGENT_CAPABILITY_ID: (
+            (
+                SubagentCapability,
+                _InlineSubagentCapability,
+                _AsyncSubagentCapability,
+            ),
             provenance.definition_ids,
-        ),
-        DELEGATION_RUN_CAPABILITY_ID: (
-            (DelegationRunCapability,),
-            provenance.run_ids,
         ),
     }
     reserved_types = tuple(capability_type for item in expected.values() for capability_type in item[0])
@@ -849,19 +861,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
                 f"{label}Capability requires one fresh run attachment.",
                 code=binding_code,
             )
-
-    delegation_owner = ctx.capabilities.get(DELEGATION_CAPABILITY_ID)
-    delegation_attachment = ctx.capabilities.get(DELEGATION_RUN_CAPABILITY_ID)
-    if delegation_attachment is not None and delegation_owner is None:
-        raise DefinitionError(
-            "A Delegation run attachment requires its definition owner.",
-            code="delegation_owner_missing",
-        )
-    if delegation_owner is not None and delegation_attachment is None:
-        raise DefinitionError(
-            "DelegationCapability requires one fresh run attachment.",
-            code="delegation_binding_missing",
-        )
 
     working_state_owner = ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID)
     task_state_attachment = ctx.capabilities.get(TASK_STATE_RUN_CAPABILITY_ID)

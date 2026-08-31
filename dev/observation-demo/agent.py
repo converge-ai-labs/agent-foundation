@@ -36,9 +36,9 @@ from a13n_harness import (
 from a13n_harness.capabilities import (
     CompactionCapability,
     CompactionPolicy,
-    DelegationCapability,
-    DelegationRunCapability,
     HandoffCapability,
+    SubagentCapability,
+    SubagentManager,
 )
 from a13n_harness.context import BuiltSubagent
 from a13n_harness.environment import (
@@ -464,11 +464,37 @@ def _build_standard_scenario(
         output_type=str,
         model=_view_model(),
         capabilities=(
-            DynamicEnvironmentCapability(
-                DynamicEnvironmentConfiguration(file_tools=True, shell_tools=False, max_reference_entries=64)
-            ),
+            DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
             cost,
         ),
+    )
+
+
+_SUBAGENT_PARENT_INSTANCE_ID = "observation-subagent-parent-instance"
+
+
+async def _bind_observation_subagent(
+    child: BuiltSubagent,
+    input: RunInputValue,
+    child_instance_id: str,
+    continuation: bool,
+    usage_limits: UsageLimits | None,
+) -> RunBindings:
+    del child, input, continuation, usage_limits
+    return RunBindings(
+        instance=AgentInstanceContext(
+            identity=AgentIdentityRef(
+                issuer="https://identity.observation.local",
+                subject="observation-demo:reviewer",
+                agent_id="observation-reviewer-agent",
+                user_id="observation-user-42",
+            ),
+            agent_instance_id=f"reviewer-{child_instance_id}",
+            parent_agent_instance_id=_SUBAGENT_PARENT_INSTANCE_ID,
+            delegation_id=child_instance_id,
+            actor="observation-demo-parent",
+        ),
+        environment=EmptyEnvironmentRuntime(),
     )
 
 
@@ -484,7 +510,13 @@ def _build_subagent_scenario(instrumentation: HarnessInstrumentation):
         output_type=str,
         definition_id="observation-parent-v1",
         model=_subagent_parent_model(),
-        capabilities=(DelegationCapability(), _DemoCostCapability()),
+        capabilities=(
+            SubagentCapability(
+                execution="inline",
+                operator=SubagentManager(_bind_observation_subagent),
+            ),
+            _DemoCostCapability(),
+        ),
         subagents=(
             SubagentDefinition(
                 name="reviewer",
@@ -498,43 +530,14 @@ def _build_subagent_scenario(instrumentation: HarnessInstrumentation):
 
 
 async def _subagent_bindings() -> RunBindings:
-    parent_instance_id = "observation-subagent-parent-instance"
-
-    async def bind_child(
-        child: BuiltSubagent,
-        input: RunInputValue,
-        child_instance_id: str,
-        continuation: bool,
-        usage_limits: UsageLimits | None,
-    ) -> RunBindings:
-        del child, input, continuation, usage_limits
-        return RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(
-                    issuer="https://identity.observation.local",
-                    subject="observation-demo:reviewer",
-                    agent_id="observation-reviewer-agent",
-                    user_id="observation-user-42",
-                ),
-                agent_instance_id=f"reviewer-{child_instance_id}",
-                parent_agent_instance_id=parent_instance_id,
-                delegation_id=child_instance_id,
-                actor="observation-demo-parent",
-            ),
-            environment=EmptyEnvironmentRuntime(),
-        )
-
     return RunBindings(
         instance=AgentInstanceContext(
             identity=_main_identity("subagent"),
-            agent_instance_id=parent_instance_id,
+            agent_instance_id=_SUBAGENT_PARENT_INSTANCE_ID,
             actor="observation-demo-host",
         ),
         environment=EmptyEnvironmentRuntime(),
-        capabilities=(
-            InvocationPolicyCapability(evaluator=_AllowInvocations(), max_dispatch_retries=0),
-            DelegationRunCapability(binder=bind_child),
-        ),
+        capabilities=(InvocationPolicyCapability(evaluator=_AllowInvocations(), max_dispatch_retries=0),),
     )
 
 

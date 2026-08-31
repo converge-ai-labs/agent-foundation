@@ -609,6 +609,33 @@ def _validate_provider_mount(
                 "read_only": bool(root.get("read_only", False)),
             },
         }
+        shell_profiles = parameters.get("shell_profiles")
+        if shell_profiles is not None:
+            if not isinstance(shell_profiles, list):
+                raise _error("provider_spec_invalid", "Direct Local shell profiles must be a list.")
+            executables = {item.executable_id: item.path for item in settings.local_executables}
+            normalized_profiles: list[dict[str, Any]] = []
+            for profile in shell_profiles:
+                if not isinstance(profile, dict):
+                    raise _error(
+                        "provider_spec_invalid",
+                        "Direct Local shell profiles must select an authorized executable alias.",
+                    )
+                executable = profile.get("executable")
+                if not isinstance(executable, dict) or set(executable) != {"executable_id"}:
+                    raise _error(
+                        "provider_spec_invalid",
+                        "Direct Local shell profiles must select an authorized executable alias.",
+                    )
+                executable_id = executable.get("executable_id")
+                executable_path = executables.get(executable_id) if isinstance(executable_id, str) else None
+                if executable_path is None:
+                    raise _error(
+                        "provider_spec_invalid",
+                        "Direct Local shell profiles must select an authorized executable alias.",
+                    )
+                normalized_profiles.append({**profile, "executable": str(executable_path)})
+            parameters["shell_profiles"] = normalized_profiles
     try:
         catalog = build_environment_provider_factory_catalog(
             builtin_keys=settings.builtin_provider_keys,
@@ -647,11 +674,6 @@ def _validate_graph(revisions: list[ResourceRevision], identities: set[tuple[str
             document = AgentDefinitionDocument.model_validate(revision.normalized_content, strict=True)
         except ValidationError as exc:
             raise _error("configuration_document_invalid", "An Agent revision is invalid.") from exc
-        if document.async_subagents.tools == "standard":
-            raise _error(
-                "capability_schema_unavailable",
-                "The async-subagent definition Capability is unavailable.",
-            )
         references = (
             document.model,
             document.prompt,

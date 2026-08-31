@@ -48,7 +48,7 @@ from .models import (
     ResolvedSubagentEdge,
 )
 
-_OPERATION_FAMILIES = frozenset({"files", "shell", "processes", "ports", "outputs", "state"})
+_ACCESS_RANK = {"read_only": 0, "read_write": 1, "full": 2}
 
 
 class SnapshotResolver:
@@ -152,13 +152,6 @@ class SnapshotResolver:
                             details={"agent_id": document.agent_id, "skill_name": unknown[0]},
                         )
 
-                _validate_requirements(document)
-                if document.async_subagents.tools == "standard":
-                    raise CompositionError(
-                        "The async-subagent definition Capability is not installed in this release.",
-                        code="capability_schema_unavailable",
-                        details={"agent_id": document.agent_id},
-                    )
                 children: list[ResolvedSubagentEdge] = []
                 for edge in document.subagents:
                     child_ref = _resolve_ref(resources, edge.agent)
@@ -172,9 +165,6 @@ class SnapshotResolver:
                             identity=edge.identity,
                             usage_limits=edge.usage_limits,
                             environment=edge.environment,
-                            lifetime=edge.lifetime,
-                            steering=edge.steering,
-                            continuation=edge.continuation,
                         )
                     )
                 node = ResolvedAgentNode(
@@ -193,6 +183,7 @@ class SnapshotResolver:
                     skill_materialization_mount=document.skills.materialization_mount,
                     default_skill_names=default_names,
                     capabilities=document.capabilities,
+                    environment_tools=document.environment_tools,
                     environment=document.environment,
                     subagents=tuple(children),
                     async_subagents=document.async_subagents,
@@ -298,7 +289,7 @@ class SnapshotResolver:
                     provider_key=mount.provider_key,
                     provider_schema_version=mount.provider_schema_version,
                     normalized_parameters=normalized,
-                    permission_ceiling=mount.permission_ceiling,
+                    access=mount.access,
                     lifecycle_capabilities=lifecycle_capabilities,
                     dependency=lock,
                 )
@@ -342,9 +333,9 @@ def validate_compatibility(
         requirements = {item.mount_name: item for item in node.environment.mounts}
         if node.skill_materialization_mount is not None:
             requirement = requirements.get(node.skill_materialization_mount)
-            if requirement is None or "files" not in requirement.required_operations:
+            if requirement is None or requirement.required_access not in {"read_write", "full"}:
                 raise CompositionError(
-                    "A Skill materialization mount must require the files operation family.",
+                    "A Skill materialization mount must require read-write access.",
                     code="agent_environment_incompatible",
                     details={"agent_id": node.agent_id},
                 )
@@ -356,10 +347,12 @@ def validate_compatibility(
                     code="agent_environment_incompatible",
                     details={"agent_id": node.agent_id, "mount_name": requirement.mount_name},
                 )
-            available = _permission_families(mount.permission_ceiling)
-            if not requirement.required_operations.issubset(available):
+            if (
+                requirement.required_access is not None
+                and _ACCESS_RANK[mount.access] < _ACCESS_RANK[requirement.required_access]
+            ):
                 raise CompositionError(
-                    "An Environment mount permission ceiling does not satisfy the Agent.",
+                    "An Environment mount access level does not satisfy the Agent.",
                     code="agent_environment_incompatible",
                     details={"agent_id": node.agent_id, "mount_name": requirement.mount_name},
                 )
@@ -418,25 +411,6 @@ def _validate_environment_lifecycle(
             "An Environment lifecycle policy is unsupported by a selected provider.",
             code="environment_lifecycle_incompatible",
         )
-
-
-def _validate_requirements(document: AgentDefinitionDocument) -> None:
-    for requirement in document.environment.mounts:
-        unsupported = sorted(set(requirement.required_operations) - _OPERATION_FAMILIES)
-        if unsupported:
-            raise CompositionError(
-                "An Agent requires an unknown Environment operation family.",
-                code="agent_environment_requirement_invalid",
-                details={"agent_id": document.agent_id, "operation": unsupported[0]},
-            )
-
-
-def _permission_families(permissions: frozenset[str]) -> frozenset[str]:
-    return frozenset(
-        family
-        for family in _OPERATION_FAMILIES
-        if family in permissions or any(value.startswith(f"{family}.") for value in permissions)
-    )
 
 
 def _reject_data_root_overlap(value: JsonValue, data_root: Path, *, key: str | None = None) -> None:
@@ -548,6 +522,36 @@ def _provider_parameters(
         "path": str(path),
         "read_only": bool(root.get("read_only", False)),
     }
+    shell_profiles = normalized.get("shell_profiles")
+    if shell_profiles is not None:
+        if not isinstance(shell_profiles, list):
+            raise CompositionError(
+                "Direct Local shell profiles must be a list.",
+                code="provider_spec_invalid",
+            )
+        executables = {item.executable_id: item.path for item in settings.local_executables}
+        normalized_profiles: list[JsonValue] = []
+        for profile in shell_profiles:
+            if not isinstance(profile, dict):
+                raise CompositionError(
+                    "A Direct Local shell profile selects an unavailable executable alias.",
+                    code="provider_spec_invalid",
+                )
+            executable = profile.get("executable")
+            if not isinstance(executable, dict) or set(executable) != {"executable_id"}:
+                raise CompositionError(
+                    "A Direct Local shell profile selects an unavailable executable alias.",
+                    code="provider_spec_invalid",
+                )
+            executable_id = executable.get("executable_id")
+            executable_path = executables.get(executable_id) if isinstance(executable_id, str) else None
+            if executable_path is None:
+                raise CompositionError(
+                    "A Direct Local shell profile selects an unavailable executable alias.",
+                    code="provider_spec_invalid",
+                )
+            normalized_profiles.append({**profile, "executable": str(executable_path)})
+        normalized["shell_profiles"] = normalized_profiles
     return normalized
 
 

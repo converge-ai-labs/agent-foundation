@@ -11,6 +11,7 @@ from a13n_ui.configuration import (
     DefinitionRootSettings,
     EnvironmentMountDefinition,
     LocalDirectorySettings,
+    LocalExecutableSettings,
     LocalSkillDiscoverySettings,
     ModelDefinition,
     PluginInstanceDefinition,
@@ -19,6 +20,7 @@ from a13n_ui.configuration import (
     load_envd_runtime_manifest,
 )
 from a13n_ui.configuration.loader import load_catalog_candidate
+from a13n_ui.configuration.models import DynamicEnvironmentCapabilityConfiguration, EnvironmentMountRequirement
 from a13n_ui.errors import ConfigurationError
 from a13n_ui.host import open_agent_ui_host
 from a13n_ui.settings import AgentUiSettings, StorageSettings
@@ -324,6 +326,97 @@ async def test_skill_package_content_changes_skill_revision(tmp_path: Path) -> N
         assert second_package.logical_digest != first_package.logical_digest
 
 
+def test_legacy_environment_configuration_maps_only_safe_defaults() -> None:
+    mount = EnvironmentMountDefinition.model_validate(
+        {
+            "mount_name": "mount-main",
+            "model_alias": "workspace",
+            "provider_key": "a13n.direct-local",
+            "provider_schema_version": "1",
+            "permission_ceiling": ["files"],
+        },
+        strict=True,
+    )
+    requirement = EnvironmentMountRequirement.model_validate(
+        {"mount_name": "mount-main", "required_operations": []},
+        strict=True,
+    )
+    state_requirement = EnvironmentMountRequirement.model_validate(
+        {"mount_name": "mount-main", "required_operations": ["state"]},
+        strict=True,
+    )
+    dynamic = DynamicEnvironmentCapabilityConfiguration.model_validate(
+        {"file_tools": True, "shell_tools": True, "max_reference_entries": 1024},
+        strict=True,
+    )
+
+    assert mount.access == "read_write"
+    assert requirement.required_access is None
+    assert state_requirement.required_access == "full"
+    assert dynamic.model_dump() == {}
+    with pytest.raises(ValidationError):
+        EnvironmentMountDefinition.model_validate(
+            {
+                "mount_name": "mount-main",
+                "model_alias": "workspace",
+                "provider_key": "a13n.direct-local",
+                "provider_schema_version": "1",
+                "permission_ceiling": [],
+            },
+            strict=True,
+        )
+    with pytest.raises(ValidationError):
+        DynamicEnvironmentCapabilityConfiguration.model_validate({"shell_tools": False}, strict=True)
+
+
+async def test_direct_local_shell_profiles_resolve_process_owned_executable_aliases(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    discovery = tmp_path / "discovery"
+    discovery.mkdir()
+    _write_complete_tree(definitions)
+    _write_yaml(
+        definitions / "environments/environment-main.yaml",
+        {
+            "schema_version": "1",
+            "environment_id": "environment-main",
+            "display_name": "Local Environment",
+            "description": None,
+            "mounts": [
+                {
+                    "mount_name": "mount-main",
+                    "model_alias": "workspace",
+                    "provider_key": "a13n.direct-local",
+                    "provider_schema_version": "1",
+                    "provider_parameters": {
+                        "environment_id": "local-main",
+                        "root": {"directory_id": "directory-skills"},
+                        "shell_profiles": [
+                            {
+                                "profile_id": "default",
+                                "executable": {"executable_id": "executable-shell"},
+                            }
+                        ],
+                    },
+                    "access": "full",
+                }
+            ],
+            "default_mount": "mount-main",
+            "lifecycle": {"provision": "on_first_run", "idle": "keep_running"},
+        },
+    )
+    base = _full_settings(tmp_path / "data", definitions, discovery).configuration
+    settings = base.model_copy(
+        update={"local_executables": (LocalExecutableSettings(executable_id="executable-shell", path=Path("/bin/sh")),)}
+    )
+
+    candidate = await load_catalog_candidate(settings)
+    assert any(item.ref.resource_id == "environment-main" for item in candidate.revisions)
+
+    with pytest.raises(ConfigurationError) as error:
+        await load_catalog_candidate(base)
+    assert error.value.code == "provider_spec_invalid"
+
+
 def test_literal_credentials_are_rejected_from_generic_resource_configuration() -> None:
     with pytest.raises(ValidationError):
         PluginInstanceDefinition.model_validate(
@@ -346,7 +439,7 @@ def test_literal_credentials_are_rejected_from_generic_resource_configuration() 
                 "provider_key": "a13n.direct-local",
                 "provider_schema_version": "1",
                 "provider_parameters": {"accessToken": "literal-secret"},
-                "permission_ceiling": [],
+                "access": "full",
             },
             strict=True,
         )

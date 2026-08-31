@@ -17,7 +17,7 @@ a13n-ui runtime status
 
 `a13n-ui` is an alias for `a13n-ui cli`. The CLI is an ordinary terminal frontend, not a separate full-screen TUI product. The WebUI reaches the same Host operations through a thin loopback HTTP/SSE adapter. Neither surface owns another Session model, Agent loop, scheduler, or storage authority.
 
-Agent UI uses best-effort continuation persistence rather than durable workflow execution. At each complete or suspended Harness result, it attempts to store and select one complete continuation. A later Run starts from the latest successfully selected continuation. Input, partial output, model and tool work, live AG-UI events, and async-child tasks are process-local and can disappear when the owning process exits. Foundation Service remains the product for durable distributed acceptance, failover, remote workers, and retry.
+Agent UI uses best-effort continuation persistence rather than durable workflow execution. At each complete or suspended Harness result, it attempts to store and select one complete continuation. A later Run starts from the latest successfully selected continuation. Input, partial output, model and tool work, live AG-UI events, and Runner-local async-child work are process-local and can disappear when their canonical owner exits. Foundation Service remains the product for durable distributed acceptance, failover, remote workers, and retry.
 
 ## Product Model
 
@@ -56,7 +56,7 @@ A Run is process-local. It uses the selected continuation, fresh Model authority
 | Continuation, snapshot, Skill, and provider payloads | Agent UI object store                       | Immutable content-addressed files published before SQLite selection                                    |
 | Live presentation                                    | Agent Stream Protocol and Agent UI live hub | Best-effort process-local streaming; not recovery authority                                            |
 | Web and terminal rendering                           | Surface adapters                            | Call detached Host commands and queries                                                                |
-| Runtime process lifecycle                            | Agent UI runtime-generation service         | Starts, activates, drains, and stops replaceable Runner processes                                      |
+| Runtime process lifecycle                            | Agent UI runtime-generation service         | Starts and activates Runners, drains admitted roots, and force-stops process-local async work          |
 | Distributed durable execution                        | Foundation Service                          | Not emulated by Agent UI                                                                               |
 
 ## Architecture
@@ -151,17 +151,19 @@ A Session stores only restart-relevant facts:
 - one latest continuation reference;
 - Environment assignments and provider state needed to resume or clean up external resources.
 
-Active Run state, pending input, partial output, subscriptions, async-child tasks, and delivery attempts stay in memory. Session history for CLI and WebUI is reconstructed from the latest `HarnessState` message history plus small terminal metadata where useful. Retained AG-UI segment chains and projection watermarks are not part of the product.
+Active Run state, pending input, partial output, subscriptions, Runner-local async-child work, and delivery attempts stay in memory. Session history for CLI and WebUI is reconstructed from the latest `HarnessState` message history plus small terminal metadata where useful. Retained AG-UI segment chains and projection watermarks are not part of the product.
 
-Environment resources can outlive one Run, so Agent UI retains provider state needed to reconnect or clean up. Lifecycle commands are serialized only within the current Host; persisted resource state uses last-write-wins. Agent UI does not persist attachments, clients, credentials, native provider objects, or `EnvironmentRuntime` values. [Sessions, Environments, and State](04-sessions-environments-and-state.md) owns this boundary.
+Environment resources can outlive one Run, so the Host retains provider state needed to reconnect or clean up. Lifecycle commands are executed by the selected Runner and serialized only within the current Host request path; persisted resource state uses last-write-wins. Agent UI does not persist attachments, clients, credentials, native provider objects, or `EnvironmentRuntime` values. [Sessions, Environments, and State](04-sessions-environments-and-state.md) owns this boundary.
 
-## Runtime and Async Children
+## Runtime and Async Operators
 
-The stable Host can replace runtime Runners without restarting the surface. New work selects the active Runner generation; admitted work stays on its original Runner until completion, cancellation, or bounded drain. No work migrates between processes.
+The stable Host can replace runtime Runners without restarting the surface. New root work selects the active Runner generation; admitted Harness Runs stay on their original Runner until completion, cancellation, or bounded drain. No live Harness Run migrates between processes.
 
-Async subagents are process-local tasks over exact Harness-built children. Their status, steering, cancellation, terminal output, and pending parent delivery exist only for the current Host lifetime. Once child output reaches the parent and the parent selects a continuation, ordinary parent `HarnessState` persistence carries the resulting continuation. Agent UI does not maintain a durable child job or delivery ledger.
+Each Runner generation owns one standard Harness `SubagentManager` and `ProcessManager`. Root async children and background processes can outlive their initiating parent Run while remaining process-local to that generation. Agent UI persists neither canonical work nor output. It aggregates async child usage in generation memory and, when the correlated Session is inactive, can start one best-effort wake Run from the latest selected continuation. Generation replacement never restores or retargets old Manager records.
 
-[Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md) owns the detailed process and frontend contracts.
+Tool authority still comes from exact Capability composition. Root reconstruction supplies the generation Managers. Nested children always use inline subagents and foreground shell even when their exact definitions select those Capabilities, so asynchronous work does not recursively escape one root generation boundary. Agent UI does not maintain a child Session entity, durable process record, generic Job, queue, or delivery ledger.
+
+[Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md) owns the detailed Runner-local child and frontend contracts.
 
 ## Configuration and Storage
 
@@ -181,7 +183,7 @@ Each command opens one Host lifetime:
 4. start and activate one runtime Runner;
 5. attach the selected surface;
 6. serve commands until the surface exits;
-7. stop accepting new work, cancel or drain process-local tasks, stop Runners, and close local collaborators.
+7. stop accepting new work, cancel root Runs, force-close Runner-local async work, stop Runners, and close local collaborators.
 
 Startup validates values when they are selected or needed; it does not scan every retained Session, infer that another process died, repair active work, or claim another process's staging files. Shutdown does not synthesize durable interruption records for tasks that are about to disappear.
 
@@ -206,7 +208,7 @@ Agent UI is complete when:
 - every complete or suspended continuation is saved on a best-effort basis, and every successfully selected continuation can resume;
 - process loss cleanly falls back to the previous selected continuation;
 - Environment resources resume and clean up through provider state;
-- async children work within one Host lifetime without a durable job subsystem;
+- async children work within one Runner generation without a durable job subsystem;
 - `a13n-ui` and `a13n-ui cli` provide one append-only terminal experience;
 - the bundled WebUI provides a complete multi-Session application over the same Host;
 - multiple local processes can open the data root using ordinary SQLite and filesystem behavior, without leases, fencing, or distributed coordination.
