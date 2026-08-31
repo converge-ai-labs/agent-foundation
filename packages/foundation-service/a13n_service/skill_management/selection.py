@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_workspace
+from a13n_service.iam import AuthenticatedActor, authorize_agent_skill_binding
 from a13n_service.storage import short_session
 
 from .domain import (
@@ -43,6 +43,7 @@ class PreparedAgentSkillSelection:
     actor: AuthenticatedActor
     organization_id: str
     workspace_id: str
+    agent_preset_id: str
     request: FoundationAgentSkillSelectionRequest
     selection: FoundationAgentSkillSelection
 
@@ -68,15 +69,16 @@ class AgentSkillLockResolver:
         *,
         actor: AuthenticatedActor,
         workspace_id: str,
+        agent_preset_id: str,
         request: FoundationAgentSkillSelectionRequest,
         permission_ceiling: EnvironmentPermissionSet | None,
     ) -> PreparedAgentSkillSelection:
         async with short_session(self._sessions) as session:
-            authorized = await authorize_workspace(
+            authorized = await authorize_agent_skill_binding(
                 session,
                 actor=actor,
                 workspace_id=workspace_id,
-                action=WorkspaceAction.skill_bind,
+                agent_preset_id=agent_preset_id,
             )
             _require_materialization_permissions(request, permission_ceiling)
             records = await _load_revisions(
@@ -91,6 +93,7 @@ class AgentSkillLockResolver:
             actor=actor,
             organization_id=authorized.organization_id,
             workspace_id=workspace_id,
+            agent_preset_id=agent_preset_id,
             request=request,
             selection=selection,
         )
@@ -104,11 +107,11 @@ class AgentSkillLockResolver:
     ) -> FoundationAgentSkillSelection:
         """Reauthorize and prove the prepared locks still publish exactly as resolved."""
 
-        authorized = await authorize_workspace(
+        authorized = await authorize_agent_skill_binding(
             session,
             actor=prepared.actor,
             workspace_id=prepared.workspace_id,
-            action=WorkspaceAction.skill_bind,
+            agent_preset_id=prepared.agent_preset_id,
         )
         _require_materialization_permissions(prepared.request, permission_ceiling)
         if authorized.organization_id != prepared.organization_id:

@@ -224,7 +224,8 @@ def upgrade() -> None:
             "principal_type IN ('user', 'service_account')", name=op.f("ck_role_bindings_principal_type_valid")
         ),
         sa.CheckConstraint(
-            "resource_type IN ('organization', 'workspace', 'agent')", name=op.f("ck_role_bindings_resource_type_valid")
+            "resource_type IN ('organization', 'workspace', 'agent_preset')",
+            name=op.f("ck_role_bindings_resource_type_valid"),
         ),
         sa.CheckConstraint(
             "role_key IN ('member', 'viewer', 'runner', 'builder', 'admin')",

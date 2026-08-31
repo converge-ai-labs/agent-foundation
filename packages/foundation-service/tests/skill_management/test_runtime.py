@@ -10,7 +10,7 @@ from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
 from a13n_harness.environment.local.files import LocalFileOperator
 from a13n_service.database.metadata import service_metadata
-from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam import AuthenticatedActor, AuthorizationError
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.skill_management.domain import (
@@ -39,6 +39,8 @@ NOW = datetime(2026, 8, 31, 8, 0, tzinfo=UTC)
 ORG_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
 BUILDER_ID = "usr_1234567890abcdef"
+DIRECT_BUILDER_ID = "usr_abcdef1234567890"
+AGENT_PRESET_ID = "agt_1234567890abcdef"
 DEPLOY_SKILL_ID = "sk_1234567890abcdef"
 DEPLOY_REVISION_ID = "skr_1234567890abcdef"
 REVIEW_SKILL_ID = "sk_abcdef1234567890"
@@ -100,6 +102,19 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
                 updated_at=NOW,
             )
         )
+        session.add(
+            UserRecord(
+                id=DIRECT_BUILDER_ID,
+                email="direct-builder@example.com",
+                normalized_email="direct-builder@example.com",
+                name="Direct Builder",
+                status="active",
+                email_verified_at=NOW,
+                version=1,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
         await session.flush()
         session.add_all(
             (
@@ -124,6 +139,45 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
                     principal_id=BUILDER_ID,
                     resource_type="workspace",
                     resource_id=WORKSPACE_ID,
+                    role_key="builder",
+                    created_by_user_id=BUILDER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+                RoleBindingRecord(
+                    id="rb_org_direct12345678901",
+                    organization_id=ORG_ID,
+                    workspace_id=None,
+                    principal_type="user",
+                    principal_id=DIRECT_BUILDER_ID,
+                    resource_type="organization",
+                    resource_id=ORG_ID,
+                    role_key="member",
+                    created_by_user_id=BUILDER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+                RoleBindingRecord(
+                    id="rb_ws_direct123456789012",
+                    organization_id=ORG_ID,
+                    workspace_id=WORKSPACE_ID,
+                    principal_type="user",
+                    principal_id=DIRECT_BUILDER_ID,
+                    resource_type="workspace",
+                    resource_id=WORKSPACE_ID,
+                    role_key="viewer",
+                    created_by_user_id=BUILDER_ID,
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+                RoleBindingRecord(
+                    id="rb_agent_direct123456789",
+                    organization_id=ORG_ID,
+                    workspace_id=WORKSPACE_ID,
+                    principal_type="user",
+                    principal_id=DIRECT_BUILDER_ID,
+                    resource_type="agent_preset",
+                    resource_id=AGENT_PRESET_ID,
                     role_key="builder",
                     created_by_user_id=BUILDER_ID,
                     created_at=NOW,
@@ -214,6 +268,16 @@ def _permissions() -> EnvironmentPermissionSet:
     return EnvironmentPermissionSet(operations=SKILL_MATERIALIZATION_ACTIONS)
 
 
+def _direct_actor() -> AuthenticatedActor:
+    return AuthenticatedActor(
+        principal=PrincipalRef(principal_type="user", principal_id=DIRECT_BUILDER_ID),
+        auth_method="session",
+        credential_id="ses_abcdef1234567890",
+        boundary_workspace_id=WORKSPACE_ID,
+        request_id="request-direct-builder",
+    )
+
+
 @pytest.mark.anyio
 async def test_agent_publish_resolves_exact_locks_and_rechecks_them(
     runtime_fixture: RuntimeFixture,
@@ -221,6 +285,7 @@ async def test_agent_publish_resolves_exact_locks_and_rechecks_them(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(
             revision_ids=(REVIEW_REVISION_ID, DEPLOY_REVISION_ID),
             mode="exact",
@@ -241,6 +306,29 @@ async def test_agent_publish_resolves_exact_locks_and_rechecks_them(
 
 
 @pytest.mark.anyio
+async def test_direct_agent_builder_can_bind_only_for_its_target_agent(
+    runtime_fixture: RuntimeFixture,
+) -> None:
+    prepared = await runtime_fixture.resolver.prepare(
+        actor=_direct_actor(),
+        workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
+        request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
+        permission_ceiling=_permissions(),
+    )
+
+    assert tuple(item.skill_name for item in prepared.selection.available) == ("deploy",)
+    with pytest.raises(AuthorizationError):
+        await runtime_fixture.resolver.prepare(
+            actor=_direct_actor(),
+            workspace_id=WORKSPACE_ID,
+            agent_preset_id="agt_abcdef1234567890",
+            request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
+            permission_ceiling=_permissions(),
+        )
+
+
+@pytest.mark.anyio
 async def test_agent_publish_rejects_deleted_or_permission_incomplete_selection(
     runtime_fixture: RuntimeFixture,
 ) -> None:
@@ -249,6 +337,7 @@ async def test_agent_publish_rejects_deleted_or_permission_incomplete_selection(
         await runtime_fixture.resolver.prepare(
             actor=runtime_fixture.actor,
             workspace_id=WORKSPACE_ID,
+            agent_preset_id=AGENT_PRESET_ID,
             request=_request(),
             permission_ceiling=incomplete,
         )
@@ -262,6 +351,7 @@ async def test_agent_publish_rejects_deleted_or_permission_incomplete_selection(
         await runtime_fixture.resolver.prepare(
             actor=runtime_fixture.actor,
             workspace_id=WORKSPACE_ID,
+            agent_preset_id=AGENT_PRESET_ID,
             request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
             permission_ceiling=_permissions(),
         )
@@ -275,6 +365,7 @@ async def test_agent_publish_final_transaction_detects_tombstone(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -303,6 +394,7 @@ async def test_agent_publish_rejects_duplicate_final_names(runtime_fixture: Runt
         await runtime_fixture.resolver.prepare(
             actor=runtime_fixture.actor,
             workspace_id=WORKSPACE_ID,
+            agent_preset_id=AGENT_PRESET_ID,
             request=_request(),
             permission_ceiling=_permissions(),
         )
@@ -316,6 +408,7 @@ async def test_turn_selection_uses_defaults_and_canonical_available_order(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(mode="exact", names=("review",)),
         permission_ceiling=_permissions(),
     )
@@ -349,6 +442,7 @@ async def test_worker_reads_and_materializes_only_effective_turn_selection(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(),
         permission_ceiling=_permissions(),
     )
@@ -381,6 +475,7 @@ async def test_materializer_replaces_tampering_and_keeps_manifest_outside_packag
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -421,6 +516,7 @@ async def test_exact_empty_turn_materializes_no_package_and_scans_empty_catalog(
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(),
         permission_ceiling=_permissions(),
     )
@@ -442,6 +538,7 @@ async def test_runtime_keeps_retained_deleted_revision_executable(runtime_fixtur
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
@@ -465,6 +562,7 @@ async def test_runtime_rejects_tampered_lock_and_stale_fence(runtime_fixture: Ru
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
         request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
         permission_ceiling=_permissions(),
     )
