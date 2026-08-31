@@ -72,12 +72,7 @@ Configuration is immutable after startup. Changing a setting requires a new proc
 
 `worker.handoff_preference_window` is a finite positive internal scheduling duration used only for same-build claims after a planned handoff with `yield_reason="service_drain"`. Its release default equals one TurnAttempt lease duration; an explicit value overrides that default but cannot be zero, negative, or unbounded. It does not delay Runner rotation, initial claims, failure recovery, or lease-expiry takeover.
 
-`gateway.a2a_enabled` is the single protocol availability switch. It defaults
-to `true`. Native and Hosted AG-UI have no runtime enable setting. When false,
-the `control` or `all` process omits A2A discovery, runtime, streaming, push
-routes, and A2A delivery components while preserving every Native and Hosted
-AG-UI surface. The setting does not select another distribution and there is no
-Agent-level A2A enable setting.
+`gateway.a2a_enabled` is the single protocol availability switch. It defaults to `true`. Native and Hosted AG-UI have no runtime enable setting. When false, the `control` or `all` process omits A2A discovery, runtime, streaming, push routes, and A2A delivery components while preserving every Native and Hosted AG-UI surface. The setting does not select another distribution and there is no Agent-level A2A enable setting.
 
 ## Deployment Profiles
 
@@ -94,12 +89,7 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 ## Process Roles
 
-`control` and `worker` are the two independently deployable roles. `all` is
-their exact process composition. The default `on_demand` Plugin Runtime profile
-runs Turn scan, compatibility preflight, claim, leases, plugin code, and Harness
-execution in the Worker process. The optional `runner` profile gives each Worker
-a stable Supervisor that owns Runtime-lock discovery, claim gating, and
-child-process lifecycle; lock-scoped Runner children own the execution loop.
+`control` and `worker` are the two independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs Turn scan, compatibility preflight, claim, leases, plugin code, and Harness execution in the Worker process. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; lock-scoped Runner children own the execution loop.
 
 | Capability                                | `control` | `worker` |   `all` |
 | ----------------------------------------- | --------: | -------: | ------: |
@@ -176,9 +166,7 @@ Readiness succeeds only when:
 - every selected critical role component started successfully; and
 - a Worker can scan work through a healthy on-demand loop or the healthy Runner required by its configured profile.
 
-An enabled A2A surface contributes its required push and delivery components to
-readiness. A disabled A2A surface contributes no route, component, or readiness
-dependency.
+An enabled A2A surface contributes its required push and delivery components to readiness. A disabled A2A surface contributes no route, component, or readiness dependency.
 
 Loss of PostgreSQL, Redis, shared object storage, or another role-required dependency makes the affected process unready. A transient dependency loss does not by itself make liveness fail or erase already committed work. The process stops accepting new dependent work while the owning component performs bounded reconnect behavior. An unrecoverable client or component failure terminates the process.
 
@@ -215,8 +203,7 @@ No failure causes an implicit switch to a local backend, another distribution, o
 
 Role values, configuration precedence, stable TOML section names, Plugin Runtime mode, and supported deployment profiles are operational compatibility contracts. New optional fields and new distribution-owned namespaces can be added. Reinterpreting an existing field, changing precedence, making an accepted profile unsafe, or changing a role's ownership requires an explicit compatibility change.
 
-The `gateway.a2a_enabled` field is a common operational compatibility contract;
-its absence has the release-default meaning `true`.
+The `gateway.a2a_enabled` field is a common operational compatibility contract; its absence has the release-default meaning `true`.
 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
 

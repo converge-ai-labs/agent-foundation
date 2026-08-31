@@ -2,19 +2,9 @@
 
 ## Design Position
 
-Foundation Service Protocol Gateway is the public protocol boundary of the
-`control` and `all` roles. It exposes Foundation-owned Native APIs, hosted
-AG-UI, and A2A without introducing another interaction model, execution
-authority, or independently deployed proxy. Each adapter validates and maps its
-own wire protocol, then calls the same Foundation application commands,
-queries, and authorized subscription ports.
+Foundation Service Protocol Gateway is the public protocol boundary of the `control` and `all` roles. It exposes Foundation-owned Native APIs, hosted AG-UI, and A2A without introducing another interaction model, execution authority, or independently deployed proxy. Each adapter validates and maps its own wire protocol, then calls the same Foundation application commands, queries, and authorized subscription ports.
 
-The Gateway does not own Agent execution, Turn scheduling, persistence, or
-authorization policy. The durable [`Session`, `Thread`, `Turn`, and
-`Item`](../interaction-model.md) model, current
-[IAM](10-identity-and-access-management.md), and the owning domain use case
-remain authoritative regardless of which protocol accepted or delivered the
-operation.
+The Gateway does not own Agent execution, Turn scheduling, persistence, or authorization policy. The durable [`Session`, `Thread`, `Turn`, and `Item`](../interaction-model.md) model, current [IAM](10-identity-and-access-management.md), and the owning domain use case remain authoritative regardless of which protocol accepted or delivered the operation.
 
 ## Boundaries
 
@@ -33,15 +23,11 @@ operation.
 | Agent protocol metadata and policy                    | [Agent Management](12-agent-management.md#protocol-configuration)                                                        | Acceptance freezes the selected Preset Version and protocol configuration         |
 | External Environment lifecycle                        | [Environment Management](19-environment-management.md) and the shared Environment Provider contracts                     | Gateway can expose owning management APIs but owns no Provider resource lifecycle |
 
-The Gateway never calls ORM repositories, Redis keys, object keys, Worker
-private interfaces, or Harness execution directly from a transport adapter.
-Application use cases own short transactions, current authorization, durable
-mutation, and subscription selection.
+The Gateway never calls ORM repositories, Redis keys, object keys, Worker private interfaces, or Harness execution directly from a transport adapter. Application use cases own short transactions, current authorization, durable mutation, and subscription selection.
 
 ## Protocol Surfaces
 
-Only `control` and `all` roles expose product protocols. A `worker` exposes no
-Native, AG-UI, A2A, browser, or product-stream route.
+Only `control` and `all` roles expose product protocols. A `worker` exposes no Native, AG-UI, A2A, browser, or product-stream route.
 
 | Surface      | Namespace                                                                | Availability                                                               | Primary callers                                  |
 | ------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------ |
@@ -49,17 +35,9 @@ Native, AG-UI, A2A, browser, or product-stream route.
 | Hosted AG-UI | `/ag-ui/v1`                                                              | Always present on `control` and `all`                                      | Standard AG-UI clients and third-party frontends |
 | A2A          | direct `/a2a/v1/agent-presets/{agent_preset_id}` plus hostname discovery | Controlled only by deployment-wide `a2a_enabled`, which defaults to `true` | Remote Agents and Agent platforms                |
 
-There is no AgentPreset-level enable switch for Native, AG-UI, or A2A. Every
-callable AgentPreset has Native and Hosted AG-UI surfaces. When
-`a2a_enabled=true`, every callable AgentPreset also has a direct A2A base URL
-and direct Agent Card URL. Preset protocol
-configuration controls bounded metadata, input schema, client tool surface,
-visibility, media modes, and limits; it does not turn a protocol on or off.
+There is no AgentPreset-level enable switch for Native, AG-UI, or A2A. Every callable AgentPreset has Native and Hosted AG-UI surfaces. When `a2a_enabled=true`, every callable AgentPreset also has a direct A2A base URL and direct Agent Card URL. Preset protocol configuration controls bounded metadata, input schema, client tool surface, visibility, media modes, and limits; it does not turn a protocol on or off.
 
-When `a2a_enabled=false`, the process does not mount A2A discovery, runtime,
-streaming, or push-notification routes and does not start A2A delivery
-components. The setting is immutable effective runtime configuration and does
-not select another distribution. Native and Hosted AG-UI remain unchanged.
+When `a2a_enabled=false`, the process does not mount A2A discovery, runtime, streaming, or push-notification routes and does not start A2A delivery components. The setting is immutable effective runtime configuration and does not select another distribution. Native and Hosted AG-UI remain unchanged.
 
 ## Adapter Contract
 
@@ -86,16 +64,11 @@ Each adapter owns only:
 - protocol-specific event projection and transport encoding; and
 - translation between owning-domain failures and the protocol's error model.
 
-Adapters share application use cases instead of calling one another. AG-UI is
-not reconstructed from a Native envelope, A2A is not reconstructed from an
-AG-UI event, and no standard protocol handler creates a second Turn acceptance
-path. A request that cannot map exactly to an accepted Foundation operation
-fails before mutation.
+Adapters share application use cases instead of calling one another. AG-UI is not reconstructed from a Native envelope, A2A is not reconstructed from an AG-UI event, and no standard protocol handler creates a second Turn acceptance path. A request that cannot map exactly to an accepted Foundation operation fails before mutation.
 
 ## Identity and Acceptance
 
-External protocol identifiers provide correlation only. They never grant
-authority and never replace Foundation IDs:
+External protocol identifiers provide correlation only. They never grant authority and never replace Foundation IDs:
 
 | External value       | Foundation relationship                                             |
 | -------------------- | ------------------------------------------------------------------- |
@@ -105,66 +78,29 @@ authority and never replace Foundation IDs:
 | A2A Task ID          | Persisted projection binding over one or more Turns in that Thread  |
 | Native stream cursor | Delivery continuation evidence only                                 |
 
-Every new command authenticates its caller, resolves the current resource, and
-authorizes the owning action. Every subscription attachment and continuation
-reauthorizes its current scope. A persisted external binding narrows lookup but
-does not preserve an earlier authorization decision.
+Every new command authenticates its caller, resolves the current resource, and authorizes the owning action. Every subscription attachment and continuation reauthorizes its current scope. A persisted external binding narrows lookup but does not preserve an earlier authorization decision.
 
-Turn acceptance freezes the exact `agent_preset_version_id`, whose content
-includes the normalized protocol configuration, plus the normalized client
-tool surface, canonical accepted `AgentInput`, and other owning-domain inputs
-required by the selected protocol.
-Later Preset edits or publication do not rewrite an accepted Run or Task.
-Worker replacement changes TurnAttempt and Harness Run identity without
-changing the accepted protocol correlation.
+Turn acceptance freezes the exact `agent_preset_version_id`, whose content includes the normalized protocol configuration, plus the normalized client tool surface, canonical accepted `AgentInput`, and other owning-domain inputs required by the selected protocol. Later Preset edits or publication do not rewrite an accepted Run or Task. Worker replacement changes TurnAttempt and Harness Run identity without changing the accepted protocol correlation.
 
 ## Security and Admission
 
-Native browser sessions, bearer API keys, AG-UI credentials, and A2A security
-schemes all resolve to the existing Foundation `PrincipalRef` and credential
-context. Foundation defines no protocol-specific Principal or credential type.
-Protocol compatibility never bypasses tenant predicates, resource actions,
-credential boundaries, CSRF or Origin requirements, or current revocation.
+Native browser sessions, bearer API keys, AG-UI credentials, and A2A security schemes all resolve to the existing Foundation `PrincipalRef` and credential context. Foundation defines no protocol-specific Principal or credential type. Protocol compatibility never bypasses tenant predicates, resource actions, credential boundaries, CSRF or Origin requirements, or current revocation.
 
-All public requests and streams are bounded by deployment configuration and
-safe common defaults for body size, uploaded content, metadata, nesting,
-connections, subscriptions, duration, queue depth, event size, and rate.
-Distribution policy can reduce or raise documented operational bounds without
-changing protocol identity or weakening hard safety ceilings.
+All public requests and streams are bounded by deployment configuration and safe common defaults for body size, uploaded content, metadata, nesting, connections, subscriptions, duration, queue depth, event size, and rate. Distribution policy can reduce or raise documented operational bounds without changing protocol identity or weakening hard safety ceilings.
 
-Public projections exclude Secrets, credentials, raw prompts, private model or
-tool payloads, provider state, internal object keys, TurnAttempt fences, Worker
-identity, Redis locators, and unprocessed reasoning. A protocol-specific
-allowlist owns every custom event or extension. Unknown client-supplied fields,
-extensions, or capabilities fail according to the selected protocol rather
-than reaching the Harness or model as opaque metadata.
+Public projections exclude Secrets, credentials, raw prompts, private model or tool payloads, provider state, internal object keys, TurnAttempt fences, Worker identity, Redis locators, and unprocessed reasoning. A protocol-specific allowlist owns every custom event or extension. Unknown client-supplied fields, extensions, or capabilities fail according to the selected protocol rather than reaching the Harness or model as opaque metadata.
 
 ## Streaming and Resource Lifetime
 
-Every SSE, WebSocket, and A2A streaming route completes authentication,
-authorization, and initial relational reads in a closed short session before
-constructing the streaming response. Later reads use fresh bounded sessions.
-No database session or transaction spans a stream, external call, wait, or
-background delivery.
+Every SSE, WebSocket, and A2A streaming route completes authentication, authorization, and initial relational reads in a closed short session before constructing the streaming response. Later reads use fresh bounded sessions. No database session or transaction spans a stream, external call, wait, or background delivery.
 
-Each attachment owns bounded queues and closes its Redis subscription, tasks,
-and network resources when the client disconnects or the process drains.
-Disconnect ends only that delivery attachment. It never cancels, fails, seals,
-or reopens a Turn or A2A Task. Cancellation is an explicit authorized command
-through the owning application use case.
+Each attachment owns bounded queues and closes its Redis subscription, tasks, and network resources when the client disconnects or the process drains. Disconnect ends only that delivery attachment. It never cancels, fails, seals, or reopens a Turn or A2A Task. Cancellation is an explicit authorized command through the owning application use case.
 
 ## Errors and Compatibility
 
-Native `/api/v1` uses the shared Foundation error envelope. Hosted AG-UI and A2A
-preserve their upstream wire errors and content types. A common internal failure
-therefore can have different public encodings without acquiring different
-domain meaning.
+Native `/api/v1` uses the shared Foundation error envelope. Hosted AG-UI and A2A preserve their upstream wire errors and content types. A common internal failure therefore can have different public encodings without acquiring different domain meaning.
 
-Native compatibility follows `/api/v1`. Hosted AG-UI compatibility follows the
-AG-UI profile pinned by the selected Harness release group. A2A compatibility
-follows the declared A2A protocol version and binding. An adapter advertises
-only capabilities that are completely implemented and enabled by its owning
-configuration; OpenAPI, Agent Card, SDK, and runtime behavior cannot disagree.
+Native compatibility follows `/api/v1`. Hosted AG-UI compatibility follows the AG-UI profile pinned by the selected Harness release group. A2A compatibility follows the declared A2A protocol version and binding. An adapter advertises only capabilities that are completely implemented and enabled by its owning configuration; OpenAPI, Agent Card, SDK, and runtime behavior cannot disagree.
 
 ## Failure Semantics
 
@@ -179,17 +115,11 @@ configuration; OpenAPI, Agent Card, SDK, and runtime behavior cannot disagree.
 
 ## Invariants
 
-1. Protocol Gateway is a Foundation Service boundary, not another service or
-   lifecycle authority.
-2. Native, Hosted AG-UI, and A2A adapters call the same Foundation application
-   commands, queries, and subscriptions.
-3. Native and Hosted AG-UI are always present on `control` and `all`; A2A has
-   exactly one deployment-wide switch, defaults on, and has no
-   AgentPreset-level enable switch.
+1. Protocol Gateway is a Foundation Service boundary, not another service or lifecycle authority.
+2. Native, Hosted AG-UI, and A2A adapters call the same Foundation application commands, queries, and subscriptions.
+3. Native and Hosted AG-UI are always present on `control` and `all`; A2A has exactly one deployment-wide switch, defaults on, and has no AgentPreset-level enable switch.
 4. External IDs, cursors, URLs, and protocol receipts grant no authority.
-5. Transport delivery, durable acceptance, execution, and terminal commitment
-   remain independent facts.
+5. Transport delivery, durable acceptance, execution, and terminal commitment remain independent facts.
 6. A streaming dependency graph contains no yielded database session.
 7. Disconnect never implies cancellation.
-8. Every advertised capability has a complete implementation and compatible
-   security, lifecycle, and failure semantics.
+8. Every advertised capability has a complete implementation and compatible security, lifecycle, and failure semantics.

@@ -4,16 +4,7 @@
 
 Foundation Service owns a durable managed Secret resource for opaque values supplied by an authorized caller. The public management API accepts a Secret value on creation or replacement and never returns that value after acceptance, including in the mutation response. It exposes only identity, ownership, key, version, and timestamps.
 
-Secret management is distinct from login credentials, credential selection,
-resolution, and injection. A ModelConfig or another Agent input can bind an
-exact Workspace-owned Secret reference or declare a User-owned Secret key that
-is resolved for the invoking User, but it contains no Secret value.
-[Connections and Triggers](23-connectors-connections-and-triggers.md) can also
-own lifecycle-managed credential material. This contract owns each referenced
-Secret's scope and use eligibility; Model Management, Agent authoring, and
-Connector contracts own how non-secret requirements and internal credentials
-enter their resources. The management API exposes no public plaintext-read or
-comparison operation.
+Secret management is distinct from login credentials, credential selection, resolution, and injection. A ModelConfig or another Agent input can bind an exact Workspace-owned Secret reference or declare a User-owned Secret key that is resolved for the invoking User, but it contains no Secret value. [Connections and Triggers](23-connectors-connections-and-triggers.md) can also own lifecycle-managed credential material. This contract owns each referenced Secret's scope and use eligibility; Model Management, Agent authoring, and Connector contracts own how non-secret requirements and internal credentials enter their resources. The management API exposes no public plaintext-read or comparison operation.
 
 Managed Secrets are recoverable encrypted values rather than password verifiers. Foundation therefore encrypts them directly with AES-256-GCM under one operator-configured master key instead of applying one-way hashing. The service is not a zero-knowledge system: the write path observes plaintext transiently, and any process holding the configured master key is cryptographically capable of recovering stored values. The public management API exposes no plaintext-read operation.
 
@@ -40,23 +31,9 @@ class SecretOwnerRef:
 
 `owner_id` is interpreted according to `owner_type`. A Workspace-owned Secret uses the stored `workspace_id` as `owner_id`. A User-owned Secret uses the User ID and remains bounded to the stored Organization and Workspace. A Connection-, Trigger-, or A2A push-configuration-owned Secret uses that exact resource ID and the resource's stored tenant boundary. The pair determines ownership and key uniqueness, while the explicit tenant fields determine isolation and routing. Foundation validates the owner, Organization, Workspace, current RoleBindings, and lifecycle before accepting a mutation. An owner reference grants no authority, and the service infers no tenant or routing fact from the identifier string.
 
-A Workspace Builder or Admin manages Workspace-owned Secrets. Only the owning
-User manages a User-owned Secret; another Builder or Admin cannot list,
-inspect, replace, transfer, or delete it. Workspace deletion still performs
-tenant-owned cleanup. A User-owned Secret is eligible for run-time use only
-when the active invoking Principal is that User, the User currently has access
-to the Workspace, and the selected ModelConfig or other Agent input declares
-the matching User Secret key. A Service Account cannot use a User-owned Secret.
+A Workspace Builder or Admin manages Workspace-owned Secrets. Only the owning User manages a User-owned Secret; another Builder or Admin cannot list, inspect, replace, transfer, or delete it. Workspace deletion still performs tenant-owned cleanup. A User-owned Secret is eligible for run-time use only when the active invoking Principal is that User, the User currently has access to the Workspace, and the selected ModelConfig or other Agent input declares the matching User Secret key. A Service Account cannot use a User-owned Secret.
 
-Connection-, Trigger-, and A2A push-configuration-owned Secrets are internal
-lifecycle data. Generic Secret routes never create, enumerate, replace, or
-delete them. The owning operation creates or rotates their values and returns
-only its safe resource projection. Runtime resolution permits a
-Connection-owned Secret only for that exact currently authorized Connection, a
-Trigger-owned Secret only for its inbound source operation, and an A2A push
-Secret only for the exact active configuration and fenced delivery generation.
-Trigger and push credentials never become Agent input or satisfy a tool
-Connection.
+Connection-, Trigger-, and A2A push-configuration-owned Secrets are internal lifecycle data. Generic Secret routes never create, enumerate, replace, or delete them. The owning operation creates or rotates their values and returns only its safe resource projection. Runtime resolution permits a Connection-owned Secret only for that exact currently authorized Connection, a Trigger-owned Secret only for its inbound source operation, and an A2A push Secret only for the exact active configuration and fenced delivery generation. Trigger and push credentials never become Agent input or satisfy a tool Connection.
 
 Secret keys, owner references, timestamps, and versions are protected metadata even though they are not plaintext Secret values. Management operations disclose them only after current authorization. Management authority and runtime resolution authority remain separate.
 
@@ -298,6 +275,4 @@ Retaining no application-visible value history reduces exposure and makes rollba
 6. Active owner/key uniqueness is enforced durably, and the management API provides no implicit upsert.
 7. Direct or owner-driven deletion removes the live ciphertext, nonce, and encryption-key identifier and preserves a metadata-only tombstone; it does not claim issuer revocation.
 8. Logs, errors, traces, metrics, cursors, audit events, and SDK debug representations contain no plaintext, reversible value derivative, ciphertext, nonce, or master-key material.
-9. A User-owned Secret is managed only by that User and can be used only for an
-   Agent invocation whose active User Principal is the same owner and whose
-   accepted configuration declares the matching key.
+9. A User-owned Secret is managed only by that User and can be used only for an Agent invocation whose active User Principal is the same owner and whose accepted configuration declares the matching key.

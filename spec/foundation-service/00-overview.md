@@ -6,17 +6,7 @@ Foundation Service is the optional modular durable Host for Agent Foundation. It
 
 The shared [Platform Interaction Model](../interaction-model.md) owns `Session`, `Thread`, `Turn`, and `Item`. Foundation persists each hosted Thread as an independent versioned relational resource, uses `Turn` as the durable Agent-work, scheduling, recovery, state, and outcome boundary, and uses `TurnAttempt` as one replaceable fenced worker generation. Every Foundation-managed Agent invocation accepts a Turn; Foundation defines no separate durable Execution resource.
 
-The worker embeds the public Harness Python API through the deployment's selected
-[Plugin Runtime profile](26-harness-plugin-artifacts-and-runtime-loading.md).
-Turn acceptance pins an internal Runtime lock. The default on-demand Worker
-preflights exact PluginVersions before claim; the optional runner profile starts
-clean lock-scoped child processes. The selected execution loop reconstructs process-local
-Agent values, materializes exact [managed Skill
-revisions](27-skill-management.md) as inert Environment content, and uses an exact
-trusted Environment connector to attach an already-running external resource.
-The connector maintains bounded keep-alive only while its fresh attachment
-scope and the current Harness run are active; Foundation owns no Sandbox lifecycle. Redis delivery, Harness
-completion, AG-UI delivery, and telemetry are never durable completion authority.
+The worker embeds the public Harness Python API through the deployment's selected [Plugin Runtime profile](26-harness-plugin-artifacts-and-runtime-loading.md). Turn acceptance pins an internal Runtime lock. The default on-demand Worker preflights exact PluginVersions before claim; the optional runner profile starts clean lock-scoped child processes. The selected execution loop reconstructs process-local Agent values, materializes exact [managed Skill revisions](27-skill-management.md) as inert Environment content, and uses an exact trusted Environment connector to attach an already-running external resource. The connector maintains bounded keep-alive only while its fresh attachment scope and the current Harness run are active; Foundation owns no Sandbox lifecycle. Redis delivery, Harness completion, AG-UI delivery, and telemetry are never durable completion authority.
 
 ## Architecture
 
@@ -76,25 +66,7 @@ flowchart LR
     Database --> Publisher --> Client
 ```
 
-PostgreSQL is the distributed authority for accepted resources, Thread
-advancement and queue versions, head selection, queued submissions, the durable
-Thread inbox, Turns, current TurnAttempt generations, Agent tool dispatch
-evidence, waiting pending summaries, desired Environment mounts, and terminal
-outcomes. Each Worker discovers claim, takeover, and pending-inbox work directly
-from that durable state. Redis carries domain-owned live data flow, including
-each Turn's stable bounded-replay message stream and each active Thread's
-expiring control-signal Stream; Redis publication or consumer-group progress
-never proves a relational transition or inbox consumption. Shared object
-storage holds the Turn's complete conditionally replaced state, including exact
-pending requests, consumed inbox receipts, immutable replay snapshot, and
-bounded large content. The detailed authorities belong to [Durable Thread
-Persistence](24-thread-persistence.md), [Durable Turn
-State](14-turn-persistence.md), [Agent Control: Active
-Execution](35-agent-control-active-execution.md), [Agent Control: Queued
-Submissions](36-agent-control-queued-submissions.md), [Environment Configuration
-and Runtime Mounts](19-environment-management.md), [Lifecycle and Stream
-Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction
-Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
+PostgreSQL is the distributed authority for accepted resources, Thread advancement and queue versions, head selection, queued submissions, the durable Thread inbox, Turns, current TurnAttempt generations, Agent tool dispatch evidence, waiting pending summaries, desired Environment mounts, and terminal outcomes. Each Worker discovers claim, takeover, and pending-inbox work directly from that durable state. Redis carries domain-owned live data flow, including each Turn's stable bounded-replay message stream and each active Thread's expiring control-signal Stream; Redis publication or consumer-group progress never proves a relational transition or inbox consumption. Shared object storage holds the Turn's complete conditionally replaced state, including exact pending requests, consumed inbox receipts, immutable replay snapshot, and bounded large content. The detailed authorities belong to [Durable Thread Persistence](24-thread-persistence.md), [Durable Turn State](14-turn-persistence.md), [Agent Control: Active Execution](35-agent-control-active-execution.md), [Agent Control: Queued Submissions](36-agent-control-queued-submissions.md), [Environment Configuration and Runtime Mounts](19-environment-management.md), [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md), and [Events, Interaction Projection, Usage, and Delivery](20-events-usage-and-delivery.md).
 
 ## Component Boundaries
 
@@ -187,10 +159,7 @@ flowchart LR
     Harness --> EnvdClient[agent-envd client]
 ```
 
-External applications call Foundation through Native HTTP/SDK, Hosted AG-UI,
-or A2A Gateway surfaces. The worker does not call the Harness through a
-Foundation SDK or another service; it imports the Harness package and invokes
-its public process-local API directly.
+External applications call Foundation through Native HTTP/SDK, Hosted AG-UI, or A2A Gateway surfaces. The worker does not call the Harness through a Foundation SDK or another service; it imports the Harness package and invokes its public process-local API directly.
 
 ## Independent Completion Boundaries
 
@@ -218,12 +187,7 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
 07. Every authoritative TurnAttempt publication verifies the current generation and legal transition.
 08. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
 09. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
-10. Public protocol adapters share application and authorization authority but
-    retain independent wire identities, errors, and delivery contracts.
-11. A queued submission owns no execution lease or outcome; only atomic
-    consumption accepts the Turn that later owns scheduling and recovery. A
-    state-first completed handoff can combine source sealing, first-entry
-    consumption, and successor acceptance in one short transaction; otherwise
-    terminal relational state remains sufficient for recovery scanning.
+10. Public protocol adapters share application and authorization authority but retain independent wire identities, errors, and delivery contracts.
+11. A queued submission owns no execution lease or outcome; only atomic consumption accepts the Turn that later owns scheduling and recovery. A state-first completed handoff can combine source sealing, first-entry consumption, and successor acceptance in one short transaction; otherwise terminal relational state remains sufficient for recovery scanning.
 12. Graceful drain gates new claims while every active Attempt keeps renewing until an authoritative terminal commit or the drain deadline.
 13. Planned `yielded` handoff preserves the running Turn, state key, and stream, but its successor always receives a fresh TurnAttempt and Harness Run.

@@ -94,20 +94,11 @@ The config contains no Python class, import target, callable, native Model, Tool
 
 Saving config performs only request-schema structure, type, size, and bounds validation. Foundation exposes no independent Validate resource, preview state, warning collection, or partially valid config lifecycle. Publish is the sole authoritative resolve-and-build validation path.
 
-The config stores one exact trusted input adapter key and bounded configuration.
-Publish validates them against the selected Plugin Runtime profile and freezes
-them inside the AgentPresetVersion. The Version carries no declaration of
-allowed input block types, media types, sources, deliveries, or per-input limits;
-every Version accepts the common [`AgentInput`](33-agent-input.md) wire contract.
-Turn acceptance validates and canonicalizes that input, and the Worker verifies
-the pinned Runtime lock before invoking the adapter. A replacement TurnAttempt
-reuses the same Version, adapter configuration, accepted input, and Runtime lock.
+The config stores one exact trusted input adapter key and bounded configuration. Publish validates them against the selected Plugin Runtime profile and freezes them inside the AgentPresetVersion. The Version carries no declaration of allowed input block types, media types, sources, deliveries, or per-input limits; every Version accepts the common [`AgentInput`](33-agent-input.md) wire contract. Turn acceptance validates and canonicalizes that input, and the Worker verifies the pinned Runtime lock before invoking the adapter. A replacement TurnAttempt reuses the same Version, adapter configuration, accepted input, and Runtime lock.
 
 ## Protocol Configuration
 
-Every `AgentPresetConfig` embeds one finite `protocol` configuration. It is
-Preset-owned authoring data rather than an independently addressable resource,
-and it has no separate lifecycle, API, enable switch, or content digest:
+Every `AgentPresetConfig` embeds one finite `protocol` configuration. It is Preset-owned authoring data rather than an independently addressable resource, and it has no separate lifecycle, API, enable switch, or content digest:
 
 ```python
 class ProtocolConfig:
@@ -125,36 +116,13 @@ class ProtocolConfig:
     limits: ProtocolLimits
 ```
 
-The bounded nested types are Foundation-owned serializable values. Publish
-validates JSON Schemas, public metadata, MIME modes, event names, client-tool
-policies, A2A projections, and per-protocol limits against finite registries and
-deployment hard ceilings. Configuration can narrow a permitted surface but
-cannot expose raw reasoning, credentials, private execution identities,
-unregistered events, arbitrary code, or a capability that the deployment does
-not support.
+The bounded nested types are Foundation-owned serializable values. Publish validates JSON Schemas, public metadata, MIME modes, event names, client-tool policies, A2A projections, and per-protocol limits against finite registries and deployment hard ceilings. Configuration can narrow a permitted surface but cannot expose raw reasoning, credentials, private execution identities, unregistered events, arbitrary code, or a capability that the deployment does not support.
 
-`input_data_schema`, when present, is the self-contained JSON Schema Draft
-2020-12 contract projected for `AgentInput.structured_content`. Publish validates
-and freezes it. Turn acceptance applies it only when `structured_content` is
-non-null; absent structured content is always valid. The schema does not restrict
-text or binary blocks, media types, sources, or deliveries.
+`input_data_schema`, when present, is the self-contained JSON Schema Draft 2020-12 contract projected for `AgentInput.structured_content`. Publish validates and freezes it. Turn acceptance applies it only when `structured_content` is non-null; absent structured content is always valid. The schema does not restrict text or binary blocks, media types, sources, or deliveries.
 
-Safe defaults impose no structured-content schema, expose bounded text output
-and the standard Run, text, and client-visible tool event families, accept no
-client tools, require empty state and context, generate a minimal public-safe A2A
-Agent Card, and expose no extended Card. Native and Hosted AG-UI remain available
-for every callable Preset. The deployment-wide `gateway.a2a_enabled` setting is
-the only A2A availability switch; ProtocolConfig does not enable or disable a
-protocol.
+Safe defaults impose no structured-content schema, expose bounded text output and the standard Run, text, and client-visible tool event families, accept no client tools, require empty state and context, generate a minimal public-safe A2A Agent Card, and expose no extended Card. Native and Hosted AG-UI remain available for every callable Preset. The deployment-wide `gateway.a2a_enabled` setting is the only A2A availability switch; ProtocolConfig does not enable or disable a protocol.
 
-Publish copies the normalized ProtocolConfig into the immutable
-`AgentPresetVersion`, whose `content_digest` already covers the complete config.
-Hosted AG-UI Run and A2A Task acceptance persist the exact
-`agent_preset_version_id`; retry, feedback, recovery, and replay therefore use
-the same protocol configuration without storing a redundant protocol digest.
-Publishing another Version changes Cards and acceptance policy only for later
-work. Continuation additionally follows the state and input compatibility rules
-of the selected Version.
+Publish copies the normalized ProtocolConfig into the immutable `AgentPresetVersion`, whose `content_digest` already covers the complete config. Hosted AG-UI Run and A2A Task acceptance persist the exact `agent_preset_version_id`; retry, feedback, recovery, and replay therefore use the same protocol configuration without storing a redundant protocol digest. Publishing another Version changes Cards and acceptance policy only for later work. Continuation additionally follows the state and input compatibility rules of the selected Version.
 
 ## Immutable AgentPresetVersion
 
@@ -254,19 +222,11 @@ A parent config declares each named child edge with a stable child `preset_id`. 
 
 Publishing a child later does not change an existing parent Version. The parent adopts the new child behavior only after another parent Publish. An active parent Version may internally execute its pinned historical child Version; this is part of the already published parent graph and is not public non-active Version selection.
 
-The worker recursively reconstructs the exact finite graph into Harness
-`SubagentDefinition` and `SubagentCollection` values. Root and child definitions
-use the same Harness build and plugin contracts. An asynchronous hosted child
-receives its own Thread, Turn, TurnAttempts, fresh `RunBindings`, Environment
-attachments, runtime mounts, `EnvironmentRuntime`, exact child Version, and
-compatible Runtime lock under [Async Subagents](18-async-subagents.md); an inline
-child remains process-local Harness execution.
+The worker recursively reconstructs the exact finite graph into Harness `SubagentDefinition` and `SubagentCollection` values. Root and child definitions use the same Harness build and plugin contracts. An asynchronous hosted child receives its own Thread, Turn, TurnAttempts, fresh `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, exact child Version, and compatible Runtime lock under [Async Subagents](18-async-subagents.md); an inline child remains process-local Harness execution.
 
 ## Turn Selection and Reconstruction
 
-New root invocation supplies `agent_preset_id` and may supply
-`agent_preset_version_id` only as an optimistic active-Version precondition.
-Durable acceptance:
+New root invocation supplies `agent_preset_id` and may supply `agent_preset_version_id` only as an optimistic active-Version precondition. Durable acceptance:
 
 1. authorizes the stable Preset resource;
 2. requires `lifecycle_state=enabled` and a non-null active Version;
@@ -274,11 +234,7 @@ Durable acceptance:
 4. resolves the immutable Preset-owned Runtime lock in `on_demand`, or atomically reads the active deployment Runtime lock in `runner`; and
 5. persists `agent_preset_id`, exact `agent_preset_version_id`, and internal `runtime_lock_digest` on the Turn and its initial state envelope.
 
-A caller cannot start new work from a non-active Version. A mismatch returns
-`preset_version_not_active`. Trigger and Schedule definitions store only
-`agent_preset_id`; each firing resolves the current active Version during its own
-Turn acceptance. Long-lived automation that must retain different behavior uses a
-duplicated Preset.
+A caller cannot start new work from a non-active Version. A mismatch returns `preset_version_not_active`. Trigger and Schedule definitions store only `agent_preset_id`; each firing resolves the current active Version during its own Turn acceptance. Long-lived automation that must retain different behavior uses a duplicated Preset.
 
 Retry, resume after worker loss, waiting feedback lineage, and already accepted asynchronous child work use the Version pinned by their owning Turn or published parent graph. They never resolve mutable config, `active`, or `latest` again. A new continuation Turn may select the then-active Version only when its state compatibility contract accepts the sealed parent state; otherwise the caller creates a fork without implied state migration.
 
@@ -341,14 +297,7 @@ class PluginVersion:
     status: Literal["ready"]
 ```
 
-Upload accepts exactly one `.whl`, reads rather than trusts its filename,
-validates distribution metadata and requirement syntax, computes the full-byte
-digest, and requires exactly one `a13n_harness.plugins` entry point and one unique
-top-level Python package. The entry-point name establishes or matches the stable
-`plugin_key`. The first successful upload atomically creates the stable Plugin
-and its first PluginVersion; later uploads target that Plugin. A Plugin's
-canonical normalized distribution name and top-level package are established by
-its first successful upload and remain fixed.
+Upload accepts exactly one `.whl`, reads rather than trusts its filename, validates distribution metadata and requirement syntax, computes the full-byte digest, and requires exactly one `a13n_harness.plugins` entry point and one unique top-level Python package. The entry-point name establishes or matches the stable `plugin_key`. The first successful upload atomically creates the stable Plugin and its first PluginVersion; later uploads target that Plugin. A Plugin's canonical normalized distribution name and top-level package are established by its first successful upload and remain fixed.
 
 `PluginVersion.version` is the normalized PEP 440 `Version` from Wheel metadata. `(plugin_id, version)` is unique. Re-uploading the same version and digest returns the existing Version; the same version with different bytes fails with `plugin_version_conflict`. Upload validates and persists the immutable artifact but neither resolves dependencies nor changes the runtime.
 
@@ -401,13 +350,7 @@ class PluginTaskReceipt:
     error: SafeFailure | None
 ```
 
-The accepted command returns `202` with `operation_id` and `running`. `GET /api/v1/operations/{operation_id}` returns only a receipt previously obtained by the
-authorized caller. A running receipt has empty results and no error; a failed
-receipt has one bounded safe error and no results; a succeeded receipt has no
-error and identifies its resulting Plugin and active Version resources when
-applicable. There is no Operation collection, Patch, Delete, dependency graph, or
-independently mutable lifecycle. Every command requires `Idempotency-Key`;
-retrying the same command returns the same receipt identity.
+The accepted command returns `202` with `operation_id` and `running`. `GET /api/v1/operations/{operation_id}` returns only a receipt previously obtained by the authorized caller. A running receipt has empty results and no error; a failed receipt has one bounded safe error and no results; a succeeded receipt has no error and identifies its resulting Plugin and active Version resources when applicable. There is no Operation collection, Patch, Delete, dependency graph, or independently mutable lifecycle. Every command requires `Idempotency-Key`; retrying the same command returns the same receipt identity.
 
 ## Plugin Lifecycle and Retention
 

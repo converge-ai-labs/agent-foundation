@@ -22,20 +22,9 @@ The shared operation boundary is not a generic repository, application service b
 
 ## Conditional Mutation
 
-A mutable resource normally exposes one monotonically increasing domain
-`version` when concurrent updates can be lost. A state-sensitive mutation
-compares the caller's expected version with the current locked resource version
-in the same short transaction that applies the change. An owning contract for
-an intentionally non-versioned mutable representation can instead compare a
-strong `If-Match` tag derived from the complete locked representation. A
-mismatch changes nothing and reports the owning conflict or precondition
-failure.
+A mutable resource normally exposes one monotonically increasing domain `version` when concurrent updates can be lost. A state-sensitive mutation compares the caller's expected version with the current locked resource version in the same short transaction that applies the change. An owning contract for an intentionally non-versioned mutable representation can instead compare a strong `If-Match` tag derived from the complete locked representation. A mismatch changes nothing and reports the owning conflict or precondition failure.
 
-Immutable revisions and append-only records do not gain an artificial version.
-An ETag does not create addressable history or rollback. Internal worker
-publication additionally verifies the current TurnAttempt ID and generation
-under the owning fencing contract; a matching resource version or tag does not
-bypass a stale worker fence.
+Immutable revisions and append-only records do not gain an artificial version. An ETag does not create addressable history or rollback. Internal worker publication additionally verifies the current TurnAttempt ID and generation under the owning fencing contract; a matching resource version or tag does not bypass a stale worker fence.
 
 ## Idempotency Evidence
 
@@ -54,11 +43,7 @@ A create or command that can be retried under the public contract records bounde
 
 Raw idempotency keys and secret request content are not stored in logs, events, traces, or diagnostics. The canonical request includes the semantic operation input and excludes transport-only values such as request ID and trace context.
 
-The operation serializes concurrent uses of the same evidence scope. The same
-key and canonical request return the original result; the same key with
-different input returns a conflict. Replay resolves before a version or ETag
-comparison so a successful mutation can return its original result after
-advancing the resource state.
+The operation serializes concurrent uses of the same evidence scope. The same key and canonical request return the original result; the same key with different input returns a conflict. Replay resolves before a version or ETag comparison so a successful mutation can return its original result after advancing the resource state.
 
 Idempotency evidence commits in the same relational transaction as the accepted mutation and result reference. An operation does not hold an idempotency reservation or database transaction across external I/O. If acceptance requires an external effect, Foundation first commits durable intent and performs the effect outside the transaction under an owning idempotency or reconciliation contract.
 
@@ -109,16 +94,7 @@ class OutboxRecord:
 
 Owning domains define the stable `source_kind` and `destination_kind` values. `destination_ref` identifies bounded configuration and contains no endpoint credential or Secret value. Outbox payload is derived from the immutable source record rather than copied as another authority.
 
-`id` is the primary key and the stable external delivery identity when the
-owning delivery contract exposes one. The tuple
-`(source_kind, source_id, destination_kind, destination_ref)` is unique so a
-source-transaction retry cannot create the same destination delivery twice.
-Claim generations and attempt counts are non-negative. Lease fields exist only
-while `status = publishing`; `published_at` exists only for `published`; and
-`dead_lettered_at` exists only for `dead_lettered`. An index on
-`(status, available_at, id)` supports bounded due-row claims;
-destination-scoped indexes support authorized delivery inspection and redrive
-without changing source identity.
+`id` is the primary key and the stable external delivery identity when the owning delivery contract exposes one. The tuple `(source_kind, source_id, destination_kind, destination_ref)` is unique so a source-transaction retry cannot create the same destination delivery twice. Claim generations and attempt counts are non-negative. Lease fields exist only while `status = publishing`; `published_at` exists only for `published`; and `dead_lettered_at` exists only for `dead_lettered`. An index on `(status, available_at, id)` supports bounded due-row claims; destination-scoped indexes support authorized delivery inspection and redrive without changing source identity.
 
 ```mermaid
 stateDiagram-v2
@@ -143,12 +119,7 @@ Publication is at least once:
 
 A claim increments `claim_generation`; completion succeeds only for the current generation. A crash or lease expiry can therefore duplicate delivery but cannot let a stale publisher record success. Retry preserves the same source identity and uses durable `available_at`. `published` means the configured destination acknowledged, not that an end user processed the event. Dead-lettering emits an operational and security-safe diagnostic, and an authorized redrive reuses the same record and source identity.
 
-Published records remain for a bounded delivery-audit and duplicate-suppression
-horizon. Dead-lettered records remain redriveable only for a bounded configured
-horizon. An owning source or destination record cannot be removed while a
-retained Outbox record can still be delivered or redriven; after the owning
-horizon expires, cleanup can remove the delivery record and release those
-retention dependencies together.
+Published records remain for a bounded delivery-audit and duplicate-suppression horizon. Dead-lettered records remain redriveable only for a bounded configured horizon. An owning source or destination record cannot be removed while a retained Outbox record can still be delivered or redriven; after the owning horizon expires, cleanup can remove the delivery record and release those retention dependencies together.
 
 Redis Streams, Pub/Sub, SSE, WebSocket, webhook, and analytical sinks are delivery mechanisms, not relational transactions. Redis is a required distributed dependency, but successful Redis publication alone never proves that the source domain mutation committed. The owning delivery contract defines whether a Redis value is retained, replayable, or intentionally live-only.
 
