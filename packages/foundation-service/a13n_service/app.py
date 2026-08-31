@@ -8,11 +8,16 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import httpx2
-from anyio import fail_after
+from anyio import create_task_group, fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 
 from a13n_service.api import install_api_conventions
+from a13n_service.asset_management.cleanup import AssetCleanupReconciler
+from a13n_service.asset_management.objects import AssetObjectStore
+from a13n_service.asset_management.router import router as asset_management_router
+from a13n_service.asset_management.service import AssetService
+from a13n_service.asset_management.staging import AssetStaging
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.model_management.connection_test import NativeModelConnectionTester
 from a13n_service.model_management.endpoint_policy import EndpointPolicy
@@ -88,6 +93,9 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
             app.state.model_secret_resolver = secret_resolver
             package_store = SkillPackageStore(storage.objects)
+            asset_staging = await AssetStaging.create(storage.files_root, limiter=storage.file_limiter)
+            asset_objects = AssetObjectStore(storage.objects, asset_staging)
+            asset_cleanup_reconciler: AssetCleanupReconciler | None = None
             if settings.role in _CONTROL_PLANE_ROLES:
                 github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
                 credential_resolver = app.state.components.skill_credential_resolver
@@ -119,25 +127,47 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     connection_tester=connection_tester,
                     connection_test_timeout_seconds=settings.model_connection_test_timeout_seconds,
                 )
+                app.state.asset_service = AssetService(
+                    storage.sessions,
+                    asset_objects,
+                    asset_staging,
+                    max_size_bytes=settings.asset_max_size_bytes,
+                )
+                asset_cleanup_reconciler = AssetCleanupReconciler(
+                    storage.sessions,
+                    asset_objects,
+                    poll_interval_seconds=settings.asset_cleanup_poll_interval_seconds,
+                    lease_seconds=settings.asset_cleanup_lease_seconds,
+                    max_attempts=settings.asset_cleanup_max_attempts,
+                )
+                app.state.asset_cleanup_reconciler = asset_cleanup_reconciler
             if settings.role in {ServiceRole.all, ServiceRole.worker}:
                 app.state.native_model_factory = NativeModelFactory(model_http_client)
                 app.state.skill_runtime_preparer = FoundationSkillRuntimePreparer(storage.sessions, package_store)
-            logger.info(
-                "service_started",
-                extra={
-                    "event": "service_started",
-                    "service": settings.service_name,
-                    "role": settings.role.value,
-                    "build_version": settings.build_version,
-                },
-            )
-            try:
-                yield
-            finally:
+            async with create_task_group() as background_tasks:
+                if asset_cleanup_reconciler is not None:
+                    background_tasks.start_soon(asset_cleanup_reconciler.run)
                 logger.info(
-                    "service_stopped",
-                    extra={"event": "service_stopped", "service": settings.service_name, "role": settings.role.value},
+                    "service_started",
+                    extra={
+                        "event": "service_started",
+                        "service": settings.service_name,
+                        "role": settings.role.value,
+                        "build_version": settings.build_version,
+                    },
                 )
+                try:
+                    yield
+                finally:
+                    background_tasks.cancel_scope.cancel()
+                    logger.info(
+                        "service_stopped",
+                        extra={
+                            "event": "service_stopped",
+                            "service": settings.service_name,
+                            "role": settings.role.value,
+                        },
+                    )
 
 
 def create_app(settings: ServiceSettings | None = None, *, components: ServiceComponents | None = None) -> FastAPI:
@@ -189,6 +219,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         return {"status": "ready", "role": resolved_settings.role.value}
 
     if serves_control_plane:
+        app.include_router(asset_management_router)
         app.include_router(model_management_router)
         app.include_router(skill_management_router)
 

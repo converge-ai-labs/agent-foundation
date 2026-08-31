@@ -13,6 +13,10 @@ from .models import RoleBindingRecord, ServiceAccountRecord, UserRecord, Workspa
 
 
 class WorkspaceAction(StrEnum):
+    asset_read = "asset.read"
+    asset_create = "asset.create"
+    asset_use = "asset.use"
+    asset_delete = "asset.delete"
     models_read = "models.read"
     models_manage = "models.manage"
     secrets_read = "secrets.read"
@@ -24,11 +28,20 @@ class WorkspaceAction(StrEnum):
     skill_bind = "skill.bind"
 
 
-_READ_ACTIONS = frozenset({WorkspaceAction.models_read, WorkspaceAction.secrets_read, WorkspaceAction.skill_read})
+_READ_ACTIONS = frozenset(
+    {
+        WorkspaceAction.asset_read,
+        WorkspaceAction.models_read,
+        WorkspaceAction.secrets_read,
+        WorkspaceAction.skill_read,
+    }
+)
+
+_RUNNER_ACTIONS = _READ_ACTIONS | frozenset({WorkspaceAction.asset_create, WorkspaceAction.asset_use})
 
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
     "viewer": _READ_ACTIONS,
-    "runner": _READ_ACTIONS,
+    "runner": _RUNNER_ACTIONS,
     "builder": frozenset(WorkspaceAction),
     "admin": frozenset(WorkspaceAction),
 }

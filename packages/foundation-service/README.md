@@ -28,6 +28,12 @@ Model create is a synchronous mutation protected by Workspace name uniqueness an
 
 Run acceptance integrations use `AcceptedModelSelector.prepare()` before the owning short transaction and `freeze_in_transaction()` while inserting the Run. Workers use `SnapshotRunModelResolver` with the retained non-secret snapshot, current Secret resolver, endpoint policy, and `NativeModelFactory`; they never fall back to the current `ModelConfig` for a replacement attempt.
 
+## Asset Management
+
+Control-plane and all-in-one roles expose immutable Workspace Assets below `/api/v1`. Uploads accept exactly one `application/octet-stream` body plus `filename`, optional `media_type`, and `Idempotency-Key`; metadata and content reads never expose object keys or public object URLs. Every distinct publication gets a new `ast` ID, while replay of the same canonical request and key returns the original Asset for 24 hours. Delete immediately tombstones the Asset and commits an `asset_content_cleanup` Outbox intent; the control-plane reconciler removes the derived object asynchronously without restoring logical access on failure.
+
+`FOUNDATION_ASSET_MAX_SIZE_BYTES` is the positive finite bound applied while streaming uploads and defaults to 100 MiB. Private staging uses `FOUNDATION_FILESYSTEM_ROOT`; object bytes use the selected object backend. Cleanup behavior can be operationally tuned with `FOUNDATION_ASSET_CLEANUP_POLL_INTERVAL_SECONDS`, `FOUNDATION_ASSET_CLEANUP_LEASE_SECONDS`, and `FOUNDATION_ASSET_CLEANUP_MAX_ATTEMPTS`. These settings do not change Asset identity, retention authority, or authorization semantics.
+
 ## Runtime
 
 `ServiceSettings` owns the `FOUNDATION_*` environment contract and maps it to the frozen `StorageSettings` model. The storage package accepts typed configuration and does not read process environment variables itself. `foundation-service serve` constructs all selected providers once in FastAPI lifespan, publishes the resulting `StorageResources` on `app.state.storage`, and closes the resources during shutdown.
