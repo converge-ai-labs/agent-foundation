@@ -75,11 +75,13 @@ class _RunnerGeneration:
     reader: asyncio.Task[None] | None = None
     selected_exit_reason: RuntimeExitReason | None = None
     lifecycle_waiters: dict[str, asyncio.Future[dict[str, Any]]] = None  # type: ignore[assignment]
+    late_responses: set[str] = None  # type: ignore[assignment]
     executions: dict[str, _HostExecution] = None  # type: ignore[assignment]
     environment_commands: dict[str, _HostEnvironmentCommand] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         self.lifecycle_waiters = {}
+        self.late_responses = set()
         self.executions = {}
         self.environment_commands = {}
 
@@ -261,6 +263,56 @@ class RuntimeGenerationService:
                 runner.environment_commands.pop(bound.request_id, None)
                 raise
         return await asyncio.shield(future)
+
+    async def close_session_work(self, session_id: str) -> None:
+        """Force-close generation-local asynchronous work for one Session."""
+
+        request_id = f"request-{secrets.token_hex(16)}"
+        waiter_key = f"SESSION_WORK_CLOSED:{request_id}"
+        future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+        sent = False
+        async with self._lock:
+            runner = self._active
+            if (
+                self._closed
+                or runner is None
+                or runner.observation.state is not RuntimeGenerationState.active
+                or runner.process.returncode is not None
+            ):
+                raise self._error("runtime_unavailable", "No active runtime Runner is available.")
+            runner.lifecycle_waiters[waiter_key] = future
+            try:
+                await runner.channel.send(
+                    "CLOSE_SESSION_WORK",
+                    generation_id=runner.generation_id,
+                    request_id=request_id,
+                    session_id=session_id,
+                )
+                sent = True
+            except BaseException:
+                runner.lifecycle_waiters.pop(waiter_key, None)
+                raise
+        try:
+            response = await asyncio.wait_for(
+                asyncio.shield(future),
+                timeout=self._settings.command_timeout_seconds,
+            )
+        finally:
+            if runner.lifecycle_waiters.pop(waiter_key, None) is future:
+                if sent:
+                    runner.late_responses.add(waiter_key)
+                future.cancel()
+        failure = response.get("failure")
+        if failure is not None:
+            detail = failure.get("message") if isinstance(failure, dict) else None
+            message = "The runtime Runner could not close Session asynchronous work."
+            if isinstance(detail, str) and detail:
+                message = f"{message} {detail}"
+            raise self._error(
+                "runtime_session_cleanup_failed",
+                message,
+                generation_id=runner.generation_id,
+            )
 
     async def cancel_root(self, request_id: str) -> bool:
         """Request cancellation of one active generation-bound root Run."""
@@ -524,6 +576,9 @@ class RuntimeGenerationService:
                 if waiter is not None:
                     if not waiter.done():
                         waiter.set_result(message)
+                    continue
+                if waiter_key in runner.late_responses:
+                    runner.late_responses.discard(waiter_key)
                     continue
                 if message_type == "RUN_EVENT":
                     request_id = require_string(message, "request_id", max_length=64)

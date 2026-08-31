@@ -745,7 +745,11 @@ async def test_slow_stable_hook_does_not_gate_child_execution_or_active_observer
     assert accepted["status"] == "running"
     assert completed["status"] == "succeeded"
     assert run.enqueued and "subagent-1 has finished" in run.enqueued[0][0]
+    closing = asyncio.create_task(operator.force_close_matching({"session_id": "session-parent"}))
+    await asyncio.sleep(0)
+    assert closing.done() is False
     hook_release.set()
+    await closing
     await operator.force_close()
 
 

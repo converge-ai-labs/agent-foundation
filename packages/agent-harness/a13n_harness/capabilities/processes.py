@@ -7,7 +7,7 @@ import inspect
 import secrets
 import weakref
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any, ClassVar, Literal, Protocol, cast, runtime_checkable
@@ -232,6 +232,7 @@ class _CanonicalProcess:
     observer: _WeakObserver
     watcher: asyncio.Task[None] | None = None
     notified: ProcessEventKind | None = None
+    delivery_tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
 
 class ProcessManager(ShellOperator):
@@ -436,20 +437,28 @@ class ProcessManager(ShellOperator):
                 if all(record.parent_host_refs.get(key) == value for key, value in selected.items())
             )
         close_task = asyncio.create_task(
-            self._force_close_records(records),
+            self._force_close_matching_records(records),
             name="process-manager-matching-force-close",
         )
-        try:
-            cancelled, error = await _await_owned_task(close_task)
-        finally:
-            async with self._lock:
-                for record in records:
-                    if self._records.get(record.process.backend_id) is record:
-                        self._records.pop(record.process.backend_id, None)
+        cancelled, error = await _await_owned_task(close_task)
         if cancelled:
             raise asyncio.CancelledError
         if error is not None:
             raise error
+
+    async def _force_close_matching_records(self, records: tuple[_CanonicalProcess, ...]) -> None:
+        try:
+            await self._force_close_records(records)
+        finally:
+            for record in records:
+                while record.delivery_tasks:
+                    deliveries = tuple(record.delivery_tasks)
+                    await asyncio.gather(*deliveries, return_exceptions=True)
+                    record.delivery_tasks.difference_update(deliveries)
+            async with self._lock:
+                for record in records:
+                    if self._records.get(record.process.backend_id) is record:
+                        self._records.pop(record.process.backend_id, None)
 
     async def _force_close_owned(self) -> None:
         async with self._lock:
@@ -520,7 +529,7 @@ class ProcessManager(ShellOperator):
         observer = record.observer.get()
         if observer is not None:
             detached = snapshot.model_copy(deep=True)
-            self._spawn_delivery(lambda: observer(detached))
+            self._spawn_delivery(record, lambda: observer(detached))
         if record.notified == "completion" or record.notified == kind:
             return
         record.notified = kind
@@ -535,9 +544,13 @@ class ProcessManager(ShellOperator):
             status=snapshot.status.model_copy(deep=True),
         )
         for hook in self._event_hooks:
-            self._spawn_delivery(lambda hook=hook: hook(event))
+            self._spawn_delivery(record, lambda hook=hook: hook(event))
 
-    def _spawn_delivery(self, delivery: Callable[[], Awaitable[None]]) -> None:
+    def _spawn_delivery(
+        self,
+        record: _CanonicalProcess,
+        delivery: Callable[[], Awaitable[None]],
+    ) -> None:
         async def deliver() -> None:
             try:
                 await delivery()
@@ -546,7 +559,9 @@ class ProcessManager(ShellOperator):
 
         task = asyncio.create_task(deliver(), name=f"process-delivery-{secrets.token_hex(6)}")
         self._delivery_tasks.add(task)
+        record.delivery_tasks.add(task)
         task.add_done_callback(self._delivery_tasks.discard)
+        task.add_done_callback(record.delivery_tasks.discard)
 
 
 def _validate_snapshot(snapshot: ProcessExecutionSnapshot, backend_id: str) -> None:

@@ -622,7 +622,7 @@ class RunnerExecutionService:
             )
         try:
             if request.action in {"pause", "destroy"}:
-                await self._force_close_session_work(request.session_id)
+                await self.force_close_session_work(request.session_id)
             snapshot = await self._objects.environment_snapshot(request.environment_snapshot)
             await _execute_environment_command(
                 request,
@@ -641,7 +641,7 @@ class RunnerExecutionService:
             )
         return RunnerEnvironmentResult(request_id=request.request_id)
 
-    async def _force_close_session_work(self, session_id: str) -> None:
+    async def force_close_session_work(self, session_id: str) -> None:
         results = await asyncio.gather(
             self._subagents.force_close_matching({"session_id": session_id}),
             self._processes.force_close_matching({"session_id": session_id}),

@@ -62,6 +62,7 @@ class ForegroundRunCoordinator:
         self._session_locks: dict[str, Lock] = {}
         self._active: dict[str, str] = {}
         self._wake_tasks: dict[str, asyncio.Task[None]] = {}
+        self._wake_suppression: dict[str, int] = {}
         self._async_usage: dict[str, dict[tuple[str, str], RunUsage]] = {}
         self._closed = False
         self._runtime.set_async_work_handler(self.handle_async_work)
@@ -118,13 +119,26 @@ class ForegroundRunCoordinator:
         session_id: str,
         *,
         cancel_active: bool = False,
+        suppress_wake: bool = False,
     ) -> AsyncGenerator[None]:
         """Serialize one Host lifecycle decision with root and wake Runs for a Session."""
-        if cancel_active:
-            await self.cancel(session_id)
-        lock = await self._session_lock(session_id)
-        async with lock:
-            yield
+        if suppress_wake:
+            async with self._registry_lock:
+                self._wake_suppression[session_id] = self._wake_suppression.get(session_id, 0) + 1
+        try:
+            if cancel_active:
+                await self.cancel(session_id)
+            lock = await self._session_lock(session_id)
+            async with lock:
+                yield
+        finally:
+            if suppress_wake:
+                async with self._registry_lock:
+                    remaining = self._wake_suppression[session_id] - 1
+                    if remaining:
+                        self._wake_suppression[session_id] = remaining
+                    else:
+                        self._wake_suppression.pop(session_id, None)
 
     async def handle_async_work(self, event: RunnerAsyncWorkEvent) -> None:
         """Aggregate detached usage and wake an inactive Session from its latest continuation."""
@@ -138,6 +152,7 @@ class ForegroundRunCoordinator:
             if (
                 self._closed
                 or event.generation_id != active_generation_id
+                or event.session_id in self._wake_suppression
                 or (event.harness_active and event.session_id in self._active)
                 or event.session_id in self._wake_tasks
             ):
@@ -163,6 +178,7 @@ class ForegroundRunCoordinator:
         async with self._registry_lock:
             wake = self._wake_tasks.pop(session_id, None)
             self._async_usage.pop(session_id, None)
+            self._wake_suppression.pop(session_id, None)
         if wake is not None:
             wake.cancel()
             await asyncio.gather(wake, return_exceptions=True)
@@ -188,7 +204,12 @@ class ForegroundRunCoordinator:
             async with lock:
                 active_generation_id = (await self._runtime.status()).active_generation_id
                 async with self._registry_lock:
-                    if self._closed or generation_id != active_generation_id or session_id in self._active:
+                    if (
+                        self._closed
+                        or generation_id != active_generation_id
+                        or session_id in self._active
+                        or session_id in self._wake_suppression
+                    ):
                         return
                 prepared, deferred = await self._prepare(
                     session_id,

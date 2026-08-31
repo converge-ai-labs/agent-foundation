@@ -506,7 +506,11 @@ async def test_slow_process_hook_does_not_block_active_run_observer() -> None:
         await _wait_for(lambda: bool(run.enqueued))
 
     assert "process-1 has finished" in run.enqueued[0][0]
+    closing = asyncio.create_task(operator.force_close_matching({"session_id": "session-parent"}))
+    await asyncio.sleep(0)
+    assert closing.done() is False
     hook_release.set()
+    await closing
     await operator.force_close()
 
 

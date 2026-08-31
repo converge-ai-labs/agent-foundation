@@ -302,7 +302,7 @@ class AgentUiHost:
         mode: EnvironmentPauseMode = EnvironmentPauseMode.FILESYSTEM,
     ) -> EnvironmentAvailability:
         async with self._operation():
-            async with self._runs.session_guard(session_id):
+            async with self._runs.session_guard(session_id, suppress_wake=True):
                 await self._execute_environment_command(session_id, mount_name, action="pause", pause_mode=mode)
                 return await self._environments.availability(session_id)
 
@@ -312,7 +312,7 @@ class AgentUiHost:
         mount_name: str,
     ) -> EnvironmentAvailability:
         async with self._operation():
-            async with self._runs.session_guard(session_id):
+            async with self._runs.session_guard(session_id, suppress_wake=True):
                 await self._execute_environment_command(session_id, mount_name, action="destroy")
                 return await self._environments.availability(session_id)
 
@@ -363,8 +363,12 @@ class AgentUiHost:
     async def delete_session(self, session_id: str) -> None:
         async with self._operation():
             await self._sessions.get(session_id)
-            async with self._runs.session_guard(session_id, cancel_active=True):
+            async with self._runs.session_guard(session_id, cancel_active=True, suppress_wake=True):
                 cleanup_error: Exception | None = None
+                try:
+                    await self._runtime.close_session_work(session_id)
+                except Exception as exc:
+                    cleanup_error = exc
                 for resource in await self._environments.resources(session_id):
                     try:
                         await self._execute_environment_command(
@@ -378,7 +382,7 @@ class AgentUiHost:
             await self._runs.forget_session(session_id)
             if cleanup_error is not None:
                 raise EnvironmentLifecycleError(
-                    "The Session was deleted, but one or more Environment resources could not be destroyed.",
+                    "The Session was deleted, but its asynchronous work or Environment cleanup did not complete.",
                     code="session_deleted_cleanup_failed",
                 ) from cleanup_error
 

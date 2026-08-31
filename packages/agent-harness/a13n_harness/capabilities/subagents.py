@@ -251,6 +251,7 @@ class _CanonicalSubagent:
     task: asyncio.Task[None] | None = None
     done: asyncio.Event = field(default_factory=asyncio.Event)
     observer: _WeakObserver | None = None
+    delivery_tasks: set[asyncio.Task[None]] = field(default_factory=set)
     notifications_enabled: bool = True
     activity_sequence: int = 0
     output_preview: str = ""
@@ -575,20 +576,28 @@ class SubagentManager(SubagentOperator):
                 if all(record.parent_host_refs.get(key) == value for key, value in selected.items())
             )
         close_task = asyncio.create_task(
-            self._force_close_records(records),
+            self._force_close_matching_records(records),
             name="subagent-manager-matching-force-close",
         )
-        try:
-            cancelled, error = await _await_owned_task(close_task)
-        finally:
-            async with self._lock:
-                for record in records:
-                    if self._records.get(record.backend_id) is record:
-                        self._records.pop(record.backend_id, None)
+        cancelled, error = await _await_owned_task(close_task)
         if cancelled:
             raise asyncio.CancelledError
         if error is not None:
             raise error
+
+    async def _force_close_matching_records(self, records: tuple[_CanonicalSubagent, ...]) -> None:
+        try:
+            await self._force_close_records(records)
+        finally:
+            for record in records:
+                while record.delivery_tasks:
+                    deliveries = tuple(record.delivery_tasks)
+                    await asyncio.gather(*deliveries, return_exceptions=True)
+                    record.delivery_tasks.difference_update(deliveries)
+            async with self._lock:
+                for record in records:
+                    if self._records.get(record.backend_id) is record:
+                        self._records.pop(record.backend_id, None)
 
     async def _force_close_owned(self) -> None:
         async with self._lock:
@@ -717,7 +726,7 @@ class SubagentManager(SubagentOperator):
         observer = record.observer.get() if record.observer is not None else None
         if observer is not None:
             snapshot = record.snapshot()
-            self._spawn_delivery(lambda: observer(snapshot))
+            self._spawn_delivery(record, lambda: observer(snapshot))
         self._dispatch_hooks(record, kind)
 
     def _dispatch_hooks(self, record: _CanonicalSubagent, kind: SubagentEventKind) -> None:
@@ -735,9 +744,13 @@ class SubagentManager(SubagentOperator):
             usage=deepcopy(record.usage),
         )
         for hook in self._event_hooks:
-            self._spawn_delivery(lambda hook=hook: hook(event))
+            self._spawn_delivery(record, lambda hook=hook: hook(event))
 
-    def _spawn_delivery(self, delivery: Callable[[], Awaitable[None]]) -> None:
+    def _spawn_delivery(
+        self,
+        record: _CanonicalSubagent,
+        delivery: Callable[[], Awaitable[None]],
+    ) -> None:
         async def deliver() -> None:
             try:
                 await delivery()
@@ -746,7 +759,9 @@ class SubagentManager(SubagentOperator):
 
         task = asyncio.create_task(deliver(), name=f"subagent-delivery-{secrets.token_hex(6)}")
         self._delivery_tasks.add(task)
+        record.delivery_tasks.add(task)
         task.add_done_callback(self._delivery_tasks.discard)
+        task.add_done_callback(record.delivery_tasks.discard)
 
     @staticmethod
     def _settle_task(record: _CanonicalSubagent, task: asyncio.Task[None]) -> None:

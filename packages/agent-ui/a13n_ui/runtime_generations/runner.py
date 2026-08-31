@@ -235,6 +235,25 @@ async def run_runtime_runner() -> int:
                     future.set_result(None)
                 else:
                     future.set_exception(ControlProtocolError("Host rejected provider state persistence"))
+            elif message_type == "CLOSE_SESSION_WORK" and state == "active":
+                request_id = require_string(message, "request_id", max_length=64)
+                session_id = require_string(message, "session_id", max_length=128)
+                failure: dict[str, str] | None = None
+                try:
+                    if executor is None:
+                        raise ControlProtocolError("Runner execution storage is not configured")
+                    await executor.force_close_session_work(session_id)
+                except Exception as exc:
+                    failure = {
+                        "code": "session_work_cleanup_failed",
+                        "message": str(exc) or exc.__class__.__name__,
+                    }
+                await channel.send(
+                    "SESSION_WORK_CLOSED",
+                    generation_id=generation_id,
+                    request_id=request_id,
+                    failure=failure,
+                )
             elif message_type == "DRAIN" and state == "active":
                 state = "draining"
                 drain_task = asyncio.create_task(finish_drain(), name=f"drain-{generation_id}")

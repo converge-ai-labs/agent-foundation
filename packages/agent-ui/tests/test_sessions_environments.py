@@ -601,6 +601,40 @@ async def test_session_delete_closes_background_work_before_destroying_environme
         assert created.session_id not in application._runs._async_usage
 
 
+async def test_session_delete_closes_async_work_without_environment_mounts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_async_subagent_composition(
+        definitions,
+        wait_for_child=False,
+        child_delay_seconds=30,
+    )
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="delegate")
+        assert result.output == "child-started:subagent-1"
+        closed_sessions: list[str] = []
+        original_close = application._runtime.close_session_work
+
+        async def close_session_work(session_id: str) -> None:
+            closed_sessions.append(session_id)
+            await original_close(session_id)
+
+        monkeypatch.setattr(application._runtime, "close_session_work", close_session_work)
+        await application.delete_session(created.session_id)
+
+        assert closed_sessions == [created.session_id]
+        assert application._runs._wake_tasks == {}
+        with pytest.raises(SessionError, match="Session does not exist"):
+            await application.session(created.session_id)
+
+
 async def test_background_shell_from_draining_generation_is_not_woken_or_restored(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
@@ -687,6 +721,75 @@ async def test_harness_terminal_completion_queues_behind_host_request_cleanup(tm
 
         await _wait_for_continuation_change(application, created.session_id, initial_continuation)
         await _wait_for_runner_idle(application)
+
+
+async def test_host_lifecycle_guard_suppresses_async_wake(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        generation_id = (await application.runtime_status()).active_generation_id
+        assert generation_id is not None
+        event = RunnerAsyncWorkEvent(
+            generation_id=generation_id,
+            session_id=created.session_id,
+            harness_active=False,
+            source="background_process",
+            kind="completion",
+            thread_id="thread-parent",
+            run_id="run-parent",
+            agent_instance_id="agent-parent",
+            reference="process-1",
+            status="cancelled",
+        )
+
+        async with application._runs.session_guard(created.session_id, suppress_wake=True):
+            await application._runs.handle_async_work(event)
+            assert application._runs._wake_tasks == {}
+
+        await asyncio.sleep(0)
+        assert application._runs._wake_tasks == {}
+        assert (await application.session(created.session_id)).continuation == created.continuation
+
+
+async def test_concurrent_lifecycle_guards_retain_wake_suppression(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        second_entered = asyncio.Event()
+        release_second = asyncio.Event()
+
+        async def hold_guard(entered: asyncio.Event, release: asyncio.Event) -> None:
+            async with application._runs.session_guard(created.session_id, suppress_wake=True):
+                entered.set()
+                await release.wait()
+
+        first = asyncio.create_task(hold_guard(first_entered, release_first))
+        await first_entered.wait()
+        second = asyncio.create_task(hold_guard(second_entered, release_second))
+        async with asyncio.timeout(2):
+            while application._runs._wake_suppression.get(created.session_id) != 2:
+                await asyncio.sleep(0)
+
+        release_first.set()
+        await first
+        await second_entered.wait()
+        assert application._runs._wake_suppression[created.session_id] == 1
+
+        release_second.set()
+        await second
+        assert created.session_id not in application._runs._wake_suppression
 
 
 async def test_background_child_outlives_parent_and_runner_restart_drains_it(tmp_path: Path) -> None:
