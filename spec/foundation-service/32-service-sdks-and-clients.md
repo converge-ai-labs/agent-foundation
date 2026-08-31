@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation publishes independent Python, Go, Rust, and TypeScript SDKs for the complete public Native Foundation Service contract. The SDKs map the same resources, commands, receipts, errors, pagination, Turn SSE, Workspace lifecycle events, and Native notifications without creating language-specific lifecycle or retry semantics.
+Foundation publishes independent Python, Go, Rust, and TypeScript SDKs for the complete public Native Foundation Service contract. The SDKs map the same resources, commands, receipts, errors, pagination, Run SSE, Workspace lifecycle events, and Native notifications without creating language-specific lifecycle or retry semantics.
 
 Foundation Web and the remote `agent-foundation` CLI are first-party clients of that public boundary. Standard AG-UI and A2A clients call their respective Gateway protocols directly and do not need a Foundation SDK.
 
@@ -12,7 +12,7 @@ Foundation Web and the remote `agent-foundation` CLI are first-party clients of 
 | -------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Native resources and command semantics                   | [Foundation Management API](21-management-api.md) and owning domains           |
 | Shared HTTP, errors, concurrency, and idempotency        | [Platform API Conventions](../api-conventions.md)                              |
-| Turn SSE, lifecycle events, and notification WebSocket   | [Native Streaming and Notifications](29-native-streaming-and-notifications.md) |
+| Run SSE, lifecycle events, and notification WebSocket    | [Native Streaming and Notifications](29-native-streaming-and-notifications.md) |
 | Language transport, public types, and idiomatic lifetime | Each SDK                                                                       |
 | CLI command composition and presentation                 | `agent-foundation` CLI                                                         |
 | Browser navigation and user experience                   | Foundation Web                                                                 |
@@ -28,18 +28,18 @@ The standalone SDK projects under `sdk/{python,go,rust,typescript}` all belong t
 - request ID and upstream correlation access;
 - explicit idempotency keys and version or ETag preconditions;
 - deterministic collection pagination;
-- Turn SSE consumption and cursor recovery;
+- Run SSE consumption and cursor recovery;
 - Workspace lifecycle event reconciliation;
 - Native WebSocket notification subscription and close; and
 - bounded cancellation and transport shutdown.
 
 The SDK source version and the server `/api/v1` version remain independent. An SDK release declares the server compatibility line it supports and tolerates additive response fields and unknown enum values under the shared API contract.
 
-SDK method names follow each language's conventions while preserving the same resource and command meaning. No language renames a Turn to Run, maps a TurnAttempt to a request retry, or treats stream close as cancellation.
+SDK method names follow each language's conventions while preserving the same resource and command meaning. No language renames a Run to Run, maps a RunAttempt to a request retry, or treats stream close as cancellation.
 
 ## Transport Lifetime
 
-Each client instance owns its connection pools and long-lived transports and has an explicit close operation. Closing an iterator, stream, WebSocket, SDK client, page traversal, or process stops only local delivery and network resources. It never submits a Turn interrupt command implicitly.
+Each client instance owns its connection pools and long-lived transports and has an explicit close operation. Closing an iterator, stream, WebSocket, SDK client, page traversal, or process stops only local delivery and network resources. It never submits a Run interrupt command implicitly.
 
 Language surfaces use their native asynchronous model:
 
@@ -52,11 +52,11 @@ Language surfaces use their native asynchronous model:
 
 A language can add a synchronous convenience layer only when it preserves the same operation and does not block an async service path or hide connection ownership.
 
-## Turn SSE and Cursor Recovery
+## Run SSE and Cursor Recovery
 
-Every SDK exposes a Turn stream event containing the stable event identity, event type, Turn correlation, parsed payload, and received cursor. Cursor persistence is an application decision; the SDK never advances an external checkpoint before yielding the corresponding event successfully.
+Every SDK exposes a Run stream event containing the stable event identity, event type, Run correlation, parsed payload, and received cursor. Cursor persistence is an application decision; the SDK never advances an external checkpoint before yielding the corresponding event successfully.
 
-Reconnection sends the last fully applied cursor through `Last-Event-ID`, uses bounded backoff, honors safe server retry guidance, and stops on authentication, authorization, schema, or replay-gap failures. A replay gap is a typed result that directs the application to current Turn, Item, and pending-action reads; it is not silently skipped.
+Reconnection sends the last fully applied cursor through `Last-Event-ID`, uses bounded backoff, honors safe server retry guidance, and stops on authentication, authorization, schema, or replay-gap failures. A replay gap is a typed result that directs the application to current Run, Item, and pending-action reads; it is not silently skipped.
 
 ## Notifications and Reconciliation
 
@@ -80,11 +80,11 @@ The SDK honors `Retry-After` and the caller's deadline. It never changes an idem
 
 The `agent-foundation` executable is the remote command-line client. Every network operation calls the Rust SDK; the CLI owns no second HTTP serializer, authentication transport, SSE parser, WebSocket client, retry engine, or service process behavior.
 
-A CLI command exists only when its service operation and Rust SDK method are real. The CLI can offer interactive terminal presentation, follow a Turn stream, or watch notifications, but Foundation defines no separate Remote TUI product or remote Session model.
+A CLI command exists only when its service operation and Rust SDK method are real. The CLI can offer interactive terminal presentation, follow a Run stream, or watch notifications, but Foundation defines no separate Remote TUI product or remote Session model.
 
 ## Foundation Web
 
-Foundation Web uses only public Native API, Turn SSE, Workspace event, and notification WebSocket contracts. It does not query Foundation tables, Redis, object storage, Worker endpoints, or internal operator routes.
+Foundation Web uses only public Native API, Run SSE, Workspace event, and notification WebSocket contracts. It does not query Foundation tables, Redis, object storage, Worker endpoints, or internal operator routes.
 
 Foundation Web implements the product's supported browser workflows; it is not required to provide a page for every administrative resource in the Management API. An absent browser page does not remove the corresponding public API or SDK contract. Browser cookie authentication, Origin, CSRF, and same-origin behavior follow the shared ingress and IAM contracts.
 
@@ -102,7 +102,7 @@ The Rust CLI releases independently from the Rust SDK source package but pins a 
 
 1. Python, Go, Rust, and TypeScript expose the same Native service resources and lifecycle meaning.
 2. SDK retries require authoritative replay evidence.
-3. Stream and client close never cancel a Turn.
+3. Stream and client close never cancel a Run.
 4. Native notifications remain best-effort wake-ups and are reconciled through durable APIs.
 5. The remote CLI performs every network operation through the Rust SDK.
 6. Foundation Web uses only public Native surfaces and need not mirror every management resource as a page.

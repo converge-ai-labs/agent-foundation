@@ -225,7 +225,7 @@ async for item in current_run_stream:
     await host.persist_and_publish(new_events)
 ```
 
-A Host can retain both Run projections in one Session, Turn, or Execution timeline, but it must not feed the earlier Run into the new observer. `resume()` never reconstructs model execution, tools, credentials, Environment authority, leases, or `HarnessState`.
+A Host can retain both Harness Run projections in one Session, Foundation Run, or Execution timeline, but it must not feed the earlier Harness Run into the new observer. `resume()` never reconstructs model execution, tools, credentials, Environment authority, leases, or `HarnessState`.
 
 ## Errors and Atomicity
 

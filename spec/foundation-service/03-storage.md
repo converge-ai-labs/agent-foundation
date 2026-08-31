@@ -6,7 +6,7 @@ Foundation Service owns one internal storage substrate for relational data, Redi
 
 The substrate standardizes typed backend construction, process lifecycle, safety, and the semantics that local and network backends share. The [runtime contract](01-runtime-configuration-and-deployment.md) selects and validates the complete deployment profile before construction. Storage does not force unlike systems behind one generic provider interface. Consumers use mature upstream Python interfaces directly when those interfaces already own the semantics. Foundation defines a small protocol only for object storage, where the local filesystem and S3-compatible services otherwise lack a shared application-facing contract.
 
-Storage capabilities contain no Agent, Turn, `TurnAttempt`, lifecycle-event, work-queue, webhook, or presentation-stream meaning. Domain owners compose these generic primitives and remain responsible for their schemas, keys, ordering rules, and authority.
+Storage capabilities contain no Agent, Run, `RunAttempt`, lifecycle-event, work-queue, webhook, or presentation-stream meaning. Domain owners compose these generic primitives and remain responsible for their schemas, keys, ordering rules, and authority.
 
 ## Boundaries
 

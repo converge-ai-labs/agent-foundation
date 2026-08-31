@@ -4,7 +4,7 @@
 
 Foundation owns durable Connector configuration, account authorization, managed tool projection, and unattended Trigger acceptance without turning provider code or external event delivery into product authority. A `ConnectorProvider` is trusted deployment code. `Connector`, `ConnectorRevision`, `Connection`, and `Trigger` are Foundation-owned Workspace data. `ConnectorRevision`, like `AgentPresetVersion`, is an independently addressable immutable Version; the other three resources have explicit mutable lifecycles.
 
-An AgentPresetVersion selects exact Connector revisions and freezes its complete model-visible tool contract. A Turn fixes every resolved Connection identity, while each TurnAttempt obtains current authorization and credential use. A Trigger targets one stable `AgentPreset` and submits each unique schedule or Connector-event occurrence through the common root [Turn acceptance](34-agent-control-input-and-continuation.md#acceptance-and-lineage) contract. Acceptance resolves the Preset's then-active Version and Runtime lock, stores both on the Turn, and selects or creates the Session and root Thread; Trigger does not own another Agent runtime, queue, or retry lifecycle.
+An AgentPresetVersion selects exact Connector revisions and freezes its complete model-visible tool contract. A Run fixes every resolved Connection identity, while each RunAttempt obtains current authorization and credential use. A Trigger targets one stable `AgentPreset` and submits each unique schedule or Connector-event occurrence through the common root [Run acceptance](34-agent-control-input-and-continuation.md#acceptance-and-lineage) contract. Acceptance resolves the Preset's then-active Version and Runtime lock, stores both on the Run, and selects or creates the Session and root Thread; Trigger does not own another Agent runtime, queue, or retry lifecycle.
 
 Provider packages are an OSS extension surface. Installing a package makes it available for discovery, not trusted for import or execution. Deployment trust, Agent dependency locks, current IAM, run grants, managed Secrets, and provider compatibility remain independent checks.
 
@@ -16,13 +16,13 @@ Provider packages are an OSS extension surface. Installing a package makes it av
 | Connector, ConnectorRevision, Connection, and Trigger resources                         | This document                                                                                                                         | Owns identity, fields, lifecycles, and compatibility                             |
 | AgentPreset, AgentPresetVersion, and Runtime lock                                       | [Agent Management](12-agent-management.md)                                                                                            | Select a stable invocation target and freeze exact executable content            |
 | Tool composition, schema validation, managed authorization, and result safety           | [Harness Tool Execution](../agent-harness/07-tool-execution.md)                                                                       | Foundation reconstructs one managed Toolset over the accepted Harness boundary   |
-| Principal, RoleBinding, and built-in role mapping                                       | [Foundation IAM](10-identity-and-access-management.md)                                                                                | Reauthorizes management, Trigger acceptance, and every TurnAttempt               |
+| Principal, RoleBinding, and built-in role mapping                                       | [Foundation IAM](10-identity-and-access-management.md)                                                                                | Reauthorizes management, Trigger acceptance, and every RunAttempt                |
 | Connector product actions and run-grant requirements                                    | This document                                                                                                                         | Defines resource-specific authority checked through Foundation IAM               |
 | Secret encryption and owner lifecycle                                                   | [Secret Management](11-secret-management.md)                                                                                          | Stores Connection and Trigger credential material without public plaintext reads |
-| Session, Thread, Turn, and TurnAttempt lifecycle                                        | [Interactions, Turns, and Attempts](13-interactions-turns-and-attempts.md)                                                            | Runs Trigger and interactive work through the same accepted lifecycle            |
-| Thread creation and versioned advancement                                               | [Durable Thread Persistence](24-thread-persistence.md)                                                                                | Commits an independent Thread row with the accepted root Turn                    |
-| Turn selections and durable Trigger correlation                                         | [Durable Turn State](14-turn-persistence.md)                                                                                          | Persists immutable acceptance facts reused by replacement TurnAttempts           |
-| Lifecycle publication and outbound delivery                                             | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) and [Events and Delivery](20-events-usage-and-delivery.md) | Publishes committed resource and Turn facts independently from inbound events    |
+| Session, Thread, Run, and RunAttempt lifecycle                                          | [Interactions, Runs, and Attempts](13-interactions-runs-and-attempts.md)                                                              | Runs Trigger and interactive work through the same accepted lifecycle            |
+| Thread creation and versioned advancement                                               | [Durable Thread Persistence](24-thread-persistence.md)                                                                                | Commits an independent Thread row with the accepted root Run                     |
+| Run selections and durable Trigger correlation                                          | [Durable Run State](14-run-persistence.md)                                                                                            | Persists immutable acceptance facts reused by replacement RunAttempts            |
+| Lifecycle publication and outbound delivery                                             | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) and [Events and Delivery](20-events-usage-and-delivery.md) | Publishes committed resource and Run facts independently from inbound events     |
 | Public route catalog and shared HTTP behavior                                           | [Management API](21-management-api.md)                                                                                                | Exposes resources and commands under `/api/v1`                                   |
 
 The Connector domain has exactly four core concepts:
@@ -36,8 +36,8 @@ flowchart LR
     AgentPreset[AgentPreset]
     AgentPresetVersion[AgentPresetVersion]
     Trigger[Trigger]
-    Turn[Root Turn in Session and Thread]
-    Attempt[TurnAttempt]
+    Run[Root Run in Session and Thread]
+    Attempt[RunAttempt]
 
     Connector --> Revision --> Provider
     Connection --> Connector
@@ -46,10 +46,10 @@ flowchart LR
     Trigger --> AgentPreset
     Trigger -. connector event .-> Revision
     Trigger -. connector event .-> Connection
-    Trigger -->|accept occurrence| Turn --> Attempt
+    Trigger -->|accept occurrence| Run --> Attempt
 ```
 
-`ConnectorProvider` is not a database resource. `Trigger` is a separate Foundation domain resource and does not become a fifth Connector concept. Inline Agent Connector declarations, transient Connection setup records, provider event state, occurrence deduplication, and resolved Turn selections are not independently addressable product resources.
+`ConnectorProvider` is not a database resource. `Trigger` is a separate Foundation domain resource and does not become a fifth Connector concept. Inline Agent Connector declarations, transient Connection setup records, provider event state, occurrence deduplication, and resolved Run selections are not independently addressable product resources.
 
 ## Provider Trust and Discovery
 
@@ -222,12 +222,12 @@ Foundation validates the complete Provider result and freezes every selected too
 
 These serializable fields reconstruct the accepted [`HarnessToolMetadata`](../agent-harness/07-tool-execution.md#tool-metadata) and native Pydantic definition. Process-local resource resolvers, Provider clients, credential brokers, and callables remain trusted reconstructed values covered by the Agent dependency lock. A Provider metadata change affects only a newly materialized AgentPresetVersion; a queued or retained Version never adopts a current `list_tools` response.
 
-## Connection Selection and TurnAttempt Preparation
+## Connection Selection and RunAttempt Preparation
 
-The Connector-owned immutable Turn facts are conceptual serializable values:
+The Connector-owned immutable Run facts are conceptual serializable values:
 
 ```python
-class ConnectorTurnSelection:
+class ConnectorRunSelection:
     declaration_index: int
     connector_revision_id: ConnectorRevisionId
     connection_id: ConnectionId | None
@@ -240,25 +240,25 @@ class AcceptedTriggerSource:
     occurrence_key: str
 ```
 
-`declaration_index` binds the selection to the matching declaration in the accepted AgentPresetVersion. `occurrence_key` is the canonical bounded schedule or Provider-event uniqueness value. These values are protected acceptance metadata, not caller-selected authority or independent resources. The Turn persistence contract owns their durable placement and immutability.
+`declaration_index` binds the selection to the matching declaration in the accepted AgentPresetVersion. `occurrence_key` is the canonical bounded schedule or Provider-event uniqueness value. These values are protected acceptance metadata, not caller-selected authority or independent resources. The Run persistence contract owns their durable placement and immutability.
 
-An Agent Connector declaration can pin a Connection. The exact invoking Principal must remain eligible to use it; pinning a personal Connection does not grant another Principal access. When no Connection is pinned and the Provider requires one, Turn acceptance resolves in this order:
+An Agent Connector declaration can pin a Connection. The exact invoking Principal must remain eligible to use it; pinning a personal Connection does not grant another Principal access. When no Connection is pinned and the Provider requires one, Run acceptance resolves in this order:
 
 1. exactly one active, compatible personal Connection owned by the invoking Principal;
 2. when none exists, exactly one active, compatible Workspace-shared Connection.
 
-Zero candidates fail as `connection_required`; several candidates at the selected level fail as `connection_ambiguous`. A connectionless declaration rejects a Connection. A Turn submission cannot supply or override a Connection choice.
+Zero candidates fail as `connection_required`; several candidates at the selected level fail as `connection_ambiguous`. A connectionless declaration rejects a Connection. A Run submission cannot supply or override a Connection choice.
 
-Acceptance records one resolved Connection ID or explicit connectionless result for every declaration in the Turn's immutable `connector_selections`. This is not a Binding or Capability resource. Replacement TurnAttempts reuse those IDs and never choose a substitute account; an explicit successor Turn performs its own acceptance and selection.
+Acceptance records one resolved Connection ID or explicit connectionless result for every declaration in the Run's immutable `connector_selections`. This is not a Binding or Capability resource. Replacement RunAttempts reuse those IDs and never choose a substitute account; an explicit successor Run performs its own acceptance and selection.
 
-Every TurnAttempt validates the complete AgentPresetVersion before entering Harness:
+Every RunAttempt validates the complete AgentPresetVersion before entering Harness:
 
 - each exact ConnectorRevision and Provider lock remains reconstructable;
 - every Connector remains enabled;
 - every resolved Connection remains currently authorized, active, Provider- and revision-compatible, and eligible for fresh Secret use; and
 - frozen tool definitions and model-visible names remain structurally valid.
 
-One failure rejects the TurnAttempt before the first model request. Foundation does not omit an unavailable Connector and run a smaller tool surface because that would change the meaning of the selected AgentPresetVersion.
+One failure rejects the RunAttempt before the first model request. Foundation does not omit an unavailable Connector and run a smaller tool surface because that would change the meaning of the selected AgentPresetVersion.
 
 ## Runtime Tool Projection and Dispatch
 
@@ -288,7 +288,7 @@ sequenceDiagram
 
 Immediately before dispatch, current policy, Connector state, Connection state, Provider compatibility, and credential eligibility are checked again. Credential material is resolved only after schema validation and authorization and is absent from the AgentPresetVersion, model arguments, `HarnessState`, ordinary events, logs, and traces. Provider external I/O spans no database session or transaction; Foundation uses separate short reads and fenced writes around it.
 
-Provider availability, Connector disablement, Connection ineligibility, lock incompatibility, or surface mismatch before Harness entry is a TurnAttempt failure. An upstream timeout, rate limit, transient refresh failure, externally removed tool, invalid provider result, or call-time compatibility loss is one explicit tool failure that the Agent may handle. Foundation exposes no general public `call_connector_tool` API that bypasses this managed boundary.
+Provider availability, Connector disablement, Connection ineligibility, lock incompatibility, or surface mismatch before Harness entry is a RunAttempt failure. An upstream timeout, rate limit, transient refresh failure, externally removed tool, invalid provider result, or call-time compatibility loss is one explicit tool failure that the Agent may handle. Foundation exposes no general public `call_connector_tool` API that bypasses this managed boundary.
 
 ## Trigger Model
 
@@ -332,11 +332,11 @@ class ConnectorEventTriggerSource:
     config: BoundedJsonObject
 ```
 
-`principal_ref` is the existing User or Service Account whose current authority is evaluated for each occurrence. It is not the external webhook sender. The creating caller can bind only itself as a User; a Workspace Admin can instead bind an eligible Service Account and cannot bind another User. The target is one stable AgentPreset. Each firing resolves that Preset's current active Version during durable Turn acceptance; it never reads mutable config or accepts a caller-selected historical Version. The Connector-event Connection is exact because an unattended Trigger cannot choose an account interactively. It authorizes event ingress only and does not override the resolved AgentPresetVersion's tool Connections.
+`principal_ref` is the existing User or Service Account whose current authority is evaluated for each occurrence. It is not the external webhook sender. The creating caller can bind only itself as a User; a Workspace Admin can instead bind an eligible Service Account and cannot bind another User. The target is one stable AgentPreset. Each firing resolves that Preset's current active Version during durable Run acceptance; it never reads mutable config or accepts a caller-selected historical Version. The Connector-event Connection is exact because an unattended Trigger cannot choose an account interactively. It authorizes event ingress only and does not override the resolved AgentPresetVersion's tool Connections.
 
 A cron schedule has exactly five fields and an explicit IANA time zone. An interval uses a positive integer `interval_seconds` and no cron or time-zone fields. Deployment policy imposes a finite minimum interval. Schedule evaluation uses UTC instants while retaining the selected IANA zone for cron meaning.
 
-The Trigger has no immutable TriggerRevision. A successful occurrence acceptance stores the exact Trigger ID and version, target AgentPreset ID, resolved active AgentPresetVersion, occurrence identity, expanded input, and resolved Connector selections with its root Turn. Updating the Trigger or publishing another Preset Version cannot alter that retained work.
+The Trigger has no immutable TriggerRevision. A successful occurrence acceptance stores the exact Trigger ID and version, target AgentPreset ID, resolved active AgentPresetVersion, occurrence identity, expanded input, and resolved Connector selections with its root Run. Updating the Trigger or publishing another Preset Version cannot alter that retained work.
 
 ## Trigger Lifecycle and Event Sources
 
@@ -360,9 +360,9 @@ For a schedule, enablement commits active schedule state without external I/O. F
 
 Event-source create, renew, and stop operations use stable identities. Providers pass them to external idempotency facilities or use them to inspect exact external state. A lost response is reconciled through `reconcile_event_source`; Foundation does not blindly create another subscription. An unresolved outcome leaves the Trigger non-active with a safe reason.
 
-Disablement first commits local `disabled`, which immediately prevents schedule claims and event acceptance, then performs bounded external cleanup. Cleanup failure or uncertainty cannot reactivate local ingress and remains reconcilable. A disabled Trigger can be deleted only when no Turn was accepted from it and no source cleanup is unresolved. Otherwise it remains as retained historical metadata.
+Disablement first commits local `disabled`, which immediately prevents schedule claims and event acceptance, then performs bounded external cleanup. Cleanup failure or uncertainty cannot reactivate local ingress and remains reconcilable. A disabled Trigger can be deleted only when no Run was accepted from it and no source cleanup is unresolved. Otherwise it remains as retained historical metadata.
 
-Trigger status describes source admission, not the health or outcome of prior Turns. Agent failures do not change Trigger status. A `status_reason` is a bounded stable code and never contains a Provider payload, signature, credential, or traceback.
+Trigger status describes source admission, not the health or outcome of prior Runs. Agent failures do not change Trigger status. A `status_reason` is a bounded stable code and never contains a Provider payload, signature, credential, or traceback.
 
 Connector-event provider state is owned by the Trigger and interpreted under a Provider-defined state version. It is not caller-mutable or a public EventSubscription resource. Event callback signing values and polling credentials are Trigger-owned managed Secrets. Tool-only Providers implement no event methods.
 
@@ -379,13 +379,13 @@ Occurrence uniqueness is:
 - `(trigger_id, provider_event_id)` for a Connector event; and
 - `(trigger_id, scheduled_for)` for a schedule.
 
-Occurrence handling invokes the common root Turn acceptance operation. It validates and publishes the initial root state, then its short acceptance transaction rechecks Trigger state, current Principal and stable Preset authorization, resolves the exact active Preset Version and profile-selected Runtime lock, verifies Provider and Connection eligibility and Agent Connector resolution, and checks the unique occurrence key. That transaction commits the versioned root Thread row, root Turn, Session relationship, exact Preset Version and Runtime lock, resolved Connection selections, Trigger source metadata, lifecycle events, and outbox intents. A duplicate returns the prior Turn receipt or a successful webhook acknowledgement and creates no second Thread or Turn.
+Occurrence handling invokes the common root Run acceptance operation. It validates and publishes the initial root state, then its short acceptance transaction rechecks Trigger state, current Principal and stable Preset authorization, resolves the exact active Preset Version and profile-selected Runtime lock, verifies Provider and Connection eligibility and Agent Connector resolution, and checks the unique occurrence key. That transaction commits the versioned root Thread row, root Run, Session relationship, exact Preset Version and Runtime lock, resolved Connection selections, Trigger source metadata, lifecycle events, and outbox intents. A duplicate returns the prior Run receipt or a successful webhook acknowledgement and creates no second Thread or Run.
 
-Trigger ingress is at-least-once and Turn acceptance is at-most-once for one unique occurrence. Neither claim makes model, tool, or external side effects exactly once. If downtime spans several schedule instants, Foundation accepts only the latest missed instant and advances to the next future instant; it does not create an unbounded catch-up burst.
+Trigger ingress is at-least-once and Run acceptance is at-most-once for one unique occurrence. Neither claim makes model, tool, or external side effects exactly once. If downtime spans several schedule instants, Foundation accepts only the latest missed instant and advances to the next future instant; it does not create an unbounded catch-up burst.
 
-Each occurrence creates an independent root Turn through the common Session and Thread allocation policy. It does not implicitly continue a prior Trigger Turn or share its model history. Trigger does not add parallel, drop, or serialize modes; the Agent workload, Workspace admission, and common Worker claim policy own concurrency and queueing. A Trigger occurrence is not a separate public TriggerActivation resource, and its Provider source is not a separate public EventSubscription.
+Each occurrence creates an independent root Run through the common Session and Thread allocation policy. It does not implicitly continue a prior Trigger Run or share its model history. Trigger does not add parallel, drop, or serialize modes; the Agent workload, Workspace admission, and common Worker claim policy own concurrency and queueing. A Trigger occurrence is not a separate public TriggerActivation resource, and its Provider source is not a separate public EventSubscription.
 
-The signed webhook request authenticates the external source only. Before acceptance, Foundation reauthorizes the Trigger's stored Principal for the stable AgentPreset, ConnectorRevision, Connection, and required Secret use. Revoked authority, disabled resources, absent Provider compatibility, or ambiguous resolved Agent Connections fail closed and create no partially authorized Turn.
+The signed webhook request authenticates the external source only. Before acceptance, Foundation reauthorizes the Trigger's stored Principal for the stable AgentPreset, ConnectorRevision, Connection, and required Secret use. Revoked authority, disabled resources, absent Provider compatibility, or ambiguous resolved Agent Connections fail closed and create no partially authorized Run.
 
 ## Management and Ingress Surfaces
 
@@ -409,31 +409,31 @@ The stable product actions are:
 | `trigger.read`        | Read safe Trigger configuration and lifecycle status                            |
 | `trigger.configure`   | Create, update, enable, disable, reconcile, or delete a Trigger                 |
 
-Model-triggerable Connector work additionally requires the run grants `connector.use`, `secret.use`, and `tool.call`. Each grant names the selected resource and allowed operation; no role name enters Harness. Effective authority intersects the accepted AgentPresetVersion, resolved Connection, current Principal and RoleBindings, current resource status, and current grants. Trigger acceptance performs the same invocation authorization for its stored Principal before accepting a Turn.
+Model-triggerable Connector work additionally requires the run grants `connector.use`, `secret.use`, and `tool.call`. Each grant names the selected resource and allowed operation; no role name enters Harness. Effective authority intersects the accepted AgentPresetVersion, resolved Connection, current Principal and RoleBindings, current resource status, and current grants. Trigger acceptance performs the same invocation authorization for its stored Principal before accepting a Run.
 
 Creates and stateful commands accept the shared idempotency contract. Mutable resource changes use `expected_version`. Collection reads are bounded, deterministically ordered, cursor-paginated, and reauthorized. Public responses expose safe account, status, compatibility, and Provider metadata but no Secret, raw Provider state, OAuth callback value, webhook signature, or unredacted Provider error.
 
-Connection OAuth callback and Connector-event webhook ingress are bounded external protocol endpoints, not alternate management APIs. A callback or webhook URL, Trigger ID, delivery ID, cursor, or setup ID grants no authority by possession. Webhook success means the occurrence was durably accepted or already known; it does not wait for the Turn or Agent to finish.
+Connection OAuth callback and Connector-event webhook ingress are bounded external protocol endpoints, not alternate management APIs. A callback or webhook URL, Trigger ID, delivery ID, cursor, or setup ID grants no authority by possession. Webhook success means the occurrence was durably accepted or already known; it does not wait for the Run or Agent to finish.
 
 ## Failure Semantics
 
-| Failure                                                                              | Observable outcome                                                                     | Retry or reconciliation                                                                              |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Provider package is installed but not trusted                                        | Provider is not imported; resource operation fails safely                              | Deployment explicitly selects the exact artifact and restarts                                        |
-| Selected Provider fails import or trusted artifact verification                      | Service does not become ready                                                          | Repair the deployment; no runtime fallback is selected                                               |
-| Historical revision names an unavailable Provider                                    | Authoring or TurnAttempt fails `provider_unavailable` before use                       | Restore an explicitly compatible trusted Provider or select a new revision for new work              |
-| Provider rejects config or state compatibility                                       | Revision, Connection, Trigger, or TurnAttempt operation fails without reinterpretation | Caller supplies valid configuration or creates a compatible immutable revision                       |
-| Connection is absent or ambiguous at Turn acceptance                                 | No Turn is accepted                                                                    | Caller changes the AgentPresetVersion or eligible Connections; the request cannot override selection |
-| Selected Connection later becomes disabled, revoked, unauthorized, or incompatible   | TurnAttempt fails before Harness entry or a call fails before dispatch                 | Restore the same eligible Connection when reversible; no substitute is chosen                        |
-| Transient credential refresh or upstream failure                                     | Current tool or Trigger operation fails safely; Connection remains active              | Retry only under the owning idempotency and deadline policy                                          |
-| Credential cannot refresh definitively                                               | Connection becomes `reauthorization_required`                                          | Complete reauthorization for the same Connection                                                     |
-| Provider tool times out, rate-limits, disappears, or returns invalid data            | One bounded managed tool failure reaches the Agent                                     | Agent or Host policy decides whether another explicit call is safe                                   |
-| Connector is disabled                                                                | New setup, tool dispatch, event acceptance, and Trigger activation fail closed         | Re-enable the same Connector through authorized CAS mutation                                         |
-| Event signature or normalized payload is invalid                                     | No occurrence or Turn is committed; safe ingress rejection is recorded operationally   | Sender corrects the request; Foundation never logs the raw payload or signature                      |
-| Event-source operation outcome is unknown                                            | Trigger remains non-active or cleanup remains unresolved                               | Reconcile the same stable operation identity; do not create a second source blindly                  |
-| Event or schedule occurrence repeats                                                 | Existing acceptance is reused; no second Turn is created                               | Acknowledge the duplicate without changing its identity                                              |
-| Trigger Principal or target authority is revoked                                     | No new Turn is accepted                                                                | Restore current authority or reconfigure the disabled Trigger                                        |
-| Connector, Connection, or Trigger delete is still referenced or has retained history | `409` conflict and no deletion                                                         | Disable the resource and retain exact history                                                        |
+| Failure                                                                              | Observable outcome                                                                    | Retry or reconciliation                                                                              |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Provider package is installed but not trusted                                        | Provider is not imported; resource operation fails safely                             | Deployment explicitly selects the exact artifact and restarts                                        |
+| Selected Provider fails import or trusted artifact verification                      | Service does not become ready                                                         | Repair the deployment; no runtime fallback is selected                                               |
+| Historical revision names an unavailable Provider                                    | Authoring or RunAttempt fails `provider_unavailable` before use                       | Restore an explicitly compatible trusted Provider or select a new revision for new work              |
+| Provider rejects config or state compatibility                                       | Revision, Connection, Trigger, or RunAttempt operation fails without reinterpretation | Caller supplies valid configuration or creates a compatible immutable revision                       |
+| Connection is absent or ambiguous at Run acceptance                                  | No Run is accepted                                                                    | Caller changes the AgentPresetVersion or eligible Connections; the request cannot override selection |
+| Selected Connection later becomes disabled, revoked, unauthorized, or incompatible   | RunAttempt fails before Harness entry or a call fails before dispatch                 | Restore the same eligible Connection when reversible; no substitute is chosen                        |
+| Transient credential refresh or upstream failure                                     | Current tool or Trigger operation fails safely; Connection remains active             | Retry only under the owning idempotency and deadline policy                                          |
+| Credential cannot refresh definitively                                               | Connection becomes `reauthorization_required`                                         | Complete reauthorization for the same Connection                                                     |
+| Provider tool times out, rate-limits, disappears, or returns invalid data            | One bounded managed tool failure reaches the Agent                                    | Agent or Host policy decides whether another explicit call is safe                                   |
+| Connector is disabled                                                                | New setup, tool dispatch, event acceptance, and Trigger activation fail closed        | Re-enable the same Connector through authorized CAS mutation                                         |
+| Event signature or normalized payload is invalid                                     | No occurrence or Run is committed; safe ingress rejection is recorded operationally   | Sender corrects the request; Foundation never logs the raw payload or signature                      |
+| Event-source operation outcome is unknown                                            | Trigger remains non-active or cleanup remains unresolved                              | Reconcile the same stable operation identity; do not create a second source blindly                  |
+| Event or schedule occurrence repeats                                                 | Existing acceptance is reused; no second Run is created                               | Acknowledge the duplicate without changing its identity                                              |
+| Trigger Principal or target authority is revoked                                     | No new Run is accepted                                                                | Restore current authority or reconfigure the disabled Trigger                                        |
+| Connector, Connection, or Trigger delete is still referenced or has retained history | `409` conflict and no deletion                                                        | Disable the resource and retain exact history                                                        |
 
 Errors follow the shared bounded shape and use stable distinctions such as `provider_unavailable`, `provider_not_trusted`, `provider_config_incompatible`, `connector_disabled`, `connection_required`, `connection_ambiguous`, `connection_disabled`, `connection_reauthorization_required`, `connection_revoked`, `connection_incompatible`, `tool_not_found`, `tool_contract_incompatible`, `provider_timeout`, `provider_rate_limited`, `trigger_not_active`, `trigger_source_incompatible`, `event_signature_invalid`, `event_payload_invalid`, and `event_source_unavailable`. Safe details never contain a Secret, Provider payload, traceback, private path, or model/tool content.
 
@@ -453,7 +453,7 @@ The following version axes have separate owners and meanings:
 | Agent dependency lock           | Exact trusted Provider artifact and reconstruction compatibility        |
 | HTTP `/api/v1`                  | Public wire compatibility under Platform API Conventions                |
 
-No version substitutes for another. A Provider upgrade can support old config, state, event, and dependency-lock identities explicitly; absence of that declared compatibility fails rather than applying current defaults. Frozen Agent tool definitions change only through a new AgentPresetVersion. Publishing that Version or changing a Trigger affects only later occurrence acceptance because every Turn retains the selected Trigger version, exact Preset Version, Runtime lock, and expanded input.
+No version substitutes for another. A Provider upgrade can support old config, state, event, and dependency-lock identities explicitly; absence of that declared compatibility fails rather than applying current defaults. Frozen Agent tool definitions change only through a new AgentPresetVersion. Publishing that Version or changing a Trigger affects only later occurrence acceptance because every Run retains the selected Trigger version, exact Preset Version, Runtime lock, and expanded input.
 
 Adding a Provider capability, safe optional response field, event type, or config version is additive. Removing a required Provider method, reinterpreting an existing config or state version, weakening trust or authorization, changing a status meaning, or changing an existing command's side-effect boundary is incompatible while durable data relies on it.
 
@@ -463,9 +463,9 @@ Trusted in-process Providers give OSS deployments a small, direct Python extensi
 
 Keeping Connector configuration immutable while Connection authorization remains current permits safe config history and credential rotation without copying Secret material into revisions. It requires explicit compatibility checks whenever a Provider or account interpretation changes.
 
-Using Trigger plus the common Turn lifecycle rather than public EventSubscription and TriggerActivation resources keeps one durable Agent-work lifecycle and one observable Turn identity. In exchange, Foundation does not expose Connector events as a general-purpose customer event bus; external event consumption independent of Agent work is outside this contract.
+Using Trigger plus the common Run lifecycle rather than public EventSubscription and TriggerActivation resources keeps one durable Agent-work lifecycle and one observable Run identity. In exchange, Foundation does not expose Connector events as a general-purpose customer event bus; external event consumption independent of Agent work is outside this contract.
 
-Stable AgentPreset targets let unattended work adopt newly published active Versions, while exact Turn pinning and fail-closed Connection ambiguity preserve accepted-work reproducibility. Choosing between several accounts remains an explicit authoring action.
+Stable AgentPreset targets let unattended work adopt newly published active Versions, while exact Run pinning and fail-closed Connection ambiguity preserve accepted-work reproducibility. Choosing between several accounts remains an explicit authoring action.
 
 ## Invariants
 
@@ -474,13 +474,13 @@ Stable AgentPreset targets let unattended work adopt newly published active Vers
 03. ConnectorRevision contains bounded non-secret Provider configuration and never contains a credential, code target, live object, or frozen tool contract.
 04. Connection credential material exists only in Connection-owned managed Secrets; public Connection data contains bounded non-secret account and Provider state.
 05. AgentPresetVersion freezes exact ConnectorRevision references, complete managed tool declarations, and Provider dependency locks without storing live authority.
-06. Turn acceptance resolves every unpinned required Connection once; a Turn submission cannot override or substitute that selection.
-07. Every TurnAttempt obtains current IAM, run grants, Provider compatibility, Connection eligibility, and credential use before Harness or external dispatch.
+06. Run acceptance resolves every unpinned required Connection once; a Run submission cannot override or substitute that selection.
+07. Every RunAttempt obtains current IAM, run grants, Provider compatibility, Connection eligibility, and credential use before Harness or external dispatch.
 08. Connector tools enter the model only through native Pydantic composition and the mandatory Harness managed-tool boundary.
 09. Provider or external I/O spans no Foundation database session or transaction, and unknown external outcomes retain exact operation identity for reconciliation.
-10. Trigger is an independent resource that targets one stable AgentPreset; each occurrence accepts a root Turn pinned to the then-active AgentPresetVersion and Runtime lock through the common Session and Thread contract.
+10. Trigger is an independent resource that targets one stable AgentPreset; each occurrence accepts a root Run pinned to the then-active AgentPresetVersion and Runtime lock through the common Session and Thread contract.
 11. A Connector-event Trigger selects one exact ConnectorRevision and Connection for ingress; that Connection never overrides the target Agent's tool selections.
-12. Each unique Trigger occurrence accepts at most one Turn, while event delivery and Agent side effects remain independently retryable and are not claimed exactly once.
+12. Each unique Trigger occurrence accepts at most one Run, while event delivery and Agent side effects remain independently retryable and are not claimed exactly once.
 13. Trigger input is bounded untrusted data and cannot create a Principal, permission, run grant, tool, Connection, or Secret authority.
-14. Event source state belongs to its Trigger; no public EventSubscription or TriggerActivation duplicates the Trigger or Turn lifecycle.
-15. Disabling or revoking a resource prevents new authority without rewriting retained ConnectorRevision, AgentPresetVersion, Trigger-version, Turn, event, or audit facts.
+14. Event source state belongs to its Trigger; no public EventSubscription or TriggerActivation duplicates the Trigger or Run lifecycle.
+15. Disabling or revoking a resource prevents new authority without rewriting retained ConnectorRevision, AgentPresetVersion, Trigger-version, Run, event, or audit facts.

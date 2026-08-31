@@ -4,58 +4,58 @@
 
 Foundation Native clients use three deliberately different delivery surfaces:
 
-- Turn SSE carries detailed ordered interaction observations for one Turn and supports bounded replay with the Turn Stream cursor;
+- Run SSE carries detailed ordered interaction observations for one Run and supports bounded replay with the Run Stream cursor;
 - the Workspace event collection reads durable lifecycle facts with its own relational cursor; and
 - one WebSocket notification endpoint delivers lightweight best-effort wake-ups for explicitly subscribed resources.
 
-These surfaces do not share an envelope, cursor, replay promise, or authority. There is no combined Workspace SSE/WebSocket stream and no WebSocket variant of the detailed Turn stream.
+These surfaces do not share an envelope, cursor, replay promise, or authority. There is no combined Workspace SSE/WebSocket stream and no WebSocket variant of the detailed Run stream.
 
 ## Boundaries
 
-| Concern                                                  | Owner                                                                      |
-| -------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Turn Stream entries, Redis cursor, and retained snapshot | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) |
-| Durable lifecycle facts and retention floor              | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) |
-| Resource and lifecycle collection authorization          | [Management API](21-management-api.md) and the owning domain               |
-| HTTP and streaming resource safety                       | [HTTP ingress](05-http-ingress-and-request-contract.md)                    |
-| SSE framing and Native notification WebSocket            | This document                                                              |
+| Concern                                                 | Owner                                                                      |
+| ------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Run Stream entries, Redis cursor, and retained snapshot | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) |
+| Durable lifecycle facts and retention floor             | [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) |
+| Resource and lifecycle collection authorization         | [Management API](21-management-api.md) and the owning domain               |
+| HTTP and streaming resource safety                      | [HTTP ingress](05-http-ingress-and-request-contract.md)                    |
+| SSE framing and Native notification WebSocket           | This document                                                              |
 
 A transport cursor or notification identity grants no resource access. Every attachment authenticates and authorizes the selected resource under current [IAM](10-identity-and-access-management.md).
 
-## Turn SSE
+## Run SSE
 
 ```http
-GET /api/v1/turns/{turn_id}/stream
+GET /api/v1/runs/{run_id}/stream
 Accept: text/event-stream
-Last-Event-ID: <turn-stream-cursor>
+Last-Event-ID: <run-stream-cursor>
 ```
 
-`Last-Event-ID` is optional. When present, it names the last completely applied Turn Stream entry and replay begins exclusively after it. A client does not place the cursor in an authorization header, query filter, or Foundation resource ID.
+`Last-Event-ID` is optional. When present, it names the last completely applied Run Stream entry and replay begins exclusively after it. A client does not place the cursor in an authorization header, query filter, or Foundation resource ID.
 
 The client owns this consumption checkpoint. It records the `id` only after its local processing completely applies the event and sends the recorded value as `Last-Event-ID` on reconnect. A client that needs recovery across process or device restarts persists the checkpoint outside the SSE connection; merely receiving an event does not advance it.
 
 Each data event uses canonical SSE framing:
 
 ```text
-id: <turn-stream-cursor>
+id: <run-stream-cursor>
 event: <event_type>
-data: <one-line JSON TurnStreamEvent>
+data: <one-line JSON RunStreamEvent>
 
 ```
 
-`id` is the Redis Stream entry ID retained in the Turn replay snapshot. `event` equals the bounded `event_type` carried by `data`. `data` is the complete versioned `TurnStreamEvent` owned by the persistence contract. JSON is encoded on one UTF-8 line; clients ignore unknown additive object fields but do not guess unknown required schema versions.
+`id` is the Redis Stream entry ID retained in the Run replay snapshot. `event` equals the bounded `event_type` carried by `data`. `data` is the complete versioned `RunStreamEvent` owned by the persistence contract. JSON is encoded on one UTF-8 line; clients ignore unknown additive object fields but do not guess unknown required schema versions.
 
-The service sends SSE comments as heartbeats. A heartbeat carries no `id`, does not advance replay, and is not a Turn observation. The server can close a healthy connection at its configured maximum lifetime; clients reconnect with the last applied event ID.
+The service sends SSE comments as heartbeats. A heartbeat carries no `id`, does not advance replay, and is not a Run observation. The server can close a healthy connection at its configured maximum lifetime; clients reconnect with the last applied event ID.
 
 ### Replay and Live Cutover
 
 The attachment establishes one high watermark after authorization, returns the authorized retained or live entries through that watermark in order, and then subscribes after the same boundary. An entry is neither skipped nor delivered twice by the replay-to-live cutover. Duplicate delivery after a client loses an acknowledgement remains possible, so clients deduplicate by cursor or stable event identity.
 
-If `Last-Event-ID` is covered by the live Redis prefix or complete immutable snapshot, replay continues from that source. If the requested prefix is no longer available and no complete snapshot bridges it, the route returns `409 turn_stream_replay_gap` before opening SSE when the gap is known during attachment. A gap discovered after the response starts emits one terminal `a13n.foundation.replay_gap` event without a replay-advancing `id` and closes the attachment. Its bounded data identifies the Turn, requested cursor, available floor, and current high watermark; it contains no missing content.
+If `Last-Event-ID` is covered by the live Redis prefix or complete immutable snapshot, replay continues from that source. If the requested prefix is no longer available and no complete snapshot bridges it, the route returns `409 run_stream_replay_gap` before opening SSE when the gap is known during attachment. A gap discovered after the response starts emits one terminal `a13n.foundation.replay_gap` event without a replay-advancing `id` and closes the attachment. Its bounded data identifies the Run, requested cursor, available floor, and current high watermark; it contains no missing content.
 
-The client reconciles a gap through current Turn, Item, and pending-action reads. It never treats the first surviving stream event as complete history.
+The client reconciles a gap through current Run, Item, and pending-action reads. It never treats the first surviving stream event as complete history.
 
-A sealed Turn stream closes after its final retained observation is delivered. The terminal stream observation reports a projection of the authoritative sealed Turn outcome; closing the connection alone does not prove completion.
+A sealed Run stream closes after its final retained observation is delivered. The terminal stream observation reports a projection of the authoritative sealed Run outcome; closing the connection alone does not prove completion.
 
 ## Workspace Lifecycle Event Collection
 
@@ -73,26 +73,26 @@ class WorkspaceEventPage:
     high_watermark: str
 ```
 
-The schema is a conceptual wire shape. The cursor binds the Workspace, Principal scope, filters, and last returned lifecycle sequence. A cursor below the retained floor returns `409 lifecycle_replay_gap` with the safe current floor and high watermark. Resource filters never mix detailed Turn token, reasoning, tool-argument, or message deltas into this collection.
+The schema is a conceptual wire shape. The cursor binds the Workspace, Principal scope, filters, and last returned lifecycle sequence. A cursor below the retained floor returns `409 lifecycle_replay_gap` with the safe current floor and high watermark. Resource filters never mix detailed Run token, reasoning, tool-argument, or message deltas into this collection.
 
 Pagination accepts only the opaque starting `cursor` and bounded `limit`; there is no end-cursor parameter. The client continues with `next_cursor` and stops at its desired checkpoint or the reported high watermark.
 
-Clients use this collection to reconcile background lifecycle and management changes after a notification disconnect. It does not replace resource reads or the detailed Turn SSE.
+Clients use this collection to reconcile background lifecycle and management changes after a notification disconnect. It does not replace resource reads or the detailed Run SSE.
 
 ## Resource Lifecycle Event Collections
 
 Webhook consumers recover a resource-local sequence gap through the owning resource collection:
 
 ```http
-GET /api/v1/turns/{turn_id}/events?after_resource_seq=10&limit=50
-GET /api/v1/turn-attempts/{turn_attempt_id}/events?after_resource_seq=10&limit=50
+GET /api/v1/runs/{run_id}/events?after_resource_seq=10&limit=50
+GET /api/v1/run-attempts/{run_attempt_id}/events?after_resource_seq=10&limit=50
 ```
 
 The response is ordered by the positive contiguous `resource_seq` owned by the lifecycle-event contract:
 
 ```python
 class ResourceLifecycleEventPage:
-    resource_type: Literal["turn", "turn_attempt"]
+    resource_type: Literal["run", "run_attempt"]
     resource_id: str
     items: tuple[LifecycleEventResource, ...]
     next_resource_seq: int
@@ -146,12 +146,12 @@ One subscribe frame is atomic. The server validates limits and authorizes every 
 
 The stable topic registry is:
 
-| Topic                    | Thread scope | Workspace scope | Meaning                                                               |
-| ------------------------ | -----------: | --------------: | --------------------------------------------------------------------- |
-| `thread.updated`         |          Yes |             Yes | Thread version, current Turn, or head may have changed                |
-| `turn.updated`           |          Yes |             Yes | A correlated Turn lifecycle or summary may have changed               |
-| `pending_action.updated` |          Yes |             Yes | Authorized waiting-Turn pending projection may require reconciliation |
-| `session.updated`        |           No |             Yes | Session list or summary may have changed                              |
+| Topic                    | Thread scope | Workspace scope | Meaning                                                              |
+| ------------------------ | -----------: | --------------: | -------------------------------------------------------------------- |
+| `thread.updated`         |          Yes |             Yes | Thread version, current Run, or head may have changed                |
+| `run.updated`            |          Yes |             Yes | A correlated Run lifecycle or summary may have changed               |
+| `pending_action.updated` |          Yes |             Yes | Authorized waiting-Run pending projection may require reconciliation |
+| `session.updated`        |           No |             Yes | Session list or summary may have changed                             |
 
 Adding a topic is additive. Clients ignore an unknown notification topic only after negotiating a profile that permits additive topics; they never interpret it as a known state transition.
 
@@ -170,7 +170,7 @@ class NotificationFrame:
     resource_version: int | None
     session_id: str | None
     thread_id: str | None
-    turn_id: str | None
+    run_id: str | None
     occurred_at: datetime
 ```
 
@@ -196,25 +196,25 @@ Authentication failure known before upgrade returns the ordinary HTTP `401` and 
 
 ## Failure Semantics
 
-| Failure                                    | Client action                                                  | Turn consequence |
-| ------------------------------------------ | -------------------------------------------------------------- | ---------------- |
-| SSE cursor is outside retained history     | Read current resources and reattach from an available boundary | None             |
-| SSE delivery disconnects                   | Reconnect with last fully applied event ID                     | None             |
-| Workspace lifecycle cursor expires         | Reconcile current resources and restart at returned floor      | None             |
-| Resource lifecycle predecessor expires     | Rebootstrap current resource state at the returned boundary    | None             |
-| Notification connection drops or overflows | Reconnect, resubscribe, and reconcile                          | None             |
-| Subscription authorization is revoked      | Subscription is denied or removed; safe error/close follows    | None             |
-| Service drains                             | Reconnect to another ready replica                             | None             |
+| Failure                                    | Client action                                                  | Run consequence |
+| ------------------------------------------ | -------------------------------------------------------------- | --------------- |
+| SSE cursor is outside retained history     | Read current resources and reattach from an available boundary | None            |
+| SSE delivery disconnects                   | Reconnect with last fully applied event ID                     | None            |
+| Workspace lifecycle cursor expires         | Reconcile current resources and restart at returned floor      | None            |
+| Resource lifecycle predecessor expires     | Rebootstrap current resource state at the returned boundary    | None            |
+| Notification connection drops or overflows | Reconnect, resubscribe, and reconcile                          | None            |
+| Subscription authorization is revoked      | Subscription is denied or removed; safe error/close follows    | None            |
+| Service drains                             | Reconnect to another ready replica                             | None            |
 
 ## Compatibility and Invariants
 
-SSE event schemas and Turn Stream cursor compatibility belong to the Turn Stream owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event owner. Resource lifecycle API compatibility includes the resource-sequence domain, contiguity, and explicit retention-gap response. `foundation.notifications.v1` versions the WebSocket frame contract; breaking frame or subscription changes require another subprotocol.
+SSE event schemas and Run Stream cursor compatibility belong to the Run Stream owner. Workspace lifecycle cursor compatibility belongs to the lifecycle event owner. Resource lifecycle API compatibility includes the resource-sequence domain, contiguity, and explicit retention-gap response. `foundation.notifications.v1` versions the WebSocket frame contract; breaking frame or subscription changes require another subprotocol.
 
-1. Detailed Turn observations use SSE only.
+1. Detailed Run observations use SSE only.
 2. Durable Workspace lifecycle replay uses a bounded JSON collection only.
 3. Resource lifecycle recovery is ordered by `resource_seq` and never infers a missing event from the Workspace cursor.
 4. Native WebSocket notifications are best effort and have no cursor or replay.
 5. A notification contains wake-up metadata, never detailed interaction content or a domain command.
 6. A new WebSocket connection has no subscriptions.
 7. Every subscription is explicitly authorized, bounded, and removed on disconnect.
-8. Disconnecting any Native transport never cancels or seals a Turn.
+8. Disconnecting any Native transport never cancels or seals a Run.

@@ -70,7 +70,7 @@ The artifact's fixed distribution descriptor supplies the complete typed configu
 
 Configuration is immutable after startup. Changing a setting requires a new process. The service performs no partial or hot reload that could leave replicas or role components using different configuration generations.
 
-`worker.handoff_preference_window` is a finite positive internal scheduling duration used only for same-build claims after a planned handoff with `yield_reason="service_drain"`. Its release default equals one TurnAttempt lease duration; an explicit value overrides that default but cannot be zero, negative, or unbounded. It does not delay Runner rotation, initial claims, failure recovery, or lease-expiry takeover.
+`worker.handoff_preference_window` is a finite positive internal scheduling duration used only for same-build claims after a planned handoff with `yield_reason="service_drain"`. Its release default equals one RunAttempt lease duration; an explicit value overrides that default but cannot be zero, negative, or unbounded. It does not delay Runner rotation, initial claims, failure recovery, or lease-expiry takeover.
 
 `gateway.a2a_enabled` is the single protocol availability switch. It defaults to `true`. Native and Hosted AG-UI have no runtime enable setting. When false, the `control` or `all` process omits A2A discovery, runtime, streaming, push routes, and A2A delivery components while preserving every Native and Hosted AG-UI surface. The setting does not select another distribution and there is no Agent-level A2A enable setting.
 
@@ -85,11 +85,11 @@ Foundation supports two profiles:
 
 The distributed profile requires PostgreSQL, real Redis, and shared object storage. It rejects SQLite, process-local Redis, and local object storage before opening service traffic. A mounted shared filesystem can satisfy a domain that explicitly owns filesystem semantics, but it does not replace shared object storage or make SQLite and local object locking distributed.
 
-Real Redis is a required distributed data-flow and coordination dependency. Required does not mean universally authoritative: each owning domain defines the identity, retention, replay, and authority of the values it places in Redis. Durable Foundation resource state, TurnAttempt fencing, and accepted lifecycle transitions remain relational facts unless an owning specification explicitly establishes a different authority.
+Real Redis is a required distributed data-flow and coordination dependency. Required does not mean universally authoritative: each owning domain defines the identity, retention, replay, and authority of the values it places in Redis. Durable Foundation resource state, RunAttempt fencing, and accepted lifecycle transitions remain relational facts unless an owning specification explicitly establishes a different authority.
 
 ## Process Roles
 
-`control` and `worker` are the two independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs Turn scan, compatibility preflight, claim, leases, plugin code, and Harness execution in the Worker process. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; lock-scoped Runner children own the execution loop.
+`control` and `worker` are the two independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs Run scan, compatibility preflight, claim, leases, plugin code, and Harness execution in the Worker process. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; lock-scoped Runner children own the execution loop.
 
 | Capability                                | `control` | `worker` |   `all` |
 | ----------------------------------------- | --------: | -------: | ------: |
@@ -100,7 +100,7 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 | Domain-owned control reconcilers          |       Yes |       No |     Yes |
 | Outbox publication                        |       Yes |       No |     Yes |
 | Profile-selected Worker execution runtime |        No |      Yes |     Yes |
-| Turn scan, claim, takeover, and lease     |        No |  Runtime | Runtime |
+| Run scan, claim, takeover, and lease      |        No |  Runtime | Runtime |
 | Harness and Environment invocation        |        No |  Runtime | Runtime |
 | Operational liveness and readiness probes |       Yes |      Yes |     Yes |
 | Automatic migration when enabled          |       Yes |    Never |     Yes |
@@ -111,11 +111,11 @@ One service process runs one ASGI worker. A deployment scales by adding service 
 
 ## Worker Build Identity
 
-Every Foundation Service build artifact carries one immutable `worker_build_id`. Official images derive the value from the release version and source/build revision supplied by the existing `BUILD_VERSION` and `BUILD_REVISION` build inputs. Replicas of the same artifact therefore report the same build ID, while `worker_generation` remains unique to one Worker process lifetime. Runtime freezes both values at process startup and copies the build ID into every claimed `TurnAttempt`.
+Every Foundation Service build artifact carries one immutable `worker_build_id`. Official images derive the value from the release version and source/build revision supplied by the existing `BUILD_VERSION` and `BUILD_REVISION` build inputs. Replicas of the same artifact therefore report the same build ID, while `worker_generation` remains unique to one Worker process lifetime. Runtime freezes both values at process startup and copies the build ID into every claimed `RunAttempt`.
 
 The build ID comes only from trusted artifact metadata. It is not read from the database, Kubernetes API, tenant input, or claim candidate, and cannot change while the process runs. A distributed `worker` or `all` process with missing, malformed, or placeholder production build identity never becomes ready. A local development artifact may use an explicit documented development identity that still remains immutable for that process.
 
-`worker_build_id` records the actual Foundation Service build serving an Attempt. It is distinct from `PluginRuntimeLock.worker_release`, which is the historical Worker dependency baseline pinned when the Runtime lock is created. A newer build may restore an older Turn only after the scheduling preflight proves that it can read the state and serve the exact pinned lock; build identity never grants lease authority, selects a target Pod, or substitutes another Runtime lock.
+`worker_build_id` records the actual Foundation Service build serving an Attempt. It is distinct from `PluginRuntimeLock.worker_release`, which is the historical Worker dependency baseline pinned when the Runtime lock is created. A newer build may restore an older Run only after the scheduling preflight proves that it can read the state and serve the exact pinned lock; build identity never grants lease authority, selects a target Pod, or substitutes another Runtime lock.
 
 ## Startup Lifecycle
 
@@ -178,9 +178,9 @@ Drain makes readiness fail before the process stops accepting new work.
 
 A control process rejects new product mutations and streaming connections, then stops ingress, domain-owned reconcilers, and publishers in an order that preserves committed state. An on-demand Worker stops its periodic scan; a runner Supervisor gates every Runner scan, including takeover scans. Runtime sets a process-local `yield_requested` flag for every active Attempt; this flag is not persisted and does not change lease authority. Each selected execution loop continues ordinary execution, heartbeat, and lease renewal while it waits for a safe boundary, publishes or reconciles complete state, quiesces its local Run, and prepares the planned-yield transaction.
 
-An Attempt stops renewal only after `yielded`, an ordinary outcome, cancellation, or failure commits, or when the configured drain deadline arrives. Readiness failure and one failed yield CAS never release the lease. If the deadline arrives first, the process fences local execution, stops renewal, and exits; another Worker remains forbidden from takeover until the recorded lease actually expires. Shutdown never extends a lease indefinitely, reports unfinished work as successful, or lets two Workers hold valid authority for one Turn.
+An Attempt stops renewal only after `yielded`, an ordinary outcome, cancellation, or failure commits, or when the configured drain deadline arrives. Readiness failure and one failed yield CAS never release the lease. If the deadline arrives first, the process fences local execution, stops renewal, and exits; another Worker remains forbidden from takeover until the recorded lease actually expires. Shutdown never extends a lease indefinitely, reports unfinished work as successful, or lets two Workers hold valid authority for one Run.
 
-Rolling deployment starts and readies compatible new capacity before old capacity is terminated. After a service-drain yield, a different compatible `worker_build_id` may claim the Turn immediately; old-build replicas defer for the bounded `handoff_preference_window` and then become fallback capacity. Same-image restart therefore still recovers after the window. An incompatible upgrade must retain compatible old capacity or use a separately reviewed state or lock migration; handoff itself does not relax compatibility. Runner rotation uses its exact historical Runtime lock and does not apply this build-preference delay.
+Rolling deployment starts and readies compatible new capacity before old capacity is terminated. After a service-drain yield, a different compatible `worker_build_id` may claim the Run immediately; old-build replicas defer for the bounded `handoff_preference_window` and then become fallback capacity. Same-image restart therefore still recovers after the window. An incompatible upgrade must retain compatible old capacity or use a separately reviewed state or lock migration; handoff itself does not relax compatibility. Runner rotation uses its exact historical Runtime lock and does not apply this build-preference delay.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 
@@ -207,7 +207,7 @@ The `gateway.a2a_enabled` field is a common operational compatibility contract; 
 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
 
-`plugin_runtime.mode` defaults to `on_demand`. Control persists the selected value when initializing a deployment and may replace it only while no Plugin, AgentPresetVersion, or Turn exists. Every role verifies the resulting value before readiness. A non-empty mode mismatch never performs an in-place migration or starts with weaker semantics.
+`plugin_runtime.mode` defaults to `on_demand`. Control persists the selected value when initializing a deployment and may replace it only while no Plugin, AgentPresetVersion, or Run exists. Every role verifies the resulting value before readiness. A non-empty mode mismatch never performs an in-place migration or starts with weaker semantics.
 
 ## Invariants
 
