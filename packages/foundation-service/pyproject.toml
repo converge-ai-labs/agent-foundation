@@ -25,6 +25,7 @@ dependencies = [
     "pydantic-ai>=2.33,<3",
     "pydantic-settings>=2.10,<3",
     "psycopg[binary]>=3.2,<4",
+    "pyyaml>=6.0,<7",
     "redis>=8,<9",
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "starlette>=1.6,<2",

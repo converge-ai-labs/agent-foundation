@@ -14,8 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from a13n_harness.capabilities import parse_skill_frontmatter
-from a13n_harness.errors import DefinitionError
+import yaml
 
 from .domain import ManagedSkillPackageFile, ManagedSkillPackageManifest
 
@@ -398,13 +397,42 @@ def _validate_skill_document(content: bytes) -> tuple[str, str]:
         document = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise _invalid("SKILL.md must be valid UTF-8") from error
-    try:
-        skill_name, description = parse_skill_frontmatter(document)
-    except DefinitionError as error:
-        raise _invalid("SKILL.md does not satisfy the Harness Skill contract") from error
+    skill_name, description = _parse_skill_frontmatter(document)
     if _utf8_size(description) > MAX_SKILL_DESCRIPTION_BYTES:
         raise _limit("Skill description exceeds its UTF-8 size limit")
     return skill_name, description
+
+
+def _parse_skill_frontmatter(content: str) -> tuple[str, str]:
+    lines = content.lstrip("\ufeff").splitlines()
+    if not lines or lines[0].strip() != "---":
+        raise _invalid("SKILL.md must begin with YAML frontmatter")
+    closing = next((index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---"), None)
+    if closing is None:
+        raise _invalid("SKILL.md has incomplete YAML frontmatter")
+    try:
+        value = yaml.safe_load("\n".join(lines[1:closing]))
+    except yaml.YAMLError as error:
+        raise _invalid("SKILL.md has invalid YAML frontmatter") from error
+    if not isinstance(value, Mapping):
+        raise _invalid("SKILL.md frontmatter must be a mapping")
+    return (
+        _require_frontmatter_text(value.get("name"), field="name", maximum_length=256),
+        _require_frontmatter_text(
+            value.get("description"),
+            field="description",
+            maximum_length=MAX_SKILL_DESCRIPTION_BYTES,
+        ),
+    )
+
+
+def _require_frontmatter_text(value: object, *, field: str, maximum_length: int) -> str:
+    if not isinstance(value, str):
+        raise _invalid(f"SKILL.md frontmatter {field} must be a string")
+    normalized = value.strip()
+    if not normalized or len(normalized) > maximum_length or "\x00" in normalized:
+        raise _invalid(f"SKILL.md frontmatter {field} is invalid")
+    return normalized
 
 
 def _canonical_json(value: object) -> bytes:

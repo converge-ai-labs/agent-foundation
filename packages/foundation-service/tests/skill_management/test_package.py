@@ -172,10 +172,41 @@ def test_file_tree_normalizes_unicode_and_rejects_normalized_or_casefolded_colli
         (("SKILL.md", b"---\nname: x\n---\n"),),
     ],
 )
-def test_package_requires_exactly_one_harness_valid_root_skill_document(
+def test_package_requires_exactly_one_contract_valid_root_skill_document(
     entries: tuple[tuple[str, bytes], ...],
 ) -> None:
     assert error_code(lambda: normalize_skill_files(entries)) == "skill_package_invalid"
+
+
+def test_foundation_parses_skill_frontmatter_without_a_harness_api() -> None:
+    package = normalize_skill_files(
+        (
+            (
+                "SKILL.md",
+                b"\xef\xbb\xbf---\nname: ' deploy-helper '\ndescription: ' Reviewed deploys. '\nignored: true\n---\nbody",
+            ),
+        )
+    )
+
+    assert package.manifest.skill_name == "deploy-helper"
+    assert package.manifest.description == "Reviewed deploys."
+
+
+@pytest.mark.parametrize(
+    "frontmatter",
+    [
+        "[]",
+        "name: [",
+        "name: deploy-helper\ndescription: true",
+        "name: true\ndescription: deploy safely",
+        'name: "\\0"\ndescription: deploy safely',
+        'name: deploy-helper\ndescription: "\\0"',
+    ],
+)
+def test_foundation_rejects_invalid_skill_frontmatter_metadata(frontmatter: str) -> None:
+    document = f"---\n{frontmatter}\n---\n".encode()
+
+    assert error_code(lambda: normalize_skill_files((("SKILL.md", document),))) == "skill_package_invalid"
 
 
 def test_skill_description_limit_counts_utf8_bytes() -> None:
