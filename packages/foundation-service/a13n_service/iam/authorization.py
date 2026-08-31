@@ -17,11 +17,18 @@ class WorkspaceAction(StrEnum):
     models_manage = "models.manage"
     secrets_read = "secrets.read"
     secrets_manage = "secrets.manage"
+    skill_read = "skill.read"
+    skill_create = "skill.create"
+    skill_update = "skill.update"
+    skill_delete = "skill.delete"
+    skill_bind = "skill.bind"
 
+
+_READ_ACTIONS = frozenset({WorkspaceAction.models_read, WorkspaceAction.secrets_read, WorkspaceAction.skill_read})
 
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
-    "viewer": frozenset({WorkspaceAction.models_read, WorkspaceAction.secrets_read}),
-    "runner": frozenset({WorkspaceAction.models_read, WorkspaceAction.secrets_read}),
+    "viewer": _READ_ACTIONS,
+    "runner": _READ_ACTIONS,
     "builder": frozenset(WorkspaceAction),
     "admin": frozenset(WorkspaceAction),
 }

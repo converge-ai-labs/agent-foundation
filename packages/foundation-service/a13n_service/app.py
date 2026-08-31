@@ -29,6 +29,14 @@ from a13n_service.model_management.service import (
     ModelConfigService,
 )
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
+from a13n_service.skill_management.catalog import SkillCatalogService
+from a13n_service.skill_management.credentials import DatabaseGitHubCredentialResolver
+from a13n_service.skill_management.github import GitHubSkillAcquirer
+from a13n_service.skill_management.objects import SkillPackageStore
+from a13n_service.skill_management.publication import SkillPublicationService
+from a13n_service.skill_management.router import router as skill_management_router
+from a13n_service.skill_management.sources import GitHubCredentialResolver, SkillSourcePreparer
+from a13n_service.skill_management.uploads import SkillUploadService
 from a13n_service.storage import StorageResources, open_storage, short_session
 from a13n_service.web import mount_web_application
 
@@ -43,6 +51,8 @@ class ServiceComponents:
     request_authenticator: RequestAuthenticator | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
+    skill_github_acquirer: GitHubSkillAcquirer | None = None
+    skill_credential_resolver: GitHubCredentialResolver | None = None
 
 
 @asynccontextmanager
@@ -57,10 +67,13 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         # Keep these names for service code that only needs relational access.
         app.state.db_engine = storage.engine
         app.state.db_session_factory = storage.sessions
-        async with httpx2.AsyncClient(
-            follow_redirects=False,
-            event_hooks={"request": [validate_model_request]},
-        ) as model_http_client:
+        async with (
+            httpx2.AsyncClient(
+                follow_redirects=False,
+                event_hooks={"request": [validate_model_request]},
+            ) as model_http_client,
+            httpx2.AsyncClient(follow_redirects=False) as github_http_client,
+        ):
             secret_resolver = app.state.components.model_secret_resolver
             if secret_resolver is None:
                 secret_resolver = DatabaseSecretValueResolver(storage.sessions, settings.secret_protector())
@@ -73,6 +86,23 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
             app.state.model_secret_resolver = secret_resolver
             if settings.role in _CONTROL_PLANE_ROLES:
+                package_store = SkillPackageStore(storage.objects)
+                github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
+                credential_resolver = app.state.components.skill_credential_resolver
+                if credential_resolver is None:
+                    credential_resolver = DatabaseGitHubCredentialResolver(
+                        storage.sessions,
+                        settings.secret_protector(),
+                    )
+                app.state.skill_upload_service = SkillUploadService(storage.sessions, package_store)
+                source_preparer = SkillSourcePreparer(
+                    storage.sessions,
+                    package_store,
+                    github_acquirer,
+                    credential_resolver,
+                )
+                app.state.skill_publication_service = SkillPublicationService(storage.sessions, source_preparer)
+                app.state.skill_catalog_service = SkillCatalogService(storage.sessions, package_store)
                 app.state.accepted_model_selector = AcceptedModelSelector(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -156,6 +186,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
 
     if serves_control_plane:
         app.include_router(model_management_router)
+        app.include_router(skill_management_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

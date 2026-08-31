@@ -1,11 +1,22 @@
 """Workspace Skill management domain and application services."""
 
 from .domain import (
+    CreateSkillRequest,
+    CreateSkillRevisionRequest,
+    FoundationSkillRevisionSource,
     GitHubRevisionSource,
     GitHubSkillImportProvenance,
     ManagedSkillPackageFile,
     ManagedSkillPackageManifest,
+    SkillPublicationReceipt,
+    SkillUploadReceipt,
+    UpdateSkillRequest,
+    WorkspaceSkill,
+    WorkspaceSkillCollection,
+    WorkspaceSkillRevision,
+    WorkspaceSkillRevisionCollection,
     ZipSkillImportProvenance,
+    ZipUploadSkillSource,
 )
 from .github import AcquiredGitHubSkill, GitHubAcquisitionError, GitHubSkillAcquirer
 from .package import (
@@ -20,6 +31,9 @@ from .package import (
 
 __all__ = [
     "AcquiredGitHubSkill",
+    "CreateSkillRequest",
+    "CreateSkillRevisionRequest",
+    "FoundationSkillRevisionSource",
     "GitHubAcquisitionError",
     "GitHubRevisionSource",
     "GitHubSkillAcquirer",
@@ -29,7 +43,15 @@ __all__ = [
     "NormalizedSkillFile",
     "NormalizedSkillPackage",
     "SkillPackageError",
+    "SkillPublicationReceipt",
+    "SkillUploadReceipt",
+    "UpdateSkillRequest",
+    "WorkspaceSkill",
+    "WorkspaceSkillCollection",
+    "WorkspaceSkillRevision",
+    "WorkspaceSkillRevisionCollection",
     "ZipSkillImportProvenance",
+    "ZipUploadSkillSource",
     "normalize_skill_files",
     "normalize_skill_path",
     "normalize_skill_zip",
