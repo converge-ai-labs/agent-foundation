@@ -292,30 +292,32 @@ Removing a User's access to a key boundary permanently revokes that boundary's P
 
 ### `security_audit_events`
 
-| Column            | Durable meaning and constraint                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `id`              | Primary key; immutable event ID                                                           |
-| `organization_id` | Tenant for Organization or Workspace activity; null for platform identity activity        |
-| `workspace_id`    | Workspace for Workspace activity; otherwise null                                          |
-| `actor_type`      | `anonymous`, `user`, `service_account`, or `system`                                       |
-| `actor_id`        | Actor identity when known; otherwise null                                                 |
-| `action`          | Stable namespaced security action                                                         |
-| `resource_type`   | Affected resource kind when known                                                         |
-| `resource_id`     | Affected resource ID when known                                                           |
-| `auth_method`     | `password`, `session`, `api_key`, `bootstrap`, or `system`                                |
-| `credential_id`   | Safe credential ID when applicable; never secret material                                 |
-| `outcome`         | `success` or `failure`                                                                    |
-| `occurred_at`     | Immutable event time                                                                      |
-| `request_id`      | Safe request correlation ID when applicable                                               |
-| `details`         | Optional bounded action-specific safe JSON; never contains credentials or resource values |
+| Column            | Durable meaning and constraint                                                     |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `id`              | Primary key; immutable event ID                                                    |
+| `organization_id` | Tenant for Organization or Workspace activity; null for platform identity activity |
+| `workspace_id`    | Workspace for Workspace activity; otherwise null                                   |
+| `actor_type`      | `anonymous`, `user`, `service_account`, or `system`                                |
+| `actor_id`        | Actor identity when known; otherwise null                                          |
+| `action`          | Stable namespaced security action                                                  |
+| `resource_type`   | Affected resource kind when known                                                  |
+| `resource_id`     | Affected resource ID when known                                                    |
+| `auth_method`     | `password`, `session`, `api_key`, `bootstrap`, or `system`                         |
+| `credential_id`   | Safe credential ID when applicable; never secret material                          |
+| `outcome`         | `success` or `failure`                                                             |
+| `occurred_at`     | Immutable event time                                                               |
+| `request_id`      | Safe request correlation ID when applicable                                        |
+| `details`         | Optional bounded action-specific safe JSON under the rules below                   |
 
 Security audit events are append-only and distinct from Turn and TurnAttempt
 lifecycle events, application logs, traces, and UsageRecords. Login, password,
 email, User status, invitation, RoleBinding, API key, Service Account,
-Workspace, Secret, and ModelConfig security mutations and connection tests emit
-events. `details` uses an action-owned allowlist; a ModelConfig update can record
-only changed field names. Events contain no secret material, credential
-verifier, old or new resource value, endpoint, or raw provider error.
+Workspace, Secret, Skill, and ModelConfig security mutations and connection tests
+emit events. `details` uses an action-owned allowlist. It can record tenant-scoped
+related resource IDs, stable enum outcomes, and changed field names needed to
+correlate an operation; those identifiers grant no authority. A ModelConfig
+update can record only changed field names. Events contain no secret material,
+credential verifier, old or new resource value, endpoint, or raw provider error.
 
 A successful security-sensitive mutation commits its audit event in the same short transaction as the authoritative state change under [Durable Operations and Outbox](06-durable-operations-and-outbox.md#atomic-durable-commit). Authentication failures and denied attempts emit through a separate bounded path because no resource mutation transaction exists; audit unavailability never converts a denial into an allow.
 

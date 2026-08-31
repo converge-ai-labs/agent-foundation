@@ -92,16 +92,23 @@ but does not rewrite retained Agents or Turns.
 Foundation enforces the shared package maxima. It additionally fixes these public
 bounds:
 
-| Value                                       |      Limit |
-| ------------------------------------------- | ---------: |
-| Staged ZIP lifetime                         |   24 hours |
-| GitHub acquisition deadline                 | 60 seconds |
-| Available Skill revisions in one Agent node |        512 |
+| Value                                       |                          Limit |
+| ------------------------------------------- | -----------------------------: |
+| Staged ZIP lifetime                         |                       24 hours |
+| `Idempotency-Key` evidence                  | 24 hours after accepted commit |
+| GitHub acquisition deadline                 |                     60 seconds |
+| Available Skill revisions in one Agent node |                            512 |
 
 Deployments can impose lower quotas on active Skills, revisions, or concurrent
 uploads. Reaching a quota rejects the operation; it never evicts retained content.
 `display_name` is NFC, contains 1 through 256 Unicode scalar values, has no leading
 or trailing whitespace, and contains no control character.
+
+Foundation retains `Idempotency-Key` evidence for ZIP staging, Skill creation,
+and revision publication for 24 hours after the accepted commit. A replay within
+that horizon returns the original bounded result before evaluating current
+resource state. After expiry, Foundation no longer promises replay, and absent
+evidence does not prove that the earlier request never committed.
 
 ## Public Management API
 
@@ -169,7 +176,7 @@ class CreateSkillRequest:
 
 
 class CreateSkillRevisionRequest:
-    expected_skill_version: int
+    expected_version: int
     source: FoundationSkillRevisionSource
 ```
 
@@ -181,7 +188,7 @@ Idempotency-Key: opaque-caller-key
 ```
 
 Create returns the Skill and revision `1` with `201`. Revision publication compares
-`expected_skill_version`; different content appends and selects one revision with
+`expected_version`; different content appends and selects one revision with
 `201`, while content equal to the current revision returns it with `200` and does not
 advance the Skill. Consuming a staged upload verifies its unexpired receipt. A
 GitHub source is resolved and normalized during the request before durable publication.
@@ -248,9 +255,32 @@ reauthorizes `skill.bind` for every selected revision. Workers read packages und
 internal Turn authority; invoking an Agent does not grant the caller package
 download permission.
 
-Audit records include actor, Workspace, Skill and revision IDs, operation, source
-kind, safe GitHub repository and resolved commit when applicable, content digest,
-and outcome.
+Skill creation, revision publication, metadata update, deletion, and denied
+management attempts emit bounded [IAM security audit
+events](10-identity-and-access-management.md#security_audit_events). Common event
+fields record the actor, Workspace, action, primary Skill resource when known, and
+success-or-failure outcome. The stable actions are `skill.create`,
+`skill.revision.publish`, `skill.update`, and `skill.delete`; a denied attempt uses
+the same action with failure outcome. Action-owned `details` use this additional
+allowlist:
+
+- Successful Skill creation records `selected_revision_id` and `source_kind`.
+- Successful revision publication records `previous_revision_id`,
+  `selected_revision_id`, `source_kind`, and `publication_outcome`, whose value is
+  `published` or `already_current`. The two revision IDs are equal when the
+  selected content is already current; otherwise they identify the immutable
+  transition that an authorized caller can compare.
+- Successful metadata update records only `changed_fields`; it never records the
+  old or new `display_name`.
+
+`source_kind` is the submitted source discriminator, `zip_upload` or `github`.
+
+The audit event never copies a GitHub repository, requested ref, resolved commit,
+subdirectory, archive digest, package content digest, manifest or file metadata,
+object key, or package bytes. Those facts remain under the authorized Skill
+revision and object-storage contracts. Security audit is operation evidence, not
+Skill value history; reading an audit event grants no authority to read either
+referenced revision.
 
 ## Publication
 
