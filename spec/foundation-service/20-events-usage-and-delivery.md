@@ -135,6 +135,8 @@ This exception prevents lease loss from silently dropping attributable usage wit
 
 Large model, tool, command, file, or child outputs use object storage only after bounded staging, digest verification, authorization through the owning Run or Item, and durable selection. They remain content of that owning record and have no independent product identity. Object keys, file paths, digests, and signed URLs grant no product authority by possession.
 
+An explicitly published [Asset](37-asset-management.md) is the distinct exception: its accepted publication creates an independent immutable `asset_id`, and Run output or an Item can retain the resulting `AssetRef`. Automatic spill, output compaction, replay retention, command capture, or object staging never upgrades content into an Asset. Asset deletion and retention remain independent from the referencing Run or Item.
+
 For example, a command result that exceeds the inline Item limit is staged as an object and selected before the immutable Run replay snapshot references it. An unselected upload is a cleanup candidate. A selected missing object produces an explicit content-read failure; Foundation does not reinterpret it as a missing Item or use it as continuation state.
 
 ## Observability
@@ -177,3 +179,4 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
 12. Native, Hosted AG-UI, and A2A delivery are independent projections over shared Foundation facts and never translate through one another.
 13. A Webhook envelope identifies its resource sequence and version, but the Webhook transport makes no ordering or exactly-once-processing guarantee.
 14. Planned handoff has an internal `run_attempt.yielded` lifecycle fact but no AG-UI Run terminal event and no Run Stream boundary.
+15. Only explicit Asset publication creates independent binary identity; automatic large-content handling remains owned by its Run or Item.

@@ -34,6 +34,7 @@ The shared [interaction model](../interaction-model.md) owns `Session`, `Thread`
 | Connector selections and accepted Trigger source                            | [Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)         | Defines the exact Connector-owned facts frozen at Run acceptance                                       |
 | Environment selection and execution configuration                           | [Environment Management](19-environment-management.md#environment-selection-and-run-state) | Freezes exact connection targets, connector locks, Secret references, and routing in state             |
 | Effective managed Skill selection                                           | [Foundation Skill Management](27-skill-management.md#agentpresetversion-selection)         | Resolves an optional invocation override within the AgentPresetVersion catalog and freezes it in state |
+| Managed Asset identity, content, publication, and deletion                  | [Asset Management](37-asset-management.md)                                                 | Supplies immutable `asset_id` references used inside accepted input, output, or retained presentation  |
 | Scheduling, recovery budget, and current-attempt selection                  | Foundation Run domain                                                                      | Authorizes initial dispatch, bounded recovery, and one sealed outcome                                  |
 | Worker generation, lease, and stale-writer fencing                          | [Run Attempt Persistence](15-run-attempt-persistence.md)                                   | Authorizes one worker generation and preserves its immutable attempt audit                             |
 | Current complete Run state                                                  | One deterministic Run state object                                                         | Stores active Harness and Host state; waiting or completed sealing selects its exact frozen identity   |
@@ -222,6 +223,8 @@ The exact `AgentPresetId`, `AgentPresetVersionId`, and internal Plugin Runtime l
 Exactly one of `input` and `input_object` is present. `input_kind` selects its owning protocol: `agent_input` stores the accepted [`AgentInput`](33-agent-input.md#agent-input-protocol), while `waiting_feedback` stores the complete normalized [`WaitingRunFeedback`](34-agent-control-input-and-continuation.md#deferred-interaction). Start, continue, continue from, and fork use `agent_input`; feedback uses `waiting_feedback`; retry copies the source Run's exact kind and value. `retry_of_run_id` is present only for retry and names the same-Thread failed or cancelled Run that was current when its accepted intent was copied. It is correlation, not another state or history edge.
 
 At most one of `output` and `output_object` is present, and neither is present before a completed outcome. The `JsonValue` annotation is the storage encoding, not an open input schema. Inline values are bounded structured data suitable for direct Run reads. Oversized payloads use immutable objects. Retry copies the exact accepted descriptor value, publishes a new Run-owned payload envelope when that JSON is object-backed, and lets execution reacquire any required binary source for the new Run. `input_text` and `output_text` are optional bounded derived projections and never replace exact data, accepted source descriptions, or the complete message history.
+
+An Asset-backed input stores its exact immutable `asset_id` inside accepted `AgentInput`; it does not copy Asset bytes or create an Asset snapshot. A completed output can contain a bounded [`AssetRef`](37-asset-management.md#asset-model) inside its owning JSON value. Foundation creates no Run-to-Asset relation or Run-owned Asset list. Retry preserves the same input Asset ID, while output references remain ordinary immutable outcome data.
 
 `waiting` is a sealed Run outcome. It contains a bounded `pending` summary; the frozen Run state contains the authoritative deferred requests and effective client-tool surface. Authenticated feedback is the accepted input of a new Run whose `parent_run_id` names the waiting Run and whose state is initialized from that waiting state.
 
@@ -413,6 +416,8 @@ The first checkpoint after the accepted Run input has crossed the Harness input 
 
 `consumed_inbox_entries` is the bounded receipt set for [`thread_inbox`](35-agent-control-active-execution.md#thread-inbox) entries incorporated into this Run. Each receipt correlates the exact inbox identity and kind with Harness or Host state already present in the same envelope. Replacement Attempts of this Run preserve the receipts. A new Run does not inherit its parent's receipts; it records only inbox entries consumed by that new Run's own acceptance.
 
+`RunStateEnvelope` contains no Asset publication ledger, receipt, reference list, or Asset Capability namespace. When a successful `publish_asset` tool result has crossed a complete Harness checkpoint, its `AssetRef` can already appear in ordinary `harness` message history. The independent Asset row and selected content object remain publication authority whether or not that tool result was checkpointed.
+
 The envelope separates four state classes:
 
 | State class                  | Contents                                                                                                       | Restore rule                                                                                  |
@@ -507,11 +512,11 @@ The object key is content-addressed beneath the Run:
 tenants/{tenant_id}/runs/{run_id}/payloads/{payload_kind}/{digest_sha256}.json
 ```
 
-[`BinaryContent`](33-agent-input.md#binary-source-and-delivery) in an accepted input retains only its normalized URL or Environment-path source description. Run payload objects never contain inline file bytes or a Foundation-managed binary body object.
+[`BinaryContent`](33-agent-input.md#binary-source-and-delivery) in an accepted input retains only its normalized URL or Environment-path source description or exact immutable `asset_id`. Run payload objects never contain inline file bytes, an Asset body snapshot, or a public object-storage reference.
 
 ### Retention
 
-Retention never removes a state or Run payload object while a retained Run or successor depends on it. A parent state remains frozen and reachable while any successor or lineage policy requires it. Reference-aware deletion of those state and payload objects never relies on object age alone. Binary source bytes remain outside Foundation persistence; their availability and lifetime belong to the caller-provided URL or external Environment.
+Retention never removes a state or Run payload object while a retained Run or successor depends on it. A parent state remains frozen and reachable while any successor or lineage policy requires it. Reference-aware deletion of those state and payload objects never relies on object age alone. URL and Environment-path source bytes remain outside Foundation persistence. Asset bytes follow the independent [Asset deletion and retention contract](37-asset-management.md#deletion-and-retention); a Run reference does not pin or restore a deleted Asset.
 
 ## Run Acceptance, Checkpoint, and Outcome Commit
 
@@ -621,7 +626,7 @@ The accepted access paths are:
 
 ## Security and Protection
 
-Run input, output, Thread inbox payloads and consumption receipts, Environment execution configuration, effective Skill selection, Harness state, Capability state, Environment state, pending summaries, deferred requests, and Run-scoped audit and usage records are sensitive tenant data. Relational and object reads are tenant-scoped and reauthorized. External resource IDs and private endpoints are protected connection data; object keys and Run IDs grant no access by possession.
+Run input, output, Asset references, Thread inbox payloads and consumption receipts, Environment execution configuration, effective Skill selection, Harness state, Capability state, Environment state, pending summaries, deferred requests, and Run-scoped audit and usage records are sensitive tenant data. Relational and object reads are tenant-scoped and reauthorized. External resource IDs and private endpoints are protected connection data; Asset IDs, object keys, and Run IDs grant no access by possession.
 
 State and payload objects use authenticated integrity verification and deployment-approved encryption at rest. Plaintext credentials, bearer authorization, Secret values, and ephemeral credential leases never enter a Run row, state object, event, Item, error, trace, or ordinary log.
 
@@ -697,3 +702,4 @@ Each new Run owns a complete state copy, so initialization cost grows with the r
 13. Before a Thread has selected any waiting or completed head, several failed or cancelled root-lineage Runs can precede another root-like acceptance; at most one root-lineage Run can be active or selected as waiting or completed.
 14. A completed source Run, first queued submission, and already-state-backed successor can commit as one combined handoff; the final Thread head names the completed source, the current Run names the accepted successor, and no accepted successor can lack its complete initial state.
 15. Graceful Attempt handoff conditionally updates the same state key and adds no checkpoint resource or selector; `yielded` releases execution authority without sealing the Run.
+16. Asset references remain inside the accepted input, output, Harness messages, or retained Items that own them; `state.json` has no Asset-specific authority or publication state, and Run persistence defines no Asset link table.

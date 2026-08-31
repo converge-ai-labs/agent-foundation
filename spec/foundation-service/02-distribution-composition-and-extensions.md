@@ -74,6 +74,8 @@ The OSS distribution includes the common durable Run/RunAttempt kernel and the O
 
 The OSS capability set includes the complete [Protocol Gateway](28-protocol-gateway.md). Its `control` and `all` roles always compose Native and Hosted AG-UI routers. It also contains the A2A adapter; the common runtime's single default-on `gateway.a2a_enabled` setting determines whether that adapter's routes and components are mounted. This operational setting neither installs a capability nor selects a distribution.
 
+The OSS capability set also includes [Asset Management](37-asset-management.md): its Native router, authorization actions and role grants, `assets` relational model and migration contribution, object-cleanup control component, Worker-side input resolver, and trusted `AssetCapability` reconstruction. Asset availability is not selected by plugin installation, tenant data, or an Agent-provided import target.
+
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
 
 ## EE and Cloud Composition

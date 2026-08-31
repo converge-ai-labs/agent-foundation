@@ -28,6 +28,7 @@ The standalone SDK projects under `sdk/{python,go,rust,typescript}` all belong t
 - request ID and upstream correlation access;
 - explicit idempotency keys and version or ETag preconditions;
 - deterministic collection pagination;
+- streaming Asset upload and content download without whole-body buffering;
 - Run SSE consumption and cursor recovery;
 - Workspace lifecycle event reconciliation;
 - Native WebSocket notification subscription and close; and
@@ -107,3 +108,4 @@ The Rust CLI releases independently from the Rust SDK source package but pins a 
 5. The remote CLI performs every network operation through the Rust SDK.
 6. Foundation Web uses only public Native surfaces and need not mirror every management resource as a page.
 7. Standard AG-UI and A2A clients require no Foundation SDK.
+8. Asset helpers preserve one-create-per-publication identity, caller-supplied idempotency keys, and streaming binary transfer; they never expose object-storage keys or emulate in-place replacement.

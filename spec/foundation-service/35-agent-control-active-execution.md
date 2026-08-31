@@ -99,7 +99,7 @@ POST /api/v1/runs/{run_id}/steer
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries one submitted `AgentInput`. Foundation acquires and canonicalizes binary content before the final short transaction. That transaction authenticates and authorizes `run.steer`, locks the owning Thread and target Run in the canonical order, requires the Run to remain the Thread's current Run with `status="running"`, allocates the next target-Run `steer_sequence`, inserts one `pending` `steer` entry, and commits the idempotency evidence. It neither creates another Run nor changes Thread head, current-Run selection, or version. The exact Run identity and locked running precondition make a caller-supplied Run version unnecessary.
+The request carries one submitted `AgentInput`. Foundation validates and canonicalizes its binary source descriptions, exact Asset IDs, and delivery selections without acquiring source bytes. The final short transaction authenticates and authorizes `run.steer`, revalidates every Asset reference, locks the owning Thread and target Run in the canonical order, requires the Run to remain the Thread's current Run with `status="running"`, allocates the next target-Run `steer_sequence`, inserts one `pending` `steer` entry, and commits the idempotency evidence. It neither creates another Run nor changes Thread head, current-Run selection, or version. The exact Run identity and locked running precondition make a caller-supplied Run version unnecessary.
 
 A successful command returns `202` with this conceptual receipt:
 

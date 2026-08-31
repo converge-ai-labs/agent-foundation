@@ -54,6 +54,9 @@ root = "/var/lib/foundation"
 
 [control]
 
+[assets]
+max_size_bytes = 104857600
+
 [gateway]
 a2a_enabled = true
 
@@ -73,6 +76,8 @@ Configuration is immutable after startup. Changing a setting requires a new proc
 `worker.handoff_preference_window` is a finite positive internal scheduling duration used only for same-build claims after a planned handoff with `yield_reason="service_drain"`. Its release default equals one RunAttempt lease duration; an explicit value overrides that default but cannot be zero, negative, or unbounded. It does not delay Runner rotation, initial claims, failure recovery, or lease-expiry takeover.
 
 `gateway.a2a_enabled` is the single protocol availability switch. It defaults to `true`. Native and Hosted AG-UI have no runtime enable setting. When false, the `control` or `all` process omits A2A discovery, runtime, streaming, push routes, and A2A delivery components while preserving every Native and Hosted AG-UI surface. The setting does not select another distribution and there is no Agent-level A2A enable setting.
+
+`assets.max_size_bytes` is a positive finite deployment bound. Control applies it to Native and Gateway acquisition, and Workers apply the same effective value to Agent publication and Asset-backed input acquisition. Replicas that can accept or execute the same work use compatible bounds; a lower admission-specific Workspace quota can reject new publication but never reinterpret an already accepted Asset.
 
 ## Deployment Profiles
 
@@ -203,7 +208,7 @@ No failure causes an implicit switch to a local backend, another distribution, o
 
 Role values, configuration precedence, stable TOML section names, Plugin Runtime mode, and supported deployment profiles are operational compatibility contracts. New optional fields and new distribution-owned namespaces can be added. Reinterpreting an existing field, changing precedence, making an accepted profile unsafe, or changing a role's ownership requires an explicit compatibility change.
 
-The `gateway.a2a_enabled` field is a common operational compatibility contract; its absence has the release-default meaning `true`.
+The `gateway.a2a_enabled` field is a common operational compatibility contract; its absence has the release-default meaning `true`. The `assets.max_size_bytes` field is a common safety contract shared by every Asset publication and acquisition path.
 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
 
@@ -227,3 +232,4 @@ The effective configuration is deployment input, not a durable product resource 
 14. Every production Worker-capable process has one immutable artifact-derived `worker_build_id`; it is audit and preference metadata, not execution authority or the pinned Runtime dependency baseline.
 15. Drain gates new claims immediately but active Attempts continue heartbeat and lease renewal until a terminal commit or the drain deadline.
 16. Same-build planned-handoff deferral is finite, applies only after `yield_reason="service_drain"`, and never weakens compatibility, lease, or fence checks. Runner rotation has no build-preference delay.
+17. Control and Worker paths apply one compatible finite Asset size bound; no protocol or Capability bypasses it.

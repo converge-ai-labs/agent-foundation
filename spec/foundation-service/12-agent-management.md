@@ -96,6 +96,8 @@ Saving config performs only request-schema structure, type, size, and bounds val
 
 The config stores one exact trusted input adapter key and bounded configuration. Publish validates them against the selected Plugin Runtime profile and freezes them inside the AgentPresetVersion. The Version carries no declaration of allowed input block types, media types, sources, deliveries, or per-input limits; every Version accepts the common [`AgentInput`](33-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the pinned Runtime lock before invoking the adapter. A replacement RunAttempt reuses the same Version, adapter configuration, accepted input, and Runtime lock.
 
+A config can explicitly select the trusted Foundation [`AssetCapability`](37-asset-management.md#agent-publication-capability). Publish freezes that selection and validates its bounded configuration with the rest of the Version. Each RunAttempt binds only its current authorized Environment; `publish_asset` fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable the tool, and the Capability adds no durable Capability-state schema.
+
 ## Protocol Configuration
 
 Every `AgentPresetConfig` embeds one finite `protocol` configuration. It is Preset-owned authoring data rather than an independently addressable resource, and it has no separate lifecycle, API, enable switch, or content digest:

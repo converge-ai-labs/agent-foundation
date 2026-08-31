@@ -140,13 +140,15 @@ The selected Version's ProtocolConfig can select supported state, message snapsh
 
 `RAW`, raw `a13n.harness.*` fallback, RunAttempt, Worker, Redis, internal Harness Run, provider-native events, and unprocessed exceptions are never delivered. The stable Foundation custom registry initially contains only:
 
-| Name                         | Meaning                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| `a13n.foundation.run_status` | Accepted, running, waiting, cancellation, or other safe durable Run status projection |
-| `a13n.foundation.artifact`   | Stable authorized result or content-reference projection                              |
-| `a13n.foundation.replay_gap` | Hosted delivery history is unavailable and client reconciliation is required          |
+| Name                         | Meaning                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n.foundation.run_status` | Accepted, running, waiting, cancellation, or other safe durable Run status projection                                                 |
+| `a13n.foundation.artifact`   | Stable authorized result projection; an explicitly published Asset carries its bounded `AssetRef` without an object key or bearer URL |
+| `a13n.foundation.replay_gap` | Hosted delivery history is unavailable and client reconciliation is required                                                          |
 
 Each custom `value` contains its own `schema_version`. ProtocolConfig can select from this finite registry but cannot invent an event name or schema.
+
+When `a13n.foundation.artifact` projects an [Asset](37-asset-management.md), the hosted binding retains the exact `asset_id` and reauthorizes the current caller before metadata or content delivery. The custom event does not create another Asset identity, pin Asset retention, or make an AG-UI cursor a content credential. A deleted Asset remains unavailable even when the hosted event is still replayable.
 
 ## Replay and Failure
 

@@ -288,7 +288,7 @@ The `run_attempts` table follows the [Relational Schema Lifecycle](04-relational
 08. Terminal attempts have `finished_at`, no renewable lease, and immutable columns.
 09. `yield_reason` is non-null exactly for `yielded`; a yielded Attempt has null `failure`, leaves its Run `running`, and is not selected as current.
 10. Every Attempt has a non-empty immutable `worker_build_id` copied from the claiming process.
-11. Terminal attempt history cannot be deleted while referenced by a sealed Run state, lifecycle event, usage record, or successor attempt.
+11. Terminal attempt history cannot be deleted while referenced by a sealed Run state, lifecycle event, usage record, successor attempt, or retained [Asset provenance](37-asset-management.md#assets-relational-schema).
 
 ## Compatibility and Trade-offs
 

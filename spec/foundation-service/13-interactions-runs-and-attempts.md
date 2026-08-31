@@ -60,6 +60,8 @@ Before dispatching an Agent tool call, Foundation records the invocation identit
 
 The next Agent may inspect that context and decide whether to issue another ordinary invocation. Foundation never automatically replays the prior call and never treats missing receipts, logs, heartbeats, or telemetry as proof that the call failed or had no effect. Foundation persists no RunAttempt-wide generic dispatch phase; model requests, run-local Environment setup, managed Skill materialization, and other Host preparation do not need a phase surrogate.
 
+The explicit [`publish_asset` Capability tool](37-asset-management.md#agent-publication-capability) uses this same dispatch boundary. Its committed Asset row records the producing RunAttempt and invocation identity; Run state gains no Asset receipt or publication namespace. If the Asset commits but its result is absent from the latest complete checkpoint, replacement preserves the ordinary `unknown_outcome` and never publishes another Asset automatically.
+
 ## RunAttempt and Harness Mapping
 
 One RunAttempt starts at most one logical Harness Run. Before Harness entry, the worker resolves exact immutable revisions, reuses the Run-owned model execution snapshot, creates fresh run Capabilities, resolves fresh credentials, opens fresh Environment connector attachments from the exact desired mount configuration in Run state, adapts them into fresh `EnvironmentRuntimeMount` values, constructs and retains one `EnvironmentRuntime`, and supplies it through fresh `RunBindings`. Each connector keeps the already-running resource alive only while its attachment scope and the Harness run are active and closes its process-local clients afterward.
@@ -90,3 +92,4 @@ Bounded connector transport retries and internal Harness recovery remain within 
 18. A completed outcome can use state-first preparation and one combined transaction to seal the source, consume the first queued submission, and accept its successor. Preparation or validation failure never blocks source completion: the queue remains durable for terminal recovery scanning. Waiting state blocks drain until feedback, retry, or explicit branch selection progresses the Thread.
 19. `yielded` terminalizes only one RunAttempt; the Run stays `running`, may temporarily have no current Attempt, and keeps the same state and stream identities.
 20. Planned-handoff recovery creates a fresh Harness Run from the latest complete same-key state and never binds recovery to a handoff-specific checkpoint record.
+21. Asset publication uses ordinary fenced Agent tool dispatch and independent Asset authority; it creates no RunAssetLink or Asset-specific continuation state.
