@@ -16,6 +16,7 @@ from a13n_service.skill_management.package import (
     MAX_PATH_BYTES,
     MAX_PATH_DEPTH,
     MAX_SEGMENT_BYTES,
+    MAX_SKILL_DESCRIPTION_BYTES,
     MAX_SKILL_DOCUMENT_BYTES,
     MAX_TOTAL_BYTES,
     SkillPackageError,
@@ -63,6 +64,7 @@ def test_contract_limits_match_the_shared_version_one_package_contract() -> None
     assert MAX_TOTAL_BYTES == 64 * 1024 * 1024
     assert MAX_FILE_BYTES == 16 * 1024 * 1024
     assert MAX_SKILL_DOCUMENT_BYTES == 256 * 1024
+    assert MAX_SKILL_DESCRIPTION_BYTES == 16 * 1024
     assert MAX_PATH_DEPTH == 32
     assert MAX_PATH_BYTES == 1024
     assert MAX_SEGMENT_BYTES == 255
@@ -163,6 +165,24 @@ def test_package_requires_exactly_one_harness_valid_root_skill_document(
     entries: tuple[tuple[str, bytes], ...],
 ) -> None:
     assert error_code(lambda: normalize_skill_files(entries)) == "skill_package_invalid"
+
+
+def test_skill_description_limit_counts_utf8_bytes() -> None:
+    boundary = "é" * (MAX_SKILL_DESCRIPTION_BYTES // len("é".encode()))
+    accepted = normalize_skill_files(
+        (("SKILL.md", f"---\nname: deploy-helper\ndescription: {boundary}\n---\n".encode()),)
+    )
+    assert accepted.manifest.description == boundary
+
+    oversized = boundary + "é"
+    assert (
+        error_code(
+            lambda: normalize_skill_files(
+                (("SKILL.md", f"---\nname: deploy-helper\ndescription: {oversized}\n---\n".encode()),)
+            )
+        )
+        == "skill_package_limit"
+    )
 
 
 def test_zip_rejects_wrapper_siblings_duplicate_members_links_and_unsupported_compression() -> None:

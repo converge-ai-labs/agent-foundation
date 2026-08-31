@@ -24,6 +24,7 @@ MAX_FILES = 4096
 MAX_TOTAL_BYTES = 64 * 1024 * 1024
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_SKILL_DOCUMENT_BYTES = 256 * 1024
+MAX_SKILL_DESCRIPTION_BYTES = 16 * 1024
 MAX_PATH_DEPTH = 32
 MAX_PATH_BYTES = 1024
 MAX_SEGMENT_BYTES = 255
@@ -301,9 +302,12 @@ def _validate_skill_document(content: bytes) -> tuple[str, str]:
     except UnicodeDecodeError as error:
         raise _invalid("SKILL.md must be valid UTF-8") from error
     try:
-        return parse_skill_frontmatter(document)
+        skill_name, description = parse_skill_frontmatter(document)
     except DefinitionError as error:
         raise _invalid("SKILL.md does not satisfy the Harness Skill contract") from error
+    if _utf8_size(description) > MAX_SKILL_DESCRIPTION_BYTES:
+        raise _limit("Skill description exceeds its UTF-8 size limit")
+    return skill_name, description
 
 
 def _canonical_json(value: object) -> bytes:
