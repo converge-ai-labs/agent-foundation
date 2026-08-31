@@ -50,3 +50,20 @@ SkillImportProvenance = Annotated[
     ZipSkillImportProvenance | GitHubSkillImportProvenance,
     Field(discriminator="kind"),
 ]
+
+
+class GitHubRevisionSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["github"] = "github"
+    repository_url: str = Field(min_length=1, max_length=2048)
+    ref: str | None = Field(default=None, min_length=1, max_length=1024)
+    subdirectory: str = Field(default="", max_length=1024)
+    expected_commit_sha: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")] | None = None
+    credential_secret_id: (
+        Annotated[
+            str,
+            StringConstraints(pattern=r"^sec_[a-z0-9]{16,64}$"),
+        ]
+        | None
+    ) = None

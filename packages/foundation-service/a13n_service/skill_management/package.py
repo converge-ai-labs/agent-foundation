@@ -97,7 +97,7 @@ def normalize_skill_files(files: Iterable[tuple[str, bytes]]) -> NormalizedSkill
     for raw_path, content in items:
         if not isinstance(content, bytes):
             raise TypeError("managed Skill file content must be bytes")
-        path = _normalize_path(raw_path)
+        path = normalize_skill_path(raw_path)
         folded = path.casefold()
         previous = casefolded.setdefault(folded, path)
         if previous != path or path in normalized:
@@ -152,6 +152,26 @@ def skill_package_object_key(organization_id: str, workspace_id: str, content_di
     return f"tenants/{organization_id}/workspaces/{workspace_id}/skills/packages/version-1/{content_digest}.zip"
 
 
+def normalize_skill_path(raw_path: str) -> str:
+    """Return one canonical portable relative path under package-contract version 1."""
+
+    if not isinstance(raw_path, str) or not raw_path:
+        raise _invalid("package path must be a non-empty string")
+    if "\\" in raw_path or raw_path.startswith("/") or _URI_OR_DRIVE_PREFIX.match(raw_path):
+        raise _invalid("package path uses an absolute, URI, drive, or backslash form")
+    path = unicodedata.normalize("NFC", raw_path)
+    segments = path.split("/")
+    if len(segments) > MAX_PATH_DEPTH:
+        raise _limit("package path exceeds the depth limit")
+    if any(not segment or segment in {".", ".."} for segment in segments):
+        raise _invalid("package path contains an empty or relative segment")
+    for segment in segments:
+        _validate_path_segment(segment)
+    if _utf8_size(path) > MAX_PATH_BYTES:
+        raise _limit("package path exceeds the UTF-8 size limit")
+    return path
+
+
 def _validated_archive_entries(source: zipfile.ZipFile) -> tuple[_ArchiveEntry, ...]:
     infos = tuple(source.infolist())
     if len(infos) > MAX_ARCHIVE_MEMBERS:
@@ -191,7 +211,7 @@ def _validated_archive_path(info: zipfile.ZipInfo) -> str:
     if "\x00" in info.orig_filename:
         raise _invalid("ZIP member name contains NUL")
     _require_ordinary_zip_member(info)
-    return _normalize_path(info.orig_filename.rstrip("/"))
+    return normalize_skill_path(info.orig_filename.rstrip("/"))
 
 
 def _wrapper_directory(entries: tuple[_ArchiveEntry, ...]) -> str | None:
@@ -245,24 +265,6 @@ def _require_ordinary_zip_member(info: zipfile.ZipInfo) -> None:
     expected = stat.S_IFDIR if info.is_dir() else stat.S_IFREG
     if kind not in {0, expected}:
         raise _invalid("ZIP contains a link or other non-regular member")
-
-
-def _normalize_path(raw_path: str) -> str:
-    if not isinstance(raw_path, str) or not raw_path:
-        raise _invalid("package path must be a non-empty string")
-    if "\\" in raw_path or raw_path.startswith("/") or _URI_OR_DRIVE_PREFIX.match(raw_path):
-        raise _invalid("package path uses an absolute, URI, drive, or backslash form")
-    path = unicodedata.normalize("NFC", raw_path)
-    segments = path.split("/")
-    if len(segments) > MAX_PATH_DEPTH:
-        raise _limit("package path exceeds the depth limit")
-    if any(not segment or segment in {".", ".."} for segment in segments):
-        raise _invalid("package path contains an empty or relative segment")
-    for segment in segments:
-        _validate_path_segment(segment)
-    if _utf8_size(path) > MAX_PATH_BYTES:
-        raise _limit("package path exceeds the UTF-8 size limit")
-    return path
 
 
 def _validate_path_segment(segment: str) -> None:
