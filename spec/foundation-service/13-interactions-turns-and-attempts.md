@@ -55,16 +55,7 @@ A Turn begins as `accepted`. A Worker's first successful claim creates a new Tur
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed Turn outcomes. They are never returned to `accepted` or `running`. Pending feedback does not reopen a waiting Turn: once the full feedback set is authenticated and accepted, Foundation accepts a new Turn whose `parent_turn_id` names that waiting Turn and leaves the parent unchanged.
 
-A TurnAttempt is an immutable audit record after it reaches `succeeded`,
-`yielded`, `failed`, or `cancelled`. `yielded` is a planned release of worker
-authority and does not seal the Turn or express a Harness result. `failed` is
-generation-terminal and does not by itself mean the Turn failed; Foundation
-defines no separate Attempt `lost` state. Replacing an Attempt creates a new
-generation with a fresh lease, Harness Run, Environment connector scope,
-attachments, runtime mounts, Host-retained `EnvironmentRuntime`, clients,
-credentials, and `RunBindings`. It reconnects the targets frozen in Turn state
-and never restores another process's task, socket, database session, live
-connector handle, attachment, Environment runtime, or Harness Run.
+A TurnAttempt is an immutable audit record after it reaches `succeeded`, `yielded`, `failed`, or `cancelled`. `yielded` is a planned release of worker authority and does not seal the Turn or express a Harness result. `failed` is generation-terminal and does not by itself mean the Turn failed; Foundation defines no separate Attempt `lost` state. Replacing an Attempt creates a new generation with a fresh lease, Harness Run, Environment connector scope, attachments, runtime mounts, Host-retained `EnvironmentRuntime`, clients, credentials, and `RunBindings`. It reconnects the targets frozen in Turn state and never restores another process's task, socket, database session, live connector handle, attachment, Environment runtime, or Harness Run.
 
 ## State and Checkpoint Boundary
 
@@ -72,11 +63,7 @@ Each Turn owns one deterministic object-storage state key. A checkpoint operatio
 
 The relational Turn record stores the exact digest, size, schema versions, checkpoint sequence, and committing TurnAttempt of a sealed state. State publication alone does not seal the Turn; the generation-fenced relational transition selects the exact published candidate. Partial messages, raw stream deltas, provider history, Items, process memory, and tool fragments are never continuation state.
 
-Planned handoff adds no state object, row, history selector, or Attempt-bound
-checkpoint reference. Before yielding, the owner confirms that its complete
-safe-boundary state is the latest successful conditional value at the same key.
-The successor reads that key through the ordinary recovery rules regardless of
-whether the latest checkpoint was written specifically for drain.
+Planned handoff adds no state object, row, history selector, or Attempt-bound checkpoint reference. Before yielding, the owner confirms that its complete safe-boundary state is the latest successful conditional value at the same key. The successor reads that key through the ordinary recovery rules regardless of whether the latest checkpoint was written specifically for drain.
 
 ## Durable Agent Tool Dispatch Boundary
 
@@ -109,10 +96,7 @@ process-local clients afterward.
 
 As soon as the Harness supplies its Run identity and before the worker publishes the first live observation, the worker binds `harness_run_id` immutably to the current TurnAttempt under the attempt fence. That durable binding provides provenance and authorization correlation; it does not define the Turn-scoped Redis Stream, whose stable identity and replay contract are owned by [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md).
 
-Bounded connector transport retries and internal Harness recovery remain within
-the Harness Run and do not allocate another TurnAttempt. Conversely, durable
-worker replacement, including a planned handoff after `yielded`, always
-allocates another TurnAttempt and another Harness Run.
+Bounded connector transport retries and internal Harness recovery remain within the Harness Run and do not allocate another TurnAttempt. Conversely, durable worker replacement, including a planned handoff after `yielded`, always allocates another TurnAttempt and another Harness Run.
 
 ## Invariants
 
@@ -146,9 +130,5 @@ allocates another TurnAttempt and another Harness Run.
     completion: the queue remains durable for terminal recovery scanning.
     Waiting state blocks drain until feedback, retry, or explicit branch
     selection progresses the Thread.
-19. `yielded` terminalizes only one TurnAttempt; the Turn stays `running`, may
-    temporarily have no current Attempt, and keeps the same state and stream
-    identities.
-20. Planned-handoff recovery creates a fresh Harness Run from the latest
-    complete same-key state and never binds recovery to a handoff-specific
-    checkpoint record.
+19. `yielded` terminalizes only one TurnAttempt; the Turn stays `running`, may temporarily have no current Attempt, and keeps the same state and stream identities.
+20. Planned-handoff recovery creates a fresh Harness Run from the latest complete same-key state and never binds recovery to a handoff-specific checkpoint record.

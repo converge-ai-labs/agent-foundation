@@ -153,11 +153,7 @@ These roots are boundaries, not a requirement that every capability become a sub
   attachment or Harness-event models, and it owns no Environment resource state,
   lifecycle operation, connection lease, or reconciliation workflow.
 - A stale TurnAttempt cannot mutate Thread current/head selection, Turn lifecycle or state, pending work, retained Items, child delivery, or terminal outcome. A late immutable `UsageRecord` can still be ingested under its original TurnAttempt when record identity and content validate, but it cannot mutate lifecycle.
-- During graceful drain, active TurnAttempts keep heartbeat and lease renewal
-  until a safe checkpoint and `yielded` transaction, another authoritative
-  outcome, or the drain deadline. Planned handoff keeps the Turn and stream
-  running, then creates a fresh TurnAttempt and Harness Run from the same latest
-  complete `state.json`.
+- During graceful drain, active TurnAttempts keep heartbeat and lease renewal until a safe checkpoint and `yielded` transaction, another authoritative outcome, or the drain deadline. Planned handoff keeps the Turn and stream running, then creates a fresh TurnAttempt and Harness Run from the same latest complete `state.json`.
 - Before an Agent tool call is dispatched, the worker durably records its
   invocation identity and bounded request summary. After a replacement Attempt
   owns the lease, its Worker projects unmatched records as `unknown_outcome` and

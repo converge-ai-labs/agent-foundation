@@ -139,13 +139,7 @@ class PluginRuntimeLock:
 
 The digest covers the profile, exact Runtime target, Worker release identity, Harness version, Plugin locks, distribution sources, versions, and artifact digests. One deployment has one homogeneous target containing Python implementation and minor version, operating system, CPU architecture, and Wheel ABI. The initial contract does not mix heterogeneous Worker targets.
 
-`PluginRuntimeLock.worker_release` is the immutable dependency baseline used to
-resolve distributions and reconstruct this lock. It does not identify the
-Worker process that happens to execute a Turn. The latter is recorded on each
-TurnAttempt as `worker_build_id`, derived from the actual Foundation Service
-artifact. A compatible newer build can execute a historical lock only when it
-still supplies or materializes every distribution and codec required by that
-exact lock; it never rewrites `worker_release` to its own build identity.
+`PluginRuntimeLock.worker_release` is the immutable dependency baseline used to resolve distributions and reconstruct this lock. It does not identify the Worker process that happens to execute a Turn. The latter is recorded on each TurnAttempt as `worker_build_id`, derived from the actual Foundation Service artifact. A compatible newer build can execute a historical lock only when it still supplies or materializes every distribution and codec required by that exact lock; it never rewrites `worker_release` to its own build identity.
 
 An `on_demand` AgentPreset Publish builds the lock from the complete resolved Preset and subagent graph. Every selected PluginVersion must be a compatible pure-Python Wheel. Every declared dependency must already exist at a compatible exact version in the reviewed Worker release manifest and is recorded with `source=worker_release`; Publish never queries a package index. A Plugin top-level package cannot collide with the standard library or a package owned by that Worker release. Conflicting plugin keys, distributions, top-level packages, or dependency requirements reject Publish.
 
@@ -242,20 +236,7 @@ A captured Worker that disappears before commit fails the command. A Worker that
 
 If any serviceable Worker fails staging, the command fails, candidate Runners exit, and the old selection remains active. After commit, new Turns pin the new lock. The receipt becomes `succeeded` only after every still-serviceable staged Supervisor observes the commit and enables its candidate Runner.
 
-An old Runner stops claiming new work and requests graceful handoff for every
-Attempt it already owns. When the Turn handoff budget permits, each Attempt
-continues heartbeat and lease renewal while it reaches a complete Harness safe
-boundary, persists ordinary `state.json`, closes local Runtime resources, and
-commits `yield_reason="runner_rotation"`. An Attempt whose handoff budget is
-exhausted continues ordinary execution. Renewal stops only after a terminal
-transaction or the shared drain deadline. A handoff successor still
-reconstructs the exact Turn-pinned historical lock; the new active lock is
-never substituted. Any compatible non-draining Runner for that exact historical
-lock may claim the successor immediately without waiting for
-`handoff_preference_window`; the draining old Runner remains claim-gated.
-Activation adds no shorter deadline. Several old-lock Runners can drain while
-one active Runner serves new work. Insufficient local capacity fails a later
-command without terminating existing Attempts.
+An old Runner stops claiming new work and requests graceful handoff for every Attempt it already owns. When the Turn handoff budget permits, each Attempt continues heartbeat and lease renewal while it reaches a complete Harness safe boundary, persists ordinary `state.json`, closes local Runtime resources, and commits `yield_reason="runner_rotation"`. An Attempt whose handoff budget is exhausted continues ordinary execution. Renewal stops only after a terminal transaction or the shared drain deadline. A handoff successor still reconstructs the exact Turn-pinned historical lock; the new active lock is never substituted. Any compatible non-draining Runner for that exact historical lock may claim the successor immediately without waiting for `handoff_preference_window`; the draining old Runner remains claim-gated. Activation adds no shorter deadline. Several old-lock Runners can drain while one active Runner serves new work. Insufficient local capacity fails a later command without terminating existing Attempts.
 
 A staged Worker that loses its liveness lease after commit leaves the serviceable set and cannot reverse cutover. On rejoin it reconstructs the committed active lock before claim. An active Runner crash causes the Supervisor to reconstruct the same lock and never silently roll back.
 
@@ -267,12 +248,7 @@ An on-demand Worker preflights the lock against its registry before claim. A Run
 
 Claim-time code performs no package-index access or dependency solving. Missing artifacts, digest mismatch, target mismatch, dependency mismatch, import failure, or factory validation failure prevents claim or Harness entry without substituting another PluginVersion. A retained on-demand Turn can become unserviceable after an incompatible Worker image upgrade; the deployment must retain or restore a Worker release compatible with the Turn lock.
 
-Planned handoff changes only the Attempt and Harness Run generation. Recovery
-preflight reads the same latest complete Turn state and exact lock digest. A
-different `worker_build_id` receives scheduling preference only after all
-Runtime-target, Harness, Plugin, Skill, Environment, state-schema, codec, and
-artifact checks pass; build difference cannot make an incompatible historical
-lock serviceable.
+Planned handoff changes only the Attempt and Harness Run generation. Recovery preflight reads the same latest complete Turn state and exact lock digest. A different `worker_build_id` receives scheduling preference only after all Runtime-target, Harness, Plugin, Skill, Environment, state-schema, codec, and artifact checks pass; build difference cannot make an incompatible historical lock serviceable.
 
 ## Worker Cache
 
@@ -335,8 +311,5 @@ Stable Plugin identity, immutable PluginVersion identity, full-byte digest, one-
 13. Neither profile unloads, reloads, or replaces Python modules in a live interpreter.
 14. Archive, Deactivate, process exit, and cache eviction never delete artifacts required by a retained Version or Turn.
 15. Plugin code executes with Worker authority; neither profile creates a security sandbox.
-16. `PluginRuntimeLock.worker_release` is a pinned dependency baseline and is
-    never reinterpreted as the actual `worker_build_id` of an executing process.
-17. Runner rotation uses the common graceful-yield boundary while preserving
-    lease renewal until commit or deadline and preserving the exact Turn-pinned
-    Runtime lock on its successor.
+16. `PluginRuntimeLock.worker_release` is a pinned dependency baseline and is never reinterpreted as the actual `worker_build_id` of an executing process.
+17. Runner rotation uses the common graceful-yield boundary while preserving lease renewal until commit or deadline and preserving the exact Turn-pinned Runtime lock on its successor.

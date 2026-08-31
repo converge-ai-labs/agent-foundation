@@ -172,12 +172,7 @@ and each event identifies its own attempt and Harness Run. Checkpoint resume
 neither allocates another presentation stream nor uses a stream cursor as state
 input.
 
-A `turn_attempt.yielded` fact closes only that Attempt generation. It does not
-close the Turn Stream, emit another `turn.running`, reset its Redis replay
-cursor, or allocate a replacement stream. A planned-handoff successor appends
-observations under its fresh Attempt and Harness Run identities to the same
-open Turn Stream. Only the eventual Turn terminal outcome closes the stream and
-makes retained replay publication eligible.
+A `turn_attempt.yielded` fact closes only that Attempt generation. It does not close the Turn Stream, emit another `turn.running`, reset its Redis replay cursor, or allocate a replacement stream. A planned-handoff successor appends observations under its fresh Attempt and Harness Run identities to the same open Turn Stream. Only the eventual Turn terminal outcome closes the stream and makes retained replay publication eligible.
 
 Each Redis entry contains one versioned JSON envelope:
 
@@ -356,5 +351,4 @@ authority.
     within one lifecycle resource and is the sole numeric resource-gap signal.
 10. Thread control signal Streams, consumer-group cursors, and TTL expiry remain
     separate from Turn presentation replay and every durable domain cursor.
-11. Planned handoff appends `turn_attempt.yielded` without closing or replacing
-    the Turn Stream and without repeating `turn.running`.
+11. Planned handoff appends `turn_attempt.yielded` without closing or replacing the Turn Stream and without repeating `turn.running`.

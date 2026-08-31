@@ -384,13 +384,7 @@ These commands exist only in `runner`. In `on_demand`, the same stable HTTP rout
 
 The commands never reload Python modules or restart the Worker container. Each candidate lock starts in a clean Runner process while the old Runner continues serving. At atomic cutover, the old Runner stops claiming new work and drains only attempts it already owns. Later commands may create another candidate while older Runners drain when capacity permits; insufficient capacity fails the new command without interrupting existing attempts.
 
-Draining an owned Attempt uses the common graceful TurnAttempt handoff rather
-than changing its pinned Runtime. The old Runner keeps heartbeat and lease
-renewal active until a complete safe checkpoint and `yielded` transaction
-commit, another authoritative outcome wins, or the applicable drain deadline
-arrives. A successor creates a fresh Harness Run from the same state and exact
-historical Runtime lock; activation never substitutes the new active lock into
-an already accepted Turn.
+Draining an owned Attempt uses the common graceful TurnAttempt handoff rather than changing its pinned Runtime. The old Runner keeps heartbeat and lease renewal active until a complete safe checkpoint and `yielded` transaction commit, another authoritative outcome wins, or the applicable drain deadline arrives. A successor creates a fresh Harness Run from the same state and exact historical Runtime lock; activation never substitutes the new active lock into an already accepted Turn.
 
 Activating a historical PluginVersion changes only new Turn acceptance after the ordinary cutover; it does not move accepted Turns to another lock. A Runner crash after cutover is recovered from the same active lock and never causes an implicit rollback.
 

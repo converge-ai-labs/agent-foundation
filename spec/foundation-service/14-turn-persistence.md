@@ -289,19 +289,7 @@ lifetime, with at most one current and lease-authorized attempt. The
 [allocation contract](15-turn-attempt-persistence.md#turn-and-turnattempt-allocation-boundary)
 owns when those attempts are created.
 
-`RecoveryBudget` is the accepted recovery-policy snapshot.
-`max_recovery_attempts` includes the first Attempt and every successor created
-after retryable failure or expired-lease takeover; a successor created after a
-planned handoff does not consume it. `max_handoffs` bounds successful planned
-handoffs independently. `attempts_started` counts every Attempt for audit,
-`recovery_attempts_started` counts only Attempts charged to the recovery budget,
-and `handoffs_completed` counts committed `yielded` transitions.
-`recovery_deadline_at` is a fixed UTC deadline, and `usage_charged` aggregates
-every Attempt, including known usage from yielded or failed work. Every counter
-and limit is non-negative. Missing required usage is never treated as zero; if
-durable usage evidence is insufficient to prove that a configured ceiling
-remains, no new Attempt is admitted. The Turn row is the sole authority for
-whether another Attempt or planned handoff is permitted.
+`RecoveryBudget` is the accepted recovery-policy snapshot. `max_recovery_attempts` includes the first Attempt and every successor created after retryable failure or expired-lease takeover; a successor created after a planned handoff does not consume it. `max_handoffs` bounds successful planned handoffs independently. `attempts_started` counts every Attempt for audit, `recovery_attempts_started` counts only Attempts charged to the recovery budget, and `handoffs_completed` counts committed `yielded` transitions. `recovery_deadline_at` is a fixed UTC deadline, and `usage_charged` aggregates every Attempt, including known usage from yielded or failed work. Every counter and limit is non-negative. Missing required usage is never treated as zero; if durable usage evidence is insufficient to prove that a configured ceiling remains, no new Attempt is admitted. The Turn row is the sole authority for whether another Attempt or planned handoff is permitted.
 
 The exact `AgentPresetId`, `AgentPresetVersionId`, and internal Plugin Runtime
 lock digest are fixed at Turn acceptance. The selected immutable Version owns
@@ -371,12 +359,7 @@ durable; no attempt is current; and a Worker may claim the Turn once
 Once the first Attempt is created, that Turn never returns to `accepted`. It is
 not a queued user-input entry, and Turn defines no `queued` state.
 
-`running` means execution of this Turn has begun and the Turn remains active. It
-normally selects one non-terminal `TurnAttempt`; during retryable backoff or
-after a planned handoff it can temporarily have no current Attempt. An expired
-selected lease grants no worker authority while awaiting transactional
-takeover. `started_at` records the first Harness Run entry and never changes
-during recovery or planned handoff.
+`running` means execution of this Turn has begun and the Turn remains active. It normally selects one non-terminal `TurnAttempt`; during retryable backoff or after a planned handoff it can temporarily have no current Attempt. An expired selected lease grants no worker authority while awaiting transactional takeover. `started_at` records the first Harness Run entry and never changes during recovery or planned handoff.
 
 `waiting`, `completed`, `failed`, and `cancelled` are sealed outcomes.
 `sealed_at` and any available `sealed_state` are selected in the same relational
@@ -729,10 +712,7 @@ resumes:
   without repeating model or tool work when its relational outcome was not yet
   sealed.
 
-The same resume rule applies after a predecessor Attempt commits `yielded`.
-Recovery reads the latest valid complete value at the deterministic key; it does
-not require that value to have been written by the yield path or selected by a
-separate relational checkpoint reference.
+The same resume rule applies after a predecessor Attempt commits `yielded`. Recovery reads the latest valid complete value at the deterministic key; it does not require that value to have been written by the yield path or selected by a separate relational checkpoint reference.
 
 `input_disposition` governs only whether accepted semantic input crosses the
 Harness input boundary again. It is not evidence that an
@@ -852,18 +832,7 @@ batch, an active inline child, a lease heartbeat, and elapsed time alone never
 trigger state publication. Adjacent progress triggers with no Harness or Host
 state change are coalesced rather than creating duplicate checkpoints.
 
-A process-local graceful-handoff request is observed at the same boundaries. It
-does not make an in-flight provider request, partial streamed response,
-incomplete tool batch, active inline child or sibling batch, or state
-publication safe. At the first boundary where no model, tool, nested execution,
-or state publication is in flight, all tool results are present in complete
-Harness message history, and the current Attempt still owns its Turn, lease,
-and fence, Foundation exports the complete Harness, Host, and portable
-Environment state and publishes the next progress checkpoint. If the already
-published state is byte-equivalent to that complete boundary, the Worker can
-reuse it without another replacement. If a waiting or completed outcome is
-already available, the Worker commits that ordinary outcome instead of
-yielding.
+A process-local graceful-handoff request is observed at the same boundaries. It does not make an in-flight provider request, partial streamed response, incomplete tool batch, active inline child or sibling batch, or state publication safe. At the first boundary where no model, tool, nested execution, or state publication is in flight, all tool results are present in complete Harness message history, and the current Attempt still owns its Turn, lease, and fence, Foundation exports the complete Harness, Host, and portable Environment state and publishes the next progress checkpoint. If the already published state is byte-equivalent to that complete boundary, the Worker can reuse it without another replacement. If a waiting or completed outcome is already available, the Worker commits that ordinary outcome instead of yielding.
 
 During execution, a checkpoint operation:
 
@@ -883,13 +852,7 @@ Checkpoint writes do not create a Turn row, attempt row, lifecycle transition,
 or historical checkpoint selector. A failed or unknown put is reconciled by
 `stat` and exact body validation before any retry.
 
-A graceful handoff likewise creates no checkpoint identity or relational
-checkpoint selection. The Worker must confirm that the current complete safe
-boundary is present before it can commit `yielded`, but the yield transaction
-does not store or compare the state digest, size, schema, checkpoint sequence,
-or opaque object version. If publication cannot be confirmed, the Worker keeps
-its Attempt lease and retries until the drain deadline; lease-expiry recovery
-can still use the last earlier valid checkpoint.
+A graceful handoff likewise creates no checkpoint identity or relational checkpoint selection. The Worker must confirm that the current complete safe boundary is present before it can commit `yielded`, but the yield transaction does not store or compare the state digest, size, schema, checkpoint sequence, or opaque object version. If publication cannot be confirmed, the Worker keeps its Attempt lease and retries until the drain deadline; lease-expiry recovery can still use the last earlier valid checkpoint.
 
 A waiting outcome and a completed outcome without a prepared queued successor
 commit in this order:
@@ -995,10 +958,7 @@ constraints:
    requires the exact waiting parent and consumes one complete normalized
    batch. Retry copies the terminal source's eligible state-parent edge; failed
    and cancelled Turns are never themselves eligible parents.
-7. `recovery_attempts_started` does not exceed `max_recovery_attempts`, and
-   `handoffs_completed` does not exceed `max_handoffs`; the total
-   `attempts_started` remains the complete audit count. Recovery, handoff,
-   deadline, and usage limits remain Turn-owned authority.
+7. `recovery_attempts_started` does not exceed `max_recovery_attempts`, and `handoffs_completed` does not exceed `max_handoffs`; the total `attempts_started` remains the complete audit count. Recovery, handoff, deadline, and usage limits remain Turn-owned authority.
 
 The accepted access paths are:
 
@@ -1149,6 +1109,4 @@ cannot make external effects exactly once; unresolved calls follow the
     successor can commit as one combined handoff; the final Thread head names
     the completed source, the current Turn names the accepted successor, and no
     accepted successor can lack its complete initial state.
-15. Graceful Attempt handoff conditionally updates the same state key and adds
-    no checkpoint resource or selector; `yielded` releases execution authority
-    without sealing the Turn.
+15. Graceful Attempt handoff conditionally updates the same state key and adds no checkpoint resource or selector; `yielded` releases execution authority without sealing the Turn.

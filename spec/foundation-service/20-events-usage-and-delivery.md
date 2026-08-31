@@ -52,12 +52,7 @@ One observer belongs to one Harness Run and is consumed by its current worker. T
 
 Before publishing its first live observation, the worker durably binds the immutable Harness Run identity to the current TurnAttempt. It then appends bounded messages to the one stable tenant-scoped Redis Stream owned by the Turn. Replacement TurnAttempts create fresh Harness Runs but continue the same Turn Stream; every entry carries exact TurnAttempt and Harness Run provenance.
 
-Expected planned handoff is a Foundation Attempt transition, not a Harness Run
-outcome. Closing the old process-local stream for `turn_attempt.yielded` emits no
-AG-UI `RUN_FINISHED`, `RUN_ERROR`, or synthetic cancelled result, does not close
-the Turn Stream, and does not repeat `turn.running`. The successor's fresh
-Harness Run continues observations in the same Turn Stream under new Attempt
-and Run provenance.
+Expected planned handoff is a Foundation Attempt transition, not a Harness Run outcome. Closing the old process-local stream for `turn_attempt.yielded` emits no AG-UI `RUN_FINISHED`, `RUN_ERROR`, or synthetic cancelled result, does not close the Turn Stream, and does not repeat `turn.running`. The successor's fresh Harness Run continues observations in the same Turn Stream under new Attempt and Run provenance.
 
 Redis Stream entry IDs are bounded live replay cursors, not product authority. Stream possession and cursor knowledge grant no access. Control authenticates and authorizes the caller against current Foundation state before reading or subscribing, and it releases all database sessions before streaming.
 
@@ -160,11 +155,7 @@ Terminal `RunUsage` is an aggregate process-local snapshot used for operational 
 
 ### Late Usage from a Terminal or Stale TurnAttempt
 
-TurnAttempt fencing prevents a stale worker from changing lifecycle state. It
-does not erase usage already incurred before lease loss or a committed planned
-handoff. Foundation can ingest a late immutable UsageRecord under the original
-failed, yielded, or otherwise terminal TurnAttempt identity when its stable
-record identity and canonical content validate.
+TurnAttempt fencing prevents a stale worker from changing lifecycle state. It does not erase usage already incurred before lease loss or a committed planned handoff. Foundation can ingest a late immutable UsageRecord under the original failed, yielded, or otherwise terminal TurnAttempt identity when its stable record identity and canonical content validate.
 
 Late ingestion:
 
@@ -184,11 +175,7 @@ For example, a command result that exceeds the inline Item limit is staged as an
 
 ## Observability
 
-OpenTelemetry traces and metrics correlate safe service role,
-`worker_build_id`, worker generation, Session, Thread, Turn, TurnAttempt,
-Harness Run, and provider identities. They omit credentials, authorization
-headers, plaintext Secrets, raw prompts, model output, tool payloads, and
-uploaded content by default.
+OpenTelemetry traces and metrics correlate safe service role, `worker_build_id`, worker generation, Session, Thread, Turn, TurnAttempt, Harness Run, and provider identities. They omit credentials, authorization headers, plaintext Secrets, raw prompts, model output, tool payloads, and uploaded content by default.
 
 Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retained Item, state, or usage facts, and its presence cannot prove commitment.
 
@@ -228,5 +215,4 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
     shared Foundation facts and never translate through one another.
 13. A Webhook envelope identifies its resource sequence and version, but the
     Webhook transport makes no ordering or exactly-once-processing guarantee.
-14. Planned handoff has an internal `turn_attempt.yielded` lifecycle fact but no
-    AG-UI Run terminal event and no Turn Stream boundary.
+14. Planned handoff has an internal `turn_attempt.yielded` lifecycle fact but no AG-UI Run terminal event and no Turn Stream boundary.

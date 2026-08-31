@@ -809,6 +809,4 @@ stream without automatically making them eligible for durable subscriptions.
 15. Inline creation produces the same versioned HookSubscription record as
     management-API creation, commits before matching `turn.accepted` in the same
     transaction, and never performs Webhook delivery on the acceptance path.
-16. Expected planned handoff emits `turn_attempt.yielded` only; it does not
-    fabricate an AG-UI terminal Run hook, close the Turn Stream, or repeat a
-    Turn lifecycle transition.
+16. Expected planned handoff emits `turn_attempt.yielded` only; it does not fabricate an AG-UI terminal Run hook, close the Turn Stream, or repeat a Turn lifecycle transition.

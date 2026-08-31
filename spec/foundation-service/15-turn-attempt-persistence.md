@@ -201,14 +201,7 @@ request and correlation needed to inform a later Agent; it defines no generic
 provider receipt table and does not query provider business state before
 admitting another attempt.
 
-`worker_generation` uniquely identifies one Worker process lifetime.
-`worker_build_id` identifies the immutable Foundation Service build artifact
-running that process; replicas of the same artifact therefore share one build
-ID. Neither value grants authority without the selected lease and fence.
-`worker_build_id` is distinct from the Turn-pinned
-`PluginRuntimeLock.worker_release`: the former records which service build
-executed this generation, while the latter remains the historical Worker
-dependency baseline selected for the Turn.
+`worker_generation` uniquely identifies one Worker process lifetime. `worker_build_id` identifies the immutable Foundation Service build artifact running that process; replicas of the same artifact therefore share one build ID. Neither value grants authority without the selected lease and fence. `worker_build_id` is distinct from the Turn-pinned `PluginRuntimeLock.worker_release`: the former records which service build executed this generation, while the latter remains the historical Worker dependency baseline selected for the Turn.
 
 ## TurnAttempt Lifecycle
 
@@ -229,16 +222,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-`succeeded`, `yielded`, `failed`, and `cancelled` are terminal. `yielded` means
-the Worker voluntarily stopped at a complete recoverable boundary, committed
-its known usage and released execution authority while the Turn remained
-`running`. It is expected placement change, not failure, cancellation, or a
-Harness result. `failed` means only that this worker generation can no longer
-produce an authoritative result. It does not by itself mean that the Turn
-failed: an in-budget retryable failure leaves the Turn `running` and allows a
-later attempt. An owning worker can commit that fact directly; otherwise a
-later Worker's takeover transaction commits it after the lease expires.
-Foundation defines no separate `lost` attempt state.
+`succeeded`, `yielded`, `failed`, and `cancelled` are terminal. `yielded` means the Worker voluntarily stopped at a complete recoverable boundary, committed its known usage and released execution authority while the Turn remained `running`. It is expected placement change, not failure, cancellation, or a Harness result. `failed` means only that this worker generation can no longer produce an authoritative result. It does not by itself mean that the Turn failed: an in-budget retryable failure leaves the Turn `running` and allows a later attempt. An owning worker can commit that fact directly; otherwise a later Worker's takeover transaction commits it after the lease expires. Foundation defines no separate `lost` attempt state.
 
 Loss of outcome certainty at the attempt boundary means that the whole attempt
 can no longer continue and produce an authoritative Turn result. One Agent tool
@@ -254,13 +238,7 @@ cannot dispatch an Agent model or tool call before Harness entry. Entering the
 Harness Run atomically records `run_id` and `started_at` and changes the attempt
 to `running`.
 
-A `leased` Attempt can yield before Harness entry by retaining the already
-complete initial or imported Turn state. A `running` Attempt can yield only
-after the [Turn state contract](14-turn-persistence.md#checkpoint-triggers-and-refresh)
-confirms a complete safe boundary and the local Harness execution is fenced
-from further model, tool, or child dispatch. A yielded Attempt has a
-`yield_reason`, has no `failure`, and has `run_id` and `started_at` exactly when
-it had entered Harness before yielding.
+A `leased` Attempt can yield before Harness entry by retaining the already complete initial or imported Turn state. A `running` Attempt can yield only after the [Turn state contract](14-turn-persistence.md#checkpoint-triggers-and-refresh) confirms a complete safe boundary and the local Harness execution is fenced from further model, tool, or child dispatch. A yielded Attempt has a `yield_reason`, has no `failure`, and has `run_id` and `started_at` exactly when it had entered Harness before yielding.
 
 ## `turn_attempts` Relational Schema
 
@@ -307,10 +285,8 @@ claim; a runner Supervisor ensures a matching Runner exists and that Runner scan
 only an equal `runtime_lock_digest`. A candidate is exactly one of:
 
 - an `accepted` Turn with no current attempt and `available_at <= now`;
-- a `running` Turn with no current attempt after a retryable failed generation
-  and `available_at <= now`;
-- a `running` Turn with no current attempt whose highest-numbered generation is
-  `yielded` and `available_at <= now`; or
+- a `running` Turn with no current attempt after a retryable failed generation and `available_at <= now`;
+- a `running` Turn with no current attempt whose highest-numbered generation is `yielded` and `available_at <= now`; or
 - a `running` Turn whose selected `leased` or `running` attempt has an expired
   lease.
 
@@ -320,26 +296,12 @@ transaction that:
 
 1. locks or conditionally updates the candidate Turn and, when present, its
    exact selected attempt;
-2. revalidates the candidate shape, Thread current selection, Turn status,
-   `available_at`, lease expiry, fixed recovery deadline, applicable recovery
-   or handoff count, aggregate known usage, and any reason-specific
-   build-preference eligibility;
+2. revalidates the candidate shape, Thread current selection, Turn status, `available_at`, lease expiry, fixed recovery deadline, applicable recovery or handoff count, aggregate known usage, and any reason-specific build-preference eligibility;
 3. when taking over an expired lease, terminalizes the selected old attempt as
    `failed` with a bounded lease-expiry reason, disables its lease, and charges
    its known usage;
-4. if the fixed deadline or aggregate usage ceiling no longer permits any
-   successor, or a failure or expiry replacement no longer fits the recovery
-   budget, creates no attempt and seals the Turn as `failed` with its terminal
-   Thread update in the same transaction; a yielded predecessor is already
-   within the handoff budget consumed by its yield and does not consume recovery
-   budget;
-5. otherwise allocates `attempt_number=attempts_started+1` and the next
-   monotonic fence, inserts the new `leased` attempt, increments
-   `attempts_started`, increments `recovery_attempts_started` only for the first
-   generation or a failure or expiry replacement, and selects it as
-   `current_turn_attempt_id`; a successor to `yielded` records
-   `recovery_reason="planned_handoff"`, and every new Attempt copies the
-   claimant's immutable `worker_build_id`;
+4. if the fixed deadline or aggregate usage ceiling no longer permits any successor, or a failure or expiry replacement no longer fits the recovery budget, creates no attempt and seals the Turn as `failed` with its terminal Thread update in the same transaction; a yielded predecessor is already within the handoff budget consumed by its yield and does not consume recovery budget;
+5. otherwise allocates `attempt_number=attempts_started+1` and the next monotonic fence, inserts the new `leased` attempt, increments `attempts_started`, increments `recovery_attempts_started` only for the first generation or a failure or expiry replacement, and selects it as `current_turn_attempt_id`; a successor to `yielded` records `recovery_reason="planned_handoff"`, and every new Attempt copies the claimant's immutable `worker_build_id`;
 6. changes an initially `accepted` Turn to `running`, leaves a replacement Turn
    `running`, and appends the corresponding lifecycle facts.
 
@@ -366,16 +328,7 @@ version. They cannot revive a terminal or deselected generation. A state write
 additionally supplies the current opaque object version and conditionally
 replaces the same deterministic state key.
 
-Drain readiness failure and claim gating do not change this rule. From the
-first process-local handoff request through safe-boundary waiting, checkpoint
-publication and reconciliation, local Run quiescence, and yield-transaction
-preparation, the selected Attempt continues its normal heartbeat and lease
-renewal. Renewal and yield use the same Attempt CAS and fence authority, so
-their conditional updates serialize: after yield commits, a late renewal fails
-because the Attempt is terminal and deselected. A yield CAS conflict does not
-release authority; while the old Attempt still passes the authority check it
-keeps renewing and either retries yield or commits the authoritative outcome
-that won the race.
+Drain readiness failure and claim gating do not change this rule. From the first process-local handoff request through safe-boundary waiting, checkpoint publication and reconciliation, local Run quiescence, and yield-transaction preparation, the selected Attempt continues its normal heartbeat and lease renewal. Renewal and yield use the same Attempt CAS and fence authority, so their conditional updates serialize: after yield commits, a late renewal fails because the Attempt is terminal and deselected. A yield CAS conflict does not release authority; while the old Attempt still passes the authority check it keeps renewing and either retries yield or commits the authoritative outcome that won the race.
 
 A waiting or completed outcome transaction validates the current running
 attempt, Turn version, and Thread current selection, satisfies the
@@ -415,67 +368,27 @@ attempt-owned tool dispatch and leaves `run_id` and `started_at` null.
 
 ## Graceful Handoff Transaction
 
-SIGTERM, deployment drain, or controlled Runner rotation sets a
-`yield_requested` flag only in the owning process. It does not add a Turn or
-Attempt column, make the Worker stale, or stop heartbeat and lease renewal. The
-Worker may begin a planned handoff only when `handoffs_completed < max_handoffs`; an exhausted handoff budget makes it continue ordinary execution
-until a normal outcome or the drain deadline.
+SIGTERM, deployment drain, or controlled Runner rotation sets a `yield_requested` flag only in the owning process. It does not add a Turn or Attempt column, make the Worker stale, or stop heartbeat and lease renewal. The Worker may begin a planned handoff only when `handoffs_completed < max_handoffs`; an exhausted handoff budget makes it continue ordinary execution until a normal outcome or the drain deadline.
 
-At a safe Harness boundary, the owner first confirms that the complete current
-Harness, Host, and portable Environment state is conditionally present at the
-Turn's ordinary deterministic `state.json` key. It may reuse an already
-equivalent complete checkpoint. The state contract creates no handoff-specific
-object, row, object key, or checkpoint identity, and the yield transaction does
-not store or validate checkpoint metadata. An unknown object-write result is
-reconciled by the ordinary object stat and body rules. Until the owner can
-confirm that this safe-point state is durable, it keeps renewing and does not
-submit `yielded`.
+At a safe Harness boundary, the owner first confirms that the complete current Harness, Host, and portable Environment state is conditionally present at the Turn's ordinary deterministic `state.json` key. It may reuse an already equivalent complete checkpoint. The state contract creates no handoff-specific object, row, object key, or checkpoint identity, and the yield transaction does not store or validate checkpoint metadata. An unknown object-write result is reconciled by the ordinary object stat and body rules. Until the owner can confirm that this safe-point state is durable, it keeps renewing and does not submit `yielded`.
 
-After that confirmation, the Worker establishes a process-local terminal fence
-for the old Harness Run when one exists, preventing another model request, tool
-call, child dispatch, or state mutation. It closes any Run stream, attachments,
-and process-local Runtime while continuing to renew the Attempt lease. It then
-opens one short transaction, locks Thread, Turn, and TurnAttempt in the
-canonical order, and revalidates the latest Attempt version, current Turn
-selection, unexpired lease proof, worker generation, fence, `running` Turn
-status, non-terminal Attempt status, and absence of an already committed
-cancellation or normal outcome.
+After that confirmation, the Worker establishes a process-local terminal fence for the old Harness Run when one exists, preventing another model request, tool call, child dispatch, or state mutation. It closes any Run stream, attachments, and process-local Runtime while continuing to renew the Attempt lease. It then opens one short transaction, locks Thread, Turn, and TurnAttempt in the canonical order, and revalidates the latest Attempt version, current Turn selection, unexpired lease proof, worker generation, fence, `running` Turn status, non-terminal Attempt status, and absence of an already committed cancellation or normal outcome.
 
 The winning transaction atomically:
 
-1. changes the Attempt to `yielded`, sets `finished_at` and `yield_reason`, and
-   leaves `failure` null;
+1. changes the Attempt to `yielded`, sets `finished_at` and `yield_reason`, and leaves `failure` null;
 2. charges all currently known Attempt usage into the Turn;
 3. increments `Turn.handoffs_completed`;
-4. clears `Turn.current_turn_attempt_id`, preserves `Turn.status=running`, and
-   sets `Turn.available_at=now`; and
+4. clears `Turn.current_turn_attempt_id`, preserves `Turn.status=running`, and sets `Turn.available_at=now`; and
 5. appends the `turn_attempt.yielded` lifecycle fact and its outbox intent.
 
-Only after this transaction commits does the old owner stop heartbeat and
-lease renewal and issue a best-effort Redis reconciliation wakeup. If the
-transaction loses to outcome or cancellation, the Worker abandons yield and
-observes that authoritative result. If it fails for another reason while the
-old Attempt remains authoritative, the Worker continues renewal, reconciles
-the latest state, and retries or commits another legal authoritative result.
+Only after this transaction commits does the old owner stop heartbeat and lease renewal and issue a best-effort Redis reconciliation wakeup. If the transaction loses to outcome or cancellation, the Worker abandons yield and observes that authoritative result. If it fails for another reason while the old Attempt remains authoritative, the Worker continues renewal, reconciles the latest state, and retries or commits another legal authoritative result.
 
-If the drain deadline arrives before any terminal transaction commits, the
-Worker abandons graceful handoff, stops renewing, fences local execution, and
-exits. The Attempt remains authoritative until its recorded lease actually
-expires; only then may an ordinary takeover transaction fail it and allocate a
-higher fence. A checkpoint written before a failed yield or process crash
-remains an ordinary valid latest checkpoint and never implies that the Attempt
-was yielded.
+If the drain deadline arrives before any terminal transaction commits, the Worker abandons graceful handoff, stops renewing, fences local execution, and exits. The Attempt remains authoritative until its recorded lease actually expires; only then may an ordinary takeover transaction fail it and allocate a higher fence. A checkpoint written before a failed yield or process crash remains an ordinary valid latest checkpoint and never implies that the Attempt was yielded.
 
 ## Recovery and Budget Enforcement
 
-Only the Turn row authorizes another attempt under its accepted recovery,
-handoff, elapsed-time, and usage limits. A first or failure/expiry replacement
-claim consumes `recovery_attempts_started`; a successful yield consumes
-`handoffs_completed`, and its planned-handoff successor consumes neither
-another handoff nor recovery count. Every claim still increments
-`attempts_started` for complete audit history. Claim and takeover consume their
-applicable authority before external preparation begins; preparation never
-reserves a future generation.
+Only the Turn row authorizes another attempt under its accepted recovery, handoff, elapsed-time, and usage limits. A first or failure/expiry replacement claim consumes `recovery_attempts_started`; a successful yield consumes `handoffs_completed`, and its planned-handoff successor consumes neither another handoff nor recovery count. Every claim still increments `attempts_started` for complete audit history. Claim and takeover consume their applicable authority before external preparation begins; preparation never reserves a future generation.
 
 After any new attempt owns the lease, its Worker reads the exact state, attempt
 history, immutable artifacts, and current authorization outside a database
@@ -488,9 +401,7 @@ It admits Harness entry only when all of these conditions hold:
   Host, and Environment-state codec validation;
 - every prior Agent tool dispatch without a matching result in that exact state
   can be represented within the bounded `recovery_unknown_outcomes` schema;
-- the applicable fixed recovery or handoff count, elapsed-time, and known-usage
-  ceilings still permit this already-created attempt after all durable usage
-  charges;
+- the applicable fixed recovery or handoff count, elapsed-time, and known-usage ceilings still permit this already-created attempt after all durable usage charges;
 - the exact AgentPresetVersion and Runtime lock, structurally decodable model execution snapshot,
   state-owned Environment execution configuration, managed Harness plugin and Skill artifacts,
   Connector contracts, Environment connector locks, and other frozen dependency
@@ -522,14 +433,7 @@ appends Attempt and Turn lifecycle facts as applicable. It records
 `sealed_state` only when exact valid state metadata is already available under
 the Turn state contract.
 
-A permanent state, integrity, schema, codec, artifact, lock, compatibility, or
-authority failure takes the final path. An exhausted applicable recovery or
-handoff count, deadline, or usage budget also takes the final path. A transient
-object-store or immutable-artifact availability failure can take the
-retry-later path only when policy classifies it retryable and all remaining
-budget checks pass. If the Worker dies during preparation, its lease eventually
-expires and another Worker's ordinary takeover transaction replaces that
-attempt.
+A permanent state, integrity, schema, codec, artifact, lock, compatibility, or authority failure takes the final path. An exhausted applicable recovery or handoff count, deadline, or usage budget also takes the final path. A transient object-store or immutable-artifact availability failure can take the retry-later path only when policy classifies it retryable and all remaining budget checks pass. If the Worker dies during preparation, its lease eventually expires and another Worker's ordinary takeover transaction replaces that attempt.
 
 Recovery does not probe model reachability, inspect provider business state,
 validate or reconcile a prior Sandbox, or reconnect a prior Environment
@@ -563,40 +467,19 @@ constraints:
 
 01. `(tenant_id, id)` is unique, and the attempt tenant equals its Turn tenant.
 02. Attempt number, fence, and row version are positive.
-03. `(tenant_id, turn_id, attempt_number)` and
-    `(tenant_id, turn_id, fence)` are unique.
-04. `replaces_turn_attempt_id`, when present, belongs to the same Turn and has a
-    smaller attempt number.
-05. `current_turn_attempt_id`, when present on a Turn, names that Turn's only
-    selected non-terminal attempt; only an unexpired matching lease authorizes
-    work.
-06. Worker scan and takeover use
-    `(status, lease_expires_at, turn_id)` on non-terminal attempts and the Turn's
-    scheduling index.
-07. A `leased` attempt has null `run_id` and `started_at`. A `running` attempt
-    has both. A terminal attempt has both exactly when it entered a Harness Run;
-    `failed`, `cancelled`, or `yielded` directly from `leased` retains both as
-    null.
-08. Terminal attempts have `finished_at`, no renewable lease, and immutable
-    columns.
-09. `yield_reason` is non-null exactly for `yielded`; a yielded Attempt has null
-    `failure`, leaves its Turn `running`, and is not selected as current.
-10. Every Attempt has a non-empty immutable `worker_build_id` copied from the
-    claiming process.
-11. Terminal attempt history cannot be deleted while referenced by a sealed Turn
-    state, lifecycle event, usage record, or successor attempt.
+03. `(tenant_id, turn_id, attempt_number)` and `(tenant_id, turn_id, fence)` are unique.
+04. `replaces_turn_attempt_id`, when present, belongs to the same Turn and has a smaller attempt number.
+05. `current_turn_attempt_id`, when present on a Turn, names that Turn's only selected non-terminal attempt; only an unexpired matching lease authorizes work.
+06. Worker scan and takeover use `(status, lease_expires_at, turn_id)` on non-terminal attempts and the Turn's scheduling index.
+07. A `leased` attempt has null `run_id` and `started_at`. A `running` attempt has both. A terminal attempt has both exactly when it entered a Harness Run; `failed`, `cancelled`, or `yielded` directly from `leased` retains both as null.
+08. Terminal attempts have `finished_at`, no renewable lease, and immutable columns.
+09. `yield_reason` is non-null exactly for `yielded`; a yielded Attempt has null `failure`, leaves its Turn `running`, and is not selected as current.
+10. Every Attempt has a non-empty immutable `worker_build_id` copied from the claiming process.
+11. Terminal attempt history cannot be deleted while referenced by a sealed Turn state, lifecycle event, usage record, or successor attempt.
 
 ## Compatibility and Trade-offs
 
-Turn row version, relational migration revision, recovery-policy version,
-Worker build identity format, and tool-invocation-record schema version are
-independent. Harness and provider compatibility remain governed by their owning
-contracts. Unknown required policy or invocation-record versions fail closed
-before dispatch or recovery. After a service-drain yield, a different
-`worker_build_id` supplies only scheduling preference; it never proves
-compatibility, grants authority, or replaces the Turn-pinned Runtime lock.
-Runner rotation has no build-preference delay. Relational migrations do not
-reinterpret terminal attempt records through current defaults.
+Turn row version, relational migration revision, recovery-policy version, Worker build identity format, and tool-invocation-record schema version are independent. Harness and provider compatibility remain governed by their owning contracts. Unknown required policy or invocation-record versions fail closed before dispatch or recovery. After a service-drain yield, a different `worker_build_id` supplies only scheduling preference; it never proves compatibility, grants authority, or replaces the Turn-pinned Runtime lock. Runner rotation has no build-preference delay. Relational migrations do not reinterpret terminal attempt records through current defaults.
 
 Keeping attempts as immutable audit rows increases relational retention but
 preserves worker, lease, usage, failure, and recovery provenance. Folding work
@@ -628,15 +511,7 @@ its coordination transactions.
 10. A completion-time combined queue handoff can terminalize the source
     TurnAttempt and accept its already-state-backed successor in one relational
     transaction, but the successor receives no TurnAttempt until a later claim.
-11. Drain or Runner rotation gates new claims but does not weaken current
-    Attempt authority: heartbeat and renewal continue until a terminal commit
-    succeeds or the drain deadline is reached.
-12. `yielded` is an Attempt terminal state, never a Harness result or Turn
-    terminal state; it preserves one complete latest `state.json` and permits a
-    fresh planned-handoff Attempt under the same running Turn.
-13. Yield and lease renewal serialize through the same selected Attempt CAS and
-    fence. A failed yield CAS never by itself stops renewal or permits another
-    Worker to execute the Turn.
-14. `attempts_started` counts every generation,
-    `recovery_attempts_started` counts the first and failure/expiry generations,
-    and `handoffs_completed` counts successful planned yields.
+11. Drain or Runner rotation gates new claims but does not weaken current Attempt authority: heartbeat and renewal continue until a terminal commit succeeds or the drain deadline is reached.
+12. `yielded` is an Attempt terminal state, never a Harness result or Turn terminal state; it preserves one complete latest `state.json` and permits a fresh planned-handoff Attempt under the same running Turn.
+13. Yield and lease renewal serialize through the same selected Attempt CAS and fence. A failed yield CAS never by itself stops renewal or permits another Worker to execute the Turn.
+14. `attempts_started` counts every generation, `recovery_attempts_started` counts the first and failure/expiry generations, and `handoffs_completed` counts successful planned yields.
