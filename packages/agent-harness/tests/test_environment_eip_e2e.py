@@ -28,6 +28,8 @@ from a13n_environment_provider import (
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+)
+from a13n_harness.environment import (
     CommandRequest,
     EnvironmentAction,
     EnvironmentError,

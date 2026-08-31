@@ -15,7 +15,7 @@ Runtime owns process behavior, not domain behavior. It loads the distribution fi
 | Backend construction and capability semantics                       | [Storage](03-storage.md)                                                     | Constructs the selected typed clients and roots                      |
 | Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                 | Prepares or verifies the final distribution schema before readiness  |
 | Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                      | Exposes only the surfaces owned by the selected role                 |
-| Process tracer provider, content policy, and OTLP lifecycle         | [Observability](37-observability-and-trace-archive.md)                       | Adds one optional best-effort export path without changing readiness |
+| Process tracer provider, content policy, and OTLP lifecycle         | [Observability](37-observability.md)                                         | Adds one optional best-effort export path without changing readiness |
 | Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                    | Declare role ownership and durable failure semantics                 |
 | Plugin Runtime profile and loading behavior                         | [Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Defines on-demand import or Supervisor/Runner execution              |
 | Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                   | Supplies external resources without changing service semantics       |
@@ -82,7 +82,7 @@ AG-UI surface. The setting does not select another distribution and there is no
 Agent-level A2A enable setting.
 
 The observability section contains only the tracing switch and Harness content
-selection owned by the [observability contract](37-observability-and-trace-archive.md).
+selection owned by the [observability contract](37-observability.md).
 Exporter, endpoint, protocol, headers, TLS, sampler, batch, and timeout settings
 use standard `OTEL_*` input and do not gain Foundation aliases. Static
 configuration is validated before startup completes. Runtime exporter
@@ -183,10 +183,9 @@ dependency.
 
 Loss of PostgreSQL, Redis, shared object storage, or another role-required dependency makes the affected process unready. A transient dependency loss does not by itself make liveness fail or erase already committed work. The process stops accepting new dependent work while the owning component performs bounded reconnect behavior. An unrecoverable client or component failure terminates the process.
 
-An OTLP endpoint or Trace Archive is not a role-required Service dependency.
-Exporter failure, queue pressure, and archive failure preserve readiness and
-ordinary work while emitting bounded diagnostics under the observability
-contract.
+An OTLP endpoint is not a role-required Service dependency. Exporter failure
+and queue pressure preserve readiness and ordinary work while emitting bounded
+diagnostics under the observability contract.
 
 Probe responses expose only bounded status, role, build identity, and safe dependency categories. They contain no endpoint, credential, tenant data, queue contents, traceback, or raw provider error.
 

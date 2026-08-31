@@ -16,10 +16,10 @@ from a13n_environment_provider import (
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
-from a13n_harness import (
+from a13n_harness import RunBindings
+from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentPermissionSet,
-    RunBindings,
 )
 from a13n_harness.environment.advanced import (
     EnvironmentProviderBinding,

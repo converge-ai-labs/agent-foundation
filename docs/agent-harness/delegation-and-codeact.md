@@ -16,10 +16,10 @@ A parent definition owns a finite collection of immediate child definitions:
 ```python
 from a13n_harness import (
     AgentDefinition,
-    DelegationCapability,
     HarnessBuilder,
     SubagentDefinition,
 )
+from a13n_harness.capabilities import DelegationCapability
 from pydantic_ai.agent.spec import AgentSpec
 
 child = AgentDefinition(
@@ -43,7 +43,7 @@ parent = HarnessBuilder().build(
 )
 ```
 
-Build recursively validates a finite acyclic graph and unique sibling names. Each child becomes an owned `ExecutableAgent` and closes with the root executable.
+Build recursively validates a finite acyclic graph and unique sibling names. Each child becomes immutable reusable `ExecutableAgent` build output contained by the root executable.
 
 ### Supply Fresh Child Authority
 
@@ -126,8 +126,8 @@ The runtime is based on Monty and has no ambient filesystem, network, process, e
 A tool owner explicitly wraps eligible tools with a typed policy:
 
 ```python
-from a13n_harness import (
-    CodeActCapability,
+from a13n_harness.capabilities import CodeActCapability
+from a13n_harness.toolsets import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
 )

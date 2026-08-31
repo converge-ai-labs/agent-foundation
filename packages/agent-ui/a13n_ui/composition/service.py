@@ -98,7 +98,9 @@ class CompositionService:
         await self.executable(reference, environment_reference)
 
     async def close(self) -> None:
-        await self._cache.close()
+        """Release retained process-local executable build outputs."""
+
+        await self._cache.clear()
 
     async def _generation(self, generation_id: str | None) -> ConfigurationGeneration:
         if generation_id is not None:

@@ -8,8 +8,6 @@ from typing import Any, cast
 import a13n_harness.execution as execution_module
 import pytest
 from a13n_harness import (
-    MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
-    MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
     AgentContext,
     AgentDefinition,
     DefinitionError,
@@ -17,9 +15,13 @@ from a13n_harness import (
     HarnessState,
     ModelResolutionError,
     RunBindings,
+    SubagentDefinition,
+)
+from a13n_harness.models import (
+    MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
+    MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
     SelfHealingModel,
     SelfHealingModelCapability,
-    SubagentDefinition,
 )
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ResolveModelId, WrapModelRequestHandler

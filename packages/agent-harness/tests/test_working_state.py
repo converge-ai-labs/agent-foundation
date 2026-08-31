@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 from a13n_harness import (
-    AgentContextStateSnapshot,
-    CapabilityState,
-    CreateTask,
     DefinitionError,
-    EmbeddedTaskStateCell,
     HarnessBuilder,
     HarnessState,
-    ProviderTaskCursor,
     RunBindings,
+)
+from a13n_harness.capabilities import (
+    CreateTask,
+    EmbeddedTaskStateCell,
+    ProviderTaskCursor,
     TaskMutation,
     TaskStateError,
     TaskStateRunCapability,
@@ -24,6 +24,10 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities.context import _requires_exact_history
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
+from a13n_harness.state import (
+    AgentContextStateSnapshot,
+    CapabilityState,
+)
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     ModelMessage,

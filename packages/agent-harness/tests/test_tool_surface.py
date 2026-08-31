@@ -6,14 +6,16 @@ from typing import Any
 
 import pytest
 from a13n_harness import (
-    CodeActCapability,
-    CodeActPolicyToolset,
-    CodeActToolPolicy,
     DefinitionError,
     HarnessBuilder,
     RunBindings,
 )
+from a13n_harness.capabilities import CodeActCapability
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.toolsets import (
+    CodeActPolicyToolset,
+    CodeActToolPolicy,
+)
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability, CapabilityOrdering
 from pydantic_ai.messages import ModelMessage

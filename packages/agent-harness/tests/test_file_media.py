@@ -5,7 +5,8 @@ from collections.abc import Mapping
 
 import a13n_harness.toolsets.file_media as file_media_module
 import pytest
-from a13n_harness import (
+from a13n_harness import RunError
+from a13n_harness.toolsets import (
     AUDIO_UNDERSTANDING_MODEL_ENV,
     IMAGE_UNDERSTANDING_MODEL_ENV,
     VIDEO_UNDERSTANDING_MODEL_ENV,
@@ -13,7 +14,6 @@ from a13n_harness import (
     AgentMediaUnderstandingProvider,
     MediaUnderstandingError,
     MediaUnderstandingRequest,
-    RunError,
 )
 from pydantic_ai import BinaryContent
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart

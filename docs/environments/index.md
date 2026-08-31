@@ -43,9 +43,11 @@ Binding an Environment supplies runtime authority but does not automatically exp
 ```python
 from a13n_harness import (
     AgentSpec,
+    HarnessBuilder,
+)
+from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
-    HarnessBuilder,
 )
 
 executable = HarnessBuilder().build(

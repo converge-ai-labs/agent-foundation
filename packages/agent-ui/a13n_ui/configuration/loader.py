@@ -22,7 +22,7 @@ from a13n_environment_provider import (
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
-from a13n_harness import (
+from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
@@ -50,13 +50,11 @@ from .models import (
     ResourceRevisionRef,
     SafeSourceRef,
     SkillDefinition,
-    SourceTransactionManifest,
     canonical_digest,
     canonical_json_value,
     resource_identity,
     restart_settings_digest,
 )
-from .transactions import read_source_overlay
 
 _NAMESPACE_MODELS: dict[str, type[ResourceDocument]] = {
     "models": ModelDefinition,
@@ -85,7 +83,6 @@ class CatalogCandidate:
     revisions: tuple[ResourceRevision, ...]
     skill_packages: tuple[SkillPackageCandidate, ...]
     availability: tuple[DependencyLock, ...]
-    source_transactions: tuple[SourceTransactionManifest, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,21 +129,9 @@ async def load_catalog_candidate(
     loaded: list[_LoadedDocument] = []
     overlays: dict[str, Mapping[str, bytes | None]] = {}
     selected_overlays = source_overlays or {}
-    source_transactions: list[SourceTransactionManifest] = []
     source_count = 0
     for layer, root in enumerate(settings.ordered_roots):
-        if root.root_id in selected_overlays:
-            active_manifest = None
-            overlay = selected_overlays[root.root_id]
-        else:
-            active_manifest, overlay = await to_thread.run_sync(read_source_overlay, root.path)
-        if active_manifest is not None:
-            if active_manifest.root_id != root.root_id:
-                raise _error(
-                    "source_transaction_invalid",
-                    "The active source transaction selects the wrong definition root.",
-                )
-            source_transactions.append(active_manifest)
+        overlay = selected_overlays.get(root.root_id, {})
         overlays[root.root_id] = overlay
         documents = await to_thread.run_sync(partial(_discover_root, root.path, settings.max_source_files, overlay))
         source_count += len(documents)
@@ -284,7 +269,6 @@ async def load_catalog_candidate(
         revisions=tuple(revisions),
         skill_packages=tuple(packages),
         availability=availability,
-        source_transactions=tuple(source_transactions),
     )
 
 
@@ -646,10 +630,7 @@ def _validate_environment_lifecycle(
     idle_policy: str,
     capabilities: EnvironmentLifecycleCapabilities,
 ) -> None:
-    required_pause_mode = {
-        "pause_full": EnvironmentPauseMode.FULL,
-        "pause_filesystem": EnvironmentPauseMode.FILESYSTEM,
-    }.get(idle_policy)
+    required_pause_mode = EnvironmentPauseMode.FULL if idle_policy == "pause" else None
     if required_pause_mode is not None and required_pause_mode not in capabilities.pause_modes:
         raise _error(
             "environment_lifecycle_incompatible",

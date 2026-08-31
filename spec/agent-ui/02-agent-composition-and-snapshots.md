@@ -64,9 +64,6 @@ class SubagentEdge(BaseModel):
     identity: SubagentIdentitySelection
     usage_limits: UsageLimits | None
     environment: ChildEnvironmentPolicy
-    lifetime: Literal["parent_scope", "session"]
-    steering: Literal["enabled", "disabled"]
-    continuation: Literal["enabled", "disabled"]
 
 
 class SubagentIdentitySelection(BaseModel):
@@ -87,28 +84,28 @@ class ChildEnvironmentPolicy(BaseModel):
         "none",
         "dedicated",
         "shared_root",
-        "serialized_root",
     ]
     mounts: tuple[str, ...] | None
 
 
 class AsyncSubagentConfiguration(BaseModel):
     tools: Literal["standard", "disabled"]
-    max_active_jobs: int
-    max_jobs_per_run: int
+    max_active_tasks: int
+    max_tasks_per_run: int
     max_depth: int
-    completion_delivery: Literal["active_or_next_run", "manual"]
 ```
 
 `model`, `prompt`, `plugins`, every `skills.available` entry, and child `agent` values reference resources by stable identity in one candidate configuration generation. Resolution replaces every reference with its exact `ResourceRevisionRef`; an immutable resolved snapshot never retains “latest” lookup semantics.
 
 Plugin order is significant. Available Skill revisions form a canonical name-keyed set; source-file ordering is retained for authoring display but does not create different runtime behavior after the same unique final catalog resolves. `default_selection.mode="all"` exposes the complete conflict-resolved available catalog. `mode="exact"` exposes only the unique exact names in `names`; an empty tuple deliberately exposes no Skills. Names select final `SKILL.md` identities rather than resource IDs, source patterns, exclusions, or paths. Resolution rejects an exact name absent from the available imported revisions and rejects ambiguous duplicate final names. `materialization_mount` is absent exactly when `available` is empty; otherwise it names one required desired Environment mount whose FileOperator operations permit the Agent UI materializer to reconcile and scan its reserved subtree.
 
-Immediate child names are unique. A child edge selects one complete child Agent, authored context and usage ceilings, an explicit Identity inheritance policy, an explicit Environment resource policy, and narrower Host lifecycle controls. It does not inherit the parent's tools, Capabilities, plugins, model, Prompt, Skill selection, credentials, provider attachments, or `EnvironmentRuntime`. Child Identity starts from the parent workload `issuer`, `subject`, and immutable claims. `inherit_agent_id=false` replaces the conventional `agent_id` claim with the resolved child Agent's `agent_id`; `true` preserves the parent's claim when present. All other claims, including `user_id`, are preserved. Each invocation still receives fresh child Identity and instance values, and the trusted Host binder remains authoritative over the complete child `RunBindings`. `parent_scope` requests cancellation when the spawning root Turn or parent async job is cancelled, interrupted, or abandoned; `session` permits accepted work to outlive that immediate owner until completion, explicit cancellation, Session deletion, or process shutdown. Neither policy makes active execution restart-durable. `max_active_jobs` bounds accepted, queued, and running jobs owned by the Agent node; waiting jobs retain state but consume no live-execution slot. `max_jobs_per_run` bounds new submissions from one root or child Harness Run.
+Immediate child names are unique. A child edge selects one complete child Agent, authored context and usage ceilings, an explicit Identity inheritance policy, and an Environment policy. It does not inherit the parent's tools, Capabilities, plugins, model, Prompt, Skill selection, credentials, provider attachments, or `EnvironmentRuntime`. Child Identity starts from the parent workload `issuer`, `subject`, and immutable claims. `inherit_agent_id=false` replaces the conventional `agent_id` claim with the resolved child Agent's `agent_id`; `true` preserves the parent's claim when present. All other claims, including `user_id`, are preserved. Each invocation still receives fresh child Identity and instance values, and the trusted Host binder remains authoritative over the complete child `RunBindings`.
+
+Async child tasks exist only in the current Host. They can continue after the spawning parent Run finishes, but Host shutdown cancels them and no configuration option changes that lifetime. Steering and continuation tools work when the live child supports them; they do not need per-edge enablement flags. `max_active_tasks` and `max_tasks_per_run` are simple in-memory resource limits.
 
 `AgentEnvironmentRequirements` declares the desired mount names and provider-neutral operation families that must be available when a Session pairs this Agent with an Environment. A node with available Skills includes the list/stat/read/write/create/remove operations required by its `materialization_mount`; an exact empty exposure still performs full source materialization and validation because Harness exact-name selection occurs after discovery. Agent resolution validates syntax and operation keys but cannot prove resource availability because Environment selection is independent. Session creation or fork checks those requirements against the selected Environment's desired mount definitions, model aliases, and permission ceilings.
 
-`none` supplies a fresh empty child `EnvironmentRuntime` and is valid only when the child node has no available Skills or other required Environment mount. `dedicated` creates or resumes independently fenced provider resource instances scoped to the async child job and requires every selected provider to advertise `MULTIPLE_FROM_SPEC`. `shared_root` acquires separate concurrent attachments from the root resource instances and requires every selected provider to advertise `SHARED`; the child intentionally observes and can mutate the same underlying workspace. `serialized_root` keeps the accepted job queued until selected root instances have no active attachment, then acquires fresh attachments sequentially. `mounts` selects a subset of the Session Environment's desired mounts or is absent to select all mounts. Unknown names, insufficient operations, or unsupported allocation/concurrency capabilities reject the Agent/Environment pairing during Session creation or fork, before provider effects.
+`none` supplies a fresh empty child `EnvironmentRuntime` and is valid only when the child node has no available Skills or other required Environment mount. `dedicated` creates or resumes separate provider resources for the process-local child task and requires providers that support another resource from the same specification. `shared_root` acquires fresh attachments to the root resources; the child intentionally observes and can mutate the same underlying workspace, so it is accepted only when the provider supports shared attachments. `mounts` selects a subset of the Session Environment's desired mounts or is absent to select all mounts. Unknown names, insufficient operations, or unsupported provider capabilities reject the Agent/Environment pairing before execution. Agent UI does not add a durable allocation scheduler or a serialized-root queue.
 
 `AgentOutputSelection` maps through a trusted Agent UI adapter to one native Harness business-output contract. The interactive default is text, but structured first-party output contracts can be selected by schema key and version. Arbitrary Python output classes and import targets are not serialized.
 
@@ -152,7 +149,7 @@ The returned resolver receives the ordinary Harness run context and logical mode
 4. applies the pinned endpoint and model settings;
 5. returns the Model only under that fresh Run's authority.
 
-Opening Agent UI without this collaborator remains valid for configuration, composition, Session, Environment, and replay operations, but foreground or child execution fails explicitly with `model_resolver_unavailable` before Harness dispatch. Agent UI never substitutes a fake Model, historic credential, or ambient provider default. A factory that returns a non-callable value fails as `model_resolver_invalid`.
+Opening Agent UI without this collaborator remains valid for configuration, composition, Session, Environment, and history operations, but foreground or child execution fails explicitly with `model_resolver_unavailable` before Harness dispatch. Agent UI never substitutes a fake Model, historic credential, or ambient provider default. A factory that returns a non-callable value fails as `model_resolver_invalid`.
 
 The Agent snapshot locks every selected Model adapter by exact key and Agent UI distribution version. Reconstruction verifies every Model lock as well as every Harness plugin lock before building the definition graph; an allowlisted but unregistered string is never treated as an adapter. A Host Model adapter can reuse a documented reentrant native client or Model internally, but that cache is process-local and keyed by non-secret configuration plus credential generation. A Session snapshot never stores the native value or historic secret. Credential rotation behind one reference can affect a later Run without changing Agent behavior content; changing provider, endpoint, model name, settings, or credential reference creates another Model revision.
 
@@ -266,8 +263,6 @@ class ResolvedAgentSnapshot(BaseModel):
 
 The snapshot contains every authority-neutral value needed to repeat trusted reconstruction. It contains no Host-resolved credential, native Model, Environment specification or resource state, plugin object, live Skill materialization, repository, task, client, or run Capability. Literal authored content, including an MCP URL, is persisted as supplied and is not classified by Agent UI as secret or non-secret.
 
-For compatibility with schema-version-1 snapshots created before child Identity selection was explicit, an absent resolved-edge `identity` value means `inherit_agent_id=false`. Loading verifies that legacy snapshot's logical digest against the exact legacy projection that omitted the field; a non-default Identity policy is accepted only when covered by the current digest.
-
 ## Session Pinning and Executable Lifetime
 
 A Session pins one exact resolved Agent snapshot identity and digest. A dynamic configuration reload can publish another Agent revision and executable, but it does not alter the Session. Applying another Agent composition to existing history requires an explicit [Session fork](04-sessions-environments-and-state.md#forking-and-composition-change).
@@ -288,9 +283,9 @@ A `self` authoring convenience can be exposed by the configuration editor, but r
 
 Agent UI never installs the Harness first-party `DelegationCapability` or exposes its blocking inline `delegate` path. `async_subagents.tools="standard"` instead selects the Agent UI-owned declarative async Capability. During each run that Capability reads the exact immediate collection from `AgentContext.subagents`; a fresh typed Agent UI run Capability supplies current Session-scoped submission, binding, scheduling, and delivery authority. `tools="disabled"` retains the built collection for trusted composition but exposes no model-facing child operation.
 
-The standard async surface is fixed to background submission and has no execution-mode argument. It provides `delegate`, `resume_subagent`, `subagent_info`, `wait_subagent`, `steer_subagent`, and `cancel_subagent` over Host-owned job records. A bounded wait may await an independently scheduled job, but spawn never executes a child inline and parent cancellation never converts a child into Harness Delegation State. Complete runtime semantics are owned by [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#async-subagent-capability).
+The standard async surface is fixed to background submission and has no execution-mode argument. It provides `delegate`, `resume_subagent`, `subagent_info`, `wait_subagent`, `steer_subagent`, and `cancel_subagent` over the current Host's in-memory child registry. A bounded wait may await an independently scheduled task, but spawn never executes a child inline and parent cancellation never converts a child into Harness Delegation State. Complete runtime semantics are owned by [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#async-subagents).
 
-Nested children use the same rule recursively. Each async job invokes the selected child through its ordinary `ExecutableAgent.stream()` with fresh bindings, owns separate child `HarnessState`, usage, events, and delivery, and never merges child continuation into the parent's `HarnessState`.
+Nested children use the same rule recursively. Each task invokes the selected child through its ordinary `ExecutableAgent.stream()` with fresh bindings and owns separate process-local `HarnessState`, usage, and live events. Child output enters parent continuation only after the live parent receives it and produces a later continuation.
 
 ## Configuration Reload
 
@@ -300,7 +295,7 @@ A newly accepted configuration generation can add, remove, or change source defi
 - unchanged Agent and Environment digests can reuse a managed-Skill pair executable;
 - a changed required digest creates another snapshot or pair executable;
 - removed current source content does not delete a snapshot pinned by a retained Session;
-- an active Run and its async-subagent jobs retain the snapshot with which they started;
+- an active Run and its process-local async-child tasks retain the snapshot with which they started;
 - package refresh can make a new adapter available but cannot unload or replace code already captured by an executable.
 
 Validation preview can resolve and build a candidate Agent without creating a Session, but it uses ordinary reconstruction and cleanup rather than a second approximate validator.
@@ -343,7 +338,7 @@ Complete children repeat some authoring values but match the Harness graph and k
 
 ## Invariants
 
-01. Agent composition is the exact combination of pinned Model, Prompt, Plugin, available Skill, default Skill exposure, Capability, output, async policy, and child-Agent revisions.
+01. Agent composition is the exact combination of pinned Model, Prompt, Plugin, available Skill, default Skill exposure, Capability, output, small async policy, and child-Agent revisions.
 02. Environment desired state and provider resources remain outside Agent composition and are selected by a Session.
 03. Every Session pins one immutable resolved Agent snapshot and logical digest.
 04. Dynamic reload, Plugin toggles, and Prompt/Skill edits never mutate an active executable or existing Session.

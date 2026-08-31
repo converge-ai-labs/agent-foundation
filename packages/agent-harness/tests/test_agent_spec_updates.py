@@ -8,8 +8,8 @@ from a13n_harness import (
     HarnessModelCharacteristics,
     ModelCapability,
     SubagentDefinition,
-    UserInteractionCapability,
 )
+from a13n_harness.capabilities import UserInteractionCapability
 from pydantic import ValidationError
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import UsageLimits

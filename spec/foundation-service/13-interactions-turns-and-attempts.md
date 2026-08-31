@@ -98,7 +98,7 @@ Bounded connector transport retries and internal Harness recovery remain within 
 
 After durable claim, each traced TurnAttempt starts one parentless
 `foundation.turn_attempt` root under the [Service observability
-contract](37-observability-and-trace-archive.md#turnattempt-trace-lifecycle).
+contract](37-observability.md#turnattempt-trace-lifecycle).
 `harness.run` remains the existing child owner. Replacement Attempts create
 separate traces and correlate through stable domain IDs plus best-effort span
 links; a Thread Trace groups those bounded traces and never becomes another

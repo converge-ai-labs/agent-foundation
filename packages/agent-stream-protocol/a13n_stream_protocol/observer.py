@@ -14,8 +14,8 @@ from a13n_harness import (
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     HarnessStreamEvent,
-    ToolExtraEventPayload,
 )
+from a13n_harness.events import ToolExtraEventPayload
 from ag_ui.core import Event
 from ag_ui.core.events import (
     BaseEvent,

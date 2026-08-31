@@ -11,8 +11,8 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
     RunError,
-    UserInteractionCapability,
 )
+from a13n_harness.capabilities import UserInteractionCapability
 from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart

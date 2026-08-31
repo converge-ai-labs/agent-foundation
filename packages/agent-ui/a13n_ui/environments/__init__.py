@@ -2,11 +2,8 @@
 
 from .models import (
     EnvironmentAvailability,
-    EnvironmentOperationView,
-    HostEnvironmentResource,
-    HostResourceLifecycleState,
-    ProviderStateRef,
-    SessionEnvironmentAssignment,
+    EnvironmentResourceStatus,
+    SessionEnvironmentResource,
     StoredProviderState,
 )
 from .runtime import EnvdExecutableResolver, ProviderRuntimeResolver, ResolvedEnvdExecutable
@@ -15,13 +12,10 @@ from .service import EnvironmentService
 __all__ = [
     "EnvdExecutableResolver",
     "EnvironmentAvailability",
-    "EnvironmentOperationView",
+    "EnvironmentResourceStatus",
     "EnvironmentService",
-    "HostEnvironmentResource",
-    "HostResourceLifecycleState",
     "ProviderRuntimeResolver",
-    "ProviderStateRef",
     "ResolvedEnvdExecutable",
-    "SessionEnvironmentAssignment",
+    "SessionEnvironmentResource",
     "StoredProviderState",
 ]

@@ -5,7 +5,7 @@
 An asynchronous subagent is an independent child Turn in its own child Thread under the same Session. It has its own TurnAttempts, Harness Runs, state key, cancellation, fresh `RunBindings`, Environment attachments, runtime mounts, `EnvironmentRuntime`, usage, retained replay, and result delivery through the parent Thread inbox. The Harness continues to own native Pydantic deferred values and blocking inline delegation; Foundation does not encode pending authority in `HarnessState` or reinterpret asynchronous submission as an unfinished Pydantic tool call.
 
 The child Thread is also an independent [Thread Trace and observability
-session](37-observability-and-trace-archive.md#thread-trace-and-vendor-mapping).
+session](37-observability.md#thread-trace-and-vendor-mapping).
 Its TurnAttempts start separate traces; bounded lineage and a best-effort span
 link express origin without placing child execution inside the parent Thread's
 trace set or vendor session.

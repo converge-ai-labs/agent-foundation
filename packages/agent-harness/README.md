@@ -7,15 +7,17 @@
 Agent definitions compose behavior through Pydantic AI Capabilities. The first-party feature Capabilities own lifecycle hooks and select pure Toolsets; the Toolsets depend only on provider-neutral ports such as `FileOperator`, `MediaReader`, `DocumentConverter`, and `WebClient`. Native MCP composition uses `pydantic_ai.capabilities.MCP` in `AgentSpec.capabilities` or as a trusted process-local Capability; the default Harness dependency includes local MCP client support rather than requiring a separate extra.
 
 ```python
-from a13n_harness import (
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
+from a13n_harness.capabilities import (
     HandoffCapability,
     RuntimeContextCapability,
-    SelfHealingModelCapability,
     UserInteractionCapability,
     WorkingStateCapability,
 )
+from a13n_harness.environment import (
+    DynamicEnvironmentCapability,
+    DynamicEnvironmentConfiguration,
+)
+from a13n_harness.models import SelfHealingModelCapability
 
 capabilities = (
     DynamicEnvironmentCapability(

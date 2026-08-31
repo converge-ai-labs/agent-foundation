@@ -40,9 +40,9 @@ from dataclasses import dataclass
 from a13n_harness import (
     AgentContext,
     AgentSpec,
-    CapabilityTypeCatalog,
     HarnessBuilder,
 )
+from a13n_harness.capability_types import CapabilityTypeCatalog
 from pydantic_ai.agent.spec import CapabilitySpec
 from pydantic_ai.capabilities import AbstractCapability
 
@@ -123,7 +123,7 @@ Harness context features use one model-context coordinator, so each owner contri
 A practical general-purpose context composition is:
 
 ```python
-from a13n_harness import (
+from a13n_harness.capabilities import (
     FileContextCapability,
     RuntimeContextCapability,
     WorkspaceOutlineCapability,
@@ -178,7 +178,7 @@ Code-first definitions can supply a custom `ShellCommandReviewer` to `ShellRevie
 `WorkingStateCapability` can keep tasks and notes inside its portable Capability namespace:
 
 ```python
-from a13n_harness import WorkingStateCapability
+from a13n_harness.capabilities import WorkingStateCapability
 
 capabilities = (WorkingStateCapability(),)
 ```
@@ -198,10 +198,10 @@ See [State and Resume](state-and-resume.md).
 These features separate stable model-facing schemas from fresh provider implementations:
 
 ```python
-from a13n_harness import (
+from a13n_harness import RunBindings
+from a13n_harness.capabilities import (
     DocumentsCapability,
     DocumentsRunCapability,
-    RunBindings,
 )
 
 executable = HarnessBuilder().build(
@@ -225,7 +225,7 @@ The same pattern applies to the general URL-oriented `MediaCapability` and to We
 Bind multiple Host backends in default fallback order, and keep search and scrape ordering independent:
 
 ```python
-from a13n_harness import (
+from a13n_harness.capabilities import (
     WebCapability,
     WebConfiguration,
     WebRunCapability,
@@ -294,11 +294,11 @@ An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and di
 During every entered root or child Turn, `ProcessManager` waits on the real provider process and can enqueue a bounded completion hint through native Pydantic AI input. A Host can configure reusable non-authoritative completion and observation-gap hooks directly with the definition-selected Capability when it builds the Agent:
 
 ```python
-from a13n_harness import (
+from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
-    ProcessEvent,
 )
+from a13n_harness.toolsets import ProcessEvent
 
 
 async def on_process_event(event: ProcessEvent) -> None:
@@ -337,7 +337,7 @@ executable = HarnessBuilder().build(
 `MessageIntegrityFilterCapability` is mandatory and builder-owned. Two optional filters are public:
 
 ```python
-from a13n_harness import (
+from a13n_harness.filters import (
     ColdStartFilterCapability,
     ColdStartFilterConfiguration,
     ContentFilterCapability,
@@ -398,12 +398,14 @@ For common Identity, lineage, run, and metadata values, use the declarative reso
 ```python
 from a13n_harness import (
     AgentIdentityRef,
-    ContextualMCP,
     HarnessBuilder,
+    RunBindings,
+)
+from a13n_harness.mcp import (
+    ContextualMCP,
     MCPContextHeaderBinding,
     MCPContextHeaders,
     MCPContextHeadersConfig,
-    RunBindings,
 )
 
 mcp = ContextualMCP(
@@ -479,7 +481,8 @@ Use a custom synchronous or asynchronous factory when the curated selectors are 
 ```python
 from collections.abc import Mapping
 
-from a13n_harness import AgentContext, ContextualMCP
+from a13n_harness import AgentContext
+from a13n_harness.mcp import ContextualMCP
 
 
 def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:

@@ -13,34 +13,42 @@ from uuid import uuid4
 from a13n_harness import (
     AgentDefinition,
     AgentSpec,
-    ContextualMCP,
     DelegationContextPolicy,
-    DocumentsCapability,
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
     ExecutableAgent,
-    FileSkillSource,
     HarnessBuilder,
-    HarnessPluginFactoryContext,
-    HarnessPluginFactoryRegistration,
-    MCPContextHeaderBinding,
-    MCPContextHeaders,
-    MCPContextHeadersConfig,
-    MediaCapability,
     ModelRecoveryPolicy,
+    SubagentDefinition,
+    SubagentIdentityPolicy,
+)
+from a13n_harness.capabilities import (
+    DocumentsCapability,
+    FileSkillSource,
+    MediaCapability,
     SkillManager,
     SkillsCapability,
     SkillsPolicy,
-    SubagentDefinition,
-    SubagentIdentityPolicy,
     UserInteractionCapability,
     WebCapability,
     WorkingStateCapability,
     WorkingStateConfiguration,
-    build_harness_plugin_factory_catalog,
+)
+from a13n_harness.environment import (
+    DynamicEnvironmentCapability,
+    DynamicEnvironmentConfiguration,
 )
 from a13n_harness.environment.files import FileOperator, FileQueryRequest
 from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.mcp import (
+    ContextualMCP,
+    MCPContextHeaderBinding,
+    MCPContextHeaders,
+    MCPContextHeadersConfig,
+)
+from a13n_harness.plugin_factories import (
+    HarnessPluginFactoryContext,
+    HarnessPluginFactoryRegistration,
+    build_harness_plugin_factory_catalog,
+)
 from anyio import Lock
 from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
@@ -195,7 +203,7 @@ async def _one_chunk(content: bytes) -> AsyncIterator[bytes]:
 
 
 class ExecutableCache:
-    """Process-local digest-keyed executable ownership with explicit cleanup."""
+    """Process-local digest-keyed executable cache."""
 
     def __init__(self) -> None:
         self._entries: dict[str, ExecutableAgent[Any]] = {}
@@ -214,21 +222,11 @@ class ExecutableCache:
             self._entries[cache_key] = executable
             return executable
 
-    async def close(self) -> None:
+    async def clear(self) -> None:
+        """Release references to all process-local build outputs."""
+
         async with self._lock:
-            entries = tuple(reversed(tuple(self._entries.values())))
             self._entries.clear()
-        failure: Exception | None = None
-        for executable in entries:
-            try:
-                await executable.close()
-            except Exception as error:
-                if failure is None:
-                    failure = error
-                else:
-                    failure.add_note(f"Another executable close failed with {type(error).__name__}.")
-        if failure is not None:
-            raise failure
 
 
 class AgentReconstructor:

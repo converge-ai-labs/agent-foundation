@@ -27,16 +27,20 @@ from a13n_environment_provider import (
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
+    DefinitionError,
+)
+from a13n_harness.capabilities import (
     BoundSkillCatalog,
     BoundSkillCatalogItem,
-    DefinitionError,
+    FileSkillSource,
+    SkillManager,
+    SkillsPolicy,
+)
+from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentError,
     EnvironmentPermissionSet,
     FileOperator,
-    FileSkillSource,
-    SkillManager,
-    SkillsPolicy,
 )
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
@@ -61,8 +65,6 @@ from .models import (
     SkillDefinition,
     SkillImportProvenance,
     SkillPackageSource,
-    SourceTransactionEntry,
-    SourceTransactionManifest,
     canonical_digest,
 )
 
@@ -168,8 +170,8 @@ class _ExistingSkill:
 @dataclass(slots=True)
 class _PreparedSkillChange:
     preview: SkillChangePreview
-    manifest: SourceTransactionManifest
-    replacements: dict[str, bytes]
+    root_id: str
+    edits: dict[str, bytes | None]
 
 
 class SkillService:
@@ -379,7 +381,7 @@ class SkillService:
         change_id: str,
         *,
         expected_operation: Literal["import", "refresh"] | None = None,
-    ) -> tuple[SourceTransactionManifest, dict[str, bytes]]:
+    ) -> tuple[str, dict[str, bytes | None]]:
         async with self._lock:
             prepared = self._prepared_changes.get(change_id)
             if prepared is not None and (
@@ -402,7 +404,7 @@ class SkillService:
                 "The prepared Skill change belongs to a stale configuration generation.",
                 code="skill_catalog_stale",
             )
-        return prepared.manifest, dict(prepared.replacements)
+        return prepared.root_id, dict(prepared.edits)
 
     async def discard_change(self, change_id: str) -> None:
         async with self._lock:
@@ -490,8 +492,7 @@ class SkillService:
                 existing_paths = tuple(
                     f"{existing.definition.package.relative_path}/{path}" for path in existing.file_digests
                 )
-            manifest, replacements, definition = self._build_import(
-                generation.catalog_digest,
+            edits, definition = self._build_import(
                 item,
                 payload,
                 copied,
@@ -519,8 +520,8 @@ class SkillService:
             async with self._lock:
                 self._prepared_changes[change_id] = _PreparedSkillChange(
                     preview=preview,
-                    manifest=manifest,
-                    replacements=replacements,
+                    root_id=target_root_id,
+                    edits=edits,
                 )
             return preview
         finally:
@@ -620,7 +621,6 @@ class SkillService:
 
     def _build_import(
         self,
-        base_catalog_digest: str,
         item: BoundSkillCatalogItem,
         payload: JsonValue,
         files: tuple[tuple[str, bytes], ...],
@@ -630,7 +630,7 @@ class SkillService:
         target_root_id: str,
         existing_paths: tuple[str, ...],
         settings: ConfigurationSettings,
-    ) -> tuple[SourceTransactionManifest, dict[str, bytes], SkillDefinition]:
+    ) -> tuple[dict[str, bytes | None], SkillDefinition]:
         roots = {root.root_id: root for root in settings.ordered_roots}
         target = roots.get(target_root_id)
         if target is None or not target.writable:
@@ -664,34 +664,9 @@ class SkillService:
         }
         for path, content in files:
             replacements[f"{package_relative}/{path}"] = content
-        entries = tuple(
-            sorted(
-                (
-                    *(
-                        SourceTransactionEntry(
-                            relative_path=path,
-                            operation="replace",
-                            content_digest=hashlib.sha256(content).hexdigest(),
-                        )
-                        for path, content in replacements.items()
-                    ),
-                    *(
-                        SourceTransactionEntry(relative_path=path, operation="delete")
-                        for path in existing_paths
-                        if path not in replacements
-                    ),
-                ),
-                key=lambda entry: entry.relative_path,
-            )
-        )
-        manifest = SourceTransactionManifest(
-            schema_version="1",
-            transaction_id=f"transaction-{uuid4().hex[:16]}",
-            root_id=target_root_id,
-            base_catalog_digest=base_catalog_digest,
-            entries=entries,
-        )
-        return manifest, replacements, definition
+        edits: dict[str, bytes | None] = dict(replacements)
+        edits.update({path: None for path in existing_paths if path not in replacements})
+        return edits, definition
 
 
 def _definition_changed(existing: _ExistingSkill | None, definition: SkillDefinition) -> bool:

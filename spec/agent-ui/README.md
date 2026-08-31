@@ -2,20 +2,22 @@
 
 ## Overview
 
-This directory defines `agent-ui`, the complete local single-user Agent workstation distributed as `a13n-ui`. It owns reloadable YAML/JSON configuration, explicit local Skill sources and managed Skill packages, reusable Model, Prompt, Plugin, Agent, and Environment definitions, Codex-style Sessions, Environment resource lifecycle, foreground root execution, async-only subagent jobs, durable local presentation history, one stable `AgentUiHost`, replaceable runtime Runners, and equivalent WebUI and CLI product surfaces.
+This directory defines `agent-ui`, the complete local single-user Agent workstation distributed as `a13n-ui`. It owns reloadable YAML/JSON configuration, explicit local Skill sources and managed Skill packages, reusable Model, Prompt, Plugin, Agent, and Environment definitions, immutable composition snapshots, continuation-backed Sessions, Environment resource lifecycle, process-local root and child execution, one stable `AgentUiHost`, replaceable runtime Runners, a normal terminal CLI, and a complete multi-Session WebUI.
 
-Agent UI is not a reduced Foundation Service. It implements the shared [`Session`, `Thread`, `Turn`, and `Item` interaction model](../interaction-model.md) for one local Host. The [Harness](../agent-harness/README.md) remains the process-local Agent runtime, the [Environment Provider package](../agent-environment-provider/README.md) remains the provider lifecycle and attachment boundary, and [Agent Stream Protocol](../agent-stream-protocol/README.md) remains the Harness-to-AG-UI observation boundary. The user-facing Local Sandbox selects the distinct `a13n.local-envd` provider over an exact Agent UI-resolved envd executable; it never silently becomes Direct Local.
+Agent UI uses best-effort continuation persistence rather than durable workflow execution. At each complete or suspended Harness result, it attempts to store and select one complete continuation. A later Run starts from the latest successfully selected continuation. Input, active Runs, partial output, live AG-UI values, and async-child tasks remain process-local and can be lost when the Host exits. Foundation Service remains the product for durable distributed execution.
+
+Agent UI is not a reduced Foundation Service. The [Harness](../agent-harness/README.md) remains the process-local Agent runtime, the [Environment Provider package](../agent-environment-provider/README.md) remains the provider lifecycle and attachment boundary, and [Agent Stream Protocol](../agent-stream-protocol/README.md) remains the Harness-to-AG-UI observation boundary. The user-facing Local Sandbox selects the distinct `a13n.local-envd` provider over an exact Agent UI-resolved envd executable; it never silently becomes Direct Local.
 
 ## Document Catalog
 
-| Document                                                                             | Owning contract                                                                                                                                                 |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md)                                                     | Local workstation architecture, stable Host boundary, surfaces, packaging, and completion boundaries                                                            |
-| [01-configuration-and-resource-catalog.md](01-configuration-and-resource-catalog.md) | Reloadable configuration, local Skill discovery/import, resource catalogs, credentials, validation, and accepted generations                                    |
-| [02-agent-composition-and-snapshots.md](02-agent-composition-and-snapshots.md)       | Model, Prompt, Plugin, Skill exposure, Capability, and async child-Agent composition; snapshots and Harness reconstruction                                      |
-| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                 | Hybrid SQLite and compressed-file persistence, authority, publication ordering, integrity, projection, retention, and recovery                                  |
-| [04-sessions-environments-and-state.md](04-sessions-environments-and-state.md)       | Session and Thread identity, Environment assignment, Turn/checkpoint lifecycle, fork, async-child records, model-visible browsing, and cleanup                  |
-| [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)         | Stable Host, runtime Runner rotation, root coordination, async-only subagents, provider attachments and Environment runtimes, WebUI, CLI, replay, and transport |
+| Document                                                                             | Owning contract                                                                                                                            |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [00-overview.md](00-overview.md)                                                     | Local workstation architecture, best-effort continuation persistence, stable Host boundary, surfaces, packaging, and completion boundaries |
+| [01-configuration-and-resource-catalog.md](01-configuration-and-resource-catalog.md) | Reloadable configuration, local Skill discovery/import, resource catalogs, credentials, validation, and accepted generations               |
+| [02-agent-composition-and-snapshots.md](02-agent-composition-and-snapshots.md)       | Model, Prompt, Plugin, Skill exposure, Capability, and process-local child-Agent composition; snapshots and Harness reconstruction         |
+| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                 | Minimal SQLite and immutable-object persistence, continuation publication and selection, multi-Host concurrency, and explicit cleanup      |
+| [04-sessions-environments-and-state.md](04-sessions-environments-and-state.md)       | Session identity, Environment assignment, continuation and suspended-request continuation, fork, history projection, and cleanup           |
+| [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)         | Stable Host, Runner rotation, root coordination, process-local async subagents, provider runtimes, WebUI, CLI, and live presentation       |
 
 ## Reading Paths
 
@@ -33,30 +35,31 @@ Read `01` and `04`, then [Provider Specifications and Catalog](../agent-environm
 
 ### Implement a Presentation Surface
 
-Read `05`, then the [Agent Stream Protocol specification](../agent-stream-protocol/README.md). A surface consumes `AgentUiHost` operations and its retained/live AG-UI stream rather than interpreting Harness events, controlling runtime Runners, or reading storage independently.
+Read `05`, then the [Agent Stream Protocol specification](../agent-stream-protocol/README.md). A surface consumes `AgentUiHost` operations, continuation-derived Session history, and the current process's live AG-UI stream. It does not interpret Harness events, control runtime Runners, or read storage independently.
 
 ## Authority Rules
 
 - Human- and agent-editable configuration files own desired Model, Prompt, Plugin instance, local Skill source/package, Agent, and Environment definitions in the latest accepted configuration generation. SQLite indexes those definitions but does not replace their file authority.
 - Agent UI resolves configuration into immutable content-addressed snapshots. A Session pins exact Agent and Environment snapshots; dynamic reload never mutates a running executable or an existing Session composition.
-- SQLite owns mutable local metadata and control state. Compressed immutable files own managed Skill packages, selected root/child `HarnessState`, pending root `DeferredToolRequests`, provider resource-state blobs, resolved snapshots, and retained AG-UI event segments.
-- `HarnessState` is the canonical process-local Agent state value. A waiting root Turn additionally pins the exact complete `DeferredToolRequests` required by the Harness resume contract; async-child jobs have only active or terminal Harness boundaries and never own deferred requests. AG-UI history, identifiers, transcript projections, SQLite indexes, rendered state, and browser caches replace none of these values.
+- SQLite owns small mutable indexes, Session metadata, the latest continuation reference, and Environment resource references. Immutable files own managed Skill packages, snapshots, complete Session continuation bundles, and provider resource-state blobs.
+- `HarnessState` is the canonical continuation value. One `StoredSessionContinuation` bundles the complete state, optional exact `DeferredToolRequests`, Harness release, and creation time. AG-UI values, rendered history, browser caches, and partial model or tool output cannot replace a continuation.
+- Input and execution are process-local until a complete or suspended continuation is selected. Agent UI has no durable input queue, Turn/Run ledger, event journal, projection watermark, child-job database, or delivery ledger.
 - The Harness and Pydantic AI own native Agent construction, Agent loops, built child collections, run events, results, and continuation semantics. Harness inline delegation remains available to other Hosts but Agent UI never selects it.
-- The embedding Host supplies one process-local `RunModelResolverFactory` when opening Agent UI. Agent UI invokes it with the exact pinned Agent snapshot for every attempted Run and accepts only a fresh callable Harness resolver; the default execution boundary is explicitly unavailable and performs no ambient Model or credential discovery. Neither factory nor resolver is persisted.
-- The Environment Provider package owns provider specification validation, Manager behavior, provider resource-state codecs, and fresh runtime attachments. Agent UI owns desired Environment mount definitions, lifecycle decisions, fencing, persistence, Session assignment, and Local Sandbox envd release/target resolution. For every root or child Run, the selected Runner acquires fresh provider attachments and supplies one single-use `EnvironmentRuntime` containing the complete pinned desired mount set. The low-level client owns no executable discovery or process lifecycle.
-- Agent Stream Protocol owns reusable Harness-to-AG-UI conversion and process-local accumulation. Agent UI owns event-file persistence, query projection, replay, fan-out, transport, and presentation policy.
-- OpenTelemetry is exported through the repository observability boundary and is not stored in Agent UI SQLite databases, Session files, or AG-UI segments.
+- The embedding Host supplies one process-local `RunModelResolverFactory` when opening Agent UI. Agent UI invokes it with the exact pinned Agent snapshot for every attempted Run and accepts only a fresh callable Harness resolver. Neither factory nor resolver is persisted.
+- The Environment Provider package owns provider specification validation, Manager behavior, provider resource-state codecs, and fresh runtime attachments. Agent UI owns desired Environment mount definitions, simple lifecycle decisions, latest-state persistence, Session assignment, and Local Sandbox envd release/target resolution.
+- For every root or child Run, the selected Runner acquires fresh provider attachments and supplies one single-use `EnvironmentRuntime` containing the complete pinned desired mount set. Persisted references never restore attachments, credentials, native provider objects, or runtime authority.
+- Agent Stream Protocol owns reusable Harness-to-AG-UI conversion and process-local accumulation. Agent UI owns a best-effort live fan-out hub and reconstructs retained Session history from the selected Harness continuation; it does not persist AG-UI as recovery state.
+- OpenTelemetry is exported through the repository observability boundary and is not stored in Agent UI SQLite databases or Session continuation objects.
 - WebUI and CLI are product peers over one `AgentUiHost`. Neither owns a separate configuration model, Session model, orchestration loop, runtime-generation controller, or rendering truth.
-- Each frontend invocation owns one stable Host process. Multiple local Hosts can share the data root through SQLite transactions and atomic file publication; no process-lifetime owner lease exists. Replaceable runtime Runners own only process-local execution behavior and no durable commit authority.
-- Persisted references and local identifiers grant no Agent, Environment, model, plugin, credential, or child authority. Every invocation receives fresh current `RunBindings`, provider attachments, and a new `EnvironmentRuntime`; none is reconstructed from persisted state.
+- Each frontend invocation owns one stable Host process. Multiple local processes can open the data root using ordinary SQLite and filesystem behavior. Updates are last-write-wins; Agent UI adds no lease, fencing, stale-writer protocol, or distributed coordination. Replaceable runtime Runners own only process-local execution behavior and no continuation-selection authority.
 
 ## Specification Conventions
 
 - Python-like schemas are conceptual unless explicitly identified as serialized local documents.
 - A configuration generation is one atomically accepted view of all reloadable configuration sources; it is not a process generation or Session revision.
 - A resource revision is immutable normalized content identified by stable resource identity plus digest; a source file can later select different content without mutating the revision.
-- A Session is a local Host interaction tree and is not a Foundation `Execution`, browser connection, Pydantic run, model-provider session, or Environment provider resource.
-- A Thread is one independently advancing history whose complete continuation is carried by `HarnessState.thread_id`.
-- A Turn is one accepted advancement of one Thread and can span zero or more Harness Runs; internal Harness `ModelAttempt` values remain process-local.
-- An Item is a semantic user-visible unit projected for presentation, not a generic Harness stream envelope.
-- Async-subagent jobs are Host-owned local work over exact Harness-built children. Active tasks are process-local; committed terminal boundaries and delivery records are not Harness inline Delegation State or Foundation child Executions. A child never enters a waiting/deferred state.
+- A Session is one local continuation-backed interaction history and is not a Foundation `Execution`, browser connection, Pydantic run, model-provider session, or Environment provider resource.
+- A Harness Run is process-local. Starting another Run from a continuation is continuation, not recovery of the old Run.
+- The root Thread identity is carried by `HarnessState.thread_id`; Agent UI does not persist an independent local Thread/Turn/Run lifecycle model.
+- Presentation items are projections of selected continuation history plus current live output. They are not continuation authority.
+- Async-subagent executions are supervised current-Host tasks over exact Harness-built children. Their state, steering, and undelivered results disappear with the Host unless the result has already entered a selected parent continuation.

@@ -11,9 +11,7 @@ plugin artifacts and Runtime locks, durable Threads, editable queued
 submissions, Turns, and TurnAttempts, scheduling, the durable Thread inbox, waiting pending summaries and exact
 Turn-state requests, Environment connection configuration in Turn state,
 lifecycle events, raw usage records, generic OpenTelemetry tracing, and the
-public management API. The OSS distribution also supplies an independently
-deployed optional Trace Archive; neither hot telemetry nor cold archive is a
-durable domain authority.
+public management API. Telemetry is not durable domain authority.
 The control surface also owns the Foundation Service Protocol Gateway, which
 maps Native, Hosted AG-UI, and A2A callers into the same application authority.
 
@@ -76,7 +74,7 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [34 Agent Control: Input and Continuation](34-agent-control-input-and-continuation.md)                | Start, selected-head, null-head root-like, or explicit historical same-Thread continuation, atomic waiting feedback, fork, and retry        |
 | [35 Agent Control: Active Execution](35-agent-control-active-execution.md)                            | Thread inbox, durable steer and interrupt commands, state-coupled consumption, Redis control wakeups, and outcome races                     |
 | [36 Agent Control: Queued Submissions](36-agent-control-queued-submissions.md)                        | Queue-if-busy Thread submission, editable ordered input, state-first completed handoff, terminal recovery drain, and atomic consumption     |
-| [37 Observability and Trace Archive](37-observability-and-trace-archive.md)                           | TurnAttempt traces, content and scope policy, generic OTLP and Langfuse mapping, Parquet archive, retention, and operator reads             |
+| [37 Observability](37-observability.md)                                                               | TurnAttempt traces, content and scope policy, generic OTLP export, backend ownership, and Langfuse mapping                                  |
 
 Read `00`, `01`, and `02` before changing process startup, roles, or distribution
 contents. Read `03`, `04`, and `06` before introducing a durable capability.
@@ -111,7 +109,7 @@ or model-facing exposure.
 
 Read `37` with Harness Observation, `01`, `05`, `13`, `15`, `16`, and `20`
 before changing tracing, telemetry correlation, OTLP export, Langfuse
-integration, or Trace Archive storage and retention.
+integration, or backend ownership.
 
 ## Implementation Orientation
 

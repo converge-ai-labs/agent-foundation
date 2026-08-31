@@ -10,10 +10,10 @@ from a13n_environment_provider import (
     EnvironmentOperationContext,
     EnvironmentProviderResourceState,
 )
-from a13n_harness import (
+from a13n_harness import RunError
+from a13n_harness.environment import (
     EnvironmentError,
     EnvironmentRunExtensionFactoryContext,
-    RunError,
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )

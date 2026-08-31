@@ -12,7 +12,11 @@ The calling model does not choose the path, and the Harness never guesses suppor
 Native media support is Harness-owned `AgentSpec` configuration. Callers use the `model_characteristics` construction key; Python reads the resolved value through `spec.model_characteristics`:
 
 ```python
-from a13n_harness import AgentSpec, ModelCapability, HarnessModelCharacteristics
+from a13n_harness import (
+    AgentSpec,
+    ModelCapability,
+    HarnessModelCharacteristics,
+)
 
 agent_spec = AgentSpec(
     model_characteristics=HarnessModelCharacteristics(
@@ -76,7 +80,10 @@ The runtime bounds each file read, dedicated Agent timeout, output, output-valid
 Enable Environment file tools through `DynamicEnvironmentCapability`, then use `view` normally:
 
 ```python
-from a13n_harness import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
+from a13n_harness.environment import (
+    DynamicEnvironmentCapability,
+    DynamicEnvironmentConfiguration,
+)
 
 capabilities = (
     DynamicEnvironmentCapability(
@@ -95,11 +102,11 @@ The same tool accepts text and supported media paths. For media, `instructions` 
 Advanced integrations can replace the environment-configured default for one run:
 
 ```python
-from a13n_harness import (
-    FileMediaUnderstandingRunCapability,
+from a13n_harness import RunBindings
+from a13n_harness.environment import FileMediaUnderstandingRunCapability
+from a13n_harness.toolsets import (
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
-    RunBindings,
 )
 
 

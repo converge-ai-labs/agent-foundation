@@ -3,7 +3,11 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from a13n_harness import AgentSpec, DefinitionError, HarnessBuilder
+from a13n_harness import (
+    AgentSpec,
+    DefinitionError,
+    HarnessBuilder,
+)
 from pydantic_ai.agent.spec import CapabilitySpec
 
 from a13n_plugin_examples.capability import CAPABILITY_SERIALIZATION_NAME

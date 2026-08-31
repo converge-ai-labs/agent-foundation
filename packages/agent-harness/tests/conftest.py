@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 import pytest
-from a13n_harness import FileQueryRequest, FileTextSearchRequest
+from a13n_harness.environment import (
+    FileQueryRequest,
+    FileTextSearchRequest,
+)
 from a13n_harness.environment.files import FileOperator
 
 

@@ -60,8 +60,8 @@ Register one no-argument factory class:
 The entry-point name and `plugin_key()` must match:
 
 ```python
-from a13n_harness import (
-    AbstractHarnessPlugin,
+from a13n_harness import AbstractHarnessPlugin
+from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
 )
@@ -96,7 +96,8 @@ Factory construction is synchronous and side-effect free. `create_plugin()` retu
 The Harness plugin document is a data schema, not a required file format:
 
 ```python
-from a13n_harness import HarnessBuildContext, HarnessBuilder
+from a13n_harness import HarnessBuilder
+from a13n_harness.plugin_configuration import HarnessBuildContext
 
 configuration = {
     "schema_version": "1",
@@ -204,7 +205,7 @@ Use an `EnvironmentRunExtension` when setup and teardown need the stable complet
 For ordinary Host setup and cleanup, register an `EnvironmentRunCallbacks` adapter instead of defining an extension class:
 
 ```python
-from a13n_harness import (
+from a13n_harness.environment import (
     EnvironmentRunCallbacks,
     EnvironmentRunExtensionContext,
 )
@@ -246,7 +247,7 @@ Use a custom async context manager when setup and cleanup share local state or n
 ```python
 from contextlib import asynccontextmanager
 
-from a13n_harness import EnvironmentRunExtensionContext
+from a13n_harness.environment import EnvironmentRunExtensionContext
 
 
 class WorkspaceMarkerExtension:
@@ -320,9 +321,9 @@ A distribution can register a side-effect-free factory under:
 The Host explicitly selects keys with `build_environment_run_extension_factory_catalog()` or provides exact factories. Harness owns no ambient configuration document for Environment run extensions. A complete installed-factory path is:
 
 ```python
-from a13n_harness import (
+from a13n_harness import RunBindings
+from a13n_harness.environment import (
     EnvironmentRunExtensionFactoryContext,
-    RunBindings,
     build_environment_run_extension_factory_catalog,
 )
 from a13n_harness.environment.advanced import create_environment_runtime

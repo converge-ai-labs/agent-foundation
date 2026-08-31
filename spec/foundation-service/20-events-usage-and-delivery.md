@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Turn authority. [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Turn-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `TurnReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and the authority boundary between those records and telemetry. [Observability and Trace Archive](37-observability-and-trace-archive.md) owns trace topology, content and scope policy, OTLP export, hot-backend mapping, and cold archive.
+Foundation owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Turn authority. [Lifecycle and Stream Persistence](17-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Turn-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `TurnReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and the authority boundary between those records and telemetry. [Observability](37-observability.md) owns trace topology, content and scope policy, OTLP export, backend ownership, and hot-backend mapping.
 
 [Foundation Hook Notifications](20a-hook-notifications.md) owns the public Hook-name registry, durable subscription matching, external channel eligibility, and Webhook flow. Hook routing reuses the records and delivery envelope defined here rather than creating another event log or transport authority. Native Turn SSE, lifecycle reads, and best-effort notifications remain owned by [Native Streaming and Notifications](29-native-streaming-and-notifications.md).
 
@@ -174,15 +174,15 @@ For example, a command result that exceeds the inline Item limit is staged as an
 ## Observability
 
 OpenTelemetry traces and metrics correlate Foundation execution under the
-[observability contract](37-observability-and-trace-archive.md). Trace content
+[observability contract](37-observability.md). Trace content
 can intentionally include upstream Pydantic execution payloads when the
 deployment selects `standard` or `full`; Service-owned fields retain their
 closed information boundary at every content level.
 
-Hot telemetry and Parquet archive are best effort. Their loss cannot erase
-durable audit, lifecycle, retained Item, state, or usage facts, and their
-presence cannot prove commitment. Neither projection is a usage ledger,
-retained interaction replay source, or lifecycle repair input.
+Telemetry is best effort. Its loss cannot erase durable audit, lifecycle,
+retained Item, state, or usage facts, and its presence cannot prove commitment.
+It is not a usage ledger, retained interaction replay source, or lifecycle
+repair input.
 
 ## Failure Semantics
 

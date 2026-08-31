@@ -44,24 +44,23 @@ async def _run_conversation(arguments: argparse.Namespace) -> None:
         state_path=state_path,
         environment=create_demo_environment(workspace),
     )
-    async with application:
-        if arguments.prompts:
-            for prompt in arguments.prompts:
-                print(f"you> {prompt}")
-                await _print_turn(application, prompt)
-            return
-
-        print("Enter a message, or type /quit to stop.")
-        while True:
-            try:
-                prompt = await asyncio.to_thread(input, "you> ")
-            except EOFError:
-                break
-            if prompt.strip() == "/quit":
-                break
-            if not prompt.strip():
-                continue
+    if arguments.prompts:
+        for prompt in arguments.prompts:
+            print(f"you> {prompt}")
             await _print_turn(application, prompt)
+        return
+
+    print("Enter a message, or type /quit to stop.")
+    while True:
+        try:
+            prompt = await asyncio.to_thread(input, "you> ")
+        except EOFError:
+            break
+        if prompt.strip() == "/quit":
+            break
+        if not prompt.strip():
+            continue
+        await _print_turn(application, prompt)
 
 
 async def _run(arguments: argparse.Namespace) -> None:

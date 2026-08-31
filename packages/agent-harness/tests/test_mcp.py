@@ -7,17 +7,19 @@ from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     AgentSpec,
-    ContextualMCP,
     DefinitionError,
     HarnessBuilder,
-    MCPContextHeaderBinding,
-    MCPContextHeaders,
-    MCPContextHeadersConfig,
     ModelRecoveryPolicy,
     RunBindings,
     RunError,
 )
 from a13n_harness.context import AgentContext
+from a13n_harness.mcp import (
+    ContextualMCP,
+    MCPContextHeaderBinding,
+    MCPContextHeaders,
+    MCPContextHeadersConfig,
+)
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY
 from a13n_harness.toolsets import FINAL_TOOL_OUTPUT_HARD_CHARS, tool_output_bytes, tool_output_text
 from mcp.server.fastmcp import FastMCP
@@ -120,8 +122,7 @@ async def test_local_mcp_oversized_results_use_unmanaged_truncation(kind: str) -
         capabilities=(MCP(local=server, id="oversized-results"),),
     )
 
-    async with executable:
-        result = await executable.run("Call the MCP tool", bindings=RunBindings.embedded())
+    result = await executable.run("Call the MCP tool", bindings=RunBindings.embedded())
 
     assert result.status == "completed"
     returns = _tool_returns(list(result.all_messages()))

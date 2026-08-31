@@ -88,17 +88,17 @@ from a13n_agent_app_example import (
 state_path = Path("conversation-state.json")
 environment = create_demo_environment(Path("workspace"))
 
-async with ConversationApplication(
+application = ConversationApplication(
     model=model,
     state_path=state_path,
     environment=environment,
-) as application:
-    async with application.stream_turn("Hello") as stream:
-        async for text in stream:
-            print(text, end="", flush=True)
+)
+async with application.stream_turn("Hello") as stream:
+    async for text in stream:
+        print(text, end="", flush=True)
 ```
 
-`ConversationApplication` owns one reusable `ExecutableAgent` for its process lifetime. For each turn it:
+`ConversationApplication` caches one reusable `ExecutableAgent` for its process lifetime. For each turn it:
 
 1. serializes turn execution with an async lock;
 2. loads the last successfully committed `HarnessState` if present;
@@ -108,7 +108,7 @@ async with ConversationApplication(
 6. requires a successful terminal result;
 7. atomically replaces the state file with the returned continuation state.
 
-Closing the application closes its executable. The Harness owns the demo Provider's temporary Resource lifecycle for each turn: create, Resource entry, attachment acquisition, attachment release, Resource exit, and destroy.
+The executable is immutable build output and has no independent resource lifecycle. The Harness owns the demo Provider's temporary Resource lifecycle for each turn: create, Resource entry, attachment acquisition, attachment release, Resource exit, and destroy.
 
 A failed or abandoned turn does not replace the last completed state. Callers must enter `stream_turn()` with `async with`; leaving that scope deterministically closes the Harness stream and temporary Environment lifecycle. The next application instance can therefore recover only from a committed checkpoint.
 

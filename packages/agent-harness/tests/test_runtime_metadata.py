@@ -6,15 +6,17 @@ from dataclasses import dataclass
 import pytest
 from a13n_harness import (
     AgentContext,
-    EnvironmentPath,
     HarnessBuilder,
     ModelRecoveryPolicy,
     RunBindings,
+)
+from a13n_harness.context import (
     RunSkillPaths,
     SkillPath,
     ToolMetadataKey,
     ToolRuntimeMetadata,
 )
+from a13n_harness.environment import EnvironmentPath
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability

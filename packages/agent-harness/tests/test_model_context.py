@@ -7,21 +7,21 @@ from typing import Any, cast
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
-    AbstractModelContextCapability,
     AgentContext,
     HarnessBuilder,
+    RunBindings,
+)
+from a13n_harness.errors import DefinitionError
+from a13n_harness.model_context import (
+    AbstractModelContextCapability,
     ModelContextBlock,
+    ModelContextCoordinatorCapability,
     ModelContextInputOrigin,
     ModelContextNext,
     ModelContextPlacement,
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
-    RunBindings,
-)
-from a13n_harness.errors import DefinitionError
-from a13n_harness.model_context import (
-    ModelContextCoordinatorCapability,
     _commit_projection,
     _is_retry_boundary,
     _remove_owned_overlays,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from a13n_harness import (
+from a13n_harness.environment import (
     EnvironmentRunExtension,
     EnvironmentRunExtensionContext,
     EnvironmentRunExtensionFactory,
