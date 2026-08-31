@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -14,8 +14,9 @@ from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
 from anyio import Lock
 
-from .domain import FoundationSkillRevisionLock
-from .package import MAX_FILES, NormalizedSkillFile, NormalizedSkillPackage
+from .domain import FoundationSkillRevisionLock, ManagedSkillPackageFile, ManagedSkillPackageManifest
+from .objects import SkillPackageStore, SkillPackageStoreError
+from .package import MAX_FILES, NormalizedSkillPackage
 
 _COMPLETION_FILE = ".a13n-foundation-complete.json"
 _STALE_ENVIRONMENT_CODES = frozenset({"environment_stale_mount", "environment_provider_binding_reused"})
@@ -32,18 +33,33 @@ class SkillMaterializationStale(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class LockedSkillPackage:
+class LockedSkillRevision:
     lock: FoundationSkillRevisionLock
-    package: NormalizedSkillPackage
+    manifest: ManagedSkillPackageManifest
+
+
+@dataclass(frozen=True, slots=True)
+class FoundationSkillMaterializationPlan:
+    target_root: str
+    catalog_digest: str
+    revisions: tuple[LockedSkillRevision, ...]
+    organization_id: str
+    workspace_id: str
 
 
 class FoundationSkillSource:
     """Scan only the exact verified package roots selected for this Turn."""
 
-    def __init__(self, source_id: str, target_root: str, packages: Sequence[LockedSkillPackage]) -> None:
+    def __init__(
+        self,
+        source_id: str,
+        plan: FoundationSkillMaterializationPlan,
+        *,
+        fence: SkillAttemptFence | None,
+    ) -> None:
         self._source_id = source_id
-        self._target_root = target_root
-        self._packages = tuple(packages)
+        self._plan = plan
+        self._fence = fence
 
     @property
     def source_id(self) -> str:
@@ -51,27 +67,45 @@ class FoundationSkillSource:
 
     @property
     def roots(self) -> tuple[str, ...]:
-        return (self._target_root,)
+        return (self._plan.target_root,)
 
     async def catalog(self, *, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
-        items: list[SkillCatalogItem] = []
-        for selected in self._packages:
-            root = _package_root(self._target_root, selected.lock.content_digest)
-            source = FileSkillSource(
-                f"{self.source_id}-{selected.lock.content_digest[:16]}",
-                (root,),
-                required=True,
-                max_entries_per_root=MAX_FILES,
-            )
-            discovered = tuple(await source.catalog(files=files))
-            if len(discovered) != 1:
-                raise _invalid("A materialized Skill package has an invalid catalog shape.")
-            item = discovered[0]
-            manifest = selected.package.manifest
-            if item.name != selected.lock.skill_name or item.description != manifest.description or item.path != root:
-                raise _invalid("A materialized Skill package does not match its immutable lock.")
-            items.append(item)
-        return tuple(items)
+        try:
+            await self._require_current()
+            items: list[SkillCatalogItem] = []
+            for selected in self._plan.revisions:
+                await self._require_current()
+                root = _package_root(self._plan.target_root, selected.lock.content_digest)
+                source = FileSkillSource(
+                    f"{self.source_id}-{selected.lock.content_digest[:16]}",
+                    (root,),
+                    required=True,
+                    max_entries_per_root=MAX_FILES,
+                )
+                discovered = tuple(await source.catalog(files=files))
+                if len(discovered) != 1:
+                    raise _invalid("A materialized Skill package has an invalid catalog shape.")
+                item = discovered[0]
+                manifest = selected.manifest
+                if (
+                    item.name != selected.lock.skill_name
+                    or item.description != manifest.description
+                    or item.path != root
+                ):
+                    raise _invalid("A materialized Skill package does not match its immutable lock.")
+                items.append(item)
+            await self._require_current()
+            return tuple(items)
+        except SkillMaterializationStale as error:
+            raise DefinitionError(
+                "Skill materialization authority became stale during catalog scanning.",
+                code="skill_materialization_stale",
+                retry_hint="new_run",
+            ) from error
+
+    async def _require_current(self) -> None:
+        if self._fence is not None:
+            await self._fence.require_current()
 
 
 class FoundationSkillMaterializer:
@@ -80,19 +114,17 @@ class FoundationSkillMaterializer:
     def __init__(
         self,
         materializer_id: str,
-        target_root: str,
-        catalog_digest: str,
-        packages: Sequence[LockedSkillPackage],
+        plan: FoundationSkillMaterializationPlan,
+        packages: SkillPackageStore,
         *,
         fence: SkillAttemptFence | None,
     ) -> None:
         self._materializer_id = materializer_id
-        self._target_root = target_root
-        self._catalog_digest = catalog_digest
-        self._packages = tuple(packages)
+        self._plan = plan
+        self._packages = packages
         self._fence = fence
         self._lock = Lock()
-        self._completion = _completion_payload(catalog_digest, self._packages)
+        self._completion = _completion_payload(plan.catalog_digest, plan.revisions)
 
     @property
     def materializer_id(self) -> str:
@@ -100,7 +132,7 @@ class FoundationSkillMaterializer:
 
     @property
     def target_root(self) -> str:
-        return self._target_root
+        return self._plan.target_root
 
     async def materialize(self, *, files: FileOperator) -> None:
         try:
@@ -134,11 +166,13 @@ class FoundationSkillMaterializer:
     async def _replace(self, files: FileOperator) -> None:
         await self._remove_target(files)
         await files.mkdir(self.target_root, parents=True, exist_ok=False)
-        for selected in self._packages:
+        for selected in self._plan.revisions:
+            await self._require_current()
+            package = await self._read_package(selected)
             await self._require_current()
             root = _package_root(self.target_root, selected.lock.content_digest)
             await files.mkdir(root, parents=True, exist_ok=False)
-            for item in selected.package.files:
+            for item in package.files:
                 destination = f"{root}/{item.path}"
                 await files.mkdir(destination.rsplit("/", 1)[0], parents=True, exist_ok=True)
                 await files.write_bytes_stream(destination, _one_chunk(item.content), mode="create")
@@ -169,7 +203,7 @@ class FoundationSkillMaterializer:
             raise
         if metadata.kind != "directory":
             return False
-        expected = _expected_entries(self._packages, include_completion=require_completion)
+        expected = _expected_entries(self._plan.revisions, include_completion=require_completion)
         actual = await _walk_entries(files, self.target_root, maximum=len(expected) + 1)
         if actual != {path: kind for path, (kind, _) in expected.items()}:
             return False
@@ -187,19 +221,35 @@ class FoundationSkillMaterializer:
         if self._fence is not None:
             await self._fence.require_current()
 
+    async def _read_package(self, selected: LockedSkillRevision) -> NormalizedSkillPackage:
+        try:
+            return await self._packages.read_verified_package(
+                organization_id=self._plan.organization_id,
+                workspace_id=self._plan.workspace_id,
+                manifest=selected.manifest,
+            )
+        except SkillPackageStoreError as error:
+            if error.code == "skill_package_unavailable":
+                raise DefinitionError(
+                    "Skill package storage is unavailable during materialization.",
+                    code="skill_materialization_unavailable",
+                    retry_hint="new_run",
+                ) from error
+            raise _invalid("A locked Skill package is invalid during materialization.") from error
+
 
 def _expected_entries(
-    packages: tuple[LockedSkillPackage, ...],
+    revisions: tuple[LockedSkillRevision, ...],
     *,
     include_completion: bool,
-) -> dict[str, tuple[FileKind, NormalizedSkillFile | None]]:
-    expected: dict[str, tuple[FileKind, NormalizedSkillFile | None]] = {}
+) -> dict[str, tuple[FileKind, ManagedSkillPackageFile | None]]:
+    expected: dict[str, tuple[FileKind, ManagedSkillPackageFile | None]] = {}
     if include_completion:
         expected[_COMPLETION_FILE] = ("file", None)
-    for selected in packages:
+    for selected in revisions:
         package_directory = selected.lock.content_digest
         expected[package_directory] = ("directory", None)
-        for item in selected.package.files:
+        for item in selected.manifest.files:
             relative = f"{package_directory}/{item.path}"
             parts = relative.split("/")
             for index in range(1, len(parts)):
@@ -236,20 +286,20 @@ async def _walk_entries(files: FileOperator, root: str, *, maximum: int) -> dict
     return actual
 
 
-async def _matches_file(files: FileOperator, path: str, expected: NormalizedSkillFile) -> bool:
+async def _matches_file(files: FileOperator, path: str, expected: ManagedSkillPackageFile) -> bool:
     digest = hashlib.sha256()
     size = 0
     try:
         async for chunk in files.read_bytes_stream(path):
             size += len(chunk)
-            if size > len(expected.content):
+            if size > expected.size_bytes:
                 return False
             digest.update(chunk)
     except EnvironmentError as error:
         if error.code == "environment_not_found":
             return False
         raise
-    return size == len(expected.content) and digest.hexdigest() == hashlib.sha256(expected.content).hexdigest()
+    return size == expected.size_bytes and digest.hexdigest() == expected.sha256
 
 
 async def _read_bounded(files: FileOperator, path: str, maximum: int) -> bytes:
@@ -266,11 +316,11 @@ async def _read_bounded(files: FileOperator, path: str, maximum: int) -> bytes:
     return bytes(body)
 
 
-def _completion_payload(catalog_digest: str, packages: tuple[LockedSkillPackage, ...]) -> bytes:
+def _completion_payload(catalog_digest: str, revisions: tuple[LockedSkillRevision, ...]) -> bytes:
     value = {
         "schema_version": "1",
         "catalog_digest": catalog_digest,
-        "packages": [item.lock.model_dump(mode="json") for item in packages],
+        "packages": [item.lock.model_dump(mode="json") for item in revisions],
     }
     return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True).encode()
 

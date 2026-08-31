@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 
@@ -28,6 +30,7 @@ from .uploads import SkillUploadService
 router = APIRouter(prefix="/api/v1", tags=["skill-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=512)]
+_CONTENT_CHUNK_BYTES = 1024 * 1024
 
 
 def _uploads(request: Request) -> SkillUploadService:
@@ -196,8 +199,8 @@ async def get_skill_revision_content(
     skill_revision_id: str,
 ) -> Response:
     content, digest = await _catalog(request).content(actor=actor, revision_id=skill_revision_id)
-    return Response(
-        content=content,
+    return StreamingResponse(
+        _content_chunks(content),
         media_type="application/zip",
         headers={"ETag": f'W/"sha256:{digest}"'},
     )
@@ -257,3 +260,8 @@ def _archive_limit() -> SkillManagementError:
         "The uploaded ZIP exceeds the package size limit.",
         status_code=400,
     )
+
+
+async def _content_chunks(content: bytes) -> AsyncIterator[bytes]:
+    for offset in range(0, len(content), _CONTENT_CHUNK_BYTES):
+        yield content[offset : offset + _CONTENT_CHUNK_BYTES]

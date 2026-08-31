@@ -21,9 +21,10 @@ from .domain import (
     ManagedSkillPackageManifest,
 )
 from .materialization import (
+    FoundationSkillMaterializationPlan,
     FoundationSkillMaterializer,
     FoundationSkillSource,
-    LockedSkillPackage,
+    LockedSkillRevision,
     SkillAttemptFence,
     SkillMaterializationStale,
 )
@@ -93,7 +94,7 @@ class FoundationSkillRuntimePreparer:
             workspace_id=workspace_id,
             locks=selected_locks,
         )
-        locked_packages: list[LockedSkillPackage] = []
+        locked_revisions: list[LockedSkillRevision] = []
         for lock in selected_locks:
             await _require_current(fence)
             record = records[lock.skill_revision_id]
@@ -108,7 +109,7 @@ class FoundationSkillRuntimePreparer:
             ):
                 raise _invalid()
             try:
-                package = await self._packages.read_verified_package(
+                await self._packages.read_verified_package(
                     organization_id=organization_id,
                     workspace_id=workspace_id,
                     manifest=manifest,
@@ -120,7 +121,7 @@ class FoundationSkillRuntimePreparer:
                     else "skill_materialization_invalid"
                 )
                 raise SkillRuntimeError(code, "A locked Skill package could not be prepared.") from error
-            locked_packages.append(LockedSkillPackage(lock=lock, package=package))
+            locked_revisions.append(LockedSkillRevision(lock=lock, manifest=manifest))
         await _require_current(fence)
         catalog_digest = _catalog_digest(selected_locks)
         mount = selection.materialization_mount
@@ -128,17 +129,23 @@ class FoundationSkillRuntimePreparer:
             raise _invalid()
         root = f"/environment/{mount}/.a13n/skills/version-1/{catalog_digest}"
         source_id = f"foundation-skills-{catalog_digest[:24]}"
+        plan = FoundationSkillMaterializationPlan(
+            target_root=root,
+            catalog_digest=catalog_digest,
+            revisions=tuple(locked_revisions),
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+        )
         materializer = FoundationSkillMaterializer(
             f"foundation-materializer-{catalog_digest[:24]}",
-            root,
-            catalog_digest,
-            locked_packages,
+            plan,
+            self._packages,
             fence=fence,
         )
         manager = SkillManager(
-            (FoundationSkillSource(source_id, root, locked_packages),),
+            (FoundationSkillSource(source_id, plan, fence=fence),),
             materializers=(materializer,),
-            policy=SkillsPolicy(conflict="error", max_skills=max(1, len(locked_packages))),
+            policy=SkillsPolicy(conflict="error", max_skills=max(1, len(locked_revisions))),
         )
         return PreparedSkillRuntime(
             manager=manager,

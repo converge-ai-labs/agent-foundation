@@ -16,6 +16,7 @@ from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.settings import ServiceSettings
+from a13n_service.skill_management.router import _content_chunks
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from fastapi import Request
@@ -240,3 +241,13 @@ async def test_zip_route_rejects_wrong_media_missing_key_and_unknown_fields(
     assert unknown.status_code == 400
     assert unknown.json()["error"]["code"] == "invalid_request"
     assert "must-not-be-accepted" not in unknown.text
+
+
+@pytest.mark.anyio
+async def test_revision_content_is_emitted_in_bounded_chunks() -> None:
+    content = b"x" * (2 * 1024 * 1024 + 1)
+
+    chunks = [chunk async for chunk in _content_chunks(content)]
+
+    assert tuple(map(len, chunks)) == (1024 * 1024, 1024 * 1024, 1)
+    assert b"".join(chunks) == content

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -183,7 +184,7 @@ class GitHubSkillAcquirer:
                 "github_unavailable",
                 "GitHub acquisition did not complete before its deadline.",
             ) from error
-        package = normalize_skill_files(files)
+        package = await asyncio.to_thread(normalize_skill_files, files)
         return AcquiredGitHubSkill(
             package=package,
             provenance=GitHubSkillImportProvenance(
@@ -338,12 +339,9 @@ class GitHubSkillAcquirer:
         if blob.sha != selection.sha or blob.size != selection.size:
             raise _unavailable("GitHub blob metadata did not match the selected tree")
         try:
-            encoded = "".join(blob.content.split()).encode("ascii")
-            content = base64.b64decode(encoded, validate=True)
+            content = await asyncio.to_thread(_decode_blob, blob, selection)
         except (UnicodeEncodeError, ValueError, binascii.Error) as error:
             raise _unavailable("GitHub returned invalid blob content") from error
-        if len(content) != selection.size or _git_blob_sha(content) != selection.sha:
-            raise _unavailable("GitHub blob content did not match the selected tree")
         return content
 
     async def _request_json(
@@ -373,7 +371,7 @@ class GitHubSkillAcquirer:
         except httpx2.HTTPError as error:
             raise _unavailable("GitHub is temporarily unavailable") from error
         try:
-            return json.loads(body)
+            return await asyncio.to_thread(json.loads, body)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise _unavailable("GitHub returned an invalid JSON response") from error
 
@@ -474,7 +472,11 @@ def _raise_for_status(response: httpx2.Response) -> None:
     status = response.status_code
     if 200 <= status < 300:
         return
-    if status == 429 or (status == 403 and response.headers.get("x-ratelimit-remaining") == "0"):
+    rate_limited = status == 429 or (
+        status == 403
+        and (response.headers.get("x-ratelimit-remaining") == "0" or response.headers.get("retry-after") is not None)
+    )
+    if rate_limited:
         retry_after_seconds = _retry_after_seconds(response.headers.get("retry-after"))
         raise GitHubAcquisitionError(
             "github_rate_limited",
@@ -500,6 +502,14 @@ def _retry_after_seconds(value: str | None) -> int | None:
 def _git_blob_sha(content: bytes) -> str:
     header = f"blob {len(content)}\0".encode()
     return hashlib.sha1(header + content, usedforsecurity=False).hexdigest()
+
+
+def _decode_blob(blob: _Blob, selection: _BlobSelection) -> bytes:
+    encoded = "".join(blob.content.split()).encode("ascii")
+    content = base64.b64decode(encoded, validate=True)
+    if len(content) != selection.size or _git_blob_sha(content) != selection.sha:
+        raise ValueError("GitHub blob content did not match the selected tree")
+    return content
 
 
 def _invalid(message: str) -> GitHubAcquisitionError:

@@ -35,6 +35,8 @@ from a13n_service.skill_management.github import GitHubSkillAcquirer
 from a13n_service.skill_management.objects import SkillPackageStore
 from a13n_service.skill_management.publication import SkillPublicationService
 from a13n_service.skill_management.router import router as skill_management_router
+from a13n_service.skill_management.runtime import FoundationSkillRuntimePreparer
+from a13n_service.skill_management.selection import AgentSkillLockResolver
 from a13n_service.skill_management.sources import GitHubCredentialResolver, SkillSourcePreparer
 from a13n_service.skill_management.uploads import SkillUploadService
 from a13n_service.storage import StorageResources, open_storage, short_session
@@ -85,8 +87,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     http_client=model_http_client,
                 )
             app.state.model_secret_resolver = secret_resolver
+            package_store = SkillPackageStore(storage.objects)
             if settings.role in _CONTROL_PLANE_ROLES:
-                package_store = SkillPackageStore(storage.objects)
                 github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
                 credential_resolver = app.state.components.skill_credential_resolver
                 if credential_resolver is None:
@@ -103,6 +105,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
                 app.state.skill_publication_service = SkillPublicationService(storage.sessions, source_preparer)
                 app.state.skill_catalog_service = SkillCatalogService(storage.sessions, package_store)
+                app.state.agent_skill_lock_resolver = AgentSkillLockResolver(storage.sessions)
                 app.state.accepted_model_selector = AcceptedModelSelector(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -118,6 +121,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 )
             if settings.role in {ServiceRole.all, ServiceRole.worker}:
                 app.state.native_model_factory = NativeModelFactory(model_http_client)
+                app.state.skill_runtime_preparer = FoundationSkillRuntimePreparer(storage.sessions, package_store)
             logger.info(
                 "service_started",
                 extra={

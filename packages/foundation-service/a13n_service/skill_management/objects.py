@@ -8,10 +8,10 @@ from a13n_service.storage import ObjectConflict, ObjectNotFound, ObjectStore, Ob
 
 from .domain import ManagedSkillPackageManifest
 from .package import (
-    MAX_ARCHIVE_BYTES,
+    MAX_NORMALIZED_ARCHIVE_BYTES,
     NormalizedSkillPackage,
     SkillPackageError,
-    normalize_skill_zip,
+    normalize_stored_skill_zip,
     skill_package_object_key,
 )
 
@@ -83,7 +83,7 @@ class SkillPackageStore:
             async with self._objects.open(key) as reader:
                 async for chunk in reader:
                     body.extend(chunk)
-                    if len(body) > MAX_ARCHIVE_BYTES:
+                    if len(body) > MAX_NORMALIZED_ARCHIVE_BYTES:
                         raise SkillPackageStoreError(
                             "skill_package_invalid",
                             "The stored Skill package exceeds its contract limit.",
@@ -99,7 +99,7 @@ class SkillPackageStore:
             raise _unavailable() from error
 
         try:
-            normalized = await asyncio.to_thread(normalize_skill_zip, bytes(body))
+            normalized = await asyncio.to_thread(normalize_stored_skill_zip, bytes(body))
         except SkillPackageError as error:
             raise SkillPackageStoreError(
                 "skill_package_invalid",

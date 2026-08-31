@@ -7,6 +7,7 @@ import io
 import json
 import re
 import stat
+import struct
 import unicodedata
 import zipfile
 from collections.abc import Iterable, Mapping
@@ -28,10 +29,13 @@ MAX_SKILL_DESCRIPTION_BYTES = 16 * 1024
 MAX_PATH_DEPTH = 32
 MAX_PATH_BYTES = 1024
 MAX_SEGMENT_BYTES = 255
+MAX_NORMALIZED_ARCHIVE_BYTES = MAX_TOTAL_BYTES + MAX_FILES * (2 * MAX_PATH_BYTES + 76) + 22
 
 _CONTENT_DIGEST_PREFIX = b"a13n.managed-skill-package.v1\n"
 _SUPPORTED_COMPRESSION = frozenset({zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED})
 _SKILL_FILE_CASEFOLD = "skill.md"
+_ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
+_ZIP_END_SIGNATURE = b"PK\x05\x06"
 _URI_OR_DRIVE_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 _WINDOWS_DEVICE_NAMES = frozenset(
     {"con", "prn", "aux", "nul"}
@@ -68,11 +72,30 @@ class _ArchiveEntry:
     path: str
 
 
+@dataclass(frozen=True, slots=True)
+class _ZipEndRecord:
+    end_offset: int
+    total_entries: int
+    central_size: int
+    central_offset: int
+
+
 def normalize_skill_zip(archive: bytes) -> NormalizedSkillPackage:
     """Normalize one bounded ZIP body into deterministic immutable package bytes."""
 
-    if len(archive) > MAX_ARCHIVE_BYTES:
-        raise _limit("uploaded ZIP exceeds the package size limit")
+    return _normalize_skill_zip(archive, maximum_archive_bytes=MAX_ARCHIVE_BYTES)
+
+
+def normalize_stored_skill_zip(archive: bytes) -> NormalizedSkillPackage:
+    """Verify one Foundation-produced deterministic ZIP under its encoded bound."""
+
+    return _normalize_skill_zip(archive, maximum_archive_bytes=MAX_NORMALIZED_ARCHIVE_BYTES)
+
+
+def _normalize_skill_zip(archive: bytes, *, maximum_archive_bytes: int) -> NormalizedSkillPackage:
+    if len(archive) > maximum_archive_bytes:
+        raise _limit("ZIP exceeds the applicable package size limit")
+    _preflight_zip(archive)
     try:
         with zipfile.ZipFile(io.BytesIO(archive), "r") as source:
             entries = _validated_archive_entries(source)
@@ -85,24 +108,83 @@ def normalize_skill_zip(archive: bytes) -> NormalizedSkillPackage:
     return normalize_skill_files((item.path, item.content) for item in files)
 
 
+def _preflight_zip(archive: bytes) -> None:
+    record = _read_zip_end_record(archive)
+    central_end = record.central_offset + record.central_size
+    if record.central_offset > record.end_offset or central_end != record.end_offset:
+        raise _invalid("ZIP central directory is malformed")
+
+    counted = _count_central_entries(archive, start=record.central_offset, end=central_end)
+    if counted != record.total_entries:
+        raise _invalid("ZIP central directory member count is inconsistent")
+
+
+def _read_zip_end_record(archive: bytes) -> _ZipEndRecord:
+    minimum = max(0, len(archive) - (65_535 + 22))
+    end_offset = archive.rfind(_ZIP_END_SIGNATURE, minimum)
+    if end_offset < 0 or end_offset + 22 > len(archive):
+        raise _invalid("ZIP end record is missing or truncated")
+    try:
+        (
+            disk_number,
+            central_disk,
+            disk_entries,
+            total_entries,
+            central_size,
+            central_offset,
+            comment_size,
+        ) = struct.unpack_from("<4H2LH", archive, end_offset + 4)
+    except struct.error as error:
+        raise _invalid("ZIP end record is malformed") from error
+    if end_offset + 22 + comment_size != len(archive):
+        raise _invalid("ZIP contains trailing or malformed end-record data")
+    if disk_number != 0 or central_disk != 0 or disk_entries != total_entries:
+        raise _invalid("multi-disk ZIP archives are not supported")
+    if total_entries > MAX_ARCHIVE_MEMBERS:
+        raise _limit("ZIP contains too many members")
+    return _ZipEndRecord(
+        end_offset=end_offset,
+        total_entries=total_entries,
+        central_size=central_size,
+        central_offset=central_offset,
+    )
+
+
+def _count_central_entries(archive: bytes, *, start: int, end: int) -> int:
+    cursor = start
+    counted = 0
+    while cursor < end:
+        if counted >= MAX_ARCHIVE_MEMBERS:
+            raise _limit("ZIP contains too many members")
+        cursor = _next_central_entry_offset(archive, cursor=cursor, end=end)
+        if cursor > end:
+            raise _invalid("ZIP central directory is malformed")
+        counted += 1
+    return counted
+
+
+def _next_central_entry_offset(archive: bytes, *, cursor: int, end: int) -> int:
+    if cursor + 46 > end or archive[cursor : cursor + 4] != _ZIP_CENTRAL_SIGNATURE:
+        raise _invalid("ZIP central directory is malformed")
+    name_size, extra_size, member_comment_size = struct.unpack_from("<3H", archive, cursor + 28)
+    return cursor + 46 + name_size + extra_size + member_comment_size
+
+
 def normalize_skill_files(files: Iterable[tuple[str, bytes]]) -> NormalizedSkillPackage:
     """Normalize one source-relative regular-file tree under the shared package contract."""
 
-    items = tuple(files)
-    if len(items) > MAX_FILES:
-        raise _limit("package contains too many regular files")
-
     normalized: dict[str, bytes] = {}
-    casefolded: dict[str, str] = {}
     total_size = 0
-    for raw_path, content in items:
+    file_count = 0
+    for raw_path, content in files:
+        file_count += 1
+        if file_count > MAX_FILES:
+            raise _limit("package contains too many regular files")
         if not isinstance(content, bytes):
             raise TypeError("managed Skill file content must be bytes")
         path = normalize_skill_path(raw_path)
-        folded = path.casefold()
-        previous = casefolded.setdefault(folded, path)
-        if previous != path or path in normalized:
-            raise _invalid("package contains duplicate or case-folded-colliding paths")
+        if path in normalized:
+            raise _invalid("package contains duplicate paths")
         size = len(content)
         if size > MAX_FILE_BYTES:
             raise _limit("package contains a file larger than the per-file limit")
@@ -113,6 +195,7 @@ def normalize_skill_files(files: Iterable[tuple[str, bytes]]) -> NormalizedSkill
             raise _limit("package expanded content exceeds the total size limit")
         normalized[path] = content
 
+    _require_portable_tree(normalized)
     _require_one_root_skill_document(normalized)
     skill_name, description = _validate_skill_document(normalized["SKILL.md"])
     ordered_files = tuple(NormalizedSkillFile(path=path, content=normalized[path]) for path in sorted(normalized))
@@ -212,6 +295,8 @@ def _validated_archive_path(info: zipfile.ZipInfo) -> str:
     if "\x00" in info.orig_filename:
         raise _invalid("ZIP member name contains NUL")
     _require_ordinary_zip_member(info)
+    if info.is_dir() and info.file_size != 0:
+        raise _invalid("ZIP directory members must not contain data")
     return normalize_skill_path(info.orig_filename.rstrip("/"))
 
 
@@ -294,6 +379,18 @@ def _require_one_root_skill_document(files: Mapping[str, bytes]) -> None:
     ]
     if conflicting:
         raise _invalid("package must not contain another path ending in SKILL.md")
+
+
+def _require_portable_tree(files: Mapping[str, bytes]) -> None:
+    nodes: dict[str, tuple[str, bool]] = {}
+    for path in files:
+        parts = path.split("/")
+        for index in range(1, len(parts) + 1):
+            node = "/".join(parts[:index])
+            identity = (node, index == len(parts))
+            previous = nodes.setdefault(node.casefold(), identity)
+            if previous != identity:
+                raise _invalid("package contains a case-folded or file-directory path collision")
 
 
 def _validate_skill_document(content: bytes) -> tuple[str, str]:

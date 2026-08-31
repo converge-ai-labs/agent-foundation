@@ -7,6 +7,7 @@ import pytest
 from a13n_service.app import create_app
 from a13n_service.secret_management import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
+from a13n_service.skill_management import AgentSkillLockResolver, FoundationSkillRuntimePreparer
 from fastapi import FastAPI
 
 
@@ -112,6 +113,8 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         storage = app.state.storage
         assert app.state.db_engine is storage.engine
         assert app.state.db_session_factory is storage.sessions
+        assert isinstance(app.state.agent_skill_lock_resolver, AgentSkillLockResolver)
+        assert isinstance(app.state.skill_runtime_preparer, FoundationSkillRuntimePreparer)
 
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -119,6 +122,19 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
 
         assert response.status_code == 200
         assert response.json() == {"status": "ready", "role": "all"}
+
+
+@pytest.mark.anyio
+async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
+    control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control))
+    async with control.router.lifespan_context(control):
+        assert isinstance(control.state.agent_skill_lock_resolver, AgentSkillLockResolver)
+        assert not hasattr(control.state, "skill_runtime_preparer")
+
+    worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker))
+    async with worker.router.lifespan_context(worker):
+        assert not hasattr(worker.state, "agent_skill_lock_resolver")
+        assert isinstance(worker.state.skill_runtime_preparer, FoundationSkillRuntimePreparer)
 
 
 @pytest.mark.anyio

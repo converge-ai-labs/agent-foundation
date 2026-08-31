@@ -246,6 +246,7 @@ async def test_expected_commit_mismatch_stops_before_tree_reads() -> None:
         (401, {}, "github_auth_failed"),
         (403, {}, "github_auth_failed"),
         (403, {"x-ratelimit-remaining": "0", "retry-after": "12"}, "github_rate_limited"),
+        (403, {"retry-after": "12"}, "github_rate_limited"),
         (404, {}, "github_auth_failed"),
         (429, {"retry-after": "12"}, "github_rate_limited"),
         (503, {}, "github_unavailable"),

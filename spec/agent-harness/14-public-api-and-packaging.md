@@ -168,6 +168,11 @@ class RunBindings:
 
 `SkillSelectionRunCapability` is the optional Host override consumed only by a definition-selected `SkillsCapability`. Its immutable exact-name set chooses a subset of the conflict-resolved discovered catalog for one logical run. Absence selects the complete catalog, while an explicit empty set selects none. It carries no source, file, package, or activation authority and is reconstructed independently for resumed and child runs.
 
+`parse_skill_frontmatter(content, path="SKILL.md")` is the public content-only
+validation helper for Hosts that already own bounded `SKILL.md` bytes. It applies
+the same frontmatter contract as `SkillManager`, returns only name and description,
+and performs no discovery, filesystem access, package acceptance, or activation.
+
 ## Executable API
 
 ```python

@@ -13,6 +13,7 @@ from a13n_service.skill_management.package import (
     MAX_ARCHIVE_MEMBERS,
     MAX_FILE_BYTES,
     MAX_FILES,
+    MAX_NORMALIZED_ARCHIVE_BYTES,
     MAX_PATH_BYTES,
     MAX_PATH_DEPTH,
     MAX_SEGMENT_BYTES,
@@ -22,6 +23,7 @@ from a13n_service.skill_management.package import (
     SkillPackageError,
     normalize_skill_files,
     normalize_skill_zip,
+    normalize_stored_skill_zip,
     skill_package_object_key,
 )
 
@@ -68,6 +70,7 @@ def test_contract_limits_match_the_shared_version_one_package_contract() -> None
     assert MAX_PATH_DEPTH == 32
     assert MAX_PATH_BYTES == 1024
     assert MAX_SEGMENT_BYTES == 255
+    assert MAX_NORMALIZED_ARCHIVE_BYTES == MAX_TOTAL_BYTES + MAX_FILES * (2 * MAX_PATH_BYTES + 76) + 22
 
 
 def test_zip_normalization_removes_one_wrapper_and_produces_canonical_content() -> None:
@@ -149,6 +152,14 @@ def test_file_tree_normalizes_unicode_and_rejects_normalized_or_casefolded_colli
         files = (("SKILL.md", SKILL_DOCUMENT), *colliding)
         assert error_code(lambda files=files: normalize_skill_files(files)) == "skill_package_invalid"
 
+    for ancestor_collision in (
+        (("assets", b"file"), ("assets/icon.png", b"nested")),
+        (("Assets", b"file"), ("assets/icon.png", b"nested")),
+        (("Assets/one.png", b"one"), ("assets/two.png", b"two")),
+    ):
+        files = (("SKILL.md", SKILL_DOCUMENT), *ancestor_collision)
+        assert error_code(lambda files=files: normalize_skill_files(files)) == "skill_package_invalid"
+
 
 @pytest.mark.parametrize(
     "entries",
@@ -215,6 +226,14 @@ def test_zip_rejects_wrapper_siblings_duplicate_members_links_and_unsupported_co
         disguised_link.external_attr = (stat.S_IFLNK | 0o777) << 16
         target.writestr(disguised_link, b"")
 
+    data_directory_output = io.BytesIO()
+    with zipfile.ZipFile(data_directory_output, "w") as target:
+        target.writestr("SKILL.md", SKILL_DOCUMENT)
+        data_directory = zipfile.ZipInfo("nested/")
+        data_directory.create_system = 3
+        data_directory.external_attr = (stat.S_IFDIR | 0o755) << 16
+        target.writestr(data_directory, b"hidden")
+
     for candidate in (
         siblings,
         duplicates,
@@ -223,6 +242,7 @@ def test_zip_rejects_wrapper_siblings_duplicate_members_links_and_unsupported_co
         encrypted,
         multi_disk,
         special_directory_output.getvalue(),
+        data_directory_output.getvalue(),
     ):
         assert error_code(lambda candidate=candidate: normalize_skill_zip(candidate)) == "skill_package_invalid"
 
@@ -280,6 +300,23 @@ def test_zip_body_and_member_count_limits_are_checked_before_extraction(monkeypa
     monkeypatch.setattr(package_module, "MAX_ARCHIVE_BYTES", MAX_ARCHIVE_BYTES)
     monkeypatch.setattr(package_module, "MAX_ARCHIVE_MEMBERS", 1)
     assert error_code(lambda: normalize_skill_zip(candidate)) == "skill_package_limit"
+
+    oversized_count = patch_zip_field(candidate, b"PK\x05\x06", 8, 8193)
+    oversized_count = patch_zip_field(oversized_count, b"PK\x05\x06", 10, 8193)
+    monkeypatch.setattr(package_module, "MAX_ARCHIVE_MEMBERS", MAX_ARCHIVE_MEMBERS)
+    assert error_code(lambda: normalize_skill_zip(oversized_count)) == "skill_package_limit"
+
+
+def test_foundation_stored_zip_has_a_separate_deterministic_encoding_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import a13n_service.skill_management.package as package_module
+
+    package = normalize_skill_files((("SKILL.md", SKILL_DOCUMENT), ("runbook.md", b"x" * 1024)))
+    monkeypatch.setattr(package_module, "MAX_ARCHIVE_BYTES", len(package.archive_bytes) - 1)
+
+    assert error_code(lambda: normalize_skill_zip(package.archive_bytes)) == "skill_package_limit"
+    assert normalize_stored_skill_zip(package.archive_bytes) == package
 
 
 def test_object_key_uses_only_authorized_tenant_identity_and_content_digest() -> None:

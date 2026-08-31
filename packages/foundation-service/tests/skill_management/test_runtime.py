@@ -9,6 +9,7 @@ import pytest
 from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
 from a13n_harness.environment.local.files import LocalFileOperator
+from a13n_harness.errors import DefinitionError
 from a13n_service.database.metadata import service_metadata
 from a13n_service.iam import AuthenticatedActor, AuthorizationError
 from a13n_service.iam.domain import PrincipalRef
@@ -18,10 +19,19 @@ from a13n_service.skill_management.domain import (
     TurnSkillSelectionRequest,
 )
 from a13n_service.skill_management.errors import SkillManagementError
-from a13n_service.skill_management.materialization import SkillMaterializationStale
+from a13n_service.skill_management.materialization import (
+    FoundationSkillMaterializationPlan,
+    FoundationSkillSource,
+    LockedSkillRevision,
+    SkillMaterializationStale,
+)
 from a13n_service.skill_management.models import WorkspaceSkillRecord, WorkspaceSkillRevisionRecord
 from a13n_service.skill_management.objects import SkillPackageStore
-from a13n_service.skill_management.package import NormalizedSkillPackage, normalize_skill_files
+from a13n_service.skill_management.package import (
+    NormalizedSkillPackage,
+    normalize_skill_files,
+    skill_package_object_key,
+)
 from a13n_service.skill_management.runtime import FoundationSkillRuntimePreparer, SkillRuntimeError
 from a13n_service.skill_management.selection import (
     SKILL_MATERIALIZATION_ACTIONS,
@@ -52,6 +62,7 @@ class RuntimeFixture:
     engine: AsyncEngine
     sessions: async_sessionmaker[AsyncSession]
     packages: SkillPackageStore
+    objects: LocalObjectStore
     resolver: AgentSkillLockResolver
     runtime: FoundationSkillRuntimePreparer
     actor: AuthenticatedActor
@@ -197,6 +208,7 @@ async def runtime_fixture(tmp_path: Path) -> AsyncIterator[RuntimeFixture]:
             engine=engine,
             sessions=sessions,
             packages=package_store,
+            objects=objects,
             resolver=AgentSkillLockResolver(sessions),
             runtime=FoundationSkillRuntimePreparer(sessions, package_store),
             actor=actor,
@@ -446,6 +458,12 @@ async def test_worker_reads_and_materializes_only_effective_turn_selection(
         request=_request(),
         permission_ceiling=_permissions(),
     )
+    unselected_key = skill_package_object_key(
+        ORG_ID,
+        WORKSPACE_ID,
+        runtime_fixture.deploy.manifest.content_digest,
+    )
+    await runtime_fixture.objects.put(unselected_key, b"corrupt", content_type="application/zip")
     runtime = await runtime_fixture.runtime.prepare(
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
@@ -509,6 +527,33 @@ async def test_materializer_replaces_tampering_and_keeps_manifest_outside_packag
 
 
 @pytest.mark.anyio
+async def test_materializer_rereads_package_without_retaining_run_lifetime_bytes(
+    runtime_fixture: RuntimeFixture,
+    tmp_path: Path,
+) -> None:
+    prepared = await runtime_fixture.resolver.prepare(
+        actor=runtime_fixture.actor,
+        workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
+        request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
+        permission_ceiling=_permissions(),
+    )
+    runtime = await runtime_fixture.runtime.prepare(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        selection=prepared.selection,
+        selected_skill_names=("deploy",),
+    )
+    key = skill_package_object_key(ORG_ID, WORKSPACE_ID, runtime_fixture.deploy.manifest.content_digest)
+    await runtime_fixture.objects.put(key, b"corrupt", content_type="application/zip")
+
+    assert runtime.manager is not None
+    with pytest.raises(DefinitionError) as invalid:
+        await runtime.manager.scan(files=_files(tmp_path))
+    assert invalid.value.code == "skill_materialization_invalid"
+
+
+@pytest.mark.anyio
 async def test_exact_empty_turn_materializes_no_package_and_scans_empty_catalog(
     runtime_fixture: RuntimeFixture,
     tmp_path: Path,
@@ -558,7 +603,10 @@ async def test_runtime_keeps_retained_deleted_revision_executable(runtime_fixtur
 
 
 @pytest.mark.anyio
-async def test_runtime_rejects_tampered_lock_and_stale_fence(runtime_fixture: RuntimeFixture) -> None:
+async def test_runtime_rejects_tampered_lock_and_stale_fence(
+    runtime_fixture: RuntimeFixture,
+    tmp_path: Path,
+) -> None:
     prepared = await runtime_fixture.resolver.prepare(
         actor=runtime_fixture.actor,
         workspace_id=WORKSPACE_ID,
@@ -594,6 +642,26 @@ async def test_runtime_rejects_tampered_lock_and_stale_fence(runtime_fixture: Ru
             fence=_StaleFence(),
         )
     assert stale.value.code == "skill_materialization_stale"
+
+    source = FoundationSkillSource(
+        "foundation-skills-test",
+        FoundationSkillMaterializationPlan(
+            target_root="/skills",
+            catalog_digest="a" * 64,
+            revisions=(
+                LockedSkillRevision(
+                    lock=prepared.selection.available[0],
+                    manifest=runtime_fixture.deploy.manifest,
+                ),
+            ),
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+        ),
+        fence=_StaleFence(),
+    )
+    with pytest.raises(DefinitionError) as stale_scan:
+        await source.catalog(files=_files(tmp_path))
+    assert stale_scan.value.code == "skill_materialization_stale"
 
 
 def _files(tmp_path: Path) -> LocalFileOperator:
