@@ -8,8 +8,10 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from a13n_service.asset_management.errors import AssetManagementError
 from a13n_service.iam import AuthenticationError
 from a13n_service.model_management.service import ModelManagementError
+from a13n_service.skill_management.errors import SkillManagementError
 
 
 def install_api_conventions(app: FastAPI) -> None:
@@ -26,9 +28,20 @@ def install_api_conventions(app: FastAPI) -> None:
     async def authentication_error(request: Request, _error: AuthenticationError) -> JSONResponse:
         return _error_response(request, 401, "authentication_required", "Authentication is required.")
 
+    @app.exception_handler(AssetManagementError)
+    async def asset_management_error(request: Request, error: AssetManagementError) -> JSONResponse:
+        return _error_response(request, error.status_code, error.code, error.message, error.details)
+
     @app.exception_handler(ModelManagementError)
     async def model_management_error(request: Request, error: ModelManagementError) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message, error.details)
+
+    @app.exception_handler(SkillManagementError)
+    async def skill_management_error(request: Request, error: SkillManagementError) -> JSONResponse:
+        response = _error_response(request, error.status_code, error.code, error.message, error.details)
+        if error.retry_after_seconds is not None:
+            response.headers["Retry-After"] = str(error.retry_after_seconds)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, error: RequestValidationError) -> JSONResponse:

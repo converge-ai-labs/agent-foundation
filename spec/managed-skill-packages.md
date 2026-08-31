@@ -10,12 +10,15 @@ accepted input normalizes to the same manifest and content digest. Accepted cont
 becomes immutable Host-owned content before an Agent can select it. Upload receipts,
 repository refs, and local paths are never runtime authority.
 
-This document owns only the portable package, shared ZIP and GitHub source
-normalization, content digest, and safety limits. The
+This document owns the portable package, the metadata projected from its root
+`SKILL.md`, shared ZIP and GitHub source normalization, content digest, and safety
+limits. The
 [Harness](agent-harness/09-context-and-memory.md#skills-and-discovery)
-owns `SKILL.md` parsing, discovery, selection, instructions, and `SkillPath` values.
-Each Host owns resource identity, APIs, authorization, storage, retention, and
-runtime materialization, including which source forms it accepts.
+owns runtime discovery, selection, instructions, and `SkillPath` values. Each Host
+owns resource identity, APIs, authorization, storage, retention, and runtime
+materialization, including which source forms it accepts. Hosts and Harness parse
+the shared document contract independently; package admission does not depend on a
+Harness SDK parser API.
 
 ## Package Model
 
@@ -83,7 +86,12 @@ Nested archives remain ordinary files and are not recursively extracted.
 The package contains one root `SKILL.md` with that exact case. No other path can end
 in case-folded `SKILL.md`, preventing one package from becoming several discovered
 Skills after materialization. The root file is valid UTF-8 and satisfies the
-selected Harness contract; other files can be binary.
+selected Harness contract; other files can be binary. Under contract `1`, an
+optional UTF-8 BOM can precede the opening `---` line, the next `---` line closes
+YAML frontmatter, and that frontmatter is a mapping containing string `name` and
+`description` fields. Both fields are trimmed, non-empty, contain no NUL, and obey
+the limits below. Other frontmatter fields and the document body do not affect the
+manifest projection.
 
 Version `1` has these hard maxima. A Host can configure lower admission limits but
 cannot raise them without selecting a later package-contract version. MiB and KiB
@@ -160,8 +168,8 @@ Environment, or execution authority.
 ## Failure and Compatibility
 
 Normalization is all-or-nothing. Malformed or oversized content, unsafe file
-kinds or paths, GitHub acquisition failure, and Harness validation failure return
-no package and leave existing Host revisions unchanged.
+kinds or paths, GitHub acquisition failure, and Skill document validation failure
+return no package and leave existing Host revisions unchanged.
 
 Schema version, path normalization, limits, digest calculation, ZIP root handling,
 GitHub selector meaning, and Harness contract selection are compatibility facts.

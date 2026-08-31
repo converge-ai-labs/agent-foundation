@@ -59,7 +59,7 @@ The conceptual tables are:
 | Sessions      | identity, display metadata, pinned snapshots, fork lineage, current continuation reference |
 | Environments  | Session assignments, provider lifecycle status, and provider-state reference               |
 
-There are no tables for pending submissions, active Turns, Run attempts, AG-UI segments, replay cursors, Item projection watermarks, async-child jobs, steering, or parent delivery.
+There are no tables for pending submissions, active Runs or attempts, AG-UI segments, replay cursors, Item projection watermarks, async-child jobs, steering, or parent delivery.
 
 Session metadata, continuation references, and provider-state references use ordinary last-write-wins updates. One Host serializes its own operations with process-local locks. If separate local processes update the same Session or resource concurrently, the last committed update becomes current; Agent UI does not add cross-process fencing, conflict detection, or merge semantics.
 

@@ -108,6 +108,11 @@ class ServiceSettings(BaseSettings):
     object_multipart_part_size: int = Field(default=8 * 1024 * 1024, ge=5 * 1024 * 1024, le=64 * 1024 * 1024)
     object_local_chunk_size: int = Field(default=256 * 1024, ge=4096, le=8 * 1024 * 1024)
 
+    asset_max_size_bytes: int = Field(default=100 * 1024 * 1024, ge=1, le=2**63 - 1)
+    asset_cleanup_poll_interval_seconds: float = Field(default=5, gt=0, le=300)
+    asset_cleanup_lease_seconds: float = Field(default=30, gt=0, le=3600)
+    asset_cleanup_max_attempts: int = Field(default=10, ge=1, le=1000)
+
     filesystem_root: Path = Path("var/files")
     filesystem_worker_limit: int = Field(default=20, ge=1, le=256)
 

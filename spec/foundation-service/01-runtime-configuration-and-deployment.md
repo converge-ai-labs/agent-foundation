@@ -8,17 +8,16 @@ Runtime owns process behavior, not domain behavior. It loads the distribution fi
 
 ## Boundaries
 
-| Concern                                                             | Owner                                                                        | Relationship                                                         |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                      | Produces one immutable effective configuration                       |
-| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md)    | Supplies the explicit application composition fixed by the artifact  |
-| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                     | Constructs the selected typed clients and roots                      |
-| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                 | Prepares or verifies the final distribution schema before readiness  |
-| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                      | Exposes only the surfaces owned by the selected role                 |
-| Process tracer provider, content policy, and OTLP lifecycle         | [Observability](37-observability.md)                                         | Adds one optional best-effort export path without changing readiness |
-| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                    | Declare role ownership and durable failure semantics                 |
-| Plugin Runtime profile and loading behavior                         | [Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Defines on-demand import or Supervisor/Runner execution              |
-| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                   | Supplies external resources without changing service semantics       |
+| Concern                                                             | Owner                                                                        | Relationship                                                        |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Configuration sources, precedence, role, and deployment profile     | Runtime                                                                      | Produces one immutable effective configuration                      |
+| Installed capabilities and role component set                       | [Distribution Composition](02-distribution-composition-and-extensions.md)    | Supplies the explicit application composition fixed by the artifact |
+| Backend construction and capability semantics                       | [Storage](03-storage.md)                                                     | Constructs the selected typed clients and roots                     |
+| Relational compatibility and migration application                  | [Relational Schema](04-relational-schema.md)                                 | Prepares or verifies the final distribution schema before readiness |
+| Product ingress and operational probes                              | [HTTP Ingress](05-http-ingress-and-request-contract.md)                      | Exposes only the surfaces owned by the selected role                |
+| Domain routers, reconcilers, publishers, and workers                | Owning Foundation domains                                                    | Declare role ownership and durable failure semantics                |
+| Plugin Runtime profile and loading behavior                         | [Plugin Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Defines on-demand import or Supervisor/Runner execution             |
+| Container scheduling, replicas, secrets, mounts, and network policy | Deployment                                                                   | Supplies external resources without changing service semantics      |
 
 The runtime does not define a general plugin loader, dependency-injection container, process manager, or dynamic configuration service. Domain code does not read process environment variables, choose a deployment role, run migrations, or start unowned background tasks.
 
@@ -55,10 +54,14 @@ root = "/var/lib/foundation"
 
 [control]
 
+[assets]
+max_size_bytes = 104857600
+
 [gateway]
 a2a_enabled = true
 
 [worker]
+handoff_preference_window = "30s"
 
 [plugin_runtime]
 mode = "on_demand"
@@ -77,22 +80,13 @@ The artifact's fixed distribution descriptor supplies the complete typed configu
 
 Configuration is immutable after startup. Changing a setting requires a new process. The service performs no partial or hot reload that could leave replicas or role components using different configuration generations.
 
-`gateway.a2a_enabled` is the single protocol availability switch. It defaults
-to `true`. Native and Hosted AG-UI have no runtime enable setting. When false,
-the `control` or `all` process omits A2A discovery, runtime, streaming, push
-routes, and A2A delivery components while preserving every Native and Hosted
-AG-UI surface. The setting does not select another distribution and there is no
-Agent-level A2A enable setting.
+`worker.handoff_preference_window` is a finite positive internal scheduling duration used only for same-build claims after a planned handoff with `yield_reason="service_drain"`. Its release default equals one RunAttempt lease duration; an explicit value overrides that default but cannot be zero, negative, or unbounded. It does not delay Runner rotation, initial claims, failure recovery, or lease-expiry takeover.
 
-The observability section contains the tracing switch and Harness content
-selection owned by the [observability contract](37-observability.md), plus the
-independent query-provider selection and typed provider configuration owned by
-[Trace Query](38-trace-query.md). Exporter, endpoint, protocol, headers, TLS,
-sampler, batch, and timeout settings use standard `OTEL_*` input and do not gain
-Foundation aliases. Query providers do not inspect or reuse those exporter
-settings. Static configuration is validated before startup completes. Runtime
-exporter and query-backend availability are diagnostic and never become
-readiness dependencies.
+`gateway.a2a_enabled` is the single protocol availability switch. It defaults to `true`. Native and Hosted AG-UI have no runtime enable setting. When false, the `control` or `all` process omits A2A discovery, runtime, streaming, push routes, and A2A delivery components while preserving every Native and Hosted AG-UI surface. The setting does not select another distribution and there is no Agent-level A2A enable setting.
+
+`assets.max_size_bytes` is a positive finite deployment bound. Control applies it to Native and Gateway acquisition, and Workers apply the same effective value to Agent publication and Asset-backed input acquisition. Replicas that can accept or execute the same work use compatible bounds; a lower admission-specific Workspace quota can reject new publication but never reinterpret an already accepted Asset.
+
+The observability section contains the tracing switch and Harness content selection owned by the [observability contract](38-observability.md), plus the independent query-provider selection and typed provider configuration owned by [Trace Query](39-trace-query.md). Exporter, endpoint, protocol, headers, TLS, sampler, batch, and timeout settings use standard `OTEL_*` input and do not gain Foundation aliases. Query providers do not inspect or reuse those exporter settings. Static configuration is validated before startup completes. Runtime exporter and query-backend availability are diagnostic and never become readiness dependencies.
 
 ## Deployment Profiles
 
@@ -105,16 +99,11 @@ Foundation supports two profiles:
 
 The distributed profile requires PostgreSQL, real Redis, and shared object storage. It rejects SQLite, process-local Redis, and local object storage before opening service traffic. A mounted shared filesystem can satisfy a domain that explicitly owns filesystem semantics, but it does not replace shared object storage or make SQLite and local object locking distributed.
 
-Real Redis is a required distributed data-flow and coordination dependency. Required does not mean universally authoritative: each owning domain defines the identity, retention, replay, and authority of the values it places in Redis. Durable Foundation resource state, TurnAttempt fencing, and accepted lifecycle transitions remain relational facts unless an owning specification explicitly establishes a different authority.
+Real Redis is a required distributed data-flow and coordination dependency. Required does not mean universally authoritative: each owning domain defines the identity, retention, replay, and authority of the values it places in Redis. Durable Foundation resource state, RunAttempt fencing, and accepted lifecycle transitions remain relational facts unless an owning specification explicitly establishes a different authority.
 
 ## Process Roles
 
-`control` and `worker` are the two independently deployable roles. `all` is
-their exact process composition. The default `on_demand` Plugin Runtime profile
-runs Turn scan, compatibility preflight, claim, leases, plugin code, and Harness
-execution in the Worker process. The optional `runner` profile gives each Worker
-a stable Supervisor that owns Runtime-lock discovery, claim gating, and
-child-process lifecycle; lock-scoped Runner children own the execution loop.
+`control` and `worker` are the two independently deployable roles. `all` is their exact process composition. The default `on_demand` Plugin Runtime profile runs Run scan, compatibility preflight, claim, leases, plugin code, and Harness execution in the Worker process. The optional `runner` profile gives each Worker a stable Supervisor that owns Runtime-lock discovery, claim gating, and child-process lifecycle; lock-scoped Runner children own the execution loop.
 
 | Capability                                | `control` | `worker` |   `all` |
 | ----------------------------------------- | --------: | -------: | ------: |
@@ -125,7 +114,7 @@ child-process lifecycle; lock-scoped Runner children own the execution loop.
 | Domain-owned control reconcilers          |       Yes |       No |     Yes |
 | Outbox publication                        |       Yes |       No |     Yes |
 | Profile-selected Worker execution runtime |        No |      Yes |     Yes |
-| Turn scan, claim, takeover, and lease     |        No |  Runtime | Runtime |
+| Run scan, claim, takeover, and lease      |        No |  Runtime | Runtime |
 | Harness and Environment invocation        |        No |  Runtime | Runtime |
 | Operational liveness and readiness probes |       Yes |      Yes |     Yes |
 | Automatic migration when enabled          |       Yes |    Never |     Yes |
@@ -133,6 +122,14 @@ child-process lifecycle; lock-scoped Runner children own the execution loop.
 Every background component has exactly one role owner. `all` installs the union once; it does not start a second application, duplicate a router, or construct another copy of shared process resources. Rolling overlap is safe only when the owning domain makes the component leased, fenced, or idempotent.
 
 One service process runs one ASGI worker. A deployment scales by adding service processes or container replicas rather than forking several independent role runtimes behind one process boundary. Runner-profile child processes are an internal Worker execution boundary, not additional service replicas or independently addressable Worker resources.
+
+## Worker Build Identity
+
+Every Foundation Service build artifact carries one immutable `worker_build_id`. Official images derive the value from the release version and source/build revision supplied by the existing `BUILD_VERSION` and `BUILD_REVISION` build inputs. Replicas of the same artifact therefore report the same build ID, while `worker_generation` remains unique to one Worker process lifetime. Runtime freezes both values at process startup and copies the build ID into every claimed `RunAttempt`.
+
+The build ID comes only from trusted artifact metadata. It is not read from the database, Kubernetes API, tenant input, or claim candidate, and cannot change while the process runs. A distributed `worker` or `all` process with missing, malformed, or placeholder production build identity never becomes ready. A local development artifact may use an explicit documented development identity that still remains immutable for that process.
+
+`worker_build_id` records the actual Foundation Service build serving an Attempt. It is distinct from `PluginRuntimeLock.worker_release`, which is the historical Worker dependency baseline pinned when the Runtime lock is created. A newer build may restore an older Run only after the scheduling preflight proves that it can read the state and serve the exact pinned lock; build identity never grants lease authority, selects a target Pod, or substitutes another Runtime lock.
 
 ## Startup Lifecycle
 
@@ -155,16 +152,15 @@ stateDiagram-v2
 
 Startup performs these ordered gates:
 
-01. load the artifact's fixed distribution descriptor and effective configuration;
-02. validate the role, distribution, and deployment profile as one unit;
-03. configure process logging once;
-04. apply or verify the final relational schema;
-05. construct required storage and external clients;
-06. construct the selected process telemetry boundary;
-07. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
-08. start the selected role components under one supervised lifespan;
-09. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
-10. report readiness only after every preceding gate succeeds.
+1. load the artifact's fixed distribution descriptor, Worker build identity, and effective configuration;
+2. validate the role, distribution, and deployment profile as one unit;
+3. configure process logging once;
+4. apply or verify the final relational schema;
+5. construct required storage and external clients;
+6. initialize the Plugin Runtime mode from Control only for an empty deployment, or verify the persisted mode from every role;
+7. start the selected role components under one supervised lifespan;
+8. for a Worker role, start the on-demand execution loop or the runner Supervisor and active-lock Runner selected by the persisted deployment mode;
+9. report readiness only after every preceding gate succeeds.
 
 A container entrypoint delegates to this lifecycle and does not own another migration, role, or fallback policy. A worker verifies the expected schema head and never mutates it. A control or all-in-one process can apply migrations under the schema contract when automatic migration is enabled; a deployment using a dedicated migration job disables replica migration.
 
@@ -177,22 +173,18 @@ Liveness reports only that the process and event loop can answer a bounded probe
 Readiness succeeds only when:
 
 - startup completed and the process is not draining;
+- a distributed Worker-capable role has a valid immutable production `worker_build_id`;
 - the database is reachable and at the expected final distribution schema head;
 - required Redis operations are reachable;
 - the selected object store and required filesystem roots passed their bounded capability checks;
 - every selected critical role component started successfully; and
 - a Worker can scan work through a healthy on-demand loop or the healthy Runner required by its configured profile.
 
-An enabled A2A surface contributes its required push and delivery components to
-readiness. A disabled A2A surface contributes no route, component, or readiness
-dependency.
+An enabled A2A surface contributes its required push and delivery components to readiness. A disabled A2A surface contributes no route, component, or readiness dependency.
 
 Loss of PostgreSQL, Redis, shared object storage, or another role-required dependency makes the affected process unready. A transient dependency loss does not by itself make liveness fail or erase already committed work. The process stops accepting new dependent work while the owning component performs bounded reconnect behavior. An unrecoverable client or component failure terminates the process.
 
-An OTLP endpoint and a selected trace-query backend are not role-required
-Service dependencies. Exporter failure, queue pressure, and trace-query failure
-preserve readiness and ordinary work while emitting bounded diagnostics under
-their owning observability contracts.
+An OTLP endpoint and a selected trace-query backend are not role-required Service dependencies. Exporter failure, queue pressure, and trace-query failure preserve readiness and ordinary work while emitting bounded diagnostics under their owning observability contracts.
 
 Probe responses expose only bounded status, role, build identity, and safe dependency categories. They contain no endpoint, credential, tenant data, queue contents, traceback, or raw provider error.
 
@@ -200,27 +192,26 @@ Probe responses expose only bounded status, role, build identity, and safe depen
 
 Drain makes readiness fail before the process stops accepting new work.
 
-A control process rejects new product mutations and streaming connections, then
-stops ingress, domain-owned reconcilers, and publishers in an order that
-preserves committed state. An on-demand Worker stops its periodic scan; a runner
-Supervisor gates every Runner scan. The selected runtime drains active work only
-until the configured deadline and then commits an authoritative Attempt decision
-or stops renewing so another Worker can take over after lease expiry. Shutdown
-never extends a lease indefinitely or reports unfinished work as successful.
+A control process rejects new product mutations and streaming connections, then stops ingress, domain-owned reconcilers, and publishers in an order that preserves committed state. An on-demand Worker stops its periodic scan; a runner Supervisor gates every Runner scan, including takeover scans. Runtime sets a process-local `yield_requested` flag for every active Attempt; this flag is not persisted and does not change lease authority. Each selected execution loop continues ordinary execution, heartbeat, and lease renewal while it waits for a safe boundary, publishes or reconciles complete state, quiesces its local Run, and prepares the planned-yield transaction.
+
+An Attempt stops renewal only after `yielded`, an ordinary outcome, cancellation, or failure commits, or when the configured drain deadline arrives. Readiness failure and one failed yield CAS never release the lease. If the deadline arrives first, the process fences local execution, stops renewal, and exits; another Worker remains forbidden from takeover until the recorded lease actually expires. Shutdown never extends a lease indefinitely, reports unfinished work as successful, or lets two Workers hold valid authority for one Run.
+
+Rolling deployment starts and readies compatible new capacity before old capacity is terminated. After a service-drain yield, a different compatible `worker_build_id` may claim the Run immediately; old-build replicas defer for the bounded `handoff_preference_window` and then become fallback capacity. Same-image restart therefore still recovers after the window. An incompatible upgrade must retain compatible old capacity or use a separately reviewed state or lock migration; handoff itself does not relax compatibility. Runner rotation uses its exact historical Runtime lock and does not apply this build-preference delay.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 
 ## Failure Semantics
 
-| Failure                                       | Observable outcome                              | Recovery                                                    |
-| --------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
-| Configuration is invalid or unknown           | Process exits before resource construction      | Correct the selected configuration                          |
-| Role and backend profile are incompatible     | Process exits before serving traffic            | Select one supported profile                                |
-| Schema is incompatible                        | Process remains unready and startup fails       | Apply the accepted final distribution history               |
-| Required dependency is unavailable at startup | Process does not become ready                   | Restore the configured dependency                           |
-| Required dependency disconnects after startup | Readiness fails and new dependent work stops    | Bounded reconnect restores readiness when safe              |
-| Critical component exits unexpectedly         | Process becomes unready and terminates          | Deployment replaces the process                             |
-| Drain deadline expires                        | Process stops without inventing successful work | Durable lease expiry and Worker takeover determine recovery |
+| Failure                                       | Observable outcome                              | Recovery                                                     |
+| --------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| Configuration is invalid or unknown           | Process exits before resource construction      | Correct the selected configuration                           |
+| Role and backend profile are incompatible     | Process exits before serving traffic            | Select one supported profile                                 |
+| Schema is incompatible                        | Process remains unready and startup fails       | Apply the accepted final distribution history                |
+| Required dependency is unavailable at startup | Process does not become ready                   | Restore the configured dependency                            |
+| Required dependency disconnects after startup | Readiness fails and new dependent work stops    | Bounded reconnect restores readiness when safe               |
+| Critical component exits unexpectedly         | Process becomes unready and terminates          | Deployment replaces the process                              |
+| Drain deadline expires                        | Process stops without inventing successful work | Durable lease expiry and Worker takeover determine recovery  |
+| Production Worker build identity is invalid   | Worker-capable process remains unready          | Correct the immutable build metadata and replace the process |
 
 No failure causes an implicit switch to a local backend, another distribution, or a weaker role.
 
@@ -228,12 +219,11 @@ No failure causes an implicit switch to a local backend, another distribution, o
 
 Role values, configuration precedence, stable TOML section names, Plugin Runtime mode, and supported deployment profiles are operational compatibility contracts. New optional fields and new distribution-owned namespaces can be added. Reinterpreting an existing field, changing precedence, making an accepted profile unsafe, or changing a role's ownership requires an explicit compatibility change.
 
-The `gateway.a2a_enabled` field is a common operational compatibility contract;
-its absence has the release-default meaning `true`.
+The `gateway.a2a_enabled` field is a common operational compatibility contract; its absence has the release-default meaning `true`. The `assets.max_size_bytes` field is a common safety contract shared by every Asset publication and acquisition path.
 
 The effective configuration is deployment input, not a durable product resource or public API representation. Replicas participating in one deployment use configuration and distribution versions that are compatible with the same schema and data-flow contracts.
 
-`plugin_runtime.mode` defaults to `on_demand`. Control persists the selected value when initializing a deployment and may replace it only while no Plugin, AgentPresetVersion, or Turn exists. Every role verifies the resulting value before readiness. A non-empty mode mismatch never performs an in-place migration or starts with weaker semantics.
+`plugin_runtime.mode` defaults to `on_demand`. Control persists the selected value when initializing a deployment and may replace it only while no Plugin, AgentPresetVersion, or Run exists. Every role verifies the resulting value before readiness. A non-empty mode mismatch never performs an in-place migration or starts with weaker semantics.
 
 ## Invariants
 
@@ -250,3 +240,7 @@ The effective configuration is deployment input, not a durable product resource 
 11. Runtime configuration never selects a distribution or arbitrary code target; the build artifact fixes one trusted distribution descriptor.
 12. Every deployment durably fixes one Plugin Runtime mode; `on_demand` executes in the Worker interpreter, while `runner` keeps Plugin code and Harness execution out of the stable Supervisor.
 13. Native and Hosted AG-UI are always present on control-capable roles; A2A is controlled only by the default-on deployment-wide setting.
+14. Every production Worker-capable process has one immutable artifact-derived `worker_build_id`; it is audit and preference metadata, not execution authority or the pinned Runtime dependency baseline.
+15. Drain gates new claims immediately but active Attempts continue heartbeat and lease renewal until a terminal commit or the drain deadline.
+16. Same-build planned-handoff deferral is finite, applies only after `yield_reason="service_drain"`, and never weakens compatibility, lease, or fence checks. Runner rotation has no build-preference delay.
+17. Control and Worker paths apply one compatible finite Asset size bound; no protocol or Capability bypasses it.

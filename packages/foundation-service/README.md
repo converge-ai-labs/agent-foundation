@@ -26,7 +26,13 @@ The key has no default and is never stored in the database. Values in `managed_s
 
 Model create is a synchronous mutation protected by Workspace name uniqueness and retains no separate replay record. Update uses the integer `version` and required `expected_version` optimistic-lock contract. Configurations are retired with `enabled=false`; the service exposes no copy, references, or hard-delete route. Custom endpoints are limited to the trusted OpenAI-compatible adapter and are checked against `FOUNDATION_MODEL_PRIVATE_ENDPOINT_DOMAINS` and `FOUNDATION_MODEL_PRIVATE_ENDPOINT_CIDRS`. Redirects are not followed by the built-in tester.
 
-Turn acceptance integrations use `AcceptedModelSelector.prepare()` before the owning short transaction and `freeze_in_transaction()` while inserting the Turn. Workers use `SnapshotRunModelResolver` with the retained non-secret snapshot, current Secret resolver, endpoint policy, and `NativeModelFactory`; they never fall back to the current `ModelConfig` for a replacement attempt.
+Run acceptance integrations use `AcceptedModelSelector.prepare()` before the owning short transaction and `freeze_in_transaction()` while inserting the Run. Workers use `SnapshotRunModelResolver` with the retained non-secret snapshot, current Secret resolver, endpoint policy, and `NativeModelFactory`; they never fall back to the current `ModelConfig` for a replacement attempt.
+
+## Asset Management
+
+Control-plane and all-in-one roles expose immutable Workspace Assets below `/api/v1`. Uploads accept exactly one `application/octet-stream` body plus `filename`, optional `media_type`, and `Idempotency-Key`; metadata and content reads never expose object keys or public object URLs. Every distinct publication gets a new `ast` ID, while replay of the same canonical request and key returns the original Asset for 24 hours. Delete immediately tombstones the Asset and commits an `asset_content_cleanup` Outbox intent; the control-plane reconciler removes the derived object asynchronously without restoring logical access on failure.
+
+`FOUNDATION_ASSET_MAX_SIZE_BYTES` is the positive finite bound applied while streaming uploads and defaults to 100 MiB. Private staging uses `FOUNDATION_FILESYSTEM_ROOT`; object bytes use the selected object backend. Cleanup behavior can be operationally tuned with `FOUNDATION_ASSET_CLEANUP_POLL_INTERVAL_SECONDS`, `FOUNDATION_ASSET_CLEANUP_LEASE_SECONDS`, and `FOUNDATION_ASSET_CLEANUP_MAX_ATTEMPTS`. These settings do not change Asset identity, retention authority, or authorization semantics.
 
 ## Runtime
 

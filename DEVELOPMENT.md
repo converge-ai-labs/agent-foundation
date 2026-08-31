@@ -8,7 +8,7 @@ This file explains the engineering choices shared by deployable Python services.
 
 - `all`: control and worker in one process;
 - `control`: APIs, scheduling, and control-plane maintenance;
-- `worker`: Turn workers only.
+- `worker`: Run workers only.
 
 A role is a process ownership and scaling boundary, not a separate product, schema, tenant, or authorization boundary. Every background loop must have one explicit owning role, and overlap during rolling deployment must be safe through durable leases, fencing, or idempotency.
 

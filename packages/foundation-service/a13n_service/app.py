@@ -8,11 +8,16 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import httpx2
-from anyio import fail_after
+from anyio import create_task_group, fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 
 from a13n_service.api import install_api_conventions
+from a13n_service.asset_management.cleanup import AssetCleanupReconciler
+from a13n_service.asset_management.objects import AssetObjectStore
+from a13n_service.asset_management.router import router as asset_management_router
+from a13n_service.asset_management.service import AssetService
+from a13n_service.asset_management.staging import AssetStaging
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.model_management.connection_test import NativeModelConnectionTester
 from a13n_service.model_management.endpoint_policy import EndpointPolicy
@@ -29,6 +34,16 @@ from a13n_service.model_management.service import (
     ModelConfigService,
 )
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
+from a13n_service.skill_management.catalog import SkillCatalogService
+from a13n_service.skill_management.credentials import DatabaseGitHubCredentialResolver
+from a13n_service.skill_management.github import GitHubSkillAcquirer
+from a13n_service.skill_management.objects import SkillPackageStore
+from a13n_service.skill_management.publication import SkillPublicationService
+from a13n_service.skill_management.router import router as skill_management_router
+from a13n_service.skill_management.runtime import FoundationSkillRuntimePreparer
+from a13n_service.skill_management.selection import AgentSkillLockResolver
+from a13n_service.skill_management.sources import GitHubCredentialResolver, SkillSourcePreparer
+from a13n_service.skill_management.uploads import SkillUploadService
 from a13n_service.storage import StorageResources, open_storage, short_session
 from a13n_service.web import mount_web_application
 
@@ -43,6 +58,8 @@ class ServiceComponents:
     request_authenticator: RequestAuthenticator | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
+    skill_github_acquirer: GitHubSkillAcquirer | None = None
+    skill_credential_resolver: GitHubCredentialResolver | None = None
 
 
 @asynccontextmanager
@@ -57,10 +74,13 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         # Keep these names for service code that only needs relational access.
         app.state.db_engine = storage.engine
         app.state.db_session_factory = storage.sessions
-        async with httpx2.AsyncClient(
-            follow_redirects=False,
-            event_hooks={"request": [validate_model_request]},
-        ) as model_http_client:
+        async with (
+            httpx2.AsyncClient(
+                follow_redirects=False,
+                event_hooks={"request": [validate_model_request]},
+            ) as model_http_client,
+            httpx2.AsyncClient(follow_redirects=False) as github_http_client,
+        ):
             secret_resolver = app.state.components.model_secret_resolver
             if secret_resolver is None:
                 secret_resolver = DatabaseSecretValueResolver(storage.sessions, settings.secret_protector())
@@ -72,7 +92,28 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     http_client=model_http_client,
                 )
             app.state.model_secret_resolver = secret_resolver
+            package_store = SkillPackageStore(storage.objects)
+            asset_staging = await AssetStaging.create(storage.files_root, limiter=storage.file_limiter)
+            asset_objects = AssetObjectStore(storage.objects, asset_staging)
+            asset_cleanup_reconciler: AssetCleanupReconciler | None = None
             if settings.role in _CONTROL_PLANE_ROLES:
+                github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
+                credential_resolver = app.state.components.skill_credential_resolver
+                if credential_resolver is None:
+                    credential_resolver = DatabaseGitHubCredentialResolver(
+                        storage.sessions,
+                        settings.secret_protector(),
+                    )
+                app.state.skill_upload_service = SkillUploadService(storage.sessions, package_store)
+                source_preparer = SkillSourcePreparer(
+                    storage.sessions,
+                    package_store,
+                    github_acquirer,
+                    credential_resolver,
+                )
+                app.state.skill_publication_service = SkillPublicationService(storage.sessions, source_preparer)
+                app.state.skill_catalog_service = SkillCatalogService(storage.sessions, package_store)
+                app.state.agent_skill_lock_resolver = AgentSkillLockResolver(storage.sessions)
                 app.state.accepted_model_selector = AcceptedModelSelector(
                     storage.sessions,
                     app.state.model_provider_registry,
@@ -86,24 +127,47 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     connection_tester=connection_tester,
                     connection_test_timeout_seconds=settings.model_connection_test_timeout_seconds,
                 )
+                app.state.asset_service = AssetService(
+                    storage.sessions,
+                    asset_objects,
+                    asset_staging,
+                    max_size_bytes=settings.asset_max_size_bytes,
+                )
+                asset_cleanup_reconciler = AssetCleanupReconciler(
+                    storage.sessions,
+                    asset_objects,
+                    poll_interval_seconds=settings.asset_cleanup_poll_interval_seconds,
+                    lease_seconds=settings.asset_cleanup_lease_seconds,
+                    max_attempts=settings.asset_cleanup_max_attempts,
+                )
+                app.state.asset_cleanup_reconciler = asset_cleanup_reconciler
             if settings.role in {ServiceRole.all, ServiceRole.worker}:
                 app.state.native_model_factory = NativeModelFactory(model_http_client)
-            logger.info(
-                "service_started",
-                extra={
-                    "event": "service_started",
-                    "service": settings.service_name,
-                    "role": settings.role.value,
-                    "build_version": settings.build_version,
-                },
-            )
-            try:
-                yield
-            finally:
+                app.state.skill_runtime_preparer = FoundationSkillRuntimePreparer(storage.sessions, package_store)
+            async with create_task_group() as background_tasks:
+                if asset_cleanup_reconciler is not None:
+                    background_tasks.start_soon(asset_cleanup_reconciler.run)
                 logger.info(
-                    "service_stopped",
-                    extra={"event": "service_stopped", "service": settings.service_name, "role": settings.role.value},
+                    "service_started",
+                    extra={
+                        "event": "service_started",
+                        "service": settings.service_name,
+                        "role": settings.role.value,
+                        "build_version": settings.build_version,
+                    },
                 )
+                try:
+                    yield
+                finally:
+                    background_tasks.cancel_scope.cancel()
+                    logger.info(
+                        "service_stopped",
+                        extra={
+                            "event": "service_stopped",
+                            "service": settings.service_name,
+                            "role": settings.role.value,
+                        },
+                    )
 
 
 def create_app(settings: ServiceSettings | None = None, *, components: ServiceComponents | None = None) -> FastAPI:
@@ -155,7 +219,9 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         return {"status": "ready", "role": resolved_settings.role.value}
 
     if serves_control_plane:
+        app.include_router(asset_management_router)
         app.include_router(model_management_router)
+        app.include_router(skill_management_router)
 
         @app.api_route("/api", methods=_API_METHODS, include_in_schema=False)
         async def unknown_api_root() -> None:

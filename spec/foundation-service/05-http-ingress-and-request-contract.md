@@ -2,11 +2,7 @@
 
 ## Design Position
 
-Foundation Service exposes one HTTP ingress for Native product APIs, Hosted
-AG-UI, A2A, the optional browser application, streaming delivery, and
-operational probes. This contract owns process-role exposure, request context,
-proxy and browser trust, authentication boundaries, protocol-aware error
-enforcement, streaming resource safety, and drain behavior.
+Foundation Service exposes one HTTP ingress for Native product APIs, Hosted AG-UI, A2A, the optional browser application, streaming delivery, and operational probes. This contract owns process-role exposure, request context, proxy and browser trust, authentication boundaries, protocol-aware error enforcement, streaming resource safety, and drain behavior.
 
 Resource routes, fields, commands, and authorization actions remain owned by their domains. Shared JSON, status, pagination, error-envelope, version, and idempotency wire semantics remain owned by [Platform API Conventions](../api-conventions.md). HTTP middleware carries transport context; it does not become a database transaction, resource authorizer, or business workflow engine.
 
@@ -23,11 +19,7 @@ Resource routes, fields, commands, and authorization actions remain owned by the
 | `/internal/v1` operator routes when configured   |       Yes |       No |   Yes |
 | `/healthz` and `/readyz`                         |       Yes |      Yes |   Yes |
 
-A worker-only process returns no product route, product OpenAPI document,
-browser fallback, static application, or authenticated product stream. Unknown
-`/api`, `/ag-ui`, `/a2a`, and well-known protocol paths are never rewritten to
-browser HTML. Operational paths are outside the product namespaces,
-unversioned, bounded, and excluded from product OpenAPI.
+A worker-only process returns no product route, product OpenAPI document, browser fallback, static application, or authenticated product stream. Unknown `/api`, `/ag-ui`, `/a2a`, and well-known protocol paths are never rewritten to browser HTML. Operational paths are outside the product namespaces, unversioned, bounded, and excluded from product OpenAPI.
 
 The internal operator surface is excluded from the public product OpenAPI, SDKs, browser application, and tenant IAM roles. A selected distribution exposes it only behind a configured deployment-owned operator authenticator and private routing policy. Requests without authenticated operator authority fail closed even when they originate on an internal network. The owning internal domain defines its resources and commands; the HTTP boundary preserves the same bounded body, error, request-ID, and transaction-lifetime rules as product ingress.
 
@@ -45,7 +37,7 @@ flowchart LR
 
 The diagram defines semantic order, not one middleware class per box. An implementation can combine stateless checks while preserving the same boundary and failure behavior.
 
-The service owns the final request ID returned in the shared error envelope and emitted in safe diagnostics. It generates a bounded unpredictable request ID for every request. An inbound request ID can be recorded only as separately labeled, validated upstream correlation and never replaces the service identity or grants trust. Trace propagation follows the configured [OpenTelemetry boundary](37-observability.md#links-and-propagation) and remains distinct from product authorization. A later durable TurnAttempt starts a parentless trace and can link this request context only while a valid context remains available; Foundation does not persist the context with the Turn.
+The service owns the final request ID returned in the shared error envelope and emitted in safe diagnostics. It generates a bounded unpredictable request ID for every request. An inbound request ID can be recorded only as separately labeled, validated upstream correlation and never replaces the service identity or grants trust. Trace propagation follows the configured [OpenTelemetry boundary](38-observability.md#links-and-propagation) and remains distinct from product authorization. A later durable RunAttempt starts a parentless trace and can link this request context only while a valid context remains available; Foundation does not persist the context with the Run.
 
 Request context contains only immutable safe values such as request ID, trace correlation, selected role, route identity, and authenticated Principal reference after authentication. It contains no live database session, credential secret, request body, mutable authorization cache, or provider client.
 
@@ -69,13 +61,7 @@ Authentication establishment routes such as login, invitation acceptance, and pa
 
 ## Errors and Diagnostics
 
-Every Native `/api` failure, including framework validation, unknown API routes,
-authentication failures, domain errors, dependency failures, and unexpected
-exceptions, uses the shared bounded error envelope from Platform API
-Conventions. Framework-native `detail` responses never escape the `/api`
-boundary. Hosted AG-UI and A2A failures use the bounded error representation
-owned by their selected protocol contracts while preserving the same request ID
-and non-disclosure rules.
+Every Native `/api` failure, including framework validation, unknown API routes, authentication failures, domain errors, dependency failures, and unexpected exceptions, uses the shared bounded error envelope from Platform API Conventions. Framework-native `detail` responses never escape the `/api` boundary. Hosted AG-UI and A2A failures use the bounded error representation owned by their selected protocol contracts while preserving the same request ID and non-disclosure rules.
 
 The stable error code and safe details come from the owning boundary. Unexpected failures use a generic code and message, retain the request ID, and log the exception once at the boundary that handles it. Responses and diagnostics never contain traceback text, SQL, credentials, authorization headers, cookies, private paths, raw prompts, model output, tool payloads, or provider-native secret data.
 
@@ -85,7 +71,7 @@ Operational probe failures use a smaller bounded operational representation and 
 
 SSE and WebSocket routes authenticate, authorize, and complete initial database reads in closed short sessions before constructing the streaming response. The stream receives immutable detached values and process-wide factories, never a yielded database session through its dependency graph.
 
-Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never interrupts a Turn unless the client separately submits the authorized interrupt command.
+Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never interrupts a Run unless the client separately submits the authorized interrupt command.
 
 When the process begins draining, it rejects new streams, signals or closes existing streams according to their owning reconnect contract, and releases subscriptions within the drain deadline. A reconnect uses the owning durable cursor or reports an explicit replay gap; it does not treat a transport connection as execution authority.
 
@@ -105,7 +91,7 @@ The service does not keep accepting work that it cannot durably authorize or acc
 | Request validation fails                      | Shared `400` with safe field details  | No product mutation                                      |
 | Required dependency is unavailable            | Shared `503`; process is unready      | Previously committed work remains under its owner        |
 | Response is lost after commit                 | Client outcome is unknown             | Same idempotency key or authoritative read reconciles it |
-| Stream disconnects                            | Delivery stops                        | Turn and retained sources remain independent             |
+| Stream disconnects                            | Delivery stops                        | Run and retained sources remain independent              |
 | Unexpected exception                          | Shared generic `500` with request ID  | Transaction rollback or owning reconciliation applies    |
 
 ## Compatibility
@@ -121,11 +107,9 @@ A new common ingress check can be added when it rejects only requests outside th
 03. Untrusted forwarded headers never change client, host, or scheme identity.
 04. Production browser access is same-origin unless an exact cross-origin policy is selected.
 05. Middleware carries transport context and never owns resource authorization or a long-lived database session.
-06. Every `/api` error uses the shared bounded error envelope; Hosted AG-UI and
-    A2A use their owning bounded protocol errors, and framework-native error
-    bodies do not escape any product boundary.
+06. Every `/api` error uses the shared bounded error envelope; Hosted AG-UI and A2A use their owning bounded protocol errors, and framework-native error bodies do not escape any product boundary.
 07. Streaming responses receive no yielded database session.
-08. Client disconnect and transport delivery never define Turn cancellation or completion.
+08. Client disconnect and transport delivery never define Run cancellation or completion.
 09. Drain rejects new work before closing streams and ingress.
 10. An open HTTP socket does not make an unready process product-available.
 11. Internal network placement alone never authenticates an operator route, and internal routes never become public SDK or tenant-role surfaces.

@@ -6,6 +6,7 @@ from .authorization import (
     AuthorizationError,
     AuthorizedWorkspace,
     WorkspaceAction,
+    authorize_agent_skill_binding,
     authorize_workspace,
 )
 from .domain import PrincipalRef, PrincipalType
@@ -34,5 +35,6 @@ __all__ = [
     "WorkspaceAction",
     "WorkspaceRecord",
     "authenticate_request",
+    "authorize_agent_skill_binding",
     "authorize_workspace",
 ]

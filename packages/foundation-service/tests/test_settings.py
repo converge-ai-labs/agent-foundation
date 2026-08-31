@@ -24,7 +24,13 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
     assert settings.role is ServiceRole.all
     assert settings.port == 8000
     assert settings.database_backend is DatabaseBackend.postgresql
+    assert settings.asset_max_size_bytes == 100 * 1024 * 1024
     assert "foundation:foundation" not in repr(settings)
+
+
+def test_asset_size_bound_must_be_positive_and_finite() -> None:
+    with pytest.raises(ValueError):
+        ServiceSettings(_env_file=None, asset_max_size_bytes=0)
 
 
 def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:

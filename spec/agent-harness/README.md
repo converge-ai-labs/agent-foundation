@@ -60,10 +60,10 @@ Read `06`, `19`, `13`, and `15`. Read `12` separately for process-local events a
 ## Authority Rules
 
 - Pydantic AI owns the Agent loop and its native Model, Capability, Toolset, message, deferred, output, event, and usage contracts.
-- The shared [interaction model](../interaction-model.md) owns Session, Thread, Turn, and Item meaning; `HarnessState` carries the stable identity and continuation of one Thread.
+- The shared [interaction model](../interaction-model.md) owns Session, Thread, Run, and Item meaning; `HarnessState` carries the stable identity and continuation of one Thread.
 - Concrete plugins and other native Python inputs are trusted in-process objects; the narrow Harness plugin document is an optional builder-local source, not an Agent definition format.
 - The Harness owns process-local code-first construction and logical-Run behavior.
-- A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, Session/Turn lifecycle, execution lifecycle, and delivery.
+- A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, Session/Run lifecycle, execution lifecycle, and delivery.
 - Providers own external side effects and authoritative reconciliation evidence.
 - A telemetry backend observes execution but never becomes lifecycle authority.
 

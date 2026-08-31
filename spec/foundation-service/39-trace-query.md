@@ -2,21 +2,21 @@
 
 ## Design Position
 
-Foundation Service exposes one authorized, provider-neutral read boundary for TurnAttempt traces. It supplies the backend API needed by a Trace Dashboard without defining browser layout or presentation behavior. The API reads telemetry from one configured `TraceQueryProvider`; it does not read Foundation tables as a trace store, ingest another telemetry copy, or reconstruct absent traces from durable lifecycle data.
+Foundation Service exposes one authorized, provider-neutral read boundary for RunAttempt traces. It supplies the backend API needed by a Trace Dashboard without defining browser layout or presentation behavior. The API reads telemetry from one configured `TraceQueryProvider`; it does not read Foundation tables as a trace store, ingest another telemetry copy, or reconstruct absent traces from durable lifecycle data.
 
 The OSS distribution includes a Langfuse v4 provider as the reference implementation. Other trusted providers implement the same narrow port and are registered explicitly by a product distribution. Runtime configuration selects among providers already present in that artifact and never names an import target or discovers installed packages.
 
-The query boundary and the [OTel producer and exporter](37-observability.md) are independent. OTLP remains the public write boundary. Query adapters use documented backend read APIs because OTLP defines telemetry transport, not a cross-backend query protocol.
+The query boundary and the [OTel producer and exporter](38-observability.md) are independent. OTLP remains the public write boundary. Query adapters use documented backend read APIs because OTLP defines telemetry transport, not a cross-backend query protocol.
 
 ## Boundaries
 
 | Concern                                          | Owner                                                  | Relationship                                                              |
 | ------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------- |
-| TurnAttempt trace topology and exported fields   | [Observability](37-observability.md)                   | Supplies one bounded trace and stable Foundation correlation              |
+| RunAttempt trace topology and exported fields    | [Observability](38-observability.md)                   | Supplies one bounded trace and stable Foundation correlation              |
 | Trace storage, indexing, retention, and deletion | Selected backend and deployment operator               | Remain backend-owned and are not copied into Foundation                   |
 | Public Trace list and detail semantics           | This contract                                          | Normalizes backend observations into one authorized Native API            |
 | Backend query and response mapping               | Selected `TraceQueryProvider`                          | Uses documented provider APIs behind the normalized boundary              |
-| Resource visibility and content authorization    | [Foundation IAM](10-identity-and-access-management.md) | Reauthorizes every returned TurnAttempt under current policy              |
+| Resource visibility and content authorization    | [Foundation IAM](10-identity-and-access-management.md) | Reauthorizes every returned RunAttempt under current policy               |
 | Shared JSON, pagination, and errors              | [Platform API Conventions](../api-conventions.md)      | Applies the common bounded `/api/v1` contract                             |
 | Browser Trace Dashboard                          | Foundation Web or another client                       | Consumes the public API; layout and interaction are outside this contract |
 | Archive, data-lake export, and rehydration       | Deployment operator                                    | Remain outside Foundation                                                 |
@@ -90,10 +90,10 @@ class TraceSummary:
     trace_status: Literal["unset", "ok", "error"]
     session_id: str
     thread_id: str
-    turn_id: str
-    turn_attempt_id: str
-    turn_attempt_number: int
-    turn_attempt_outcome: Literal["succeeded", "failed", "cancelled"] | None
+    run_id: str
+    run_attempt_id: str
+    run_attempt_number: int
+    run_attempt_outcome: Literal["succeeded", "yielded", "failed", "cancelled"] | None
     input: JsonValue | None
     output: JsonValue | None
     observation_count: int | None
@@ -125,7 +125,7 @@ class TraceDetail:
     observations: tuple[Observation, ...]
 ```
 
-The schemas are conceptual; their JSON representation follows the shared API conventions. `id` and observation IDs are opaque external telemetry identifiers, not Foundation object IDs. `trace_status` and observation `status` are backend telemetry states. After validating the correlation, Foundation projects `turn_attempt_number` and `turn_attempt_outcome` from the authoritative TurnAttempt read rather than trusting telemetry to supply lifecycle truth. They remain distinct from telemetry status. Null usage, cost, content, end time, or outcome means unavailable, not zero or success.
+The schemas are conceptual; their JSON representation follows the shared API conventions. `id` and observation IDs are opaque external telemetry identifiers, not Foundation object IDs. `trace_status` and observation `status` are backend telemetry states. After validating the correlation, Foundation projects `run_attempt_number` and `run_attempt_outcome` from the authoritative RunAttempt read rather than trusting telemetry to supply lifecycle truth. They remain distinct from telemetry status. Null usage, cost, content, end time, or outcome means unavailable, not zero or success.
 
 The service admits only bounded JSON-compatible content, normalized observation metadata, model names, and usage keys. Provider-private fields outside the declared models are dropped rather than becoming an unversioned public escape hatch. Collection summaries can contain root input and output when present; clients use `compact` detail when they do not need payload content.
 
@@ -135,20 +135,20 @@ The service admits only bounded JSON-compatible content, normalized observation 
 
 The trace collection accepts these base query controls:
 
-| Parameter         | Meaning                                                                                 |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| `from` and `to`   | Optional RFC 3339 UTC pair selecting root start time in the half-open range `[from,to)` |
-| `limit`           | Shared collection limit from `1` through `100`, default `50`                            |
-| `cursor`          | Opaque continuation bound to caller, Workspace, provider, range, search, and filters    |
-| `query`           | Optional input/output token or phrase search, at most 512 UTF-8 bytes                   |
-| `search_in`       | `input`, `output`, or `input_output`; valid only with `query`                           |
-| `thread_id`       | Optional exact Foundation Thread correlation                                            |
-| `turn_id`         | Optional exact Foundation Turn correlation                                              |
-| `turn_attempt_id` | Optional exact Foundation TurnAttempt correlation                                       |
+| Parameter        | Meaning                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------- |
+| `from` and `to`  | Optional RFC 3339 UTC pair selecting root start time in the half-open range `[from,to)` |
+| `limit`          | Shared collection limit from `1` through `100`, default `50`                            |
+| `cursor`         | Opaque continuation bound to caller, Workspace, provider, range, search, and filters    |
+| `query`          | Optional input/output token or phrase search, at most 512 UTF-8 bytes                   |
+| `search_in`      | `input`, `output`, or `input_output`; valid only with `query`                           |
+| `thread_id`      | Optional exact Foundation Thread correlation                                            |
+| `run_id`         | Optional exact Foundation Run correlation                                               |
+| `run_attempt_id` | Optional exact Foundation RunAttempt correlation                                        |
 
 If both time parameters are absent, the range is the 24 hours before request evaluation. Supplying only one is invalid. An explicit range cannot exceed 31 days but can select any retained historical interval. The collection order is `started_at desc, id desc` and cannot be changed. All supplied filters combine with logical `AND`.
 
-Search applies only to input and output on the TurnAttempt root observation. It is not regex, wildcard, arbitrary metadata, score, tag, or provider-query syntax. The provider owns tokenization and phrase matching within its declared full-text capability. Unsupported search returns `trace_query_filter_unsupported`; it never degrades into a broad unfiltered read.
+Search applies only to input and output on the RunAttempt root observation. It is not regex, wildcard, arbitrary metadata, score, tag, or provider-query syntax. The provider owns tokenization and phrase matching within its declared full-text capability. Unsupported search returns `trace_query_filter_unsupported`; it never degrades into a broad unfiltered read.
 
 Duration, token, cost, model, environment, status, tag, score, and arbitrary metadata filters are not part of this contract. They can be added additively when a product query is defined without changing the provider port or base cursor contract.
 
@@ -168,12 +168,12 @@ sequenceDiagram
     DB-->>Control: detached principal and scope
     Control->>Backend: provider query with forced Workspace correlation
     Backend-->>Control: provider observations
-    Control->>DB: validate correlated TurnAttempts and current visibility
+    Control->>DB: validate correlated RunAttempts and current visibility
     DB-->>Control: authorized detached projections
     Control-->>Client: normalized bounded response
 ```
 
-No database session or transaction remains open during the backend call. The provider always constrains its request to `foundation.turn_attempt` roots and the exact Organization and Workspace correlation. Foundation then validates every returned trace against authoritative TurnAttempt ownership and the caller's current visibility. Workspace Viewer authority can read Workspace-visible traces; a direct AgentPreset Viewer sees only traces for associated authorized Turns even without Workspace-wide visibility. Existing resource-read grants are reused; trace query defines no broader observability grant.
+No database session or transaction remains open during the backend call. The provider always constrains its request to `foundation.run_attempt` roots and the exact Organization and Workspace correlation. Foundation then validates every returned trace against authoritative RunAttempt ownership and the caller's current visibility. Workspace Viewer authority can read Workspace-visible traces; a direct AgentPreset Viewer sees only traces for associated authorized Runs even without Workspace-wide visibility. Existing resource-read grants are reused; trace query defines no broader observability grant.
 
 The `a13n.*` attributes and provider project key are correlation, not authorization evidence. Uncorrelated, cross-tenant, nonexistent, or currently unauthorized results are never returned. Exact reads conceal absent and unauthorized traces with the same `404 trace_not_found` result. List reads omit unrelated backend data and fail safely when a provider response cannot be bounded or interpreted.
 
@@ -181,7 +181,7 @@ Input, output, and metadata can contain sensitive business content admitted by t
 
 ## Langfuse v4 Provider
 
-The built-in provider supports Langfuse server v4 and uses the documented Observations v2 Public API. It does not call deprecated Trace or Observation APIs, private application endpoints, Langfuse ClickHouse tables, or Blob Storage Export. It identifies root observations by the `foundation.turn_attempt` name and parentless topology, groups descendants by OTel trace ID, and maps the stable `a13n.*` correlation registry into the normalized models.
+The built-in provider supports Langfuse server v4 and uses the documented Observations v2 Public API. It does not call deprecated Trace or Observation APIs, private application endpoints, Langfuse ClickHouse tables, or Blob Storage Export. It identifies root observations by the `foundation.run_attempt` name and parentless topology, groups descendants by OTel trace ID, and maps the stable `a13n.*` correlation registry into the normalized models.
 
 Langfuse deployment, project creation, storage schema, user management, retention, and backup remain operator-owned. The query provider's API credentials can read only the operator-selected project. Foundation IAM still scopes the results inside that project.
 
@@ -226,7 +226,7 @@ One normalized API lets Foundation clients build a consistent trace experience w
 
 1. Trace Query reads one selected backend and persists no trace, observation, cursor, index, or archive.
 2. OTLP is the write boundary; `TraceQueryProvider` is a separate documented-read adapter boundary.
-3. Every returned trace correlates to one authorized Foundation TurnAttempt under current policy.
+3. Every returned trace correlates to one authorized Foundation RunAttempt under current policy.
 4. Telemetry correlation, backend project membership, trace IDs, and cursors never grant authority.
 5. `ListTraces` and `GetTrace` are the only public trace query operations; observations are nested in `TraceDetail`.
 6. Provider selection names only an implementation registered by the artifact's distribution descriptor.
