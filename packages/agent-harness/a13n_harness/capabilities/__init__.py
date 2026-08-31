@@ -71,6 +71,7 @@ from .skills import (
     SkillSelectionRunCapability,
     SkillSource,
     SkillsPolicy,
+    parse_skill_frontmatter,
 )
 from .web import (
     WEB_SCRAPE_BACKEND_ENV,
@@ -213,4 +214,5 @@ __all__ = [
     "WorkingStateConfiguration",
     "WorkspaceOutlineCapability",
     "WorkspaceOutlineConfiguration",
+    "parse_skill_frontmatter",
 ]

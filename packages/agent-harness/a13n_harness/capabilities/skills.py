@@ -242,7 +242,7 @@ class FileSkillSource:
                 code="skill_catalog_invalid",
                 details={"path": path, "environment_code": exc.code},
             ) from exc
-        name, description = _parse_frontmatter(result.text, path=path)
+        name, description = parse_skill_frontmatter(result.text, path=path)
         lines = result.text.lstrip("\ufeff").splitlines()
         closing = next(index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---")
         if any(line_number <= closing + 1 for line_number in result.truncated_lines):
@@ -961,7 +961,9 @@ async def _is_file(files: FileOperator, path: str) -> bool:
     return metadata.kind == "file"
 
 
-def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
+def parse_skill_frontmatter(content: str, *, path: str = "SKILL.md") -> tuple[str, str]:
+    """Validate one Harness Skill document and return its model-facing identity."""
+
     lines = content.lstrip("\ufeff").splitlines()
     if not lines or lines[0].strip() != "---":
         raise DefinitionError(
@@ -1012,4 +1014,5 @@ __all__ = [
     "SkillSource",
     "SkillsCapability",
     "SkillsPolicy",
+    "parse_skill_frontmatter",
 ]

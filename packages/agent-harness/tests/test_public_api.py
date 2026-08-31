@@ -140,6 +140,7 @@ def test_feature_facades_export_documented_families() -> None:
         "WebSearchBackendBinding",
         "WebSearchConfiguration",
         "WorkingStateCapability",
+        "parse_skill_frontmatter",
     }
     expected_toolsets = {
         "AUDIO_UNDERSTANDING_MODEL_ENV",
