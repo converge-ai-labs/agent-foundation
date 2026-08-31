@@ -133,17 +133,17 @@ The adapter returns `None` only for accepted empty input. It receives no credent
 
 ## Use by Control Operation
 
-| Operation          | Behavior                                                                                                                           |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Root invocation    | Stores new accepted input on the root Run.                                                                                         |
-| Continuation       | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                |
-| Thread submission  | Accepts input immediately when the Thread is eligible; otherwise stores it as editable queue data until consumption accepts a Run. |
-| Fork               | Stores new accepted input on the new Thread's first Run.                                                                           |
-| Managed Trigger    | Places bounded machine data in `structured_content`, validating its optional protocol schema.                                      |
-| Asynchronous child | Stores parent- or Host-supplied input on the child Run.                                                                            |
-| Active steer       | Stores accepted input in the target Thread inbox without creating a Run.                                                           |
-| Retry              | Copies the source Run's accepted input and reacquires any needed binary source for the new Run.                                    |
-| Waiting feedback   | Uses the separate [atomic feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction).                     |
+| Operation             | Behavior                                                                                                                                  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Root invocation       | Stores new accepted input on the root Run.                                                                                                |
+| Continuation          | Stores new accepted input on a successor accepted by Continue, Continue From, or queue consumption.                                       |
+| Thread Run submission | Accepts input immediately when the Thread is eligible; otherwise stores the complete editable Run intent until consumption accepts a Run. |
+| Fork                  | Stores new accepted input on the new Thread's first Run.                                                                                  |
+| Managed Trigger       | Places bounded machine data in `structured_content`, validating its optional protocol schema.                                             |
+| Asynchronous child    | Stores parent- or Host-supplied input on the child Run.                                                                                   |
+| Active steer          | Stores accepted input in the target Thread inbox without creating a Run.                                                                  |
+| Retry                 | Copies the source Run's accepted input and reacquires any needed binary source for the new Run.                                           |
+| Waiting feedback      | Uses the separate [atomic feedback protocol](34-agent-control-input-and-continuation.md#deferred-interaction).                            |
 
 ## Failure Semantics
 
