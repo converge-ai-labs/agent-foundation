@@ -66,6 +66,9 @@ mode = "on_demand"
 [observability]
 tracing = true
 trace_content = "none"
+
+[observability.query]
+provider = "none"
 ```
 
 The example defines section ownership, not an exhaustive setting catalog. The executable package documents concrete fields and environment names. An environment variable maps to its section and field under the `FOUNDATION_` prefix. Unknown TOML sections and fields are rejected; a misspelled or distribution-unsupported setting never disappears silently.
@@ -81,12 +84,15 @@ routes, and A2A delivery components while preserving every Native and Hosted
 AG-UI surface. The setting does not select another distribution and there is no
 Agent-level A2A enable setting.
 
-The observability section contains only the tracing switch and Harness content
-selection owned by the [observability contract](37-observability.md).
-Exporter, endpoint, protocol, headers, TLS, sampler, batch, and timeout settings
-use standard `OTEL_*` input and do not gain Foundation aliases. Static
-configuration is validated before startup completes. Runtime exporter
-availability is diagnostic and never becomes a readiness dependency.
+The observability section contains the tracing switch and Harness content
+selection owned by the [observability contract](37-observability.md), plus the
+independent query-provider selection and typed provider configuration owned by
+[Trace Query](38-trace-query.md). Exporter, endpoint, protocol, headers, TLS,
+sampler, batch, and timeout settings use standard `OTEL_*` input and do not gain
+Foundation aliases. Query providers do not inspect or reuse those exporter
+settings. Static configuration is validated before startup completes. Runtime
+exporter and query-backend availability are diagnostic and never become
+readiness dependencies.
 
 ## Deployment Profiles
 
@@ -183,9 +189,10 @@ dependency.
 
 Loss of PostgreSQL, Redis, shared object storage, or another role-required dependency makes the affected process unready. A transient dependency loss does not by itself make liveness fail or erase already committed work. The process stops accepting new dependent work while the owning component performs bounded reconnect behavior. An unrecoverable client or component failure terminates the process.
 
-An OTLP endpoint is not a role-required Service dependency. Exporter failure
-and queue pressure preserve readiness and ordinary work while emitting bounded
-diagnostics under the observability contract.
+An OTLP endpoint and a selected trace-query backend are not role-required
+Service dependencies. Exporter failure, queue pressure, and trace-query failure
+preserve readiness and ordinary work while emitting bounded diagnostics under
+their owning observability contracts.
 
 Probe responses expose only bounded status, role, build identity, and safe dependency categories. They contain no endpoint, credential, tenant data, queue contents, traceback, or raw provider error.
 

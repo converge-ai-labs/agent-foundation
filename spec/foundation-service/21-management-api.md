@@ -91,6 +91,7 @@ The following paths are relative to `/api/v1` and are the owning collection and 
 | Native notifications         | `WS /notifications`                                                                                                                         | Explicit Thread or Workspace subscriptions; best-effort wake-ups without replay                    |
 | Hook subscriptions           | `/workspaces/{workspace_id}/hook-subscriptions`, `/hook-subscriptions/{hook_subscription_id}`                                               | Long-lived creation plus management of every durable subscription, including Turn-inline resources |
 | Usage records                | `/workspaces/{workspace_id}/usage-records`                                                                                                  | Immutable raw records with durable attribution                                                     |
+| Trace queries                | `/workspaces/{workspace_id}/traces`, `/workspaces/{workspace_id}/traces/{trace_id}`                                                         | Authorized provider-backed list and detail views; not durable Foundation resources                 |
 
 The selected [distribution](02-distribution-composition-and-extensions.md) registers exactly the routes for its supported capabilities. An EE or Cloud capability can add Organization lifecycle, external identity, Group, custom-role, or Organization-bound credential routes without inserting license branches into OSS handlers or changing existing resource meaning.
 
@@ -241,6 +242,9 @@ Public resources expose stable product fields and safe references, not ORM objec
 - LifecycleEvent reads preserve event identity and type, schema version, owning-resource sequence, subject, actor when applicable, TurnAttempt attribution, resource version, bounded payload, and commit time;
 - HookSubscription reads preserve version, active or paused status, exact Hook names, bounded resource filters, callback URL, managed signing-Secret reference, signature profile, and timestamps without URL credentials or signing Secret values;
 - UsageRecord reads preserve immutable identity and attribution.
+- Trace reads expose normalized provider telemetry only after validating exact
+  Foundation TurnAttempt correlation and current resource visibility; they do
+  not become lifecycle, retained interaction, audit, or usage authority.
 
 An Item read never substitutes for lifecycle event replay, and an event read never expands private Item or object-backed content without separate authorization.
 
@@ -290,6 +294,10 @@ cursor-paginated.
 ## Pagination, Filtering, and Replay
 
 Ordinary collections use `limit` and opaque `cursor` exactly as defined by Platform API Conventions. Each resource defines deterministic default ordering and explicit filters. Cursors are bound to principal scope, filter, order, and retention.
+
+The Trace collection additionally follows the provider-backed range, search,
+cursor, and authorization rules in [Trace Query](38-trace-query.md). Its cursor
+is ordinary query continuation, not telemetry or lifecycle authority.
 
 Workspace lifecycle replay uses its own opaque cursor over authorized durable
 `lifecycle_events`. It supports only owning lifecycle/resource filters and
@@ -355,3 +363,5 @@ The API uses the shared bounded errors and stable codes enforced by the [HTTP in
     preserves their order. A completed source can seal together with first-entry
     consumption and successor acceptance after state-first preparation;
     otherwise terminal recovery drain remains independently repeatable.
+16. Trace query views normalize authorized backend telemetry and never become
+    Foundation resources or durable authority.

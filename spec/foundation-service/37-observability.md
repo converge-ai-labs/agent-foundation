@@ -4,9 +4,9 @@
 
 Foundation Service projects each bounded worker generation through one generic OpenTelemetry trace. One `TurnAttempt` owns one parentless `foundation.turn_attempt` root span; the existing `harness.run` span and its Pydantic AI descendants execute beneath that root through the same current OpenTelemetry context. A Thread Trace is a query view over all of a Thread's TurnAttempt traces, not another durable resource and not one unbounded OpenTelemetry trace.
 
-Foundation owns the process tracer provider, resource, sampling, processors, scope filter, exporter lifecycle, correlation projection, and bounded shutdown. It exports through at most one OTLP destination. Langfuse is one optional hot query backend reached through that generic OTLP path; Foundation installs no Langfuse SDK, vendor profile, backend switch, or Langfuse persistence dependency.
+Foundation owns the process tracer provider, resource, sampling, processors, scope filter, exporter lifecycle, correlation projection, and bounded shutdown. It exports through at most one OTLP destination. Langfuse is one optional backend reached through that generic OTLP path; Foundation installs no Langfuse SDK, vendor tracing profile, or Langfuse persistence dependency.
 
-Telemetry storage, query, retention, and archival belong to the deployment operator and selected backend. Foundation defines no trace database, archive schema, archive reader, or rehydration path. Telemetry is a best-effort diagnostic projection and is never lifecycle, state, audit, usage, billing, authorization, or delivery authority. Missing telemetry proves none of those facts.
+Telemetry storage, retention, and archival belong to the deployment operator and selected backend. Foundation defines no trace database, archive schema, archive reader, or rehydration path. The separate [Trace Query](38-trace-query.md) contract defines an authorized, provider-neutral read API over a selected backend without changing that ownership. Telemetry is a best-effort diagnostic projection and is never lifecycle, state, audit, usage, billing, authorization, or delivery authority. Missing telemetry proves none of those facts.
 
 ## Boundaries
 
@@ -17,7 +17,8 @@ Telemetry storage, query, retention, and archival belong to the deployment opera
 | Harness and Pydantic AI observations             | [Harness Observation](../agent-harness/19-observation-model.md) | Retains its existing span ownership and content semantics beneath the Service root |
 | Inbound W3C Trace Context trust                  | [HTTP Ingress](05-http-ingress-and-request-contract.md)         | Validates transport context without granting product authority                     |
 | TurnAttempt root and Service phase spans         | This contract                                                   | Covers the claimed worker generation before, during, and after Harness execution   |
-| Storage, query, retention, and archival          | Deployment operator and selected backend                        | Remain outside Foundation and never become durable lifecycle authority             |
+| Authorized Trace Query API and backend adapters  | [Trace Query](38-trace-query.md)                                | Normalizes selected backend reads without owning stored telemetry                  |
+| Telemetry storage, retention, and archival       | Deployment operator and selected backend                        | Remain outside Foundation and never become durable lifecycle authority             |
 | OTLP fan-out and tail sampling                   | External OpenTelemetry Collector                                | Remain outside the Service process                                                 |
 
 This contract owns tracing. Harness metrics retain their independent provider and instrument ownership. A trace setting neither enables nor disables an otherwise selected meter provider.
@@ -58,9 +59,9 @@ An asynchronous child owns another Thread and therefore another Langfuse Session
 
 Foundation's `Session` and Langfuse's Session intentionally have different meanings. Neither mapping changes durable identities, Pydantic conversation correlation, provider-native session state, or authorization.
 
-## Provider and Runtime Configuration
+## Producer and Export Configuration
 
-Foundation-owned configuration has exactly two fields:
+Foundation's OTel producer policy has exactly two common fields:
 
 ```toml
 [observability]
@@ -68,7 +69,7 @@ tracing = true
 trace_content = "none" # none | standard | full
 ```
 
-They map to `FOUNDATION_OBSERVABILITY_TRACING` and `FOUNDATION_OBSERVABILITY_TRACE_CONTENT` under the common runtime precedence. Release defaults are `tracing=true` and `trace_content="none"`. Development deployments can explicitly select another content value; there is no implicit development profile, Workspace override, per-Run override, default/ceiling pair, or configuration hot reload. The content value is dormant while tracing is disabled and is not recorded as a span attribute.
+They map to `FOUNDATION_OBSERVABILITY_TRACING` and `FOUNDATION_OBSERVABILITY_TRACE_CONTENT` under the common runtime precedence. Release defaults are `tracing=true` and `trace_content="none"`. Development deployments can explicitly select another content value; there is no implicit development profile, Workspace override, per-Run override, default/ceiling pair, or configuration hot reload. The content value is dormant while tracing is disabled and is not recorded as a span attribute. Trace query selection and credentials are an independent control-plane concern owned by [Trace Query](38-trace-query.md#configuration-and-provider-selection); selecting or disabling a query provider never changes this producer or exporter configuration.
 
 Endpoint, protocol, headers, TLS, compression, sampler, batching, queue, timeout, retry, and resource overrides use only standard `OTEL_*` settings. Foundation defines no `profile`, `backend`, `langfuse_enabled`, or parallel `FOUNDATION_*` transport settings. OTLP authentication values remain protected deployment configuration and never enter effective-configuration output, diagnostics, or traces.
 
@@ -174,7 +175,18 @@ All three values preserve the same span topology, correlation, timing, outcome, 
 
 The mapping carries the exact upstream limitations defined by Harness. Pydantic AI can still emit Agent descriptions, tool definitions and schema defaults, Agent/run metadata, exception messages, and stack traces at `none`. `standard` and `full` can contain raw business content. `full` is the highest-exposure diagnostic choice and can export multimodal bytes and complete request parameters. Foundation provides no recursive sanitizer, payload classification, or guarantee that upstream content is secret-free.
 
-Foundation-owned Resource, span, event, and link fields use only the closed registries in this contract. They never contain credentials, Secret values, Authorization, cookies, environment variables, raw headers or bodies, raw exception objects, native paths, arbitrary metadata, provider response bodies, or copied prompt/model/tool content. This producer constraint does not make allowed upstream Pydantic fields safe. A deployment requiring stronger controls places a tested processor or Collector policy before data crosses its trust boundary.
+The root observation exposes the complete TurnAttempt's user-facing boundary without copying the complete execution transcript:
+
+| Root attribute     | Value                                                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `input.value`      | Accepted user input serialized as ordinary text or JSON when content is `standard` or `full`               |
+| `input.mime_type`  | `text/plain` or `application/json` when `input.value` is present                                           |
+| `output.value`     | Final user-visible Attempt output serialized as ordinary text or JSON when content is `standard` or `full` |
+| `output.mime_type` | `text/plain` or `application/json` when `output.value` is present                                          |
+
+At `none` all four fields are absent. An Attempt that fails, is cancelled, or loses authority before committing user-visible output leaves `output.value` absent; it never synthesizes an error string as output. These fields do not copy intermediate model messages, tool arguments or results, complete conversation history, Harness state, binary bytes, file contents, or usage records. `full` expands upstream Pydantic capture but does not make the Foundation root another dump of those descendants.
+
+Except for this explicit root input/output boundary, Foundation-owned Resource, span, event, and link fields use only the closed registries in this contract. They never contain credentials, Secret values, Authorization, cookies, environment variables, raw headers or bodies, raw exception objects, native paths, arbitrary metadata, provider response bodies, or copied prompt/model/tool content. This producer constraint does not make allowed root or upstream Pydantic content safe. A deployment requiring stronger controls places a tested processor or Collector policy before data crosses its trust boundary.
 
 Foundation adds no trace-specific byte truncation. Oversized upstream spans can be rejected by an exporter or backend and are then lost as telemetry without changing Agent or Turn behavior.
 
@@ -203,7 +215,7 @@ The initial provider limits are the selected OTel SDK defaults:
 
 Standard OTel settings can override these values. Attribute, event, and link overflow uses the OTel `dropped_*_count` fields. Queue capacity and queue size use the selected SDK processor's native metrics. An exporter batch failure reports only a safe batch result because Foundation cannot prove which spans a remote backend accepted. Drop diagnostics never recursively create traces.
 
-## Export Topology and Hot Query
+## Export Topology and Backend Retention
 
 Foundation has one in-process trace exporter and at most one destination:
 
@@ -215,7 +227,7 @@ Service -> no exporter
 
 An external Collector can fan out the Service's sole OTLP stream. The operator owns its destinations, persistent queues, retry, capacity, and failure isolation. Foundation never adds another in-process exporter or repeats instrumentation for downstream delivery.
 
-Langfuse stores the telemetry it successfully ingests and provides its own hot Trace, Session, usage, latency, error, score, and evaluation views. Its deployment, ClickHouse schema, projects, users, access controls, and retention remain outside Foundation. The operator configures Langfuse through standard OTLP endpoint and header settings and accesses Langfuse directly; Foundation does not provision projects, distribute project keys, proxy queries, embed its UI, or map Foundation Principal/RoleBinding values to Langfuse users.
+Langfuse stores the telemetry it successfully ingests and can provide its own Trace, Session, usage, latency, error, score, and evaluation views. Its deployment, ClickHouse schema, projects, users, access controls, and retention remain outside Foundation. The operator configures Langfuse ingestion through standard OTLP endpoint and header settings. Foundation does not provision projects, distribute project keys, embed Langfuse UI, or map Foundation Principal or RoleBinding values to Langfuse users. When configured, the independent Trace Query boundary calls a documented backend API with deployment-owned read credentials and applies Foundation authorization to its normalized results.
 
 After Langfuse or another selected backend deletes an expired trace, Foundation cannot query or restore it. Any long-term export, archive, or data-lake integration is configured and operated outside Foundation.
 
@@ -234,21 +246,21 @@ Every selected OTLP destination receives exactly the content admitted to the Ser
 
 ## Compatibility and Verification
 
-Stable span names, attribute meanings, scope allowlist, content mappings, configuration fields, and Langfuse grouping are compatibility contracts. Adding an exported scope, widening content, changing an identity mapping, or making an optional backend operationally required is an information-boundary change, not a private refactor.
+Stable span names, attribute meanings, root input/output semantics, scope allowlist, content mappings, configuration fields, and Langfuse grouping are compatibility contracts. Adding an exported scope, widening content, changing an identity mapping, or making an optional backend operationally required is an information-boundary change, not a private refactor.
 
 Verification covers:
 
 - disabled, no-export, OTLP, invalid-static-config, endpoint-failure, queue pressure, flush timeout, and throwing processor/exporter paths;
 - one parentless root per TurnAttempt, fixed Service phase spans, unchanged Harness/Pydantic ownership, replacement Attempts, and incomplete old roots;
 - exact Session/Thread/Turn/Attempt correlation and independent child Threads;
-- each content value and the admitted/rejected scope matrix;
+- each content value, root input/output presence, and the admitted/rejected scope matrix;
 - Service-owned credential/header/body/metadata/exception exclusions;
 - direct backend export and external Collector fan-out without a second Service exporter; and
 - proof that every telemetry failure leaves lifecycle, state, delivery, and usage authority unchanged.
 
 ## Trade-offs
 
-One trace per TurnAttempt makes retries and worker replacement honest, bounded, and independently sampleable, at the cost of joining several traces for one Thread view. A generic OTLP path preserves backend choice but leaves storage, query, retention, archival, deployment, and access outside Foundation.
+One trace per TurnAttempt makes retries and worker replacement honest, bounded, and independently sampleable, at the cost of joining several traces for one Thread view. A generic OTLP path preserves backend choice. Foundation accepts a provider-specific read adapter at the control boundary so clients receive one API, while storage, retention, archival, and backend operation remain deployment concerns.
 
 ## Invariants
 
@@ -259,7 +271,7 @@ One trace per TurnAttempt makes retries and worker replacement honest, bounded, 
 05. `session.id` identifies the Foundation Thread, while `a13n.observation.session.id` identifies the broader Foundation Session.
 06. Sampling, content, exporter selection, backend selection, and backend retention are independent controls.
 07. Production defaults to tracing enabled, `trace_content=none`, and `always_on` sampling; transport uses only standard OTel settings.
-08. Foundation exports through at most one OTLP destination and installs no vendor SDK or backend-specific switch.
+08. Foundation exports through at most one OTLP destination and installs no vendor SDK or backend-specific export switch.
 09. Only distribution-approved Foundation, Harness, and locked Pydantic AI scopes cross the exporter boundary.
 10. Foundation-owned telemetry never generates known credentials, authorization material, raw transport bodies, arbitrary metadata, or raw exception objects.
 11. `standard` and `full` follow upstream Pydantic content semantics and carry no universal sanitization guarantee.

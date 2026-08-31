@@ -60,11 +60,12 @@ Before configuration parsing and runtime validation, the artifact's distribution
 - relational models and migration revision locations;
 - required storage and external capabilities;
 - readiness requirements;
+- trusted adapter registrations such as trace query providers; and
 - distribution-owned configuration namespaces.
 
 The declaration is data used for deterministic assembly, not a service locator. Domain application code receives explicit dependencies and does not query the distribution to decide ordinary behavior.
 
-Duplicate route method and path pairs, component identities, authorization action keys, relational table names, model registrations, or migration revision identities fail composition before resources open. A capability cannot override another contribution by registration order.
+Duplicate route method and path pairs, component identities, authorization action keys, trusted adapter keys, relational table names, model registrations, or migration revision identities fail composition before resources open. A capability cannot override another contribution by registration order.
 
 `all` receives the exact union of the artifact distribution's control and worker components. Composition deduplicates shared process resources and never constructs parallel schemas, authorizers, or domain models for the two roles.
 

@@ -4,9 +4,9 @@
 
 Foundation publishes independent Python, Go, Rust, and TypeScript SDKs for the
 complete public Native Foundation Service contract. The SDKs map the same
-resources, commands, receipts, errors, pagination, Turn SSE, Workspace lifecycle
-events, and Native notifications without creating language-specific lifecycle
-or retry semantics.
+resources, trace query views, commands, receipts, errors, pagination, Turn SSE,
+Workspace lifecycle events, and Native notifications without creating
+language-specific lifecycle or retry semantics.
 
 Foundation Web and the remote `agent-foundation` CLI are first-party clients of
 that public boundary. Standard AG-UI and A2A clients call their respective
@@ -38,6 +38,7 @@ in the OSS distribution, each SDK exposes:
 - request ID and upstream correlation access;
 - explicit idempotency keys and version or ETag preconditions;
 - deterministic collection pagination;
+- bounded Trace list and detail reads through the configured query provider;
 - Turn SSE consumption and cursor recovery;
 - Workspace lifecycle event reconciliation;
 - Native WebSocket notification subscription and close; and
@@ -130,9 +131,10 @@ or remote Session model.
 
 ## Foundation Web
 
-Foundation Web uses only public Native API, Turn SSE, Workspace event, and
-notification WebSocket contracts. It does not query Foundation tables, Redis,
-object storage, Worker endpoints, or internal operator routes.
+Foundation Web uses only public Native API, including Trace Query, Turn SSE,
+Workspace event, and notification WebSocket contracts. It does not query
+Foundation tables, Redis, object storage, trace backends, Worker endpoints, or
+internal operator routes.
 
 Foundation Web implements the product's supported browser workflows; it is not
 required to provide a page for every administrative resource in the Management
