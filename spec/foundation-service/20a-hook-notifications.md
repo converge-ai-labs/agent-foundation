@@ -664,13 +664,13 @@ Foundation owns the lifecycle of its process-local connection and active
 binding, not the lifecycle of an external Environment or Sandbox. The Worker can
 emit these live observations:
 
-| Hook name                       | Trigger                                                                                        | Information                                                                                            |
-| ------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `environment.binding.started`   | A fenced TurnAttempt begins connecting its exact Environment configuration                     | Environment and revision identity, connector/provider key, TurnAttempt correlation and occurrence time |
-| `environment.binding.ready`     | The connector validates the existing resource and returns a compatible attachment              | Correlation plus bounded safe capability and readiness summary                                         |
-| `environment.binding.failed`    | Connection, authorization, compatibility, or attachment validation fails                       | Correlation and bounded safe failure code; no target credential or provider body                       |
-| `environment.keep_alive.failed` | Active-run keep-alive exhausts its bounded retry policy                                        | Correlation, bounded safe failure and terminal Attempt classification                                  |
-| `environment.binding.closed`    | Binding closes after Harness completion, cancellation, lease loss, failure, or Worker shutdown | Correlation and bounded close reason; no claim about external resource state                           |
+| Hook name                       | Trigger                                                                                                         | Information                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `environment.binding.started`   | A fenced TurnAttempt begins connecting its exact Environment configuration                                      | Environment and revision identity, connector/provider key, TurnAttempt correlation and occurrence time |
+| `environment.binding.ready`     | The connector validates the existing resource and returns a compatible attachment                               | Correlation plus bounded safe capability and readiness summary                                         |
+| `environment.binding.failed`    | Connection, authorization, compatibility, or attachment validation fails                                        | Correlation and bounded safe failure code; no target credential or provider body                       |
+| `environment.keep_alive.failed` | Active-run keep-alive exhausts its bounded retry policy                                                         | Correlation, bounded safe failure and terminal Attempt classification                                  |
+| `environment.binding.closed`    | Binding closes after Harness completion, planned handoff, cancellation, lease loss, failure, or Worker shutdown | Correlation and bounded close reason; no claim about external resource state                           |
 
 These hooks are live Turn SSE observations only. Foundation emits no
 `sandbox.created`, `sandbox.started`, `sandbox.paused`, `sandbox.resumed`,

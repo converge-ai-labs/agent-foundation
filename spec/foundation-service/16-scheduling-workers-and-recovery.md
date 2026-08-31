@@ -49,13 +49,16 @@ selected execution loop can consider:
 - a `running` Turn whose selected `leased` or `running` Attempt has an expired
   lease.
 
-The yielded candidate has a bounded build preference in addition to ordinary
-Runtime and state compatibility preflight. A compatible claimant whose
-immutable `worker_build_id` differs from the yielded Attempt may claim
-immediately. A same-build claimant skips it until the finite positive
+The yielded candidate has reason-specific scheduling eligibility in addition to
+ordinary Runtime and state compatibility preflight. After
+`yield_reason="service_drain"`, a compatible claimant whose immutable
+`worker_build_id` differs from the yielded Attempt may claim immediately. A
+same-build claimant skips it until the finite positive
 `handoff_preference_window` has elapsed from `finished_at`, then may claim as a
 capacity fallback. The default window equals one TurnAttempt lease duration.
-This preference applies only after planned handoff: it does not delay initial
+After `yield_reason="runner_rotation"`, any compatible non-draining execution
+loop whose Runtime lock matches exactly may claim immediately, regardless of
+`worker_build_id`. The build preference does not delay Runner rotation, initial
 claim, retryable-failure recovery, or expired-lease takeover. A draining Worker
 never claims any candidate.
 
@@ -63,8 +66,8 @@ Build difference is neither authority nor compatibility proof. Every claimant
 must still pass the existing exact Runtime, state-schema, Harness, Plugin,
 Skill, Environment, and artifact compatibility checks, and the claim
 transaction must still win the Turn lease and fence. The preference chooses no
-Pod; it merely lets compatible new-build capacity win during ordinary rolling
-overlap while retaining bounded same-build fallback.
+Pod; for service drain it merely lets compatible new-build capacity win during
+ordinary rolling overlap while retaining bounded same-build fallback.
 
 The scan is only candidate discovery. The execution loop must revalidate the exact Turn,
 Thread selection, current Attempt, lease condition, and budget in the short
@@ -74,12 +77,13 @@ one new `leased` Attempt or seals the Turn as `failed` when budget is exhausted.
 For an initial or backoff-ready Turn, the same transaction either creates the
 next Attempt or fails the Turn when its accepted recovery budget no longer
 permits one. For a yielded Turn, it creates a successor with
-`recovery_reason="planned_handoff"` only after build-preference eligibility is
-revalidated; the yield already consumed handoff budget, and this successor does
-not consume recovery budget. Every candidate, including a planned-handoff
-successor, remains subject to the fixed recovery deadline and aggregate usage
-ceilings; exhaustion seals the Turn instead of creating another Attempt. Every
-successful claim increments the complete `attempts_started` audit count.
+`recovery_reason="planned_handoff"` only after the reason-specific scheduling
+eligibility is revalidated; the yield already consumed handoff budget, and this
+successor does not consume recovery budget. Every candidate, including a
+planned-handoff successor, remains subject to the fixed recovery deadline and
+aggregate usage ceilings; exhaustion seals the Turn instead of creating
+another Attempt. Every successful claim increments the complete
+`attempts_started` audit count.
 A direct budget failure also clears active selection and model snapshot, freezes
 the state key, retains the failed Turn as the Thread's current Turn, preserves
 the prior continuation head, increments the Thread version, and appends the
@@ -421,6 +425,8 @@ through leases, fencing, and transactional claims.
     from the same latest complete state key.
 18. Yield and heartbeat use one CAS/fence authority, so a CAS conflict cannot
     create two valid owners or silently release the old lease.
-19. Build preference after planned handoff is bounded and advisory:
+19. Build preference after a service-drain handoff is bounded and advisory:
     compatibility and the transactional lease claim remain mandatory, while a
     same-build Worker becomes eligible after `handoff_preference_window`.
+    Runner-rotation successors have no build-preference delay and still require
+    an exact Runtime lock match.

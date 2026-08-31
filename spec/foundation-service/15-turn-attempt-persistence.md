@@ -322,7 +322,8 @@ transaction that:
    exact selected attempt;
 2. revalidates the candidate shape, Thread current selection, Turn status,
    `available_at`, lease expiry, fixed recovery deadline, applicable recovery
-   or handoff count, aggregate known usage, and build-preference eligibility;
+   or handoff count, aggregate known usage, and any reason-specific
+   build-preference eligibility;
 3. when taking over an expired lease, terminalizes the selected old attempt as
    `failed` with a bounded lease-expiry reason, disables its lease, and charges
    its known usage;
@@ -591,10 +592,11 @@ Turn row version, relational migration revision, recovery-policy version,
 Worker build identity format, and tool-invocation-record schema version are
 independent. Harness and provider compatibility remain governed by their owning
 contracts. Unknown required policy or invocation-record versions fail closed
-before dispatch or recovery. A different `worker_build_id` is only a scheduling
-preference; it never proves compatibility, grants authority, or replaces the
-Turn-pinned Runtime lock. Relational migrations do not reinterpret terminal
-attempt records through current defaults.
+before dispatch or recovery. After a service-drain yield, a different
+`worker_build_id` supplies only scheduling preference; it never proves
+compatibility, grants authority, or replaces the Turn-pinned Runtime lock.
+Runner rotation has no build-preference delay. Relational migrations do not
+reinterpret terminal attempt records through current defaults.
 
 Keeping attempts as immutable audit rows increases relational retention but
 preserves worker, lease, usage, failure, and recovery provenance. Folding work

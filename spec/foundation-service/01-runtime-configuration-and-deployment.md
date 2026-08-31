@@ -71,10 +71,11 @@ The artifact's fixed distribution descriptor supplies the complete typed configu
 Configuration is immutable after startup. Changing a setting requires a new process. The service performs no partial or hot reload that could leave replicas or role components using different configuration generations.
 
 `worker.handoff_preference_window` is a finite positive internal scheduling
-duration used only for same-build claims after planned handoff. Its release
-default equals one TurnAttempt lease duration; an explicit value overrides that
-default but cannot be zero, negative, or unbounded. It does not delay initial
-claims, failure recovery, or lease-expiry takeover.
+duration used only for same-build claims after a planned handoff with
+`yield_reason="service_drain"`. Its release default equals one TurnAttempt lease
+duration; an explicit value overrides that default but cannot be zero,
+negative, or unbounded. It does not delay Runner rotation, initial claims,
+failure recovery, or lease-expiry takeover.
 
 `gateway.a2a_enabled` is the single protocol availability switch. It defaults
 to `true`. Native and Hosted AG-UI have no runtime enable setting. When false,
@@ -231,12 +232,14 @@ unfinished work as successful, or lets two Workers hold valid authority for one
 Turn.
 
 Rolling deployment starts and readies compatible new capacity before old
-capacity is terminated. A different compatible `worker_build_id` may claim a
-yielded Turn immediately; old-build replicas defer for the bounded
-`handoff_preference_window` and then become fallback capacity. Same-image
-restart therefore still recovers after the window. An incompatible upgrade
-must retain compatible old capacity or use a separately reviewed state or lock
-migration; handoff itself does not relax compatibility.
+capacity is terminated. After a service-drain yield, a different compatible
+`worker_build_id` may claim the Turn immediately; old-build replicas defer for
+the bounded `handoff_preference_window` and then become fallback capacity.
+Same-image restart therefore still recovers after the window. An incompatible
+upgrade must retain compatible old capacity or use a separately reviewed state
+or lock migration; handoff itself does not relax compatibility. Runner rotation
+uses its exact historical Runtime lock and does not apply this build-preference
+delay.
 
 Resources close in reverse ownership order after role components stop. Cancellation remains observable, cleanup is bounded, and process termination never relies on an unbounded background task or external call.
 
@@ -287,4 +290,5 @@ The effective configuration is deployment input, not a durable product resource 
 15. Drain gates new claims immediately but active Attempts continue heartbeat
     and lease renewal until a terminal commit or the drain deadline.
 16. Same-build planned-handoff deferral is finite, applies only after
-    `yielded`, and never weakens compatibility, lease, or fence checks.
+    `yield_reason="service_drain"`, and never weakens compatibility, lease, or
+    fence checks. Runner rotation has no build-preference delay.

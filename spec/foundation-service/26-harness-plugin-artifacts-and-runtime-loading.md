@@ -250,9 +250,12 @@ commits `yield_reason="runner_rotation"`. An Attempt whose handoff budget is
 exhausted continues ordinary execution. Renewal stops only after a terminal
 transaction or the shared drain deadline. A handoff successor still
 reconstructs the exact Turn-pinned historical lock; the new active lock is
-never substituted. Activation adds no shorter deadline. Several old-lock
-Runners can drain while one active Runner serves new work. Insufficient local
-capacity fails a later command without terminating existing Attempts.
+never substituted. Any compatible non-draining Runner for that exact historical
+lock may claim the successor immediately without waiting for
+`handoff_preference_window`; the draining old Runner remains claim-gated.
+Activation adds no shorter deadline. Several old-lock Runners can drain while
+one active Runner serves new work. Insufficient local capacity fails a later
+command without terminating existing Attempts.
 
 A staged Worker that loses its liveness lease after commit leaves the serviceable set and cannot reverse cutover. On rejoin it reconstructs the committed active lock before claim. An active Runner crash causes the Supervisor to reconstruct the same lock and never silently roll back.
 
