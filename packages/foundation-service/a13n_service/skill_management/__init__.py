@@ -3,6 +3,9 @@
 from .domain import (
     CreateSkillRequest,
     CreateSkillRevisionRequest,
+    FoundationAgentSkillSelection,
+    FoundationAgentSkillSelectionRequest,
+    FoundationSkillRevisionLock,
     FoundationSkillRevisionSource,
     GitHubRevisionSource,
     GitHubSkillImportProvenance,
@@ -10,6 +13,7 @@ from .domain import (
     ManagedSkillPackageManifest,
     SkillPublicationReceipt,
     SkillUploadReceipt,
+    TurnSkillSelectionRequest,
     UpdateSkillRequest,
     WorkspaceSkill,
     WorkspaceSkillCollection,
@@ -19,6 +23,7 @@ from .domain import (
     ZipUploadSkillSource,
 )
 from .github import AcquiredGitHubSkill, GitHubAcquisitionError, GitHubSkillAcquirer
+from .materialization import SkillAttemptFence, SkillMaterializationStale
 from .package import (
     NormalizedSkillFile,
     NormalizedSkillPackage,
@@ -28,12 +33,24 @@ from .package import (
     normalize_skill_zip,
     skill_package_object_key,
 )
+from .runtime import FoundationSkillRuntimePreparer, PreparedSkillRuntime, SkillRuntimeError
+from .selection import (
+    AgentSkillLockResolver,
+    PreparedAgentSkillSelection,
+    resolve_turn_skill_selection,
+    validate_frozen_turn_skill_selection,
+)
 
 __all__ = [
     "AcquiredGitHubSkill",
+    "AgentSkillLockResolver",
     "CreateSkillRequest",
     "CreateSkillRevisionRequest",
+    "FoundationAgentSkillSelection",
+    "FoundationAgentSkillSelectionRequest",
+    "FoundationSkillRevisionLock",
     "FoundationSkillRevisionSource",
+    "FoundationSkillRuntimePreparer",
     "GitHubAcquisitionError",
     "GitHubRevisionSource",
     "GitHubSkillAcquirer",
@@ -42,9 +59,15 @@ __all__ = [
     "ManagedSkillPackageManifest",
     "NormalizedSkillFile",
     "NormalizedSkillPackage",
+    "PreparedAgentSkillSelection",
+    "PreparedSkillRuntime",
+    "SkillAttemptFence",
+    "SkillMaterializationStale",
     "SkillPackageError",
     "SkillPublicationReceipt",
+    "SkillRuntimeError",
     "SkillUploadReceipt",
+    "TurnSkillSelectionRequest",
     "UpdateSkillRequest",
     "WorkspaceSkill",
     "WorkspaceSkillCollection",
@@ -55,5 +78,7 @@ __all__ = [
     "normalize_skill_files",
     "normalize_skill_path",
     "normalize_skill_zip",
+    "resolve_turn_skill_selection",
     "skill_package_object_key",
+    "validate_frozen_turn_skill_selection",
 ]
