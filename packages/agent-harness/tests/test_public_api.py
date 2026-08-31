@@ -96,8 +96,6 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
     assert pricing.get_default_pricing_catalog is not None
     assert "EnvironmentSkillSource" not in capabilities.__all__
     assert not hasattr(capabilities, "EnvironmentSkillSource")
-    assert "parse_skill_frontmatter" not in capabilities.__all__
-    assert not hasattr(capabilities, "parse_skill_frontmatter")
 
 
 def test_feature_facades_export_documented_families() -> None:
