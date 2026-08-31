@@ -21,6 +21,7 @@ from a13n_service.skill_management.domain import (
 from a13n_service.skill_management.errors import SkillManagementError
 from a13n_service.skill_management.materialization import (
     FoundationSkillMaterializationPlan,
+    FoundationSkillMaterializer,
     FoundationSkillSource,
     LockedSkillRevision,
     SkillMaterializationStale,
@@ -68,6 +69,17 @@ class RuntimeFixture:
     actor: AuthenticatedActor
     deploy: NormalizedSkillPackage
     review: NormalizedSkillPackage
+
+
+class ExpiringFence:
+    def __init__(self, *, stale_on_call: int) -> None:
+        self._stale_on_call = stale_on_call
+        self.calls = 0
+
+    async def require_current(self) -> None:
+        self.calls += 1
+        if self.calls >= self._stale_on_call:
+            raise SkillMaterializationStale
 
 
 @pytest.fixture
@@ -551,6 +563,45 @@ async def test_materializer_rereads_package_without_retaining_run_lifetime_bytes
     with pytest.raises(DefinitionError) as invalid:
         await runtime.manager.scan(files=_files(tmp_path))
     assert invalid.value.code == "skill_materialization_invalid"
+
+
+@pytest.mark.anyio
+async def test_materializer_stops_writes_when_attempt_fence_expires_mid_package(
+    runtime_fixture: RuntimeFixture,
+    tmp_path: Path,
+) -> None:
+    prepared = await runtime_fixture.resolver.prepare(
+        actor=runtime_fixture.actor,
+        workspace_id=WORKSPACE_ID,
+        agent_preset_id=AGENT_PRESET_ID,
+        request=_request(revision_ids=(DEPLOY_REVISION_ID,)),
+        permission_ceiling=_permissions(),
+    )
+    selected = LockedSkillRevision(
+        lock=prepared.selection.available[0],
+        manifest=runtime_fixture.deploy.manifest,
+    )
+    plan = FoundationSkillMaterializationPlan(
+        target_root="/skills",
+        catalog_digest="a" * 64,
+        revisions=(selected,),
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+    )
+    fence = ExpiringFence(stale_on_call=6)
+    materializer = FoundationSkillMaterializer(
+        "foundation-materializer-test",
+        plan,
+        runtime_fixture.packages,
+        fence=fence,
+    )
+
+    with pytest.raises(DefinitionError) as stale:
+        await materializer.materialize(files=_files(tmp_path))
+
+    assert stale.value.code == "skill_materialization_stale"
+    assert fence.calls == 6
+    assert not (tmp_path / "skills" / selected.lock.content_digest / "SKILL.md").exists()
 
 
 @pytest.mark.anyio

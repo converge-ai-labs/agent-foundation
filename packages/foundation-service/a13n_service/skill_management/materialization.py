@@ -164,7 +164,9 @@ class FoundationSkillMaterializer:
             ) from error
 
     async def _replace(self, files: FileOperator) -> None:
+        await self._require_current()
         await self._remove_target(files)
+        await self._require_current()
         await files.mkdir(self.target_root, parents=True, exist_ok=False)
         for selected in self._plan.revisions:
             await self._require_current()
@@ -173,8 +175,10 @@ class FoundationSkillMaterializer:
             root = _package_root(self.target_root, selected.lock.content_digest)
             await files.mkdir(root, parents=True, exist_ok=False)
             for item in package.files:
+                await self._require_current()
                 destination = f"{root}/{item.path}"
                 await files.mkdir(destination.rsplit("/", 1)[0], parents=True, exist_ok=True)
+                await self._require_current()
                 await files.write_bytes_stream(destination, _one_chunk(item.content), mode="create")
         if not await self._matches(files, require_completion=False):
             raise _invalid("The materialized Skill root failed complete verification.")
@@ -192,6 +196,7 @@ class FoundationSkillMaterializer:
             if error.code == "environment_not_found":
                 return
             raise
+        await self._require_current()
         await files.remove(self.target_root, recursive=True)
 
     async def _matches(self, files: FileOperator, *, require_completion: bool) -> bool:
