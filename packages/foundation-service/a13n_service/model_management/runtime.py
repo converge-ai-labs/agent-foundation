@@ -1,4 +1,4 @@
-"""Turn-time ModelConfig freezing and fresh worker model reconstruction."""
+"""Run-time ModelConfig freezing and fresh worker model reconstruction."""
 
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ class PreparedModelExecution:
 
 
 class AcceptedModelSelector:
-    """Two-phase selector that keeps DNS I/O outside the Turn commit transaction."""
+    """Two-phase selector that keeps DNS I/O outside the Run commit transaction."""
 
     def __init__(
         self,
@@ -177,7 +177,7 @@ class AcceptedModelSelector:
         if current.version != prepared.version:
             raise ModelManagementError(
                 "model_configuration_changed",
-                "The model configuration changed during Turn acceptance.",
+                "The model configuration changed during Run acceptance.",
                 status_code=409,
             )
         selection = prepared.selection
@@ -327,7 +327,7 @@ class SnapshotRunModelResolver:
         snapshot = self._snapshot
         if model_id != snapshot.model_id:
             raise ModelResolutionError(
-                "The requested model does not match the accepted Turn snapshot.",
+                "The requested model does not match the accepted Run snapshot.",
                 code="accepted_model_mismatch",
                 details={"model_id": model_id},
             )

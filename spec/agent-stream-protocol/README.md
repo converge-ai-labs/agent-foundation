@@ -26,7 +26,8 @@ Read `00`, then [Agent UI Runtime Subagents and Surfaces](../agent-ui/05-runtime
 
 Read `00`, then [Foundation Hosted
 AG-UI](../foundation-service/30-hosted-ag-ui.md) for input acceptance, durable
-Run/Turn binding, event filtering, lifecycle projection, cursor, and SSE.
+Harness Run/Foundation Run binding, event filtering, lifecycle projection,
+cursor, and SSE.
 Foundation uses the same observer while owning lifecycle records, event
 identities, retention, and delivery.
 

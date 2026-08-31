@@ -11,9 +11,9 @@ from .domain import (
     GitHubSkillImportProvenance,
     ManagedSkillPackageFile,
     ManagedSkillPackageManifest,
+    RunSkillSelectionRequest,
     SkillPublicationReceipt,
     SkillUploadReceipt,
-    TurnSkillSelectionRequest,
     UpdateSkillRequest,
     WorkspaceSkill,
     WorkspaceSkillCollection,
@@ -37,8 +37,8 @@ from .runtime import FoundationSkillRuntimePreparer, PreparedSkillRuntime, Skill
 from .selection import (
     AgentSkillLockResolver,
     PreparedAgentSkillSelection,
-    resolve_turn_skill_selection,
-    validate_frozen_turn_skill_selection,
+    resolve_run_skill_selection,
+    validate_frozen_run_skill_selection,
 )
 
 __all__ = [
@@ -61,13 +61,13 @@ __all__ = [
     "NormalizedSkillPackage",
     "PreparedAgentSkillSelection",
     "PreparedSkillRuntime",
+    "RunSkillSelectionRequest",
     "SkillAttemptFence",
     "SkillMaterializationStale",
     "SkillPackageError",
     "SkillPublicationReceipt",
     "SkillRuntimeError",
     "SkillUploadReceipt",
-    "TurnSkillSelectionRequest",
     "UpdateSkillRequest",
     "WorkspaceSkill",
     "WorkspaceSkillCollection",
@@ -78,7 +78,7 @@ __all__ = [
     "normalize_skill_files",
     "normalize_skill_path",
     "normalize_skill_zip",
-    "resolve_turn_skill_selection",
+    "resolve_run_skill_selection",
     "skill_package_object_key",
-    "validate_frozen_turn_skill_selection",
+    "validate_frozen_run_skill_selection",
 ]

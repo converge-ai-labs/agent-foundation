@@ -289,7 +289,7 @@ class FoundationAgentSkillSelection(BaseModel):
         return self
 
 
-class TurnSkillSelectionRequest(BaseModel):
+class RunSkillSelectionRequest(BaseModel):
     """Invocation-time optional exact-name override with null kept invalid."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)

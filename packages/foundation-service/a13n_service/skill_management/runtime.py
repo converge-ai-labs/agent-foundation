@@ -1,4 +1,4 @@
-"""Worker preparation for immutable managed Skill locks and Turn selections."""
+"""Worker preparation for immutable managed Skill locks and Run selections."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .materialization import (
 )
 from .models import WorkspaceSkillRevisionRecord
 from .objects import SkillPackageStore, SkillPackageStoreError
-from .selection import FrozenSkillSelectionError, validate_frozen_turn_skill_selection
+from .selection import FrozenSkillSelectionError, validate_frozen_run_skill_selection
 
 type SkillRuntimeErrorCode = Literal[
     "skill_materialization_invalid",
@@ -40,7 +40,7 @@ type SkillRuntimeErrorCode = Literal[
 
 
 class SkillRuntimeError(RuntimeError):
-    """Safe pre-Harness failure mapped into the TurnAttempt lifecycle by the Worker."""
+    """Safe pre-Harness failure mapped into the RunAttempt lifecycle by the Worker."""
 
     def __init__(self, code: SkillRuntimeErrorCode, message: str) -> None:
         super().__init__(message)
@@ -49,7 +49,7 @@ class SkillRuntimeError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class PreparedSkillRuntime:
-    """Exact Harness inputs for one accepted Turn's managed Skill selection."""
+    """Exact Harness inputs for one accepted Run's managed Skill selection."""
 
     manager: SkillManager | None
     selection_capability: SkillSelectionRunCapability | None
@@ -78,7 +78,7 @@ class FoundationSkillRuntimePreparer:
         fence: SkillAttemptFence | None = None,
     ) -> PreparedSkillRuntime:
         try:
-            selected_locks = validate_frozen_turn_skill_selection(selection, selected_skill_names)
+            selected_locks = validate_frozen_run_skill_selection(selection, selected_skill_names)
         except FrozenSkillSelectionError as error:
             raise _invalid() from error
         if not selection.available:

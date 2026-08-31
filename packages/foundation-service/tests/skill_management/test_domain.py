@@ -13,7 +13,7 @@ from a13n_service.skill_management.domain import (
     FoundationAgentSkillSelection,
     FoundationAgentSkillSelectionRequest,
     FoundationSkillRevisionLock,
-    TurnSkillSelectionRequest,
+    RunSkillSelectionRequest,
     UpdateSkillRequest,
 )
 from pydantic import ValidationError
@@ -116,7 +116,7 @@ def test_agent_skill_selection_request_enforces_mount_and_defaults() -> None:
             FoundationAgentSkillSelectionRequest.model_validate(value)
 
 
-def test_resolved_agent_selection_is_canonical_and_turn_null_is_invalid() -> None:
+def test_resolved_agent_selection_is_canonical_and_run_null_is_invalid() -> None:
     deploy = FoundationSkillRevisionLock(
         skill_revision_id="skr_1234567890abcdef",
         skill_name="deploy",
@@ -143,6 +143,6 @@ def test_resolved_agent_selection_is_canonical_and_turn_null_is_invalid() -> Non
             default_names=("review", "deploy"),
         )
     with pytest.raises(ValidationError):
-        TurnSkillSelectionRequest.model_validate({"selected_skill_names": None})
+        RunSkillSelectionRequest.model_validate({"selected_skill_names": None})
     with pytest.raises(ValidationError):
-        TurnSkillSelectionRequest(selected_skill_names=("deploy", "deploy"))
+        RunSkillSelectionRequest(selected_skill_names=("deploy", "deploy"))

@@ -23,13 +23,13 @@ _STALE_ENVIRONMENT_CODES = frozenset({"environment_stale_mount", "environment_pr
 
 
 class SkillAttemptFence(Protocol):
-    """Worker-owned authority check for the current TurnAttempt fence."""
+    """Worker-owned authority check for the current RunAttempt fence."""
 
     async def require_current(self) -> None: ...
 
 
 class SkillMaterializationStale(RuntimeError):
-    """The current TurnAttempt no longer owns materialization authority."""
+    """The current RunAttempt no longer owns materialization authority."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +48,7 @@ class FoundationSkillMaterializationPlan:
 
 
 class FoundationSkillSource:
-    """Scan only the exact verified package roots selected for this Turn."""
+    """Scan only the exact verified package roots selected for this Run."""
 
     def __init__(
         self,

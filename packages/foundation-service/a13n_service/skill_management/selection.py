@@ -1,4 +1,4 @@
-"""Agent publication locks and immutable Turn-time Skill selection."""
+"""Agent publication locks and immutable Run-time Skill selection."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from .domain import (
     FoundationAgentSkillSelectionRequest,
     FoundationSkillRevisionLock,
     ManagedSkillPackageManifest,
-    TurnSkillSelectionRequest,
+    RunSkillSelectionRequest,
 )
 from .errors import SkillManagementError
 from .models import WorkspaceSkillRecord, WorkspaceSkillRevisionRecord
@@ -49,7 +49,7 @@ class PreparedAgentSkillSelection:
 
 
 class FrozenSkillSelectionError(ValueError):
-    """Persisted Turn Skill names do not match their immutable Agent catalog."""
+    """Persisted Run Skill names do not match their immutable Agent catalog."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,42 +132,42 @@ class AgentSkillLockResolver:
         return current
 
 
-def resolve_turn_skill_selection(
+def resolve_run_skill_selection(
     selection: FoundationAgentSkillSelection,
-    request: TurnSkillSelectionRequest,
+    request: RunSkillSelectionRequest,
 ) -> tuple[str, ...]:
-    """Resolve one effective Turn tuple in immutable available-catalog order."""
+    """Resolve one effective Run tuple in immutable available-catalog order."""
 
     available = tuple(item.skill_name for item in selection.available)
     if request.has_override:
         requested = request.selected_skill_names
         if requested is None:
-            raise _turn_selection_invalid()
+            raise _run_selection_invalid()
     elif selection.default_mode == "all":
         requested = available
     else:
         requested = selection.default_names
     unknown = set(requested) - set(available)
     if unknown:
-        raise _turn_selection_invalid()
+        raise _run_selection_invalid()
     requested_set = set(requested)
     return tuple(name for name in available if name in requested_set)
 
 
-def validate_frozen_turn_skill_selection(
+def validate_frozen_run_skill_selection(
     selection: FoundationAgentSkillSelection,
     selected_skill_names: tuple[str, ...],
 ) -> tuple[FoundationSkillRevisionLock, ...]:
-    """Validate persisted Turn state and return its selected immutable locks."""
+    """Validate persisted Run state and return its selected immutable locks."""
 
     if len(selected_skill_names) > MAX_AGENT_SKILLS or len(selected_skill_names) != len(set(selected_skill_names)):
-        raise FrozenSkillSelectionError("The accepted Turn Skill selection is invalid.")
+        raise FrozenSkillSelectionError("The accepted Run Skill selection is invalid.")
     available = {item.skill_name: item for item in selection.available}
     if any(name not in available for name in selected_skill_names):
-        raise FrozenSkillSelectionError("The accepted Turn Skill selection is invalid.")
+        raise FrozenSkillSelectionError("The accepted Run Skill selection is invalid.")
     ordered = tuple(item for item in selection.available if item.skill_name in set(selected_skill_names))
     if tuple(item.skill_name for item in ordered) != selected_skill_names:
-        raise FrozenSkillSelectionError("The accepted Turn Skill selection is invalid.")
+        raise FrozenSkillSelectionError("The accepted Run Skill selection is invalid.")
     return ordered
 
 
@@ -275,7 +275,7 @@ def _selection_changed() -> SkillManagementError:
     )
 
 
-def _turn_selection_invalid() -> SkillManagementError:
+def _run_selection_invalid() -> SkillManagementError:
     return SkillManagementError(
         "skill_selection_invalid",
         "The requested Skill selection is invalid.",

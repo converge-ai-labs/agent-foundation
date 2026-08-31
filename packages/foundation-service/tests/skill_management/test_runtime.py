@@ -16,7 +16,7 @@ from a13n_service.iam.domain import PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.skill_management.domain import (
     FoundationAgentSkillSelectionRequest,
-    TurnSkillSelectionRequest,
+    RunSkillSelectionRequest,
 )
 from a13n_service.skill_management.errors import SkillManagementError
 from a13n_service.skill_management.materialization import (
@@ -37,7 +37,7 @@ from a13n_service.skill_management.runtime import FoundationSkillRuntimePreparer
 from a13n_service.skill_management.selection import (
     SKILL_MATERIALIZATION_ACTIONS,
     AgentSkillLockResolver,
-    resolve_turn_skill_selection,
+    resolve_run_skill_selection,
 )
 from a13n_service.storage import transaction
 from a13n_service.storage.config import SQLiteConfig
@@ -426,7 +426,7 @@ async def test_agent_publish_rejects_duplicate_final_names(runtime_fixture: Runt
 
 
 @pytest.mark.anyio
-async def test_turn_selection_uses_defaults_and_canonical_available_order(
+async def test_run_selection_uses_defaults_and_canonical_available_order(
     runtime_fixture: RuntimeFixture,
 ) -> None:
     prepared = await runtime_fixture.resolver.prepare(
@@ -438,28 +438,28 @@ async def test_turn_selection_uses_defaults_and_canonical_available_order(
     )
     selection = prepared.selection
 
-    assert resolve_turn_skill_selection(selection, TurnSkillSelectionRequest()) == ("review",)
-    assert resolve_turn_skill_selection(
+    assert resolve_run_skill_selection(selection, RunSkillSelectionRequest()) == ("review",)
+    assert resolve_run_skill_selection(
         selection,
-        TurnSkillSelectionRequest(selected_skill_names=("review", "deploy")),
+        RunSkillSelectionRequest(selected_skill_names=("review", "deploy")),
     ) == ("deploy", "review")
     assert (
-        resolve_turn_skill_selection(
+        resolve_run_skill_selection(
             selection,
-            TurnSkillSelectionRequest(selected_skill_names=()),
+            RunSkillSelectionRequest(selected_skill_names=()),
         )
         == ()
     )
     with pytest.raises(SkillManagementError) as captured:
-        resolve_turn_skill_selection(
+        resolve_run_skill_selection(
             selection,
-            TurnSkillSelectionRequest(selected_skill_names=("missing",)),
+            RunSkillSelectionRequest(selected_skill_names=("missing",)),
         )
     assert captured.value.code == "skill_selection_invalid"
 
 
 @pytest.mark.anyio
-async def test_worker_reads_and_materializes_only_effective_turn_selection(
+async def test_worker_reads_and_materializes_only_effective_run_selection(
     runtime_fixture: RuntimeFixture,
     tmp_path: Path,
 ) -> None:
@@ -605,7 +605,7 @@ async def test_materializer_stops_writes_when_attempt_fence_expires_mid_package(
 
 
 @pytest.mark.anyio
-async def test_exact_empty_turn_materializes_no_package_and_scans_empty_catalog(
+async def test_exact_empty_run_materializes_no_package_and_scans_empty_catalog(
     runtime_fixture: RuntimeFixture,
     tmp_path: Path,
 ) -> None:
