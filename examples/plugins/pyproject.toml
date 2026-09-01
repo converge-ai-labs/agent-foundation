@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.entry-points."a13n_environment_provider.providers"]
-"example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProviderFactory"
+"example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProvider"
 
 [project.entry-points."a13n_harness.environment_run_extensions"]
 "example.workspace-marker" = "a13n_plugin_examples.environment_extension:WorkspaceMarkerExtensionFactory"

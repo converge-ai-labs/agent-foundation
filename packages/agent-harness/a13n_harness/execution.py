@@ -1324,11 +1324,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         assert ready is not None
         try:
             async with self._environment_binding.bind(
+                thread_id=self._previous_state.thread_id,
                 run_id=self.run_id,
                 instance=self._bindings.instance,
+                host_refs=self._bindings.instance.host_refs,
             ) as environment:
-                if self._previous_state.environment_state is not None:
-                    await environment.restore_state(self._previous_state.environment_state)
                 await self._environment_binding._activate()
                 if not ready.done():
                     ready.set_result(environment)

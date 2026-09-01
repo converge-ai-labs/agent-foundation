@@ -18,7 +18,7 @@ SQLite is not the authority for desired configuration. It records accepted gener
 | Accepted-generation and resource query metadata                               | SQLite metadata store                | Mutable index over accepted file-backed content                                     |
 | Exact Session composition                                                     | Content-addressed resolved snapshots | Immutable even after configuration reload                                           |
 | Local Sandbox envd release assets and hashes                                  | Package-owned runtime manifest       | Exact default executable selection; never ambient discovery                         |
-| Native Model, plugin, Capability, Agent, or Environment resource              | Owning runtime package               | Reconstructed only at explicit runtime boundaries                                   |
+| Native Model, plugin, Capability, Agent, or Environment adapter               | Owning runtime package               | Reconstructed only at explicit runtime boundaries                                   |
 
 ## Configuration Sources
 
@@ -65,7 +65,7 @@ The package owns a reviewed runtime manifest that selects one exact agent-envd r
 
 An advanced process setting can replace the managed default with one explicit absolute executable path. Relative paths, command names, shell expressions, directories, and `PATH` lookup are invalid. Syntax validation occurs with configuration; actual availability remains a runtime fact. Before Local Sandbox provider creation, the selected Runner requires the executable to report the package manifest's exact envd release identity, runs the production-equivalent required-isolation probe, and later requires compatible EIP initialization. The override changes location only, not the selected release. Failure leaves Local Sandbox unavailable and never substitutes Direct Local.
 
-The override affects later Local Sandbox resource operations only. An already entered provider resource or active attachment retains its selected executable/process generation until its ordinary lifecycle closes. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution) owns download, cache, validation, diagnostics, and provider handoff.
+The override affects only later Local Sandbox adapter construction. An already entered Environment retains its selected executable/process generation until its ordinary non-destructive close. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution) owns download, cache, validation, diagnostics, and provider handoff.
 
 ## Resource Identity and Revisions
 
@@ -99,7 +99,7 @@ class ResourceRevision(BaseModel):
 
 `content_digest` covers the canonical normalized content and all behavior-affecting dependency references owned by the revision. Source path, modification time, UI display ordering, diagnostics, and accepted generation do not change the digest unless they change normalized behavior.
 
-A revision stores no credential, native provider object, live plugin, imported module object, provider attachment, `EnvironmentRuntime`, `HarnessState`, or process authority. Exact immutable snapshot persistence is owned by [Local Storage and Recovery](03-local-storage-and-recovery.md).
+A revision stores no credential, native Provider/Environment object, live plugin, imported module object, `EnvironmentState`, Harness bound facade, `HarnessState`, or process authority. Exact immutable snapshot persistence is owned by [Local Storage and Recovery](03-local-storage-and-recovery.md).
 
 ## Resource Documents
 
@@ -180,7 +180,7 @@ class LocalSkillDiscoverySettings(BaseModel):
     max_skills: int
 ```
 
-Every `ordered_sources` entry names a `skill_source` resource exactly once. `directory` is a credential-free local directory selector authorized by current Host policy. Agent UI acquires one fresh Direct Local provider attachment for each configured existing directory, adapts the attachments into a single-use `EnvironmentRuntime`, and gives every source a unique mount name used by `/environment/{source-alias}/...` logical paths. `roots` are normalized beneath that mount. Agent UI then constructs explicit ordered Harness `FileSkillSource` values and calls `SkillManager.scan_environment(environment=...)` against the current mount set. That operation captures every configured root, scans and materializes through exact mount-incarnation-pinned `FileOperator` scopes, and reselects every configured root before returning a `BoundSkillCatalog`. The catalog carries exact bound paths and observed provider generations for its discovered items; Agent UI calls `require_current()` before consuming a bound logical path. It never reads a native path through a second Skill scanner.
+Every `ordered_sources` entry names a `skill_source` resource exactly once. `directory` is a credential-free local directory selector authorized by current Host policy. Agent UI constructs one fresh Direct Local Environment for each configured existing directory and gives every source a unique Harness mount name used by `/environment/{source-alias}/...` logical paths. `roots` are normalized beneath that mount. Agent UI then constructs explicit ordered Harness `FileSkillSource` values and calls `SkillManager.scan_environment(environment=...)` against the current mount set. That operation captures every configured root, scans and materializes through exact mount-incarnation-pinned `FileOperator` scopes, and reselects every configured root before returning a `BoundSkillCatalog`. The catalog carries exact bound paths and observed provider generations for its discovered items; Agent UI calls `require_current()` before consuming a bound logical path. It never reads a native path through a second Skill scanner.
 
 `BoundSkillCatalog`, `BoundSkillCatalogItem`, their bound `EnvironmentPath` values, captured mount incarnations, and observed provider generations are process-local evidence about one entered Environment. Agent UI never persists them as package, resource-revision, snapshot, or Session authority. Only the copied package manifest, payloads, and content digest become retained Agent UI authority; safe source provenance kept for refresh remains a non-authoritative hint.
 
@@ -210,7 +210,7 @@ class SkillDefinition(BaseModel):
 
 Import follows one explicit pipeline:
 
-1. acquire fresh Direct Local provider attachments for the selected sources and enter one single-use `EnvironmentRuntime` with the corresponding named mounts;
+1. construct fresh Direct Local Environment adapters for the selected sources and enter one Run-local bound facade with the corresponding named mounts;
 2. use `SkillManager.scan_environment(environment=...)` to produce a conflict-resolved revision-bound metadata catalog;
 3. select one exact `BoundSkillCatalogItem`, call `catalog.require_current(environment)`, and call `environment.select_files(item.path)`;
 4. verify that the selection's `resolved_path` and `observed_generation` equal the bound item's directory and generation, enter `environment.open_files(selection)`, and keep that exact mount-incarnation-pinned scope open while enumerating and copying the package's bounded regular files;

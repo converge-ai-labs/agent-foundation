@@ -8,14 +8,14 @@ EIP is a semantic Environment protocol rather than a remote syscall interface. C
 
 ## Boundaries
 
-| Concern                                                                                 | Owner                                                                                  | Relationship                                  |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------- |
-| JSON-RPC methods, params/results, operation identity, transfers, errors, and versioning | This document                                                                          | Identical on every carrier                    |
-| Canonical IDL and generated Rust/Python realization                                     | [Protocol Source, Client, and Generation](08-protocol-source-client-and-generation.md) | Encodes this contract without semantic drift  |
-| Framing, attachment authentication, carrier direction, sessions, and liveness           | [Transports and Sessions](03-transports-and-sessions.md)                               | Establishes a trusted session before dispatch |
-| Multi-Environment routing and Harness policy                                            | Harness and Host                                                                       | Selects one trusted binding before EIP        |
-| Native filesystem, process, isolation, output, and receipt evidence                     | `agent-envd` resource owners                                                           | Executes accepted operations                  |
-| Provider lifecycle effects and durable Agent completion                                 | Environment Provider package and Host                                                  | Outside EIP                                   |
+| Concern                                                                                 | Owner                                                                                  | Relationship                                       |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| JSON-RPC methods, params/results, operation identity, transfers, errors, and versioning | This document                                                                          | Identical on every carrier                         |
+| Canonical IDL and generated Rust/Python realization                                     | [Protocol Source, Client, and Generation](08-protocol-source-client-and-generation.md) | Encodes this contract without semantic drift       |
+| Framing, attachment authentication, carrier direction, sessions, and liveness           | [Transports and Sessions](03-transports-and-sessions.md)                               | Establishes a trusted session before dispatch      |
+| Multi-Environment routing and Harness policy                                            | Harness and Host                                                                       | Selects one trusted Environment adapter before EIP |
+| Native filesystem, process, isolation, output, and receipt evidence                     | `agent-envd` resource owners                                                           | Executes accepted operations                       |
+| Environment lifecycle policy, current state, and durable Agent completion               | Host; lifecycle effects use a fresh Provider-specific Environment adapter              | Outside EIP                                        |
 
 Carrier headers, stdio pipes, attachment credentials, and WebSocket upgrade fields never appear in ordinary EIP params. Carrier direction cannot change a method, result, retry rule, or side-effect classification.
 
@@ -127,7 +127,7 @@ class InitializeResult(BaseModel):
 
 Versions use `<major>.<minor>`. The server selects the highest mutually supported minor in a mutually supported major. The prerelease EIP 0.1 contract selects binary data-frame profile version 1; the profile retains its fixed major-1 compatibility tag independently of the prerelease control-contract version. No binary attachment is legal before initialization.
 
-`expected_environment_id` is mandatory trusted binding input. A mismatch fails initialization without publishing a usable descriptor. `required_methods` contains exact JSON-RPC names. Initialization fails if any required name is absent from `available_methods`. The list does not grant a method; it asserts compatibility with the daemon's configured policy and truthful platform support.
+`expected_environment_id` is mandatory trusted initialization input. A mismatch fails initialization without publishing a usable descriptor. `required_methods` contains exact JSON-RPC names. Initialization fails if any required name is absent from `available_methods`. The list does not grant a method; it asserts compatibility with the daemon's configured policy and truthful platform support.
 
 The descriptor contains configured logical mounts only. `root_mount_id`, when present, identifies exactly one descriptor mount and is never inferred from ordering. A provider requiring broad native access configures ordinary trusted roots explicitly. There is no session-selectable resource-authority mode or synthesized server filesystem.
 
@@ -160,7 +160,7 @@ A requester validates that `environment_id` and `generation` exactly match the i
 
 `environment.readiness` is `active_only`. Its operation ID follows the common active-duplicate, cancellation, timeout, and response-handoff rules and retains no historical result. A caller that wants a new observation always uses a new operation ID. JSON-RPC request correlation remains separate from operation identity.
 
-A Provider or control service can establish readiness without inventing another health API by opening a short-lived EIP Session, completing initialize plus the initial readiness operation, and cleanly calling `session.close`. A normal attachment uses the same sequence before exposing its Session to Harness operations. This readiness Session is a real, bounded protocol Session rather than a filesystem marker, transport-specific probe, or provider-native operation.
+A Provider or control service can establish readiness without inventing another health API by opening a short-lived EIP Session, completing initialize plus the initial readiness operation, and cleanly calling `session.close`. A Provider-specific Environment adapter uses the same sequence before making its provider-neutral operations ready for Harness. This readiness Session is a real, bounded protocol Session rather than a filesystem marker, transport-specific probe, or provider-native operation.
 
 ## Common Operation Context and Replay
 

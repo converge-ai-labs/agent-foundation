@@ -42,7 +42,7 @@ async def _run_conversation(arguments: argparse.Namespace) -> None:
     application = ConversationApplication(
         model=create_demo_model(),
         state_path=state_path,
-        environment=create_demo_environment(workspace),
+        environment_factory=lambda: create_demo_environment(workspace),
     )
     if arguments.prompts:
         for prompt in arguments.prompts:

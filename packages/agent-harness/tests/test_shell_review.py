@@ -132,8 +132,8 @@ def _build(
         *,
         cwd: str | None = None,
         environment: Mapping[str, str] | None = None,
+        yield_time_seconds: float | None = None,
         timeout_seconds: float | None = None,
-        background: bool = False,
         alias: str | None = None,
     ) -> dict[str, bool]:
         executed.append(
@@ -141,8 +141,8 @@ def _build(
                 "command": command,
                 "cwd": cwd,
                 "environment": dict(environment or {}),
+                "yield_time_seconds": yield_time_seconds,
                 "timeout_seconds": timeout_seconds,
-                "background": background,
                 "alias": alias,
             }
         )
@@ -156,8 +156,8 @@ def _build(
                 "command": "printf safe",
                 "cwd": "/workspace",
                 "environment": {"TOKEN": "secret-value", "PATH": "/bin"},
+                "yield_time_seconds": 10,
                 "timeout_seconds": 10,
-                "background": False,
                 "alias": "primary",
             }
         ),
@@ -367,14 +367,15 @@ async def test_below_threshold_dispatches_without_environment_values_and_attribu
     assert "secret-value" not in request.model_dump_json()
     assert request.command == "printf safe"
     assert request.cwd == "/workspace"
+    assert request.yield_time_seconds == 10
     assert request.alias == "primary"
     assert executed == [
         {
             "command": "printf safe",
             "cwd": "/workspace",
             "environment": {"TOKEN": "secret-value", "PATH": "/bin"},
+            "yield_time_seconds": 10.0,
             "timeout_seconds": 10.0,
-            "background": False,
             "alias": "primary",
         }
     ]
@@ -513,7 +514,8 @@ def test_plugin_cannot_contribute_reserved_shell_review_capability() -> None:
 
 
 def test_shell_toolset_marks_only_command_launch_for_review() -> None:
-    toolset = ShellToolset()
+    toolset = cast(Any, object.__new__(ShellToolset))
+    toolset._resource_resolver = None
     command = toolset._tool(
         lambda: None,
         "environment.shell_exec",

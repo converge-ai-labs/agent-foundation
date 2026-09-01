@@ -6,15 +6,10 @@ from .configuration import (
     DockerMountSource,
     DockerProviderConfiguration,
     DockerProviderStateData,
-    DockerResourcePhase,
     DockerShellProfile,
     DockerVolumeMountSource,
 )
-from .provider import (
-    DockerEnvironmentProvider,
-    DockerEnvironmentProviderFactory,
-    DockerEnvironmentResource,
-)
+from .provider import DockerEnvironment, DockerEnvironmentProvider
 from .runtime import (
     DirectoryDockerBootstrapStore,
     DockerBootstrapAllocation,
@@ -44,9 +39,8 @@ __all__ = [
     "DockerEngine",
     "DockerEngineError",
     "DockerEngineMount",
+    "DockerEnvironment",
     "DockerEnvironmentProvider",
-    "DockerEnvironmentProviderFactory",
-    "DockerEnvironmentResource",
     "DockerImageInspection",
     "DockerImagePullPolicy",
     "DockerMountConfiguration",
@@ -54,7 +48,6 @@ __all__ = [
     "DockerProviderConfiguration",
     "DockerProviderRuntime",
     "DockerProviderStateData",
-    "DockerResourcePhase",
     "DockerSDKEngine",
     "DockerShellProfile",
     "DockerVolumeMountSource",

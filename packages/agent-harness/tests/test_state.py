@@ -1,15 +1,12 @@
 from typing import Any, cast
 
 import pytest
+from a13n_environment_provider import EnvironmentState
 from a13n_harness import (
     HarnessRunResult,
     HarnessState,
     SafeFailure,
     StateError,
-)
-from a13n_harness.environment import (
-    EnvironmentMountState,
-    EnvironmentState,
 )
 from a13n_harness.state import (
     AgentContextState,
@@ -24,18 +21,17 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
-def test_environment_state_rejects_non_finite_json(value: float) -> None:
-    environment = EnvironmentState(
-        mounts={
-            "workspace": EnvironmentMountState(
-                provider_type="test.provider",
-                state_version="state-1",
-                state=value,
-            )
-        },
-    )
-    with pytest.raises(ValueError, match="finite canonical JSON"):
-        HarnessState.new(environment_state=environment)
+def test_environment_states_reject_non_finite_json(value: float) -> None:
+    with pytest.raises(ValueError, match="bounded finite JSON"):
+        HarnessState.new(
+            environment_states={
+                "workspace": EnvironmentState(
+                    provider_key="test.provider",
+                    state_version="state-1",
+                    state=value,
+                )
+            }
+        )
 
 
 class CounterState(BaseModel):
@@ -56,6 +52,18 @@ async def test_capability_state_namespaces_are_typed_and_detached() -> None:
     assert (await state.read("counter", CounterState, version="1")) == CounterState(value=2)
 
 
+def test_state_import_rejects_removed_process_namespace() -> None:
+    with pytest.raises(ValidationError, match="no longer supported"):
+        AgentContextStateSnapshot(
+            entries={
+                "a13n.dynamic-environment.processes": CapabilityState(
+                    version="2",
+                    data={"next_sequence": 2, "processes": {}},
+                )
+            }
+        )
+
+
 def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
     state = HarnessState.new()
     copied = state.model_copy(deep=True)
@@ -69,7 +77,7 @@ def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
     assert forked.thread_id != state.thread_id
     assert forked.message_history == state.message_history
     assert forked.agent_context_state == state.agent_context_state
-    assert forked.environment_state == state.environment_state
+    assert forked.environment_states == {}
 
 
 def test_independent_states_receive_distinct_thread_identities() -> None:

@@ -1,12 +1,5 @@
-"""Advanced Environment runtime construction API.
+"""Advanced Host construction for a run-local multi-mount Environment facade."""
 
-Most embedded applications should pass an EnvironmentProvider or entered
-EnvironmentResource directly to ExecutableAgent.run() or stream(). This module
-exists for Hosts and provider integrations that need explicit control over a
-run-scoped mount set.
-"""
-
-from .attachments import create_environment_provider_binding
 from .coordinator import (
     CompositeBoundEnvironment,
     EmptyEnvironmentRuntime,
@@ -15,27 +8,15 @@ from .coordinator import (
     create_empty_environment_runtime,
     create_environment_runtime,
 )
-from .providers import (
-    BoundEnvironment,
-    BoundEnvironmentProvider,
-    EnvironmentProviderBinding,
-    EnvironmentProviderOperations,
-    EnvironmentRuntime,
-    EnvironmentRuntimeMount,
-)
+from .providers import BoundEnvironment, EnvironmentRuntime
 
 __all__ = [
     "BoundEnvironment",
-    "BoundEnvironmentProvider",
     "CompositeBoundEnvironment",
     "EmptyEnvironmentRuntime",
-    "EnvironmentProviderBinding",
-    "EnvironmentProviderOperations",
     "EnvironmentRuntime",
-    "EnvironmentRuntimeMount",
     "ManagedEnvironmentRuntime",
     "NoopBoundEnvironment",
     "create_empty_environment_runtime",
-    "create_environment_provider_binding",
     "create_environment_runtime",
 ]

@@ -39,7 +39,7 @@ from ..files import (
 from ..models import EnvironmentError, EnvironmentOperationReceipt
 
 if TYPE_CHECKING:
-    from .binding import _DirectLocalFilePolicy
+    from .provider import _DirectLocalFilePolicy
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _MAX_QUERY_PATTERN_BYTES = 16 * 1024

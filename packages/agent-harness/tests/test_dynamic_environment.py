@@ -21,10 +21,9 @@ from a13n_environment_provider import (
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
 )
+from a13n_environment_provider.direct_local.files import LocalFileOperator
+from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
-    AgentDefinition,
-    AgentIdentityRef,
-    AgentInstanceContext,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -32,10 +31,7 @@ from a13n_harness import (
     ModelCapability,
     ModelRecoveryPolicy,
     RunBindings,
-    SubagentDefinition,
 )
-from a13n_harness import AgentSpec as HarnessAgentSpec
-from a13n_harness.capabilities import ShellOperator, SubagentCapability, SubagentManager
 from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
@@ -47,7 +43,6 @@ from a13n_harness.environment import (
     FileMediaUnderstandingRunCapability,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeMount,
     create_empty_environment_runtime,
     create_environment_runtime,
 )
@@ -59,13 +54,11 @@ from a13n_harness.environment.files import (
     FileTextSearchResult,
     FileWriteResult,
 )
-from a13n_harness.environment.local.binding import (
-    DirectLocalEnvironmentProviderBinding,
-    _DirectLocalFilePolicy,
-)
-from a13n_harness.environment.local.files import LocalFileOperator
 from a13n_harness.environment.models import EnvironmentOperationReceipt
-from a13n_harness.environment.providers import FileScopeSelection
+from a13n_harness.environment.providers import (
+    EnvironmentRuntimeMount,
+    FileScopeSelection,
+)
 from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
 from a13n_harness.plugins import (
     AbstractHarnessPlugin,
@@ -74,7 +67,6 @@ from a13n_harness.plugins import (
     PluginRunResponse,
 )
 from a13n_harness.result import HarnessRunResult
-from a13n_harness.state import AgentContextState
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     HarnessTool,
@@ -108,6 +100,11 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import RequestUsage
+
+from .environment_helpers import (
+    DirectLocalEnvironmentProviderBinding,
+    DirectLocalFilePolicy,
+)
 
 pytestmark = pytest.mark.anyio
 requires_posix_process_groups = pytest.mark.skipif(
@@ -204,65 +201,25 @@ def _configuration(**updates: Any) -> DynamicEnvironmentConfiguration:
     )
 
 
-class _ShellRunContext:
-    def __init__(self) -> None:
-        self.deps = SimpleNamespace(
-            state=AgentContextState(),
-            thread_id="thread-test",
-            run_id="run-test",
-            instance=SimpleNamespace(agent_instance_id="agent-instance-test"),
-        )
-        self.enqueued: list[str] = []
-
-    def enqueue(self, value: str, *, priority: str) -> str:
-        del priority
-        self.enqueued.append(value)
-        return f"enqueue-{len(self.enqueued)}"
-
-
-class _ManagedProcesses(ShellOperator):
-    supports_background = True
-
-    async def start(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("process start was not expected")
-
-    async def rebind(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("process rebind was not expected")
-
-    async def inspect(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("process inspection was not expected")
-
-    async def read_output(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("process output read was not expected")
-
-    async def write_stdin(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("process input was not expected")
-
-    async def signal(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("process signal was not expected")
-
-    async def kill(self, *args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("process kill was not expected")
-
-
-async def test_dynamic_environment_keeps_its_definition_selected_operator_across_runs(
+async def test_dynamic_environment_creates_run_owned_replacements_and_registers_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    operator = _ManagedProcesses()
-    propagated: list[Any] = []
+    replacements: list[Any] = []
+
+    class Replacement:
+        async def _close_processes(self) -> None:
+            return None
 
     def capture_run_capability(
         configuration: DynamicEnvironmentConfiguration,
         *,
-        operator: ShellOperator,
-        supports_background: bool,
         run_id: str,
         environment: Any,
-    ) -> object:
+    ) -> Replacement:
         del configuration, run_id, environment
-        assert supports_background is True
-        propagated.append(operator)
-        return object()
+        replacement = Replacement()
+        replacements.append(replacement)
+        return replacement
 
     monkeypatch.setattr(dynamic_environment_module, "_DynamicEnvironmentRunCapability", capture_run_capability)
 
@@ -271,6 +228,7 @@ async def test_dynamic_environment_keeps_its_definition_selected_operator_across
             self.run_id = "run-1"
             self.environment = object()
             self.recorded: object | None = None
+            self.cleanup: tuple[str, Any] | None = None
 
         def _run_capability(self, capability_id: str) -> None:
             del capability_id
@@ -280,16 +238,25 @@ async def test_dynamic_environment_keeps_its_definition_selected_operator_across
             del capability_id
             self.recorded = value
 
-    capability = DynamicEnvironmentCapability(_configuration(), operator=operator)
+        def _register_run_cleanup(self, owner_id: str, cleanup: Any) -> None:
+            self.cleanup = (owner_id, cleanup)
+
+    capability = DynamicEnvironmentCapability(_configuration())
     first = Deps()
     second = Deps()
 
     await capability.for_run(cast(Any, SimpleNamespace(deps=first)))
     await capability.for_run(cast(Any, SimpleNamespace(deps=second)))
 
-    assert propagated == [operator, operator]
-    assert first.recorded is not None
-    assert second.recorded is not None
+    assert [first.recorded, second.recorded] == replacements
+    assert first.cleanup == (
+        "a13n.dynamic-environment.shell-processes",
+        replacements[0]._close_processes,
+    )
+    assert second.cleanup == (
+        "a13n.dynamic-environment.shell-processes",
+        replacements[1]._close_processes,
+    )
 
 
 class _Allow:
@@ -473,7 +440,20 @@ async def test_mount_changes_refresh_the_environment_tool_surface_between_model_
         ),
         (
             EnvironmentAccess.FULL,
-            {"view", "write", "edit", "multi_edit", "mkdir", "ls", "glob", "grep", "shell_exec"},
+            {
+                "view",
+                "write",
+                "edit",
+                "multi_edit",
+                "mkdir",
+                "ls",
+                "glob",
+                "grep",
+                "shell_exec",
+                "shell_wait",
+                "shell_input",
+                "shell_signal",
+            },
         ),
     ),
 )
@@ -568,7 +548,7 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
     assert {"view", "write", "edit", "multi_edit", "ls", "glob", "grep"} <= names
     assert "environment_read_text" not in names
     assert "shell_exec" in names
-    assert {"shell_wait", "shell_status", "shell_input", "shell_signal", "shell_kill"}.isdisjoint(names)
+    assert {"shell_wait", "shell_input", "shell_signal"} <= names
     metadata = {
         tool.name: tool.metadata[HARNESS_TOOL_METADATA_KEY]
         for tool in info.function_tools
@@ -606,7 +586,7 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
 
 
 @requires_posix_process_groups
-async def test_fresh_process_binding_adds_background_mode_and_process_tools(tmp_path: Path) -> None:
+async def test_fresh_process_binding_adds_run_owned_process_tools(tmp_path: Path) -> None:
     calls: list[AgentInfo] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -618,7 +598,7 @@ async def test_fresh_process_binding_adds_background_mode_and_process_tools(tmp_
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration(), operator=_ManagedProcesses()),),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
     )
     result = await executable.run(
         "inspect",
@@ -627,9 +607,11 @@ async def test_fresh_process_binding_adds_background_mode_and_process_tools(tmp_
 
     assert result.output_or_raise() == "done"
     names = {tool.name for tool in calls[0].function_tools}
-    assert {"shell_exec", "shell_wait", "shell_status", "shell_input", "shell_signal", "shell_kill"} <= names
+    assert {"shell_exec", "shell_wait", "shell_input", "shell_signal"} <= names
+    assert {"shell_status", "shell_kill"}.isdisjoint(names)
     shell_tool = next(tool for tool in calls[0].function_tools if tool.name == "shell_exec")
-    assert "background" in shell_tool.parameters_json_schema["properties"]
+    assert "background" not in shell_tool.parameters_json_schema["properties"]
+    assert "yield_time_seconds" in shell_tool.parameters_json_schema["properties"]
 
 
 async def test_file_tools_omit_file_revisions_and_use_native_managed_policy(tmp_path: Path) -> None:
@@ -1770,12 +1752,15 @@ async def test_managed_authorization_is_fenced_by_mount_incarnation(tmp_path: Pa
         environment_id="dynamic-environment-test-replacement",
     )
 
-    async with aggregate.bind(run_id="run-1", instance=run_bindings.instance) as environment:
+    async with aggregate.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=run_bindings.instance,
+        host_refs={},
+    ) as environment:
         await aggregate._activate()
         capability = _DynamicEnvironmentRunCapability(
             _configuration(),
-            operator=ShellOperator(),
-            supports_background=False,
             run_id="run-1",
             environment=environment,
         )
@@ -1856,130 +1841,6 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
     assert result.output_or_raise() == "done"
     assert observed_path is not None
     assert not (tmp_path / observed_path.removeprefix("/workspace/")).exists()
-
-
-async def test_wait_subagent_large_result_spills_for_the_parent_run_and_is_cleaned(tmp_path: Path) -> None:
-    output = "x" * (300 * 1024)
-    observed_path: str | None = None
-
-    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages, info
-        yield output
-
-    @asynccontextmanager
-    async def open_child(
-        context: Any,
-        child: Any,
-        input: Any,
-        child_instance_id: str,
-        continuation: bool,
-        usage_limits: Any,
-    ) -> AsyncGenerator[RunBindings]:
-        del child, input, continuation, usage_limits
-        yield RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="test", subject="child"),
-                agent_instance_id="child-1",
-                parent_agent_instance_id=context.instance.agent_instance_id,
-                delegation_id=child_instance_id,
-            ),
-            environment=create_empty_environment_runtime(),
-        )
-
-    manager = SubagentManager(open_child)
-    child = AgentDefinition(
-        agent=AgentSpec(),
-        output_type=str,
-        definition_id="spill-child-v1",
-        model=FunctionModel(stream_function=child_stream),
-    )
-
-    async def parent_stream(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        nonlocal observed_path
-        del info
-        returns = [
-            part
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        if not returns:
-            yield {
-                0: DeltaToolCall(
-                    name="delegate",
-                    json_args=json.dumps({"subagent_name": "worker", "prompt": "large result"}),
-                    tool_call_id="delegate-1",
-                )
-            }
-            return
-        if not any(part.tool_name == "wait_subagent" for part in returns):
-            delegated = next(part for part in returns if part.tool_name == "delegate")
-            assert isinstance(delegated.content, dict)
-            yield {
-                0: DeltaToolCall(
-                    name="wait_subagent",
-                    json_args=json.dumps(
-                        {
-                            "execution_id": delegated.content["execution_id"],
-                            "timeout_seconds": 2,
-                        }
-                    ),
-                    tool_call_id="wait-1",
-                )
-            }
-            return
-
-        waited = next(part for part in returns if part.tool_name == "wait_subagent")
-        assert isinstance(waited.content, dict)
-        assert waited.content["truncated"] is True
-        assert waited.content["output_bytes"] > len(output)
-        observed_path = cast(str, waited.content["output_file_path"])
-        spilled = tmp_path / observed_path.removeprefix("/workspace/")
-        spilled_value = json.loads(spilled.read_text(encoding="utf-8"))
-        assert spilled_value["execution_id"] == "subagent-1"
-        assert spilled_value["status"] == "succeeded"
-        assert spilled_value["output"] == output
-        yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentDefinition(
-            agent=AgentSpec(),
-            output_type=str,
-            definition_id="spill-parent-v1",
-            model=FunctionModel(stream_function=parent_stream),
-            capabilities=(
-                SubagentCapability(execution="async", operator=manager),
-                DynamicEnvironmentCapability(_configuration()),
-            ),
-            subagents=(
-                SubagentDefinition(
-                    name="worker",
-                    description="Return one large result.",
-                    agent=child,
-                ),
-            ),
-        )
-    )
-    result = await executable.run(
-        "delegate and wait",
-        bindings=RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="test", subject="parent"),
-                agent_instance_id="parent-1",
-            ),
-            environment=_local_binding(tmp_path),
-            capabilities=(_policy(),),
-        ),
-    )
-
-    assert result.output_or_raise() == "done"
-    assert observed_path is not None
-    assert not (tmp_path / observed_path.removeprefix("/workspace/")).exists()
-    await manager.force_close()
 
 
 async def test_unmanaged_large_json_result_uses_default_truncation(tmp_path: Path) -> None:
@@ -2477,7 +2338,7 @@ async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
     )
@@ -2496,7 +2357,7 @@ async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
     )
@@ -2607,29 +2468,56 @@ async def test_file_toolset_list_continues_after_a_fully_filtered_raw_page() -> 
     assert "disclosure" not in second
 
 
-async def test_shell_toolset_is_foreground_only_with_the_default_operator(tmp_path: Path) -> None:
-    del tmp_path
-    toolset = ShellToolset()
-    tools = toolset.get_toolset().tools
+async def test_shell_toolset_is_foreground_only_without_process_actions(tmp_path: Path) -> None:
+    runtime = _local_binding(
+        tmp_path,
+        operations=frozenset({EnvironmentAction.SHELL_EXEC}),
+        process_output=True,
+    )
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=bindings.instance,
+        host_refs={},
+    ) as environment:
+        await runtime._activate()
+        toolset = ShellToolset(environment, process_capable=False)
+        tools = toolset.get_toolset().tools
 
-    assert set(tools) == {"shell_exec"}
-    assert "background" not in tools["shell_exec"].function_schema.json_schema["properties"]
+        assert set(tools) == {"shell_exec"}
+        properties = tools["shell_exec"].function_schema.json_schema["properties"]
+        assert "background" not in properties
+        assert "yield_time_seconds" not in properties
 
 
-async def test_shell_toolset_adds_process_tools_for_a_background_capable_operator(tmp_path: Path) -> None:
-    del tmp_path
-    toolset = ShellToolset(operator=_ManagedProcesses())
-    tools = toolset.get_toolset().tools
+async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: Path) -> None:
+    runtime = _local_binding(tmp_path, process_output=True)
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=bindings.instance,
+        host_refs={},
+    ) as environment:
+        await runtime._activate()
+        toolset = ShellToolset(environment, process_capable=True)
+        tools = toolset.get_toolset().tools
 
-    assert set(tools) == {"shell_exec", "shell_wait", "shell_status", "shell_input", "shell_signal", "shell_kill"}
-    assert "background" in tools["shell_exec"].function_schema.json_schema["properties"]
+        assert set(tools) == {"shell_exec", "shell_wait", "shell_input", "shell_signal"}
+        properties = tools["shell_exec"].function_schema.json_schema["properties"]
+        assert "background" not in properties
+        assert "yield_time_seconds" in properties
+        signal_metadata = tools["shell_signal"].metadata[HARNESS_TOOL_METADATA_KEY]
+        assert signal_metadata.effects == frozenset({"delete", "execute"})
+        await toolset.close()
 
 
 async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_error(tmp_path: Path) -> None:
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
     )
@@ -2652,7 +2540,7 @@ async def test_file_toolset_rechecks_authorization_between_compound_operations(t
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
     )
@@ -2750,7 +2638,7 @@ async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) ->
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
     )
@@ -2771,7 +2659,7 @@ async def test_direct_local_create_is_exclusive_under_concurrency(tmp_path: Path
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
     )
@@ -2800,7 +2688,7 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
     files = LocalFileOperator(
         root=tmp_path,
         read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
+        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
     )
@@ -2826,3 +2714,61 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
     assert not edit_task.done()
     result = await edit_task
     assert result["ok"] is True
+
+
+@requires_posix_process_groups
+async def test_mixed_shell_mounts_dispatch_foreground_and_process_paths_per_alias(tmp_path: Path) -> None:
+    (tmp_path / "local").mkdir()
+    (tmp_path / "shared").mkdir()
+    runtime = create_environment_runtime(
+        mounts={
+            "local": _local_mount(
+                tmp_path / "local",
+                environment_id="mixed-shell-local",
+                operations=frozenset(
+                    {
+                        EnvironmentAction.SHELL_EXEC,
+                        EnvironmentAction.OUTPUT_READ,
+                        EnvironmentAction.OUTPUT_RELEASE,
+                    }
+                ),
+                process_output=True,
+            ),
+            "shared": _local_mount(
+                tmp_path / "shared",
+                environment_id="mixed-shell-shared",
+                process_output=True,
+            ),
+        },
+        default_mount="local",
+    )
+    bindings = RunBindings.embedded(environment=runtime)
+    async with runtime.bind(
+        thread_id="thread-1",
+        run_id="run-1",
+        instance=bindings.instance,
+        host_refs={},
+    ) as environment:
+        await runtime._activate()
+        toolset = ShellToolset(environment, process_capable=True)
+        ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace()))
+
+        foreground = await toolset.shell_exec(
+            ctx,
+            "printf foreground",
+            cwd="/workspace",
+            yield_time_seconds=0,
+        )
+        live = await toolset.shell_exec(
+            ctx,
+            "printf process; sleep 30",
+            cwd="/environment/shared",
+            yield_time_seconds=0,
+        )
+
+        assert foreground["ok"] is True
+        assert foreground["stdout"]["text"] == "foreground"
+        assert "process_id" not in foreground
+        assert live["ok"] is True
+        assert "process_id" in live
+        await toolset.close()

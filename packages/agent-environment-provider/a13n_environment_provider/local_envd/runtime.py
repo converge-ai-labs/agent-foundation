@@ -17,7 +17,6 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..management import EnvironmentProviderRuntime
 
 A13N_AGENT_ENVD_EXECUTABLE = "A13N_AGENT_ENVD_EXECUTABLE"
 _PROVIDER_KEY = "a13n.local-envd"
@@ -27,7 +26,7 @@ type LocalEnvdRuntimeAllocator = Callable[[], AbstractAsyncContextManager[Path]]
 
 
 @dataclass(frozen=True, slots=True)
-class LocalEnvdProviderRuntime(EnvironmentProviderRuntime):
+class LocalEnvdProviderRuntime:
     executable: Path
     allocate_private_runtime: LocalEnvdRuntimeAllocator
 
@@ -42,7 +41,7 @@ class LocalEnvdProviderRuntime(EnvironmentProviderRuntime):
 
 @dataclass(frozen=True, slots=True)
 class TemporaryLocalEnvdRuntimeAllocator:
-    """Allocate one private temporary directory per entered Local Envd Resource."""
+    """Allocate one private temporary directory per entered Local Envd adapter."""
 
     parent: Path | None = None
     prefix: str = "a13n-local-envd-"

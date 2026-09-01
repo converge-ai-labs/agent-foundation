@@ -55,13 +55,16 @@ from a13n_harness.environment import (
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeMount,
     create_environment_runtime,
 )
-from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.environment.providers import (
+    EnvironmentRuntimeMount,
+)
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+from .environment_helpers import DirectLocalEnvironmentProviderBinding
 
 pytestmark = pytest.mark.anyio
 
@@ -70,6 +73,9 @@ _EXPECTED_TOOLS = {
     "download",
     "edit",
     "shell_exec",
+    "shell_wait",
+    "shell_input",
+    "shell_signal",
     "fetch",
     "glob",
     "grep",

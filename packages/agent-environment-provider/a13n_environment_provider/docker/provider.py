@@ -4,12 +4,24 @@ import asyncio
 import hashlib
 import json
 import secrets
-from collections.abc import AsyncGenerator, Mapping
-from contextlib import asynccontextmanager
+from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
+from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from a13n_envd_client import EIPSession
+from a13n_envd_client.eip import v1 as eip
+from pydantic import BaseModel, JsonValue, ValidationError
 
-from ..attachments import EIPEnvironmentAttachment, EnvironmentRuntimeAttachment, HttpEIPSessionSource
+from ..attachments import HttpEIPSessionSource
+from ..eip._common import invoke
+from ..eip.files import EIPFileOperator
+from ..eip.output import EIPOutputOperations, EIPOutputRegistry
+from ..eip.processes import (
+    EIPPortOperations,
+    EIPProcessOperations,
+    EIPShellOperations,
+    _ProcessConversions,
+)
 from ..errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
@@ -17,26 +29,24 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..factories import EnvironmentProviderFactory
-from ..management import EnvironmentProvider, EnvironmentProviderRuntime, EnvironmentResource
+from ..management import Environment, EnvironmentProvider
 from ..models import (
-    EnvironmentAttachmentConcurrency,
-    EnvironmentLifecycleCapabilities,
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
-    EnvironmentPauseMode,
-    EnvironmentProviderResourceState,
-    EnvironmentReconciliationPhase,
-    EnvironmentReconciliationResult,
-    EnvironmentResourceAllocation,
+    EnvironmentAction,
+    EnvironmentAvailability,
+    EnvironmentDescriptor,
+    EnvironmentError,
+    EnvironmentMountDescriptor,
+    EnvironmentOperationFamily,
+    EnvironmentPermissionSet,
+    EnvironmentState,
 )
+from ..operations import EnvironmentOperations
 from .configuration import (
     DockerBindMountSource,
     DockerImagePullPolicy,
     DockerMountConfiguration,
     DockerProviderConfiguration,
     DockerProviderStateData,
-    DockerResourcePhase,
     DockerVolumeMountSource,
 )
 from .runtime import (
@@ -52,6 +62,7 @@ from .runtime import (
 )
 
 _PROVIDER_KEY = "a13n.docker"
+_CONFIGURATION_VERSION = "1"
 _STATE_VERSION = "1"
 _EIP_CONTAINER_PORT = 8787
 _BOOTSTRAP_CONTAINER_PATH = "/run/a13n/bootstrap"
@@ -68,131 +79,249 @@ _REQUIRED_ENVIRONMENT = {
     "AGENT_ENVD_EXECUTION_ISOLATION": "disabled",
     "AGENT_ENVD_EXECUTION_NETWORK": "host",
 }
-_READ_OPERATIONS = ("stat", "read_text", "open_reader", "list", "find", "search")
-_WRITE_OPERATIONS = ("write_text", "open_writer", "remove", "move")
 _LABEL_PROVIDER = "io.a13n.environment-provider"
 _LABEL_STATE = "io.a13n.environment-provider.state"
 _LABEL_ENVIRONMENT = "io.a13n.environment-id"
-_LABEL_RESOURCE = "io.a13n.resource-correlation"
 _LABEL_BOOTSTRAP = "io.a13n.bootstrap-correlation"
 _LABEL_FINGERPRINT = "io.a13n.configuration-fingerprint"
-_LABEL_CREATE_OPERATION = "io.a13n.create-operation-id"
-_CAPABILITIES = EnvironmentLifecycleCapabilities(
-    pause_modes=frozenset({EnvironmentPauseMode.FILESYSTEM}),
-    resource_allocation=EnvironmentResourceAllocation.MULTIPLE_FROM_SPEC,
-    attachment_concurrency=EnvironmentAttachmentConcurrency.SINGLE,
-)
-
-
-class DockerEnvironmentProviderFactory(EnvironmentProviderFactory):
-    @classmethod
-    def provider_key(cls) -> str:
-        return _PROVIDER_KEY
-
-    @classmethod
-    def supported_schema_versions(cls) -> frozenset[str]:
-        return frozenset({_STATE_VERSION})
-
-    @classmethod
-    def configuration_model(cls, schema_version: str) -> type[BaseModel]:
-        if schema_version != _STATE_VERSION:
-            raise EnvironmentProviderError(
-                f"Docker does not support schema version {schema_version!r}.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-                context=EnvironmentProviderErrorContext(
-                    provider_key=_PROVIDER_KEY,
-                    schema_version=schema_version,
-                ),
-            )
-        return DockerProviderConfiguration
-
-    def lifecycle_capabilities(self, configuration: BaseModel) -> EnvironmentLifecycleCapabilities:
-        _require_configuration(configuration)
-        return _CAPABILITIES
-
-    def create_provider(
-        self,
-        configuration: BaseModel,
-        *,
-        runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentProvider:
-        actual_configuration = _require_configuration(configuration)
-        if not isinstance(runtime, DockerProviderRuntime):
-            raise EnvironmentProviderError(
-                "Docker requires DockerProviderRuntime.",
-                code="provider_runtime_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                recovery_hint=EnvironmentProviderRecoveryHint.REFRESH_RUNTIME,
-                context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-            )
-        return DockerEnvironmentProvider(actual_configuration, runtime)
+_LABEL_CREATE = "io.a13n.create-correlation"
+_REQUIRED_EIP_METHODS = frozenset({"environment.describe", "environment.readiness", "session.close"})
+_METHOD_ACTIONS: dict[str, tuple[EnvironmentAction, ...]] = {
+    "file.stat": (EnvironmentAction.FILE_STAT,),
+    "file.read_text": (EnvironmentAction.FILE_READ_TEXT,),
+    "file.open_reader": (EnvironmentAction.FILE_READ_BYTES,),
+    "file.write_text": (EnvironmentAction.FILE_WRITE_TEXT,),
+    "file.patch_text": (EnvironmentAction.FILE_PATCH_TEXT,),
+    "file.list": (EnvironmentAction.FILE_LIST,),
+    "file.find": (EnvironmentAction.FILE_QUERY,),
+    "file.search": (EnvironmentAction.FILE_SEARCH_TEXT,),
+    "file.mkdir": (EnvironmentAction.FILE_MKDIR,),
+    "file.move": (EnvironmentAction.FILE_MOVE,),
+    "file.remove": (EnvironmentAction.FILE_REMOVE,),
+    "file.open_writer": (EnvironmentAction.FILE_WRITE_BYTES,),
+    "file.copy": (EnvironmentAction.FILE_COPY_SOURCE, EnvironmentAction.FILE_COPY_DESTINATION),
+    "shell.exec": (EnvironmentAction.SHELL_EXEC,),
+    "process.start": (EnvironmentAction.PROCESS_START,),
+    "process.inspect": (EnvironmentAction.PROCESS_INSPECT,),
+    "process.write_stdin": (EnvironmentAction.PROCESS_WRITE_STDIN,),
+    "process.close_stdin": (EnvironmentAction.PROCESS_CLOSE_STDIN,),
+    "process.signal": (EnvironmentAction.PROCESS_SIGNAL,),
+    "process.wait": (EnvironmentAction.PROCESS_WAIT,),
+    "process.kill": (EnvironmentAction.PROCESS_KILL,),
+    "process.release": (EnvironmentAction.PROCESS_RELEASE,),
+    "output.read": (EnvironmentAction.OUTPUT_READ,),
+    "output.release": (EnvironmentAction.OUTPUT_RELEASE,),
+    "port.inspect": (EnvironmentAction.PORT_INSPECT,),
+    "port.wait": (EnvironmentAction.PORT_WAIT,),
+}
 
 
 class DockerEnvironmentProvider(EnvironmentProvider):
-    def __init__(self, configuration: DockerProviderConfiguration, runtime: DockerProviderRuntime) -> None:
-        super().__init__()
-        self._configuration = configuration.model_copy(deep=True)
-        self._runtime = runtime
-        self._identity = object()
+    """Reusable inert Docker provider plugin."""
 
     @property
-    def lifecycle_capabilities(self) -> EnvironmentLifecycleCapabilities:
-        return _CAPABILITIES
+    def key(self) -> str:
+        return _PROVIDER_KEY
 
-    async def create(self, *, operation: EnvironmentOperationContext) -> EnvironmentResource:
-        self._require_operation(operation, EnvironmentManagementAction.CREATE, provider_key=_PROVIDER_KEY)
-        configuration = await _validated_configuration(self._configuration)
-        await _engine_read(self._runtime.engine.validate_local_topology())
+    @property
+    def configuration_versions(self) -> frozenset[str]:
+        return frozenset({_CONFIGURATION_VERSION})
+
+    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
+        if schema_version != _CONFIGURATION_VERSION:
+            raise _provider_error(
+                "Docker configuration version is unsupported.",
+                code="provider_schema_unsupported",
+                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
+                schema_version=schema_version,
+            )
+        try:
+            return DockerProviderConfiguration.model_validate(value)
+        except ValidationError as error:
+            raise _provider_error(
+                "Docker configuration is invalid.",
+                code="provider_spec_invalid",
+                category=EnvironmentProviderErrorCategory.INVALID,
+                schema_version=schema_version,
+            ) from error
+
+    def create_environment(
+        self,
+        *,
+        configuration: BaseModel,
+        state: EnvironmentState | None,
+        runtime: object | None = None,
+    ) -> Environment:
+        if not isinstance(configuration, DockerProviderConfiguration):
+            raise TypeError("Docker requires DockerProviderConfiguration")
+        if not isinstance(runtime, DockerProviderRuntime):
+            raise TypeError("Docker requires DockerProviderRuntime")
+        state_data = _decode_state(state, configuration)
+        return DockerEnvironment(configuration, state, state_data=state_data, runtime=runtime)
+
+
+class DockerEnvironment(Environment):
+    """Fresh single-use adapter for one exact Docker container."""
+
+    def __init__(
+        self,
+        configuration: DockerProviderConfiguration,
+        state: EnvironmentState | None,
+        *,
+        state_data: DockerProviderStateData | None,
+        runtime: DockerProviderRuntime,
+    ) -> None:
+        super().__init__(state.model_copy(deep=True) if state is not None else None)
+        self._configuration = configuration.model_copy(deep=True)
+        self._state_data = state_data.model_copy(deep=True) if state_data is not None else None
+        self._runtime = runtime
+        self._descriptor: EnvironmentDescriptor | None = None
+        self._availability = EnvironmentAvailability(status="preparing")
+        self._operations = EnvironmentOperations()
+        self._session_context: AbstractAsyncContextManager[EIPSession] | None = None
+        self._session: EIPSession | None = None
+        self._outputs: EIPOutputRegistry | None = None
+        self._conversions: _ProcessConversions | None = None
+
+    @property
+    def provider_key(self) -> str:
+        return _PROVIDER_KEY
+
+    @property
+    def environment_id(self) -> str:
+        return self._configuration.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        if self._descriptor is None:
+            raise RuntimeError("Environment descriptor is unavailable before entry")
+        return self._descriptor
+
+    @property
+    def availability(self) -> EnvironmentAvailability:
+        return self._availability
+
+    @property
+    def operations(self) -> EnvironmentOperations:
+        return self._operations
+
+    async def _enter(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        agent_instance_id: str,
+        mount_id: str,
+        host_refs: Mapping[str, str],
+    ) -> None:
+        del host_refs
+        configuration = await _canonical_configuration(self._configuration)
+        await _engine_call(self._runtime.engine.validate_local_topology())
+        for mount in _configured_engine_mounts(configuration):
+            await _engine_call(self._runtime.engine.validate_mount(mount))
+
+        if self._state_data is None:
+            state, inspection, allocation = await self._create_target(
+                configuration,
+                correlation_seed=(thread_id, run_id, agent_instance_id, mount_id),
+            )
+        else:
+            state, inspection, allocation = await self._reenter_target(
+                configuration,
+                self._state_data,
+                correlation_seed=(thread_id, run_id, agent_instance_id, mount_id),
+            )
+        self._state_data = state
+        await self._open_eip(inspection, allocation, mount_id=mount_id)
+
+    async def _create_target(
+        self,
+        configuration: DockerProviderConfiguration,
+        *,
+        correlation_seed: tuple[str, ...],
+        replacing: DockerProviderStateData | None = None,
+    ) -> tuple[DockerProviderStateData, DockerContainerInspection, DockerBootstrapAllocation]:
         image = await _resolve_image(self._runtime, configuration)
         _validate_image(image)
-        configured_mounts = _configured_engine_mounts(configuration)
-        for mount in configured_mounts:
-            await _engine_read(self._runtime.engine.validate_mount(mount))
+        fingerprint = _configuration_fingerprint(self._configuration)
+        create_correlation = _correlation(
+            "create", *correlation_seed, replacing.create_correlation if replacing else "new"
+        )
+        bootstrap_correlation = _correlation("bootstrap", create_correlation)
+        labels = _labels(
+            configuration,
+            bootstrap_correlation=bootstrap_correlation,
+            configuration_fingerprint=fingerprint,
+            create_correlation=create_correlation,
+        )
 
-        fingerprint = _configuration_fingerprint(configuration)
-        bootstrap_correlation = _bootstrap_correlation(operation.operation_id)
-        allocation: DockerBootstrapAllocation | None = None
-        material: DockerBootstrapMaterial | None = None
+        allocation = await _store_recover(self._runtime, bootstrap_correlation)
         created_allocation = False
-        container_dispatched = False
-        try:
-            allocation = await _store_recover(self._runtime, bootstrap_correlation)
-            if allocation is None:
-                material = _new_bootstrap_material(configuration, fingerprint)
-                allocation = await _store_create(self._runtime, bootstrap_correlation, material)
-                created_allocation = True
-            else:
-                _validate_bootstrap(allocation, configuration, fingerprint)
-            bootstrap_mount = DockerEngineMount(
-                type="bind",
-                source=str(allocation.directory),
-                target=_BOOTSTRAP_CONTAINER_PATH,
-                read_only=True,
+        if allocation is None:
+            allocation = await _store_create(
+                self._runtime,
+                bootstrap_correlation,
+                _new_bootstrap_material(configuration, fingerprint),
             )
-            await _engine_read(self._runtime.engine.validate_mount(bootstrap_mount))
-            labels = _labels(
-                configuration,
-                resource_correlation=operation.resource_correlation,
-                bootstrap_correlation=bootstrap_correlation,
-                configuration_fingerprint=fingerprint,
-                create_operation_id=operation.operation_id,
-            )
-            spec = _container_spec(
-                configuration,
+            created_allocation = True
+        else:
+            _validate_bootstrap(allocation, configuration, fingerprint)
+
+        matches = await _engine_call(self._runtime.engine.find_containers(labels))
+        if len(matches) > 1:
+            raise _unknown_failure("Docker create correlation is ambiguous.")
+        if matches:
+            inspection = matches[0]
+            _validate_inspection(
+                inspection,
+                configuration=configuration,
                 image_id=image.image_id,
                 labels=labels,
-                mounts=(*configured_mounts, bootstrap_mount),
+                allocation=allocation,
+                require_route=inspection.status == "running",
             )
-            container_dispatched = True
+            state = _state_data(
+                configuration,
+                container_id=inspection.container_id,
+                image_id=inspection.image_id,
+                bootstrap_correlation=bootstrap_correlation,
+                configuration_fingerprint=fingerprint,
+                create_correlation=create_correlation,
+            )
+            self._publish_state(state)
+            inspection, allocation = await self._start_if_needed(configuration, state, inspection, allocation)
+            return state, inspection, allocation
+
+        bootstrap_mount = DockerEngineMount(
+            type="bind",
+            source=str(allocation.directory),
+            target=_BOOTSTRAP_CONTAINER_PATH,
+            read_only=True,
+        )
+        await _engine_call(self._runtime.engine.validate_mount(bootstrap_mount))
+        spec = _container_spec(
+            configuration,
+            image_id=image.image_id,
+            labels=labels,
+            mounts=(*_configured_engine_mounts(configuration), bootstrap_mount),
+        )
+        dispatched = False
+        try:
+            dispatched = True
             container_id = await self._runtime.engine.create_container(spec)
+            state = _state_data(
+                configuration,
+                container_id=container_id,
+                image_id=image.image_id,
+                bootstrap_correlation=bootstrap_correlation,
+                configuration_fingerprint=fingerprint,
+                create_correlation=create_correlation,
+            )
+            self._publish_state(state)
             await self._runtime.engine.start_container(container_id)
-            inspection = await _engine_read(self._runtime.engine.inspect_container(container_id))
+            inspection = await _engine_call(self._runtime.engine.inspect_container(container_id))
             if inspection is None:
-                raise _unknown_error(operation, "Docker container disappeared after start.")
+                raise _unknown_failure("Docker container disappeared after create.")
             _validate_inspection(
                 inspection,
                 configuration=configuration,
@@ -202,485 +331,376 @@ class DockerEnvironmentProvider(EnvironmentProvider):
                 require_route=True,
             )
             if inspection.status != "running":
-                raise _unknown_error(operation, "Docker container did not reach running state.")
-        except EnvironmentProviderError as error:
-            if created_allocation and not container_dispatched:
-                await _remove_failed_bootstrap(self._runtime, bootstrap_correlation)
-            if container_dispatched and error.certainty is not EnvironmentProviderOutcomeCertainty.UNKNOWN:
-                raise _unknown_error(operation, error.description) from error
+                raise _unknown_failure("Docker container did not reach running state.")
+            return state, inspection, allocation
+        except asyncio.CancelledError:
+            if created_allocation and not dispatched:
+                await _remove_bootstrap(self._runtime, bootstrap_correlation)
             raise
         except DockerEngineError as error:
-            if created_allocation and not container_dispatched:
-                await _remove_failed_bootstrap(self._runtime, bootstrap_correlation)
-            if container_dispatched or error.dispatched:
-                raise _unknown_error(operation, str(error)) from error
-            raise _runtime_failure(str(error)) from error
-        except asyncio.CancelledError as cancellation:
-            if not container_dispatched and (created_allocation or material is not None):
-                await _cleanup_cancelled_create(
-                    self._runtime,
-                    bootstrap_correlation,
-                    material=material,
-                    cancellation=cancellation,
-                )
+            if created_allocation and not dispatched and not error.dispatched:
+                await _remove_bootstrap(self._runtime, bootstrap_correlation)
+            if dispatched or error.dispatched:
+                raise _unknown_failure("Docker create or start outcome is unknown.") from error
+            raise _runtime_failure("Docker container creation failed.") from error
+        except BaseException:
+            if created_allocation and not dispatched:
+                await _remove_bootstrap(self._runtime, bootstrap_correlation)
             raise
-        except BaseException as error:
-            if created_allocation and not container_dispatched:
-                await _remove_failed_bootstrap(self._runtime, bootstrap_correlation)
-            raise _runtime_failure("Docker create prerequisites failed.") from error
 
-        state = _build_state(
-            configuration,
-            resource_correlation=operation.resource_correlation,
-            container_id=inspection.container_id,
-            image_id=inspection.image_id,
-            bootstrap_correlation=bootstrap_correlation,
-            create_operation_id=operation.operation_id,
-            phase=DockerResourcePhase.RUNNING,
-        )
-        return DockerEnvironmentResource(
-            configuration,
-            state,
-            runtime=self._runtime,
-            provider_identity=self._identity,
-        )
-
-    async def resume(
+    async def _reenter_target(
         self,
-        state: EnvironmentProviderResourceState,
+        configuration: DockerProviderConfiguration,
+        state: DockerProviderStateData,
         *,
-        operation: EnvironmentOperationContext,
-    ) -> EnvironmentResource:
-        self._require_operation(operation, EnvironmentManagementAction.RESUME, provider_key=_PROVIDER_KEY)
-        configuration = await _validated_configuration(self._configuration)
-        state_data = _validate_state(
-            state,
-            configuration=configuration,
-            resource_correlation=operation.resource_correlation,
-        )
-        await _engine_read(self._runtime.engine.validate_local_topology())
-        inspection = await _engine_read(self._runtime.engine.inspect_container(state_data.container_id))
+        correlation_seed: tuple[str, ...],
+    ) -> tuple[DockerProviderStateData, DockerContainerInspection, DockerBootstrapAllocation]:
+        inspection = await _engine_call(self._runtime.engine.inspect_container(state.container_id))
         if inspection is None:
-            raise _missing_error("Docker container does not exist.", operation)
-        allocation = await _store_recover(self._runtime, state_data.bootstrap_correlation)
+            matches = await _engine_call(self._runtime.engine.find_containers(_labels_from_state(configuration, state)))
+            if matches:
+                raise _unknown_failure("Docker exact target is absent but its correlation is still present.")
+            return await self._create_target(
+                configuration,
+                correlation_seed=(*correlation_seed, "replacement"),
+                replacing=state,
+            )
+
+        allocation = await _store_recover(self._runtime, state.bootstrap_correlation)
         if allocation is None:
-            raise _missing_error("Docker bootstrap allocation does not exist.", operation)
-        labels = _labels_from_state(configuration, state_data)
+            raise _missing_failure("Docker bootstrap allocation is unavailable for the existing target.")
+        _validate_bootstrap(allocation, configuration, state.configuration_fingerprint)
         _validate_inspection(
             inspection,
             configuration=configuration,
-            image_id=state_data.image_id,
-            labels=labels,
+            image_id=state.image_id,
+            labels=_labels_from_state(configuration, state),
             allocation=allocation,
             require_route=inspection.status == "running",
         )
-        _validate_bootstrap(allocation, configuration, state_data.configuration_fingerprint)
-        if inspection.status in {"created", "exited"}:
-            replacement = _new_bootstrap_material(configuration, state_data.configuration_fingerprint)
-            allocation = await _store_replace(self._runtime, state_data.bootstrap_correlation, replacement)
-            try:
-                await self._runtime.engine.start_container(state_data.container_id)
-                inspection = await _engine_read(self._runtime.engine.inspect_container(state_data.container_id))
-                if inspection is None:
-                    raise _unknown_error(operation, "Docker container disappeared after resume.")
-                _validate_inspection(
-                    inspection,
-                    configuration=configuration,
-                    image_id=state_data.image_id,
-                    labels=labels,
-                    allocation=allocation,
-                    require_route=True,
-                )
-                if inspection.status != "running":
-                    raise _unknown_error(operation, "Docker container did not reach running state after resume.")
-            except DockerEngineError as error:
-                raise _unknown_error(operation, str(error)) from error
-            except EnvironmentProviderError as error:
-                if error.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN:
-                    raise
-                raise _unknown_error(operation, error.description) from error
-        if inspection.status != "running":
-            raise _state_error("Docker container is not resumable from its current state.", operation)
-        running = _state_with_phase(state_data, DockerResourcePhase.RUNNING)
-        return DockerEnvironmentResource(
-            configuration,
-            running,
-            runtime=self._runtime,
-            provider_identity=self._identity,
-        )
+        inspection, allocation = await self._start_if_needed(configuration, state, inspection, allocation)
+        return state, inspection, allocation
 
-    async def pause(
+    async def _start_if_needed(
         self,
-        environment: EnvironmentResource,
-        *,
-        operation: EnvironmentOperationContext,
-        mode: EnvironmentPauseMode = EnvironmentPauseMode.FULL,
-    ) -> EnvironmentProviderResourceState:
-        self._require_operation(operation, EnvironmentManagementAction.PAUSE, provider_key=_PROVIDER_KEY)
-        if mode is not EnvironmentPauseMode.FILESYSTEM:
-            raise EnvironmentProviderError(
-                "Docker supports only filesystem pause.",
-                code="provider_action_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-                context=_operation_context(operation),
-            )
-        if (
-            not isinstance(environment, DockerEnvironmentResource)
-            or environment._provider_identity is not self._identity
-        ):
-            raise _state_error("Docker pause requires a Resource created by this Provider instance.", operation)
-        environment._require_entered()
-        state_data = _validate_state(
-            environment.state,
-            configuration=environment._configuration,
-            resource_correlation=operation.resource_correlation,
-        )
-        inspection, allocation = await _inspect_owned_resource(
-            self._runtime,
-            environment._configuration,
-            state_data,
-            operation=operation,
-        )
-        await environment._close_admission_for_pause()
+        configuration: DockerProviderConfiguration,
+        state: DockerProviderStateData,
+        inspection: DockerContainerInspection,
+        allocation: DockerBootstrapAllocation,
+    ) -> tuple[DockerContainerInspection, DockerBootstrapAllocation]:
         if inspection.status == "running":
-            try:
-                await self._runtime.engine.stop_container(
-                    state_data.container_id,
-                    timeout_seconds=environment._configuration.stop_grace_seconds,
-                )
-                inspection = await _engine_read(self._runtime.engine.inspect_container(state_data.container_id))
-                if inspection is None:
-                    raise _unknown_error(operation, "Docker container disappeared while pausing.")
-                _validate_inspection(
-                    inspection,
-                    configuration=environment._configuration,
-                    image_id=state_data.image_id,
-                    labels=_labels_from_state(environment._configuration, state_data),
-                    allocation=allocation,
-                    require_route=False,
-                )
-            except DockerEngineError as error:
-                raise _unknown_error(operation, str(error)) from error
-            except EnvironmentProviderError as error:
-                if error.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN:
-                    raise
-                raise _unknown_error(operation, error.description) from error
+            return inspection, allocation
         if inspection.status not in {"created", "exited"}:
-            raise _unknown_error(operation, "Docker container stop could not be confirmed.")
-        paused = _state_with_phase(state_data, DockerResourcePhase.PAUSED)
-        environment._state = paused
-        return paused
-
-    async def destroy(
-        self,
-        state: EnvironmentProviderResourceState,
-        *,
-        operation: EnvironmentOperationContext,
-    ) -> None:
-        self._require_operation(operation, EnvironmentManagementAction.DESTROY, provider_key=_PROVIDER_KEY)
-        configuration = await _validated_configuration(self._configuration)
-        state_data = _validate_state(
-            state,
-            configuration=configuration,
-            resource_correlation=operation.resource_correlation,
+            raise _conflict_failure("Docker container state is not safely re-enterable.")
+        allocation = await _store_replace(
+            self._runtime,
+            state.bootstrap_correlation,
+            _new_bootstrap_material(configuration, state.configuration_fingerprint),
         )
-        await _engine_read(self._runtime.engine.validate_local_topology())
-        inspection = await _engine_read(self._runtime.engine.inspect_container(state_data.container_id))
-        allocation = await _store_recover(self._runtime, state_data.bootstrap_correlation)
+        try:
+            await self._runtime.engine.start_container(state.container_id)
+            current = await _engine_call(self._runtime.engine.inspect_container(state.container_id))
+        except DockerEngineError as error:
+            raise _unknown_failure("Docker container start outcome is unknown.") from error
+        if current is None:
+            raise _unknown_failure("Docker container disappeared after start.")
+        _validate_inspection(
+            current,
+            configuration=configuration,
+            image_id=state.image_id,
+            labels=_labels_from_state(configuration, state),
+            allocation=allocation,
+            require_route=True,
+        )
+        if current.status != "running":
+            raise _unknown_failure("Docker container did not reach running state.")
+        return current, allocation
+
+    def _publish_state(self, state: DockerProviderStateData) -> None:
+        envelope = EnvironmentState(
+            provider_key=_PROVIDER_KEY,
+            state_version=_STATE_VERSION,
+            state=state.model_dump(mode="json"),
+        )
+        self._state_data = state
+        self._cache_state(envelope)
+
+    async def _open_eip(
+        self,
+        inspection: DockerContainerInspection,
+        allocation: DockerBootstrapAllocation,
+        *,
+        mount_id: str,
+    ) -> None:
+        if (
+            inspection.status != "running"
+            or not inspection.eip_route_exact
+            or inspection.eip_host_ip != "127.0.0.1"
+            or inspection.eip_host_port is None
+        ):
+            raise _conflict_failure("Docker target has no exact active Host-loopback EIP route.")
+        source = HttpEIPSessionSource(
+            f"http://127.0.0.1:{inspection.eip_host_port}",
+            allocation.material.credential,
+            initialization_timeout=10.0,
+            request_timeout=30.0,
+            allow_plaintext_private_link=True,
+        )
+        context = source.open_session(
+            expected_environment_id=self.environment_id,
+            required_methods=_REQUIRED_EIP_METHODS,
+        )
+        try:
+            session = await context.__aenter__()
+            readiness = await invoke(session.readiness())
+            if not readiness.ready:
+                raise EnvironmentError(
+                    "Docker EIP environment is not ready",
+                    code="environment_unavailable",
+                    retry_hint="new_run",
+                )
+            descriptor = _convert_descriptor(session.descriptor)
+            operations, outputs, conversions = _compose_operations(
+                session,
+                environment_id=self.environment_id,
+                mount_id=mount_id,
+                descriptor=descriptor,
+            )
+        except BaseException as error:
+            try:
+                await context.__aexit__(type(error), error, error.__traceback__)
+            except BaseException as cleanup_error:
+                error.add_note(f"Docker EIP cleanup also failed: {cleanup_error!r}")
+            if isinstance(error, asyncio.CancelledError | EnvironmentProviderError):
+                raise
+            raise _runtime_failure("Docker EIP initialization or readiness failed.") from error
+        self._session_context = context
+        self._session = session
+        self._descriptor = descriptor
+        self._operations = operations
+        self._outputs = outputs
+        self._conversions = conversions
+        self._availability = EnvironmentAvailability(
+            status="available",
+            ready_families=descriptor.operation_families,
+        )
+
+    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+        missing = operations - self.descriptor.operation_families
+        if missing:
+            raise EnvironmentError(
+                "Docker EIP does not expose the requested operation family",
+                code="environment_unsupported",
+            )
+        if self._session is None:
+            raise EnvironmentError("Docker EIP session is closed", code="environment_unavailable")
+        readiness = await invoke(self._session.readiness())
+        if not readiness.ready:
+            self._availability = EnvironmentAvailability(status="unavailable")
+            raise EnvironmentError(
+                "Docker EIP environment is not ready",
+                code="environment_unavailable",
+                retry_hint="new_run",
+            )
+
+    async def _close(self) -> None:
+        self._availability = EnvironmentAvailability(status="unavailable")
+        errors: list[BaseException] = []
+        if self._conversions is not None:
+            try:
+                await self._conversions.cleanup_owned()
+            except BaseException as error:
+                errors.append(error)
+        if self._outputs is not None:
+            try:
+                await self._outputs.cleanup_pending()
+            except BaseException as error:
+                errors.append(error)
+        if self._session_context is not None:
+            try:
+                await self._session_context.__aexit__(None, None, None)
+            except BaseException as error:
+                errors.append(error)
+        self._session_context = None
+        self._session = None
+        self._outputs = None
+        self._conversions = None
+        self._operations = EnvironmentOperations()
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            raise BaseExceptionGroup("Docker local cleanup failed", errors)
+
+    async def _destroy(self) -> None:
+        state = self._state_data
+        if state is None:
+            raise _state_failure("Docker destroy requires state for one exact target.")
+        configuration = await _canonical_configuration(self._configuration)
+        await _engine_call(self._runtime.engine.validate_local_topology())
+        inspection = await _engine_call(self._runtime.engine.inspect_container(state.container_id))
         if inspection is not None:
+            allocation = await _store_recover(self._runtime, state.bootstrap_correlation)
             if allocation is None:
-                raise _unknown_error(operation, "Docker bootstrap evidence is missing while the container exists.")
-            _validate_bootstrap(allocation, configuration, state_data.configuration_fingerprint)
+                raise _missing_failure("Docker bootstrap allocation is unavailable for the existing target.")
+            _validate_bootstrap(allocation, configuration, state.configuration_fingerprint)
             _validate_inspection(
                 inspection,
                 configuration=configuration,
-                image_id=state_data.image_id,
-                labels=_labels_from_state(configuration, state_data),
+                image_id=state.image_id,
+                labels=_labels_from_state(configuration, state),
                 allocation=allocation,
                 require_route=inspection.status == "running",
             )
-            mutation_dispatched = False
-            try:
-                if inspection.status == "running":
-                    mutation_dispatched = True
+            if inspection.status == "running":
+                try:
                     await self._runtime.engine.stop_container(
-                        state_data.container_id,
+                        state.container_id,
                         timeout_seconds=configuration.stop_grace_seconds,
                     )
-                elif inspection.status not in {"created", "exited"}:
-                    raise _unknown_error(operation, "Docker container state is not safe to destroy.")
-                mutation_dispatched = True
-                await self._runtime.engine.remove_container(state_data.container_id)
-                remaining = await _engine_read(self._runtime.engine.inspect_container(state_data.container_id))
-                if remaining is not None:
-                    raise _unknown_error(operation, "Docker container removal could not be confirmed.")
+                except DockerEngineError as error:
+                    raise _unknown_failure("Docker stop outcome is unknown.") from error
+            try:
+                await self._runtime.engine.remove_container(state.container_id)
             except DockerEngineError as error:
-                raise _unknown_error(operation, str(error)) from error
-            except EnvironmentProviderError as error:
-                if mutation_dispatched and error.certainty is not EnvironmentProviderOutcomeCertainty.UNKNOWN:
-                    raise _unknown_error(operation, error.description) from error
-                raise
-        try:
-            await self._runtime.bootstrap_store.remove(state_data.bootstrap_correlation)
-        except DockerBootstrapStoreError as error:
-            raise EnvironmentProviderError(
-                "Docker container is absent but bootstrap cleanup failed.",
-                code="provider_cleanup_failed",
-                category=EnvironmentProviderErrorCategory.CLEANUP,
-                certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-                context=_operation_context(operation),
-            ) from error
-
-    async def reconcile(
-        self,
-        operation: EnvironmentOperationContext,
-        *,
-        last_known_state: EnvironmentProviderResourceState | None,
-    ) -> EnvironmentReconciliationResult:
-        self._require_reconciliation_operation(operation, provider_key=_PROVIDER_KEY)
-        try:
-            configuration = await _validated_configuration(self._configuration)
-            await _engine_read(self._runtime.engine.validate_local_topology())
-            if operation.action is EnvironmentManagementAction.CREATE and last_known_state is None:
-                return await self._reconcile_create(configuration, operation)
-            if last_known_state is None:
-                return _unknown_reconciliation(operation, "last_known_state_missing")
-            state_data = _validate_state(
-                last_known_state,
-                configuration=configuration,
-                resource_correlation=operation.resource_correlation,
-            )
-            inspection = await _engine_read(self._runtime.engine.inspect_container(state_data.container_id))
-            allocation = await _store_recover(self._runtime, state_data.bootstrap_correlation)
-            if inspection is None:
-                if allocation is None:
-                    return EnvironmentReconciliationResult(
-                        operation_id=operation.operation_id,
-                        phase=EnvironmentReconciliationPhase.ABSENT,
-                        evidence={"container": "absent", "bootstrap": "absent"},
-                    )
-                return _unknown_reconciliation(operation, "container_absent_bootstrap_present")
-            if allocation is None:
-                return _unknown_reconciliation(operation, "container_present_bootstrap_absent")
-            _validate_bootstrap(allocation, configuration, state_data.configuration_fingerprint)
-            _validate_inspection(
-                inspection,
-                configuration=configuration,
-                image_id=state_data.image_id,
-                labels=_labels_from_state(configuration, state_data),
-                allocation=allocation,
-                require_route=inspection.status == "running",
-            )
-            return _inspection_reconciliation(operation, state_data, inspection)
-        except EnvironmentProviderError as error:
-            if error.certainty is EnvironmentProviderOutcomeCertainty.UNKNOWN:
-                raise
-            return _unknown_reconciliation(operation, error.code)
-        except (DockerEngineError, DockerBootstrapStoreError, OSError, ValueError):
-            return _unknown_reconciliation(operation, "provider_evidence_unavailable")
-
-    async def _reconcile_create(
-        self,
-        configuration: DockerProviderConfiguration,
-        operation: EnvironmentOperationContext,
-    ) -> EnvironmentReconciliationResult:
-        fingerprint = _configuration_fingerprint(configuration)
-        bootstrap_correlation = _bootstrap_correlation(operation.operation_id)
-        labels = _labels(
-            configuration,
-            resource_correlation=operation.resource_correlation,
-            bootstrap_correlation=bootstrap_correlation,
-            configuration_fingerprint=fingerprint,
-            create_operation_id=operation.operation_id,
-        )
-        inspections = await _engine_read(self._runtime.engine.find_containers(labels))
-        allocation = await _store_recover(self._runtime, bootstrap_correlation)
-        if not inspections:
-            if allocation is not None:
-                _validate_bootstrap(allocation, configuration, fingerprint)
-            return EnvironmentReconciliationResult(
-                operation_id=operation.operation_id,
-                phase=EnvironmentReconciliationPhase.ABSENT,
-                evidence={"matching_container_count": 0},
-            )
-        if len(inspections) != 1 or allocation is None:
-            return _unknown_reconciliation(operation, "create_evidence_ambiguous")
-        inspection = inspections[0]
-        _validate_bootstrap(allocation, configuration, fingerprint)
-        _validate_inspection(
-            inspection,
-            configuration=configuration,
-            image_id=inspection.image_id,
-            labels=labels,
-            allocation=allocation,
-            require_route=inspection.status == "running",
-        )
-        state = _build_state(
-            configuration,
-            resource_correlation=operation.resource_correlation,
-            container_id=inspection.container_id,
-            image_id=inspection.image_id,
-            bootstrap_correlation=bootstrap_correlation,
-            create_operation_id=operation.operation_id,
-            phase=DockerResourcePhase.RUNNING if inspection.status == "running" else DockerResourcePhase.PAUSED,
-        )
-        phase = (
-            EnvironmentReconciliationPhase.RUNNING
-            if inspection.status == "running"
-            else EnvironmentReconciliationPhase.PAUSED
-        )
-        if inspection.status not in {"running", "created", "exited"}:
-            return _unknown_reconciliation(operation, "container_state_ambiguous")
-        return EnvironmentReconciliationResult(
-            operation_id=operation.operation_id,
-            phase=phase,
-            state=state,
-            evidence={"matching_container_count": 1, "container_status": inspection.status},
-        )
+                raise _unknown_failure("Docker remove outcome is unknown.") from error
+            remaining = await _engine_call(self._runtime.engine.inspect_container(state.container_id))
+            if remaining is not None:
+                raise _unknown_failure("Docker target absence could not be confirmed.")
+        else:
+            matches = await _engine_call(self._runtime.engine.find_containers(_labels_from_state(configuration, state)))
+            if matches:
+                raise _unknown_failure("Docker target identity is ambiguous during destroy.")
+        await _remove_bootstrap(self._runtime, state.bootstrap_correlation)
 
 
-class DockerEnvironmentResource(EnvironmentResource):
-    def __init__(
-        self,
-        configuration: DockerProviderConfiguration,
-        state: EnvironmentProviderResourceState,
-        *,
-        runtime: DockerProviderRuntime,
-        provider_identity: object,
-    ) -> None:
-        super().__init__()
-        self._configuration = configuration
-        self._state = state
-        self._runtime = runtime
-        self._provider_identity = provider_identity
-        self._attachment_sequence = 0
-        self._active_attachments = 0
-        self._admitting = False
-        self._endpoint: str | None = None
-        self._credential: str | None = None
-        self._lock = asyncio.Lock()
+def _compose_operations(
+    session: EIPSession,
+    *,
+    environment_id: str,
+    mount_id: str,
+    descriptor: EnvironmentDescriptor,
+) -> tuple[EnvironmentOperations, EIPOutputRegistry, _ProcessConversions]:
+    generation = descriptor.generation
+    methods = set(session.descriptor.available_methods)
+    files = EIPFileOperator(
+        session=session,
+        environment_id=environment_id,
+        mount_id=mount_id,
+        generation=generation,
+    )
+    outputs = EIPOutputRegistry(
+        session=session,
+        environment_id=environment_id,
+        mount_id=mount_id,
+        generation=generation,
+    )
+    conversions = _ProcessConversions(
+        session=session,
+        files=files,
+        outputs=outputs,
+        provider_type=_PROVIDER_KEY,
+        environment_id=environment_id,
+        mount_id=mount_id,
+        generation=generation,
+    )
+    return (
+        EnvironmentOperations(
+            files=files if any(method.startswith("file.") for method in methods) else None,
+            shell=EIPShellOperations(conversions) if "shell.exec" in methods else None,
+            processes=EIPProcessOperations(conversions) if "process.start" in methods else None,
+            ports=EIPPortOperations(conversions) if {"port.inspect", "port.wait"} & methods else None,
+            outputs=EIPOutputOperations(outputs) if "output.read" in methods else None,
+        ),
+        outputs,
+        conversions,
+    )
 
-    @property
-    def state(self) -> EnvironmentProviderResourceState:
-        return self._state
 
-    async def _enter_scope(self) -> None:
-        state_data = _validate_state(
-            self._state,
-            configuration=self._configuration,
-            resource_correlation=DockerProviderStateData.model_validate(self._state.data).resource_correlation,
-        )
-        try:
-            inspection, allocation = await _inspect_owned_resource(
-                self._runtime,
-                self._configuration,
-                state_data,
-            )
-            if inspection.status != "running":
-                raise _runtime_failure("Docker Resource container is not running.")
-            if inspection.eip_host_ip != "127.0.0.1" or inspection.eip_host_port is None:
-                raise _runtime_failure("Docker Resource has no authoritative Host-loopback EIP route.")
-            endpoint = f"http://127.0.0.1:{inspection.eip_host_port}"
-            source = _http_source(endpoint, allocation.material.credential)
-            try:
-                async with source.open_session(
-                    expected_environment_id=self._configuration.environment_id,
-                    required_methods=frozenset({"environment.readiness", "session.close"}),
-                ):
-                    pass
-            finally:
-                await source.discard()
-            async with self._lock:
-                self._endpoint = endpoint
-                self._credential = allocation.material.credential
-                self._admitting = True
-        except asyncio.CancelledError:
-            raise
-        except EnvironmentProviderError:
-            raise
-        except Exception as error:
-            raise _runtime_failure("Docker Resource EIP readiness failed.") from error
+def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDescriptor:
+    methods = set(descriptor.available_methods)
+    actions = {action for method in methods for action in _METHOD_ACTIONS.get(method, ())}
+    if "process.inspect" in methods and "output.read" in methods:
+        actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
+    families: set[EnvironmentOperationFamily] = set()
+    if any(method.startswith("file.") for method in methods):
+        families.add("files")
+    if "shell.exec" in methods:
+        families.add("shell")
+    if any(method.startswith("process.") for method in methods):
+        families.add("processes")
+    if any(method.startswith("port.") for method in methods):
+        families.add("ports")
+    if any(method.startswith("output.") for method in methods):
+        families.add("outputs")
+    limits = descriptor.limits
+    return EnvironmentDescriptor(
+        generation=str(descriptor.generation),
+        operation_families=frozenset(families),
+        permissions=EnvironmentPermissionSet(operations=frozenset(actions)),
+        limits={
+            "max_request_bytes": limits.max_request_bytes,
+            "max_response_bytes": limits.max_response_bytes,
+            "max_concurrent_operations": limits.max_concurrent_operations,
+            "max_processes": limits.max_processes,
+            "max_operation_duration_ms": limits.max_operation_duration_ms,
+            "max_output_preview_bytes": limits.max_output_preview_bytes,
+            "max_output_bytes_per_stream": limits.max_output_bytes_per_stream,
+            "max_transfer_frame_bytes": limits.max_transfer_frame_bytes,
+            "max_concurrent_file_transfers": limits.max_concurrent_file_transfers,
+            "max_file_transfer_bytes": limits.max_file_transfer_bytes,
+        },
+        mounts=tuple(
+            EnvironmentMountDescriptor(name=mount.mount_id, path=mount.logical_root, read_only=not mount.writable)
+            for mount in descriptor.mounts
+        ),
+    )
 
-    @asynccontextmanager
-    async def acquire_attachment(self) -> AsyncGenerator[EnvironmentRuntimeAttachment]:
-        self._require_entered()
-        async with self._lock:
-            if self._active_attachments:
-                raise _attachment_conflict("Docker Resource already has an active attachment.")
-            if not self._admitting or self._endpoint is None or self._credential is None:
-                raise _attachment_conflict("Docker Resource attachment admission is closed.")
-            self._attachment_sequence += 1
-            self._active_attachments = 1
-            source = _http_source(self._endpoint, self._credential)
-            attachment = EIPEnvironmentAttachment(
-                attachment_id=f"attachment-{self._attachment_sequence}",
-                environment_id=self._configuration.environment_id,
-                session_source=source,
-            )
-        primary_error: BaseException | None = None
-        try:
-            yield attachment
-        except BaseException as error:
-            primary_error = error
-            raise
-        finally:
-            release_error: BaseException | None = None
-            try:
-                await source.discard()
-            except asyncio.CancelledError as error:
-                release_error = error
-            except BaseException as error:
-                release_error = _runtime_failure("Docker attachment release failed.")
-                release_error.add_note(repr(error))
-            async with self._lock:
-                self._active_attachments = 0
-            if isinstance(release_error, asyncio.CancelledError):
-                if primary_error is not None:
-                    release_error.add_note(f"Docker attachment use also failed: {primary_error!r}")
-                raise release_error
-            if release_error is not None:
-                if isinstance(primary_error, asyncio.CancelledError):
-                    primary_error.add_note(f"Docker attachment release also failed: {release_error!r}")
-                elif primary_error is not None:
-                    raise BaseExceptionGroup(
-                        "Docker attachment use and release failed",
-                        [primary_error, release_error],
-                    ) from None
-                else:
-                    raise release_error
 
-    async def _close_admission_for_pause(self) -> None:
-        async with self._lock:
-            if self._active_attachments:
-                raise _attachment_conflict("Docker cannot pause with an active attachment scope.")
-            self._admitting = False
-            self._credential = None
-            self._endpoint = None
+def _decode_state(
+    state: EnvironmentState | None,
+    configuration: DockerProviderConfiguration,
+) -> DockerProviderStateData | None:
+    if state is None:
+        return None
+    if state.provider_key != _PROVIDER_KEY or state.state_version != _STATE_VERSION:
+        raise _state_failure("Docker state envelope is incompatible.")
+    try:
+        data = DockerProviderStateData.model_validate(state.state)
+    except ValidationError as error:
+        raise _state_failure("Docker state payload is invalid.") from error
+    if (
+        data.environment_id != configuration.environment_id
+        or data.configuration_fingerprint != _configuration_fingerprint(configuration)
+    ):
+        raise _conflict_failure("Docker state is incompatible with the desired configuration.")
+    return data
 
-    async def _exit_scope(self) -> None:
-        async with self._lock:
-            self._admitting = False
-            self._credential = None
-            self._endpoint = None
-            active = self._active_attachments
-        if active:
-            raise EnvironmentProviderError(
-                "Docker EnvironmentResource closed with active attachment scopes.",
-                code="provider_cleanup_failed",
-                category=EnvironmentProviderErrorCategory.CLEANUP,
-                certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-                context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-                details={"active_attachment_count": active},
-            )
+
+async def _canonical_configuration(configuration: DockerProviderConfiguration) -> DockerProviderConfiguration:
+    def canonicalize() -> DockerProviderConfiguration:
+        mounts: list[DockerMountConfiguration] = []
+        for mount in configuration.mounts:
+            source = mount.source
+            if isinstance(source, DockerBindMountSource):
+                try:
+                    path = source.path.resolve(strict=True)
+                except (OSError, ValueError) as error:
+                    raise _state_failure("Docker bind source could not be resolved.") from error
+                if not path.is_dir():
+                    raise _state_failure("Docker bind source must be an existing directory.")
+                source = source.model_copy(update={"path": path})
+            mounts.append(mount.model_copy(update={"source": source}))
+        return configuration.model_copy(update={"mounts": tuple(mounts)})
+
+    return await asyncio.to_thread(canonicalize)
 
 
 async def _resolve_image(
     runtime: DockerProviderRuntime,
     configuration: DockerProviderConfiguration,
 ) -> DockerImageInspection:
-    image: DockerImageInspection | None = None
     try:
+        image: DockerImageInspection | None = None
         if configuration.pull_policy is DockerImagePullPolicy.ALWAYS:
             await runtime.engine.pull_image(configuration.image)
         else:
@@ -690,45 +710,15 @@ async def _resolve_image(
         if image is None:
             image = await runtime.engine.inspect_image(configuration.image)
     except DockerEngineError as error:
-        raise _runtime_failure(str(error)) from error
+        raise _runtime_failure("Docker image resolution failed.") from error
     if image is None:
-        raise EnvironmentProviderError(
-            "Docker image is not available under the selected pull policy.",
-            code="provider_resource_missing",
-            category=EnvironmentProviderErrorCategory.MISSING,
-            certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-            recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-            context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-        )
+        raise _missing_failure("Docker image is unavailable under the selected pull policy.")
     return image
 
 
 def _validate_image(image: DockerImageInspection) -> None:
-    user = image.user.strip().lower()
-    if not user or user in {"0", "root", "0:0", "root:root"}:
-        raise _spec_error("Docker image must declare a fixed non-root user.")
-
-
-async def _validated_configuration(
-    configuration: DockerProviderConfiguration,
-) -> DockerProviderConfiguration:
-    return await asyncio.to_thread(_canonical_configuration, configuration)
-
-
-def _canonical_configuration(configuration: DockerProviderConfiguration) -> DockerProviderConfiguration:
-    mounts: list[DockerMountConfiguration] = []
-    for mount in configuration.mounts:
-        source = mount.source
-        if isinstance(source, DockerBindMountSource):
-            try:
-                path = source.path.resolve(strict=True)
-            except (OSError, ValueError) as error:
-                raise _spec_error("Docker bind source could not be resolved.") from error
-            if not path.is_dir():
-                raise _spec_error("Docker bind source must be an existing directory.")
-            source = source.model_copy(update={"path": path})
-        mounts.append(mount.model_copy(update={"source": source}))
-    return configuration.model_copy(update={"mounts": tuple(mounts)})
+    if not image.user or image.user.strip().lower() in {"0", "root", "0:0", "root:root"}:
+        raise _state_failure("Docker image must declare a fixed non-root user.")
 
 
 def _configuration_fingerprint(configuration: DockerProviderConfiguration) -> str:
@@ -741,9 +731,12 @@ def _configuration_fingerprint(configuration: DockerProviderConfiguration) -> st
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
-def _bootstrap_correlation(create_operation_id: str) -> str:
-    digest = hashlib.sha256(create_operation_id.encode()).hexdigest()
-    return f"bootstrap-{digest[:24]}"
+def _correlation(prefix: str, *values: str) -> str:
+    digest = hashlib.sha256()
+    for value in values:
+        digest.update(value.encode())
+        digest.update(b"\0")
+    return f"{prefix}-{digest.hexdigest()[:24]}"
 
 
 def _new_bootstrap_material(
@@ -761,49 +754,30 @@ def _new_bootstrap_material(
 def _envd_configuration(configuration: DockerProviderConfiguration) -> bytes:
     mounts = []
     for mount in configuration.mounts:
-        operations: list[str] = list(_READ_OPERATIONS)
-        if not mount.read_only:
-            operations.extend(_WRITE_OPERATIONS)
-        if mount.allow_command_execution:
-            operations.extend(("command_cwd", "executable_source"))
         mounts.append(
             {
                 "mount_id": mount.mount_id,
-                "native_root": str(mount.container_path),
+                "logical_root": str(mount.container_path),
+                "physical_root": str(mount.container_path),
                 "writable": not mount.read_only,
                 "allow_command_execution": mount.allow_command_execution,
-                "max_file_bytes": configuration.max_file_bytes,
-                "allowed_operations": operations,
             }
         )
-    shell_profiles = []
-    for profile in configuration.shell_profiles:
-        search_roots = tuple(dict.fromkeys((*configuration.trusted_executable_roots, profile.executable.parent)))
-        shell_profiles.append(
-            {
-                "profile_id": profile.profile_id,
-                "display_name": profile.profile_id,
-                "native_executable": str(profile.executable),
-                "fixed_arguments": list(profile.fixed_arguments),
-                "safe_base_environment": {},
-                "executable_search_roots": [str(path) for path in search_roots],
-                "max_script_bytes": profile.max_script_bytes,
-                "allow_login_mode": profile.allow_login,
-            }
-        )
-    payload = {
+    value = {
+        "schema_version": "1",
+        "environment_id": configuration.environment_id,
+        "mounts": mounts,
         "root_mount_id": configuration.root_mount_id,
+        "trusted_executable_roots": [str(path) for path in configuration.trusted_executable_roots],
+        "shell_profiles": [profile.model_dump(mode="json") for profile in configuration.shell_profiles],
         "limits": {
+            "max_file_bytes": configuration.max_file_bytes,
             "max_output_preview_bytes": configuration.max_output_preview_bytes,
             "max_output_bytes_per_stream": configuration.max_output_bytes_per_stream,
             "max_spool_bytes": configuration.max_spool_bytes,
         },
-        "mounts": mounts,
-        "trusted_executable_roots": [str(path) for path in configuration.trusted_executable_roots],
-        "shell_profiles": shell_profiles,
-        "execution": {"isolation": "disabled", "network": "host", "extra_read_only_paths": []},
     }
-    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
 
 
 def _configured_engine_mounts(configuration: DockerProviderConfiguration) -> tuple[DockerEngineMount, ...]:
@@ -856,19 +830,17 @@ def _container_spec(
 def _labels(
     configuration: DockerProviderConfiguration,
     *,
-    resource_correlation: str,
     bootstrap_correlation: str,
     configuration_fingerprint: str,
-    create_operation_id: str,
+    create_correlation: str,
 ) -> dict[str, str]:
     return {
         _LABEL_PROVIDER: _PROVIDER_KEY,
         _LABEL_STATE: _STATE_VERSION,
         _LABEL_ENVIRONMENT: configuration.environment_id,
-        _LABEL_RESOURCE: resource_correlation,
         _LABEL_BOOTSTRAP: bootstrap_correlation,
         _LABEL_FINGERPRINT: configuration_fingerprint,
-        _LABEL_CREATE_OPERATION: create_operation_id,
+        _LABEL_CREATE: create_correlation,
     }
 
 
@@ -878,71 +850,29 @@ def _labels_from_state(
 ) -> dict[str, str]:
     return _labels(
         configuration,
-        resource_correlation=state.resource_correlation,
         bootstrap_correlation=state.bootstrap_correlation,
         configuration_fingerprint=state.configuration_fingerprint,
-        create_operation_id=state.create_operation_id,
+        create_correlation=state.create_correlation,
     )
 
 
-def _build_state(
+def _state_data(
     configuration: DockerProviderConfiguration,
     *,
-    resource_correlation: str,
     container_id: str,
     image_id: str,
     bootstrap_correlation: str,
-    create_operation_id: str,
-    phase: DockerResourcePhase,
-) -> EnvironmentProviderResourceState:
-    data = DockerProviderStateData(
+    configuration_fingerprint: str,
+    create_correlation: str,
+) -> DockerProviderStateData:
+    return DockerProviderStateData(
         environment_id=configuration.environment_id,
-        resource_correlation=resource_correlation,
         container_id=container_id,
         image_id=image_id,
         bootstrap_correlation=bootstrap_correlation,
-        configuration_fingerprint=_configuration_fingerprint(configuration),
-        create_operation_id=create_operation_id,
-        phase=phase,
+        configuration_fingerprint=configuration_fingerprint,
+        create_correlation=create_correlation,
     )
-    return EnvironmentProviderResourceState(
-        provider_key=_PROVIDER_KEY,
-        state_version=_STATE_VERSION,
-        data=data.model_dump(mode="json"),
-    )
-
-
-def _state_with_phase(
-    data: DockerProviderStateData,
-    phase: DockerResourcePhase,
-) -> EnvironmentProviderResourceState:
-    updated = data.model_copy(update={"phase": phase})
-    return EnvironmentProviderResourceState(
-        provider_key=_PROVIDER_KEY,
-        state_version=_STATE_VERSION,
-        data=updated.model_dump(mode="json"),
-    )
-
-
-def _validate_state(
-    state: EnvironmentProviderResourceState,
-    *,
-    configuration: DockerProviderConfiguration,
-    resource_correlation: str,
-) -> DockerProviderStateData:
-    if state.provider_key != _PROVIDER_KEY or state.state_version != _STATE_VERSION:
-        raise _state_error("Docker state envelope is incompatible.")
-    try:
-        data = DockerProviderStateData.model_validate(state.data)
-    except ValidationError as error:
-        raise _state_error("Docker state data is invalid.") from error
-    if (
-        data.environment_id != configuration.environment_id
-        or data.resource_correlation != resource_correlation
-        or data.configuration_fingerprint != _configuration_fingerprint(configuration)
-    ):
-        raise _state_error("Docker state does not match this configuration and resource.")
-    return data
 
 
 def _validate_bootstrap(
@@ -957,7 +887,7 @@ def _validate_bootstrap(
         or material.envd_configuration != _envd_configuration(configuration)
         or not material.credential
     ):
-        raise _state_error("Docker bootstrap allocation does not match this resource.")
+        raise _conflict_failure("Docker bootstrap allocation is incompatible.")
 
 
 def _validate_inspection(
@@ -971,85 +901,39 @@ def _validate_inspection(
 ) -> None:
     provider_labels = {key: value for key, value in inspection.labels.items() if key.startswith("io.a13n.")}
     if inspection.image_id != image_id or provider_labels != dict(labels):
-        raise _state_error("Docker container identity or labels do not match this resource.")
+        raise _conflict_failure("Docker container identity or labels are incompatible.")
     if inspection.command != _COMMAND:
-        raise _state_error("Docker container command does not match the fixed envd command.")
+        raise _conflict_failure("Docker container command is incompatible.")
     if not inspection.user or inspection.user.strip().lower() in {"0", "root", "0:0", "root:root"}:
-        raise _state_error("Docker container is not running under a fixed non-root user.")
+        raise _conflict_failure("Docker container user is incompatible.")
     required_environment = dict(_REQUIRED_ENVIRONMENT)
     required_environment["AGENT_ENVD_ENVIRONMENT_ID"] = configuration.environment_id
     if any(inspection.environment.get(name) != value for name, value in required_environment.items()):
-        raise _state_error("Docker container envd environment does not match this resource.")
+        raise _conflict_failure("Docker container environment is incompatible.")
     expected_mounts = {
         (mount.type, mount.source, mount.target, mount.read_only) for mount in _configured_engine_mounts(configuration)
     }
     expected_mounts.add(("bind", str(allocation.directory), _BOOTSTRAP_CONTAINER_PATH, True))
     actual_mounts = {(mount.type, mount.source, mount.target, mount.read_only) for mount in inspection.mounts}
     if actual_mounts != expected_mounts:
-        raise _state_error("Docker container mounts do not match this resource.")
+        raise _conflict_failure("Docker container mounts are incompatible.")
     if (
         inspection.nano_cpus != configuration.nano_cpus
         or inspection.memory_bytes != configuration.memory_bytes
         or inspection.pids_limit != configuration.pids_limit
     ):
-        raise _state_error("Docker container resource limits do not match this configuration.")
+        raise _conflict_failure("Docker container limits are incompatible.")
     if not inspection.eip_binding_exact or inspection.eip_host_ip != "127.0.0.1":
-        raise _state_error("Docker container EIP port publication is not exactly Host-loopback-only.")
+        raise _conflict_failure("Docker EIP publication is not exactly Host-loopback-only.")
     if require_route and (not inspection.eip_route_exact or inspection.eip_host_port is None):
-        raise _state_error("Docker container has no exact active Host-loopback EIP route.")
+        raise _conflict_failure("Docker container has no exact active EIP route.")
 
 
-async def _inspect_owned_resource(
-    runtime: DockerProviderRuntime,
-    configuration: DockerProviderConfiguration,
-    state: DockerProviderStateData,
-    *,
-    operation: EnvironmentOperationContext | None = None,
-) -> tuple[DockerContainerInspection, DockerBootstrapAllocation]:
-    inspection = await _engine_read(runtime.engine.inspect_container(state.container_id))
-    if inspection is None:
-        raise _missing_error("Docker container does not exist.", operation)
-    allocation = await _store_recover(runtime, state.bootstrap_correlation)
-    if allocation is None:
-        raise _missing_error("Docker bootstrap allocation does not exist.", operation)
-    _validate_bootstrap(allocation, configuration, state.configuration_fingerprint)
-    _validate_inspection(
-        inspection,
-        configuration=configuration,
-        image_id=state.image_id,
-        labels=_labels_from_state(configuration, state),
-        allocation=allocation,
-        require_route=True,
-    )
-    return inspection, allocation
-
-
-def _inspection_reconciliation(
-    operation: EnvironmentOperationContext,
-    state: DockerProviderStateData,
-    inspection: DockerContainerInspection,
-) -> EnvironmentReconciliationResult:
-    if inspection.status == "running":
-        phase = EnvironmentReconciliationPhase.RUNNING
-        resource_phase = DockerResourcePhase.RUNNING
-    elif inspection.status in {"created", "exited"}:
-        phase = EnvironmentReconciliationPhase.PAUSED
-        resource_phase = DockerResourcePhase.PAUSED
-    else:
-        return _unknown_reconciliation(operation, "container_state_ambiguous")
-    return EnvironmentReconciliationResult(
-        operation_id=operation.operation_id,
-        phase=phase,
-        state=_state_with_phase(state, resource_phase),
-        evidence={"container_status": inspection.status, "bootstrap": "present"},
-    )
-
-
-async def _engine_read(awaitable):
+async def _engine_call(awaitable: Any) -> Any:
     try:
         return await awaitable
     except DockerEngineError as error:
-        raise _runtime_failure(str(error)) from error
+        raise _runtime_failure("Docker Engine evidence is unavailable.") from error
 
 
 async def _store_create(
@@ -1070,7 +954,7 @@ async def _store_recover(
     try:
         return await runtime.bootstrap_store.recover(correlation)
     except DockerBootstrapStoreError as error:
-        raise _runtime_failure("Docker bootstrap recovery failed.") from error
+        raise _runtime_failure("Docker bootstrap evidence is unavailable.") from error
 
 
 async def _store_replace(
@@ -1081,157 +965,90 @@ async def _store_replace(
     try:
         return await runtime.bootstrap_store.replace(correlation, material)
     except DockerBootstrapStoreError as error:
-        raise _runtime_failure("Docker bootstrap replacement failed.") from error
+        raise _runtime_failure("Docker bootstrap credential replacement failed.") from error
 
 
-async def _cleanup_cancelled_create(
-    runtime: DockerProviderRuntime,
-    correlation: str,
-    *,
-    material: DockerBootstrapMaterial | None,
-    cancellation: asyncio.CancelledError,
-) -> None:
-    async def cleanup() -> None:
-        allocation = await _store_recover(runtime, correlation)
-        if allocation is not None and (material is None or allocation.material.digest == material.digest):
-            await _remove_failed_bootstrap(runtime, correlation)
-
-    cleanup_task = asyncio.create_task(cleanup(), name="docker-cancelled-create-cleanup")
-    while True:
-        try:
-            await asyncio.shield(cleanup_task)
-        except asyncio.CancelledError as error:
-            if cleanup_task.cancelled():
-                cancellation.add_note(f"Docker cancelled-create cleanup was cancelled: {error!r}")
-                return
-            continue
-        except BaseException as error:
-            cancellation.add_note(f"Docker cancelled-create cleanup also failed: {error!r}")
-        return
-
-
-async def _remove_failed_bootstrap(runtime: DockerProviderRuntime, correlation: str) -> None:
+async def _remove_bootstrap(runtime: DockerProviderRuntime, correlation: str) -> None:
     try:
         await runtime.bootstrap_store.remove(correlation)
-    except asyncio.CancelledError:
-        raise
-    except Exception as error:
-        failure = EnvironmentProviderError(
-            "Docker create failed before dispatch and bootstrap cleanup also failed.",
-            code="provider_cleanup_failed",
-            category=EnvironmentProviderErrorCategory.CLEANUP,
-            certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-            context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-        )
-        failure.add_note(repr(error))
-        raise failure from error
+    except DockerBootstrapStoreError as error:
+        raise _cleanup_failure("Docker bootstrap cleanup failed.") from error
 
 
-def _http_source(endpoint: str, credential: str) -> HttpEIPSessionSource:
-    return HttpEIPSessionSource(
-        endpoint,
-        credential,
-        initialization_timeout=10.0,
-        request_timeout=30.0,
-        allow_plaintext_private_link=True,
-    )
-
-
-def _require_configuration(configuration: BaseModel) -> DockerProviderConfiguration:
-    if not isinstance(configuration, DockerProviderConfiguration):
-        raise _spec_error("Docker requires DockerProviderConfiguration.")
-    return configuration
-
-
-def _operation_context(operation: EnvironmentOperationContext) -> EnvironmentProviderErrorContext:
-    return EnvironmentProviderErrorContext(
-        provider_key=_PROVIDER_KEY,
-        action=operation.action,
-        operation_id=operation.operation_id,
-        resource_correlation=operation.resource_correlation,
-    )
-
-
-def _state_error(
+def _provider_error(
     description: str,
-    operation: EnvironmentOperationContext | None = None,
+    *,
+    code: str,
+    category: EnvironmentProviderErrorCategory,
+    schema_version: str | None = None,
+    certainty: EnvironmentProviderOutcomeCertainty = EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
+    recovery_hint: EnvironmentProviderRecoveryHint = EnvironmentProviderRecoveryHint.FIX_INPUT,
 ) -> EnvironmentProviderError:
     return EnvironmentProviderError(
         description,
-        code="provider_state_invalid",
-        category=EnvironmentProviderErrorCategory.INVALID,
-        certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-        recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-        context=_operation_context(operation)
-        if operation is not None
-        else EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
+        code=code,
+        category=category,
+        certainty=certainty,
+        recovery_hint=recovery_hint,
+        context=EnvironmentProviderErrorContext(
+            provider_key=_PROVIDER_KEY,
+            schema_version=schema_version,
+            state_version=_STATE_VERSION if schema_version is None else None,
+        ),
     )
 
 
-def _spec_error(description: str) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
+def _state_failure(description: str) -> EnvironmentProviderError:
+    return _provider_error(
         description,
-        code="provider_spec_invalid",
+        code="provider_state_invalid",
         category=EnvironmentProviderErrorCategory.INVALID,
-        certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-        recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-        context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY, schema_version=_STATE_VERSION),
+    )
+
+
+def _conflict_failure(description: str) -> EnvironmentProviderError:
+    return _provider_error(
+        description,
+        code="provider_state_conflict",
+        category=EnvironmentProviderErrorCategory.CONFLICT,
+    )
+
+
+def _missing_failure(description: str) -> EnvironmentProviderError:
+    return _provider_error(
+        description,
+        code="provider_target_missing",
+        category=EnvironmentProviderErrorCategory.MISSING,
+        certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
+        recovery_hint=EnvironmentProviderRecoveryHint.NONE,
     )
 
 
 def _runtime_failure(description: str) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
+    return _provider_error(
         description,
         code="provider_unavailable",
         category=EnvironmentProviderErrorCategory.UNAVAILABLE,
         certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
         recovery_hint=EnvironmentProviderRecoveryHint.REFRESH_RUNTIME,
-        context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
     )
 
 
-def _missing_error(
-    description: str,
-    operation: EnvironmentOperationContext | None,
-) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
-        description,
-        code="provider_resource_missing",
-        category=EnvironmentProviderErrorCategory.MISSING,
-        certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
-        context=_operation_context(operation)
-        if operation is not None
-        else EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-    )
-
-
-def _attachment_conflict(description: str) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
-        description,
-        code="provider_attachment_conflict",
-        category=EnvironmentProviderErrorCategory.CONFLICT,
-        certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
-        context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
-    )
-
-
-def _unknown_error(operation: EnvironmentOperationContext, description: str) -> EnvironmentProviderError:
-    return EnvironmentProviderError(
+def _unknown_failure(description: str) -> EnvironmentProviderError:
+    return _provider_error(
         description,
         code="provider_unknown_outcome",
         category=EnvironmentProviderErrorCategory.UNKNOWN_OUTCOME,
         certainty=EnvironmentProviderOutcomeCertainty.UNKNOWN,
         recovery_hint=EnvironmentProviderRecoveryHint.RECONCILE,
-        context=_operation_context(operation),
     )
 
 
-def _unknown_reconciliation(
-    operation: EnvironmentOperationContext,
-    reason: str,
-) -> EnvironmentReconciliationResult:
-    return EnvironmentReconciliationResult(
-        operation_id=operation.operation_id,
-        phase=EnvironmentReconciliationPhase.UNKNOWN,
-        evidence={"reason": reason},
+def _cleanup_failure(description: str) -> EnvironmentProviderError:
+    return _provider_error(
+        description,
+        code="provider_cleanup_failed",
+        category=EnvironmentProviderErrorCategory.CLEANUP,
+        certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
+        recovery_hint=EnvironmentProviderRecoveryHint.RETRY_SAME_OPERATION,
     )

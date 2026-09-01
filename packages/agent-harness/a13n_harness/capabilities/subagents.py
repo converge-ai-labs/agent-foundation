@@ -1,66 +1,38 @@
-"""Definition-selected inline and asynchronous subagent execution."""
+"""Harness-owned inline delegation and Host-owned asynchronous subagent boundary."""
 
 from __future__ import annotations
 
-import asyncio
-import inspect
-import json
 import re
-import secrets
-import weakref
-from collections import OrderedDict, deque
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
+from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import ToolFailed
-from pydantic_ai.messages import (
-    FunctionToolCallEvent,
-    FunctionToolResultEvent,
-    PartDeltaEvent,
-    PartStartEvent,
-    RetryPromptPart,
-    TextPart,
-    TextPartDelta,
-    ToolCallPart,
-    ToolReturnPart,
-)
 from pydantic_ai.toolsets import AbstractToolset
-from pydantic_ai.usage import RunUsage, UsageLimits
+from pydantic_ai.usage import UsageLimits
 
-from a13n_harness._json import redact_bearer, redact_json
-from a13n_harness.context import AgentContext, BuiltSubagent, RunBindings
+from a13n_harness.context import AgentContext, BuiltSubagent
 from a13n_harness.errors import DefinitionError, StateError
-from a13n_harness.events import HarnessEvent, HarnessRunResultEvent
+from a13n_harness.identity import AgentIdentityRef
 from a13n_harness.input import RunInputValue
 from a13n_harness.state import HarnessState
+
+if TYPE_CHECKING:
+    from a13n_harness.execution import DelegationContextPolicy
 
 SUBAGENT_CAPABILITY_ID = "a13n.subagents"
 _INLINE_SUBAGENT_STATE_VERSION = "1"
 _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-9a-f]{4})$")
-_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
-_MAX_FAILURE_BYTES = 1024 * 1024
-_MAX_ACTIVITY_OUTPUT_BYTES = 32 * 1024
-_MAX_ACTIVITY_VALUE_BYTES = 32 * 1024
-_MAX_RECENT_TOOL_CALLS = 20
-_JSON_ADAPTER = TypeAdapter(JsonValue)
+_MAX_PROMPT_LENGTH = 1024 * 1024
+_MAX_EXECUTION_PAGE = 100
 
-type SubagentExecutionMode = Literal["inline", "async"]
-type SubagentStatus = Literal["running", "succeeded", "failed", "cancelled"]
+type SubagentStatus = Literal["running", "succeeded", "failed", "cancelled", "lost"]
 type SubagentToolCallStatus = Literal["running", "success", "failed", "denied", "interrupted"]
-type SubagentEventKind = Literal["started", "completion", "gap"]
-type _OpenChild = Callable[
-    [AgentContext, BuiltSubagent, RunInputValue, str, bool, UsageLimits | None],
-    AbstractAsyncContextManager[RunBindings],
-]
-type SubagentBackendEventHook = Callable[[SubagentExecutionSnapshot], Awaitable[None]]
-type SubagentEventHook = Callable[[SubagentEvent], Awaitable[None]]
 
 
 class InlineSubagentState(BaseModel):
@@ -81,8 +53,8 @@ class InlineSubagentState(BaseModel):
         return self
 
 
-class InlineSubagentManagerState(BaseModel):
-    """Capability-owned map of stable inline child references to nested Harness State."""
+class InlineSubagentCollectionState(BaseModel):
+    """Capability-owned inline child continuations stored in parent Agent state."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
@@ -96,22 +68,8 @@ class InlineSubagentManagerState(BaseModel):
         return value
 
 
-class SubagentExecutionSnapshot(BaseModel):
-    """Detached current projection returned by an asynchronous operator."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
-
-    backend_id: str = Field(min_length=1, max_length=512)
-    status: SubagentStatus
-    output: JsonValue | None = None
-    failure: JsonValue | None = None
-    resumable: bool = False
-    thread_id: str | None = Field(default=None, min_length=1, max_length=256)
-    usage: RunUsage = Field(default_factory=RunUsage)
-
-
 class SubagentToolCallSnapshot(BaseModel):
-    """Bounded current or recent Tool activity owned by one live backend execution."""
+    """Bounded Host projection of one current or recent child Tool call."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
@@ -123,684 +81,270 @@ class SubagentToolCallSnapshot(BaseModel):
 
 
 class SubagentActivitySnapshot(BaseModel):
-    """Bounded, process-local view of one execution's recent model and Tool activity."""
+    """Bounded Host projection of recent child output and Tool activity."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
     sequence: int = Field(ge=0)
-    output_preview: str = ""
+    output_preview: str = Field(default="", max_length=32 * 1024)
     output_truncated: bool = False
-    active_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=_MAX_RECENT_TOOL_CALLS)
-    recent_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=_MAX_RECENT_TOOL_CALLS)
+    active_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=20)
+    recent_tool_calls: tuple[SubagentToolCallSnapshot, ...] = Field(default=(), max_length=20)
     dropped_tool_calls: int = Field(default=0, ge=0)
 
 
-@dataclass(frozen=True, slots=True)
-class SubagentEvent:
-    """Correlated non-authoritative observation delivered to stable Host hooks."""
+class AsyncDelegateRequest(BaseModel):
+    """Validated async child admission request passed to the Host operator."""
 
-    kind: SubagentEventKind
-    thread_id: str
-    run_id: str
-    agent_instance_id: str
-    host_refs: Mapping[str, str]
-    subagent_id: str
-    subagent_name: str
-    child_thread_id: str | None
-    backend_id: str
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    subagent_name: str = Field(min_length=1, max_length=63)
+    prompt: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
+
+
+class AsyncResumeRequest(BaseModel):
+    """Validated linked-continuation request passed to the Host operator."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    execution_id: str = Field(min_length=1, max_length=256)
+    prompt: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
+
+
+class SubagentInfoRequest(BaseModel):
+    """Validated async execution inspection request."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    execution_id: str | None = Field(default=None, min_length=1, max_length=256)
+    execution_offset: int = Field(default=0, ge=0)
+    execution_limit: int = Field(default=20, ge=1, le=_MAX_EXECUTION_PAGE)
+
+
+class SubagentWaitRequest(BaseModel):
+    """Validated bounded wait or fan-in request."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    execution_id: str | None = Field(default=None, min_length=1, max_length=256)
+    timeout_seconds: float | None = Field(default=None, gt=0)
+    execution_offset: int = Field(default=0, ge=0)
+    execution_limit: int = Field(default=20, ge=1, le=_MAX_EXECUTION_PAGE)
+
+
+class SubagentSteerRequest(BaseModel):
+    """Validated steering request for one active Host execution."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    execution_id: str = Field(min_length=1, max_length=256)
+    message: str = Field(min_length=1, max_length=_MAX_PROMPT_LENGTH)
+
+
+class SubagentCancelRequest(BaseModel):
+    """Validated cancellation request for one Host execution."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    execution_id: str = Field(min_length=1, max_length=256)
+
+
+class AsyncExecutionView(BaseModel):
+    """Compact accepted execution projection returned by delegate or resume."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
+
+    execution_id: str = Field(min_length=1, max_length=256)
+    subagent_name: str = Field(min_length=1, max_length=63)
+    child_definition_id: str = Field(min_length=1, max_length=256)
     status: SubagentStatus
-    usage: RunUsage
+    resumed_from: str | None = Field(default=None, min_length=1, max_length=256)
+    failure: JsonValue | None = None
+    resumable: bool = False
+    thread_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
-class SubagentOperator:
-    """Process-local execution boundary used by the standard subagent Toolsets."""
+class SubagentExecutionView(AsyncExecutionView):
+    """Bounded current execution view returned by info or wait."""
 
-    @property
-    def usage_limits(self) -> UsageLimits | None:
-        """Return optional operator narrowing applied below authored limits."""
-        return None
-
-    def open_child(
-        self,
-        context: AgentContext,
-        child: BuiltSubagent,
-        input: RunInputValue,
-        child_instance_id: str,
-        continuation: bool,
-        usage_limits: UsageLimits | None,
-    ) -> AbstractAsyncContextManager[RunBindings]:
-        """Open one fresh child authority scope for inline or asynchronous execution."""
-        del context, child, input, child_instance_id, continuation, usage_limits
-        raise DefinitionError(
-            "The configured subagent operator cannot create child bindings.",
-            code="subagent_operator_unavailable",
-        )
-
-    async def start(
-        self,
-        context: AgentContext,
-        child: BuiltSubagent,
-        input: RunInputValue,
-        subagent_id: str,
-        resume_from: str | None,
-        usage_limits: UsageLimits | None,
-        observer: SubagentBackendEventHook,
-    ) -> SubagentExecutionSnapshot:
-        del context, child, input, subagent_id, resume_from, usage_limits, observer
-        raise ToolFailed("Asynchronous subagent execution is unavailable.")
-
-    async def attach(
-        self,
-        context: AgentContext,
-        backend_id: str,
-        observer: SubagentBackendEventHook,
-    ) -> SubagentExecutionSnapshot | None:
-        """Attach the current parent Run observer and return the latest snapshot."""
-        del context, backend_id, observer
-        return None
-
-    async def snapshot(self, context: AgentContext, backend_id: str) -> SubagentExecutionSnapshot | None:
-        """Return one detached current snapshot without changing observation."""
-        del context, backend_id
-        return None
-
-    async def activity(self, context: AgentContext, backend_id: str) -> SubagentActivitySnapshot | None:
-        """Return bounded process-local activity when supported by the backend."""
-        del context, backend_id
-        return None
-
-    async def wait(
-        self,
-        context: AgentContext,
-        backend_id: str,
-        timeout_seconds: float | None,
-    ) -> SubagentExecutionSnapshot | None:
-        del context, backend_id, timeout_seconds
-        return None
-
-    async def steer(self, context: AgentContext, backend_id: str, message: str) -> str | None:
-        del context, backend_id, message
-        return None
-
-    async def cancel(self, context: AgentContext, backend_id: str) -> bool:
-        del context, backend_id
-        return False
-
-    async def force_close(self) -> None:
-        """Reject admission, force-cancel owned work, and finish only its cleanup."""
+    input: str | None = Field(default=None, max_length=_MAX_PROMPT_LENGTH)
+    output: JsonValue | None = None
+    activity: SubagentActivitySnapshot | None = None
 
 
-@dataclass(slots=True)
-class _CanonicalSubagent:
-    backend_id: str
-    subagent_id: str
-    subagent_name: str
-    child_definition_id: str
+class SubagentInfoResult(BaseModel):
+    """One bounded page of current Host execution projections."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
+
+    executions: tuple[SubagentExecutionView, ...] = Field(default=(), max_length=_MAX_EXECUTION_PAGE)
+    execution_offset: int = Field(default=0, ge=0)
+    total: int = Field(ge=0)
+    next_offset: int | None = Field(default=None, ge=0)
+
+
+class SubagentWaitResult(BaseModel):
+    """One bounded wait result or fan-in page from the Host operator."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
+
+    executions: tuple[SubagentExecutionView, ...] = Field(default=(), max_length=_MAX_EXECUTION_PAGE)
+    execution_offset: int = Field(default=0, ge=0)
+    total: int = Field(ge=0)
+    next_offset: int | None = Field(default=None, ge=0)
+
+
+class SubagentSteerResult(BaseModel):
+    """Host acknowledgement for one steering request."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    execution_id: str = Field(min_length=1, max_length=256)
+    accepted: bool
+    enqueue_id: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+class SubagentCancelResult(BaseModel):
+    """Host acknowledgement for one cancellation request."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    execution_id: str = Field(min_length=1, max_length=256)
+    accepted: bool
+    status: SubagentStatus | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SubagentOperatorContext:
+    """Detached parent correlation supplied to each Host operator use case."""
+
     parent_thread_id: str
     parent_run_id: str
     parent_agent_instance_id: str
-    parent_host_refs: Mapping[str, str]
-    status: SubagentStatus = "running"
-    output: JsonValue | None = None
-    failure: JsonValue | None = None
-    cleanup_failure: str | None = None
-    state: HarnessState | None = None
-    thread_id: str | None = None
-    usage: RunUsage = field(default_factory=RunUsage)
-    stream: Any | None = None
-    task: asyncio.Task[None] | None = None
-    done: asyncio.Event = field(default_factory=asyncio.Event)
-    observer: _WeakObserver | None = None
-    delivery_tasks: set[asyncio.Task[None]] = field(default_factory=set)
-    notifications_enabled: bool = True
-    activity_sequence: int = 0
-    output_preview: str = ""
-    output_truncated: bool = False
-    active_tool_calls: OrderedDict[str, SubagentToolCallSnapshot] = field(default_factory=OrderedDict)
-    recent_tool_calls: deque[SubagentToolCallSnapshot] = field(default_factory=deque)
-    dropped_tool_calls: int = 0
+    host_refs: Mapping[str, str]
 
-    def snapshot(self) -> SubagentExecutionSnapshot:
-        return SubagentExecutionSnapshot(
-            backend_id=self.backend_id,
-            status=self.status,
-            output=deepcopy(self.output),
-            failure=deepcopy(self.failure),
-            resumable=self.state is not None,
-            thread_id=self.thread_id,
-            usage=deepcopy(self.usage),
-        )
-
-    def activity_snapshot(self) -> SubagentActivitySnapshot:
-        return SubagentActivitySnapshot(
-            sequence=self.activity_sequence,
-            output_preview=redact_bearer(self.output_preview),
-            output_truncated=self.output_truncated,
-            active_tool_calls=tuple(item.model_copy(deep=True) for item in self.active_tool_calls.values()),
-            recent_tool_calls=tuple(item.model_copy(deep=True) for item in self.recent_tool_calls),
-            dropped_tool_calls=self.dropped_tool_calls,
-        )
+    def __post_init__(self) -> None:
+        values = (self.parent_thread_id, self.parent_run_id, self.parent_agent_instance_id)
+        if any(not isinstance(value, str) or not value.strip() for value in values):
+            raise ValueError("subagent operator parent correlation must be non-blank")
+        object.__setattr__(self, "host_refs", MappingProxyType(dict(self.host_refs)))
 
 
-class _WeakObserver:
-    """Weak, replaceable reference that cannot retain a completed parent Run."""
+@dataclass(frozen=True, slots=True)
+class ResolvedDelegationContext:
+    """Detached child input produced after applying one authored context policy."""
 
-    def __init__(self, callback: SubagentBackendEventHook) -> None:
-        if inspect.ismethod(callback):
-            self._reference: weakref.ReferenceType[Any] = weakref.WeakMethod(callback)
-        else:
-            try:
-                self._reference = weakref.ref(callback)
-            except TypeError as exc:
-                raise TypeError("subagent observer must support weak references") from exc
+    input: RunInputValue
+    policy: DelegationContextPolicy
 
-    def get(self) -> SubagentBackendEventHook | None:
-        return cast(SubagentBackendEventHook | None, self._reference())
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "input", deepcopy(self.input))
+        object.__setattr__(self, "policy", deepcopy(self.policy))
 
 
-class SubagentBindingOperator(SubagentOperator):
-    """Bind inline child Runs without providing asynchronous execution ownership."""
+@dataclass(frozen=True, slots=True)
+class SubagentDelegationPlan:
+    """Immutable Harness-resolved child authority ceiling for one Host admission."""
 
-    def __init__(self, open_child: _OpenChild) -> None:
-        if not callable(open_child):
-            raise TypeError("open_child must be callable")
-        self._open_child = open_child
+    child: BuiltSubagent
+    child_identity: AgentIdentityRef
+    context: ResolvedDelegationContext
+    usage_limits: UsageLimits | None
+    parent: SubagentOperatorContext
 
-    def open_child(
+    def __post_init__(self) -> None:
+        if not isinstance(self.child, BuiltSubagent):
+            raise TypeError("child must be a BuiltSubagent")
+        if not isinstance(self.child_identity, AgentIdentityRef):
+            raise TypeError("child_identity must be an AgentIdentityRef")
+        if not isinstance(self.context, ResolvedDelegationContext):
+            raise TypeError("context must be a ResolvedDelegationContext")
+        if self.usage_limits is not None and not isinstance(self.usage_limits, UsageLimits):
+            raise TypeError("usage_limits must be UsageLimits or None")
+        if not isinstance(self.parent, SubagentOperatorContext):
+            raise TypeError("parent must be a SubagentOperatorContext")
+        object.__setattr__(self, "usage_limits", deepcopy(self.usage_limits))
+
+
+class SubagentOperator(ABC):
+    """Host-owned complete asynchronous subagent use-case boundary."""
+
+    @abstractmethod
+    async def delegate(
         self,
-        context: AgentContext,
-        child: BuiltSubagent,
-        input: RunInputValue,
-        child_instance_id: str,
-        continuation: bool,
-        usage_limits: UsageLimits | None,
-    ) -> AbstractAsyncContextManager[RunBindings]:
-        manager = self._open_child(
-            context,
-            child,
-            input,
-            child_instance_id,
-            continuation,
-            deepcopy(usage_limits),
-        )
-        if not isinstance(manager, AbstractAsyncContextManager):
-            raise TypeError("open_child must return an async context manager")
-        return manager
+        plan: SubagentDelegationPlan,
+        request: AsyncDelegateRequest,
+    ) -> AsyncExecutionView: ...
 
-
-class SubagentManager(SubagentOperator):
-    """Default in-memory operator owning child tasks until generation shutdown."""
-
-    def __init__(
+    @abstractmethod
+    async def info(
         self,
-        open_child: _OpenChild,
-        *,
-        usage_limits: UsageLimits | None = None,
-        event_hooks: Sequence[SubagentEventHook] = (),
-    ) -> None:
-        if not callable(open_child):
-            raise TypeError("open_child must be callable")
-        hooks = tuple(event_hooks)
-        if not all(callable(hook) for hook in hooks):
-            raise TypeError("event_hooks must contain callables")
-        self._open_child = open_child
-        self._usage_limits = deepcopy(usage_limits)
-        self._event_hooks = hooks
-        self._records: dict[str, _CanonicalSubagent] = {}
-        self._child_authority_ids: set[str] = set()
-        self._delivery_tasks: set[asyncio.Task[None]] = set()
-        self._lock = asyncio.Lock()
-        self._force_close_task: asyncio.Task[None] | None = None
-        self._closed = False
+        context: SubagentOperatorContext,
+        request: SubagentInfoRequest,
+    ) -> SubagentInfoResult: ...
 
-    @property
-    def usage_limits(self) -> UsageLimits | None:
-        return deepcopy(self._usage_limits)
-
-    def open_child(
-        self,
-        context: AgentContext,
-        child: BuiltSubagent,
-        input: RunInputValue,
-        child_instance_id: str,
-        continuation: bool,
-        usage_limits: UsageLimits | None,
-    ) -> AbstractAsyncContextManager[RunBindings]:
-        if self._closed:
-            raise DefinitionError("The subagent manager is closed.", code="subagent_operator_unavailable")
-        manager = self._open_child(
-            context,
-            child,
-            input,
-            child_instance_id,
-            continuation,
-            deepcopy(usage_limits),
-        )
-        if not isinstance(manager, AbstractAsyncContextManager):
-            raise TypeError("open_child must return an async context manager")
-        return manager
-
-    async def start(
-        self,
-        context: AgentContext,
-        child: BuiltSubagent,
-        input: RunInputValue,
-        subagent_id: str,
-        resume_from: str | None,
-        usage_limits: UsageLimits | None,
-        observer: SubagentBackendEventHook,
-    ) -> SubagentExecutionSnapshot:
-        previous_state: HarnessState | None = None
-        if resume_from is not None:
-            async with self._lock:
-                previous = self._records.get(resume_from)
-                if previous is None:
-                    raise ToolFailed("The previous subagent execution is no longer available.")
-                if previous.status not in _TERMINAL_STATUSES or previous.state is None:
-                    raise ToolFailed("The previous subagent execution is not resumable.")
-                if previous.child_definition_id != child.definition.definition_id:
-                    raise ToolFailed("The previous subagent definition is incompatible.")
-                previous_state = previous.state.model_copy(deep=True)
-
-        backend_id = f"subagent-backend-{secrets.token_hex(12)}"
-        stack = AsyncExitStack()
-        await stack.__aenter__()
-        try:
-            bindings = await stack.enter_async_context(
-                self.open_child(
-                    context,
-                    child,
-                    input,
-                    backend_id,
-                    resume_from is not None,
-                    usage_limits,
-                )
-            )
-            if not isinstance(bindings, RunBindings):
-                raise DefinitionError(
-                    "Subagent binding factory returned an invalid value.",
-                    code="subagent_binding_invalid",
-                )
-            _validate_child_lineage(context, bindings, backend_id)
-            child_authority_id = bindings.instance.agent_instance_id
-            record = _CanonicalSubagent(
-                backend_id=backend_id,
-                subagent_id=subagent_id,
-                subagent_name=child.declaration.name,
-                child_definition_id=child.definition.definition_id,
-                parent_thread_id=context.thread_id,
-                parent_run_id=context.run_id,
-                parent_agent_instance_id=context.instance.agent_instance_id,
-                parent_host_refs=MappingProxyType(dict(context.instance.host_refs)),
-                observer=_WeakObserver(observer),
-            )
-            start_gate = asyncio.Event()
-            async with self._lock:
-                if self._closed:
-                    raise ToolFailed("The subagent manager is closing.")
-                if child_authority_id in self._child_authority_ids:
-                    raise DefinitionError(
-                        "Child bindings reused an existing authority identity.",
-                        code="delegation_lineage_invalid",
-                    )
-                self._child_authority_ids.add(child_authority_id)
-                self._records[backend_id] = record
-                record.task = asyncio.create_task(
-                    self._run(
-                        record,
-                        child,
-                        input,
-                        bindings,
-                        stack,
-                        previous_state,
-                        usage_limits,
-                        start_gate,
-                    ),
-                    name=f"subagent-{backend_id}",
-                )
-                record.task.add_done_callback(lambda task: self._settle_task(record, task))
-        except BaseException:
-            await stack.aclose()
-            raise
-
-        self._dispatch_hooks(record, "started")
-        start_gate.set()
-        return record.snapshot()
-
-    async def attach(
-        self,
-        context: AgentContext,
-        backend_id: str,
-        observer: SubagentBackendEventHook,
-    ) -> SubagentExecutionSnapshot | None:
-        del context
-        async with self._lock:
-            record = self._records.get(backend_id)
-            if record is None:
-                return None
-            record.observer = _WeakObserver(observer)
-            return record.snapshot()
-
-    async def snapshot(self, context: AgentContext, backend_id: str) -> SubagentExecutionSnapshot | None:
-        del context
-        async with self._lock:
-            record = self._records.get(backend_id)
-            return None if record is None else record.snapshot()
-
-    async def activity(self, context: AgentContext, backend_id: str) -> SubagentActivitySnapshot | None:
-        del context
-        async with self._lock:
-            record = self._records.get(backend_id)
-            return None if record is None else record.activity_snapshot()
-
+    @abstractmethod
     async def wait(
         self,
-        context: AgentContext,
-        backend_id: str,
-        timeout_seconds: float | None,
-    ) -> SubagentExecutionSnapshot | None:
-        del context
-        async with self._lock:
-            record = self._records.get(backend_id)
-        if record is None:
-            return None
-        try:
-            if timeout_seconds is None:
-                await record.done.wait()
-            else:
-                await asyncio.wait_for(record.done.wait(), timeout_seconds)
-        except TimeoutError:
-            pass
-        return record.snapshot()
+        context: SubagentOperatorContext,
+        request: SubagentWaitRequest,
+    ) -> SubagentWaitResult: ...
 
-    async def steer(self, context: AgentContext, backend_id: str, message: str) -> str | None:
-        del context
-        async with self._lock:
-            record = self._records.get(backend_id)
-            stream = None if record is None else record.stream
-            status = None if record is None else record.status
-        if stream is None or status != "running":
-            return None
-        return await stream.steer(message)
-
-    async def cancel(self, context: AgentContext, backend_id: str) -> bool:
-        del context
-        async with self._lock:
-            record = self._records.get(backend_id)
-            if record is None or record.status != "running":
-                return False
-            stream = record.stream
-            task = record.task
-            if stream is not None:
-                stream.cancel()
-            elif task is not None:
-                task.cancel()
-        return True
-
-    async def wait_idle(self) -> None:
-        """Wait until all currently admitted child executions are terminal."""
-
-        while True:
-            async with self._lock:
-                tasks = tuple(
-                    record.task
-                    for record in self._records.values()
-                    if not record.done.is_set() and record.task is not None
-                )
-            if not tasks:
-                return
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def force_close(self) -> None:
-        async with self._lock:
-            close_task = self._force_close_task
-            if close_task is None:
-                self._closed = True
-                close_task = asyncio.create_task(self._force_close_owned(), name="subagent-manager-force-close")
-                self._force_close_task = close_task
-        cancelled, error = await _await_owned_task(close_task)
-        if cancelled:
-            raise asyncio.CancelledError
-        if error is not None:
-            raise error
-
-    async def force_close_matching(self, host_refs: Mapping[str, str]) -> None:
-        """Force-close and forget work whose Host correlation contains every selected reference."""
-        if not host_refs:
-            raise ValueError("host_refs must select at least one Host reference")
-        selected = dict(host_refs)
-        async with self._lock:
-            records = tuple(
-                record
-                for record in self._records.values()
-                if all(record.parent_host_refs.get(key) == value for key, value in selected.items())
-            )
-        close_task = asyncio.create_task(
-            self._force_close_matching_records(records),
-            name="subagent-manager-matching-force-close",
-        )
-        cancelled, error = await _await_owned_task(close_task)
-        if cancelled:
-            raise asyncio.CancelledError
-        if error is not None:
-            raise error
-
-    async def _force_close_matching_records(self, records: tuple[_CanonicalSubagent, ...]) -> None:
-        try:
-            await self._force_close_records(records)
-        finally:
-            for record in records:
-                while record.delivery_tasks:
-                    deliveries = tuple(record.delivery_tasks)
-                    await asyncio.gather(*deliveries, return_exceptions=True)
-                    record.delivery_tasks.difference_update(deliveries)
-            async with self._lock:
-                for record in records:
-                    if self._records.get(record.backend_id) is record:
-                        self._records.pop(record.backend_id, None)
-
-    async def _force_close_owned(self) -> None:
-        async with self._lock:
-            records = tuple(self._records.values())
-        cleanup_error: BaseException | None = None
-        try:
-            await self._force_close_records(records)
-        except BaseException as error:
-            cleanup_error = error
-        finally:
-            while self._delivery_tasks:
-                deliveries = tuple(self._delivery_tasks)
-                await asyncio.gather(*deliveries, return_exceptions=True)
-                self._delivery_tasks.difference_update(deliveries)
-            async with self._lock:
-                self._records.clear()
-        if cleanup_error is not None:
-            raise cleanup_error
-
-    async def _force_close_records(self, records: tuple[_CanonicalSubagent, ...]) -> None:
-        closing_records = tuple(record for record in records if not record.done.is_set())
-        async with self._lock:
-            for record in closing_records:
-                record.notifications_enabled = False
-                if record.stream is not None:
-                    record.stream.cancel()
-                elif record.task is not None:
-                    record.task.cancel()
-        tasks = tuple(record.task for record in records if record.task is not None)
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        errors = [
-            RuntimeError(record.cleanup_failure) for record in closing_records if record.cleanup_failure is not None
-        ]
-        if errors:
-            raise ExceptionGroup("Subagent binding cleanup failed.", errors)
-
-    async def _run(
+    @abstractmethod
+    async def steer(
         self,
-        record: _CanonicalSubagent,
-        child: BuiltSubagent,
-        input: RunInputValue,
-        bindings: RunBindings,
-        stack: AsyncExitStack,
-        previous_state: HarnessState | None,
-        usage_limits: UsageLimits | None,
-        start_gate: asyncio.Event,
-    ) -> None:
-        status: SubagentStatus = "failed"
-        output: JsonValue | None = None
-        failure: JsonValue | None = None
-        state: HarnessState | None = None
-        thread_id: str | None = None
-        usage = RunUsage()
-        cancelled = False
-        try:
-            await start_gate.wait()
-            stream = child.executable.stream(
-                input,
-                bindings=bindings,
-                previous_state=previous_state,
-                usage=usage,
-                usage_limits=deepcopy(usage_limits),
-            )
-            record.stream = stream
-            terminal = None
-            async with stream:
-                async for item in stream:
-                    if isinstance(item, HarnessRunResultEvent):
-                        terminal = item.result
-                    elif isinstance(item, HarnessEvent):
-                        _observe_activity(record, item)
-            if terminal is None:
-                raise RuntimeError("The asynchronous child ended without a terminal result.")
-            state = terminal.state.model_copy(deep=True) if terminal.state is not None else None
-            thread_id = terminal.state.thread_id if terminal.state is not None else None
-            if terminal.status == "completed":
-                status = "succeeded"
-                output = _detach_json(terminal.output)
-            elif terminal.status == "cancelled":
-                status = "cancelled"
-            else:
-                status = "failed"
-                failure = _bounded_json(
-                    terminal.failure.model_dump(mode="json")
-                    if terminal.failure is not None
-                    else {"code": "subagent_failed"}
-                )
-        except asyncio.CancelledError:
-            status = "cancelled"
-            cancelled = True
-        except Exception as exc:
-            status = "failed"
-            failure = {
-                "code": "subagent_execution_failed",
-                "message": _bounded_text(str(exc) or exc.__class__.__name__),
-            }
-        finally:
-            record.stream = None
-            cleanup_error: BaseException | None = None
-            cleanup_task = asyncio.create_task(stack.aclose(), name=f"subagent-cleanup-{record.backend_id}")
-            cleanup_cancelled, cleanup_error = await _await_owned_task(cleanup_task)
-            cancelled = cancelled or cleanup_cancelled or isinstance(cleanup_error, asyncio.CancelledError)
-            if cleanup_error is not None:
-                status = "failed"
-                output = None
-                record.cleanup_failure = _bounded_text(str(cleanup_error) or cleanup_error.__class__.__name__)
-                failure = {
-                    "code": "subagent_binding_cleanup_failed",
-                    "message": record.cleanup_failure,
-                }
-            record.status = status
-            record.output = output
-            record.failure = failure
-            record.state = state
-            record.thread_id = thread_id
-            record.usage = deepcopy(usage)
-            record.done.set()
-            self._notify(record, "completion")
-        if cancelled:
-            raise asyncio.CancelledError
+        context: SubagentOperatorContext,
+        request: SubagentSteerRequest,
+    ) -> SubagentSteerResult: ...
 
-    def _notify(self, record: _CanonicalSubagent, kind: SubagentEventKind) -> None:
-        if not record.notifications_enabled:
-            return
-        observer = record.observer.get() if record.observer is not None else None
-        if observer is not None:
-            snapshot = record.snapshot()
-            self._spawn_delivery(record, lambda: observer(snapshot))
-        self._dispatch_hooks(record, kind)
-
-    def _dispatch_hooks(self, record: _CanonicalSubagent, kind: SubagentEventKind) -> None:
-        event = SubagentEvent(
-            kind=kind,
-            thread_id=record.parent_thread_id,
-            run_id=record.parent_run_id,
-            agent_instance_id=record.parent_agent_instance_id,
-            host_refs=record.parent_host_refs,
-            subagent_id=record.subagent_id,
-            subagent_name=record.subagent_name,
-            child_thread_id=record.thread_id,
-            backend_id=record.backend_id,
-            status=record.status,
-            usage=deepcopy(record.usage),
-        )
-        for hook in self._event_hooks:
-            self._spawn_delivery(record, lambda hook=hook: hook(event))
-
-    def _spawn_delivery(
+    @abstractmethod
+    async def cancel(
         self,
-        record: _CanonicalSubagent,
-        delivery: Callable[[], Awaitable[None]],
-    ) -> None:
-        async def deliver() -> None:
-            try:
-                await delivery()
-            except Exception:
-                pass
+        context: SubagentOperatorContext,
+        request: SubagentCancelRequest,
+    ) -> SubagentCancelResult: ...
 
-        task = asyncio.create_task(deliver(), name=f"subagent-delivery-{secrets.token_hex(6)}")
-        self._delivery_tasks.add(task)
-        record.delivery_tasks.add(task)
-        task.add_done_callback(self._delivery_tasks.discard)
-        task.add_done_callback(record.delivery_tasks.discard)
-
-    @staticmethod
-    def _settle_task(record: _CanonicalSubagent, task: asyncio.Task[None]) -> None:
-        if record.done.is_set():
-            return
-        if task.cancelled():
-            record.status = "cancelled"
-        else:
-            error = task.exception()
-            if error is not None:
-                record.status = "failed"
-                record.failure = {
-                    "code": "subagent_execution_failed",
-                    "message": _bounded_text(str(error) or error.__class__.__name__),
-                }
-        record.stream = None
-        record.done.set()
+    @abstractmethod
+    async def resume(
+        self,
+        plan: SubagentDelegationPlan,
+        request: AsyncResumeRequest,
+    ) -> AsyncExecutionView: ...
 
 
 @dataclass(init=False)
 class SubagentCapability(AbstractCapability[AgentContext]):
-    """Fix one subagent execution mode, operator, and standard Toolset."""
+    """Select the standard inline surface or an explicit Host async operator."""
 
     id = SUBAGENT_CAPABILITY_ID
 
-    def __init__(self, *, execution: SubagentExecutionMode, operator: SubagentOperator) -> None:
-        if execution not in {"inline", "async"}:
-            raise ValueError("execution must be 'inline' or 'async'")
-        if not isinstance(operator, SubagentOperator):
-            raise TypeError("operator must be a SubagentOperator")
-        self._execution: SubagentExecutionMode = execution
-        self._operator: SubagentOperator = operator
+    def __init__(
+        self,
+        *,
+        async_enabled: bool = False,
+        operator: SubagentOperator | None = None,
+    ) -> None:
+        if not isinstance(async_enabled, bool):
+            raise TypeError("async_enabled must be a boolean")
+        if async_enabled and not isinstance(operator, SubagentOperator):
+            raise DefinitionError(
+                "Async subagents require a Host SubagentOperator.",
+                code="subagent_operator_required",
+            )
+        if not async_enabled and operator is not None:
+            raise DefinitionError(
+                "Inline subagents do not accept a Host SubagentOperator.",
+                code="subagent_operator_unexpected",
+            )
+        self._async_enabled = async_enabled
+        self._operator = operator
 
     @property
-    def execution(self) -> SubagentExecutionMode:
-        return self._execution
+    def async_enabled(self) -> bool:
+        return self._async_enabled
 
     @property
-    def operator(self) -> SubagentOperator:
+    def operator(self) -> SubagentOperator | None:
         return self._operator
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
@@ -818,34 +362,37 @@ class SubagentCapability(AbstractCapability[AgentContext]):
                 code="capability_scope_invalid",
             )
 
-        if self.execution == "inline":
+        if self.async_enabled:
+            assert self.operator is not None
+            replacement: _SubagentActiveCapability = _AsyncSubagentCapability(
+                context=ctx.deps,
+                operator=self.operator,
+            )
+        else:
             state = (
                 await ctx.deps.state.read(
                     SUBAGENT_CAPABILITY_ID,
-                    InlineSubagentManagerState,
+                    InlineSubagentCollectionState,
                     version=_INLINE_SUBAGENT_STATE_VERSION,
                 )
-                or InlineSubagentManagerState()
+                or InlineSubagentCollectionState()
             )
             _validate_inline_subagent_state(state, ctx.deps)
-            replacement: _SubagentActiveCapability = _InlineSubagentCapability(
-                context=ctx.deps,
-                operator=self.operator,
-                state=state,
-            )
-        else:
-            replacement = _AsyncSubagentCapability(
-                context=ctx.deps,
-                operator=self.operator,
-            )
+            replacement = _InlineSubagentCapability(context=ctx.deps, state=state)
         ctx.deps._record_run_capability(SUBAGENT_CAPABILITY_ID, replacement)
         return replacement
 
 
 @dataclass(init=False)
 class _SubagentActiveCapability(SubagentCapability):
-    def __init__(self, *, context: AgentContext, execution: SubagentExecutionMode, operator: SubagentOperator) -> None:
-        super().__init__(execution=execution, operator=operator)
+    def __init__(
+        self,
+        *,
+        context: AgentContext,
+        async_enabled: bool,
+        operator: SubagentOperator | None,
+    ) -> None:
+        super().__init__(async_enabled=async_enabled, operator=operator)
         self._context = context
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
@@ -859,17 +406,11 @@ class _SubagentActiveCapability(SubagentCapability):
 
 @dataclass(init=False)
 class _InlineSubagentCapability(_SubagentActiveCapability):
-    def __init__(
-        self,
-        *,
-        context: AgentContext,
-        operator: SubagentOperator,
-        state: InlineSubagentManagerState,
-    ) -> None:
+    def __init__(self, *, context: AgentContext, state: InlineSubagentCollectionState) -> None:
         from a13n_harness.toolsets.delegation import DelegationToolset
 
-        super().__init__(context=context, execution="inline", operator=operator)
-        self._toolset = DelegationToolset(owner=self, context=context, operator=operator, state=state)
+        super().__init__(context=context, async_enabled=False, operator=None)
+        self._toolset = DelegationToolset(owner=self, context=context, state=state)
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return self._toolset.get_toolset()
@@ -878,50 +419,20 @@ class _InlineSubagentCapability(_SubagentActiveCapability):
 @dataclass(init=False)
 class _AsyncSubagentCapability(_SubagentActiveCapability):
     def __init__(self, *, context: AgentContext, operator: SubagentOperator) -> None:
-        from a13n_harness.toolsets.subagent_manager import SubagentManagerToolset, _AsyncSubagentProjection
+        from a13n_harness.toolsets.subagents import AsyncSubagentToolset
 
-        super().__init__(context=context, execution="async", operator=operator)
-        self._projection = _AsyncSubagentProjection(operator=operator, children=context.subagents)
-        self._toolset = SubagentManagerToolset(self._projection, children=context.subagents)
+        super().__init__(context=context, async_enabled=True, operator=operator)
+        self._toolset = AsyncSubagentToolset(
+            owner=self,
+            context=context,
+            operator=operator,
+        )
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:
         return self._toolset.get_toolset()
 
-    async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
-        async with self._projection.active_run(ctx):
-            return await handler()
 
-
-async def _await_owned_task(task: asyncio.Task[Any]) -> tuple[bool, BaseException | None]:
-    """Wait for owned work without letting repeated caller cancellation cancel it."""
-    cancelled = False
-    while True:
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError as exc:
-            if task.cancelled():
-                return cancelled, exc
-            cancelled = True
-            continue
-        except BaseException as exc:
-            return cancelled, exc
-        return cancelled, None
-
-
-def _validate_child_lineage(parent: AgentContext, bindings: RunBindings, child_instance_id: str) -> None:
-    instance = bindings.instance
-    if (
-        instance.agent_instance_id == parent.instance.agent_instance_id
-        or instance.parent_agent_instance_id != parent.instance.agent_instance_id
-        or instance.delegation_id != child_instance_id
-    ):
-        raise DefinitionError(
-            "Child bindings do not reproduce the requested parent lineage.",
-            code="delegation_lineage_invalid",
-        )
-
-
-def _validate_inline_subagent_state(state: InlineSubagentManagerState, context: AgentContext) -> None:
+def _validate_inline_subagent_state(state: InlineSubagentCollectionState, context: AgentContext) -> None:
     _validate_inline_thread_identities(state, parent_thread_id=context.thread_id)
     for child_id, record in state.children.items():
         try:
@@ -940,7 +451,11 @@ def _validate_inline_subagent_state(state: InlineSubagentManagerState, context: 
             )
 
 
-def _validate_inline_thread_identities(state: InlineSubagentManagerState, *, parent_thread_id: str) -> None:
+def _validate_inline_thread_identities(
+    state: InlineSubagentCollectionState,
+    *,
+    parent_thread_id: str,
+) -> None:
     seen = {parent_thread_id}
     pending = [state]
     while pending:
@@ -964,7 +479,7 @@ def _validate_inline_thread_identities(state: InlineSubagentManagerState, *, par
                     details={"child_instance_id": child_id},
                 )
             try:
-                pending.append(InlineSubagentManagerState.model_validate(entry.data))
+                pending.append(InlineSubagentCollectionState.model_validate(entry.data))
             except ValueError as exc:
                 raise StateError(
                     "Nested inline subagent State is invalid.",
@@ -973,136 +488,29 @@ def _validate_inline_thread_identities(state: InlineSubagentManagerState, *, par
                 ) from exc
 
 
-def _observe_activity(record: _CanonicalSubagent, item: HarnessEvent) -> None:
-    event = item.event
-    if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
-        _append_output_preview(record, event.part.content)
-        return
-    if isinstance(event, PartStartEvent) and isinstance(event.part, ToolCallPart):
-        _start_tool_activity(record, event.part)
-        return
-    if isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-        _append_output_preview(record, event.delta.content_delta)
-        return
-    if isinstance(event, FunctionToolCallEvent):
-        _start_tool_activity(record, event.part)
-        return
-    if isinstance(event, FunctionToolResultEvent):
-        part = event.part
-        active = record.active_tool_calls.pop(part.tool_call_id, None)
-        if isinstance(part, ToolReturnPart):
-            tool_name = part.tool_name
-            status: SubagentToolCallStatus = part.outcome
-            result = event.content if event.content is not None else part.content
-        elif isinstance(part, RetryPromptPart):
-            tool_name = part.tool_name or (active.tool_name if active is not None else "unknown")
-            status = "failed"
-            result = part.content
-        else:
-            return
-        completed = SubagentToolCallSnapshot(
-            tool_call_id=part.tool_call_id,
-            tool_name=tool_name,
-            status=status,
-            arguments=None if active is None else active.arguments,
-            result=_bounded_activity_json(result),
-        )
-        if len(record.recent_tool_calls) >= _MAX_RECENT_TOOL_CALLS:
-            record.recent_tool_calls.popleft()
-            record.dropped_tool_calls += 1
-        record.recent_tool_calls.append(completed)
-        record.activity_sequence += 1
-
-
-def _start_tool_activity(record: _CanonicalSubagent, part: ToolCallPart) -> None:
-    try:
-        arguments: Any = part.args_as_dict()
-    except ValueError:
-        arguments = part.args
-    if part.tool_call_id not in record.active_tool_calls and len(record.active_tool_calls) >= _MAX_RECENT_TOOL_CALLS:
-        record.active_tool_calls.popitem(last=False)
-        record.dropped_tool_calls += 1
-    record.active_tool_calls[part.tool_call_id] = SubagentToolCallSnapshot(
-        tool_call_id=part.tool_call_id,
-        tool_name=part.tool_name,
-        status="running",
-        arguments=_bounded_activity_json(arguments),
-    )
-    record.activity_sequence += 1
-
-
-def _append_output_preview(record: _CanonicalSubagent, delta: str) -> None:
-    if not delta:
-        return
-    combined = (record.output_preview + delta).encode()
-    if len(combined) > _MAX_ACTIVITY_OUTPUT_BYTES:
-        combined = combined[-_MAX_ACTIVITY_OUTPUT_BYTES:]
-        record.output_truncated = True
-    record.output_preview = combined.decode(errors="ignore")
-    record.activity_sequence += 1
-
-
-def _bounded_activity_json(value: Any) -> JsonValue | None:
-    if value is None:
-        return None
-    detached = redact_json(_detach_json(value))
-    try:
-        encoded = json.dumps(detached, ensure_ascii=False, separators=(",", ":")).encode()
-    except Exception:
-        return _bounded_activity_text(str(value))
-    if len(encoded) <= _MAX_ACTIVITY_VALUE_BYTES:
-        return detached
-    return {"truncated": True, "preview": _bounded_activity_text(str(detached))}
-
-
-def _bounded_activity_text(value: str) -> str:
-    encoded = value.encode()
-    if len(encoded) <= _MAX_ACTIVITY_VALUE_BYTES:
-        return value
-    return encoded[:_MAX_ACTIVITY_VALUE_BYTES].decode(errors="ignore")
-
-
-def _detach_json(value: Any) -> JsonValue:
-    try:
-        projected = _JSON_ADAPTER.dump_python(value, mode="json", warnings="error")
-        return _JSON_ADAPTER.validate_python(deepcopy(projected), strict=True)
-    except Exception:
-        return str(value)
-
-
-def _bounded_json(value: Any) -> JsonValue:
-    detached = _detach_json(value)
-    try:
-        encoded = json.dumps(detached, ensure_ascii=False, separators=(",", ":")).encode()
-    except Exception:
-        return _bounded_text(str(value))
-    if len(encoded) <= _MAX_FAILURE_BYTES:
-        return detached
-    return {"truncated": True, "preview": _bounded_text(str(value))}
-
-
-def _bounded_text(value: str) -> str:
-    encoded = value.encode()
-    if len(encoded) <= _MAX_FAILURE_BYTES:
-        return value
-    return encoded[:_MAX_FAILURE_BYTES].decode(errors="ignore")
-
-
 __all__ = [
     "SUBAGENT_CAPABILITY_ID",
-    "InlineSubagentManagerState",
+    "AsyncDelegateRequest",
+    "AsyncExecutionView",
+    "AsyncResumeRequest",
+    "InlineSubagentCollectionState",
     "InlineSubagentState",
+    "ResolvedDelegationContext",
     "SubagentActivitySnapshot",
-    "SubagentBackendEventHook",
+    "SubagentCancelRequest",
+    "SubagentCancelResult",
     "SubagentCapability",
-    "SubagentEvent",
-    "SubagentEventHook",
-    "SubagentEventKind",
-    "SubagentExecutionMode",
-    "SubagentExecutionSnapshot",
-    "SubagentManager",
+    "SubagentDelegationPlan",
+    "SubagentExecutionView",
+    "SubagentInfoRequest",
+    "SubagentInfoResult",
     "SubagentOperator",
+    "SubagentOperatorContext",
     "SubagentStatus",
+    "SubagentSteerRequest",
+    "SubagentSteerResult",
     "SubagentToolCallSnapshot",
     "SubagentToolCallStatus",
+    "SubagentWaitRequest",
+    "SubagentWaitResult",
 ]

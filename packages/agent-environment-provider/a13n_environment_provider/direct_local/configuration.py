@@ -116,13 +116,3 @@ class DirectLocalProviderConfiguration(BaseModel):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive and finite")
         return self
-
-
-class DirectLocalProviderStateData(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    environment_id: Annotated[str, Field(min_length=1, max_length=128)]
-    configuration_fingerprint: Annotated[
-        str,
-        Field(pattern=r"^sha256:[0-9a-f]{64}$"),
-    ]

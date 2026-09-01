@@ -1,50 +1,48 @@
 # Environments
 
-An Environment gives an Agent a provider-neutral way to work with files, commands, processes, retained output, and ports. It separates the operations visible to the Harness from the resource lifecycle owned by an Environment Provider.
+An Environment gives an Agent a provider-neutral way to work with files, commands, processes, retained output, and ports. A Host uses an Environment Provider to construct one fresh adapter for a selected workspace, sandbox, container, VM, or remote execution target.
 
 You do not need an Environment for an Agent that only calls ordinary application tools or remote APIs.
 
 ## Choose a backend
 
-| Need                                        | Start with                  | Important boundary                                       |
-| ------------------------------------------- | --------------------------- | -------------------------------------------------------- |
-| No files or command execution               | No Environment              | Keep the Agent surface minimal                           |
-| Trusted access to a Host-selected directory | Direct Local                | Shared Host account; not an OS sandbox                   |
-| Local native command isolation              | Local Envd                  | Provider launches `agent-envd` and speaks EIP over stdio |
-| Container, VM, or remote sandbox            | An EIP-backed provider      | Provider owns outer lifecycle; EIP owns operations       |
-| A new vendor integration                    | Environment Provider plugin | Implement lifecycle plus a supported attachment backend  |
+| Need                                        | Start with                  | Important boundary                                                   |
+| ------------------------------------------- | --------------------------- | -------------------------------------------------------------------- |
+| No files or command execution               | No Environment              | Keep the Agent surface minimal                                       |
+| Trusted access to a Host-selected directory | Direct Local                | Shares the Host account; it is not an operating-system sandbox       |
+| Local native command isolation              | Local Envd                  | Launches `agent-envd` and uses EIP over a private stdio carrier      |
+| Local container isolation                   | Docker                      | Provider owns the container; EIP owns Agent-visible operations       |
+| A remote or vendor sandbox                  | Environment Provider plugin | Construct a fresh adapter that exposes the provider-neutral contract |
 
-Use Direct Local for development, trusted automation, and tests where sharing the Host account is acceptable. Use Local Envd or another EIP-backed provider when command execution must cross an explicit isolation or remote-execution boundary.
+Use Direct Local for development, trusted automation, and tests where sharing the Host account is acceptable. Use Local Envd, Docker, or another EIP-backed Provider when command execution must cross an explicit isolation or remote-execution boundary.
 
 ## How the layers fit
 
 ```mermaid
 flowchart LR
-    Harness[Agent Harness] --> Provider[Environment Provider]
-    Provider --> Resource[Environment Resource]
-    Resource --> Attachment[Fresh attachment]
-    Attachment --> Direct[Direct Local operations]
-    Attachment --> EIP[EIP session]
-    EIP --> Envd[agent-envd]
+    Host[Host policy, configuration, state, and credentials] --> Provider[EnvironmentProvider]
+    Provider --> Environment[Fresh Environment adapter]
+    Environment --> Harness[Agent Harness Run]
+    Harness --> Tools[Selected model-facing tools]
+    Environment --> Direct[Direct Local operations]
+    Environment --> EIP[EIP operations]
+    EIP --> Envd[agent-envd or remote backend]
 ```
 
-- **Agent Harness** binds an Environment attachment into one logical run and exposes selected tools.
-- **Environment Provider** creates, resumes, pauses, destroys, and reconciles provider resources.
-- **Environment Resource** is one identified provider resource with a process-local scope.
-- **Attachment** is fresh, process-local, single-use runtime authority.
+- **Host** selects a trusted Provider, desired configuration, current state, runtime collaborators, retention policy, and authorization.
+- **Environment Provider** validates configuration and constructs fresh single-use adapters without external I/O.
+- **Environment** enters or creates one exact target, exposes typed operations, caches the latest state, closes process-local resources, and supports explicit Host destruction.
+- **Agent Harness** owns Run-local mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
 - **EIP** is the typed operation protocol used by `agent-envd` and remote backends.
 
-Provider state and Harness continuation state are different records. Persist `EnvironmentProviderResourceState` for provider lifecycle recovery and `HarnessState` for Agent continuation. Neither restores current credentials or authorization.
+`EnvironmentState` and `HarnessState` are different records. The former is a Provider-owned soft reference to a target; the latter is Agent continuation state. Neither restores current credentials or authorization.
 
 ## Build an Environment-aware Agent
 
-Binding an Environment supplies runtime authority but does not automatically expose operations to the model. Add the dynamic Environment Capability; it derives the model-visible tools from each mount's effective access and Provider capabilities:
+Binding an Environment supplies runtime authority but does not automatically expose operations to the model. Add the dynamic Environment Capability; it derives model-visible tools from each mount's effective access and Provider capabilities:
 
 ```python
-from a13n_harness import (
-    AgentSpec,
-    HarnessBuilder,
-)
+from a13n_harness import AgentSpec, HarnessBuilder
 from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
@@ -59,7 +57,7 @@ executable = HarnessBuilder().build(
 )
 ```
 
-The examples below reuse this executable. Configure the selected model provider before running them, or replace the model selection with a deterministic `FunctionModel` in tests.
+Configure the selected model provider before running the examples, or replace the model with a deterministic `FunctionModel` in tests.
 
 ## Start with Direct Local
 
@@ -74,89 +72,147 @@ from a13n_environment_provider import (
     DirectLocalRootConfiguration,
 )
 
-provider = DirectLocalEnvironmentProvider(
-    DirectLocalProviderConfiguration(
+provider = DirectLocalEnvironmentProvider()
+configuration = provider.validate_configuration(
+    schema_version="1",
+    value=DirectLocalProviderConfiguration(
         environment_id="workspace",
         root=DirectLocalRootConfiguration(
             path=Path("./workspace").resolve(),
         ),
-    )
+    ).model_dump(mode="json"),
+)
+environment = provider.create_environment(
+    configuration=configuration,
+    state=None,
 )
 
 result = await executable.run(
     "Inspect the workspace",
-    environment=provider,
+    environment=environment,
 )
 ```
 
-Passing a Provider gives the Harness one temporary lifecycle: create, enter, acquire a fresh attachment, release, exit, and destroy. Direct Local does not remove the selected directory when that logical provider resource is destroyed.
+The Provider does not inspect the directory until Harness enters the fresh adapter. Harness closes the adapter after the Run but never destroys a target. Direct Local preserves the selected directory on close and explicit destroy.
 
 Direct Local restrictions apply through the current Environment mount. They do not isolate an allowed child process from the Host user account.
 
-## Add Local Envd
+## Use Local Envd
 
-Local Envd is the built-in provider path for a locally launched `agent-envd`:
+Local Envd launches one compatible `agent-envd` generation for a Host-selected workspace. The Host supplies the executable and private-runtime allocator when constructing the adapter:
 
 ```python
 from pathlib import Path
 
 from a13n_environment_provider import (
-    EnvironmentProviderSpec,
     LocalEnvdProviderRuntime,
+    LocalEnvdWorkspaceConfiguration,
     TemporaryLocalEnvdRuntimeAllocator,
-    build_environment_provider_factory_catalog,
+    build_environment_provider_catalog,
     resolve_agent_envd_executable,
 )
 
-catalog = build_environment_provider_factory_catalog(
+catalog = build_environment_provider_catalog(
     builtin_keys=("a13n.local-envd",),
 )
-spec = EnvironmentProviderSpec(
-    provider_key="a13n.local-envd",
+provider = catalog.resolve("a13n.local-envd")
+configuration = provider.validate_configuration(
     schema_version="1",
-    parameters={
+    value={
         "environment_id": "sandbox",
-        "workspace": {"path": str(Path("./workspace").resolve())},
+        "workspace": LocalEnvdWorkspaceConfiguration(
+            path=Path("./workspace").resolve(),
+        ).model_dump(mode="json"),
         "execution_network": "deny",
     },
 )
-runtime = LocalEnvdProviderRuntime(
-    executable=resolve_agent_envd_executable(),
-    allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+environment = provider.create_environment(
+    configuration=configuration,
+    state=None,
+    runtime=LocalEnvdProviderRuntime(
+        executable=resolve_agent_envd_executable(),
+        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+    ),
 )
-provider = catalog.create_provider(spec, runtime=runtime)
 
 result = await executable.run(
     "Inspect the sandboxed workspace",
-    environment=provider,
+    environment=environment,
 )
 ```
 
-The Host selects the executable. Resolution checks an explicit argument, `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` on `PATH`. The client and Provider packages do not install or download the native binary.
+Executable resolution checks an explicit argument, `A13N_AGENT_ENVD_EXECUTABLE`, then `agent-envd` on `PATH`. The client and Provider packages do not install or download the native binary.
 
-Local Envd validates the exact daemon/client release and the required isolation probe. It does not fall back to Direct Local or silently disable isolation. Read the [`agent-envd` guide](../agent-envd/index.md) for installation and platform prerequisites.
+Local Envd validates exact daemon/client compatibility and the required isolation probe. It does not fall back to Direct Local or silently disable isolation. Read the [`agent-envd` guide](../agent-envd/index.md) for installation and platform prerequisites.
 
-## Choose lifecycle ownership
+## Re-enter and retain a target
 
-Pass a Provider when one run should own a temporary resource. Pass an already entered `EnvironmentResource` when the Host must retain the resource across runs or restarts.
+A stateful Provider such as Docker returns `EnvironmentState`. The Host persists the latest state and supplies it when constructing the next fresh adapter:
 
-| Input to the Harness          | Outer lifecycle owner | Harness behavior                                   |
-| ----------------------------- | --------------------- | -------------------------------------------------- |
-| `EnvironmentProvider`         | Harness for one run   | Creates and destroys one temporary Resource        |
-| Entered `EnvironmentResource` | Host                  | Acquires and releases one fresh attachment         |
-| Named mapping                 | Source type per entry | Supports mixed ownership and multiple Environments |
+```python
+current_state = await state_store.load(environment_key)
+environment = provider.create_environment(
+    configuration=configuration,
+    state=current_state,
+    runtime=fresh_runtime,
+)
 
-A suspended run still closes and destroys a Harness-owned temporary resource. Durable workflows should use Host-owned resources, persist their latest provider state, and make resume/pause/destroy/reconcile decisions explicitly.
+try:
+    result = await executable.run(
+        "Continue the task",
+        environment=environment,
+        previous_state=previous_harness_state,
+    )
+finally:
+    await state_store.publish(environment_key, environment.dump_state())
+```
 
-## Select additional operations
+`dump_state()` is a synchronous detached read of the adapter's latest validated cache. The Host can call it after entry failure, cancellation, Run failure, or close failure without causing more provider I/O.
 
-The example enables file tools only. Add shell, process, retained-output, or port operations through `DynamicEnvironmentConfiguration` only when the Agent definition requires them. Keep unnecessary operations disabled.
+Close and destruction are deliberately separate:
 
-The [Harness Environment guide](../agent-harness/environments.md) covers complete Capability configuration, single and multiple Environments, portable process references, mount changes, and advanced Host runtimes.
+| Operation                 | Owner   | Effect                                                                                   |
+| ------------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| Enter and Run-local use   | Harness | Enters one fresh adapter and mounts its operations                                       |
+| `close()`                 | Harness | Releases process-local resources without removing the target                             |
+| State persistence         | Host    | Selects and stores the latest authoritative `EnvironmentState`                           |
+| Fresh-adapter `destroy()` | Host    | Removes the exact Provider-owned target and bootstrap material when retention selects it |
+
+A suspended or failed Run still closes its adapter non-destructively. Harness never infers temporary ownership and never calls `destroy()`.
+
+## Use several Environments
+
+Pass multiple fresh adapters with explicit Run-local policy:
+
+```python
+from a13n_harness import EnvironmentAccess, EnvironmentMount
+
+result = await executable.run(
+    "Read the source data and write the build output",
+    environments={
+        "build": build_environment,
+        "data": EnvironmentMount(
+            data_environment,
+            access=EnvironmentAccess.READ_ONLY,
+        ),
+    },
+    default_environment="build",
+)
+```
+
+The default mount is available at `/workspace`; named mounts are available at `/environment/{name}`. When several entries are present, select `default_environment` explicitly or leave `/workspace` unbound. Mapping order never grants authority.
+
+Harness validates the complete mount set before entry. If one adapter fails, it closes every supplied adapter that may own process-local resources and publishes no partial mount set. It never destroys a target during unwind.
+
+## Select only required operations
+
+`EnvironmentMount` narrows Provider capability with `READ_ONLY`, `READ_WRITE`, or `FULL` access. `DynamicEnvironmentConfiguration` controls which stable Environment Toolsets the model can see. Keep shell, background-process, retained-output, and port operations absent unless the Agent definition requires them.
+
+The [Harness Environment guide](../agent-harness/environments.md) covers complete Capability configuration, deterministic routing, state export, portable process references, and advanced Host runtimes.
 
 ## Next steps
 
 - [Use Environments from Agent Harness](../agent-harness/environments.md)
+- [Manage Provider state and implement plugins](../agent-environment-provider/index.md)
 - [Operate and configure `agent-envd`](../agent-envd/index.md)
-- [Manage provider lifecycle or implement a plugin](../agent-environment-provider/index.md)
 - [Read the EIP and agent-envd specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/agent-envd)

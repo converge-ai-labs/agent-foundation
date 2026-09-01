@@ -158,35 +158,28 @@ await context.state.write(
 )
 ```
 
-Unknown namespaces can remain opaque across a run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or provider resource state in a namespace.
+Unknown namespaces can remain opaque across a run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or `EnvironmentState` in a Capability namespace.
 
-## Managed Background Processes
+## Run-owned Shell Processes
 
-Dynamic Environment uses one Capability namespace to preserve model-facing background-process continuation. It stores:
+Shell process state is deliberately absent from `HarnessState`. A process-capable `shell_exec` can return a concise `process-*` reference, but that reference addresses only the private controller for the exact logical Run that started it. Harness does not persist the reference, sequence, bound handle, output offsets, status mirror, watcher, or cleanup state in a Capability namespace.
 
-- the `process-N` reference and monotonic next sequence;
-- one exact opaque operator backend ID;
-- independent next-unread stdout and stderr offsets;
-- last observed status, stdin state, produced-byte counts, and `backend_lost` correction.
+Within the same Run, `shell_wait` uses caller-supplied stdout and stderr offsets and performs non-consuming retained-output reads. Harness stores no unread cursor. When the Run closes, it kills every still-live owned process and releases its handles before Environment adapters close.
 
-It does not store a live `ManagedProcess`, `BoundProcessHandle`, task, hook, output buffer, provider cursor, credential, attachment, or authority. The configured operator remains the canonical source of truth.
-
-When the same `HarnessState` continues in a new Run, the process projection asks the same configured operator to rebind the exact backend ID. A mount name, default mount, saved routing hint, native PID, or process enumeration cannot retarget it. If the operator no longer has that record, the projection becomes `backend_lost`.
-
-Persisting this namespace is necessary but not sufficient for process survival. The default `ProcessManager` must remain alive across those Runs and its launcher-returned `ManagedProcess` must retain the Environment resources it needs. Stable hooks can schedule later work. Process or Runner restart loses default-Manager records; a durable Host uses a custom operator and never places its storage authority in `HarnessState`. See [Embedding in a Host](hosting.md#background-processes-across-turns-and-restarts).
+A continuation or fork starts with a fresh empty process controller and a new reference incarnation. A process reference retained in message history is historical text, not authority, and cannot be rebound from a mount, Provider process ID, or `EnvironmentState`. Cross-Run or restart-surviving process execution belongs to a separate Host capability outside the current Harness shell contract. See [Embedding in a Host](hosting.md#run-owned-shell-processes).
 
 ## Host Checkpointing
 
 A durable Host should keep these facts separate:
 
-| Fact                                                  | Owner                     |
-| ----------------------------------------------------- | ------------------------- |
-| Portable conversation continuation                    | `HarnessState` candidate  |
-| Selected checkpoint and provenance                    | Host                      |
-| Definition revision and artifact lock                 | Host                      |
-| Current identity, policy, and credentials             | Fresh Host reconstruction |
-| Desired mount definitions and provider resource state | Host/provider integration |
-| Execution attempt, generation, fence, and lease       | Host                      |
-| Durable completion and output delivery                | Host/product              |
+| Fact                                                           | Owner                     |
+| -------------------------------------------------------------- | ------------------------- |
+| Portable conversation continuation                             | `HarnessState` candidate  |
+| Selected checkpoint and provenance                             | Host                      |
+| Definition revision and artifact lock                          | Host                      |
+| Current identity, policy, and credentials                      | Fresh Host reconstruction |
+| Desired mount definitions and authoritative `EnvironmentState` | Host/Provider integration |
+| Execution attempt, generation, fence, and lease                | Host                      |
+| Durable completion and output delivery                         | Host/product              |
 
 See [Embedding in a Host](hosting.md) for the full authority boundary. The runnable [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) demonstrates the smaller single-application case: stream a turn, commit its returned state, reconstruct the application, and continue the same Thread.

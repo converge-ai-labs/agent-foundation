@@ -483,8 +483,8 @@ def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellRev
     command = arguments.get("command")
     cwd = arguments.get("cwd")
     environment = arguments.get("environment")
+    yield_time_seconds = arguments.get("yield_time_seconds")
     timeout_seconds = arguments.get("timeout_seconds")
-    background = arguments.get("background", False)
     alias = arguments.get("alias")
     if not isinstance(command, str):
         raise ValueError("reviewable shell invocation has no string command")
@@ -496,12 +496,16 @@ def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellRev
         environment_keys = tuple(sorted(environment))
     else:
         raise ValueError("reviewable shell invocation has an invalid environment")
+    if yield_time_seconds is not None and (
+        not isinstance(yield_time_seconds, int | float)
+        or isinstance(yield_time_seconds, bool)
+        or yield_time_seconds < 0
+    ):
+        raise ValueError("reviewable shell invocation has an invalid yield window")
     if timeout_seconds is not None and (
         not isinstance(timeout_seconds, int | float) or isinstance(timeout_seconds, bool)
     ):
         raise ValueError("reviewable shell invocation has an invalid timeout")
-    if not isinstance(background, bool):
-        raise ValueError("reviewable shell invocation has an invalid background flag")
     if alias is not None and not isinstance(alias, str):
         raise ValueError("reviewable shell invocation has an invalid alias")
     return ShellReviewRequest(
@@ -510,8 +514,8 @@ def _project_shell_review_request(invocation: ToolInvocationContext) -> ShellRev
         command=command,
         cwd=cwd,
         environment_keys=environment_keys,
+        yield_time_seconds=yield_time_seconds,
         timeout_seconds=timeout_seconds,
-        background=background,
         alias=alias,
     )
 

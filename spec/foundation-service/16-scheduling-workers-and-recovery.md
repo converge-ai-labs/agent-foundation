@@ -54,7 +54,7 @@ sequenceDiagram
     Executor->>DB: short fenced preparation-decision CAS
     alt continue
         DB-->>Executor: preparation accepted
-        Executor->>Harness: enter one logical Run with fresh RunBindings and EnvironmentRuntime
+        Executor->>Harness: enter one logical Run with fresh RunBindings and Environment adapters
         loop bounded heartbeat
             Executor->>DB: renew only while this Attempt still owns the lease
         end
@@ -114,7 +114,7 @@ The newly created Attempt already owns the lease before recovery checks begin. I
 | State                       | The deterministic `state.json` exists and its key metadata, tenant, Run, Thread, digest, size, checkpoint sequence, outer schema, AgentPresetVersion, Runtime lock, and required Harness, Host, Capability, and Environment-state codecs validate exactly.                            |
 | Unknown Agent tool outcomes | Every durable prior Agent tool dispatch absent from that exact complete state can be represented as bounded `unknown_outcome` context. The check reads no provider business state and never automatically replays a call.                                                             |
 | Budget                      | The already-created Attempt remains within the applicable `max_recovery_attempts` or `max_handoffs` count, the fixed `recovery_deadline_at`, and every configured aggregate usage ceiling after all durable known usage charges. Unknown required usage cannot be assumed to be zero. |
-| Frozen compatibility        | The exact AgentPresetVersion, Runtime lock, model execution snapshot, managed Skill artifacts, Connector contracts, Environment connector locks, state-owned Environment configuration, and all other frozen dependencies are present, digest-valid, and compatible.                  |
+| Frozen compatibility        | The exact AgentPresetVersion, Runtime lock, model execution snapshot, managed Skill artifacts, Connector contracts, Environment Provider locks, state-owned Environment configuration, and all other frozen dependencies are present, digest-valid, and compatible.                   |
 | Current authority           | Current Workspace and principal policy, RoleBindings, Connection eligibility, Environment provider selection, required Secret metadata, and intended credential uses still authorize reconstruction. Persisted references grant no authority by themselves.                           |
 
 The decision is complete:
@@ -127,17 +127,17 @@ A confirmed missing or corrupt state, incompatible schema or lock, digest mismat
 
 The same preparation contract applies to a planned-handoff successor. It reads the latest successfully committed complete value at the Run's unchanged `state.json` key and does not require a handoff-specific checkpoint marker or infer `yielded` from object contents. It preserves the exact pinned Runtime lock and accepts a different Foundation Service build only when that build can read the state schemas and serve every frozen dependency named by the Run.
 
-Recovery does not probe model reachability, inspect external tool or provider business state, validate or reconcile a previous Sandbox, or resume a previous Environment resource. Model reachability and fresh Environment connection are ordinary outcomes of the newly owned Attempt.
+Recovery does not probe model reachability, inspect external tool or Provider business state, validate a backing target, or re-enter a previous Environment. Model reachability and fresh Environment entry from current Host state are ordinary outcomes of the newly owned Attempt.
 
 ## Worker Run Boundary
 
 After preparation succeeds, the owning Worker execution loop reconstructs safe process-local Agent values from the exact AgentPresetVersion, Run-pinned Runtime lock, fresh authorized credentials, and Run-owned model execution snapshot. It never re-resolves current ModelConfig or the active Runtime lock. Managed plugin factories create fresh Agent-specific instances. Managed Skill packages named by the effective selection frozen in `state.json` are verified and materialized through a fresh `SkillManager` and fresh Environment before model exposure.
 
-The execution loop constructs fresh Environment connector scopes from the exact desired mount configuration in `state.json`. Each connector attaches the configured already-running resource and supplies one fresh process-local attachment. The Worker adapts those attachments into runtime mounts, constructs and retains one `EnvironmentRuntime`, and keeps each resource alive only while its attachment scope, the Harness run, and the Attempt lease remain active. Foundation does not create, resume, pause, destroy, lease, validate, or reconcile the external resource. A fresh connection failure is an Attempt execution failure, classified under the ordinary retry and budget rules.
+The execution loop loads current Host state for the exact desired mounts in `state.json`, resolves each trusted `EnvironmentProvider`, and constructs one fresh process-local `Environment` adapter per mount without I/O. Harness enters and closes those adapters non-destructively. In unconditional finalization, the Worker dumps each adapter's latest known state and publishes only values changed from those supplied, independently from Run checkpoint or outcome publication. Entry or finalization failure is an Attempt execution failure classified under the ordinary retry and budget rules; only separate Host cleanup policy invokes `destroy()`.
 
 The execution loop calls the public process-local Harness Python API from its verified Runtime. It is the sole consumer of the `HarnessRunStream` and owning `HarnessAguiObserver`. Database sessions and locks never span reconstruction I/O, provider calls, Harness work, waits, sleeps, event streaming, or cleanup.
 
-As soon as Harness supplies its Run identity and before the first live observation, the execution loop binds that identity immutably to the current Attempt under its fence and changes the Attempt from `leased` to `running`. A replacement creates a fresh Attempt, Harness Run, connector scopes, attachments, runtime mounts, `EnvironmentRuntime`, clients, credentials, and `RunBindings`. It never restores another process's task, session, socket, attachment, runtime, Sandbox, or stream subscriber.
+As soon as Harness supplies its Run identity and before the first live observation, the execution loop binds that identity immutably to the current Attempt under its fence and changes the Attempt from `leased` to `running`. A replacement creates a fresh Attempt, Harness Run, Environment adapters, clients, credentials, and `RunBindings`. It never restores another process's task, session, socket, adapter, entered facade, or stream subscriber.
 
 ## Thread Inbox and Control Reconciliation
 
@@ -151,7 +151,7 @@ Worker shutdown unregisters process-local run controls and stops group consumpti
 
 Retries remain owned by the layer that knows the failed boundary:
 
-- bounded connection and keep-alive transport retries remain in the Environment connector;
+- bounded Provider transport retries remain inside the fresh Environment adapter under Provider and Host policy;
 - Harness semantic recovery creates another ModelAttempt inside one Harness Run;
 - eligible pending inbox delivery that can no longer enter the current native Run prevents completed sealing and follows the [active-control recovery rule](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment);
 - Foundation creates another RunAttempt only after the prior Attempt has failed, yielded, or had its lease expire, and only under the applicable Run budget;

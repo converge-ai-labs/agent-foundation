@@ -14,8 +14,8 @@ The Host also owns durable acceptance, worker `ExecutionAttempt` values, leases,
 | Trusted direct Python object reconstruction                | Owns                                          | Validates process-local composition                 |
 | Optional plugin configuration/loading                      | Persists or supplies deployment input         | Owns document, loading, and application             |
 | Agent Identity and provider policy                         | Issues/evaluates                              | Carries through fresh bindings                      |
-| Environment Providers and Resources                        | Chooses source and durable ownership policy   | Owns only explicitly ephemeral inputs               |
-| Environment and model resolution                           | Supplies optional sources/bindings and policy | Normalizes, enters, and closes run scope            |
+| Environment Providers, configuration, and current state    | Selects and owns durable lifecycle behavior   | Never discovers or persists them                    |
+| Environment and model resolution                           | Supplies fresh adapters, resolver, and policy | Enters, routes, snapshots, and closes Run scope     |
 | Agent loop and outer middleware                            | Delegates                                     | Owns process-locally                                |
 | Internal `ModelAttempt` values                             | Observes one logical run                      | Owns bounded recovery                               |
 | Worker crash and durable replay                            | Owns                                          | Exports portable state only                         |
@@ -43,11 +43,11 @@ At execution time trusted installed adapters create:
 - native `AgentSpec` containing only concrete `HarnessModelCharacteristics`, concrete native `ModelSettings`, and, for code-first output, a process-local `OutputSpec`;
 - optional Model or logical model name;
 - Agent-bound Capabilities that own all function tools, Toolsets, guidance, settings, and hooks;
-- optional stable Host operator implementations passed to the exact Capabilities that own async subagent or background-process presentation;
+- an optional stable `SubagentOperator` passed to a definition-selected async `SubagentCapability`;
 - optional direct concrete Harness plugin instances;
 - self-healing and semantic recovery policy.
 
-An operator is a trusted process-local interface object, not persisted Agent content or a Toolset contribution. The Capability fixes the model-visible mode and Toolset when the definition is reconstructed. The operator receives explicit current-run correlation on each call and owns canonical work without storing mutable current-run authority in the reusable Capability.
+An async subagent operator is a trusted process-local interface object, not persisted Agent content or a Toolset contribution. The Capability fixes the model-visible subagent mode and Toolset when the definition is reconstructed. The operator receives explicit current-run correlation on each call and owns canonical child work without storing mutable current-run authority in the reusable Capability. Shell processes need no Host operator and remain inside the exact entered Run Environment.
 
 Configured plugin instances are created by `HarnessBuilder` from an explicit `HarnessBuildContext` or the ambient source. The deployment switch remains false by default, while a trusted create-and-run or create-and-stream Host path can pass `configured_plugins_enabled=True` when constructing that operation's executable. They need not be reconstructed by a Host adapter, and the choice cannot change after Agent construction.
 
@@ -60,19 +60,18 @@ The resulting value is an ordinary `AgentDefinition`. An operator may pass an ex
 For each logical run the Host can construct `RunBindings` with:
 
 - the trusted `AgentInstanceContext`;
-- an optional advanced `EnvironmentRuntime` when it needs an explicit initial mount set, live mount mutation, or run extensions;
 - an optional fresh `RunModelResolver`;
 - optional model-context middleware;
-- fresh run Capabilities;
+- fresh run Capabilities required by definition-selected features;
 - bounded non-authoritative metadata.
 
-An embedded caller can omit `RunBindings`; the Harness creates fresh embedded bindings. Environment selection is independent from the remaining bindings: the caller passes one Provider or entered Resource through `environment=`, a mixed alias mapping through `environments=`, or an advanced aggregate through `RunBindings.environment`. High-level and advanced inputs cannot be combined.
+An embedded caller can omit `RunBindings`; Harness creates fresh embedded bindings. Environment selection is independent from the remaining bindings: the caller passes one already constructed `Environment` or `EnvironmentMount` through `environment=`, or a named mapping through `environments=`. Provider keys, specifications, Provider objects, state envelopes, and lifecycle policy are not Harness Run inputs.
 
 The Host supplies `AgentInstanceRef` as workload identity and policy correlation. Thread identity is independent: the Harness generates `HarnessState.thread_id` for new history and restores it into fresh `AgentContext` from the State selected for continuation. A new Harness run or worker `ExecutionAttempt` changes transient run correlation but does not change the State-owned ID, and no fresh binding can override it.
 
-The Harness enters and activates the normalized Environment runtime for the complete logical run. An advanced Host retains that same `EnvironmentRuntime`; a reconciliation task can start before stream entry and await `runtime.wait_until_active()` without polling, then mount, replace, unmount, or select a default during input preparation, model attempts, tool work, or recovery backoff. The runtime is never put in metadata, `AgentContext`, a Capability namespace, a model tool, or a durable record, and its mutation methods reject every call after the run terminal fence.
+Harness enters the complete initial adapter mapping before input production and exposes one stable internal bound facade for the logical Run. A trusted Run integration can apply linearizable mount, replace, unmount, or default-selection changes through a controller bound to that exact Run. The controller is never placed in metadata, `AgentContext`, a Capability namespace, model tools, or durable records; it rejects calls after the terminal fence and cannot mutate Host durable Environment association.
 
-Provider specification validation, built-in and third-party factory selection, create/resume/pause/destroy behavior, resource state, and fresh attachment acquisition use the separate [Environment Provider contract](../agent-environment-provider/README.md). Provider availability and schema validity never authorize a run. Passing a Provider to the high-level API explicitly selects one ephemeral Resource lifetime. Passing an entered Resource selects attachment only: the Host retains its outer scope and can reuse it across runs while the Harness holds one fresh attachment for each run and never selects pause or destroy. Durable Hosts use the entered Resource or advanced runtime form when the Resource must survive suspension or continuation. Provider resource state and import targets never enter `RunBindings` or `HarnessState`.
+Provider specification validation, catalog selection, inert adapter construction, re-entry state, and backing-target lifecycle use the separate [Environment Provider contract](../agent-environment-provider/README.md). Provider availability and schema validity never authorize a Run. The Host resolves authoritative `EnvironmentState | None`, constructs one fresh Environment per independent Run, and passes it to Harness. Harness never calls `warmup()` or `destroy()` and its `close()` path is non-destructive. `HarnessState.environment_states` contains portable observations only; it does not become managed Host authority or a `RunBindings` value.
 
 A hosted model integration normally supplies an async callable satisfying `RunModelResolver`; it resolves its own trusted configuration, current policy, credentials, and route selection, then returns a native Model or raises. It reads `ModelResolutionContext.deps.thread_id` and derives or restores provider model-session and prompt-cache affinity from that State-owned value and the selected model/provider namespace. A Session or `AgentInstanceRef` routing key may remain broader, but it cannot replace the prompt-cache key for the root and all children because those Agents own different message histories. The Harness applies no special catalog role validation and, if a Host omits the resolver for a string model, uses Harness `infer_model()` with the builder's optional gateway Provider factory. A fail-closed hosted profile therefore requires its worker adapter to supply and test the resolver; this is a Host invariant, not a different Harness API.
 
@@ -91,9 +90,9 @@ sequenceDiagram
     Host->>Harness: later new run with fresh bindings and selected state
 ```
 
-The Host stores and selects `HarnessState`, including its stable Thread ID. If the Host persists provider resources, it separately stores desired Environment mounts and `EnvironmentProviderResourceState`, along with definition revision, any additional opaque non-derivable provider continuation selector, accepted client-tool pending data, asynchronous child state, delivery ledgers, and durable reconciliation evidence.
+The Host stores and selects `HarnessState`, including its stable Thread ID. For managed Environments, it separately owns desired mounts, current `EnvironmentState | None`, root/child Thread association, runtime-collaborator resolution, cleanup/prune behavior, accepted client-tool pending data, asynchronous child state, delivery ledgers, and durable reconciliation evidence. The specification does not prescribe Host record or link models.
 
-`HarnessState` restores public Pydantic messages, JSON Capability namespaces, and optional provider-defined portable Environment data for already selected fresh mounts. It does not restore the current mount set, provider reachability, or launch authority. Plugin objects, Model resolvers, Environment runtimes and bindings, credentials, policy, usage, active attempts, and delivery facts are rebuilt.
+`HarnessState` restores public Pydantic messages and JSON Capability namespaces and carries a direct mount-name-to-`EnvironmentState` mapping. It does not restore desired mounts, current managed state, provider reachability, process authority, or lifecycle authority. A Host may adopt portable Environment values only in an explicit unmanaged/import flow. Plugin objects, Model resolvers, Environment adapters, credentials, policy, usage, active attempts, and delivery facts are rebuilt.
 
 The Harness defines no mandatory model route pin or provider-session schema. If one provider requires an additional durable continuation selector beyond public messages and `thread_id`, the Host and that model integration own it as provider-specific state and associate it with the selected Harness State. It is not a generic Harness recovery condition, and the Host never substitutes a fresh Harness or model-attempt ID for the State-owned ID.
 
@@ -104,7 +103,7 @@ The Host distinguishes:
 - internal Harness `ModelAttempt` values inside one live logical run;
 - a new durable worker `ExecutionAttempt` after process loss, lease loss, or selected recovery.
 
-A new durable Host attempt always creates a new Harness run with fresh bindings and a new `EnvironmentRuntime`. It reconstructs desired mounts from Host state, resumes or creates provider Resources through the selected Provider before Harness entry, passes fresh attachments or provider candidates to the run, uses only an authoritative selected checkpoint, and does not blindly replay a possible external mutation. The interrupted-tool normalization text explicitly preserves unknown outcome and tells the next model to inspect current state.
+A new durable Host attempt always creates a new Harness Run with fresh bindings and fresh Environment adapters. It reconstructs desired mounts, resolves current managed state before construction, supplies fresh runtime collaborators, passes the adapters to Harness, and uses only an authoritative selected checkpoint. It does not blindly replay a possible external mutation. Interrupted-tool normalization preserves unknown outcome and tells the next model to inspect current state.
 
 Provider transport retry and Harness Model self-healing do not create durable Host attempt records. Usage observations from all inner `ModelAttempt` values remain in the one logical run accumulator and must not be double-counted with terminal snapshots.
 
@@ -114,15 +113,15 @@ Native Pydantic `DeferredToolRequests` end the Harness run as `status="suspended
 
 External calls and approvals remain distinct. A Host reconstructs exact tool surfaces from its own revision and pending attachment and verifies their identity before resume; those surfaces and the resume envelope are not encoded in `HarnessState`.
 
-## Async Operators
+## Host Operators
 
-The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. A first-party `SubagentCapability(execution="async", operator=...)` fixes the standard async Toolset and owns one parent Agent's compact references and portable projection. The configured `SubagentOperator` owns fresh child authority and canonical execution. The default `SubagentManager` retains tasks, streams, latest child state, steering, cancellation, and results in memory; a custom operator may map work to an independently managed real Thread.
+The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. `SubagentCapability(async_enabled=True, operator=...)` fixes the standard async Toolset and requires a Host-owned `SubagentOperator`. Before admission, Harness supplies an immutable plan containing the exact built child, derived child Identity, applied context, usage ceilings, and detached parent correlation. The operator owns child Thread identity, admission, scheduling, fresh `RunBindings`, Environment association and re-entry, recursive Harness invocation, checkpoints, status, activity, wait and wake, steering, cancellation, linked resume, loss, cleanup, and retention.
 
-A successful async spawn is an ordinary tool result, not `DeferredToolRequests`. While the parent Run is active, Harness enqueue tells the model to wait or inspect. Independently, the operator always dispatches stable Host hooks; after Run closure a Host may use the hook to wake the parent Thread. Completion does not satisfy the original spawn call, mutate an already selected continuation, or itself create another Harness Run. A later Run rebinds the opaque backend ID through the same operator or marks it lost. The parent projection stores no child `HarnessState`.
+Harness supplies no default async manager, execution-store protocol, parent-state mirror, completion observer, or shutdown operation. A successful async spawn is an ordinary tool result, not `DeferredToolRequests`. Completion does not satisfy the original spawn call, mutate an already selected continuation, or itself create another Harness Run. A later Run queries the Host operator using the public execution reference. Parent Run closure neither cancels accepted child work nor closes the operator.
 
-`DynamicEnvironmentCapability` follows the same composition rule for shell work. Its configured `ShellOperator.supports_background` declaration fixes the shell Toolset. The default foreground operator uses the current Environment; `ProcessManager` owns detached in-memory background processes and stable hooks. No `RunBindings` field selects subagent mode, supplies either operator, or changes background shell availability.
+Shell processes follow a separate Environment-owned contract. When an entered Environment exposes process actions, Harness supplies the four standard Run-owned shell tools, active-Run final-completion readiness, explicit-offset polling, and cleanup without any Host operator. These processes cannot survive that Run, contribute no portable state, and are killed and released before Environment adapters close.
 
-A Host requiring durable child or process executions, attempts, retries, checkpoints, result delivery, or wake-up owns those resources behind the operator interface. The Harness does not generalize them into a Job, Session child, or distributed workflow model.
+Foundation Service and embedded callers use this ordinary Run-owned behavior without another process integration layer. Cross-Run process execution, durable result delivery, idle wake, and Agent UI process integration are not current Harness features. Async subagents retain their independent Host operator and share no Manager or lifecycle store with shell processes.
 
 ## Events and Completion
 
@@ -140,7 +139,7 @@ The builder's default environment selection reads `A13N_HARNESS_TRACE_LEVEL`, `A
 
 ## Embedded Profile
 
-An embedded caller can construct `AgentDefinition` directly or use the `AgentSpec` overload of `HarnessBuilder.build()`, use Harness model inference when no `RunModelResolver` is present, retain an advanced `EnvironmentRuntime` when dynamic mounts are needed, and keep state in memory or application-selected storage. It follows the same Environment lifecycle, plugin, model recovery, result, and cleanup semantics.
+An embedded caller can construct `AgentDefinition` directly or use the `AgentSpec` overload of `HarnessBuilder.build()`, use Harness model inference when no `RunModelResolver` is present, construct Environment adapters through trusted Providers, and keep state in memory or application-selected storage. It follows the same non-destructive Environment lifecycle, plugin, model recovery, result, and cleanup semantics.
 
 ## Compatibility
 
@@ -165,7 +164,7 @@ A Host rejects an incompatible revision or adapter before building process-local
 06. New durable recovery uses a fresh Harness run and fresh bindings.
 07. Process-local completion is only a candidate for Host durable completion.
 08. State restores data, not authority, desired mounts, runtime mutation authority, or live resources.
-09. A Host mutates the current mount set only through the `EnvironmentRuntime` bound to that logical run.
+09. Run-local mount mutation uses only the controller bound to that logical Run and never changes durable Host association.
 10. Every independent root, child, or fork history has its own State-owned Thread ID; continuation restores it into `AgentContext`, and fresh model resolvers derive affinity from it rather than from workload or transient run IDs.
 11. The Host owns Observation provider, propagation, export, sanitization, flush, and shutdown lifecycle and supplies a conforming provider whose telemetry callbacks do not raise into instrumented application code.
 

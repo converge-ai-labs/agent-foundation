@@ -144,8 +144,6 @@ class _DynamicEnvironmentContext:
             if cwd is not None:
                 return (self._path_resource(context, cwd, alias=alias),)
             return (self._binding_resource(context, alias),)
-        if tool_id == "environment.process_status":
-            return ()
         if tool_id.startswith("environment.process_"):
             backend_id = self._resolve_process_resource(_string_argument(arguments, "process_id"))
             return (

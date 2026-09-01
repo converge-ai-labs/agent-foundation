@@ -2,13 +2,13 @@
 
 ## Design Position
 
-An `EnvironmentProviderSpec` is the serializable, credential-free description of one desired Environment provider resource. It identifies a trusted provider key, one provider-owned configuration schema version, and a finite JSON parameter object. The same selected factory validates that document wherever a Host accepts, stores, compares, or executes it.
+An Environment Provider is selected by a namespaced key and one versioned serializable configuration. Configuration expresses desired behavior; it does not contain current backing-target identity, credentials, clients, endpoints resolved at runtime, or process-local authority.
 
-The specification is not a Harness binding, live resource, provider launch record, arbitrary import instruction, or user authorization decision. Validation proves schema compatibility only. A Host separately decides which provider keys and parameter values are allowed for the current caller and deployment.
+The catalog maps a trusted key to an inert `EnvironmentProvider`. The Provider validates configuration and constructs fresh `Environment` instances from optional `EnvironmentState` and explicit runtime collaborators. Discovery and construction perform no external I/O.
 
-## Serialized Specification
+## Serialized Configuration
 
-The following schema is the stable serialized envelope:
+A provider configuration envelope has this conceptual shape:
 
 ```python
 class EnvironmentProviderSpec(BaseModel):
@@ -16,203 +16,148 @@ class EnvironmentProviderSpec(BaseModel):
 
     provider_key: str
     schema_version: str
-    parameters: Mapping[str, JsonValue] = Field(default_factory=dict)
+    configuration: JsonValue
 ```
 
-`provider_key` is a bounded namespaced identifier. `schema_version` selects the provider-owned parameter schema and migration rules. `parameters` is recursively detached, finite JSON. It contains desired resource properties only and never contains:
+The envelope is a shared serialized boundary. A Provider owns the exact model for `configuration` at each `schema_version`.
 
-- credentials or credential references usable without current Host authorization;
-- provider lifecycle identity such as a container or sandbox ID;
-- an endpoint, socket, EIP session, or attachment credential;
-- launch, lease, destroy, retry, or reconciliation state;
-- a Python import target, object, callable, or serialized Harness value.
+Rules:
 
-A Host can wrap this envelope in its own named resource, policy, revision, or persistence schema. Those outer records are not part of the provider package contract.
+1. `provider_key` is a bounded lowercase namespaced key such as `a13n.docker`.
+2. `schema_version` is non-blank and belongs to the configuration schema, not the state codec.
+3. `configuration` is canonical JSON and rejects unknown fields through the provider model.
+4. Configuration contains no credential, live client, transport session, provider target ID, resolved endpoint, PID, operation receipt, or Host record identity.
+5. Paths and resource references are validated by the provider. Relative process-local interpretation is not permitted for persisted paths unless the provider schema defines an explicit portable base.
+6. Validation is deterministic and performs no filesystem, daemon, network, subprocess, or provider API I/O.
 
-## Factory Contract
+A Host can store its own definition revision around this envelope. That outer record may own user names, policy, sharing, and lifecycle settings, but those values do not become Provider configuration unless the provider contract needs them to define the target.
 
-The conceptual factory API is process-local:
+## Provider Contract
 
 ```python
-ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP = (
-    "a13n_environment_provider.providers"
-)
-
-
-class EnvironmentProviderRuntime(ABC):
-    """Provider-owned process-local runtime collaborator marker."""
-
-
-class EnvironmentProviderFactory(ABC):
-    @classmethod
-    def provider_key(cls) -> str: ...
-
-    @classmethod
-    def supported_schema_versions(cls) -> frozenset[str]: ...
-
-    @classmethod
-    def configuration_model(
-        cls,
-        schema_version: str,
-    ) -> type[BaseModel]: ...
-
-    @abstractmethod
-    def lifecycle_capabilities(
-        self,
-        configuration: BaseModel,
-    ) -> EnvironmentLifecycleCapabilities: ...
-
-    @abstractmethod
-    def create_provider(
-        self,
-        configuration: BaseModel,
-        *,
-        runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentProvider: ...
-```
-
-Each factory owns exactly one provider key and one or more explicitly supported configuration schema versions. `configuration_model()` returns the exact frozen Pydantic model for a supported version. The catalog validates `parameters` with `extra="forbid"` behavior, preserves no caller-owned mutable collection, and produces a process-local resolved value:
-
-```python
-@dataclass(frozen=True, slots=True)
-class ResolvedEnvironmentProviderSpec:
-    spec: EnvironmentProviderSpec
-    configuration: BaseModel
-    lifecycle_capabilities: EnvironmentLifecycleCapabilities
-    factory: EnvironmentProviderFactory
-```
-
-The resolved value is not serialized. It retains trusted code selected by the Host and can construct an `EnvironmentProvider` from one fresh process-local `EnvironmentProviderRuntime`. `lifecycle_capabilities()` is a pure, synchronous inspection of the already validated configuration. It performs no provider construction or external I/O and returns the exact allocation, attachment-concurrency, and pause capabilities that a provider created from that configuration will expose. A Host can therefore validate lifecycle and topology compatibility before acquiring runtime authority or causing provider effects. Catalog construction verifies that the created Provider reports exactly the introspected capabilities and rejects a mismatch.
-
-The runtime abstract marker has no Host or Harness dependency; each provider owns one exact typed runtime implementation carrying only current credential/client factories and other live collaborators. Runtime values are non-serializable and never enter provider specifications or resource state. Provider construction is synchronous and inert: it captures the runtime but performs no filesystem, Docker, provider, credential, network, daemon, or package-discovery I/O and creates no cleanup obligation.
-
-## Built-in and Extension Catalog
-
-The package ships four factories under exact keys:
-
-- `a13n.direct-local`;
-- `a13n.local-envd`;
-- `a13n.docker`;
-- `a13n.e2b`.
-
-Built-ins are selectable directly and do not depend on installed entry-point metadata. Third-party distributions can register one factory class:
-
-```toml
-[project.entry-points."a13n_environment_provider.providers"]
-"acme.sandbox" = "acme_environment.provider:AcmeEnvironmentProviderFactory"
-```
-
-Metadata discovery returns bounded references without importing targets. Catalog construction accepts explicit built-in keys, selected third-party keys, and direct factory instances. It preflights missing keys and every collision before importing a selected target. A third-party entry cannot replace or alias a built-in key. Empty third-party selection scans and imports no distribution metadata.
-
-```python
-@dataclass(frozen=True, slots=True)
-class EnvironmentProviderFactoryReference:
-    provider_key: str
-    import_target: str
-    distribution_name: str | None
-    distribution_version: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class EnvironmentProviderFactoryRegistration:
-    provider_key: str
-    class_module: str
-    class_qualname: str
-    import_target: str | None
-    distribution_name: str | None
-    distribution_version: str | None
-
-
-class EnvironmentProviderFactoryCatalog(
-    Mapping[str, EnvironmentProviderFactory]
-):
+class EnvironmentProvider(ABC):
     @property
-    def registrations(
-        self,
-    ) -> tuple[EnvironmentProviderFactoryRegistration, ...]: ...
+    def key(self) -> str: ...
 
-    def require(
-        self,
-        provider_key: str,
-    ) -> EnvironmentProviderFactory: ...
+    @property
+    def configuration_versions(self) -> frozenset[str]: ...
 
-    def resolve_spec(
+    def validate_configuration(
         self,
-        spec: EnvironmentProviderSpec,
-    ) -> ResolvedEnvironmentProviderSpec: ...
-
-    def create_provider(
-        self,
-        spec: EnvironmentProviderSpec,
         *,
-        runtime: EnvironmentProviderRuntime,
-    ) -> EnvironmentProvider: ...
+        schema_version: str,
+        value: JsonValue,
+    ) -> BaseModel: ...
 
-
-def discover_environment_provider_factory_references(
-) -> tuple[EnvironmentProviderFactoryReference, ...]: ...
-
-
-def build_environment_provider_factory_catalog(
-    *,
-    builtin_keys: Iterable[str] = (),
-    extension_keys: Iterable[str] = (),
-    explicit_factories: Iterable[EnvironmentProviderFactory] = (),
-) -> EnvironmentProviderFactoryCatalog: ...
+    def create_environment(
+        self,
+        *,
+        configuration: BaseModel,
+        state: EnvironmentState | None,
+        runtime: object | None = None,
+    ) -> Environment: ...
 ```
 
-Built-in selection is explicit but requires no metadata scan or import target. Calling the discovery function explicitly scans installed entry-point metadata and returns deterministic bounded references without loading target code. Catalog construction loads only the requested extension keys, and an empty `extension_keys` value performs no metadata scan. Direct factory instances are already trusted process-local inputs; their keys still participate in complete collision checks. The returned catalog and registration sequence are immutable snapshots.
+The exact language API may use typed generic runtime values, but these semantics are fixed:
 
-A selected entry point must resolve to an `EnvironmentProviderFactory` subclass with a safe no-argument constructor. The class's `provider_key()` must equal the entry-point name. Catalog construction instantiates each selected factory once and records bounded distribution provenance for Host lock verification. There is no mutable global registry or import-time auto-registration.
+- The Provider is inert after construction.
+- `validate_configuration()` performs pure parsing, normalization, and deterministic validation.
+- `create_environment()` performs no external I/O and returns a fresh single-use adapter.
+- The state is either `None` or has the same `provider_key`. Provider-specific codec validation can occur during construction, but target validation and external observation occur only during explicit Environment operations.
+- Runtime collaborators are fresh process-local trusted values. They can include credential sources, a Docker engine boundary, a bootstrap store, an EIP transport factory, or a local runtime allocator.
+- Runtime collaborators and configuration are retained only by the resulting process-local Environment. They are never copied into `EnvironmentState`.
+- A Provider never stores durable current state, chooses retention, or associates Threads.
+
+There is no separate Provider factory entity. Catalog loading creates an `EnvironmentProvider` directly through the trusted entry point. There is no lifecycle Provider, Resource, attachment, or binding layer between Provider and Environment.
+
+## Catalog
+
+The package owns one explicit catalog:
+
+```python
+class EnvironmentProviderCatalog:
+    def register(self, provider: EnvironmentProvider) -> None: ...
+
+    def resolve(self, provider_key: str) -> EnvironmentProvider: ...
+
+    def load_entry_points(
+        self,
+        *,
+        enabled_keys: Collection[str],
+    ) -> None: ...
+```
+
+The built-in keys are:
+
+| Key                 | Target                                                            |
+| ------------------- | ----------------------------------------------------------------- |
+| `a13n.direct-local` | One Host-selected local root using direct operating-system access |
+| `a13n.local-envd`   | One Host-selected workspace served by a fresh local envd process  |
+| `a13n.docker`       | One Docker container running envd                                 |
+| `a13n.e2b`          | One E2B sandbox running envd                                      |
+
+Third-party Providers register under the `a13n_environment_provider.providers` entry-point group. One entry point contributes exactly one Provider. Entry-point names and `provider.key` must match.
+
+Duplicate keys, malformed keys, import failures, wrong object types, and Provider-construction failures are explicit catalog errors. The catalog does not catch such failures and continue with a partial ambiguous selection.
 
 ## Selection and Authorization
 
-Installed, discoverable, selected, schema-valid, deployment-trusted, and caller-authorized are separate states. The package enforces selected-code and schema boundaries; the Host owns policy.
+Catalog presence does not authorize use. A Host:
 
-An API value, model value, `HarnessState`, provider parameter, resource-state payload, or database field cannot name an arbitrary `module:object`. A Host selects an exact provider key from its trusted catalog before Provider construction. Provider configuration cannot enable another provider, load an extension, or add a Harness Capability.
+1. selects an allowed key from trusted definition or deployment configuration;
+2. resolves the Provider from an allowlisted catalog;
+3. validates the exact configuration version and payload;
+4. resolves current authoritative state and fresh runtime collaborators;
+5. calls `create_environment()`;
+6. passes the Environment to Harness or invokes Host-only warmup/destroy behavior.
 
-Provider schemas can perform deterministic semantic validation that is intrinsic to the provider, such as positive resource sizes or mutually exclusive Docker image selectors. Validation that requires credentials, current vendor state, filesystem inspection, network calls, or allocation belongs to an explicit async Provider operation rather than document decoding.
+Model content, imported Harness state, a package installed in the environment, or an arbitrary entry-point key cannot select a Provider or supply runtime collaborators.
+
+A state value cannot retarget configuration. The Provider validates that its opaque state payload is compatible with the selected configuration. A mismatched Provider key, configuration fingerprint, target metadata, or immutable identity fails rather than being adopted or rewritten.
 
 ## Configuration Evolution
 
-A provider configuration schema version changes independently from the package version, EIP version, Harness state version, and Host record version. A factory accepts only its declared versions. It does not infer a version from parameter shape or silently reinterpret an unknown version as latest.
+Configuration `schema_version` and `EnvironmentState.state_version` evolve independently.
 
-A provider-owned migration is an explicit pure transformation from one accepted serialized `EnvironmentProviderSpec` to another. The caller decides whether to persist or use the migrated value. Migration performs no provider I/O and cannot produce resource state, current credentials, or runtime attachment authority.
+- A new configuration version changes desired configuration syntax or semantics.
+- A new state version changes the provider-owned re-entry payload codec.
+- Supporting a new configuration version does not imply accepting old state versions.
+- Supporting a state migration does not authorize changing desired configuration.
+- Providers reject unsupported versions explicitly.
+- Hosts migrate stored configuration or state only through an explicit provider-owned migration boundary. Entry never silently rewrites incompatible data.
 
-Compatible changes within a schema version can only narrow implementation internals without changing accepted parameter meaning or defaults. Adding a new optional parameter with a stable default requires the selected model and canonical representation to agree across Host components. Removing, renaming, changing authority, or changing the meaning/default of a field requires another schema version.
+Configuration normalization produces a stable fingerprint when a provider needs to prove that state belongs to the selected desired configuration. The fingerprint is compatibility evidence, not authorization or target identity.
 
 ## Failure Semantics
 
-| Failure                                                         | Outcome                                                    |
-| --------------------------------------------------------------- | ---------------------------------------------------------- |
-| Invalid provider key or envelope                                | Bounded specification error; no target import              |
-| Missing selected key                                            | Catalog error before Provider construction                 |
-| Built-in or entry-point collision                               | Complete catalog construction fails                        |
-| Import or factory construction fails                            | Bounded load error with protected cause                    |
-| Unsupported schema version                                      | Explicit compatibility error; no fallback                  |
-| Invalid or oversized parameters                                 | Validation error without Provider construction             |
-| Capability inspection fails or returns an invalid value         | Bounded factory error before Provider construction         |
-| Provider constructor raises                                     | Bounded factory error; no external cleanup may be required |
-| Provider reports capabilities different from factory inspection | Factory target error; Provider is not returned             |
-| Host policy denies a valid spec                                 | Host denial; package does not substitute another provider  |
+| Failure                                       | Behavior                                                               |
+| --------------------------------------------- | ---------------------------------------------------------------------- |
+| Unknown or disabled Provider key              | Fail before configuration validation or runtime resolution             |
+| Duplicate catalog key                         | Fail catalog construction                                              |
+| Unsupported configuration version             | Fail with supported versions and no provider effects                   |
+| Invalid configuration payload                 | Fail with bounded field diagnostics and no provider effects            |
+| Mismatched state Provider key                 | Fail before Environment construction                                   |
+| Invalid state JSON or unsupported codec       | Fail during deterministic state validation                             |
+| Missing runtime collaborator                  | Fail Environment construction or explicit entry before target mutation |
+| Entry-point import or Provider creation fails | Fail catalog loading; do not silently omit an enabled Provider         |
 
-Safe errors can include the bounded provider key, schema version, and distribution provenance. They never include parameter values, object representations, credentials, raw vendor exception text, or private installation paths.
+Errors never expose credentials, bearer URLs, Docker socket details, raw Host paths outside safe configuration diagnostics, or native exception text to model-facing surfaces.
 
 ## Compatibility
 
-Provider key, configuration schema version, factory API, package version, vendor SDK range, EIP version, and Host persistence schema are independent compatibility axes. The Harness release group pins one provider-package version, but a serialized provider specification remains governed by its own `provider_key` and `schema_version`.
+Provider keys are stable serialized discriminators. A key changes only for a semantically distinct Provider family. Configuration and state version changes follow their explicit compatibility boundaries.
 
-Changing an existing built-in key, making discovery implicit, allowing arbitrary import targets, making factory or Provider construction effectful, or treating schema validation as authorization is incompatible.
+`EnvironmentProvider`, `Environment`, and `EnvironmentState` are the only shared lifecycle API. The pre-release removal of Provider factories, Resources, attachments, Provider bindings, lifecycle capability matrices, and pause APIs is a direct cut with no compatibility aliases.
 
 ## Invariants
 
-01. One serialized provider specification contains only a provider key, schema version, and finite credential-free desired parameters.
-02. The selected provider factory is the sole owner of its parameter schema and migration meaning.
-03. Built-in keys are exact, namespaced, and cannot be shadowed by entry points.
-04. Package metadata is availability, not authorization.
-05. Empty extension selection performs no metadata scan or target import.
-06. Factory and Provider construction are deterministic, synchronous, and inert; a fresh typed runtime supplies current live collaborators without ambient credential lookup.
-07. Provider configuration never carries live authority, resource state, attachment state, or a Python import target.
-08. Unknown schema versions fail explicitly rather than receiving latest-version defaults.
-09. Factory lifecycle-capability inspection is pure and configuration-aware; a constructed Provider must report the same immutable capability value.
-10. Host policy can always deny or narrow a schema-valid provider specification.
+01. Provider resolution is explicit and allowlisted.
+02. Configuration validation and Environment construction perform no external I/O.
+03. Provider configuration contains desired behavior only.
+04. Current backing-target identity belongs in `EnvironmentState`, not configuration.
+05. Credentials and live collaborators remain process-local.
+06. Every `create_environment()` call returns a fresh single-use Environment.
+07. State cannot select another Provider or retarget incompatible configuration.
+08. Catalog availability never grants Agent authority.
+09. Configuration and state versions are independent explicit contracts.
+10. No separate Provider factory, Resource, attachment, or binding entity exists.

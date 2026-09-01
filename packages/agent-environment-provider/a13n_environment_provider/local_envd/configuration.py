@@ -101,20 +101,6 @@ class LocalEnvdProviderConfiguration(BaseModel):
         return self
 
 
-class LocalEnvdResourcePhase(StrEnum):
-    RUNNING = "running"
-    PAUSED = "paused"
-
-
-class LocalEnvdProviderStateData(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    environment_id: Annotated[str, Field(min_length=1, max_length=128)]
-    resource_correlation: Annotated[str, Field(min_length=1, max_length=128)]
-    configuration_fingerprint: Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
-    phase: LocalEnvdResourcePhase
-
-
 def _absolute_os_path(value: Path, *, label: str) -> Path:
     expanded = value.expanduser()
     if "\x00" in str(expanded):

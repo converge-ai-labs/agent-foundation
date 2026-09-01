@@ -21,9 +21,12 @@ The project builds on [Pydantic AI](https://ai.pydantic.dev/). Pydantic AI owns 
 flowchart LR
     App[Application or Host] --> Harness[Agent Harness]
     Harness --> PAI[Pydantic AI]
-    Harness --> Provider[Environment Provider]
-    Provider --> Direct[Direct Local]
-    Provider --> Envd[agent-envd via EIP]
+    Provider[Environment Provider] --> Environment[Fresh Environment]
+    App --> Provider
+    App --> Environment
+    Environment --> Harness
+    Environment --> Direct[Direct Local]
+    Environment --> Envd[agent-envd via EIP]
     Harness --> Stream[Agent Stream Protocol]
     Stream --> Consumer[AG-UI consumer]
 ```
@@ -33,7 +36,7 @@ These components stay separate deliberately:
 - the **application or Host** owns identity, authorization, persistence, delivery, and product policy;
 - the **Agent Harness** owns one process-local definition and logical run;
 - **Pydantic AI** owns the inner Agent loop;
-- an **Environment Provider** owns resource lifecycle and fresh runtime attachments;
+- an **Environment Provider** validates configuration and constructs fresh Environment adapters;
 - **`agent-envd`** serves one configured Environment generation over EIP;
 - **Agent Stream Protocol** projects public observations but does not run or resume an Agent.
 
@@ -53,7 +56,7 @@ Use `a13n-harness` when you want a reusable execution boundary around Pydantic A
 
 ## Environments
 
-An Environment is the boundary through which an Agent can work with files, commands, processes, retained output, and ports. The Environment Provider contract separates those operations from provider resource lifecycle.
+An Environment is one fresh single-use adapter through which an Agent can work with files, commands, processes, retained output, and ports. The Host selects a trusted Provider, configuration, current state, and runtime collaborators before passing the constructed adapter to Harness. Harness closes it non-destructively; target destruction remains an explicit Host operation.
 
 Use Direct Local for trusted work against a Host-selected directory. Use Local Envd or another EIP-backed provider when the workload needs an isolation or remote-execution boundary.
 

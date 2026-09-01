@@ -4,25 +4,25 @@
 
 An Agent UI Session is one local interaction history. It pins one resolved Agent snapshot, one resolved Environment snapshot, one exact Skill-exposure map, and one latest complete continuation bundle. It supports create, list, resume, fork, archive, pin, and delete without becoming a durable workflow.
 
-A live Run, its input, partial output, model client, provider attachment, `EnvironmentRuntime`, Runner-local async-child work, and subscriptions are process-local. Restart resumes the Session from its last successfully selected continuation. Work after that continuation can be lost or repeated.
+A live Run, input, partial output, model client, Environment adapters, Runner-local async work, and subscriptions are process-local. Restart resumes from the last selected continuation and reconstructs all live authority. Work after that continuation can be lost or repeated.
+
+Agent UI is the Host for Session Environments. It owns current state, root/child Thread association, changed-only publication, explicit cleanup, and prune behavior. Those behaviors use Agent UI's private persistence model and do not define shared Host record or link classes.
 
 ## Boundaries
 
-| Concern                   | Owner                                   | Session relationship                                                                         |
-| ------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Agent composition         | Resolved Agent snapshot                 | Session pins one exact immutable revision graph                                              |
-| Desired Environment       | Resolved Environment snapshot           | Session pins exact desired mounts and provisioning policy                                    |
-| Continuation              | Harness `HarnessState`                  | Stored in the selected continuation bundle without interpreting private Capability state     |
-| Suspended requests        | Harness `DeferredToolRequests`          | Stored beside `HarnessState` in the same selected continuation bundle                        |
-| Session selection         | Agent UI SQLite                         | Stores metadata and one current continuation reference                                       |
-| Provider resource effects | Runner and Environment Provider package | Host selects detached state needed to reconnect or clean up                                  |
-| Current mount set         | Harness `EnvironmentRuntime`            | Fresh and process-local for every Run                                                        |
-| Presentation              | Harness message history plus live AG-UI | Continuation supplies retained history; AG-UI is best-effort live output                     |
-| Async children            | Selected Runner generation              | Lost with that generation unless their result already reached a selected parent continuation |
+| Concern                   | Owner                                 | Session relationship                                                                 |
+| ------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------ |
+| Agent composition         | Resolved Agent snapshot               | Session pins one immutable revision graph                                            |
+| Desired Environment       | Resolved Environment snapshot         | Session pins exact Provider configuration, mount names, access, and provision policy |
+| Current Environment state | Agent UI Host                         | Latest authoritative `EnvironmentState` or authoritative `None`                      |
+| Continuation              | Harness `HarnessState`                | Stored without interpreting private Capability state                                 |
+| Suspended requests        | Harness `DeferredToolRequests`        | Stored beside `HarnessState` in the selected continuation bundle                     |
+| Current mount set         | Harness process-local bound facade    | Fresh for every independent root or child Run                                        |
+| Provider operations       | Fresh entered `Environment` in Runner | Constructed from Host-selected state before each Run                                 |
+| Backing-target lifecycle  | Host policy executed by Runner        | Warmup, explicit destroy, and prune never follow Harness close automatically         |
+| Presentation              | Harness history plus live AG-UI       | Continuation supplies retained history; live output is best effort                   |
 
 ## Environment Definition
-
-An Environment definition describes desired mounts and initial provisioning policy:
 
 ```python
 class EnvironmentDefinitionDocument(BaseModel):
@@ -40,22 +40,17 @@ class EnvironmentMountDefinition(BaseModel):
     model_alias: str
     provider: EnvironmentProviderSpec
     access: Literal["read_only", "read_write", "full"] = "full"
-
 ```
 
-The default provisions on first use and gives each mount `full` access. `read_only` permits model-facing file reads, `read_write` permits all file operations, and `full` permits every Agent-facing Environment capability offered by the Provider. Agent UI defines no idle timer or automatic pause policy. Provider-native idle or auto-stop behavior belongs to validated provider parameters. Session pause is an explicit Host command, and Session deletion requests provider destruction best effort. Agent UI does not retain a configurable cleanup workflow or orphan-resource policy.
+`mount_name` is Agent UI's stable desired-mount identity. `model_alias` is the Harness mount name. Access selects a Harness ceiling and is narrowed by the entered provider descriptor. A Run translates each selected desired mount into one fresh `EnvironmentMount` containing an already constructed adapter.
 
-Editing a mount's access creates a new immutable Environment revision and therefore a new resolved Environment snapshot. Existing Sessions continue to use their pinned snapshot; Agent UI never changes the access of an active or resumable Session in place. A user selects the new revision by creating or forking a Session through the ordinary snapshot-selection flow.
+The definition contains no credential, current provider target ID, endpoint resolved at runtime, live Provider/Environment/client, `EnvironmentState`, Harness mount ID, or `HarnessState`. Editing desired configuration or access creates a new immutable revision. Existing Sessions remain pinned until the user explicitly creates or forks a Session against another snapshot.
 
-The definition contains no arbitrary action set, credential, provider resource ID, endpoint resolved at runtime, attachment, live provider object, `EnvironmentRuntime`, or `HarnessState`. Exact Harness `EnvironmentPermissionSet` values are reconstructed only at the trusted Runner boundary from the selected access level and are not ordinary Agent UI configuration.
+`on_first_run` lets state absence create the provider target during first entry. `eager` asks the Host to send a detached warmup command to an authorized Runner after Session creation. The Runner constructs the fresh Provider adapter, invokes `warmup()`, reads its cached state, closes it, and returns detached state and outcome. Eager warmup state publication follows the same changed-only Host rules as Run finalization and does not create a Harness continuation.
 
-`mount_name` is the stable desired-mount identity. `model_alias` is the Harness mount name. A Run translates the selected desired definitions into one fresh `EnvironmentRuntime`. Agent UI does not persist or restore that runtime.
-
-Agent UI's data root is internal storage and cannot be selected as an executable Session mount. Existing Host-native roots are normalized before use and must not overlap the data root. This direct overlap check is sufficient; Agent UI does not build a broader filesystem sandbox policy around ordinary local configuration.
+Agent UI's data root is internal storage and cannot be selected as an executable Session mount. Host-native roots are normalized and must not overlap the data root. Direct Local remains an explicit trusted local execution choice, not a sandbox.
 
 ## Session Record
-
-The application projection is intentionally small:
 
 ```python
 class LocalSession(BaseModel):
@@ -72,19 +67,20 @@ class LocalSession(BaseModel):
     continuation: ContinuationRef
 ```
 
-The selected continuation supplies the root Thread identity. Agent UI does not need durable `accepted`, `running`, `interrupted`, or queue records to explain process-local work. Current Run status is a detached process-memory observation exposed only by the Host that owns it.
+The selected continuation supplies the root Thread identity. Agent UI does not need durable accepted/running/interrupted records to explain process-local root work. Current Run status is a process-memory observation exposed by the owning Host.
 
-Session display fields and the latest continuation reference use normal last-write-wins behavior. One Host serializes its own Runs for a Session, but Agent UI does not coordinate separate local processes or merge divergent continuations.
+Session display fields and continuation selection use ordinary last-write-wins. One Host serializes its own Runs for a Session, but separate local processes can still race and the last committed write wins.
 
-A Session is created by:
+Session creation:
 
-1. resolving and validating the selected Agent and Environment snapshots;
-2. creating `HarnessState.new()`;
-3. publishing one baseline continuation bundle;
-4. inserting Session metadata and its continuation reference in one short transaction;
-5. provisioning eager Environment resources when requested, without changing continuation semantics.
+1. resolves and validates exact Agent and Environment snapshots;
+2. creates `HarnessState.new()`;
+3. publishes one baseline continuation;
+4. inserts Session metadata and continuation reference in one short transaction;
+5. initializes private Environment associations with authoritative no-state values;
+6. performs eager warmup when selected and publishes any changed state.
 
-A resource provisioning failure is reported by Environment availability. It does not require a separate Session state machine with provisioning, blocked, deleting, and cleanup-pending states. A Session can exist while an Environment is temporarily unavailable.
+Warmup failure is reported as Environment unavailability. It does not require a Session workflow state machine.
 
 ## Continuation Model
 
@@ -93,133 +89,127 @@ class ContinuationRef(BaseModel):
     object_digest: str
 ```
 
-The object digest is the complete continuation identity. The referenced `StoredSessionContinuation` contains the Harness release, complete `HarnessState`, optional exact `DeferredToolRequests`, and creation time. Agent UI does not duplicate Thread, suspension, or codec fields in SQLite; it validates them when loading the object.
+The referenced `StoredSessionContinuation` contains the Harness release, complete `HarnessState`, optional exact `DeferredToolRequests`, and creation time. Agent UI does not duplicate Thread, suspension, or codec fields in SQLite.
 
-The Host attempts to save every complete state boundary returned by the Harness:
+The Host attempts to save every accepted complete state boundary:
 
 - completed root Run;
 - suspended root Run;
-- failed or cancelled result only when the Harness supplies a complete state that Agent UI intentionally accepts;
-- completed child output only indirectly after it reaches the parent and the parent produces a complete continuation.
+- failed or cancelled result only when Harness supplies a complete state that Agent UI intentionally accepts;
+- completed child output only after it reaches a parent continuation through the selected subagent contract.
 
-Partial messages, live AG-UI events, model-provider history, and Environment files never synthesize a continuation.
+Partial messages, live AG-UI events, provider observations, and Environment files never synthesize a continuation.
+
+`HarnessState.environment_states` is a portable observation. For an Agent UI-managed Session, current Host state wins, including authoritative `None`; the continuation mapping never overwrites that authority. Agent UI adopts portable state only during an explicit unmanaged/import operation in which no managed association exists.
+
+## Host-private Environment State
+
+Agent UI persists one private current-state association per desired Session mount. Conceptually it retains:
+
+- Session and desired mount identity;
+- selected Provider key and exact configuration snapshot/digest;
+- current authoritative `EnvironmentState | None`;
+- availability and last bounded failure observation;
+- update time;
+- enough private cleanup bookkeeping to retry or prune an unused/orphaned backing target.
+
+This list describes behavior, not a shared schema. The implementation can use rows and immutable state objects without exporting a canonical `SessionEnvironmentResource`, Thread-link, or prune-candidate model.
+
+State is sensitive Host data even when not a bearer credential. Provider payloads are immutable objects referenced by digest or stored directly under bounded size limits. Credentials, clients, PIDs, EIP sessions, Docker objects, live adapters, and bootstrap secrets are never persisted in the state envelope.
+
+For each managed mount, state selection is:
+
+1. load the Host's current association;
+2. treat an existing association with `None` as authoritative no-state;
+3. treat deleted or explicitly absent association as suppressing stale continuation fallback;
+4. use continuation state only in a separate explicit import path;
+5. validate Provider key, state version, JSON codec, configuration compatibility, and size before adapter construction.
 
 ## Run and Resume
 
-One process-local Run uses this flow:
+A root Run proceeds:
 
 01. acquire the current Host's Session Run lock;
-02. read and validate the Session's latest continuation bundle and provider-state references;
-03. dispatch those exact immutable inputs to the selected runtime Runner;
-04. reconstruct fresh Model and Environment authority and execute one Harness stream in that Runner;
-05. forward live presentation best effort;
-06. publish and select each detached provider-state update before acknowledging its required lifecycle transition;
-07. on a complete or suspended result, publish one continuation bundle;
-08. update the Session's latest continuation reference;
-09. close the current attachments and process-local Resource scopes without selecting provider pause or destroy;
+02. load the selected continuation and current Host Environment associations;
+03. reconstruct trusted Providers, exact configuration, and fresh runtime collaborators;
+04. construct one fresh `Environment` per desired mount from current Host state without I/O;
+05. dispatch the immutable inputs and adapters to the selected Runner;
+06. run one Harness stream and forward live presentation best effort;
+07. in unconditional finalization, inspect each adapter's latest known `dump_state()` and close any remaining local resources;
+08. publish only changed Environment state, even after execution, cancellation, checkpoint, or close failure;
+09. on an accepted complete/suspended result, publish and select one continuation bundle;
 10. release the Session lock.
 
-No input row is committed before execution. If the process exits before the database update, the input and partial work are forgotten and the Session retains whichever continuation reference was last committed. If runtime cleanup fails after a continuation was selected, the Run reports that cleanup failure together with the selected continuation identity; cleanup failure does not roll back or obscure the successful selection.
+State publication and continuation publication are independent outcomes. A changed Environment value is not discarded merely because Harness state export or continuation storage failed. A continuation can be selected even when later local cleanup fails; the response reports all material outcomes.
 
-A suspended continuation exposes its exact deferred requests. Supplying results starts another ordinary process-local Run from that continuation. The old suspended continuation remains selected until a later continuation commits. Agent UI does not maintain a separate request-consumption ledger or claim exactly-once application of external results.
+Equal state performs no write. Changed state is ordinary last-write-wins. An older Run that dumps its originally supplied value cannot overwrite a concurrent replacement because equality causes no write. A genuinely changed later value can win and orphan a displaced provider target; Agent UI's explicit prune behavior handles that case.
 
-Cancellation requests the current process-local Run to stop. If the Harness returns a complete accepted continuation, the Host can select it; otherwise the prior continuation remains current. Cancellation does not roll back model, tool, or provider effects.
+Cancellation does not prove rollback. If Harness returns an accepted continuation, Agent UI may select it; otherwise the previous continuation remains current. Known changed Environment state is still published from finalization.
 
-## Local Write Behavior
+## Fresh Run Construction
 
-One Host serializes Runs for one Session with a process-local lock. Separate local processes can still run and update the same Session. The update is intentionally ordinary:
+For every independent root or async child Run, the selected Runner receives:
 
-```sql
-UPDATE session
-SET continuation = :continuation,
-    updated_at = :updated_at
-WHERE session_id = :session_id
-```
+1. exact pinned desired Environment definitions;
+2. Host-selected current state for each association;
+3. fresh process-local Provider runtime collaborators and credentials;
+4. one newly constructed Environment adapter per mount;
+5. lightweight Harness `EnvironmentMount` values with access and working-directory policy.
 
-The last committed write becomes current. Agent UI does not detect a stale base, preserve both branches, merge histories, retry model or tool work, or expose a continuation conflict protocol. Users who intentionally need independent continuations fork Sessions before running them.
+Harness enters the adapters atomically, routes operations, snapshots non-`None` state into `HarnessState.environment_states`, and closes adapters non-destructively. Provider selection, state adoption, and `destroy()` remain outside Harness.
 
-## Environment Resources
+Inline child execution borrows the parent's already entered Harness facade. Async child Threads normally inherit the parent's Host Environment association but receive fresh adapters and independent Run correlation. A child policy can select no Environment or a dedicated Host association. Agent UI owns that selection; Harness does not infer it from continuation state.
 
-A Session stores one resource row per desired mount instead of separate assignment and resource graphs:
-
-```python
-class SessionEnvironmentResource(BaseModel):
-    session_id: str
-    mount_name: str
-    model_alias: str
-    access: Literal["read_only", "read_write", "full"]
-    provider_key: str
-    provider_spec_digest: str
-    status: Literal[
-        "unprovisioned",
-        "available",
-        "paused",
-        "unavailable",
-    ]
-    provider_state: ProviderStateRef | None
-    updated_at: datetime
-```
-
-The provider owns the state payload and lifecycle behavior. The Host stores only the latest provider state needed to reconnect, pause, destroy, or report an unavailable resource. Before dispatch, it selects the current rows and exact state objects. During execution, the Runner returns detached state after each create, resume, explicit pause, or explicit destroy transition that changes durable provider state. The Host validates and publishes that object, replaces the corresponding row with an ordinary last-write-wins update, and then acknowledges the transition. Ordinary Run and Resource-scope exit publishes no lifecycle transition because it closes only process-local responsibilities. The Runner does not continue a transition that requires persistence when the Host returns a publication or save failure. Transient operation status remains process-local; a lifecycle failure is reported and can mark the resource unavailable when the prior state is no longer usable.
-
-- `unprovisioned` provisions on first use;
-- `available` acquires a fresh attachment for a Run;
-- `paused` resumes before attachment acquisition;
-- `unavailable` requires an explicit retry or provider-aware inspection;
-- successful explicit destroy clears provider state and returns the row to `unprovisioned`; Session deletion removes the row.
-
-Agent UI does not persist active attachment counts, operation IDs, or fences. One Host serializes its own lifecycle commands with a process-local lock. If another local process operates on the same row concurrently, the last persisted result wins. Process loss can leave external effects unknown; Agent UI reports that limitation rather than maintaining a recovery workflow.
-
-## Runtime Attachments
-
-For every root or child Run, the selected Runner:
-
-1. reconstructs the pinned Environment definition from the exact Host-selected snapshot;
-2. creates fresh provider collaborators;
-3. restores only the exact provider state selected by the Host when present;
-4. ensures each desired resource is available, completing required state-update acknowledgements;
-5. acquires one fresh attachment per mount;
-6. creates one new `EnvironmentRuntime` with the complete current mount set;
-7. closes the runtime and attachments after the Harness stream closes.
-
-Attachments, provider instances, clients, credentials, and `EnvironmentRuntime` values never enter a continuation. Restart constructs all of them again.
-
-The built-in Local Sandbox selects `a13n.local-envd`. If envd, native isolation, or EIP initialization is unavailable, Local Sandbox is unavailable. Agent UI never silently falls back to Direct Local.
+The built-in Local Sandbox uses `a13n.local-envd`. It constructs a fresh daemon per independent Run, stores no PID in Environment state, and never falls back to Direct Local. Docker state includes the exact container ID. E2B state includes the exact sandbox identity.
 
 ## Forking
 
 A fork loads one selected source continuation and creates a new Session:
 
-- when the logical Agent snapshot is compatible, use `HarnessState.fork()`;
-- when only readable message history can transfer, create a fresh state seeded from that history;
+- when the Agent snapshot is compatible, use `HarnessState.fork()`;
+- when only readable history transfers, seed a fresh state from that history;
 - select the requested Environment snapshot independently;
-- create new Session Environment resource rows;
-- publish a new baseline continuation and record source lineage.
+- create new Host-private Environment associations with authoritative no-state values rather than copying live adapters, current state, or authority;
+- start the fork with empty `environment_states`; importing a backing target is a separate explicit non-fork operation;
+- publish a baseline continuation and source lineage.
 
-Forking does not copy provider attachments, active Runs, live AG-UI events, Runner-local child work, or pending process-local delivery. `HarnessState.fork()` changes the root Thread ID and creates a new Session ID, so any async execution IDs retained in copied message history are not visible through the fork's Runner scope.
+Forking does not copy current Environment state, live adapters, active Runs, AG-UI streams, local tasks, credentials, PIDs, or native handles. `HarnessState.fork()` changes the root Thread ID. Async subagent authority remains Host-owned and rejects source-Thread references; background processes have no Harness continuation mapping to copy.
 
-## Session Queries and History
+## Queries and Process-local Work
 
-Session list and search use small metadata fields such as title, pinned state, archive state, update time, Agent identity, and project association. Opening a Session loads the selected continuation and projects its Harness message history into frontend items.
+Session list/search uses bounded metadata such as title, pinned/archive state, update time, Agent identity, and project association. Opening a Session projects message history from the selected continuation.
 
-The first implementation does not need a durable semantic Item database or full-text projection. If continuation-derived queries later prove insufficient for a real WebUI need, a disposable cache can be added from measured requirements. It must remain rebuildable and cannot become continuation authority.
+A model-visible Session browsing Capability can read bounded current projection. It cannot switch Sessions, select continuations, submit input, control Runs, inspect private Environment state, or access another Session by arbitrary ID.
 
-A model-visible Session browsing Capability can expose bounded reads from the current continuation projection. It cannot switch Sessions, select continuations, submit input, control Runs, read raw private Capability state, or access another Session by arbitrary ID.
+Async subagent execution references and process references in messages are selectors, not Environment state or authority. An async reference is resolved only by the same generation operator under the owning Thread. A default process reference is valid only in its source Harness Run and fails in every continuation. Neither contains a raw PID, adapter, provider target state, task, callback, output buffer, or storage authority.
 
-## Process-local Async Work
+## Cleanup and Prune
 
-An Agent UI parent continuation can retain compact `subagent-N` and `process-N` values returned in ordinary model-visible tool history. Each value names one canonical record in the current Runner generation's standard Harness Manager. It does not embed a child `HarnessState`, managed process, callback, task, provider attachment, storage metadata, or storage authority.
+Session deletion first makes the Session unavailable to new Runs, then schedules or performs best-effort explicit destruction for each Host-managed backing target. The Host sends an authorized Runner a detached command containing the exact configuration and last known state. The Runner resolves the trusted Provider and fresh runtime collaborators, constructs a fresh Environment, validates target identity, calls `destroy()`, reads the resulting cached state, closes the adapter, and returns detached state and outcome for Host publication. Harness is not involved, and no Provider or adapter enters the stable Host process.
 
-The generation `SubagentManager` retains child state, status, bounded output or failure, usage, steering, and cancellation. The generation `ProcessManager` retains detached process control and output access. Runner exit makes both unavailable. Agent UI does not persist or recover them. A later Run in the same Session and generation reconciles through the compact projection; after generation loss the projection becomes explicitly lost and is never retargeted.
+Cleanup is idempotent where provider evidence permits. Unknown destroy outcome retains enough private state for retry. Agent UI never deletes Direct Local or Local Envd workspaces, Docker bind sources, external named volumes, or unrelated provider targets.
 
-A delegated child receives fresh Model, Identity, Skills, Capabilities, and Environment authority from its exact resolved definition. Nested reconstruction fixes subagents to inline execution and shell to foreground execution. Once a parent Run collects async output and selects a continuation, ordinary continuation persistence preserves the incorporated model/tool result, not the canonical Manager record.
+Agent UI periodically or explicitly prunes:
 
-Stable Manager events carry Host-only correlation copied from the initiating `AgentInstanceContext`. Completion usage is deduplicated in generation memory. The Runner reports correlated Harness activity and the Host independently checks Session request activity; the stable hook is a no-op only while both remain active. Otherwise Agent UI schedules at most one best-effort wake behind the Session lock and reloads the latest selected continuation, including when Harness has terminated while the original Host request is still finishing cleanup. A draining generation may publish usage but cannot wake or retarget the replacement generation.
+- targets from deleted Sessions whose destruction did not complete;
+- displaced states orphaned by last-write-wins publication;
+- provider-discoverable targets carrying exact Agent UI correlations but no current authorized association.
 
-There are no child Session rows, generic Job rows, durable process rows, steering ledgers, delivery identities, linked-successor fences, or retention dependencies. Forking never copies canonical Manager work, and the parent can start new work after resuming from its selected continuation.
+Grace periods, retry timing, and private candidate representation are implementation policy. There is no shared Host prune model, global lock, or exactly-once guarantee.
 
-## Delete and Cleanup
+## Invariants
 
-Deleting a Session first cancels its active root Run and acquires the same Session lock used by root and wake Runs. The selected Runner then force-closes only Manager records whose captured Host correlation names that Session, which cancels live children, terminates live processes, and releases their independent Environment scopes. After that local cleanup completes, the Runner destroys the Session's Environment resources best effort and the Host removes the Session and resource rows. This targeted cleanup does not close generation Managers or affect another Session. Session deletion creates no durable child cleanup workflow. A failed local or external Environment cleanup is reported but does not create a durable deletion workflow or cleanup-pending state machine.
-
-Unreferenced immutable objects are eligible for an explicit garbage-collection pass.
+01. A Session pins exact Agent and Environment desired snapshots plus one selected continuation.
+02. Agent UI current Environment state is independent from `HarnessState` and wins for managed mounts.
+03. Every independent root or async child Run receives fresh Environment adapters.
+04. Inline children borrow the parent's entered facade.
+05. State is selected before adapter entry.
+06. `HarnessState.environment_states` is portable observation, not managed Host authority.
+07. Entry and close values are process-local and never persisted.
+08. Harness close is non-destructive; only Agent UI policy invokes destroy.
+09. Known changed state publishes from unconditional finalization after every Run outcome.
+10. Equal state performs no write; changed state is last-write-wins.
+11. Orphans are accepted and handled by explicit prune behavior.
+12. Host persistence shape remains Agent UI-private.
+13. Credentials, PIDs, live clients, adapters, and native handles never enter continuation or Environment state.
+14. Session continuation publication and Environment state publication are independent outcomes.

@@ -8,14 +8,14 @@ Every session observes the daemon's immutable trusted mount configuration. The d
 
 ## Boundaries
 
-| Concern                                                                              | Owner                                                    | Relationship                                        |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------- | --------------------------------------------------- |
-| Configured roots, writable ceilings, allowed methods, and port-observation policy    | Operator or provider adapter                             | Trusted immutable daemon configuration              |
-| Harness virtual `/workspace` and `/environment/{alias}` routing                      | Harness                                                  | Resolves to one binding before EIP dispatch         |
-| Logical mount paths and file, search, and port methods                               | This document                                            | Stable EIP resource contract                        |
-| Native path canonicalization, symlink containment, bounded publication, and receipts | `agent-envd`                                             | Authoritative provider enforcement                  |
-| Provider ingress, public URL, tunnel, or container port publishing                   | Provider adapter                                         | Outside EIP port observation                        |
-| Raw file-transfer framing, attachment, and backpressure                              | [Transports and Sessions](03-transports-and-sessions.md) | Carries bytes for the transfer lifecycle owned here |
+| Concern                                                                              | Owner                                                    | Relationship                                            |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------- |
+| Configured roots, writable ceilings, allowed methods, and port-observation policy    | Operator or provider adapter                             | Trusted immutable daemon configuration                  |
+| Harness virtual `/workspace` and `/environment/{alias}` routing                      | Harness                                                  | Resolves to one Environment adapter before EIP dispatch |
+| Logical mount paths and file, search, and port methods                               | This document                                            | Stable EIP resource contract                            |
+| Native path canonicalization, symlink containment, bounded publication, and receipts | `agent-envd`                                             | Authoritative provider enforcement                      |
+| Provider ingress, public URL, tunnel, or container port publishing                   | Provider adapter                                         | Outside EIP port observation                            |
+| Raw file-transfer framing, attachment, and backpressure                              | [Transports and Sessions](03-transports-and-sessions.md) | Carries bytes for the transfer lifecycle owned here     |
 
 Filesystem selectors and port numbers are not authority. Every method also crosses trusted-session checks, exact method availability, current generation, mount policy, and configured ceilings.
 
@@ -581,4 +581,4 @@ Providers can expose narrower limits and omit unsupported methods. A client neve
 11. Port methods observe only policy-authorized local TCP targets in `1..65535` and never create external exposure or scan remote hosts.
 12. `file.find` matches relative path names and never reads file content; `file.search` matches UTF-8 regular-file content and uses path globs only for file selection.
 13. Native files and crash-left destination-local candidates can outlive envd, while process, operation, receipt, command-output, transfer, and spool records never outlive their owning session or daemon generation.
-14. Provider lifecycle state, transport state, and Host durable execution state never enter an EIP state export because EIP defines no state export or restore method.
+14. Environment state, transport state, and Host durable execution state never enter an EIP state export because EIP defines no state export or restore method.

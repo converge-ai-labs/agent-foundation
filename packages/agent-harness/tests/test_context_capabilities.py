@@ -44,10 +44,11 @@ from a13n_harness.environment import (
     EnvironmentPermissionSet,
 )
 from a13n_harness.environment.advanced import (
-    EnvironmentRuntimeMount,
     create_environment_runtime,
 )
-from a13n_harness.environment.local.binding import DirectLocalEnvironmentProviderBinding
+from a13n_harness.environment.providers import (
+    EnvironmentRuntimeMount,
+)
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry
 from pydantic_ai.agent.spec import AgentSpec
@@ -65,6 +66,8 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import RequestUsage, UsageLimits
+
+from .environment_helpers import DirectLocalEnvironmentProviderBinding
 
 pytestmark = pytest.mark.anyio
 
@@ -462,7 +465,7 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
             ),
         ),
         agent_context_state=retained_state,
-        environment_state=first.state.environment_state,
+        environment_states=first.state.environment_states,
     )
     phase = "compact"
     calls.clear()

@@ -2,11 +2,13 @@
 
 ## Design Position
 
-Agent UI has one surface-neutral `AgentUiHost` and replaceable runtime Runner generations. The Host owns Session commands, selected continuations, local persistence, active-root coordination, and presentation. A Runner owns process-local Harness, Model, Plugin, Environment Provider, and Agent Stream Protocol objects for the work admitted to that generation.
+Agent UI has one surface-neutral `AgentUiHost` and replaceable runtime Runner generations. The Host owns Session commands, selected continuations, local persistence, active-root coordination, and presentation. A Runner owns process-local Harness, Model, Plugin, Environment Provider, and Agent Stream Protocol objects for work admitted to that generation.
 
-Agent UI reconstructs the standard Harness async-subagent and background-process operators once per Runner generation. Canonical child records, detached process bindings, retained output, and completion hooks remain in that Runner's memory. The stable Host aggregates asynchronous usage in memory and can start one best-effort wake Run from the latest selected Session continuation; it creates no durable job, queue, wake, or delivery subsystem.
+Agent UI supplies one generation-owned `AgentUiSubagentOperator` for root Agents whose definitions select async subagents. Canonical child records, bounded output, usage, and completion observation remain in that Runner's memory. The stable Host can start one best-effort wake Run for an inactive Session after child completion, but it creates no durable job, queue, wake, or delivery subsystem.
 
-The detailed Harness lifecycle is defined by [Async Components and Lifecycle](../agent-harness/20-async-components-and-lifecycle.md). This document owns Agent UI's Host/Runner placement, Runner-local async work, inactive-Session wake policy, generation replacement, and surface behavior.
+Background shell uses the Harness default Run-owned process controller. Agent UI supplies no `HostedProcessRunCapability`, stores no process record or cursor, and performs no post-Run process wake. A background command can outlive one tool call but not its owning Harness Run; active-Run completion readiness and explicit polling remain standard Harness behavior.
+
+[Async Subagent Lifecycle](../agent-harness/20-async-components-and-lifecycle.md) defines child lifecycle, while [Environment Integration](../agent-harness/08-environment-integration.md#command-and-background-processes) defines shell processes. This document owns Agent UI's Host/Runner placement, Runner-local child work, inactive-Session child wake policy, generation replacement, and surface behavior.
 
 ## Architecture and Ownership
 
@@ -16,7 +18,7 @@ flowchart TB
         Commands[Session commands and queries]
         Continuations[Continuation selection]
         ActiveRoots[Active root registry]
-        AsyncHandler[Async usage and wake handler]
+        ChildHandler[Child usage and wake handler]
         RuntimeService[Runtime generation service]
         LiveHub[Live presentation hub]
         Store[SQLite and immutable objects]
@@ -25,9 +27,8 @@ flowchart TB
     subgraph Runner[Selected Runner generation]
         Reconstruction[Snapshot reconstruction]
         Harness[Harness root Runs]
-        Subagents[SubagentManager]
-        Processes[ProcessManager]
-        Providers[Model and Environment runtimes]
+        Subagents[AgentUiSubagentOperator]
+        Providers[Model and Environment adapters]
         Observer[Agent Stream Protocol observer]
     end
 
@@ -37,62 +38,42 @@ flowchart TB
     Continuations --> Store
     Harness --> Observer --> LiveHub --> CLI
     LiveHub --> WebUI
-    Reconstruction --> Subagents & Processes
+    Reconstruction --> Subagents
     Reconstruction --> Providers
     RuntimeService --> ActiveRoots
     ActiveRoots --> Commands
-    Subagents & Processes --> AsyncHandler --> Commands
+    Subagents --> ChildHandler --> Commands
 ```
 
-| Concern                                                                 | Owner                                    | Boundary                                                                            |
-| ----------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| Configuration, immutable snapshots, Sessions, and selected continuation | Stable Host                              | Runner receives only exact detached inputs selected for one request                 |
-| Root and child Agent loops                                              | Harness in the selected Runner           | No live Harness object crosses the process boundary                                 |
-| Model and credential resolution                                         | Runner                                   | Uses the pinned snapshot and fresh local credentials for each Run                   |
-| Environment provider lifecycle and attachments                          | Runner with Host state publication       | Native providers stay in Runner; detached provider state returns to Host            |
-| Selected async-subagent tools                                           | Harness `SubagentManager` in the Runner  | Canonical children are generation-memory only; nested children run inline           |
-| Dynamic Environment tools                                               | Harness Capability                       | Root Agents use the generation process operator; nested Agents use foreground shell |
-| Detached process Environment                                            | Runner                                   | Reopens exact pinned mounts with fresh bindings independent of the parent Run       |
-| Async completion usage and wake                                         | Stable Host                              | Generation-aware in-memory deduplication and best-effort inactive wake              |
-| Continuation publication and selection                                  | Stable Host                              | A Runner returns a candidate but cannot publish or select it                        |
-| Live AG-UI presentation                                                 | Agent Stream Protocol plus Host live hub | Best-effort and reconstructable from the selected continuation                      |
-| Durable distributed execution                                           | Foundation Service                       | Not emulated by Agent UI                                                            |
+| Concern                                                                 | Owner                                    | Boundary                                                                  |
+| ----------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
+| Configuration, immutable snapshots, Sessions, and selected continuation | Stable Host                              | Runner receives exact detached inputs selected for one request            |
+| Root and child Agent loops                                              | Harness in selected Runner               | No live Harness object crosses the process boundary                       |
+| Model and credential resolution                                         | Runner                                   | Uses pinned snapshot and fresh local credentials for each Run             |
+| Environment adapter construction and operation                          | Runner with Host state publication       | Native Providers and adapters stay in Runner                              |
+| Selected async-subagent tools                                           | `AgentUiSubagentOperator`                | Canonical children are generation-memory only; nested children run inline |
+| Dynamic Environment tools                                               | Harness `DynamicEnvironmentCapability`   | Foreground and background shell use the current Run Environment           |
+| Background process tracking and active readiness                        | Harness Run process controller           | No Agent UI record, cross-Run lookup, or idle wake                        |
+| Async child completion usage and wake                                   | Stable Host                              | Generation-aware in-memory deduplication and best-effort inactive wake    |
+| Continuation publication and selection                                  | Stable Host                              | Runner returns a candidate but cannot publish or select it                |
+| Live AG-UI presentation                                                 | Agent Stream Protocol plus Host live hub | Best-effort and reconstructable from selected continuation                |
+| Durable distributed execution                                           | Foundation Service                       | Not emulated by Agent UI                                                  |
 
 ## Host Lifetime
 
-`AgentUiHost` owns one CLI or Web process lifetime. It opens the local store, loads the accepted configuration, starts one Runner generation, and exposes the same commands and queries to both surfaces. Its public values are detached; no database session, storage path as authority, native Model, credential, Provider, attachment, Harness stream, task, lock, or private Capability state escapes through a surface API.
+`AgentUiHost` owns one CLI or Web process lifetime. It opens the local store, loads accepted configuration, starts one Runner generation, and exposes the same commands and queries to both surfaces. Its public values are detached; no database session, storage path as authority, native Model, credential, Provider, Environment adapter, Harness stream, task, lock, or private Capability state escapes through a surface API.
 
-Startup validates resources when selected. It does not scan every retained Session, classify work from previous processes, replay accepted input, or reconstruct old Manager records.
+Startup validates selected resources. It does not scan every retained Session, classify work from previous processes, replay accepted input, or reconstruct old child records. Process references present in historical messages grant no authority because default background work ended with its source Run.
 
 Host shutdown is destructive for process-local work:
 
 1. stop accepting new surface commands;
-2. cancel active root Runs;
-3. force-close each Runner generation's subagent and process managers and their process-local collaborators;
-4. apply a bounded process-termination escalation if a Runner does not exit;
+2. cancel active root Runs, whose Harness cleanup kills and releases default background processes;
+3. request bounded shutdown of each generation's Agent UI subagent operator;
+4. terminate and then kill a Runner process if bounded shutdown does not complete;
 5. close the live hub and local store.
 
-Shutdown first applies the bounded generation drain contract. If work remains when that bound expires, manager force-close cancels children, terminates processes, and releases their independent Environment runtimes. Shutdown writes no synthetic interruption record and does not advance a Session continuation merely because work was cancelled.
-
-```mermaid
-sequenceDiagram
-    participant Surface as CLI or WebUI
-    participant Host as AgentUiHost
-    participant Runner as Runner generation
-    participant Managers as Async work managers
-    participant Store as Local store
-
-    Surface->>Host: close frontend lifetime
-    Host->>Host: stop command acceptance and cancel roots
-    Host->>Runner: force shutdown
-    Runner->>Managers: force_close()
-    Managers->>Managers: cancel children and terminate processes
-    Runner-->>Host: exiting
-    alt Runner does not exit within bound
-        Host->>Runner: terminate, then kill process
-    end
-    Host->>Store: close
-```
+Shutdown writes no synthetic interruption record and does not advance a Session continuation merely because work was cancelled.
 
 ## Runner Generations
 
@@ -103,10 +84,10 @@ A replacement uses direct activation:
 1. start and verify a candidate Runner;
 2. activate and select the candidate for new work;
 3. stop admitting root Runs to the previous generation;
-4. allow already admitted root Runs and generation-owned async work a bounded natural drain;
-5. force-close remaining child/process work and stop that Runner.
+4. allow admitted root Runs and generation-owned async children a bounded natural drain;
+5. cancel remaining children through the old generation's operator and stop that Runner.
 
-The old Runner admits no new root Run after replacement. Its drain waits only work already owned by that generation and is bounded by the Host. On expiry, the Host first requests bounded Manager force-close and Runner shutdown; only a failed or timed-out force-close proceeds to Runner process termination and kill. A root Run, child, detached process, or reopened Environment remains on the generation that admitted it and never migrates between interpreters.
+Default background processes are already owned by their exact root or child Harness Run and participate in that Run's cleanup. They never migrate, become generation records, or delay a generation after all owning Runs have closed.
 
 ```mermaid
 stateDiagram-v2
@@ -114,9 +95,9 @@ stateDiagram-v2
     starting --> ready: protocol and runtime verified
     ready --> active: activated
     active --> draining: replacement selected
-    draining --> force_closing: owned work completes or bound expires
+    draining --> force_closing: owned Runs and children complete or bound expires
     active --> force_closing: Host shutdown
-    force_closing --> exited: managers closed
+    force_closing --> exited: children cancelled and Runner closed
     starting --> exited: startup failure
     ready --> exited: startup failure
     active --> exited: process loss
@@ -125,71 +106,71 @@ stateDiagram-v2
 
 ## Root Run and Continuation Flow
 
-For one root command, the Host sends the exact Session, Agent snapshot, Environment snapshot, selected continuation, provider states, Skill selections, input, and optional deferred results. The Runner reconstructs trusted process-local objects, enters one Harness stream, converts public items through Agent Stream Protocol, and returns one complete or suspended continuation candidate.
+For one root command, the Host sends the exact Session, Agent snapshot, Environment snapshot, selected continuation, current Host Environment states, Skill selections, input, and optional deferred results. The Runner reconstructs trusted process-local objects, constructs fresh Environment adapters before Harness entry, enters one Harness stream, converts public items through Agent Stream Protocol, and returns one complete or suspended continuation candidate.
 
-The Host validates and publishes the candidate, then performs the only update that advances the Session's selected continuation. A failed Run, process loss, cancelled Run without an accepted complete state, or failed publication leaves the Session at its prior continuation. Input, partial output, live events, and an unselected candidate are not recovery authority.
+The Host validates and publishes the candidate, then performs the only update that advances the Session's selected continuation. A failed Run, Runner loss, cancelled Run without an accepted complete state, or failed publication leaves the Session at its prior continuation. Input, partial output, live events, and an unselected candidate are not recovery authority.
 
-Provider state crosses the boundary only as detached updates. The Host publishes an update before acknowledging it; the Runner does not continue a provider lifecycle transition whose required state publication failed. Native Provider, Resource, attachment, client, and `EnvironmentRuntime` objects remain in the Runner.
+Environment state crosses the boundary only as detached values. In unconditional finalization after success, failure, cancellation, checkpoint failure, or local-close failure, the Runner reads each adapter's infallible cached `dump_state()`, returns the latest known state, and closes remaining process-local resources. The Host publishes only values changed from those it supplied. Environment-state publication and continuation selection are independent outcomes.
 
-## Model and Environment Runtime
+## Model and Environment Adapters
 
-The Runner resolves each logical Model only from the pinned Agent snapshot and the installed adapter catalog. It obtains current credential material at Run time, constructs the native Model or resolver, and closes owned clients with the Run. Credentials and model clients are never persisted or sent to the Host.
+The Runner resolves each logical Model only from the pinned Agent snapshot and installed adapter catalog. It obtains current credential material at Run time, constructs the native Model or resolver, and closes owned clients with the Run. Credentials and model clients are never persisted or sent to the Host.
 
-The Host owns desired Session Environment assignments, latest provider-state references, and every pause or destroy decision. The Runner ensures the selected Resources are available, acquires fresh attachments, builds one single-use `EnvironmentRuntime`, and returns detached provider-state changes for Host publication. Ordinary Run exit closes only fresh attachments and process-local Resource scopes. It never infers Session idleness and never pauses or destroys the logical provider resource.
+The Host owns desired Session Environment assignments, current `EnvironmentState | None` for each association, and every warmup or destroy decision. For each independent Run, the Runner resolves selected trusted Providers, constructs fresh single-use Environment adapters from exact configuration, Host-selected current state, and fresh runtime collaborators without I/O, and supplies them as lightweight Harness mounts. Harness enters and closes the adapters; ordinary Run exit is non-destructive and never infers Session idleness or destroys a backing target.
 
-Foreground shell remains bound to the current Run Environment. Before admitting a root async child or background process, the Runner takes one detached admission-time snapshot of the exact pinned Environment definition and latest provider state whose Host publication has been acknowledged, then reopens from that snapshot with fresh runtime collaborators. This includes state first created or resumed earlier in the same root execution, so reopen does not repeat allocation from a stale request snapshot or combine mount states observed at different points during construction. The resulting child binding or managed process is self-contained after Manager acceptance. Reopen can share an underlying Direct Local directory, Local Envd workspace, Docker container, or E2B sandbox according to the selected provider; each provider owns concurrent reopen/session safety. The launcher never retains the parent Run's `BoundEnvironment`.
+Foreground commands and default background processes use that same entered Run Environment. Harness keeps background handles, output cursors, controls, and terminal watchers private to the Run. Run closure kills and releases remaining processes before adapter close. Agent UI never constructs another Environment scope for a process and never publishes process-specific Environment state.
 
-Only the root Agent receives this background-capable operator. Every nested Agent reconstructs the standard foreground operator, so subagent processes are isolated inside that child's own fresh Environment and cannot create another detached-process tree. A dedicated child explicitly selects the Provider's temporary automatic-destroy scope. Shared-root children and detached background processes reopen the Host-selected resource state and close only their independent process-local scopes.
+An async child is different: the Agent UI subagent operator selects child Environment association, loads Host-authoritative current state, constructs fresh adapters and `RunBindings`, and starts one independent child Harness Run. Inline children borrow the active parent's facade and cannot mutate its mount set. Nested definitions use inline subagents; Agent UI exposes no nested async operator.
 
 Local Sandbox resolves one exact package-selected `agent-envd` executable or one explicit validated override. Failure does not fall back to Direct Local. Executable cache state carries no Session or execution authority.
 
-## Async Work and Wake Lifecycle
+## Async Child Work and Wake
 
-When a resolved root Agent selects standard async-subagent tools, Runner reconstruction uses the generation `SubagentManager`. Omitting the selection exposes no model-facing child operation. Root Dynamic Environment reconstruction independently uses the generation `ProcessManager`; nested reconstruction always selects inline subagents and foreground shell.
+When a resolved root Agent selects standard async-subagent tools, reconstruction supplies the generation `AgentUiSubagentOperator`. Omitting that selection exposes no model-facing async child operation. Each admitted child receives fresh Identity, Model, Skill, Capability, and Environment authority from its exact resolved definition.
 
-Each root or child execution opens fresh Identity, Model, Skill, Capability, and Environment authority from its exact resolved definition. `open_child` and `launch_process` are construction callbacks only: after Manager acceptance, the child scope or `ManagedProcess` is self-contained and the Manager is its sole lifecycle owner. Closing the parent scope rejects later submissions from that scope but does not cancel canonical work already admitted to the generation. Nested child definitions may contain further children, but Agent UI executes those edges inline and exposes no nested async operator.
+The operator retains bounded child status, activity, output, failure, usage, and resumability in Runner memory. A later Run in the same Session and Runner generation can query the public execution reference. Completion emits one typed generation-local event containing detached initiating correlation. The Host deduplicates child usage by child Thread identity; this aggregate is process-local and is never merged into parent Harness usage or continuation state.
 
-The Managers retain bounded child status/output/failure/usage and process status/output/control state in Runner memory. A later Run in the same Session and Runner generation can reconcile a compact ID. Completion emits one typed generation-local event containing a detached snapshot of the initiating instance's Host-only references. The Host deduplicates async child usage by child Thread identity and process events by compact reference; this aggregate is process-local and is never merged into parent Harness usage or continuation state.
-
-For every stable event, the Runner reports whether the correlated Harness parent is still active, while the stable Host independently checks whether that Session has an active request. The hook is a no-op only while both are active, because ordinary Harness steering owns observation. If either is inactive, including the interval after the Harness terminal result while Host request cleanup still holds the Session lock, the Host schedules at most one wake behind that lock. The wake rechecks that the source generation is still active and the Session has no active request, reloads the latest selected continuation, and starts a normal input-less Run. There is no durable event queue. A completion from a draining generation records usage but cannot wake the replacement generation because its canonical Manager record cannot be rebound there.
+For each child completion, the Runner reports whether the correlated Harness parent remains active, while the Host independently checks whether the Session has an active request. The Host no-ops wake only while both are active. Otherwise it schedules at most one wake behind the Session lock, rechecks that the source generation remains active and the Session has no active request, loads the latest selected continuation, and starts a normal input-less Run. There is no durable event queue. Completion from a draining generation records usage but cannot wake a replacement generation because the child execution reference cannot be rebound there.
 
 ```mermaid
 sequenceDiagram
     participant Host as AgentUiHost
     participant Runner as Runner generation
     participant Parent as Parent Harness Run
-    participant Manager as Subagent or process Manager
-    participant Work as Child or process
+    participant Operator as AgentUiSubagentOperator
+    participant Child as Child Harness Run
 
     Host->>Runner: execute root from selected continuation
-    Parent->>Manager: admit canonical work
-    Manager-->>Parent: compact ID and initial status
-    Manager->>Work: execute with independent authority
+    Parent->>Operator: delegate authorized child plan
+    Operator-->>Parent: accepted execution reference
+    Operator->>Child: execute with independent authority
     Parent-->>Runner: terminal parent result
     Runner-->>Host: continuation candidate
     Host->>Host: publish and select continuation
-    Work-->>Manager: terminal result
-    Manager-->>Host: generation-local completion
+    Child-->>Operator: terminal result
+    Operator-->>Host: generation-local completion
 
     alt later Run on same generation
         Host->>Runner: wake from latest selected continuation
-        Parent->>Manager: inspect or wait by compact ID
-        Manager-->>Parent: current bounded result
+        Parent->>Operator: inspect or wait by execution reference
+        Operator-->>Parent: current bounded result
     else Runner replacement or loss
         Host->>Host: retain prior selected continuation
-        Note over Host: retained execution IDs are unavailable
+        Note over Host: retained execution references are unavailable
     end
 ```
 
-## Cancellation, Force Close, and Loss
+Background-process completion is not part of this wake path. Harness can enqueue readiness only while the exact owning Run remains active. If the Run closes first, cleanup terminates the process and no later Agent UI Run is started for it.
 
-Root cancellation targets one current process-local Harness Run. Tool-authored cancellation or kill targets one retained Manager record. Neither operation rolls back model, tool, provider, filesystem, or external effects.
+## Cancellation, Shutdown, and Loss
 
-Parent Run and Environment exit never close generation Managers or their admitted work. Agent UI explicitly chooses generation shutdown as the Manager ownership boundary. At that boundary, Manager force-close rejects new work, cancels every live child, force-terminates every live process, releases independent Environment scopes, and waits only for owned cleanup and already-dispatched callbacks.
+Root cancellation targets one current Harness Run and therefore also cleans its default background processes. `shell_kill` targets one reference in that exact Run controller. Async subagent cancellation targets one retained Agent UI operator record. None rolls back model, tool, provider, filesystem, or external effects.
 
-An explicit Environment pause, Environment destroy, or Session delete is a narrower Host lifecycle decision. Under the Session lock, the Host suppresses same-Session wake, and the Runner first applies Manager `force_close_matching()` to the initiating `session_id` and drains delivery already dispatched by those records. It then invokes the selected provider pause or destroy operation. This prevents a logical resource transition while same-Session background work still holds an independently reopened scope, prevents forced-cleanup completion from immediately reopening the resource through a wake Run, and leaves other Sessions and the generation Managers active.
+Parent Run and Environment exit do not cancel an accepted async child. Agent UI chooses generation shutdown as the child-operator ownership boundary. At that boundary the operator rejects new work, cancels live children, closes their independent Environment adapters non-destructively, and waits only for owned cleanup and dispatched completion handling.
 
-If cleanup exceeds the Host's bound, the runtime-generation service terminates and then kills the Runner process. Manager records, activity, successful output not yet collected, async usage, and retained Environment/process state disappear. Restart selects only the latest successfully stored Session continuation; prior compact IDs reconcile as lost and are never recovered, replayed, or retargeted.
+An explicit Environment destroy or Session delete is a narrower Host lifecycle decision. Under the Session lock, the Host suppresses same-Session child wake, cancels active root Runs, and asks the authorized old generation to cancel matching async children before destroy. The Host then sends exact detached configuration, current state, and destroy command. The Runner constructs a fresh adapter, invokes `destroy()`, reads cached resulting state, closes it, and returns detached state and outcome for Host publication. No independent background-process adapter can remain after all owning Runs are closed.
+
+If cleanup exceeds the Host bound, the runtime-generation service terminates and then kills the Runner. Child records, activity, uncollected output, and async usage disappear. Restart selects only the latest stored Session continuation; prior async execution references are unavailable and are never recovered, replayed, or retargeted. Historical default process references were already non-restorable.
 
 ## Live Presentation and Surfaces
 
@@ -199,13 +180,14 @@ CLI and WebUI are peers over `AgentUiHost`. Both use the same configuration, Ses
 
 ## Stable Principles
 
-01. The stable Host owns Session and continuation authority; a Runner owns only process-local execution for one generation.
-02. Root async subagents and background processes use standard generation-owned Harness Managers; nested children remain inline and foreground.
-03. Canonical async work can outlive its parent Run but never its owning Runner generation.
-04. Active Harness observation and Host Session activity are checked independently; only their overlap suppresses at most one generation-aware best-effort wake from the latest selected continuation.
-05. Async usage is deduplicated in Host memory and never changes parent Harness usage or state.
-06. Generation drain is bounded; force-close cancels children, terminates processes, and releases reopened Environments before process escalation.
-07. Restart or Runner loss never migrates or retargets Manager work; retained compact IDs become lost.
-08. Environment reopen uses exact pinned specifications and provider state with fresh bindings; no parent `BoundEnvironment` escapes its Run.
-09. Live AG-UI delivery is independent of continuation publication and is never recovery authority.
-10. Agent UI adds no durable Job, child Thread, background process, output, usage, steering, wake, or delivery record.
+01. The stable Host owns Session and continuation authority; a Runner owns process-local execution for one generation.
+02. Root async subagents use one generation-owned Agent UI operator; nested children remain inline.
+03. Default background shell is owned by the exact Harness Run, requires no Host operator, and cannot survive Run closure.
+04. Harness active-Run process readiness is best-effort; Agent UI implements no process result retention, cross-Run lookup, or idle wake.
+05. Canonical async child work can outlive its parent Run but never its owning Runner generation.
+06. Async child usage is deduplicated in Host memory and never changes parent Harness usage or state.
+07. Generation drain is bounded; shutdown cancels remaining children before process escalation.
+08. Restart or Runner loss never migrates or retargets child work; retained references become unavailable.
+09. Independent child Environment construction uses exact pinned specifications and current Host state; no parent Harness facade escapes its Run.
+10. Live AG-UI delivery is independent of continuation publication and is never recovery authority.
+11. Agent UI adds no durable Job, child Thread, background process, output, usage, steering, wake, or delivery record.

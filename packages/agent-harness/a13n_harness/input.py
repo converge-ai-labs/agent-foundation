@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from pydantic import JsonValue
 from pydantic_ai.messages import UserContent
 
-from a13n_harness.environment import Environment
+from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.errors import InputError
 from a13n_harness.identity import AgentInstanceContext
 
@@ -22,7 +22,7 @@ class RunPreparationContext:
 
     run_id: str
     instance: AgentInstanceContext
-    environment: Environment
+    environment: BoundEnvironment
     metadata: Mapping[str, JsonValue]
 
 

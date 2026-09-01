@@ -19,7 +19,7 @@ from a13n_harness import (
     HarnessBuilder,
     SubagentDefinition,
 )
-from a13n_harness.capabilities import SubagentBindingOperator, SubagentCapability
+from a13n_harness.capabilities import SubagentCapability
 from pydantic_ai.agent.spec import AgentSpec
 
 child = AgentDefinition(
@@ -33,12 +33,7 @@ parent = HarnessBuilder().build(
         agent=AgentSpec(),
         output_type=str,
         model=coordinator_model,
-        capabilities=(
-            SubagentCapability(
-                execution="inline",
-                operator=SubagentBindingOperator(open_child),
-            ),
-        ),
+        capabilities=(SubagentCapability(),),
         subagents=(
             SubagentDefinition(
                 name="reviewer",
@@ -52,52 +47,49 @@ parent = HarnessBuilder().build(
 
 Build recursively validates a finite acyclic graph and unique sibling names. Each child becomes immutable reusable `ExecutableAgent` build output contained by the root executable.
 
-### Supply Fresh Child Authority
+### Inline Execution and Continuation
 
-The definition describes topology and fixes execution mode, but not current authority. `SubagentBindingOperator(open_child)` receives the current parent context and returns one fresh child `RunBindings` async scope under the authored edge ceilings.
-
-Inline `SubagentCapability` exposes one blocking `delegate` tool over the declared children. A call:
+The default Capability needs no Host scheduler or child-binding callback. Its private inline executor:
 
 1. selects one declared child;
-2. asks the fresh run binder for child authority and context;
-3. runs the child through its canonical `ExecutableAgent.stream()` path;
-4. forwards validated child observations into the parent stream;
-5. waits for one child terminal result;
-6. returns a bounded result to the parent model.
+2. derives fresh child instance lineage and intersects authored usage ceilings;
+3. applies the edge context policy;
+4. borrows the parent's already-entered Environment mapping without re-entering or closing adapters;
+5. runs the child through its canonical `ExecutableAgent.stream()` path;
+6. forwards validated child observations into the parent stream;
+7. stores complete nested child continuation before returning a bounded result.
 
-A returned `child_instance_id` can continue only that child's private nested `HarnessState` through the same parent invocation context.
+`delegate(subagent, prompt)` creates a new inline continuation and returns its `execution_id`. `resume_subagent(execution_id, prompt)` advances only that exact compatible nested `HarnessState`. Inline child state never publishes borrowed Environment state independently, and the child cannot mount, replace, unmount, or change the default Environment.
 
 ### Asynchronous Children
 
-Use one stable `SubagentManager` when a child may outlive the parent Run:
+A child that may outlive the parent Run requires a Host-owned `SubagentOperator`:
 
 ```python
-from a13n_harness.capabilities import SubagentCapability, SubagentManager
+from a13n_harness.capabilities import SubagentCapability
 
-subagent_manager = SubagentManager(
-    open_child,
-    event_hooks=(on_subagent_event,),
-)
+operator = ApplicationSubagentOperator(thread_service, environment_service)
 capability = SubagentCapability(
-    execution="async",
-    operator=subagent_manager,
+    async_enabled=True,
+    operator=operator,
 )
 ```
 
-The Manager owns admitted child tasks, streams, state, output, usage, steering, cancellation, and fresh child-binding cleanup. The parent stores only `subagent-N`, one opaque backend ID, the exact prompt, and bounded observations. Closing a parent Run or its Environment detaches observation without cancelling the child. A later compatible Run uses the same Manager to inspect or wait. `force_close()` is an explicit Host operation, normally used when the embedding executable or Runner generation shuts down; Harness never invokes it from parent cleanup.
+The operator implements complete `delegate`, `info`, `wait`, `steer`, `cancel`, and `resume` use cases. Harness resolves the exact child, derived Identity, applied context, intersected usage limits, and detached parent correlation before admission. The operator then owns child Thread creation, fresh `RunBindings`, Environment association and re-entry, recursive Harness invocation, storage, checkpoints, observation, wake, cancellation, resume, loss, cleanup, and retention.
 
-Stable hooks contain parent Thread, Run, Agent-instance, and Host-reference correlation. They can wake a later Run, but they are not a durable delivery system. The default Manager is process-local and its records become lost after restart. A durable Host can implement `SubagentOperator` over its own independently managed child Threads without changing the standard Toolset.
+Harness provides no default async manager, execution store, background task registry, parent-state execution mirror, or shutdown method. Parent Run or Environment closure does not cancel accepted child work or close the operator. `subagent_info` and `wait_subagent` query the Host directly on every call.
 
 ### Deliberate Boundary
 
-The default inline operator and asynchronous Manager are process-local. They do not provide:
+Inline execution is the only built-in child executor. Async support does not provide:
 
-- durable child executions or workers;
-- receipts, polling, or result inboxes;
+- a process-local scheduler or default storage;
+- a required database or checkpoint protocol;
+- completion callbacks or a wake ledger;
 - cross-process cancellation routing;
-- durable child scheduling or delivery.
+- a parent `HarnessState` copy of Host child status or state.
 
-A Host can implement those semantics behind `SubagentOperator`. Do not turn the parent projection into a second job or child-state store.
+Implement those semantics behind `SubagentOperator` according to the owning Host. Do not retain a live parent `AgentContext` or entered Environment after admission, and do not turn parent state into a second child store.
 
 ### Deferred Tools in Child Runs
 
@@ -137,7 +129,7 @@ When designing extension behavior:
 6. Treat only a terminal root `HarnessRunResult(status="suspended")` and its exact `deferred` value as suspension authority. Deferred stream events are observations, and child jobs have no deferred-response lifecycle.
 7. Test the same extension as both a root and a child. Cover static surface omission, dynamic `CallDeferred`, dynamic `ApprovalRequired`, managed-policy approval, mixed ordinary/deferred batches, and the model's denial recovery path.
 
-Usage limits remain the bound on a model that repeatedly retries denied interactions. An inline child receives the strictest per-field intersection of the parent effective limit, its own `AgentSpec.usage_limits`, the authored subagent edge, and current Host policy. The Harness does not add a second hidden retry counter or mutate the extension definition.
+Usage limits remain the bound on a model that repeatedly retries denied interactions. An inline child receives the strictest per-field intersection of the parent effective limit, its own `AgentSpec.usage_limits`, and the authored subagent edge. An async Host receives that same ceiling and may only narrow it. Harness does not add a second hidden retry counter or mutate the extension definition.
 
 ## CodeAct
 

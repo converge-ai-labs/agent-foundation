@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, aclosing
 from pathlib import Path
 
+from a13n_environment_provider import Environment
 from a13n_harness import (
     AgentSpec,
-    EnvironmentSource,
     HarnessBuilder,
     HarnessEvent,
     HarnessRunResult,
@@ -31,11 +31,11 @@ class ConversationApplication:
         *,
         model: Model,
         state_path: Path,
-        environment: EnvironmentSource,
+        environment_factory: Callable[[], Environment],
         instructions: str = _DEFAULT_INSTRUCTIONS,
     ) -> None:
         self._state_path = state_path
-        self._environment = environment
+        self._environment_factory = environment_factory
         self._turn_lock = asyncio.Lock()
         self._executable = HarnessBuilder(configured_plugins_enabled=False).build(
             AgentSpec(instructions=instructions),
@@ -68,7 +68,7 @@ class ConversationApplication:
 
             async with self._executable.stream(
                 prompt,
-                environment=self._environment,
+                environment=self._environment_factory(),
                 previous_state=previous_state,
             ) as stream:
                 async for item in stream:

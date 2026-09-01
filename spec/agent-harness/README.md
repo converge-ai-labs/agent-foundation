@@ -4,7 +4,7 @@
 
 This directory defines `agent-harness`, the Pydantic AI-based process-local execution library used by embedded applications and hosted workers.
 
-The Harness owns code-first Agent construction, a neutral package-local official model catalog, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed run context, the `EnvironmentRuntime` lifecycle, ordered runtime-wide extensions and current mount set, optional run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
+The Harness owns code-first Agent construction, a neutral package-local official model catalog, default-on build-time model-cost valuation, a narrow optional plugin configuration/loading boundary, trusted outer plugins, fresh typed Run context, Run-local Environment entry and multi-mount routing, optional Run-scoped model resolution, bounded model-interruption recovery, native Pydantic execution, portable continuation state, normalized events, results, and cleanup. It does not own durable Agent schemas, Presets, artifact installation or trust, execution records, queues, worker leases, delivery, or billing.
 
 ## Document Catalog
 
@@ -18,10 +18,10 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [05-plugin-system.md](05-plugin-system.md)                                               | Plugin document/Build Context, selected factories, concrete middleware, ordering, binding, result/state composition, and cleanup |
 | [06-execution-context-and-lifecycle.md](06-execution-context-and-lifecycle.md)           | Logical run lifecycle, inner model attempts, cancellation, terminal results, and cleanup                                         |
 | [07-tool-execution.md](07-tool-execution.md)                                             | Native and managed function tools, client-side external tools, policy, credentials, and deferred results                         |
-| [08-environment-integration.md](08-environment-integration.md)                           | Environment runtime, provider mounts, run extensions, Host mutation, model projection, portable state, and enforcement           |
+| [08-environment-integration.md](08-environment-integration.md)                           | Fresh Environment inputs, multi-mount routing, Run-local mutation, model projection, portable state, and cleanup                 |
 | [09-context-and-memory.md](09-context-and-memory.md)                                     | History, runtime context, handoff, skills, working state, resource acquisition, compaction, and memory boundary                  |
 | [10-snapshot-and-resume.md](10-snapshot-and-resume.md)                                   | `HarnessState`, interrupted-history normalization, import/export, and Host persistence boundary                                  |
-| [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, standard inline/async Toolsets, operator lifecycle, and durable Host boundary                                    |
+| [11-delegation-and-subagents.md](11-delegation-and-subagents.md)                         | Child topology, Harness-private inline execution, standard async Toolsets, and the Host operator boundary                        |
 | [12-events-observability-and-usage.md](12-events-observability-and-usage.md)             | Process-local events, mixed-source usage attribution, pricing catalogs, reporting, and accounting boundary                       |
 | [13-hosting-contract.md](13-hosting-contract.md)                                         | Host-owned schemas/reconstruction, fresh bindings, durable lifecycle, and completion mapping                                     |
 | [14-public-api-and-packaging.md](14-public-api-and-packaging.md)                         | Public Python API, package boundary, errors, and compatibility                                                                   |
@@ -30,7 +30,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [17-core-capability-catalog.md](17-core-capability-catalog.md)                           | Documentation catalog for mandatory and optional Capability composition roles                                                    |
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch          |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
-| [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Shared async-component admission, observation, cleanup, loss, generation ownership, and complete Host takeover                   |
+| [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Async subagent admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown                         |
 
 ## Reading Paths
 
@@ -48,11 +48,11 @@ Read `06`, `10`, and `16`. Provider transport retry, exact history repair, `Mode
 
 ### Integrate Tools or Environments
 
-Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`. For async subagents or detached processes, read `11` and `20`. `EnvironmentRuntime` is one run lifecycle resource with a Host-mutable current mount set; an `EnvironmentRunExtension` binds runtime-wide resources, while `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
+Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](../agent-environment-provider/README.md). For restricted Python orchestration over tools, also read `18`. Read `11` and `20` for async subagents; `08` solely owns background-process semantics. A Run receives fresh Environment adapters and exposes one internal multi-mount facade; `DynamicEnvironmentCapability` is only the optional model-facing projection. For durable client-tool delivery, also read [Foundation Service](../foundation-service/README.md).
 
 ### Implement Hosting or Persistence
 
-Read `10`, `12`, `13`, `14`, and `20`, then the Foundation Service catalog. A Host that takes over child or process execution must preserve the standard Harness Toolsets and compact projection contract while owning every stronger lifecycle guarantee.
+Read `10`, `12`, `13`, `14`, and `20`, then the Foundation Service catalog. A Host owns all async-child lifecycle authority. Shell processes remain Run-owned, use explicit-offset output observation, and are killed and released before Environment close; no process state enters `HarnessState`.
 
 ### Integrate Observation
 
@@ -65,7 +65,7 @@ Read `06`, `19`, `13`, and `15`. Read `12` separately for process-local events a
 - Concrete plugins and other native Python inputs are trusted in-process objects; the narrow Harness plugin document is an optional builder-local source, not an Agent definition format.
 - The Harness owns process-local code-first construction and logical-Run behavior.
 - A Host owns durable definition schemas, Presets, revisions, artifact locks, reconstruction adapters, Session/Run lifecycle, execution lifecycle, and delivery.
-- Providers own external side effects and authoritative reconciliation evidence.
+- Environment Providers construct fresh adapters without I/O; entered Environments own provider effects and evidence, while Hosts own current state and lifecycle policy.
 - A telemetry backend observes execution but never becomes lifecycle authority.
 
 ## Specification Conventions

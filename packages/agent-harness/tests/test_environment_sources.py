@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 
 import pytest
 from a13n_environment_provider import (
+    DirectLocalEnvironment,
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
-    EnvironmentManagementAction,
-    EnvironmentOperationContext,
+    Environment,
 )
 from a13n_harness import (
+    AgentIdentityRef,
+    AgentInstanceContext,
     EnvironmentAccess,
     EnvironmentMount,
     HarnessBuilder,
@@ -39,22 +41,25 @@ def _executable():
     )
 
 
-def _provider(root: Path, environment_id: str) -> DirectLocalEnvironmentProvider:
-    return DirectLocalEnvironmentProvider(
-        DirectLocalProviderConfiguration(
+def _environment(root: Path, environment_id: str, *, read_only: bool = False) -> Environment:
+    provider = DirectLocalEnvironmentProvider()
+    return provider.create_environment(
+        configuration=DirectLocalProviderConfiguration(
             environment_id=environment_id,
-            root=DirectLocalRootConfiguration(path=root),
-        )
+            root=DirectLocalRootConfiguration(path=root, read_only=read_only),
+        ),
+        state=None,
     )
 
 
-class _TrackingProvider(DirectLocalEnvironmentProvider):
+class _TrackingEnvironment(DirectLocalEnvironment):
     def __init__(
         self,
         root: Path,
         environment_id: str,
         *,
         lifecycle_events: list[str] | None = None,
+        fail_entry: bool = False,
     ) -> None:
         super().__init__(
             DirectLocalProviderConfiguration(
@@ -62,33 +67,41 @@ class _TrackingProvider(DirectLocalEnvironmentProvider):
                 root=DirectLocalRootConfiguration(path=root),
             )
         )
-        self.events: list[str] = []
-        self._environment_id = environment_id
+        self.entry: tuple[str, str, str, str, dict[str, str]] | None = None
+        self.close_calls = 0
         self._lifecycle_events = lifecycle_events
+        self._fail_entry = fail_entry
 
-    async def create(self, *, operation: EnvironmentOperationContext):
-        self.events.append("create")
+    async def _enter(
+        self,
+        *,
+        thread_id: str,
+        run_id: str,
+        agent_instance_id: str,
+        mount_id: str,
+        host_refs: Mapping[str, str],
+    ) -> None:
+        self.entry = (thread_id, run_id, agent_instance_id, mount_id, dict(host_refs))
         if self._lifecycle_events is not None:
-            self._lifecycle_events.append(f"create:{self._environment_id}")
-        return await super().create(operation=operation)
+            self._lifecycle_events.append(f"enter:{self.environment_id}")
+        if self._fail_entry:
+            raise RuntimeError("entry failed")
+        await super()._enter(
+            thread_id=thread_id,
+            run_id=run_id,
+            agent_instance_id=agent_instance_id,
+            mount_id=mount_id,
+            host_refs=host_refs,
+        )
 
-    async def destroy(self, state, *, operation: EnvironmentOperationContext) -> None:
-        self.events.append("destroy")
+    async def _close(self) -> None:
+        self.close_calls += 1
         if self._lifecycle_events is not None:
-            self._lifecycle_events.append(f"destroy:{self._environment_id}")
-        await super().destroy(state, operation=operation)
+            self._lifecycle_events.append(f"close:{self.environment_id}")
+        await super()._close()
 
 
-def _operation(action: EnvironmentManagementAction, suffix: str) -> EnvironmentOperationContext:
-    return EnvironmentOperationContext(
-        operation_id=f"operation-{suffix}",
-        action=action,
-        resource_correlation=f"resource-{suffix}",
-        attempt=1,
-    )
-
-
-async def test_run_needs_no_mounts_or_environment_for_ordinary_embedded_use() -> None:
+async def test_run_needs_no_environment_for_ordinary_embedded_use() -> None:
     snapshots = []
 
     async def prepare(context) -> str:
@@ -102,99 +115,84 @@ async def test_run_needs_no_mounts_or_environment_for_ordinary_embedded_use() ->
     assert snapshots[0].default_mount is None
 
 
-async def test_provider_input_is_harness_owned_and_available_as_workspace(tmp_path: Path) -> None:
-    provider = _TrackingProvider(tmp_path, "provider-owned")
-    observed = []
+async def test_environment_input_is_entered_as_workspace_and_closed_non_destructively(
+    tmp_path: Path,
+) -> None:
+    environment = _TrackingEnvironment(tmp_path, "workspace-environment")
+    bindings = RunBindings(
+        instance=AgentInstanceContext(
+            identity=AgentIdentityRef(issuer="test", subject="agent"),
+            agent_instance_id="agent-instance-1",
+            host_refs={"attempt": "attempt-1"},
+        )
+    )
 
     async def prepare(context) -> str:
         snapshot = context.environment.snapshot
-        observed.append(snapshot)
         assert snapshot.default_mount == "workspace"
         assert [mount.name for mount in snapshot.mounts] == ["workspace"]
-        await context.environment.files.write_text("/workspace/value.txt", "created", mode="create")
+        await context.environment.files.write_text("/workspace/value.txt", "preserved", mode="create")
         return "use environment"
 
-    result = await _executable().run(input_factory=prepare, environment=provider)
+    result = await _executable().run(
+        input_factory=prepare,
+        environment=environment,
+        bindings=bindings,
+    )
 
     assert result.output_or_raise() == "ok"
-    assert (tmp_path / "value.txt").read_text() == "created"
-    assert len(observed) == 1
-    assert provider.events == ["create", "destroy"]
+    assert (tmp_path / "value.txt").read_text() == "preserved"
+    assert environment.close_calls == 1
+    assert environment.entry is not None
+    thread_id, run_id, agent_instance_id, mount_id, host_refs = environment.entry
+    assert thread_id == result.thread_id
+    assert run_id == result.run_id
+    assert agent_instance_id == "agent-instance-1"
+    assert mount_id.startswith("mount-")
+    assert host_refs == {"attempt": "attempt-1"}
 
 
-async def test_entered_resource_is_borrowed_and_reusable_across_runs(tmp_path: Path) -> None:
-    provider = _provider(tmp_path, "host-owned")
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "create"))
-
-    async with resource:
-
-        async def write(context) -> str:
-            await context.environment.files.write_text("/workspace/shared.txt", "preserved", mode="create")
-            return "write"
-
-        async def read(context) -> str:
-            value = await context.environment.files.read_text("/workspace/shared.txt")
-            assert value.text == "preserved"
-            return "read"
-
-        first = await _executable().run(input_factory=write, environment=resource)
-        assert resource.is_entered
-        second = await _executable().run(input_factory=read, environment=resource)
-        assert resource.is_entered
-
-    await provider.destroy(
-        resource.state,
-        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy"),
-    )
-    assert first.output_or_raise() == second.output_or_raise() == "ok"
-
-
-async def test_multiple_sources_support_mixed_ownership_access_and_explicit_default(
-    tmp_path: Path,
-) -> None:
+async def test_multiple_environments_apply_access_and_explicit_default(tmp_path: Path) -> None:
     build_root = tmp_path / "build"
     data_root = tmp_path / "data"
     build_root.mkdir()
     data_root.mkdir()
     (data_root / "input.txt").write_text("source")
-    build_provider = _provider(build_root, "build-provider")
-    data_provider = _provider(data_root, "data-resource")
-    data_resource = await data_provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "data"))
 
-    async with data_resource:
+    async def prepare(context) -> str:
+        snapshot = context.environment.snapshot
+        assert snapshot.default_mount == "build"
+        assert [mount.name for mount in snapshot.mounts] == ["build", "data"]
+        await context.environment.files.write_text("/workspace/output.txt", "result", mode="create")
+        source = await context.environment.files.read_text("/environment/data/input.txt")
+        assert source.text == "source"
+        with pytest.raises(EnvironmentError) as exc_info:
+            await context.environment.files.write_text(
+                "/environment/data/denied.txt",
+                "denied",
+                mode="create",
+            )
+        assert exc_info.value.code == "environment_denied"
+        return "mixed"
 
-        async def prepare(context) -> str:
-            snapshot = context.environment.snapshot
-            assert snapshot.default_mount == "build"
-            assert [mount.name for mount in snapshot.mounts] == ["build", "data"]
-            await context.environment.files.write_text("/workspace/output.txt", "result", mode="create")
-            source = await context.environment.files.read_text("/environment/data/input.txt")
-            assert source.text == "source"
-            with pytest.raises(EnvironmentError) as exc_info:
-                await context.environment.files.write_text(
-                    "/environment/data/denied.txt",
-                    "denied",
-                    mode="create",
-                )
-            assert exc_info.value.code == "environment_denied"
-            return "mixed"
-
-        result = await _executable().run(
-            input_factory=prepare,
-            environments={
-                "build": build_provider,
-                "data": EnvironmentMount(data_resource, access=EnvironmentAccess.READ_ONLY),
-            },
-            default_environment="build",
-        )
-        assert data_resource.is_entered
+    result = await _executable().run(
+        input_factory=prepare,
+        environments={
+            "build": _environment(build_root, "build"),
+            "data": EnvironmentMount(
+                _environment(data_root, "data"),
+                access=EnvironmentAccess.READ_ONLY,
+            ),
+        },
+        default_environment="build",
+    )
 
     assert result.output_or_raise() == "ok"
     assert (build_root / "output.txt").read_text() == "result"
     assert not (data_root / "denied.txt").exists()
 
 
-async def test_multiple_sources_never_select_default_from_mapping_order(tmp_path: Path) -> None:
+async def test_multiple_environments_do_not_infer_default_from_mapping_order(tmp_path: Path) -> None:
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     first_root.mkdir()
@@ -213,8 +211,8 @@ async def test_multiple_sources_never_select_default_from_mapping_order(tmp_path
     result = await _executable().run(
         input_factory=prepare,
         environments={
-            "first": _provider(first_root, "first"),
-            "second": _provider(second_root, "second"),
+            "first": _environment(first_root, "first"),
+            "second": _environment(second_root, "second"),
         },
     )
     assert result.output_or_raise() == "ok"
@@ -236,6 +234,18 @@ def test_environment_source_validation_fails_before_stream_entry(kwargs: dict[st
     assert exc_info.value.code == "environment_request_invalid"
 
 
+def test_one_environment_instance_cannot_be_mounted_twice(tmp_path: Path) -> None:
+    environment = _environment(tmp_path, "duplicate")
+
+    with pytest.raises(EnvironmentError) as exc_info:
+        _executable().stream(
+            "hello",
+            environments={"one": environment, "two": environment},
+        )
+
+    assert exc_info.value.code == "environment_request_invalid"
+
+
 @pytest.mark.parametrize("working_directory", ["relative", "/with/../parent", "/double//slash", "/trailing/"])
 def test_environment_mount_rejects_noncanonical_working_directory(
     tmp_path: Path,
@@ -243,7 +253,7 @@ def test_environment_mount_rejects_noncanonical_working_directory(
 ) -> None:
     with pytest.raises(ValueError, match="canonical absolute path"):
         EnvironmentMount(
-            _provider(tmp_path, "invalid-working-directory"),
+            _environment(tmp_path, "invalid-working-directory"),
             working_directory=working_directory,
         )
 
@@ -254,84 +264,45 @@ def test_high_level_sources_conflict_with_advanced_run_binding(tmp_path: Path) -
     with pytest.raises(EnvironmentError) as exc_info:
         _executable().stream(
             "hello",
-            environment=_provider(tmp_path, "conflict"),
+            environment=_environment(tmp_path, "conflict"),
             bindings=bindings,
         )
 
     assert exc_info.value.code == "environment_request_invalid"
 
 
-def test_invalid_run_bindings_fail_before_stream_entry() -> None:
-    with pytest.raises(Exception) as exc_info:
-        _executable().stream("hello", bindings=object())  # type: ignore[arg-type]
+async def test_environment_adapter_is_single_use(tmp_path: Path) -> None:
+    environment = _environment(tmp_path, "single-use")
+    first = await _executable().run("first", environment=environment)
+    assert first.output_or_raise() == "ok"
 
-    assert getattr(exc_info.value, "code", None) == "run_bindings_invalid"
-
-
-async def test_unentered_resource_fails_on_stream_entry(tmp_path: Path) -> None:
-    provider = _provider(tmp_path, "unentered")
-    resource = await provider.create(operation=_operation(EnvironmentManagementAction.CREATE, "unentered"))
-
-    with pytest.raises(EnvironmentError) as exc_info:
-        async with _executable().stream("hello", environment=resource):
-            pass
-
-    assert exc_info.value.code == "environment_request_invalid"
-    await provider.destroy(
-        resource.state,
-        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy-unentered"),
-    )
+    with pytest.raises(RuntimeError, match="entered exactly once"):
+        await _executable().run("second", environment=environment)
 
 
-async def test_provider_sources_are_cleaned_in_reverse_order_when_later_entry_fails(tmp_path: Path) -> None:
+async def test_entered_environments_close_in_reverse_order_when_later_entry_fails(
+    tmp_path: Path,
+) -> None:
     events: list[str] = []
-    first_root = tmp_path / "first-cleanup"
-    second_root = tmp_path / "second-cleanup"
-    failed_root = tmp_path / "failed-resource"
-    first_root.mkdir()
-    second_root.mkdir()
-    failed_root.mkdir()
-    first = _TrackingProvider(first_root, "first-cleanup", lifecycle_events=events)
-    second = _TrackingProvider(second_root, "second-cleanup", lifecycle_events=events)
-    failed_provider = _provider(failed_root, "failed-resource")
-    unentered = await failed_provider.create(
-        operation=_operation(EnvironmentManagementAction.CREATE, "failed-resource")
-    )
+    roots = [tmp_path / name for name in ("first", "second", "failed")]
+    for root in roots:
+        root.mkdir()
+    first = _TrackingEnvironment(roots[0], "first", lifecycle_events=events)
+    second = _TrackingEnvironment(roots[1], "second", lifecycle_events=events)
+    failed = _TrackingEnvironment(roots[2], "failed", lifecycle_events=events, fail_entry=True)
 
-    with pytest.raises(EnvironmentError) as exc_info:
+    with pytest.raises(RuntimeError, match="entry failed"):
         async with _executable().stream(
             "hello",
-            environments={"first": first, "second": second, "failed": unentered},
+            environments={"first": first, "second": second, "failed": failed},
         ):
             pass
 
-    assert exc_info.value.code == "environment_request_invalid"
     assert events == [
-        "create:first-cleanup",
-        "create:second-cleanup",
-        "destroy:second-cleanup",
-        "destroy:first-cleanup",
+        "enter:first",
+        "enter:second",
+        "enter:failed",
+        "close:failed",
+        "close:second",
+        "close:first",
     ]
-    await failed_provider.destroy(
-        unentered.state,
-        operation=_operation(EnvironmentManagementAction.DESTROY, "destroy-failed-resource"),
-    )
-
-
-async def test_provider_owned_environment_is_cleaned_when_input_preparation_fails(tmp_path: Path) -> None:
-    provider = _TrackingProvider(tmp_path, "preparation-failure")
-
-    async def fail(context) -> str:
-        await context.environment.files.write_text("/workspace/before.txt", "written", mode="create")
-        raise ValueError("invalid input")
-
-    with pytest.raises(Exception) as exc_info:
-        await _executable().run(input_factory=fail, environment=provider)
-
-    assert getattr(exc_info.value, "code", None) == "input_factory_failed"
-    assert (tmp_path / "before.txt").read_text() == "written"
-    assert provider.events == ["create", "destroy"]
-
-    # A second run proves the Provider-owned resource and attachment scopes were fully retired.
-    result = await _executable().run("again", environment=provider)
-    assert result.output_or_raise() == "ok"

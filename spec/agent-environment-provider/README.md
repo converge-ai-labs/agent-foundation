@@ -2,51 +2,56 @@
 
 ## Overview
 
-This directory defines `agent-environment-provider`, distributed as `a13n-environment-provider`. It is the shared Python contract and built-in implementation package for Environment provider definitions, resource management, provider resource state, and fresh runtime attachments.
+This directory defines `agent-environment-provider`, distributed as `a13n-environment-provider`. It owns the shared single-Environment operation contracts, the three core lifecycle entities, provider discovery, and the built-in Direct Local, Local Envd, Docker, and E2B providers.
 
-Hosts and `a13n-harness` consume the same provider keys and configuration schemas. The package performs no durable storage and owns no Harness run, Agent loop, model-facing tool, or provider-neutral Environment operation. A Host chooses whether and how to persist desired provider specifications and resource state; the Harness adapts fresh runtime attachments into provider bindings for run-local mounts.
+The core model is:
+
+```mermaid
+flowchart LR
+    Provider[EnvironmentProvider] -->|constructs without I/O| Environment
+    Environment <--> State[EnvironmentState]
+```
+
+A Host selects a trusted Provider, desired configuration, current state, and fresh process-local collaborators. The Provider constructs a fresh `Environment`; the caller enters, uses, snapshots, and closes it. `close()` is non-destructive. Only explicit Host policy invokes `destroy()`.
+
+The package performs no durable storage and owns no Agent loop, model-facing Toolset, Thread relationship, retention policy, or Harness multi-mount aggregate.
 
 ## Document Catalog
 
-| Document                                                                               | Owning contract                                                                                                                                                     |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md)                                                       | Package position, architecture, boundaries, dependency direction, and stable principles                                                                             |
-| [01-provider-specs-and-catalog.md](01-provider-specs-and-catalog.md)                   | Serializable provider specifications, typed configuration, built-in and third-party factories, validation, and compatibility                                        |
-| [02-resource-management-and-attachments.md](02-resource-management-and-attachments.md) | Host-owned management lifecycle, operation identities, exact-operation reconciliation, resource state, reusable resources, fresh attachments, failure, and recovery |
-| [03-built-in-providers.md](03-built-in-providers.md)                                   | Direct Local, Local Envd, Docker, and E2B configuration and lifecycle behavior, runtime/SDK boundaries, and security                                                |
+| Document                                                                               | Owns                                                                                                               |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [00-overview.md](00-overview.md)                                                       | Package position, architecture, boundaries, end-to-end flow, dependency direction, and stable principles           |
+| [01-provider-specs-and-catalog.md](01-provider-specs-and-catalog.md)                   | Provider configuration schemas, inert factory contract, catalog, discovery, authorization, and evolution           |
+| [02-resource-management-and-attachments.md](02-resource-management-and-attachments.md) | `Environment`, `EnvironmentState`, re-entry lifecycle, close/destroy semantics, failure, concurrency, and security |
+| [03-built-in-providers.md](03-built-in-providers.md)                                   | Direct Local, Local Envd, Docker, and E2B configuration, state, entry, close, and destruction behavior             |
 
 ## Reading Paths
 
-### Declare or persist an Environment
+### Select or persist an Environment
 
-Read `00`, `01`, and `02`. A Host persists a provider specification and provider-owned resource-state envelope under its own authorization, encryption, fencing, and retention policy.
+Read `00`, `01`, and `02`, then the chosen built-in section in `03`. Desired provider configuration and `EnvironmentState` are distinct: configuration states what should exist; state is a provider-owned soft reference used to re-enter what currently exists.
 
 ### Integrate the Harness
 
-Read `00` and `02`, then [Harness Environment Integration](../agent-harness/08-environment-integration.md). The provider package returns a fresh attachment; the Harness owns attachment-to-binding adaptation and provider-neutral operations.
+Read `00` and `02`, then [Harness Environment Integration](../agent-harness/08-environment-integration.md). The Host constructs fresh Environment instances before each independent Harness Run. Harness receives those instances and owns only Run-local multi-mount routing and policy.
 
-### Implement or review a built-in provider
+### Implement a provider
 
-Read all four documents, then the [EIP carrier contract](../agent-envd/03-transports-and-sessions.md) for Local Envd, Docker, or E2B.
-
-### Add a third-party provider
-
-Read `01` and `02`. A third-party factory uses the same provider-specification, provider, resource-state, and attachment contracts and registers one namespaced key through the documented entry-point group.
+Read `01` and `02`. A third-party Provider registers one namespaced key, validates one versioned configuration schema, constructs Environment instances without I/O, validates its own state codec, and implements provider-neutral operations plus re-entry, state dump, non-destructive close, and explicit destroy.
 
 ## Authority Rules
 
-- A Host owns user authorization, desired provider specifications, durable resource identity, operation fencing, resource-state persistence, lease policy, and destroy/recreate decisions.
-- The provider package owns provider-specific schema validation, resource-management behavior, and bounded exact-operation reconciliation but no durable record.
-- A bound provider resource owns live provider clients, maintenance, and fresh attachment issuance for one Host scope.
-- A runtime attachment carries fresh process-local access material; it is not durable state and is transferred at most once.
-- The Harness owns the current mount set, provider-neutral operations, state restoration, and run-local cleanup.
-- Local Envd, Docker, and E2B use EIP for all Environment operations. Local Envd owns only the exact Host-resolved daemon process/private runtime; Docker and E2B vendor SDKs own only outer provider-resource lifecycle.
-- Direct Local and EIP are the only Environment operation backends.
+- A Host authorizes Provider selection, supplies current credentials and runtime collaborators, owns current state, and chooses retention, destruction, and prune policy.
+- `EnvironmentProvider` validates desired configuration and constructs fresh Environment instances without external I/O.
+- `Environment` owns one provider's process-local operation implementation and re-entry lifecycle.
+- `EnvironmentState` is portable provider data, not a credential, live client, durable lease, or proof of target existence.
+- Harness never discovers Providers or invokes backing-target destruction.
+- Provider state and configuration validity never authorize an Agent operation; Harness and provider operation policy still apply.
 
 ## Specification Conventions
 
-- Python-like schemas are conceptual typed contracts unless explicitly identified as serialized documents.
-- A provider specification is serializable desired configuration; a resource-state envelope is sensitive Host state; a runtime attachment is a live process-local value.
-- Provider keys select installed trusted code but grant no user or run authority.
-- Resource identity, Environment identity, Harness binding identity, daemon generation, and EIP session identity remain distinct.
-- Provider management outcome, Harness result, and Host durable completion are independent facts.
+- Provider keys use a namespaced lowercase form such as `a13n.docker`.
+- Configuration and state versions are explicit and independently owned.
+- Configuration and state contain canonical JSON only; live collaborators and credentials remain process-local.
+- Cancellation never proves that an external operation did not occur.
+- Public errors expose stable bounded codes and safe fields rather than provider-native exceptions or sensitive identifiers.

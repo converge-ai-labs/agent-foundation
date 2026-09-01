@@ -8,7 +8,6 @@ from a13n_harness.environment import (
     EnvironmentAccess,
     EnvironmentEntry,
     EnvironmentMount,
-    EnvironmentSource,
 )
 from a13n_harness.errors import (
     DefinitionError,
@@ -77,7 +76,6 @@ __all__ = [
     "EnvironmentAccess",
     "EnvironmentEntry",
     "EnvironmentMount",
-    "EnvironmentSource",
     "ExecutableAgent",
     "HarnessBuilder",
     "HarnessError",

@@ -46,14 +46,13 @@ from ..retention import (
 from .retention import LocalRetentionStore, LocalRetentionWriter
 
 if TYPE_CHECKING:
-    from a13n_environment_provider import DirectLocalShellProfile
-
-    from .binding import (
+    from .configuration import DirectLocalShellProfile
+    from .files import LocalFileOperator
+    from .provider import (
         _DirectLocalOutputPolicy,
         _DirectLocalPortPolicy,
         _DirectLocalProcessPolicy,
     )
-    from .files import LocalFileOperator
 
 
 class _OutputCollector:

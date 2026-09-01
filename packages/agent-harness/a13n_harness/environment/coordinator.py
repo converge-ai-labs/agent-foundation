@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import math
 import secrets
 import sys
@@ -12,6 +11,8 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
+from a13n_environment_provider import EnvironmentState
+from a13n_environment_provider.operations import EnvironmentOperations as EnvironmentProviderOperations
 from pydantic import BaseModel, JsonValue
 
 from a13n_harness._json import dump_json_bytes
@@ -46,14 +47,12 @@ from .models import (
     EnvironmentError,
     EnvironmentMountInfo,
     EnvironmentMountObservation,
-    EnvironmentMountState,
     EnvironmentOperationFamily,
     EnvironmentOperationReceipt,
     EnvironmentPath,
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
-    EnvironmentState,
 )
 from .providers import (
     BoundEnvironment,
@@ -63,7 +62,6 @@ from .providers import (
     BoundProcessOperations,
     BoundShellOperations,
     EnvironmentProviderBinding,
-    EnvironmentProviderOperations,
     EnvironmentRuntime,
     EnvironmentRuntimeMount,
     FileScopeSelection,
@@ -284,9 +282,17 @@ class _ShellFacade:
             _validate_provider_artifacts(entered, result)
             return result
 
-    async def exec_captured(self, request: CommandRequest, *, alias: str | None = None) -> ShellExecResult:
+    async def exec_captured(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None = None,
+        expected_mount_id: str | None = None,
+    ) -> ShellExecResult:
         """Preflight and hold one mount incarnation through foreground output materialization."""
         entered, provider_request = self._environment._prepare_command(request, alias=alias)
+        if expected_mount_id is not None and entered.mount_id != expected_mount_id:
+            raise EnvironmentError("Shell mount changed before dispatch.", code="environment_stale_mount")
         for action in (EnvironmentAction.SHELL_EXEC, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE):
             selected = self._environment.require_action(entered.mount_id, action)
             if selected is not entered:
@@ -381,8 +387,21 @@ class _ProcessFacade:
     def __init__(self, environment: CompositeBoundEnvironment) -> None:
         self._environment = environment
 
-    async def start(self, request: CommandRequest, *, alias: str | None = None) -> ProcessStartResult:
+    async def start(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None = None,
+        required_actions: frozenset[EnvironmentAction] = frozenset({EnvironmentAction.PROCESS_START}),
+        expected_mount_id: str | None = None,
+    ) -> ProcessStartResult:
         entered, provider_request = self._environment._prepare_command(request, alias=alias)
+        if expected_mount_id is not None and entered.mount_id != expected_mount_id:
+            raise EnvironmentError("Process mount changed before dispatch.", code="environment_stale_mount")
+        for action in required_actions:
+            selected = self._environment.require_action(entered.mount_id, action)
+            if selected is not entered:
+                raise EnvironmentError("Process mount changed before dispatch.", code="environment_stale_mount")
         async with self._environment._operation_lease(
             entered,
             EnvironmentAction.PROCESS_START,
@@ -541,8 +560,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
     def __init__(
         self,
         *,
+        thread_id: str,
         run_id: str,
         instance: AgentInstanceContext,
+        host_refs: Mapping[str, str],
         snapshot: EnvironmentSnapshot,
         entered: Mapping[str, _EnteredMount],
         owned_scopes: Mapping[_MountKey, _OwnedProviderScope],
@@ -550,8 +571,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
         runtime: ManagedEnvironmentRuntime,
         extensions: tuple[tuple[str, EnvironmentRunExtension], ...],
     ) -> None:
+        self._thread_id = thread_id
         self._run_id = run_id
         self._instance = instance
+        self._host_refs = dict(host_refs)
         self._snapshot = snapshot
         self._entered = dict(entered)
         self._entered_by_id = {item.mount_id: item for item in entered.values()}
@@ -561,7 +584,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._extensions = extensions
         self._extension_scopes: list[tuple[str, AbstractAsyncContextManager[None]]] = []
         self._activation_state = "not_started"
-        self._state_restored = False
         self._readiness_lock = asyncio.Lock()
         self._operation_lock = asyncio.Lock()
         self._mutation_lock = asyncio.Lock()
@@ -938,7 +960,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
             candidate=candidate,
         )
         mount_id = _new_mount_id()
-        scope = candidate.bind(run_id=self._run_id, instance=self._instance, mount_id=mount_id)
+        scope = candidate.bind(
+            thread_id=self._thread_id,
+            run_id=self._run_id,
+            instance=self._instance,
+            mount_id=mount_id,
+            host_refs=self._host_refs,
+        )
         try:
             async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
                 provider = await scope.__aenter__()
@@ -1074,6 +1102,16 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 code="environment_selection_invalid",
             )
         return entered
+
+    def _select_command_actions(
+        self,
+        request: CommandRequest,
+        *,
+        alias: str | None,
+        actions: frozenset[EnvironmentAction],
+    ) -> tuple[str, bool]:
+        entered, _ = self._prepare_command(request, alias=alias)
+        return entered.mount_id, actions <= entered.public.permission_ceiling.operations
 
     def _prepare_command(
         self,
@@ -1685,74 +1723,21 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if failures:
             raise BaseExceptionGroup("Environment aggregate cleanup failed", failures)
 
-    async def export_state(self) -> EnvironmentState:
-        self._assert_open()
-        eligible = [
-            entered
-            for entered in self._entered.values()
-            if "state" in entered.public.descriptor.operation_families
-            and EnvironmentAction.STATE_EXPORT in entered.public.permission_ceiling.operations
-        ]
-        entries: dict[str, EnvironmentMountState] = {}
-        try:
-            for entered in eligible:
-                async with self._operation_lease(
-                    entered,
-                    EnvironmentAction.STATE_EXPORT,
-                    "state",
-                    timeout_code="state_timeout",
-                ):
-                    state = await entered.provider.export_state()
-                    if state is None:
-                        continue
-                    if state.provider_type != entered.public.provider_type:
-                        raise EnvironmentError(
-                            "Provider state has an incompatible provider type.",
-                            code="state_invalid",
-                        )
-                    raw = dump_json_bytes(state.model_dump(mode="json"), sort_keys=True)
-                    entries[entered.public.name] = EnvironmentMountState.model_validate(json.loads(raw))
-        except EnvironmentError:
-            raise
-        except (TypeError, ValueError) as exc:
-            raise EnvironmentError("Provider state is not canonical JSON.", code="state_invalid") from exc
-        return EnvironmentState(mounts=entries)
-
-    async def restore_state(self, state: EnvironmentState) -> None:
-        self._assert_open()
-        if self._activation_state != "not_started":
-            raise EnvironmentError(
-                "Environment state must be restored before activation begins.",
-                code="state_invalid",
-            )
-        if self._state_restored:
-            raise EnvironmentError("Environment state was already restored.", code="state_invalid")
-        try:
-            raw_state = dump_json_bytes(state.model_dump(mode="json"), sort_keys=True)
-            detached = EnvironmentState.model_validate(json.loads(raw_state))
-        except (TypeError, ValueError) as exc:
-            raise EnvironmentError("Environment state is not canonical JSON.", code="state_invalid") from exc
-        matched: list[tuple[EnvironmentMountState, _EnteredMount]] = []
-        for name, entry in detached.mounts.items():
-            entered = self._entered.get(name)
-            if entered is None:
+    def dump_states(self) -> Mapping[str, EnvironmentState]:
+        """Read each entered adapter's last validated portable state without I/O."""
+        states: dict[str, EnvironmentState] = {}
+        for entered in self._entered.values():
+            state = entered.provider.dump_state()
+            if state is None:
                 continue
-            if entry.provider_type != entered.public.provider_type:
+            if state.provider_key != entered.public.provider_type:
                 raise EnvironmentError(
-                    "Environment state provider type is incompatible.",
+                    "Provider state has an incompatible provider key.",
                     code="state_invalid",
-                    details={"name": name},
+                    details={"name": entered.public.name},
                 )
-            matched.append((entry, entered))
-        for entry, entered in matched:
-            async with self._operation_lease(
-                entered,
-                EnvironmentAction.STATE_RESTORE,
-                "state",
-                timeout_code="state_timeout",
-            ):
-                await entered.provider.restore_state(entry)
-        self._state_restored = True
+            states[entered.public.name] = state
+        return states
 
 
 class NoopBoundEnvironment(CompositeBoundEnvironment):
@@ -1835,10 +1820,19 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
     async def bind(
         self,
         *,
+        thread_id: str,
         run_id: str,
         instance: AgentInstanceContext,
+        host_refs: Mapping[str, str],
     ) -> AsyncGenerator[BoundEnvironment]:
-        if not isinstance(run_id, str) or not run_id.strip() or not isinstance(instance, AgentInstanceContext):
+        if (
+            not isinstance(thread_id, str)
+            or not thread_id.strip()
+            or not isinstance(run_id, str)
+            or not run_id.strip()
+            or not isinstance(instance, AgentInstanceContext)
+            or not isinstance(host_refs, Mapping)
+        ):
             raise EnvironmentError("Environment run identity is invalid.", code="environment_request_invalid")
         if self._used:
             raise EnvironmentError(
@@ -1871,7 +1865,13 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
             for requested in self._initial_mounts:
                 candidate = requested.candidate
                 mount_id = _new_mount_id()
-                scope = candidate.bind(run_id=run_id, instance=instance, mount_id=mount_id)
+                scope = candidate.bind(
+                    thread_id=thread_id,
+                    run_id=run_id,
+                    instance=instance,
+                    mount_id=mount_id,
+                    host_refs=host_refs,
+                )
                 async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
                     provider = await scope.__aenter__()
                 scopes.append(scope)
@@ -1888,8 +1888,10 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
             }
             bound_type = NoopBoundEnvironment if self._noop else CompositeBoundEnvironment
             bound = bound_type(
+                thread_id=thread_id,
                 run_id=run_id,
                 instance=instance,
+                host_refs=host_refs,
                 snapshot=snapshot,
                 entered=entered,
                 owned_scopes=owned_scopes,
@@ -2000,23 +2002,21 @@ def _validate_entered(
         raise EnvironmentError("Provider returned invalid availability.", code="environment_provider_failure")
     if not isinstance(operations, EnvironmentProviderOperations):
         raise EnvironmentError("Provider returned invalid operations.", code="environment_provider_failure")
-    if provider.provider_type != candidate.provider_type or provider.environment_id != candidate.environment_id:
+    if provider.provider_key != candidate.provider_type or provider.environment_id != candidate.environment_id:
         raise EnvironmentError("Provider identity changed during entry.", code="environment_provider_failure")
     if not availability.ready_families <= descriptor.operation_families:
         raise EnvironmentError("Provider readiness advertises an absent family.", code="environment_provider_failure")
     if not callable(getattr(provider, "ensure_ready", None)):
         raise EnvironmentError("Provider has no readiness path.", code="environment_provider_failure")
-    if "state" in descriptor.operation_families and (
-        not callable(getattr(provider, "export_state", None)) or not callable(getattr(provider, "restore_state", None))
-    ):
-        raise EnvironmentError("Provider has no complete state codec path.", code="environment_provider_failure")
+    if not callable(getattr(provider, "dump_state", None)):
+        raise EnvironmentError("Provider has no state cache path.", code="environment_provider_failure")
 
     facet_families = {
         family
         for family in ("files", "shell", "processes", "ports", "outputs")
         if getattr(operations, family) is not None
     }
-    advertised_facets = set(descriptor.operation_families) - {"state"}
+    advertised_facets = set(descriptor.operation_families)
     if facet_families != advertised_facets:
         raise EnvironmentError(
             "Provider descriptor and operation facets disagree.",
@@ -2025,10 +2025,7 @@ def _validate_entered(
         )
     for action in descriptor.permissions.operations:
         dispatch = ENVIRONMENT_ACTION_DISPATCH[action]
-        if dispatch.family == "state":
-            method = getattr(provider, dispatch.method, None)
-        else:
-            method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
+        method = getattr(getattr(operations, dispatch.facet), dispatch.method, None)
         if not callable(method):
             raise EnvironmentError(
                 "Provider permission has no executable semantic method.",
@@ -2041,7 +2038,7 @@ def _validate_entered(
     )
     public = EnvironmentMountInfo(
         name=requested.name,
-        provider_type=provider.provider_type,
+        provider_type=provider.provider_key,
         descriptor=descriptor,
         permission_ceiling=effective,
         default_working_directory=requested.default_working_directory,

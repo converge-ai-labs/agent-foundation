@@ -53,15 +53,17 @@ sequenceDiagram
     participant User
     participant App as ConversationApplication
     participant State as HarnessState file
-    participant Environment as Demo Environment Provider
+    participant Provider as Demo Environment Provider
+    participant Environment as Fresh Environment
     participant Harness
 
     User->>App: first prompt
     App->>State: load state or start a new Thread
+    App->>Provider: construct fresh Environment
     App->>Harness: stream prompt with previous_state and Environment
-    Harness->>Environment: create, enter, acquire fresh attachment
+    Harness->>Environment: enter
     Harness-->>App: text events and terminal result
-    Harness->>Environment: release, exit, destroy
+    Harness->>Environment: non-destructive close
     App->>State: atomically commit completed state
 
     User->>App: next prompt
@@ -73,7 +75,7 @@ sequenceDiagram
     Note over App,State: A new process constructs a new application and loads the same state file
 ```
 
-The Provider, Resource, attachment, credentials, and grants are fresh authority and are not serialized into `HarnessState`. The checkpoint can contain portable provider-defined Environment continuation state, which the Harness restores only into a compatible freshly bound Environment. Conversation history resumes because the application reloads the last completed state and passes it as `previous_state`.
+The Provider, Environment adapter, credentials, and runtime collaborators are fresh authority and are not serialized into `HarnessState`. A checkpoint can contain portable provider-defined Environment state, but the Host must select that state and construct a fresh compatible Environment before a later independent Run. This Direct Local example is stateless. Conversation history resumes because the application reloads the last completed state and passes it as `previous_state`.
 
 ## Main API
 
@@ -86,12 +88,12 @@ from a13n_agent_app_example import (
 )
 
 state_path = Path("conversation-state.json")
-environment = create_demo_environment(Path("workspace"))
+workspace = Path("workspace")
 
 application = ConversationApplication(
     model=model,
     state_path=state_path,
-    environment=environment,
+    environment_factory=lambda: create_demo_environment(workspace),
 )
 async with application.stream_turn("Hello") as stream:
     async for text in stream:
@@ -102,15 +104,15 @@ async with application.stream_turn("Hello") as stream:
 
 1. serializes turn execution with an async lock;
 2. loads the last successfully committed `HarnessState` if present;
-3. opens one explicitly scoped turn stream with the Environment and `previous_state`;
+3. constructs one fresh Direct Local Environment and opens one explicitly scoped turn stream with `previous_state`;
 4. yields text start and delta events immediately;
-5. closes the Harness stream and Environment lifecycle if the consumer stops early;
+5. closes the Harness stream and Environment adapter non-destructively if the consumer stops early;
 6. requires a successful terminal result;
 7. atomically replaces the state file with the returned continuation state.
 
-The executable is immutable build output and has no independent resource lifecycle. The Harness owns the demo Provider's temporary Resource lifecycle for each turn: create, Resource entry, attachment acquisition, attachment release, Resource exit, and destroy.
+The executable is immutable build output and has no independent resource lifecycle. The application constructs one fresh adapter per turn; Harness enters it, uses it for Run-local routing, and closes it without deleting the Host workspace. Harness never calls Provider destruction.
 
-A failed or abandoned turn does not replace the last completed state. Callers must enter `stream_turn()` with `async with`; leaving that scope deterministically closes the Harness stream and temporary Environment lifecycle. The next application instance can therefore recover only from a committed checkpoint.
+A failed or abandoned turn does not replace the last completed state. Callers must enter `stream_turn()` with `async with`; leaving that scope deterministically closes the Harness stream and fresh Environment adapter. The next application instance can therefore recover only from a committed checkpoint.
 
 ## Source Layout
 

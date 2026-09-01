@@ -6,25 +6,25 @@ Agent UI keeps local persistence small and continuation-oriented:
 
 1. editable files own desired configuration;
 2. SQLite owns compact mutable indexes and current selections;
-3. content-addressed files own immutable snapshots, managed Skill packages, Session continuation bundles, and provider state;
+3. content-addressed files own immutable snapshots, managed Skill packages, Session continuation bundles, and Environment state;
 4. live Runs, pending input, AG-UI events, subscriptions, async children, and native runtime objects stay in memory.
 
 The store provides best-effort continuation persistence. It preserves the latest successfully selected continuation under ordinary local SQLite and filesystem behavior but does not promise that active work, partial output, or the most recent OS-buffered write survives process or machine failure. Agent UI does not expose durability profiles, run an effect journal, or emulate a distributed workflow store.
 
 ## Persisted Values
 
-| Value                                                                                  | Storage                           | Reason                                                       |
-| -------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------ |
-| Process and product configuration                                                      | YAML/JSON/Markdown source files   | Inspectable desired state                                    |
-| Accepted generation and resource index                                                 | SQLite                            | Fast local lookup of the current valid file-backed catalog   |
-| Resolved Agent and Environment snapshots                                               | Immutable object files            | Existing Sessions pin exact composition after source changes |
-| Managed Skill packages                                                                 | Immutable object files            | Exact Session reconstruction after source changes            |
-| Session identity, metadata, snapshot references, and latest continuation reference     | SQLite                            | Resume, list, fork, archive, and multi-Session browsing      |
-| Complete continuation bundle                                                           | Immutable object file             | Canonical restart boundary for one Session                   |
-| Environment assignment and provider state                                              | SQLite plus immutable object file | Resume or clean up external resources                        |
-| envd executable cache                                                                  | Replaceable runtime cache         | Avoid repeated verified download                             |
-| Active Runs, input, live events, async children, attachments, credentials, and clients | Process memory                    | No cross-process continuation promise                        |
-| Logs and OpenTelemetry                                                                 | Configured process outputs        | Diagnostics only                                             |
+| Value                                                                                           | Storage                           | Reason                                                       |
+| ----------------------------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| Process and product configuration                                                               | YAML/JSON/Markdown source files   | Inspectable desired state                                    |
+| Accepted generation and resource index                                                          | SQLite                            | Fast local lookup of the current valid file-backed catalog   |
+| Resolved Agent and Environment snapshots                                                        | Immutable object files            | Existing Sessions pin exact composition after source changes |
+| Managed Skill packages                                                                          | Immutable object files            | Exact Session reconstruction after source changes            |
+| Session identity, metadata, snapshot references, and latest continuation reference              | SQLite                            | Resume, list, fork, archive, and multi-Session browsing      |
+| Complete continuation bundle                                                                    | Immutable object file             | Canonical restart boundary for one Session                   |
+| Environment assignment and Environment state                                                    | SQLite plus immutable object file | Resume or clean up backing targets                           |
+| envd executable cache                                                                           | Replaceable runtime cache         | Avoid repeated verified download                             |
+| Active Runs, input, live events, async children, Environment adapters, credentials, and clients | Process memory                    | No cross-process continuation promise                        |
+| Logs and OpenTelemetry                                                                          | Configured process outputs        | Diagnostics only                                             |
 
 SQLite is not a durable input queue, Run ledger, event journal, child-job database, or exactly-once delivery store.
 
@@ -38,7 +38,7 @@ data-root/
 │   ├── environment-snapshots/
 │   ├── skill-packages/
 │   ├── continuations/
-│   └── provider-states/
+│   └── Environment-states/
 ├── runtimes/
 │   └── agent-envd/<version>/<target>/agent-envd[.exe]
 └── staging/
@@ -57,11 +57,11 @@ The conceptual tables are:
 | Configuration | accepted generation, resource revisions, source diagnostics                                |
 | Composition   | immutable snapshot references and managed Skill references                                 |
 | Sessions      | identity, display metadata, pinned snapshots, fork lineage, current continuation reference |
-| Environments  | Session assignments, provider lifecycle status, and provider-state reference               |
+| Environments  | Session assignments, Host lifecycle status, and Environment-state reference                |
 
 There are no tables for pending submissions, active Runs or attempts, AG-UI segments, replay cursors, Item projection watermarks, async-child jobs, steering, or parent delivery.
 
-Session metadata, continuation references, and provider-state references use ordinary last-write-wins updates. One Host serializes its own operations with process-local locks. If separate local processes update the same Session or resource concurrently, the last committed update becomes current; Agent UI does not add cross-process fencing, conflict detection, or merge semantics.
+Session metadata, continuation references, and Environment-state references use ordinary last-write-wins updates. One Host serializes its own operations with process-local locks. If separate local processes update the same Session or resource concurrently, the last committed update becomes current; Agent UI does not add cross-process fencing, conflict detection, or merge semantics.
 
 ## Immutable Object Publication
 
@@ -91,7 +91,7 @@ class StoredSessionContinuation(BaseModel):
 
 `HarnessState` remains the canonical continuation value. `deferred_requests` contains the exact complete `DeferredToolRequests` only when the corresponding root Run suspended. `harness_release` identifies the required Harness release, and `created_at` records when Agent UI created the bundle. Keeping these values together gives the Session one self-contained continuation without a separate pending-request lifecycle.
 
-The bundle never contains Model clients, credentials, provider attachments, `EnvironmentRuntime`, plugin instances, tasks, locks, AG-UI cursors, or async-child jobs.
+The bundle never contains Model clients, credentials, Provider runtime collaborators, Environment adapters, entered mount facades, plugin instances, tasks, locks, AG-UI cursors, or async-child jobs.
 
 At a complete or suspended Harness boundary:
 
@@ -122,7 +122,7 @@ Startup is deliberately small:
 1. open SQLite and apply package-owned migrations under a short write transaction;
 2. load or accept one valid configuration generation;
 3. start the selected runtime Runner;
-4. validate Session snapshots, continuations, provider state, and executable artifacts only when a command selects them.
+4. validate Session snapshots, continuations, Environment state, and executable artifacts only when a command selects them.
 
 Startup does not:
 
@@ -154,7 +154,7 @@ Multiple local Host processes can open the same data root. This does not turn Ag
 
 - SQLite provides ordinary transaction serialization and a bounded busy timeout.
 - Immutable files use unique staging names and atomic replacement.
-- Session, configuration, and provider-state updates use last-write-wins.
+- Session, configuration, and Environment-state updates use last-write-wins.
 - One Host uses process-local locks to avoid overlapping its own operations.
 - Agent UI provides no cross-process leases, fences, conflict protocol, retry coordinator, or merge semantics.
 
@@ -169,7 +169,7 @@ Cleanup remains straightforward:
 - Agent UI does not perform online garbage collection, complex startup retention, lossy event compaction, archive moves, or recovery quarantine;
 - export copies Session metadata, pinned snapshots, managed Skills, and the selected continuation bundle;
 - import validates those values and creates a new local Session identity;
-- provider state and credentials are excluded unless an explicit provider-aware export contract is added later.
+- Environment state and credentials are excluded unless an explicit provider-aware export contract is added later.
 
 Because there is no durable event or child-job ledger, export does not need retention generations, delivery records, projection databases, or event compaction policy.
 
@@ -183,10 +183,10 @@ Because there is no durable event or child-job ledger, export does not need rete
 | Live AG-UI delivery fails                   | Current viewer can miss transient output; continuation selection is unaffected |
 | Process exits during a Run                  | Active input and partial work disappear; prior selected continuation remains   |
 | SQLite commit fails after external effects  | Prior continuation remains; effects can be unknown and may repeat              |
-| Runtime cleanup fails after selection       | The error reports the selected continuation; selection remains current         |
+| Process-local cleanup fails after selection | The error reports the selected continuation; selection remains current         |
 | Selected continuation is missing or corrupt | Session resume fails explicitly                                                |
 | OTel or logging fails                       | Diagnostic loss only                                                           |
 
 ## Compatibility
 
-SQLite schema, immutable object schemas, Harness continuation schema, provider-state codec, and resolved snapshot schemas evolve independently. A package migration changes SQLite structure. Object readers either support an older schema explicitly or reject it. Agent UI never silently converts partial presentation history into a newer Harness continuation.
+SQLite schema, immutable object schemas, Harness continuation schema, Environment-state codec, and resolved snapshot schemas evolve independently. A package migration changes SQLite structure. Object readers either support an older schema explicitly or reject it. Agent UI never silently converts partial presentation history into a newer Harness continuation.

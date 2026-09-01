@@ -4,7 +4,7 @@
 
 EIP has one language-neutral protocol source that generates the daemon wire surface and the Python client surface. The canonical source uses Protobuf service and message IDL with EIP-specific method options. JSON-RPC 2.0 remains the observable control envelope over trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket, while raw file bytes use the correlated transfer mapping defined by each carrier profile. Protobuf is an IDL and generation input; EIP does not use gRPC as a mandatory transport, put binary protobuf messages inside JSON-RPC, or serialize native file content as protobuf.
 
-The dedicated `a13n-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, executable-discovery, artifact-download, installation, or daemon-process authority. It communicates over a session source supplied by an owning provider or Host and never searches `PATH`, selects a release, installs a binary, or launches `agent-envd`. The Harness directly owns the adapter from its provider-neutral Environment protocols to this client; there is no separate EIP Environment adapter package.
+The dedicated `a13n-envd-client` Python package contains the generated EIP models, method and transfer metadata, control/data codecs, typed request stubs, high-level async file readers and writers, and a small handwritten transport/session runtime. It has no Harness, provider, product, executable-discovery, artifact-download, installation, or daemon-process authority. It communicates over a session source supplied by an owning provider or Host and never searches `PATH`, selects a release, installs a binary, or launches `agent-envd`. The Environment Provider package owns the provider-neutral `Environment` implementation over this client; Harness receives that adapter directly and adds only Run-local multi-mount routing.
 
 The client and `agent-envd` daemon belong to one agent-envd release group. Their package version is release identity, while the negotiated EIP `<major>.<minor>` version remains the independent wire-compatibility identity defined by [EIP Protocol](02-eip-protocol.md).
 
@@ -18,9 +18,10 @@ The client and `agent-envd` daemon belong to one agent-envd release group. Their
 | Rust server models, codecs, method registry, and dispatch surface                          | Generated agent-envd crate modules                           | Used behind daemon transport and resource owners               |
 | Python models, codecs, method registry, and typed client stubs                             | `a13n-envd-client`                                           | Transport-neutral client contract                              |
 | JSON-RPC framing, raw-data attachment/multiplexing, authentication, sessions, and liveness | Handwritten client and daemon runtimes over generated codecs | Implements [transport profiles](03-transports-and-sessions.md) |
-| Provider-neutral Environment adaptation and Harness result mapping                         | `a13n-harness`                                               | Exhaustively maps fresh attachments to Harness bindings        |
-| Provider lifecycle, bootstrap, and EIP session sources                                     | `a13n-environment-provider` and Host                         | Supplies fresh `EIPEnvironmentAttachment` values               |
-| Product routing, durable execution, and optional provider-state persistence                | Host                                                         | Never generated from EIP IDL                                   |
+| Provider-neutral Environment adaptation                                                    | `a13n-environment-provider`                                  | Implements fresh `Environment` adapters over EIP               |
+| Multi-mount routing and model-facing result mapping                                        | `a13n-harness`                                               | Consumes already constructed Environment adapters              |
+| Provider lifecycle, bootstrap, and EIP session sources                                     | `a13n-environment-provider` and Host                         | Supplies fresh process-local runtime collaborators             |
+| Product routing, durable execution, and current Environment-state persistence              | Host                                                         | Never generated from EIP IDL                                   |
 | Executable release selection, discovery, download, installation, and process ownership     | Installer, Host, or selected provider                        | Absent from the low-level client                               |
 
 The normative Markdown specification owns meaning. The canonical IDL must encode that accepted meaning exactly and is the source from which code is generated. A mismatch between specification, IDL, generated code, or golden wire fixtures fails validation; an implementation cannot select whichever copy is convenient.
@@ -38,12 +39,12 @@ The stable source and output ownership is:
 | `crates/agent-envd/build_support/` and Cargo `OUT_DIR`                                               | Descriptor-driven Rust generator and its generated serde models, method registry, handler trait, and dispatch surface                       |
 | `crates/agent-envd/protocol/eip/v1/testdata/`                                                        | Shared hand-curated canonical JSON values and binary-frame fixtures consumed by Python and Rust conformance tests                           |
 | `spec/agent-envd/`                                                                                   | Normative architecture, protocol, transport, resource, output, isolation, and generation contracts                                          |
-| `packages/agent-environment-provider/a13n_environment_provider/`                                     | Provider specifications, Providers, Resources, and attachments, and stdio/HTTP/reverse-WebSocket EIP session sources                        |
-| `packages/agent-harness/a13n_harness/`                                                               | Direct Local Environment implementation plus the exhaustive attachment adapter that consumes `a13n-envd-client`                             |
+| `packages/agent-environment-provider/a13n_environment_provider/`                                     | Provider specifications, Providers, Environment adapters, state codecs, and stdio/HTTP/reverse-WebSocket EIP session sources                |
+| `packages/agent-harness/a13n_harness/`                                                               | Run-local multi-mount routing and model-facing integration over already constructed Environment adapters                                    |
 
 `a13n-envd-client` is a Python workspace member for repository development and validation, but it belongs to the agent-envd release group rather than the Foundation Python release group. A Foundation release can depend on a compatible published client range but does not version or republish that package.
 
-The client package is lower-level than both the provider package and the Harness and is reusable by product gateways, CLIs, IDEs, provider controllers, and trusted background jobs. It imports no Pydantic AI Agent type, `AgentContext`, `BoundEnvironment`, `ToolOutputPolicy`, browser principal, provider SDK, or Host lifecycle model. The provider package uses its session runtime to supply fresh EIP session sources. The Harness attachment adapter uses the same client and translates between generated EIP values and Harness-owned provider-neutral descriptors, logical references, errors, and receipts.
+The client package is lower-level than both the provider package and the Harness and is reusable by product gateways, CLIs, IDEs, provider controllers, and trusted background jobs. It imports no Pydantic AI Agent type, `AgentContext`, `BoundEnvironment`, `ToolOutputPolicy`, browser principal, provider SDK, or Host lifecycle model. The Provider package uses the client session runtime to construct fresh EIP-backed Environment adapters and translates generated EIP values into provider-neutral descriptors, logical references, errors, and receipts. Harness routes those provider-neutral operations without owning an EIP adapter.
 
 ## Canonical IDL Profile
 
@@ -150,13 +151,13 @@ Normal reader iteration maintains a local count and SHA-256 and calls `file.clos
 
 ## Provider and Harness Boundaries
 
-The shared Environment Provider package owns provider specifications, resource Managers, and fresh attachments. Its EIP attachment carries a session source for trusted stdio, Host-dialed HTTP, or an accepted reverse-WebSocket carrier. It imports no Harness or Pydantic AI type and uses vendor SDKs only for outer resource lifecycle and bootstrap.
+The shared Environment Provider package owns Provider specifications, fresh Environment adapters, portable state codecs, and EIP session sources for trusted stdio, Host-dialed HTTP, or an accepted reverse-WebSocket carrier. It imports no Harness or Pydantic AI type and uses vendor SDKs only for backing-target lifecycle and bootstrap.
 
-The Harness exhaustively adapts a fresh `EIPEnvironmentAttachment` into an EIP-backed Environment beside Direct Local. That adapter owns provider-neutral path, descriptor, command, process, output-reference, receipt, cancellation, and error translation. It wraps opaque provider selectors with the selected binding and generation before any model-facing projection. Unknown attachment variants fail before aggregate transfer.
+The Provider package's EIP-backed `Environment` implementation owns provider-neutral path, descriptor, command, process, output-reference, receipt, cancellation, and error translation. It wraps opaque EIP selectors with the entered adapter and daemon generation before any model-facing projection. Harness consumes that Environment directly; incompatible Provider or state variants fail before Harness entry.
 
 Harness model-output policy is not serialized as EIP command policy. Envd always captures bounded raw command output through its spool; the Harness decides how much to read, redact, inline, truncate, or expose through its own logical reference. The client and provider packages know neither Harness virtual paths nor model/tool metadata.
 
-A Host chooses create, resume, pause, destroy, attachment, and optional provider-state persistence policy through the provider package without assuming Foundation Service behavior. Direct Local Environments do not depend on envd.
+A Host owns current `EnvironmentState`, selects entry, warmup, destroy, cleanup, and prune policy, and invokes those operations on fresh adapters without assuming Foundation Service behavior. Direct Local Environments do not depend on envd.
 
 ## Executable Distribution and Installation
 
@@ -204,9 +205,9 @@ Generated-model round trips alone are insufficient because both languages can re
 
 A custom descriptor-driven generator adds maintenance and requires disciplined compatibility lint. It removes hand-maintained cross-language model, method, transfer-enum, and frame-codec duplication and makes daemon/client drift mechanically visible. The fixed raw frame avoids per-chunk JSON/base64 overhead without creating an independently editable second protocol.
 
-### Dedicated client package and attachment adapter
+### Dedicated client package and EIP-backed Environment adapter
 
-A separate low-level client gives non-Harness consumers a reusable EIP connection without forcing them to import Pydantic AI. The provider package owns reusable lifecycle and session-source contracts, while the Harness keeps only provider-neutral attachment adaptation and operation mapping. This preserves one operation adapter without coupling provider management to the Harness.
+A separate low-level client gives non-Harness consumers a reusable EIP connection without forcing them to import Pydantic AI. The Provider package owns the reusable EIP-backed Environment implementation and session-source contracts, while Harness keeps only provider-neutral multi-mount routing and model-facing mapping. This preserves one operation adapter without coupling Provider management to Harness.
 
 ### Co-released client and daemon
 
@@ -222,7 +223,7 @@ One release group makes source, generated descriptor, conformance fixtures, and 
 06. Carrier, attachment authentication, correlation, backpressure, fair multiplexing, session, retry, and cleanup behavior remains handwritten, bounded, and shared beneath generated surfaces.
 07. Compiler and generator tools are locked build dependencies rather than accidental client runtime dependencies.
 08. `a13n-envd-client` imports no Harness or Host lifecycle type, grants no provider authority, and never discovers, downloads, installs, selects, or launches an envd executable.
-09. The provider package owns EIP session sources, while the Harness exhaustively owns fresh-attachment-to-Environment adaptation; neither reimplements wire models, method constants, or transport handshakes.
+09. The Environment Provider package owns EIP session sources and Provider-specific adaptation into fresh Environment adapters; Harness receives only those constructed adapters. Neither layer reimplements wire models, method constants, or transport handshakes.
 10. The client and daemon share the agent-envd release group and descriptor digest, while package version and EIP version remain independent identities.
 11. Shared hand-curated golden wire values, focused structural negative fixtures, and actual cross-language daemon/client tests are required in addition to generated-model round trips.
 12. Direct-local Harness Environments remain first-class and do not depend on starting envd.
