@@ -7,10 +7,12 @@ from dataclasses import dataclass
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
+from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectors import ConnectorError
+from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import AuthenticatedActor, authorize_agent_preset, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.model_configs.runtime import AcceptedModelSelector, PreparedModelExecution
@@ -22,6 +24,7 @@ from .connector_resolution import AgentConnectorSelectionResolver, PreparedConne
 from .domain import (
     AgentPresetConfig,
     ChildEnvironmentPolicy,
+    EnvironmentExecutionConfig,
     PluginRuntimeMode,
     ResolvedAgentModelConfig,
     ResolvedRevisionContent,
@@ -30,6 +33,7 @@ from .domain import (
     SubagentSelection,
     canonical_digest,
 )
+from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedEnvironmentSelection
 from .errors import AgentPresetError, preset_publish_failed
 from .models import AgentPresetRecord, AgentPresetRevisionRecord
 from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
@@ -63,6 +67,7 @@ class PreparedRevisionResolution:
     config: AgentPresetConfig
     model: PreparedModelExecution
     connectors: PreparedConnectorSelections | None
+    environment: PreparedEnvironmentSelection | None
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkill, ...]
     subagents: tuple[PreparedSubagent, ...]
@@ -78,11 +83,13 @@ class AgentPresetResolver:
         *,
         plugin_runtime_mode: PluginRuntimeMode,
         connector_resolver: AgentConnectorSelectionResolver | None = None,
+        environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connector_resolver = connector_resolver
+        self._environment_resolver = environment_resolver
         self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
             sessions,
             runtime_mode=plugin_runtime_mode,
@@ -151,6 +158,19 @@ class AgentPresetResolver:
                 )
             except ConnectorError as error:
                 raise preset_publish_failed(_connector_reason(error), path="connectors") from error
+        environment = None
+        if config.environment is not None:
+            if self._environment_resolver is None:
+                raise preset_publish_failed("environment_resolution_unavailable", path="environment")
+            try:
+                environment = await self._environment_resolver.prepare_publication(
+                    actor=actor,
+                    organization_id=organization_id,
+                    workspace_id=workspace_id,
+                    selection=config.environment,
+                )
+            except EnvironmentManagementError as error:
+                raise preset_publish_failed(error.code, path="environment") from error
         return PreparedRevisionResolution(
             actor=actor,
             organization_id=organization_id,
@@ -159,6 +179,7 @@ class AgentPresetResolver:
             config=config,
             model=model,
             connectors=connectors,
+            environment=environment,
             plugins=plugins,
             skills=skills,
             subagents=subagents,
@@ -196,6 +217,14 @@ class AgentPresetResolver:
         except ConnectorError as error:
             raise preset_publish_failed(_connector_reason(error), path="connectors") from error
         skills = await self._freeze_skills(session, prepared)
+        try:
+            environment = (
+                await self._environment_resolver.freeze_in_transaction(session, prepared=prepared.environment)
+                if self._environment_resolver is not None and prepared.environment is not None
+                else None
+            )
+        except EnvironmentManagementError as error:
+            raise preset_publish_failed(error.code, path="environment") from error
         subagents = await self._freeze_subagents(session, prepared)
         runtime_lock_digest = canonical_digest(
             {
@@ -203,6 +232,7 @@ class AgentPresetResolver:
                 "mode": self.plugin_runtime_mode.value,
                 "plugins": [item.model_dump(mode="json") for item in plugins],
                 "child_locks": [item.child_revision_digest for item in prepared.subagents],
+                "environment_lock": _environment_lock(environment),
             }
         )
         return ResolvedRevisionContent(
@@ -215,6 +245,7 @@ class AgentPresetResolver:
             runtime_lock_digest=runtime_lock_digest,
             resolved_skills=skills,
             resolved_connectors=connectors,
+            resolved_environment=environment,
             resolved_subagents=subagents,
         )
 
@@ -223,7 +254,7 @@ class AgentPresetResolver:
             raise preset_publish_failed("input_adapter_unsupported", path="input_adapter")
         if config.connectors and self._connector_resolver is None:
             raise preset_publish_failed("connector_resolution_unavailable", path="connectors")
-        if config.environment is not None:
+        if config.environment is not None and self._environment_resolver is None:
             raise preset_publish_failed("environment_resolution_unavailable", path="environment")
         for index, skill in enumerate(config.skills):
             if skill.skill_revision_id in {item.skill_revision_id for item in config.skills[:index]}:
@@ -458,6 +489,15 @@ class AgentPresetResolver:
                 )
             )
         return tuple(result)
+
+
+def _environment_lock(environment: EnvironmentExecutionConfig | None) -> dict[str, JsonValue] | None:
+    if environment is None:
+        return None
+    return {
+        "provider_lock": environment.provider_lock,
+        "logical_digest_sha256": environment.logical_digest_sha256,
+    }
 
 
 def _validate_json_schemas(config: AgentPresetConfig) -> None:

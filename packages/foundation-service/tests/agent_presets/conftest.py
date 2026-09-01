@@ -5,11 +5,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from a13n_environment_provider import build_environment_provider_catalog
 from a13n_service.agent_presets.domain import AgentPresetConfig, PluginRuntimeMode
+from a13n_service.agent_presets.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.resolution import AgentPresetResolver
 from a13n_service.agent_presets.service import AgentPresetService
 from a13n_service.database.metadata import service_metadata
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.model_configs.domain import ModelCapabilities, WorkspaceSecretCredential
@@ -48,6 +52,7 @@ def preset_config(
     plugins: list[object] | None = None,
     connectors: dict[str, object] | None = None,
     subagents: dict[str, object] | None = None,
+    environment: dict[str, object] | None = None,
 ) -> AgentPresetConfig:
     return AgentPresetConfig.model_validate(
         {
@@ -61,7 +66,7 @@ def preset_config(
             "plugins": plugins or [],
             "skills": [],
             "connectors": connectors or {},
-            "environment": None,
+            "environment": environment,
             "subagents": subagents or {},
             "client_tools": [],
             "output_spec": None,
@@ -206,15 +211,21 @@ async def agent_preset_service(
         built_in_provider_registry(),
         EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
     )
+    environment_resolver = AgentEnvironmentSelectionResolver(
+        agent_preset_sessions,
+        _environment_catalog(),
+    )
     resolver = AgentPresetResolver(
         agent_preset_sessions,
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
+        environment_resolver=environment_resolver,
     )
     invocation_resolver = AgentPresetInvocationResolver(
         agent_preset_sessions,
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
+        environment_resolver=environment_resolver,
     )
     yield AgentPresetService(
         agent_preset_sessions,
@@ -233,8 +244,28 @@ async def agent_preset_invocation_resolver(
         built_in_provider_registry(),
         EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
     )
+    environment_resolver = AgentEnvironmentSelectionResolver(
+        agent_preset_sessions,
+        _environment_catalog(),
+    )
     yield AgentPresetInvocationResolver(
         agent_preset_sessions,
         model_selector,
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
+        environment_resolver=environment_resolver,
     )
+
+
+@pytest.fixture
+def agent_environment_service(
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> EnvironmentManagementService:
+    return EnvironmentManagementService(
+        agent_preset_sessions,
+        _environment_catalog(),
+        clock=lambda: NOW,
+    )
+
+
+def _environment_catalog() -> FoundationEnvironmentProviderCatalog:
+    return FoundationEnvironmentProviderCatalog(build_environment_provider_catalog(builtin_keys=("a13n.direct-local",)))

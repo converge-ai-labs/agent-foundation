@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from a13n_service.agent_presets import AgentPresetError
 from a13n_service.assets.errors import AssetError
 from a13n_service.connectors import ConnectorError
+from a13n_service.environments import EnvironmentManagementError
 from a13n_service.iam import AuthenticationError
 from a13n_service.model_configs.service import ModelConfigError
 from a13n_service.plugins import PluginError
@@ -42,6 +43,13 @@ def install_api_conventions(app: FastAPI) -> None:
 
     @app.exception_handler(ModelConfigError)
     async def model_config_error_handler(request: Request, error: ModelConfigError) -> JSONResponse:
+        return _error_response(request, error.status_code, error.code, error.message, error.details)
+
+    @app.exception_handler(EnvironmentManagementError)
+    async def environment_management_error_handler(
+        request: Request,
+        error: EnvironmentManagementError,
+    ) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message, error.details)
 
     @app.exception_handler(PluginError)

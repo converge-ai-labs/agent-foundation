@@ -27,6 +27,7 @@ def service_metadata() -> MetaData:
     from a13n_service.assets import models as asset_models
     from a13n_service.connectors import models as connector_models
     from a13n_service.durable_operations import models as durable_operations_models
+    from a13n_service.environments import models as environment_models
     from a13n_service.iam import models as iam_models
     from a13n_service.model_configs import models as model_config_models
     from a13n_service.plugins import models as plugin_models
@@ -38,6 +39,7 @@ def service_metadata() -> MetaData:
         asset_models,
         connector_models,
         durable_operations_models,
+        environment_models,
         iam_models,
         model_config_models,
         plugin_models,

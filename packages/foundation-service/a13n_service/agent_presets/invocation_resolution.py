@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectors import ConnectorError
+from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -42,6 +44,7 @@ from .domain import (
     SubagentSelection,
     canonical_digest,
 )
+from .environment_resolution import AgentEnvironmentSelectionResolver, PreparedEnvironmentSelection
 from .errors import (
     AgentPresetError,
     active_revision_conflict,
@@ -97,6 +100,7 @@ class PreparedAgentInvocation:
     plugins: PreparedPluginSelections | None
     skills: tuple[PreparedInvocationSkill, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
+    environment: PreparedEnvironmentSelection | None
     resolved_environment: EnvironmentExecutionConfig | None
     subagents: tuple[PreparedInvocationSubagent, ...]
 
@@ -127,11 +131,13 @@ class AgentPresetInvocationResolver:
         *,
         plugin_runtime_mode: PluginRuntimeMode,
         connector_resolver: AgentConnectorSelectionResolver | None = None,
+        environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connector_resolver = connector_resolver
+        self._environment_resolver = environment_resolver
         self._plugin_runtime_mode = plugin_runtime_mode
         self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
             sessions,
@@ -223,7 +229,26 @@ class AgentPresetInvocationResolver:
                     except PluginSelectionError as error:
                         raise preset_revision_not_executable(error.reason) from error
                 resolved_plugins = plugins.resolved
-                resolved_environment = _resolve_environment(revision, merged)
+            environment = None
+            resolved_environment = None
+            if merged.config.environment is not None:
+                if self._environment_resolver is None:
+                    raise preset_revision_not_executable("environment_resolution_unavailable")
+                retained_environment = (
+                    revision.resolved_environment if merged.config.environment == revision.config.environment else None
+                )
+                try:
+                    environment = await self._environment_resolver.prepare_invocation(
+                        actor=actor,
+                        organization_id=authorized.organization_id,
+                        workspace_id=workspace_id,
+                        selection=merged.config.environment,
+                        retained=retained_environment,
+                    )
+                except EnvironmentManagementError as error:
+                    raise preset_revision_not_executable(error.code) from error
+                resolved_environment = environment.resolved
+            async with short_session(self._sessions) as session:
                 subagents = await self._prepare_subagents(
                     session,
                     actor=actor,
@@ -291,6 +316,7 @@ class AgentPresetInvocationResolver:
             plugins=plugins,
             skills=skills,
             resolved_plugin_versions=resolved_plugins,
+            environment=environment,
             resolved_environment=resolved_environment,
             subagents=subagents,
         )
@@ -420,6 +446,17 @@ class AgentPresetInvocationResolver:
             except ConnectorError as error:
                 raise preset_revision_not_executable(_connector_reason(error)) from error
             try:
+                environment = (
+                    await self._environment_resolver.freeze_in_transaction(
+                        session,
+                        prepared=prepared.environment,
+                    )
+                    if self._environment_resolver is not None and prepared.environment is not None
+                    else None
+                )
+            except EnvironmentManagementError as error:
+                raise preset_revision_not_executable(error.code) from error
+            try:
                 plugins = (
                     await self._plugin_resolver.freeze_in_transaction(
                         session,
@@ -437,7 +474,7 @@ class AgentPresetInvocationResolver:
             raise _authorization_error(error) from error
 
         resolved_subagents = tuple(item.edge for item in subagents)
-        runtime_lock_digest = _runtime_lock_digest(prepared, plugins, resolved_subagents)
+        runtime_lock_digest = _runtime_lock_digest(prepared, plugins, resolved_subagents, environment)
         config_payload = {
             "schema_version": "1",
             "resolved_model": ResolvedAgentModelConfig(
@@ -449,7 +486,7 @@ class AgentPresetInvocationResolver:
             "runtime_lock_digest": runtime_lock_digest,
             "resolved_skills": skills,
             "resolved_connectors": connectors,
-            "resolved_environment": prepared.resolved_environment,
+            "resolved_environment": environment,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.config.instructions,
             "input_adapter": prepared.merged.config.input_adapter,
@@ -694,17 +731,6 @@ async def _freeze_subagents(
     return tuple(result)
 
 
-def _resolve_environment(
-    revision: AgentPresetRevision,
-    merged: MergedAgentRun,
-) -> EnvironmentExecutionConfig | None:
-    if merged.config.environment == revision.config.environment:
-        return revision.resolved_environment
-    if merged.config.environment is None:
-        return None
-    raise preset_revision_not_executable("environment_resolution_unavailable")
-
-
 async def _load_preset(
     session: AsyncSession,
     *,
@@ -844,10 +870,12 @@ def _runtime_lock_digest(
     prepared: PreparedAgentInvocation,
     resolved_plugins: tuple[ResolvedPluginVersion, ...],
     resolved_subagents: tuple[ResolvedSubagentEdge, ...],
+    resolved_environment: EnvironmentExecutionConfig | None,
 ) -> str:
     if (
         resolved_plugins == prepared.revision.resolved_plugin_versions
         and resolved_subagents == prepared.revision.resolved_subagents
+        and resolved_environment == prepared.revision.resolved_environment
     ):
         return prepared.revision.runtime_lock_digest
     child_digest_by_id = {
@@ -859,8 +887,18 @@ def _runtime_lock_digest(
             "mode": prepared.revision.plugin_runtime_mode.value,
             "plugins": [item.model_dump(mode="json") for item in resolved_plugins],
             "child_locks": [child_digest_by_id[item.child_agent_preset_revision_id] for item in resolved_subagents],
+            "environment_lock": _environment_lock(resolved_environment),
         }
     )
+
+
+def _environment_lock(environment: EnvironmentExecutionConfig | None) -> dict[str, JsonValue] | None:
+    if environment is None:
+        return None
+    return {
+        "provider_lock": environment.provider_lock,
+        "logical_digest_sha256": environment.logical_digest_sha256,
+    }
 
 
 def _authorization_error(error: AuthorizationError) -> AgentPresetError:

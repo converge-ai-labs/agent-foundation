@@ -44,6 +44,13 @@ class WorkspaceAction(StrEnum):
     skill_update = "skill.update"
     skill_delete = "skill.delete"
     skill_bind = "skill.bind"
+    environment_provider_read = "environment_provider.read"
+    environment_provider_select = "environment_provider.select"
+    environment_read = "environment.read"
+    environment_manage = "environment.manage"
+    environment_test = "environment.test"
+    environment_use = "environment.use"
+    secrets_bind = "secrets.bind"
 
 
 _READ_ACTIONS = frozenset(
@@ -57,6 +64,8 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.connection_read,
         WorkspaceAction.trigger_read,
         WorkspaceAction.skill_read,
+        WorkspaceAction.environment_provider_read,
+        WorkspaceAction.environment_read,
     }
 )
 
@@ -66,6 +75,7 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
         WorkspaceAction.connector_invoke,
+        WorkspaceAction.environment_use,
     }
 )
 

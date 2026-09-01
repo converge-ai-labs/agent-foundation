@@ -8,12 +8,14 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import httpx2
+from a13n_environment_provider import EnvironmentProviderCatalog, build_environment_provider_catalog
 from anyio import create_task_group, fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 from starlette.types import Receive, Scope, Send
 
 from a13n_service.agent_presets.connector_resolution import AgentConnectorSelectionResolver
+from a13n_service.agent_presets.environment_resolution import AgentEnvironmentSelectionResolver
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agent_presets.references import AgentPresetConnectorReferenceChecker
@@ -45,6 +47,9 @@ from a13n_service.connectors import (
     create_connector_provider_operations_app,
 )
 from a13n_service.connectors.router import router as connector_router
+from a13n_service.environments.catalog import FoundationEnvironmentProviderCatalog
+from a13n_service.environments.router import router as environment_router
+from a13n_service.environments.service import EnvironmentManagementService
 from a13n_service.iam import RequestAuthenticator
 from a13n_service.model_configs.connection_test import NativeModelConnectionTester
 from a13n_service.model_configs.endpoint_policy import EndpointPolicy
@@ -105,6 +110,7 @@ class ServiceComponents:
     model_secret_resolver: RuntimeSecretValueResolver | None = None
     connector_provider_catalog: ConnectorProviderCatalog | None = None
     connector_provider_operations: ConnectorProviderOperations | None = None
+    environment_provider_catalog: EnvironmentProviderCatalog | None = None
     connector_invocation_authorizer: ConnectorInvocationAuthorizer | None = None
     connector_attempt_authorizer: ConnectorAttemptAuthorizer | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
@@ -267,6 +273,19 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
             if settings.role in _CONTROL_PLANE_ROLES:
+                selected_environment_providers = app.state.components.environment_provider_catalog
+                if selected_environment_providers is None:
+                    selected_environment_providers = build_environment_provider_catalog(
+                        builtin_keys=settings.environment_provider_builtins,
+                        extension_keys=settings.environment_provider_extensions,
+                    )
+                app.state.environment_provider_catalog = FoundationEnvironmentProviderCatalog(
+                    selected_environment_providers
+                )
+                app.state.environment_service = EnvironmentManagementService(
+                    storage.sessions,
+                    app.state.environment_provider_catalog,
+                )
                 plugin_staging = await PluginStaging.create(storage.files_root, limiter=storage.file_limiter)
                 app.state.plugin_service = PluginService(
                     storage.sessions,
@@ -315,11 +334,16 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         runtime_mode=settings.plugin_runtime_mode,
                     )
                 )
+                app.state.agent_environment_selection_resolver = AgentEnvironmentSelectionResolver(
+                    storage.sessions,
+                    app.state.environment_provider_catalog,
+                )
                 app.state.agent_preset_resolver = app.state.components.agent_preset_resolver or AgentPresetResolver(
                     storage.sessions,
                     app.state.accepted_model_selector,
                     plugin_runtime_mode=settings.plugin_runtime_mode,
                     connector_resolver=app.state.agent_connector_selection_resolver,
+                    environment_resolver=app.state.agent_environment_selection_resolver,
                     plugin_resolver=app.state.agent_plugin_selection_resolver,
                 )
                 app.state.agent_preset_invocation_resolver = (
@@ -329,6 +353,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         app.state.accepted_model_selector,
                         plugin_runtime_mode=settings.plugin_runtime_mode,
                         connector_resolver=app.state.agent_connector_selection_resolver,
+                        environment_resolver=app.state.agent_environment_selection_resolver,
                         plugin_resolver=app.state.agent_plugin_selection_resolver,
                     )
                 )
@@ -536,6 +561,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
     if serves_control_plane:
         app.include_router(agent_preset_router)
         app.include_router(connector_router)
+        app.include_router(environment_router)
         app.include_router(asset_router)
         app.include_router(model_config_router)
         app.include_router(plugin_router)
