@@ -115,7 +115,7 @@ from a13n_environment_provider import (
 catalog = build_environment_provider_catalog(
     builtin_keys=("a13n.local-envd",),
 )
-provider = catalog.resolve("a13n.local-envd")
+provider = catalog.require("a13n.local-envd")
 configuration = provider.validate_configuration(
     schema_version="1",
     value={

@@ -70,35 +70,67 @@ The exact language API may use typed generic runtime values, but these semantics
 
 There is no separate Provider factory entity. Catalog loading creates an `EnvironmentProvider` directly through the trusted entry point. There is no lifecycle Provider, Resource, attachment, or binding layer between Provider and Environment.
 
-## Catalog
+## Catalog and Discovery
 
-The package owns one explicit catalog:
+The package owns metadata-only discovery values, validated process-local registrations, and one immutable selected catalog:
 
 ```python
-class EnvironmentProviderCatalog:
-    def register(self, provider: EnvironmentProvider) -> None: ...
+@dataclass(frozen=True, slots=True)
+class EnvironmentProviderReference:
+    provider_key: str
+    import_target: str
+    distribution_name: str | None
+    distribution_version: str | None
 
-    def resolve(self, provider_key: str) -> EnvironmentProvider: ...
 
-    def load_entry_points(
-        self,
-        *,
-        enabled_keys: Collection[str],
-    ) -> None: ...
+@dataclass(frozen=True, slots=True)
+class EnvironmentProviderRegistration:
+    provider_key: str
+    class_module: str
+    class_qualname: str
+    import_target: str | None
+    distribution_name: str | None
+    distribution_version: str | None
+    builtin: bool
+
+
+class EnvironmentProviderCatalog(Mapping[str, EnvironmentProvider]):
+    @property
+    def registrations(self) -> tuple[EnvironmentProviderRegistration, ...]: ...
+
+    def require(self, provider_key: str) -> EnvironmentProvider: ...
+
+
+def discover_environment_provider_references() -> tuple[EnvironmentProviderReference, ...]: ...
+
+
+def build_environment_provider_catalog(
+    *,
+    builtin_keys: Iterable[str] = (),
+    extension_keys: Iterable[str] = (),
+    explicit_providers: Iterable[EnvironmentProvider] = (),
+) -> EnvironmentProviderCatalog: ...
 ```
 
-The built-in keys are:
+`discover_environment_provider_references()` reads installed entry-point metadata and returns references sorted by Provider key, distribution name, distribution version, and import target. It does not import entry-point targets. References describe availability only and are not catalog registrations or authorization decisions.
+
+`build_environment_provider_catalog()` creates one caller-owned immutable snapshot. It validates all requested keys, rejects duplicates and collisions among built-in, extension, and explicit sources, and verifies that every selected extension has exactly one installed entry point before importing any selected extension target. It then registers built-ins in `builtin_keys` order, installed extensions in `extension_keys` order, and explicit Provider objects in supplied order. An empty selection performs no entry-point scan.
+
+The currently implemented built-in catalog keys are:
 
 | Key                 | Target                                                            |
 | ------------------- | ----------------------------------------------------------------- |
 | `a13n.direct-local` | One Host-selected local root using direct operating-system access |
 | `a13n.local-envd`   | One Host-selected workspace served by a fresh local envd process  |
 | `a13n.docker`       | One Docker container running envd                                 |
-| `a13n.e2b`          | One E2B sandbox running envd                                      |
 
-Third-party Providers register under the `a13n_environment_provider.providers` entry-point group. One entry point contributes exactly one Provider. Entry-point names and `provider.key` must match.
+Third-party Providers register under the `a13n_environment_provider.providers` entry-point group. One selected entry point must load one concrete `EnvironmentProvider` class with safe no-argument construction. Preconstructed objects are not valid entry-point targets. The entry-point name and constructed `provider.key` must match. Only selected extension keys are imported.
 
-Duplicate keys, malformed keys, import failures, wrong object types, and Provider-construction failures are explicit catalog errors. The catalog does not catch such failures and continue with a partial ambiguous selection.
+Explicit Provider objects support embedded applications, tests, and source-level development without installed distribution metadata. They enter the same immutable catalog and Provider validation path. Their registrations have no import target or distribution provenance and are not built-ins.
+
+The catalog is a `Mapping`: ordinary indexing has standard `KeyError` behavior, while `require()` validates the key and raises a stable Provider catalog error when the Provider was not selected. The catalog exposes no mutation, late loading, process-global registry, arbitrary serialized import target, ambient activation, or module replacement. Changed Provider code requires a fresh Host process.
+
+Duplicate keys, malformed keys, missing entry points, metadata failures, import failures, wrong target types, mismatched keys, and Provider-construction failures are bounded `EnvironmentProviderError` values. Catalog errors use `provider_catalog_key_invalid`, `provider_catalog_duplicate`, `provider_catalog_missing`, `provider_catalog_load_failed`, or `provider_catalog_target_invalid`; they suppress native exception text and expose only bounded Provider and distribution context. Catalog construction never returns a partial ambiguous selection.
 
 ## Selection and Authorization
 

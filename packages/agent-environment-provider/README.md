@@ -5,7 +5,7 @@
 The package owns:
 
 - credential-free `EnvironmentProviderSpec` envelopes and exact versioned configuration validation;
-- explicitly selected built-in and extension Provider catalogs;
+- metadata-only installed Provider discovery and immutable built-in, extension, and explicit-object catalogs;
 - inert `EnvironmentProvider` plugins that construct fresh adapters;
 - single-use `Environment` adapters with creation or re-entry, readiness, provider-neutral operations, cached state, non-destructive close, and explicit destruction;
 - portable provider-owned `EnvironmentState` soft references;

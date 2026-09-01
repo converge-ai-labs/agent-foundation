@@ -12,7 +12,10 @@ from .attachments import (
 from .catalog import (
     ENVIRONMENT_PROVIDER_ENTRY_POINT_GROUP,
     EnvironmentProviderCatalog,
+    EnvironmentProviderReference,
+    EnvironmentProviderRegistration,
     build_environment_provider_catalog,
+    discover_environment_provider_references,
 )
 from .commands import (
     ArgvCommand,
@@ -229,6 +232,8 @@ __all__ = [
     "EnvironmentProviderErrorContext",
     "EnvironmentProviderOutcomeCertainty",
     "EnvironmentProviderRecoveryHint",
+    "EnvironmentProviderReference",
+    "EnvironmentProviderRegistration",
     "EnvironmentProviderSafeError",
     "EnvironmentProviderSpec",
     "EnvironmentReadinessRequirement",
@@ -284,5 +289,6 @@ __all__ = [
     "TemporaryLocalEnvdRuntimeAllocator",
     "__version__",
     "build_environment_provider_catalog",
+    "discover_environment_provider_references",
     "resolve_agent_envd_executable",
 ]

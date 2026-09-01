@@ -290,9 +290,12 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
         "Environment",
         "EnvironmentProvider",
         "EnvironmentProviderCatalog",
+        "EnvironmentProviderReference",
+        "EnvironmentProviderRegistration",
         "EnvironmentProviderSpec",
         "EnvironmentState",
         "build_environment_provider_catalog",
+        "discover_environment_provider_references",
     } <= set(environment_provider.__all__)
     assert {
         "EnvironmentProviderFactory",

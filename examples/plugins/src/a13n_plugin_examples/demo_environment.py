@@ -57,7 +57,7 @@ async def _run_environment_demo(
     source_root: Path,
     docs_root: Path,
 ) -> EnvironmentDemoResult:
-    provider = catalog.resolve(PROVIDER_KEY)
+    provider = catalog.require(PROVIDER_KEY)
     source = provider.create_environment(
         configuration=_configuration(provider, source_root, "workspace-source"),
         state=None,
@@ -140,7 +140,9 @@ async def run_environment_code_demo(
 
     from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
 
-    catalog = EnvironmentProviderCatalog((WorkspaceEnvironmentProvider(),))
+    catalog = build_environment_provider_catalog(
+        explicit_providers=(WorkspaceEnvironmentProvider(),),
+    )
     return await _run_environment_demo(
         selection_mode="code",
         catalog=catalog,
