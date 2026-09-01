@@ -173,6 +173,44 @@ async def test_config_edit_publish_rollback_duplicate_and_lifecycle(
 
 
 @pytest.mark.anyio
+async def test_duplicate_accepts_a_disabled_published_source(
+    agent_preset_service: AgentPresetService,
+) -> None:
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-disabled-duplicate-source",
+        request=CreateAgentPresetRequest(name="Disabled Duplicate Source", config=preset_config()),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-disabled-duplicate-source",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    disabled = await agent_preset_service.change_lifecycle(
+        actor=actor(),
+        preset_id=preset.id,
+        action="disable",
+        idempotency_key="disable-duplicate-source",
+        request=AgentPresetCommandRequest(expected_resource_version=published.preset.resource_version),
+    )
+
+    duplicate = await agent_preset_service.duplicate(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="duplicate-disabled-source",
+        request=DuplicateAgentPresetRequest(
+            expected_resource_version=disabled.resource_version,
+            name="Disabled Source Copy",
+        ),
+    )
+
+    assert duplicate.lifecycle_state == "enabled"
+    assert duplicate.duplicated_from_revision_id == published.revision.id
+
+
+@pytest.mark.anyio
 async def test_optimistic_lock_and_idempotency_conflicts(agent_preset_service: AgentPresetService) -> None:
     preset = await agent_preset_service.create(
         actor=actor(),
@@ -403,3 +441,96 @@ async def test_enable_revalidates_every_retained_subagent_revision(
     assert rejected.value.code == "preset_disabled"
     assert current.lifecycle_state == "disabled"
     assert current.resource_version == disabled.resource_version
+
+
+@pytest.mark.anyio
+async def test_rollback_and_duplicate_reject_invalid_transitive_revision_graph(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    child = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-copy-validation-child",
+        request=CreateAgentPresetRequest(name="Copy Validation Child", config=preset_config()),
+    )
+    await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=child.id,
+        idempotency_key="publish-copy-validation-child",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    middle = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-copy-validation-middle",
+        request=CreateAgentPresetRequest(
+            name="Copy Validation Middle",
+            config=preset_config(subagents={"child": {"agent_preset_id": child.id, "environment": {"mode": "none"}}}),
+        ),
+    )
+    await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=middle.id,
+        idempotency_key="publish-copy-validation-middle",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    root = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-copy-validation-root",
+        request=CreateAgentPresetRequest(
+            name="Copy Validation Root",
+            config=preset_config(subagents={"middle": {"agent_preset_id": middle.id, "environment": {"mode": "none"}}}),
+        ),
+    )
+    first = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=root.id,
+        idempotency_key="publish-copy-validation-root-1",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    second = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=root.id,
+        idempotency_key="publish-copy-validation-root-2",
+        request=AgentPresetCommandRequest(expected_resource_version=first.preset.resource_version),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        child_record = await session.get(AgentPresetRecord, child.id)
+        assert child_record is not None
+        child_record.lifecycle_state = "disabled"
+
+    with pytest.raises(AgentPresetError) as rollback_rejected:
+        await agent_preset_service.rollback(
+            actor=actor(),
+            preset_id=root.id,
+            idempotency_key="rollback-invalid-copy-graph",
+            request=RollbackAgentPresetRequest(
+                expected_resource_version=second.preset.resource_version,
+                source_revision_id=first.revision.id,
+            ),
+        )
+    with pytest.raises(AgentPresetError) as duplicate_rejected:
+        await agent_preset_service.duplicate(
+            actor=actor(),
+            preset_id=root.id,
+            idempotency_key="duplicate-invalid-copy-graph",
+            request=DuplicateAgentPresetRequest(
+                expected_resource_version=second.preset.resource_version,
+                name="Invalid Graph Copy",
+            ),
+        )
+
+    current = await agent_preset_service.get(actor=actor(), preset_id=root.id)
+    revisions = await agent_preset_service.list_revisions(
+        actor=actor(),
+        preset_id=root.id,
+        limit=10,
+        cursor=None,
+    )
+    assert rollback_rejected.value.code == "preset_disabled"
+    assert duplicate_rejected.value.code == "preset_disabled"
+    assert current.active_revision_id == second.revision.id
+    assert current.resource_version == second.preset.resource_version
+    assert len(revisions.items) == 2

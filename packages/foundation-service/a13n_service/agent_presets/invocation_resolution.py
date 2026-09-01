@@ -112,8 +112,9 @@ class FrozenAgentInvocation:
 
 
 @dataclass(frozen=True, slots=True)
-class PreparedAgentPresetEnable:
+class PreparedAgentPresetRevisionGraph:
     invocations: tuple[PreparedAgentInvocation, ...]
+    allow_disabled_root: bool
 
 
 class AgentPresetInvocationResolver:
@@ -294,18 +295,21 @@ class AgentPresetInvocationResolver:
             subagents=subagents,
         )
 
-    async def prepare_enable_revalidation(
+    async def prepare_retained_revision_graph(
         self,
         *,
         actor: AuthenticatedActor,
         agent_preset_id: str,
-    ) -> PreparedAgentPresetEnable:
-        """Preflight one disabled root and every exact retained child Revision."""
+        agent_preset_revision_id: str | None = None,
+        allow_disabled_root: bool = False,
+    ) -> PreparedAgentPresetRevisionGraph:
+        """Preflight one retained root Revision and its complete exact child graph."""
 
         root = await self.prepare(
             actor=actor,
             agent_preset_id=agent_preset_id,
-            _allow_disabled_root=True,
+            agent_preset_revision_id=agent_preset_revision_id,
+            _allow_disabled_root=allow_disabled_root,
         )
         invocations = [root]
         visited = {root.agent_preset_revision_id}
@@ -324,24 +328,32 @@ class AgentPresetInvocationResolver:
                 raise preset_revision_not_executable("subagent_graph_too_large")
             invocations.append(child)
             pending.extend(child.subagents)
-        return PreparedAgentPresetEnable(tuple(invocations))
+        return PreparedAgentPresetRevisionGraph(
+            invocations=tuple(invocations),
+            allow_disabled_root=allow_disabled_root,
+        )
 
-    async def freeze_enable_revalidation(
+    async def freeze_retained_revision_graph(
         self,
         session: AsyncSession,
         *,
-        prepared: PreparedAgentPresetEnable,
+        prepared: PreparedAgentPresetRevisionGraph,
     ) -> None:
-        """Recheck all preflight evidence inside the final lifecycle transaction."""
+        """Recheck all retained graph evidence inside the final transaction."""
 
-        for invocation in prepared.invocations:
-            await self.freeze_in_transaction(session, prepared=invocation)
+        for index, invocation in enumerate(prepared.invocations):
+            await self.freeze_in_transaction(
+                session,
+                prepared=invocation,
+                _allow_disabled_root=index == 0 and prepared.allow_disabled_root,
+            )
 
     async def freeze_in_transaction(
         self,
         session: AsyncSession,
         *,
         prepared: PreparedAgentInvocation,
+        _allow_disabled_root: bool = False,
     ) -> FrozenAgentInvocation:
         try:
             await authorize_agent_preset(
@@ -358,7 +370,7 @@ class AgentPresetInvocationResolver:
                 preset_id=prepared.agent_preset_id,
                 for_update=True,
             )
-            _require_invocable_preset(preset)
+            _require_invocable_preset(preset, allow_disabled=_allow_disabled_root)
             if (
                 prepared.expected_active_revision_id is not None
                 and preset.active_revision_id != prepared.expected_active_revision_id

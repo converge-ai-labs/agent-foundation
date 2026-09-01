@@ -5,7 +5,9 @@ from a13n_service.agent_presets.domain import (
     AgentPresetCommandRequest,
     AgentRunOverride,
     CreateAgentPresetRequest,
+    DuplicateAgentPresetRequest,
     PluginRuntimeMode,
+    RollbackAgentPresetRequest,
 )
 from a13n_service.agent_presets.errors import AgentPresetError
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
@@ -272,6 +274,161 @@ async def test_enable_rejects_changed_retained_plugin_evidence(
     assert rejected.value.details == {"reason": "plugin_version_changed"}
     assert current.lifecycle_state == "disabled"
     assert current.resource_version == disabled.resource_version
+
+
+@pytest.mark.anyio
+async def test_rollback_reuses_archived_retained_plugin_version(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-rollback-retained-plugin",
+        request=CreateAgentPresetRequest(
+            name="Rollback Retained Plugin",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    first = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-rollback-retained-plugin-1",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    second = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-rollback-retained-plugin-2",
+        request=AgentPresetCommandRequest(expected_resource_version=first.preset.resource_version),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        plugin = await session.get(PluginRecord, PLUGIN_ID)
+        assert plugin is not None
+        plugin.lifecycle_state = "archived"
+
+    rolled_back = await agent_preset_service.rollback(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="rollback-retained-plugin",
+        request=RollbackAgentPresetRequest(
+            expected_resource_version=second.preset.resource_version,
+            source_revision_id=first.revision.id,
+        ),
+    )
+
+    assert rolled_back.revision.source_revision_id == first.revision.id
+    assert rolled_back.revision.resolved_plugin_versions == first.revision.resolved_plugin_versions
+    assert rolled_back.revision.runtime_lock_digest == first.revision.runtime_lock_digest
+
+
+@pytest.mark.anyio
+async def test_rollback_rejects_changed_retained_plugin_without_committing(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-invalid-rollback-plugin",
+        request=CreateAgentPresetRequest(
+            name="Invalid Rollback Plugin",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    first = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-invalid-rollback-plugin-1",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    second = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-invalid-rollback-plugin-2",
+        request=AgentPresetCommandRequest(expected_resource_version=first.preset.resource_version),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        version = await session.get(PluginVersionRecord, PLUGIN_VERSION_ID)
+        assert version is not None
+        version.content_digest = "b" * 64
+
+    with pytest.raises(AgentPresetError) as rejected:
+        await agent_preset_service.rollback(
+            actor=actor(),
+            preset_id=preset.id,
+            idempotency_key="rollback-invalid-retained-plugin",
+            request=RollbackAgentPresetRequest(
+                expected_resource_version=second.preset.resource_version,
+                source_revision_id=first.revision.id,
+            ),
+        )
+
+    current = await agent_preset_service.get(actor=actor(), preset_id=preset.id)
+    revisions = await agent_preset_service.list_revisions(
+        actor=actor(),
+        preset_id=preset.id,
+        limit=10,
+        cursor=None,
+    )
+    assert rejected.value.code == "preset_revision_not_executable"
+    assert rejected.value.details == {"reason": "plugin_version_changed"}
+    assert current.active_revision_id == second.revision.id
+    assert current.resource_version == second.preset.resource_version
+    assert len(revisions.items) == 2
+
+
+@pytest.mark.anyio
+async def test_duplicate_rejects_changed_retained_plugin_without_creating_copy(
+    agent_preset_service: AgentPresetService,
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    await _add_plugin(agent_preset_sessions)
+    preset = await agent_preset_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-invalid-duplicate-plugin",
+        request=CreateAgentPresetRequest(
+            name="Invalid Duplicate Plugin",
+            config=preset_config(plugins=[_selection()]),
+        ),
+    )
+    published = await agent_preset_service.publish(
+        actor=actor(),
+        preset_id=preset.id,
+        idempotency_key="publish-invalid-duplicate-plugin",
+        request=AgentPresetCommandRequest(expected_resource_version=1),
+    )
+    async with transaction(agent_preset_sessions) as session:
+        version = await session.get(PluginVersionRecord, PLUGIN_VERSION_ID)
+        assert version is not None
+        version.content_digest = "b" * 64
+
+    with pytest.raises(AgentPresetError) as rejected:
+        await agent_preset_service.duplicate(
+            actor=actor(),
+            preset_id=preset.id,
+            idempotency_key="duplicate-invalid-retained-plugin",
+            request=DuplicateAgentPresetRequest(
+                expected_resource_version=published.preset.resource_version,
+                name="Invalid Duplicate Plugin Copy",
+            ),
+        )
+
+    presets = await agent_preset_service.list(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        limit=10,
+        cursor=None,
+        lifecycle_state=None,
+        source=None,
+        include_archived=True,
+    )
+    assert rejected.value.code == "preset_revision_not_executable"
+    assert rejected.value.details == {"reason": "plugin_version_changed"}
+    assert tuple(item.name for item in presets.items) == (preset.name,)
 
 
 @pytest.mark.anyio
