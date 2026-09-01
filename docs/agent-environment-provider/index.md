@@ -59,7 +59,7 @@ spec = EnvironmentProviderSpec(
 catalog = build_environment_provider_catalog(
     builtin_keys=("a13n.direct-local",),
 )
-provider = catalog.resolve(spec.provider_key)
+provider = catalog.require(spec.provider_key)
 configuration = provider.validate_configuration(
     schema_version=spec.schema_version,
     value=spec.configuration,
@@ -134,18 +134,28 @@ Do not use context exit, Harness completion, suspension, or cancellation as an i
 
 ## Provider catalog and plugins
 
-`EnvironmentProviderCatalog` is an explicit allowlist. Built-ins and extension entry points are enabled by exact key:
+`EnvironmentProviderCatalog` is an immutable explicit allowlist. Built-ins and installed extension entry points are selected by exact key, while trusted embedded code can supply Provider objects directly:
 
 ```python
+from a13n_environment_provider import (
+    build_environment_provider_catalog,
+    discover_environment_provider_references,
+)
+
+available = discover_environment_provider_references()
 catalog = build_environment_provider_catalog(
     builtin_keys=("a13n.direct-local", "a13n.docker"),
     extension_keys=("acme.sandbox",),
+    explicit_providers=(development_provider,),
 )
+provider = catalog.require("acme.sandbox")
 ```
 
-Metadata discovery imports nothing by itself. `extension_keys` selects exactly which installed entry points may load. An extension cannot shadow a registered key, and unknown keys or schema versions fail without latest-version inference or fallback.
+Discovery returns sorted entry-point metadata without importing target modules. Catalog construction imports only `extension_keys`; an empty or explicit-only build does not scan installed metadata. It rejects malformed, missing, duplicate, and colliding keys before loading selected extension targets. `catalog.registrations` records the concrete class and built-in or distribution provenance in built-in, extension, then explicit order.
 
-Register one no-argument Provider through the entry-point group:
+Package presence is availability, not authorization. No catalog accepts arbitrary serialized import targets, performs ambient activation, mutates a process-global registry, or reloads changed modules. Use a fresh Host process to load changed Provider code.
+
+Register one concrete no-argument Provider class through the entry-point group:
 
 ```toml
 [project.entry-points."a13n_environment_provider.providers"]
@@ -162,7 +172,9 @@ A Provider implementation should:
 6. expose provider-neutral `EnvironmentOperations` after entry;
 7. keep `close()` non-destructive and implement target removal only in explicit `destroy()`.
 
-The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both installed entry-point and explicit-code registration with the same validation, construction, and Harness path.
+The entry-point name and constructed `provider.key` must match. Preconstructed Provider objects are supported only through `explicit_providers`, which is intended for embedded applications, tests, and source development.
+
+The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) demonstrates both installed entry-point and explicit-object composition with the same immutable catalog, validation, construction, and Harness path.
 
 ## Built-in Providers
 

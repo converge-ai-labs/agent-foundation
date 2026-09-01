@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 from a13n_environment_provider import (
-    EnvironmentProviderCatalog,
     EnvironmentProviderError,
     build_environment_provider_catalog,
 )
@@ -36,8 +35,8 @@ def test_environment_entrypoint_loading_is_explicit_and_construction_is_inert(tm
     catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
 
     assert PLUGIN_MODULE in sys.modules
-    assert catalog.keys == (PROVIDER_KEY,)
-    provider = catalog.resolve(PROVIDER_KEY)
+    assert tuple(catalog) == (PROVIDER_KEY,)
+    provider = catalog.require(PROVIDER_KEY)
     assert provider.configuration_versions == frozenset({"1"})
     root = tmp_path / "not-created-by-the-provider"
     configuration = provider.validate_configuration(
@@ -59,11 +58,13 @@ def test_environment_explicit_provider_needs_no_metadata_scan(
     from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
 
     monkeypatch.setattr(
-        "a13n_environment_provider.catalog.entry_points",
-        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
+        "a13n_environment_provider.catalog._entry_points",
+        lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
-    catalog = EnvironmentProviderCatalog((WorkspaceEnvironmentProvider(),))
-    provider = catalog.resolve(PROVIDER_KEY)
+    catalog = build_environment_provider_catalog(
+        explicit_providers=(WorkspaceEnvironmentProvider(),),
+    )
+    provider = catalog.require(PROVIDER_KEY)
     root = tmp_path / "still-inert"
     configuration = provider.validate_configuration(
         schema_version="1",
@@ -71,13 +72,13 @@ def test_environment_explicit_provider_needs_no_metadata_scan(
     )
     provider.create_environment(configuration=configuration, state=None)
 
-    assert catalog.keys == (PROVIDER_KEY,)
+    assert tuple(catalog) == (PROVIDER_KEY,)
     assert not root.exists()
 
 
 def test_environment_provider_rejects_invalid_json_configuration() -> None:
     catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
-    provider = catalog.resolve(PROVIDER_KEY)
+    provider = catalog.require(PROVIDER_KEY)
 
     with pytest.raises(EnvironmentProviderError) as exc_info:
         provider.validate_configuration(

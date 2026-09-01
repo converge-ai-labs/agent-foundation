@@ -83,7 +83,7 @@ uv run plugin-example-environment-entrypoint
 
 ### Explicit code mode
 
-[`run_environment_code_demo()`](src/a13n_plugin_examples/demo_environment.py) registers `WorkspaceEnvironmentProvider()` directly without scanning package metadata. It then uses the same validation, construction, and Harness Run path.
+[`run_environment_code_demo()`](src/a13n_plugin_examples/demo_environment.py) supplies `WorkspaceEnvironmentProvider()` through `explicit_providers` without scanning package metadata. It then uses the same immutable catalog, validation, construction, and Harness Run path.
 
 ```bash
 uv run plugin-example-environment-code
