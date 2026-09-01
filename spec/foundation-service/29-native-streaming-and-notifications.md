@@ -22,6 +22,14 @@ These surfaces do not share an envelope, cursor, replay promise, or authority. T
 
 A transport cursor or notification identity grants no resource access. Every attachment authenticates and authorizes the selected resource under current [IAM](10-identity-and-access-management.md).
 
+Run SSE authorizes `run.read`; Workspace and resource lifecycle collections
+authorize `lifecycle_event.read` plus current resource-read authority; and each
+WebSocket subscription change authorizes `notification.subscribe` plus every
+selected resource's read action. These actions are registered centrally by
+[IAM](10-identity-and-access-management.md#stable-action-registry). A connection
+opened under an earlier allow does not preserve authority for a later subscribe
+frame or stream continuation.
+
 ## Run SSE
 
 ```http

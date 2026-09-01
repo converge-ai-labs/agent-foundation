@@ -415,7 +415,7 @@ protected acceptance metadata, not caller-selected authority or independent
 resources. The Run persistence contract owns their durable placement and
 immutability.
 
-An Agent Connector declaration can pin a Connection. The exact invoking Principal
+An Agent Connector declaration can pin a Connection. The exact Run authority Principal
 must remain eligible to use it; pinning a personal Connection does not grant
 another Principal access. When no Connection is pinned and the Provider requires
 one, Run acceptance resolves in this order:
@@ -770,9 +770,12 @@ The signed webhook request authenticates the external source only. Connector
 Service authentication to Control authorizes only submission of the verified
 occurrence and cannot create a Run by possession of a Trigger ID. Before
 acceptance, Control reauthorizes the Trigger's stored Principal for the stable
-AgentPreset, ConnectorRevision, Connection, and required Secret use. Revoked
-authority, disabled resources, absent Provider compatibility, or ambiguous
-resolved Agent Connections fail closed and create no partially authorized Run.
+AgentPreset, ConnectorRevision, Connection, and required Secret use. The
+accepted Run copies that exact `principal_ref` into its immutable
+`authority_principal`; neither the external sender nor Connector Service becomes
+the Run Principal. Revoked authority, disabled resources, absent Provider
+compatibility, or ambiguous resolved Agent Connections fail closed and create
+no partially authorized Run.
 
 ## Management and Ingress Surfaces
 
@@ -806,7 +809,7 @@ The stable product actions are:
 Model-triggerable Connector work additionally requires the run grants
 `connector.use`, `secret.use`, and `tool.call`. Each grant names the selected
 resource and allowed operation; no role name enters Harness. Effective authority
-intersects the accepted AgentPresetVersion, resolved Connection, current Principal and
+intersects the accepted AgentPresetVersion, resolved Connection, current Run authority Principal and
 RoleBindings, current resource status, and current grants. Trigger acceptance
 performs the same invocation authorization for its stored Principal before
 accepting a Run.

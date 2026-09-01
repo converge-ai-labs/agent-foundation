@@ -119,7 +119,7 @@ POST /api/v1/runs/{run_id}/steer
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries one submitted `AgentInput`. Foundation validates and canonicalizes its binary source descriptions, exact Asset IDs, and delivery selections without acquiring source bytes. The final short transaction authenticates and authorizes `run.steer`, revalidates every Asset reference, then locks the owning Thread, named Run, inbox counter, and affected inbox rows in canonical order. It requires the named Run to remain current and either:
+The request carries one submitted `AgentInput`. Foundation validates and canonicalizes its binary source descriptions, exact Asset IDs, and delivery selections without acquiring source bytes. The final short transaction authenticates and authorizes `run.steer` from the IAM [stable action registry](10-identity-and-access-management.md#stable-action-registry), revalidates every Asset reference, then locks the owning Thread, named Run, inbox counter, and affected inbox rows in canonical order. It requires the named Run to remain current and either:
 
 - `status="running"`, in which case the new entry binds directly to that Run; or
 - `status="waiting"` with `current_run_id=head_run_id=run_id`, in which case the entry records that waiting Run as its source and has no active target.
@@ -191,7 +191,7 @@ POST /api/v1/runs/{run_id}/interrupt
 Idempotency-Key: opaque-caller-key
 ```
 
-Interrupt is an independent command and is never encoded as a steer mode or an `AgentInput`. It authenticates and authorizes `run.interrupt`; locks the owning Thread, target Run, current RunAttempt when present, inbox counter, and affected entries in canonical order; requires the Run to remain current and active; and in one short transaction:
+Interrupt is an independent command and is never encoded as a steer mode or an `AgentInput`. It authenticates and authorizes `run.interrupt` from the same registry; locks the owning Thread, target Run, current RunAttempt when present, inbox counter, and affected entries in canonical order; requires the Run to remain current and active; and in one short transaction:
 
 - seals the Run as `cancelled` through the ordinary Run lifecycle;
 - terminalizes and deselects the current RunAttempt when one exists;

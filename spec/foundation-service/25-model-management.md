@@ -235,6 +235,13 @@ Model Management exposes no hard delete. A configuration that should no longer b
 
 Workspace Viewer can read safe provider and model metadata. Workspace Builder and Admin can create, update, test, enable, and disable model configurations. Agent-scoped grants do not confer Workspace model-management or Workspace Secret-management permission. Running an authorized Agent permits runtime use of its selected ModelConfig but does not permit reading a Secret value or changing the configuration.
 
+Provider and ModelConfig reads authorize `models.read`; create, update, test,
+enable, and disable authorize `models.manage`. These stable actions and
+built-in grants are owned by the IAM
+[registry](10-identity-and-access-management.md#stable-action-registry). Runtime
+model use is accepted Agent execution under the Run's current authority and
+grants, not another public ModelConfig action.
+
 Create, update, enable, disable, and test attempts emit security audit events with Workspace, model when present, actor, request, outcome, and time. A successful update includes only a bounded sorted list of changed field names. Audit data contains no old or new field values, Secret reference or value, endpoint, raw provider error, prompt, or output. Audit is evidence and cannot restore an overwritten configuration.
 
 ## Failure Semantics

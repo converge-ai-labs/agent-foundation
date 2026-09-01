@@ -4,6 +4,14 @@
 
 Foundation Service hosts an AG-UI HTTP/SSE adapter for every callable AgentPreset. The adapter accepts standard `RunAgentInput`, maps it to the canonical [`AgentInput`](33-agent-input.md) and the existing Session/Thread/Run control contract, and delivers standard AG-UI `BaseEvent` values derived from the selected Harness release group and durable Foundation facts. It is not another Agent runtime or lifecycle authority.
 
+New and continued AG-UI work authorizes the same `agent_preset.invoke`,
+`run.continue`, and, when waiting defaults are selected, `run.feedback` actions
+as the equivalent Native operation. Cancellation authorizes `run.interrupt`, and
+SSE attachment authorizes `run.read`. The IAM
+[stable action registry](10-identity-and-access-management.md#stable-action-registry)
+owns these action names and grants; external IDs and adapter bindings never
+select or preserve authority.
+
 Hosted AG-UI is always present on `control` and `all` roles. It has no deployment or AgentPreset-level enable switch and does not require a Foundation SDK. A standard AG-UI client can call it using the wire profile defined here.
 
 ## Boundaries

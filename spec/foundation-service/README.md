@@ -16,7 +16,7 @@ The shared [Platform Interaction Model](../interaction-model.md) owns the public
 Session -> Thread -> Run -> RunAttempt -> Harness Run -> ModelAttempt
 ```
 
-Every Foundation-managed Agent invocation accepts a Run belonging to exactly one Session and Thread. Interactive requests, schedules, webhooks, service requests, and asynchronous children use the same Worker scan, RunAttempt, and recovery contract.
+Every Foundation-managed Agent invocation accepts a Run belonging to exactly one Session and Thread and persisting exactly one User or Service Account authority Principal. Interactive requests, schedules, webhooks, service requests, queued continuations, retries, and asynchronous children use the same Worker scan, RunAttempt, current-Principal reauthorization, and recovery contract; a Worker, queue consumer, responder, or internal system actor never becomes the execution Principal implicitly.
 
 Each hosted Thread is an independent versioned relational resource. It owns Session membership, origin, the current Run (the most recently accepted Run), the selected continuation head, and optimistic concurrency for accepted advancement; Run rows remain the durable work and state DAG. Whether the current Run is active derives from its status.
 

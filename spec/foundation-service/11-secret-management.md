@@ -95,6 +95,16 @@ the public management API. Secret values appear only in authenticated request
 bodies; they never appear in a URL, query parameter, header, or multipart
 filename.
 
+Metadata Get and List authorize `secrets.read`. Workspace-owned create,
+replace, and delete authorize `secrets.manage`; selecting an existing Secret in
+AgentPreset or other authoring configuration authorizes `secrets.bind` in
+addition to the consuming resource's update action. User-owned routes instead
+require exact authenticated User equality. Internal owner lifecycle and runtime
+resolution use their owning resource authority plus the run grant `secret.use`;
+they do not turn `secrets.read` or `secrets.manage` into a plaintext-read action.
+The action names and built-in grants are owned by the IAM
+[stable action registry](10-identity-and-access-management.md#stable-action-registry).
+
 ### Create
 
 ```http

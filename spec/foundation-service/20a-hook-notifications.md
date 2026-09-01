@@ -142,6 +142,17 @@ To receive `run.accepted`, a managed subscription must already match when Run ac
 
 Creating, changing, pausing, or deleting a subscription uses ordinary Workspace authorization and optimistic concurrency. Every mutation appends a new immutable version in `hook_subscriptions` and supersedes the prior current version. Workspace limits keep the active matching destination set bounded for every source. For a lifecycle event, the subscription version observed by the source transaction determines which Outbox rows are created. A later change does not alter an already committed Outbox row or retroactively deliver older sources. Authorized redrive reuses the original delivery identity and exact subscription version.
 
+Subscription List and Get authorize `hook_subscription.read`; creation
+authorizes `hook_subscription.create`; configuration or pause changes authorize
+`hook_subscription.update`; deletion authorizes `hook_subscription.delete`; and
+redrive authorizes `hook_subscription.redrive`. Exact Run-inline creation is the
+only Runner-level create grant and still requires current authority for the
+signing Secret. Long-lived creation and every later mutation require Builder or
+Admin. The IAM
+[stable action registry](10-identity-and-access-management.md#stable-action-registry)
+owns these grants; subscription scope, Secret, destination, version, and source
+eligibility remain additional checks owned here.
+
 Only committed lifecycle events are eligible for durable Webhook subscription delivery. Live-only Run Stream entries, Items, token deltas, diagnostics, Environment-binding observations, and telemetry never create Outbox rows.
 
 ## Storage Model

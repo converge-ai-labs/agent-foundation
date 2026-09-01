@@ -366,6 +366,19 @@ Plugin, PluginVersion, successful Wheel artifact, runner task receipt evidence, 
 
 The AgentPreset `/api/v1` routes are cataloged by [Management API](21-management-api.md). AgentPreset commands are synchronous and return their committed result:
 
+Preset and Version List or Get authorize `agent_preset.read`; Create authorizes
+`agent_preset.create`; metadata or config replacement authorizes
+`agent_preset.update`; Publish and Rollback authorize `agent_preset.publish`;
+Enable, Disable, Archive, and Unarchive authorize `agent_preset.lifecycle`;
+Duplicate authorizes `agent_preset.duplicate`; and new Run acceptance authorizes
+`agent_preset.invoke`. Plugin reads authorize `plugin.read`; upload and archive
+authorize `plugin.manage`; runner-profile Activate and Deactivate authorize
+`plugin.runtime.manage`. The IAM
+[stable action registry](10-identity-and-access-management.md#stable-action-registry)
+owns their role grants. Publish additionally authorizes every referenced
+Workspace resource action, such as `skill.bind` or `secrets.bind`, rather than
+treating Preset update permission as ambient access.
+
 ```python
 class AgentPresetPublishResult:
     preset: AgentPreset

@@ -237,6 +237,15 @@ The public `/api/v1` surface follows the shared [Management API](21-management-a
 | Revisions                    | `POST/GET /environments/{environment_id}/revisions`, `GET /environment-revisions/{environment_revision_id}` |
 | Connection test              | `POST /environment-revisions/{environment_revision_id}/test`                                                |
 
+Provider catalog reads authorize `environment_provider.read`; Workspace
+selection mutation authorizes `environment_provider.select`; Environment and
+revision reads authorize `environment.read`; create, metadata mutation,
+revision publication, and archive mutation authorize `environment.manage`; a
+connection test authorizes `environment.test`; and an explicit Run selection
+authorizes `environment.use` in addition to Agent invocation. These stable
+actions and built-in grants are owned by the IAM
+[registry](10-identity-and-access-management.md#stable-action-registry).
+
 The synchronous test uses the exact revision and current authorized credentials, opens and validates one connection, returns a bounded safe capability/readiness result, and closes local clients. It creates no lifecycle state and does not start run keep-alive.
 
 An authorized revision-detail read can return its protected non-secret connection specification so that the user can manage it; collection and event projections contain only safe summaries. No projection exposes Secret values, provider-private state, runtime objects, attachments, or import paths. Foundation exposes no provider resource, assignment, lease, or lifecycle-command API.

@@ -108,6 +108,11 @@ The old combined Workspace SSE/WebSocket delivery surface does not exist. Durabl
 
 The Harness owns native `RunUsage`, the run-local attribution ledger, immutable `UsageRecord` values, and bounded `usage_report` delivery. Foundation ingests immutable `UsageRecord` values idempotently by `record_id` and adds durable attribution:
 
+Public Workspace UsageRecord List authorizes `usage.read` from the IAM
+[stable action registry](10-identity-and-access-management.md#stable-action-registry).
+Internal ingestion is fenced RunAttempt authority and does not require or grant
+that public read action.
+
 - Organization, Workspace, Session, Thread, and Run;
 - originating RunAttempt and Harness Run;
 - stable AgentPreset, exact AgentPresetVersion, and Runtime lock digest; and

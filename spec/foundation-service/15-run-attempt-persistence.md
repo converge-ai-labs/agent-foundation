@@ -248,13 +248,15 @@ If the drain deadline arrives before any terminal transaction commits, the Worke
 
 Only the Run row authorizes another attempt under its accepted recovery, handoff, elapsed-time, and usage limits. A first or failure/expiry replacement claim consumes `recovery_attempts_started`; a successful yield consumes `handoffs_completed`, and its planned-handoff successor consumes neither another handoff nor recovery count. Every claim still increments `attempts_started` for complete audit history. Claim and takeover consume their applicable authority before external preparation begins; preparation never reserves a future generation.
 
-After any new attempt owns the lease, its Worker reads the exact state, attempt history, immutable artifacts, and current authorization outside a database transaction and satisfies the [active-control recovery contract](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
+After any new attempt owns the lease, its Worker reads the exact state, attempt history, immutable artifacts, and the Run's immutable `authority_principal` outside a database transaction and satisfies the [active-control recovery contract](35-agent-control-active-execution.md#unified-fifo-delivery-and-state-commitment). It admits Harness entry only when all of these conditions hold:
 
 - the latest complete state object passes key, tenant, Run, Thread, digest, size, envelope, checkpoint, AgentPresetVersion, Runtime lock, and required Harness, Capability, Host, and Environment-state codec validation;
 - every prior Agent tool dispatch without a matching result in that exact state can be represented within the bounded `recovery_unknown_outcomes` schema;
 - the applicable fixed recovery or handoff count, elapsed-time, and known-usage ceilings still permit this already-created attempt after all durable usage charges;
 - the exact AgentPresetVersion and Runtime lock, structurally decodable model execution snapshot, state-owned Environment execution configuration, managed Harness plugin and Skill artifacts, Connector contracts, Environment connector locks, and other frozen dependency locks are present, digest-valid, and compatible; and
-- current Workspace and principal policy, RoleBindings, Connection eligibility, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
+- the Run's persisted authority Principal remains active in the same tenant, and its current Workspace and principal policy, RoleBindings, AgentPreset invocation authority, Connection ownership or eligibility, Environment provider selection, and required Secret metadata authorize the reconstruction and intended uses.
+
+Attempt preparation is an internal operation over already accepted work. It does not replay the accepting browser session or API key and does not substitute the claiming Worker, queue consumer, administrator, or `system` audit actor as the Run Principal. Revoking the original request credential blocks later requests made with that credential but does not erase the accepted Run; disabling the persisted Principal or removing its required current grants fails the Attempt closed.
 
 The Worker then uses one short fenced compare-and-swap transaction to revalidate that the same Run still selects its unexpired `leased` attempt and to commit exactly one preparation decision:
 
@@ -312,3 +314,4 @@ Keeping attempts as immutable audit rows increases relational retention but pres
 12. `yielded` is an Attempt terminal state, never a Harness result or Run terminal state; it preserves one complete latest `state.json` and permits a fresh planned-handoff Attempt under the same running Run.
 13. Yield and lease renewal serialize through the same selected Attempt CAS and fence. A failed yield CAS never by itself stops renewal or permits another Worker to execute the Run.
 14. `attempts_started` counts every generation, `recovery_attempts_started` counts the first and failure/expiry generations, and `handoffs_completed` counts successful planned yields.
+15. Every Attempt executes for its Run's immutable authority Principal and re-evaluates that Principal's current status and grants before Harness entry; an internal claimant never becomes the product Principal.
