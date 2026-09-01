@@ -13,6 +13,9 @@ from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 from starlette.types import Receive, Scope, Send
 
+from a13n_service.agent_presets.resolution import AgentPresetResolver
+from a13n_service.agent_presets.router import router as agent_preset_router
+from a13n_service.agent_presets.service import AgentPresetService
 from a13n_service.api import install_api_conventions
 from a13n_service.assets.cleanup import AssetCleanupReconciler
 from a13n_service.assets.objects import AssetObjectStore
@@ -86,6 +89,7 @@ _CONNECTOR_ROLES = {ServiceRole.all, ServiceRole.connector}
 @dataclass(frozen=True, slots=True)
 class ServiceComponents:
     request_authenticator: RequestAuthenticator | None = None
+    agent_preset_resolver: AgentPresetResolver | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
     connector_provider_catalog: ConnectorProviderCatalog | None = None
@@ -272,6 +276,15 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                     storage.sessions,
                     app.state.model_provider_registry,
                     app.state.model_endpoint_policy,
+                )
+                app.state.agent_preset_resolver = app.state.components.agent_preset_resolver or AgentPresetResolver(
+                    storage.sessions,
+                    app.state.accepted_model_selector,
+                    plugin_runtime_mode=settings.plugin_runtime_mode,
+                )
+                app.state.agent_preset_service = AgentPresetService(
+                    storage.sessions,
+                    app.state.agent_preset_resolver,
                 )
                 app.state.model_config_service = ModelConfigService(
                     storage.sessions,
@@ -470,6 +483,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP route not found")
 
     if serves_control_plane:
+        app.include_router(agent_preset_router)
         app.include_router(connector_router)
         app.include_router(asset_router)
         app.include_router(model_config_router)

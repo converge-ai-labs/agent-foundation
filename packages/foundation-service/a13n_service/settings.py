@@ -13,6 +13,7 @@ from a13n_logging import LogFormat
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from a13n_service.agent_presets.domain import PluginRuntimeMode
 from a13n_service.connectors.capability import ConnectorCapabilityCodec
 from a13n_service.connectors.registry import ConnectorProviderTrust
 from a13n_service.database import MigrationConfig
@@ -71,6 +72,7 @@ class ServiceSettings(BaseSettings):
     build_version: str = "unknown"
     deployment_environment_name: str = Field(default="default", min_length=1, max_length=256)
     service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
+    plugin_runtime_mode: PluginRuntimeMode = PluginRuntimeMode.on_demand
     web_dist_dir: Path | None = None
     observability_tracing: bool = True
     observability_trace_content: TraceContent = TraceContent.none

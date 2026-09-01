@@ -137,6 +137,7 @@ name = "a13n-service"
 version = "0.0.0"
 source = { editable = "packages/foundation-service" }
 dependencies = [
+    { name = "a13n-environment-provider" },
     { name = "a13n-harness" },
     { name = "a13n-logging" },
     { name = "aiobotocore", extra = ["httpx2"] },
@@ -169,6 +170,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a13n-environment-provider", editable = "packages/agent-environment-provider" },
     { name = "a13n-harness", editable = "packages/agent-harness" },
     { name = "a13n-logging", editable = "packages/logging" },
     { name = "aiobotocore", extras = ["httpx2"], specifier = ">=3.9,<4" },

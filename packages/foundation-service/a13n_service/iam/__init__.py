@@ -4,8 +4,11 @@ from .authentication import AuthenticationError, RequestAuthenticator, authentic
 from .authorization import (
     AuthenticatedActor,
     AuthorizationError,
+    AuthorizedAgentPresetCollection,
     AuthorizedWorkspace,
     WorkspaceAction,
+    authorize_agent_preset,
+    authorize_agent_preset_collection,
     authorize_agent_skill_binding,
     authorize_workspace,
 )
@@ -23,6 +26,7 @@ __all__ = [
     "AuthenticatedActor",
     "AuthenticationError",
     "AuthorizationError",
+    "AuthorizedAgentPresetCollection",
     "AuthorizedWorkspace",
     "OrganizationRecord",
     "PrincipalRef",
@@ -35,6 +39,8 @@ __all__ = [
     "WorkspaceAction",
     "WorkspaceRecord",
     "authenticate_request",
+    "authorize_agent_preset",
+    "authorize_agent_preset_collection",
     "authorize_agent_skill_binding",
     "authorize_workspace",
 ]
