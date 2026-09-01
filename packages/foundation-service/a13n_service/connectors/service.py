@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from anyio import CancelScope
-from jsonschema import Draft202012Validator
 from pydantic import JsonValue
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,15 +31,14 @@ from .domain import (
     UpdateConnector,
     bounded_json_object,
 )
-from .errors import ConnectorError, ConnectorProviderError, ConnectorReauthorizationRequired
+from .errors import ConnectorError, ConnectorReauthorizationRequired
 from .models import ConnectionRecord, ConnectorRecord, ConnectorRevisionRecord, TriggerRecord
+from .operations import ConnectorProviderOperations, provider_operations
 from .provider import (
-    ConnectorConnectionProvider,
     ConnectorProviderConnection,
     ConnectorProviderConnectionResult,
     ConnectorProviderContext,
     ConnectorProviderSecret,
-    invoke_provider,
 )
 from .registry import ConnectorProviderCatalog
 
@@ -51,15 +49,15 @@ class ConnectorService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        providers: ConnectorProviderCatalog,
+        providers: ConnectorProviderOperations | ConnectorProviderCatalog,
         reference_checker: ConnectorReferenceChecker | None = None,
     ) -> None:
         self._sessions = sessions
-        self._providers = providers
+        self._providers = provider_operations(providers)
         self._reference_checker = reference_checker
 
     async def create(self, request: CreateConnector) -> ConnectorCreateResult:
-        config = self._validate_config(
+        config = await self._validate_config(
             request.provider_key,
             request.provider_config_version,
             request.config,
@@ -172,7 +170,7 @@ class ConnectorService:
         connector_id: str,
         request: CreateConnectorRevision,
     ) -> ConnectorRevisionCreateResult:
-        config = self._validate_config(
+        config = await self._validate_config(
             request.provider_key,
             request.provider_config_version,
             request.config,
@@ -306,33 +304,18 @@ class ConnectorService:
                 raise ConnectorError("Connector is still in use.", code="connector_in_use")
             await session.execute(delete(ConnectorRecord).where(ConnectorRecord.id == connector_id))
 
-    def _validate_config(
+    async def _validate_config(
         self,
         provider_key: str,
         provider_config_version: str,
         config: dict[str, JsonValue],
     ) -> dict[str, JsonValue]:
         normalized = bounded_json_object(config, field_name="config")
-        provider = self._providers.require(provider_key)
-        if provider_config_version not in provider.metadata.provider_config_schemas:
-            raise ConnectorError(
-                "Connector Provider configuration version is unsupported.",
-                code="provider_config_incompatible",
-                details={"provider_key": provider_key},
-            )
-        try:
-            Draft202012Validator(provider.metadata.provider_config_schemas[provider_config_version]).validate(
-                normalized
-            )
-            provider.validate_config(provider_config_version, normalized)
-        except ConnectorProviderError:
-            raise
-        except Exception:
-            raise ConnectorError(
-                "Connector Provider rejected the configuration.",
-                code="provider_config_incompatible",
-                details={"provider_key": provider_key},
-            ) from None
+        await self._providers.validate_config(
+            provider_key,
+            provider_config_version=provider_config_version,
+            config=normalized,
+        )
         return normalized
 
 
@@ -388,11 +371,11 @@ class ConnectionService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        providers: ConnectorProviderCatalog,
+        providers: ConnectorProviderOperations | ConnectorProviderCatalog,
         secrets: ConnectionSecretStore,
     ) -> None:
         self._sessions = sessions
-        self._providers = providers
+        self._providers = provider_operations(providers)
         self._secrets = secrets
 
     async def create_from_provider_result(
@@ -411,22 +394,12 @@ class ConnectionService:
             workspace_id,
             connector_revision_id,
         )
-        provider = self._providers.require(revision.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider):
-            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
-        try:
-            provider.validate_connection(
-                provider_config_version=revision.provider_config_version,
-                config=revision.config,
-                connection=_provider_connection(result),
-            )
-        except ConnectorProviderError:
-            raise
-        except Exception:
-            raise ConnectorError(
-                "Connector Provider rejected the Connection result.",
-                code="connection_incompatible",
-            ) from None
+        await self._providers.validate_connection(
+            revision.provider_key,
+            provider_config_version=revision.provider_config_version,
+            config=revision.config,
+            connection=_provider_connection(result),
+        )
 
         now = datetime.now(UTC)
         record = ConnectionRecord(
@@ -589,18 +562,13 @@ class ConnectionService:
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
-        provider = self._providers.require(record.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider):
-            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         try:
-            result = await invoke_provider(
+            result = await self._providers.refresh_connection(
+                record.provider_key,
                 effective_context,
-                provider.refresh_connection(
-                    effective_context,
-                    provider_config_version=revision.provider_config_version,
-                    config=revision.config,
-                    connection=_record_provider_connection(record, secrets),
-                ),
+                provider_config_version=revision.provider_config_version,
+                config=revision.config,
+                connection=_record_provider_connection(record, secrets),
             )
         except ConnectorReauthorizationRequired:
             async with transaction(self._sessions) as session:
@@ -617,7 +585,8 @@ class ConnectionService:
                     _advance_connection(current)
                 current.lifecycle_operation_id = None
             raise
-        provider.validate_connection(
+        await self._providers.validate_connection(
+            record.provider_key,
             provider_config_version=revision.provider_config_version,
             config=revision.config,
             connection=_provider_connection(result),
@@ -686,19 +655,14 @@ class ConnectionService:
             workspace_id=workspace_id,
             connection_id=connection_id,
         )
-        provider = self._providers.require(record.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider):
-            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         provider_error: BaseException | None = None
         try:
-            await invoke_provider(
+            await self._providers.revoke_connection(
+                record.provider_key,
                 context,
-                provider.revoke_connection(
-                    context,
-                    provider_config_version=revision.provider_config_version,
-                    config=revision.config,
-                    connection=_record_provider_connection(record, secrets),
-                ),
+                provider_config_version=revision.provider_config_version,
+                config=revision.config,
+                connection=_record_provider_connection(record, secrets),
             )
         except BaseException as error:
             provider_error = error
@@ -750,9 +714,6 @@ class ConnectionService:
             raise ConnectorError("Connection is not revoked.", code="connection_incompatible")
         if not record.cleanup_pending:
             return _connection(record)
-        provider = self._providers.require(record.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider):
-            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         secrets = await self._secrets.read_connection_secrets(
             organization_id=organization_id,
             workspace_id=workspace_id,
@@ -762,14 +723,12 @@ class ConnectionService:
             operation_id=record.lifecycle_operation_id or context.operation_id,
             deadline=context.deadline,
         )
-        await invoke_provider(
+        await self._providers.revoke_connection(
+            record.provider_key,
             effective_context,
-            provider.revoke_connection(
-                effective_context,
-                provider_config_version=revision.provider_config_version,
-                config=revision.config,
-                connection=_record_provider_connection(record, secrets),
-            ),
+            provider_config_version=revision.provider_config_version,
+            config=revision.config,
+            connection=_record_provider_connection(record, secrets),
         )
         async with transaction(self._sessions) as session:
             current = await _get_connection(

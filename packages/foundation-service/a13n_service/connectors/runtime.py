@@ -1,4 +1,4 @@
-"""Agent authoring discovery and managed Connector tool dispatch."""
+"""Connector Provider discovery and data-plane execution."""
 
 from __future__ import annotations
 
@@ -6,7 +6,10 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from a13n_harness.tools import HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.errors import DefinitionError
+from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError
 from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -17,7 +20,6 @@ from .domain import (
     AgentConnectorDeclaration,
     ConnectorProviderContractLock,
     ConnectorTurnSelection,
-    FrozenConnectorTool,
     PrincipalRef,
     bounded_json_object,
     bounded_json_value,
@@ -43,8 +45,8 @@ _MAX_TOOLS = 256
 _MAX_EVENTS = 256
 
 
-class ConnectorRunAuthorizer(Protocol):
-    """Current run-grant and product-policy decision for one managed call."""
+class ConnectorInvocationAuthorizer(Protocol):
+    """Current policy decision used by the Connector data plane."""
 
     async def authorize_connector_discovery(
         self,
@@ -72,15 +74,15 @@ class ConnectorRunAuthorizer(Protocol):
     ) -> None: ...
 
 
-class ConnectorToolRuntime:
-    """Freeze Provider tools for Agent revisions and dispatch exact frozen tools."""
+class ConnectorProviderRuntime:
+    """Execute trusted Providers behind the Connector Service boundary."""
 
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
         providers: ConnectorProviderCatalog,
         connection_secrets: ConnectionSecretStore,
-        authorizer: ConnectorRunAuthorizer,
+        authorizer: ConnectorInvocationAuthorizer,
     ) -> None:
         self._sessions = sessions
         self._providers = providers
@@ -112,24 +114,7 @@ class ConnectorToolRuntime:
             connector_revision_id=target.revision.id,
             connection_id=connection_id,
         )
-        provider_connection = await self._provider_connection(
-            target,
-            organization_id=organization_id,
-            workspace_id=workspace_id,
-        )
-        provider = self._providers.require(target.revision.provider_key)
-        if not isinstance(provider, ConnectorToolProvider):
-            raise ConnectorError("Connector Provider exposes no tools.", code="tool_not_found")
-        tools = await invoke_provider(
-            context,
-            provider.list_tools(
-                context,
-                provider_config_version=target.revision.provider_config_version,
-                config=target.revision.config,
-                connection=provider_connection,
-            ),
-        )
-        return _validate_provider_tools(tools)
+        return await self._provider_tools(target, context=context)
 
     async def create_declaration(
         self,
@@ -138,7 +123,7 @@ class ConnectorToolRuntime:
         workspace_id: str,
         connector_revision_id: str,
         connection_id: str | None,
-        selected_provider_tool_names: Sequence[str],
+        selected_provider_tool_names: Sequence[str] | None,
         principal: PrincipalRef,
         context: ConnectorProviderContext,
     ) -> AgentConnectorDeclaration:
@@ -150,29 +135,217 @@ class ConnectorToolRuntime:
             principal=principal,
             context=context,
         )
-        selected_names = tuple(selected_provider_tool_names)
-        if len(set(selected_names)) != len(selected_names):
-            raise ConnectorError("Selected Connector tool names must be unique.", code="invalid_request")
-        available_by_name = {tool.name: tool for tool in available}
-        try:
-            selected = tuple(available_by_name[name] for name in selected_names)
-        except KeyError:
-            raise ConnectorError("A selected Connector tool was not found.", code="tool_not_found") from None
+        selected_names: tuple[str, ...] | None = None
+        if selected_provider_tool_names is not None:
+            selected_names = tuple(selected_provider_tool_names)
+            if not selected_names or len(set(selected_names)) != len(selected_names):
+                raise ConnectorError(
+                    "Selected Connector tool names must be a non-empty unique list.",
+                    code="invalid_request",
+                )
+            available_names = {tool.name for tool in available}
+            if any(name not in available_names for name in selected_names):
+                raise ConnectorError("A selected Connector tool was not found.", code="tool_not_found")
         async with short_session(self._sessions) as session:
             revision = await _get_revision(session, organization_id, workspace_id, connector_revision_id)
-            connector = await _get_connector(session, organization_id, workspace_id, revision.connector_id)
-        prefix = _connector_prefix(connector.name, connector.id)
-        frozen = tuple(_freeze_tool(prefix, tool) for tool in selected)
         registration = self._providers.registration(revision.provider_key)
         return AgentConnectorDeclaration(
             connector_revision_id=connector_revision_id,
             connection_id=connection_id,
-            tools=frozen,
+            tools=selected_names,
             provider_lock=ConnectorProviderContractLock(
                 provider_key=registration.provider_key,
                 contract_version=registration.metadata.contract_version,
             ),
         )
+
+    async def prepare_turn_selection(
+        self,
+        *,
+        organization_id: str,
+        workspace_id: str,
+        declaration_index: int,
+        declaration: AgentConnectorDeclaration,
+        principal: PrincipalRef,
+        context: ConnectorProviderContext,
+    ) -> ConnectorTurnSelection:
+        connection_id = declaration.connection_id
+        target = await self._load_target(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            connector_revision_id=declaration.connector_revision_id,
+            connection_id=connection_id,
+            principal=principal,
+        )
+        self._require_provider_contract(target, declaration.provider_lock.contract_version)
+        try:
+            available = await self.discover_tools(
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                connector_revision_id=declaration.connector_revision_id,
+                connection_id=connection_id,
+                principal=principal,
+                context=context,
+            )
+        except ConnectorError as error:
+            if connection_id is not None or error.code != "connection_required":
+                raise
+            connection_id = await self._resolve_connection_id(target, principal=principal)
+            target = await self._load_target(
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                connector_revision_id=declaration.connector_revision_id,
+                connection_id=connection_id,
+                principal=principal,
+            )
+            available = await self.discover_tools(
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                connector_revision_id=declaration.connector_revision_id,
+                connection_id=connection_id,
+                principal=principal,
+                context=context,
+            )
+
+        effective = _select_tools(available, declaration.tools)
+        if target.connection is None and any(tool.credential_audiences for tool in effective):
+            connection_id = await self._resolve_connection_id(target, principal=principal)
+            target = await self._load_target(
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                connector_revision_id=declaration.connector_revision_id,
+                connection_id=connection_id,
+                principal=principal,
+            )
+            effective = _select_tools(
+                await self.discover_tools(
+                    organization_id=organization_id,
+                    workspace_id=workspace_id,
+                    connector_revision_id=declaration.connector_revision_id,
+                    connection_id=connection_id,
+                    principal=principal,
+                    context=context,
+                ),
+                declaration.tools,
+            )
+
+        return ConnectorTurnSelection(
+            declaration_index=declaration_index,
+            connector_revision_id=declaration.connector_revision_id,
+            connection_id=connection_id,
+            effective_tools=tuple(tool.name for tool in effective),
+            provider_contract_version=declaration.provider_lock.contract_version,
+        )
+
+    async def list_selected_tools(
+        self,
+        *,
+        organization_id: str,
+        workspace_id: str,
+        connector_id: str,
+        connector_revision_id: str,
+        connection_id: str | None,
+        effective_tools: Sequence[str] | None,
+        provider_contract_version: str,
+        principal: PrincipalRef,
+        context: ConnectorProviderContext,
+    ) -> tuple[ConnectorProviderTool, ...]:
+        target = await self._load_target(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            connector_revision_id=connector_revision_id,
+            connection_id=connection_id,
+            principal=principal,
+        )
+        if target.connector.id != connector_id:
+            raise ConnectorError("Connector target is unavailable.", code="not_found")
+        self._require_provider_contract(target, provider_contract_version)
+        await self._authorizer.authorize_connector_discovery(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            principal=principal,
+            connector_id=connector_id,
+            connector_revision_id=connector_revision_id,
+            connection_id=connection_id,
+        )
+        return _select_tools(await self._provider_tools(target, context=context), effective_tools)
+
+    async def call_tool(
+        self,
+        *,
+        organization_id: str,
+        workspace_id: str,
+        connector_id: str,
+        connector_revision_id: str,
+        connection_id: str | None,
+        effective_tools: Sequence[str] | None,
+        provider_contract_version: str,
+        provider_tool_name: str,
+        arguments: Mapping[str, JsonValue],
+        principal: PrincipalRef,
+        context: ConnectorProviderContext,
+    ) -> ConnectorProviderToolResult:
+        tools = await self.list_selected_tools(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            connector_id=connector_id,
+            connector_revision_id=connector_revision_id,
+            connection_id=connection_id,
+            effective_tools=effective_tools,
+            provider_contract_version=provider_contract_version,
+            principal=principal,
+            context=context,
+        )
+        selected = next((tool for tool in tools if tool.name == provider_tool_name), None)
+        if selected is None:
+            raise ConnectorError("Connector tool was not found.", code="tool_not_found")
+        try:
+            Draft202012Validator(dict(selected.parameters_json_schema)).validate(arguments)
+        except ValidationError:
+            raise ConnectorError("Connector tool arguments are invalid.", code="invalid_request") from None
+        target = await self._load_target(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            connector_revision_id=connector_revision_id,
+            connection_id=connection_id,
+            principal=principal,
+        )
+        if selected.credential_audiences and target.connection is None:
+            raise ConnectorError("Connector tool requires a Connection.", code="connection_required")
+        await self._authorizer.authorize_connector_tool(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            principal=principal,
+            connector_id=connector_id,
+            connector_revision_id=connector_revision_id,
+            connection_id=connection_id,
+            tool_id=selected.tool_id,
+            effects=selected.effects,
+            credential_audiences=selected.credential_audiences,
+        )
+        provider = self._providers.require(target.revision.provider_key)
+        if not isinstance(provider, ConnectorToolProvider):
+            raise ConnectorError("Connector Provider exposes no tools.", code="tool_not_found")
+        provider_connection = await self._provider_connection(target)
+        result = await invoke_provider(
+            context,
+            provider.call_tool(
+                context,
+                provider_config_version=target.revision.provider_config_version,
+                config=target.revision.config,
+                connection=provider_connection,
+                tool_name=selected.name,
+                arguments=bounded_json_object(dict(arguments), field_name="arguments"),
+            ),
+        )
+        try:
+            value = bounded_json_value(result.value, field_name="tool_result")
+        except ConnectorError:
+            raise ConnectorError(
+                "Connector Provider returned an invalid tool result.",
+                code="tool_contract_incompatible",
+            ) from None
+        return ConnectorProviderToolResult(value=value)
 
     async def discover_events(
         self,
@@ -199,11 +372,7 @@ class ConnectorToolRuntime:
             connector_revision_id=target.revision.id,
             connection_id=connection_id,
         )
-        provider_connection = await self._provider_connection(
-            target,
-            organization_id=organization_id,
-            workspace_id=workspace_id,
-        )
+        provider_connection = await self._provider_connection(target)
         if provider_connection is None:
             raise ConnectorError("Event discovery requires a Connection.", code="connection_required")
         provider = self._providers.require(target.revision.provider_key)
@@ -220,82 +389,59 @@ class ConnectorToolRuntime:
         )
         return _validate_provider_events(events)
 
-    async def call_tool(
+    async def latest_revision_id(
         self,
         *,
         organization_id: str,
         workspace_id: str,
-        declaration: AgentConnectorDeclaration,
-        selection: ConnectorTurnSelection,
-        provider_tool_name: str,
-        arguments: Mapping[str, JsonValue],
-        principal: PrincipalRef,
-        context: ConnectorProviderContext,
-    ) -> ConnectorProviderToolResult:
-        if selection.connector_revision_id != declaration.connector_revision_id:
-            raise ConnectorError(
-                "Connector selection does not match the Agent declaration.", code="connection_incompatible"
+        connector_id: str,
+    ) -> str:
+        async with short_session(self._sessions) as session:
+            revision_id = await session.scalar(
+                select(ConnectorRevisionRecord.id)
+                .where(
+                    ConnectorRevisionRecord.organization_id == organization_id,
+                    ConnectorRevisionRecord.workspace_id == workspace_id,
+                    ConnectorRevisionRecord.connector_id == connector_id,
+                )
+                .order_by(ConnectorRevisionRecord.version.desc())
+                .limit(1)
             )
-        if selection.connection_id != declaration.connection_id and declaration.connection_id is not None:
-            raise ConnectorError("Connector selection changed a pinned Connection.", code="connection_incompatible")
-        frozen = next((tool for tool in declaration.tools if tool.provider_tool_name == provider_tool_name), None)
-        if frozen is None:
-            raise ConnectorError("Connector tool is not frozen in the Agent revision.", code="tool_not_found")
+        if revision_id is None:
+            raise ConnectorError("Connector revision was not found.", code="not_found")
+        return revision_id
+
+    async def provider_contract_version(self, connector_revision_id: str) -> str:
+        async with short_session(self._sessions) as session:
+            revision = await session.get(ConnectorRevisionRecord, connector_revision_id)
+        if revision is None:
+            raise ConnectorError("Connector revision was not found.", code="not_found")
+        return self._providers.registration(revision.provider_key).metadata.contract_version
+
+    async def resolve_standard_connection(
+        self,
+        *,
+        organization_id: str,
+        workspace_id: str,
+        connector_revision_id: str,
+        requested_connection_id: str | None,
+        principal: PrincipalRef,
+    ) -> str | None:
         target = await self._load_target(
             organization_id=organization_id,
             workspace_id=workspace_id,
-            connector_revision_id=declaration.connector_revision_id,
-            connection_id=selection.connection_id,
+            connector_revision_id=connector_revision_id,
+            connection_id=requested_connection_id,
             principal=principal,
         )
-        registration = self._providers.registration(target.revision.provider_key)
-        lock = declaration.provider_lock
-        provider = self._providers.require(target.revision.provider_key)
-        if not isinstance(provider, ConnectorToolProvider):
-            raise ConnectorError("Connector Provider exposes no tools.", code="tool_not_found")
-        if (
-            registration.provider_key != lock.provider_key
-            or registration.metadata.contract_version != lock.contract_version
-        ):
-            raise ConnectorError("Connector Provider contract is unavailable.", code="provider_not_trusted")
-        if frozen.credential_audiences and target.connection is None:
-            raise ConnectorError("Connector tool requires a Connection.", code="connection_required")
-        args = bounded_json_object(dict(arguments), field_name="arguments")
-        await self._authorizer.authorize_connector_tool(
-            organization_id=organization_id,
-            workspace_id=workspace_id,
-            principal=principal,
-            connector_id=target.connector.id,
-            connector_revision_id=target.revision.id,
-            connection_id=selection.connection_id,
-            tool_id=frozen.tool_id,
-            effects=frozen.effects,
-            credential_audiences=frozen.credential_audiences,
-        )
-        provider_connection = await self._provider_connection(
-            target,
-            organization_id=organization_id,
-            workspace_id=workspace_id,
-        )
-        result = await invoke_provider(
-            context,
-            provider.call_tool(
-                context,
-                provider_config_version=target.revision.provider_config_version,
-                config=target.revision.config,
-                connection=provider_connection,
-                tool_name=frozen.provider_tool_name,
-                arguments=args,
-            ),
-        )
+        if requested_connection_id is not None:
+            return requested_connection_id
         try:
-            value = bounded_json_value(result.value, field_name="tool_result")
-        except ConnectorError:
-            raise ConnectorError(
-                "Connector Provider returned an invalid tool result.",
-                code="tool_contract_incompatible",
-            ) from None
-        return ConnectorProviderToolResult(value=value)
+            return await self._resolve_connection_id(target, principal=principal)
+        except ConnectorError as error:
+            if error.code == "connection_required":
+                return None
+            raise
 
     async def _load_target(
         self,
@@ -331,24 +477,79 @@ class ConnectorToolRuntime:
                 or connection.principal_id != principal.principal_id
             ):
                 raise ConnectorError("Connection is unavailable.", code="connection_required")
-        return _RuntimeTarget(
-            connector=connector,
-            revision=revision,
-            connection=connection,
-        )
+        return _RuntimeTarget(connector=connector, revision=revision, connection=connection)
 
-    async def _provider_connection(
+    async def _resolve_connection_id(self, target: _RuntimeTarget, *, principal: PrincipalRef) -> str:
+        async with short_session(self._sessions) as session:
+            personal = tuple(
+                await session.scalars(
+                    select(ConnectionRecord.id)
+                    .where(
+                        ConnectionRecord.organization_id == target.revision.organization_id,
+                        ConnectionRecord.workspace_id == target.revision.workspace_id,
+                        ConnectionRecord.connector_id == target.connector.id,
+                        ConnectionRecord.provider_key == target.revision.provider_key,
+                        ConnectionRecord.status == "active",
+                        ConnectionRecord.principal_type == principal.principal_type,
+                        ConnectionRecord.principal_id == principal.principal_id,
+                    )
+                    .order_by(ConnectionRecord.id)
+                    .limit(2)
+                )
+            )
+            if len(personal) > 1:
+                raise ConnectorError("Connection selection is ambiguous.", code="connection_ambiguous")
+            if personal:
+                return personal[0]
+            shared = tuple(
+                await session.scalars(
+                    select(ConnectionRecord.id)
+                    .where(
+                        ConnectionRecord.organization_id == target.revision.organization_id,
+                        ConnectionRecord.workspace_id == target.revision.workspace_id,
+                        ConnectionRecord.connector_id == target.connector.id,
+                        ConnectionRecord.provider_key == target.revision.provider_key,
+                        ConnectionRecord.status == "active",
+                        ConnectionRecord.principal_type.is_(None),
+                        ConnectionRecord.principal_id.is_(None),
+                    )
+                    .order_by(ConnectionRecord.id)
+                    .limit(2)
+                )
+            )
+        if len(shared) > 1:
+            raise ConnectorError("Connection selection is ambiguous.", code="connection_ambiguous")
+        if shared:
+            return shared[0]
+        raise ConnectorError("A Connection is required.", code="connection_required")
+
+    async def _provider_tools(
         self,
         target: _RuntimeTarget,
         *,
-        organization_id: str,
-        workspace_id: str,
-    ) -> ConnectorProviderConnection | None:
+        context: ConnectorProviderContext,
+    ) -> tuple[ConnectorProviderTool, ...]:
+        provider = self._providers.require(target.revision.provider_key)
+        if not isinstance(provider, ConnectorToolProvider):
+            raise ConnectorError("Connector Provider exposes no tools.", code="tool_not_found")
+        provider_connection = await self._provider_connection(target)
+        tools = await invoke_provider(
+            context,
+            provider.list_tools(
+                context,
+                provider_config_version=target.revision.provider_config_version,
+                config=target.revision.config,
+                connection=provider_connection,
+            ),
+        )
+        return _validate_provider_tools(tools)
+
+    async def _provider_connection(self, target: _RuntimeTarget) -> ConnectorProviderConnection | None:
         if target.connection is None:
             return None
         secrets = await self._connection_secrets.read_connection_secrets(
-            organization_id=organization_id,
-            workspace_id=workspace_id,
+            organization_id=target.revision.organization_id,
+            workspace_id=target.revision.workspace_id,
             connection_id=target.connection.id,
         )
         provider_connection = ConnectorProviderConnection(
@@ -365,6 +566,11 @@ class ConnectorToolRuntime:
             connection=provider_connection,
         )
         return provider_connection
+
+    def _require_provider_contract(self, target: _RuntimeTarget, expected: str) -> None:
+        actual = self._providers.registration(target.revision.provider_key)
+        if actual.metadata.contract_version != expected:
+            raise ConnectorError("Connector Provider contract is unavailable.", code="provider_not_trusted")
 
 
 class _RuntimeTarget:
@@ -418,6 +624,25 @@ async def _get_connector(
     return connector
 
 
+def _select_tools(
+    available: Sequence[ConnectorProviderTool],
+    selected_names: Sequence[str] | None,
+) -> tuple[ConnectorProviderTool, ...]:
+    values = tuple(available)
+    if selected_names is None:
+        if not values:
+            raise ConnectorError("Connector Provider exposes no tools.", code="tool_not_found")
+        return values
+    names = tuple(selected_names)
+    if not names or len(names) != len(set(names)):
+        raise ConnectorError("Connector tool selection is invalid.", code="tool_contract_incompatible")
+    by_name = {tool.name: tool for tool in values}
+    try:
+        return tuple(by_name[name] for name in names)
+    except KeyError:
+        raise ConnectorError("A selected Connector tool was not found.", code="tool_not_found") from None
+
+
 def _validate_provider_tools(tools: Sequence[ConnectorProviderTool]) -> tuple[ConnectorProviderTool, ...]:
     values = tuple(tools)
     if len(values) > _MAX_TOOLS:
@@ -425,27 +650,36 @@ def _validate_provider_tools(tools: Sequence[ConnectorProviderTool]) -> tuple[Co
     names: set[str] = set()
     tool_ids: set[str] = set()
     for tool in values:
-        if not isinstance(tool, ConnectorProviderTool) or _TOOL_NAME.fullmatch(tool.name) is None:
-            raise ConnectorError("Connector Provider returned an invalid tool.", code="tool_contract_incompatible")
-        if tool.name in names or tool.tool_id in tool_ids:
-            raise ConnectorError("Connector Provider returned duplicate tools.", code="tool_contract_incompatible")
-        bounded_json_object(dict(tool.parameters_json_schema), field_name="parameters_json_schema")
-        bounded_json_object(dict(tool.output_policy), field_name="output_policy")
-        try:
-            FrozenConnectorTool(
-                provider_tool_name=tool.name,
-                model_tool_name=tool.name,
-                tool_id=tool.tool_id,
-                description=tool.description,
-                parameters_json_schema=dict(tool.parameters_json_schema),
-                effects=tool.effects,  # type: ignore[arg-type]
-                credential_audiences=tool.credential_audiences,
-                idempotency=tool.idempotency,  # type: ignore[arg-type]
-                output_policy=dict(tool.output_policy),
+        if (
+            not isinstance(tool, ConnectorProviderTool)
+            or _TOOL_NAME.fullmatch(tool.name) is None
+            or not 1 <= len(tool.tool_id) <= 256
+            or len(tool.description) > 4_000
+            or tool.name in names
+            or tool.tool_id in tool_ids
+            or tool.idempotency not in {"none", "read_only", "provider_key"}
+            or any(
+                effect not in {"read", "write", "delete", "execute", "external_communication"}
+                for effect in tool.effects
             )
-        except ValueError:
+            or any(not audience or len(audience) > 256 for audience in tool.credential_audiences)
+        ):
+            raise ConnectorError("Connector Provider returned an invalid tool.", code="tool_contract_incompatible")
+        bounded_json_object(dict(tool.parameters_json_schema), field_name="parameters_json_schema")
+        try:
+            normalize_harness_tool_metadata(
+                {
+                    "tool_id": tool.tool_id,
+                    "effects": tool.effects,
+                    "credential_audiences": tool.credential_audiences,
+                    "idempotency": tool.idempotency,
+                    "output_policy": tool.output_policy,
+                }
+            )
+        except DefinitionError:
             raise ConnectorError(
-                "Connector Provider returned an invalid tool.", code="tool_contract_incompatible"
+                "Connector Provider returned invalid managed tool metadata.",
+                code="tool_contract_incompatible",
             ) from None
         names.add(tool.name)
         tool_ids.add(tool.tool_id)
@@ -468,40 +702,3 @@ def _validate_provider_events(events: Sequence[ConnectorProviderEventType]) -> t
         bounded_json_object(dict(event.config_schema), field_name="event_config_schema")
         names.add(event.name)
     return values
-
-
-def _connector_prefix(name: str, connector_id: str) -> str:
-    normalized = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")[:32]
-    if not normalized or not normalized[0].isalpha():
-        normalized = "connector"
-    suffix = connector_id.rsplit("_", 1)[-1][:8]
-    return f"{normalized}_{suffix}"
-
-
-def _freeze_tool(prefix: str, tool: ConnectorProviderTool) -> FrozenConnectorTool:
-    model_tool_name = f"{prefix}_{tool.name}"
-    if len(model_tool_name) > 256:
-        raise ConnectorError("Connector tool name is too long after prefixing.", code="tool_contract_incompatible")
-    try:
-        metadata = HarnessToolMetadata(
-            tool_id=tool.tool_id,
-            effects=frozenset(tool.effects),  # type: ignore[arg-type]
-            credential_audiences=tool.credential_audiences,
-            idempotency=tool.idempotency,  # type: ignore[arg-type]
-            output_policy=ToolOutputPolicy.model_validate(dict(tool.output_policy)),
-        )
-    except (TypeError, ValueError):
-        raise ConnectorError("Connector tool metadata is invalid.", code="tool_contract_incompatible") from None
-    return FrozenConnectorTool(
-        provider_tool_name=tool.name,
-        model_tool_name=model_tool_name,
-        tool_id=tool.tool_id,
-        description=tool.description,
-        parameters_json_schema=bounded_json_object(
-            dict(tool.parameters_json_schema), field_name="parameters_json_schema"
-        ),
-        effects=tuple(sorted(metadata.effects)),
-        credential_audiences=metadata.credential_audiences,
-        idempotency=metadata.idempotency,
-        output_policy=bounded_json_object(metadata.output_policy.model_dump(mode="json"), field_name="output_policy"),
-    )

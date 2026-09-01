@@ -31,7 +31,7 @@ from .domain import (
     UpdateConnector,
 )
 from .errors import ConnectorError
-from .registry import ConnectorProviderCatalog
+from .operations import ConnectorProviderOperations
 from .service import ConnectorService
 
 router = APIRouter(prefix="/api/v1", tags=["connectors"])
@@ -106,8 +106,8 @@ def _service(request: Request) -> ConnectorService:
     return service
 
 
-def _providers(request: Request) -> ConnectorProviderCatalog:
-    providers: ConnectorProviderCatalog | None = getattr(request.app.state, "connector_providers", None)
+def _providers(request: Request) -> ConnectorProviderOperations:
+    providers: ConnectorProviderOperations | None = getattr(request.app.state, "connector_provider_operations", None)
     if providers is None:
         raise ConnectorError("Connector Provider catalog is unavailable.", code="dependency_unavailable")
     return providers
@@ -128,8 +128,8 @@ async def _authorize(
         raise ConnectorError("Connector resource is unavailable.", code=code) from error
 
 
-def _provider_resource(key: str, providers: ConnectorProviderCatalog) -> ConnectorProviderResource:
-    metadata = providers.registration(key).metadata
+async def _provider_resource(key: str, providers: ConnectorProviderOperations) -> ConnectorProviderResource:
+    metadata = await providers.metadata(key)
     return ConnectorProviderResource(
         key=key,
         display_name=metadata.display_name,
@@ -150,15 +150,15 @@ def _provider_resource(key: str, providers: ConnectorProviderCatalog) -> Connect
 async def list_connector_providers(request: Request, actor: Actor) -> ConnectorProviderCollection:
     await _authorize(request, actor, actor.boundary_workspace_id, WorkspaceAction.connector_read)
     providers = _providers(request)
-    return ConnectorProviderCollection(
-        items=tuple(_provider_resource(item.provider_key, providers) for item in providers.registrations)
-    )
+    registrations = await providers.registrations()
+    items = [await _provider_resource(item.provider_key, providers) for item in registrations]
+    return ConnectorProviderCollection(items=tuple(items))
 
 
 @router.get("/connector-providers/{provider_key}", response_model=ConnectorProviderResource)
 async def get_connector_provider(request: Request, actor: Actor, provider_key: str) -> ConnectorProviderResource:
     await _authorize(request, actor, actor.boundary_workspace_id, WorkspaceAction.connector_read)
-    return _provider_resource(provider_key, _providers(request))
+    return await _provider_resource(provider_key, _providers(request))
 
 
 @router.get("/workspaces/{workspace_id}/connectors", response_model=ConnectorCollection)

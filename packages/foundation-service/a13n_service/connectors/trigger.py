@@ -34,14 +34,13 @@ from .models import (
     TriggerOccurrenceRecord,
     TriggerRecord,
 )
+from .operations import ConnectorProviderOperations, provider_operations
 from .provider import (
-    ConnectorConnectionProvider,
-    ConnectorEventProvider,
     ConnectorProviderConnection,
     ConnectorProviderContext,
     ConnectorProviderEventSourceResult,
+    ConnectorProviderMetadata,
     ConnectorProviderSecret,
-    invoke_provider,
 )
 from .registry import ConnectorProviderCatalog
 from .service import ConnectionSecretStore
@@ -101,7 +100,7 @@ class TriggerService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        providers: ConnectorProviderCatalog,
+        providers: ConnectorProviderOperations | ConnectorProviderCatalog,
         connection_secrets: ConnectionSecretStore,
         trigger_secrets: TriggerSecretStore,
         agent_targets: AgentTriggerTargetValidator,
@@ -111,7 +110,7 @@ class TriggerService:
         if minimum_interval_seconds < 1:
             raise ValueError("minimum_interval_seconds must be positive")
         self._sessions = sessions
-        self._providers = providers
+        self._providers = provider_operations(providers)
         self._connection_secrets = connection_secrets
         self._trigger_secrets = trigger_secrets
         self._agent_targets = agent_targets
@@ -315,25 +314,23 @@ class TriggerService:
             deadline=context.deadline,
         )
         try:
-            provider, provider_connection, revision = await self._event_runtime(
+            provider_key, metadata, provider_connection, revision = await self._event_runtime(
                 organization_id,
                 workspace_id,
                 source,
             )
-            if provider.metadata.capabilities.event_delivery == "webhook" and callback_url is None:
+            if metadata.capabilities.event_delivery == "webhook" and callback_url is None:
                 raise ConnectorError("Webhook Provider requires a callback URL.", code="invalid_request")
-            result = await invoke_provider(
+            result = await self._providers.start_event_source(
+                provider_key,
                 effective_context,
-                provider.start_event_source(
-                    effective_context,
-                    provider_config_version=revision.provider_config_version,
-                    config=revision.config,
-                    connection=provider_connection,
-                    event_type=source.event_type,
-                    provider_event_config_version=source.provider_event_config_version,
-                    event_config=source.config,
-                    callback_url=(callback_url if provider.metadata.capabilities.event_delivery == "webhook" else None),
-                ),
+                provider_config_version=revision.provider_config_version,
+                config=revision.config,
+                connection=provider_connection,
+                event_type=source.event_type,
+                provider_event_config_version=source.provider_event_config_version,
+                event_config=source.config,
+                callback_url=(callback_url if metadata.capabilities.event_delivery == "webhook" else None),
             )
             provider_state = bounded_json_object(dict(result.provider_state), field_name="provider_state")
         except Exception:
@@ -413,12 +410,8 @@ class TriggerService:
             secrets=trigger_secrets,
         )
         try:
-            provider = self._providers.require(
-                (await self._event_revision(organization_id, workspace_id, source)).provider_key
-            )
-            if not isinstance(provider, ConnectorEventProvider):
-                raise ConnectorError("Connector Provider exposes no events.", code="trigger_source_incompatible")
-            await invoke_provider(context, provider.stop_event_source(context, source=source_state))
+            revision = await self._event_revision(organization_id, workspace_id, source)
+            await self._providers.stop_event_source(revision.provider_key, context, source=source_state)
         except Exception:
             return _trigger(record)
         async with transaction(self._sessions) as session:
@@ -488,15 +481,12 @@ class TriggerService:
             operation_id=operation_id,
             deadline=context.deadline,
         )
-        provider = self._providers.require(
-            (await self._event_revision(organization_id, workspace_id, source)).provider_key
-        )
-        if not isinstance(provider, ConnectorEventProvider):
-            raise ConnectorError("Connector Provider exposes no events.", code="trigger_source_incompatible")
+        revision = await self._event_revision(organization_id, workspace_id, source)
         try:
-            result = await invoke_provider(
+            result = await self._providers.renew_event_source(
+                revision.provider_key,
                 effective_context,
-                provider.renew_event_source(effective_context, source=source_state),
+                source=source_state,
             )
         except Exception:
             async with transaction(self._sessions) as session:
@@ -540,31 +530,31 @@ class TriggerService:
         if record.status == "disabled":
             if not record.cleanup_pending:
                 return _trigger(record)
-            provider, connection, revision = await self._event_runtime(organization_id, workspace_id, source)
+            provider_key, _metadata, connection, revision = await self._event_runtime(
+                organization_id, workspace_id, source
+            )
             operation_id = record.lifecycle_operation_id or context.operation_id
             effective_context = ConnectorProviderContext(
                 operation_id=operation_id,
                 deadline=context.deadline,
             )
             if source_state is None:
-                source_state = await invoke_provider(
+                source_state = await self._providers.reconcile_event_source(
+                    provider_key,
                     effective_context,
-                    provider.reconcile_event_source(
-                        effective_context,
-                        provider_config_version=revision.provider_config_version,
-                        config=revision.config,
-                        connection=connection,
-                        event_type=source.event_type,
-                        provider_event_config_version=source.provider_event_config_version,
-                        event_config=source.config,
-                        source=None,
-                    ),
+                    provider_config_version=revision.provider_config_version,
+                    config=revision.config,
+                    connection=connection,
+                    event_type=source.event_type,
+                    provider_event_config_version=source.provider_event_config_version,
+                    event_config=source.config,
+                    source=None,
                 )
             stop_context = ConnectorProviderContext(
                 operation_id=f"{operation_id}:stop",
                 deadline=context.deadline,
             )
-            await invoke_provider(stop_context, provider.stop_event_source(stop_context, source=source_state))
+            await self._providers.stop_event_source(provider_key, stop_context, source=source_state)
             async with transaction(self._sessions) as session:
                 current = await _get_trigger(session, organization_id, workspace_id, trigger_id, for_update=True)
                 _require_trigger_version(current, expected_version)
@@ -584,23 +574,21 @@ class TriggerService:
                 current.lifecycle_operation_id = None
                 _advance_trigger(current)
             return _trigger(current)
-        provider, connection, revision = await self._event_runtime(organization_id, workspace_id, source)
+        provider_key, _metadata, connection, revision = await self._event_runtime(organization_id, workspace_id, source)
         effective_context = ConnectorProviderContext(
             operation_id=record.lifecycle_operation_id or context.operation_id,
             deadline=context.deadline,
         )
-        result = await invoke_provider(
+        result = await self._providers.reconcile_event_source(
+            provider_key,
             effective_context,
-            provider.reconcile_event_source(
-                effective_context,
-                provider_config_version=revision.provider_config_version,
-                config=revision.config,
-                connection=connection,
-                event_type=source.event_type,
-                provider_event_config_version=source.provider_event_config_version,
-                event_config=source.config,
-                source=source_state,
-            ),
+            provider_config_version=revision.provider_config_version,
+            config=revision.config,
+            connection=connection,
+            event_type=source.event_type,
+            provider_event_config_version=source.provider_event_config_version,
+            event_config=source.config,
+            source=source_state,
         )
         return await self._commit_source_result(
             record,
@@ -700,10 +688,11 @@ class TriggerService:
                 except (ValueError, ZoneInfoNotFoundError):
                     raise ConnectorError("Trigger cron schedule is invalid.", code="invalid_request") from None
             return source
-        provider, connection, revision = await self._event_runtime(organization_id, workspace_id, source)
+        provider_key, _metadata, connection, revision = await self._event_runtime(organization_id, workspace_id, source)
         event_config = bounded_json_object(source.config, field_name="event_config")
         try:
-            provider.validate_event_config(
+            await self._providers.validate_event_config(
+                provider_key,
                 provider_config_version=revision.provider_config_version,
                 config=revision.config,
                 connection=connection,
@@ -723,7 +712,7 @@ class TriggerService:
         organization_id: str,
         workspace_id: str,
         source: ConnectorEventTriggerSource,
-    ) -> tuple[ConnectorEventProvider, ConnectorProviderConnection, ConnectorRevisionRecord]:
+    ) -> tuple[str, ConnectorProviderMetadata, ConnectorProviderConnection, ConnectorRevisionRecord]:
         revision = await self._event_revision(organization_id, workspace_id, source)
         async with short_session(self._sessions) as session:
             connector = await session.scalar(
@@ -753,20 +742,21 @@ class TriggerService:
             workspace_id=workspace_id,
             connection_id=connection.id,
         )
-        provider = self._providers.require(revision.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider) or not isinstance(provider, ConnectorEventProvider):
+        metadata = await self._providers.metadata(revision.provider_key)
+        if not metadata.capabilities.connections or not metadata.capabilities.events:
             raise ConnectorError("Connector Provider exposes no compatible events.", code="trigger_source_incompatible")
         provider_connection = ConnectorProviderConnection(
             provider_state_version=connection.provider_state_version,
             provider_state=connection.provider_state,
             secrets=secrets,
         )
-        provider.validate_connection(
+        await self._providers.validate_connection(
+            revision.provider_key,
             provider_config_version=revision.provider_config_version,
             config=revision.config,
             connection=provider_connection,
         )
-        return provider, provider_connection, revision
+        return revision.provider_key, metadata, provider_connection, revision
 
     async def _event_revision(
         self,

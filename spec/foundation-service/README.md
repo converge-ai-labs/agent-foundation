@@ -2,7 +2,10 @@
 
 ## Design Position
 
-This directory defines `foundation-service`, the optional durable Host that embeds `agent-harness`. It is a modular service with independently selectable control and worker process roles, not another Agent loop and not a collection of independently versioned microservices.
+This directory defines `foundation-service`, the optional durable Host that
+embeds `agent-harness`. It is a modular service with independently selectable
+control, worker, and connector process roles, not another Agent loop and not a
+collection of independently versioned microservices.
 
 Foundation owns managed Secrets, ModelConfigs, resource authorization,
 serializable AgentPreset authoring resources, immutable AgentPresetVersions,
@@ -10,7 +13,8 @@ Workspace Skill resources and immutable package revisions, trusted Harness
 plugin artifacts and Runtime locks, durable Threads, editable queued
 submissions, Turns, and TurnAttempts, scheduling, the durable Thread inbox, waiting pending summaries and exact
 Turn-state requests, Environment connection configuration in Turn state,
-lifecycle events, raw usage records, and the public management API.
+lifecycle events, Connector resources and MCP projection, raw usage records, and
+the public management API.
 The control surface also owns the Foundation Service Protocol Gateway, which
 maps Native, Hosted AG-UI, and A2A callers into the same application authority.
 
@@ -39,7 +43,7 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | Document                                                                                              | Owning contract                                                                                                                             |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | [00 Overview](00-overview.md)                                                                         | Service shape, end-to-end flow, subsystem boundaries, dependency direction, and completion boundaries                                       |
-| [01 Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md)                 | Configuration precedence, deployment profiles, control and worker roles, startup, readiness, supervision, drain, and shutdown               |
+| [01 Runtime Configuration and Deployment](01-runtime-configuration-and-deployment.md)                 | Configuration precedence, deployment profiles, control, worker, and connector roles, startup, readiness, supervision, drain, and shutdown   |
 | [02 Distribution Composition and Extensions](02-distribution-composition-and-extensions.md)           | OSS, EE, and Cloud composition, dependency direction, contribution conflicts, configuration, and final schema assembly                      |
 | [03 Storage](03-storage.md)                                                                           | Relational, Redis-compatible, object, and mounted-filesystem capabilities and local/network semantics                                       |
 | [04 Relational Schema](04-relational-schema.md)                                                       | Final distribution metadata, migration authority, compatibility, application, and failure semantics                                         |
@@ -59,7 +63,7 @@ A non-terminal Turn can span several process-local Harness Runs when Worker take
 | [20a Hook Notifications](20a-hook-notifications.md)                                                   | Hook registry, durable subscriptions, Webhook delivery, channel eligibility, and blocking semantics                                         |
 | [21 Management API](21-management-api.md)                                                             | Public resource catalog, common command boundaries, read models, replay, and compatibility                                                  |
 | [22 Agent Interaction Retrieval](22-agent-interaction-retrieval.md)                                   | Agent-facing authorized retrieval of retained Turn lineage and interaction projections                                                      |
-| [23 Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)                 | Trusted Provider discovery, Connector revisions, account Connections, managed tools, and Trigger occurrence acceptance                      |
+| [23 Connectors, Connections, and Triggers](23-connectors-connections-and-triggers.md)                 | Trusted Provider discovery, Connector revisions, account Connections, MCP projection, Connector Service, and Trigger occurrence acceptance  |
 | [24 Durable Thread Persistence](24-thread-persistence.md)                                             | Thread relational identity, Session membership, origin, version, current Turn, continuation head, creation, advancement, and reads          |
 | [25 Model Management](25-model-management.md)                                                         | Workspace ModelConfigs, trusted provider registry, credentials, testing, lifecycle, and Turn-time execution snapshots                       |
 | [26 Harness Plugin Artifacts and Runtime Loading](26-harness-plugin-artifacts-and-runtime-loading.md) | Trusted Wheel publication, durable Runtime mode, on-demand loading, Runner cutover, and historical reconstruction                           |
@@ -131,6 +135,11 @@ These roots are boundaries, not a requirement that every capability become a sub
   lock-scoped children. The selected loop transactionally claims or replaces
   fenced `TurnAttempt` leases, performs recovery checks, and invokes Harness. It
   exposes no additional product API and never runs migrations.
+- Each Connector Service process loads only deployment-trusted
+  ConnectorProviders, exposes the standard and internal MCP boundaries, executes
+  Provider operations, and handles Connector event ingress or polling. It owns
+  no Connector, Connection, Trigger, Turn, or TurnAttempt lifecycle and never
+  runs migrations.
 - PostgreSQL is authoritative for accepted lifecycle state and fencing. Real Redis is required for distributed data flow and coordination; each owning domain defines its Redis retention and replay semantics, and Redis delivery alone never proves a relational transition.
 - Queued input remains a separate editable relational resource until one short
   consumption transaction accepts its Turn. Queue rows own no Worker lease,
@@ -146,7 +155,7 @@ These roots are boundaries, not a requirement that every capability become a sub
   lock in an AgentPresetVersion. The selected Worker execution loop verifies its immutable object and supplies
   run-local materialization through the fresh Environment before model exposure;
   GitHub and upload sources are never runtime inputs.
-- Connector Provider package presence grants no trust. AgentPresetVersions freeze tool contracts and exact Provider semantic contract locks; deployment composition owns the installed artifact, and every TurnAttempt resolves current Connection authority and credentials.
+- Connector Provider package presence grants no trust. AgentPresetVersions freeze exact ConnectorRevision references, optional Provider tool-name allowlists, and semantic contract locks; each Turn freezes effective tool names, and every TurnAttempt resolves current Connection authority and credentials through a fenced MCP capability.
 - Trigger ingress deduplicates one source occurrence into one root Turn under the common Session and Thread contract. It does not bypass Agent, IAM, scheduling, or Turn authority.
 - Foundation Environment connectors return the canonical runtime attachment and
   Foundation consumes `HarnessAguiObserver`; it does not create parallel

@@ -1,5 +1,7 @@
 """Foundation Connector domain and trusted Provider extension boundary."""
 
+from .capability import ConnectorAttemptAuthorizer, ConnectorCapabilityClaims, ConnectorCapabilityCodec
+from .client import build_connector_mcp_client
 from .domain import (
     AcceptedTriggerSource,
     AgentConnectorDeclaration,
@@ -17,7 +19,6 @@ from .domain import (
     CreateConnector,
     CreateConnectorRevision,
     CreateTrigger,
-    FrozenConnectorTool,
     PrincipalRef,
     ScheduleTriggerSource,
     StartConnectionSetup,
@@ -34,7 +35,15 @@ from .errors import (
     ConnectorProviderError,
     ConnectorReauthorizationRequired,
 )
+from .mcp import (
+    AttemptConnectorMCPAuthenticator,
+    ConnectorMCPGateway,
+    ConnectorMCPInvocation,
+    ConnectorMCPRequestAuthenticator,
+    StandardConnectorMCPAuthenticator,
+)
 from .occurrence import TriggerIngressService, TriggerTurnAcceptor
+from .operations import ConnectorProviderOperations, LocalConnectorProviderOperations
 from .provider import (
     ConnectorConnectionProvider,
     ConnectorEventProvider,
@@ -65,11 +74,11 @@ from .registry import (
     build_connector_provider_catalog,
     discover_connector_provider_references,
 )
-from .runtime import ConnectorRunAuthorizer, ConnectorToolRuntime
+from .runtime import ConnectorInvocationAuthorizer, ConnectorProviderRuntime
 from .secrets import DatabaseConnectorSecretStore
 from .service import ConnectionSecretStore, ConnectionService, ConnectorService, resolve_connection
 from .setup import ConnectionSetupService, ConnectionSetupStateProtector
-from .toolset import ConnectorManagedToolset
+from .transport import RemoteConnectorProviderOperations, create_connector_provider_operations_app
 from .trigger import AgentTriggerTargetValidator, TriggerSecretStore, TriggerService
 
 __all__ = [
@@ -77,6 +86,7 @@ __all__ = [
     "AcceptedTriggerSource",
     "AgentConnectorDeclaration",
     "AgentTriggerTargetValidator",
+    "AttemptConnectorMCPAuthenticator",
     "Connection",
     "ConnectionAccount",
     "ConnectionSecretStore",
@@ -86,12 +96,18 @@ __all__ = [
     "ConnectionSetupStateProtector",
     "ConnectionStatus",
     "Connector",
+    "ConnectorAttemptAuthorizer",
+    "ConnectorCapabilityClaims",
+    "ConnectorCapabilityCodec",
     "ConnectorConnectionProvider",
     "ConnectorCreateResult",
     "ConnectorError",
     "ConnectorEventProvider",
     "ConnectorEventTriggerSource",
-    "ConnectorManagedToolset",
+    "ConnectorInvocationAuthorizer",
+    "ConnectorMCPGateway",
+    "ConnectorMCPInvocation",
+    "ConnectorMCPRequestAuthenticator",
     "ConnectorPollingProvider",
     "ConnectorProvider",
     "ConnectorProviderAccount",
@@ -107,8 +123,10 @@ __all__ = [
     "ConnectorProviderEventSourceResult",
     "ConnectorProviderEventType",
     "ConnectorProviderMetadata",
+    "ConnectorProviderOperations",
     "ConnectorProviderReference",
     "ConnectorProviderRegistration",
+    "ConnectorProviderRuntime",
     "ConnectorProviderSecret",
     "ConnectorProviderSetupResult",
     "ConnectorProviderTool",
@@ -117,19 +135,19 @@ __all__ = [
     "ConnectorReauthorizationRequired",
     "ConnectorRevision",
     "ConnectorRevisionCreateResult",
-    "ConnectorRunAuthorizer",
     "ConnectorService",
     "ConnectorToolProvider",
-    "ConnectorToolRuntime",
     "ConnectorTurnSelection",
     "ConnectorWebhookProvider",
     "CreateConnector",
     "CreateConnectorRevision",
     "CreateTrigger",
     "DatabaseConnectorSecretStore",
-    "FrozenConnectorTool",
+    "LocalConnectorProviderOperations",
     "PrincipalRef",
+    "RemoteConnectorProviderOperations",
     "ScheduleTriggerSource",
+    "StandardConnectorMCPAuthenticator",
     "StartConnectionSetup",
     "Trigger",
     "TriggerIngressService",
@@ -141,7 +159,9 @@ __all__ = [
     "UpdateConnection",
     "UpdateConnector",
     "UpdateTrigger",
+    "build_connector_mcp_client",
     "build_connector_provider_catalog",
+    "create_connector_provider_operations_app",
     "discover_connector_provider_references",
     "resolve_connection",
 ]

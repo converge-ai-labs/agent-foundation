@@ -25,14 +25,8 @@ from .domain import (
 )
 from .errors import ConnectorError
 from .models import TriggerOccurrenceRecord, TriggerRecord
-from .provider import (
-    ConnectorPollingProvider,
-    ConnectorProviderContext,
-    ConnectorProviderEvent,
-    ConnectorProviderEventSourceResult,
-    ConnectorWebhookProvider,
-    invoke_provider,
-)
+from .operations import ConnectorProviderOperations, provider_operations
+from .provider import ConnectorProviderContext, ConnectorProviderEvent, ConnectorProviderEventSourceResult
 from .registry import ConnectorProviderCatalog
 from .template import expand_event_template, expand_schedule_template
 from .trigger import TriggerSecretStore
@@ -71,7 +65,7 @@ class TriggerIngressService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        providers: ConnectorProviderCatalog,
+        providers: ConnectorProviderOperations | ConnectorProviderCatalog,
         trigger_secrets: TriggerSecretStore,
         turns: TriggerTurnAcceptor,
         *,
@@ -80,7 +74,7 @@ class TriggerIngressService:
         max_webhook_header_bytes: int = 32 * 1024,
     ) -> None:
         self._sessions = sessions
-        self._providers = providers
+        self._providers = provider_operations(providers)
         self._trigger_secrets = trigger_secrets
         self._turns = turns
         self._max_webhook_body_bytes = max_webhook_body_bytes
@@ -99,8 +93,8 @@ class TriggerIngressService:
         if len(body) > self._max_webhook_body_bytes:
             raise ConnectorError("Webhook body is too large.", code="event_payload_invalid")
         snapshot = await self._event_snapshot(trigger_id)
-        provider = self._providers.require(snapshot.provider_key)
-        if not isinstance(provider, ConnectorWebhookProvider):
+        metadata = await self._providers.metadata(snapshot.provider_key)
+        if metadata.capabilities.event_delivery != "webhook":
             raise ConnectorError("Trigger Provider does not use webhooks.", code="trigger_source_incompatible")
         secrets = await self._trigger_secrets.read_trigger_secrets(
             organization_id=snapshot.organization_id,
@@ -113,14 +107,12 @@ class TriggerIngressService:
             secrets=secrets,
         )
         try:
-            events = await invoke_provider(
+            events = await self._providers.receive_webhook(
+                snapshot.provider_key,
                 context,
-                provider.receive_webhook(
-                    context,
-                    source=source_state,
-                    headers=safe_headers,
-                    body=body,
-                ),
+                source=source_state,
+                headers=safe_headers,
+                body=body,
             )
         except ConnectorError:
             raise
@@ -174,8 +166,8 @@ class TriggerIngressService:
         context: ConnectorProviderContext,
     ) -> tuple[TriggerOccurrenceReceipt, ...]:
         snapshot = await self._event_snapshot(trigger_id)
-        provider = self._providers.require(snapshot.provider_key)
-        if not isinstance(provider, ConnectorPollingProvider):
+        metadata = await self._providers.metadata(snapshot.provider_key)
+        if metadata.capabilities.event_delivery != "polling":
             raise ConnectorError("Trigger Provider does not use polling.", code="trigger_source_incompatible")
         secrets = await self._trigger_secrets.read_trigger_secrets(
             organization_id=snapshot.organization_id,
@@ -187,9 +179,11 @@ class TriggerIngressService:
             provider_state=snapshot.provider_state,
             secrets=secrets,
         )
-        events, cursor = await invoke_provider(
+        events, cursor = await self._providers.poll_events(
+            snapshot.provider_key,
             context,
-            provider.poll_events(context, source=source_state, cursor=snapshot.event_cursor),
+            source=source_state,
+            cursor=snapshot.event_cursor,
         )
         if len(events) > 100 or (cursor is not None and len(cursor) > 2_000):
             raise ConnectorError("Polling result is too large.", code="event_payload_invalid")

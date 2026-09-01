@@ -20,6 +20,7 @@ class WorkspaceAction(StrEnum):
     connector_read = "connector.read"
     connector_create = "connector.create"
     connector_configure = "connector.configure"
+    connector_invoke = "connector.invoke"
     connection_read = "connection.read"
     connection_manage = "connection.manage"
     trigger_read = "trigger.read"
@@ -38,7 +39,7 @@ _WORKSPACE_READ_ACTIONS = frozenset(
 
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
     "viewer": _WORKSPACE_READ_ACTIONS,
-    "runner": _WORKSPACE_READ_ACTIONS,
+    "runner": _WORKSPACE_READ_ACTIONS | {WorkspaceAction.connector_invoke},
     "builder": frozenset(WorkspaceAction),
     "admin": frozenset(WorkspaceAction),
 }

@@ -290,6 +290,11 @@ API key state is derived rather than stored: an unrevoked key before its optiona
 
 Removing a User's access to a key boundary permanently revokes that boundary's Personal API Keys. Removing a Service Account's Workspace binding or deleting the Service Account revokes all of its keys. Role changes do not rotate or revoke a key; the next request observes the new effective permissions.
 
+An OSS API Key carries no per-key capability or permission toggles. It
+authenticates its existing User or Service Account Principal and narrows only to
+its credential boundary; each operation, including standard Connector MCP
+invocation, authorizes the current RoleBindings and target resource again.
+
 ### `security_audit_events`
 
 | Column            | Durable meaning and constraint                                                            |
@@ -325,7 +330,14 @@ Organization Admin can read its Organization's events. Workspace Admin can read 
 
 ## Bootstrap and Invitation Flow
 
-The OSS distribution supplies an IAM bootstrap control component under the shared [runtime lifecycle](01-runtime-configuration-and-deployment.md). Deployment configuration contains only the initial Admin email. The component idempotently creates the singleton Organization, its `default` Workspace, and one bootstrap Invitation granting Organization Admin, then generates a single-use initialization link. Concurrent control or all-in-one replicas serialize the same bootstrap facts and cannot create another Organization or invitation identity. A worker-only process never performs IAM bootstrap.
+The OSS distribution supplies an IAM bootstrap control component under the shared
+[runtime lifecycle](01-runtime-configuration-and-deployment.md). Deployment
+configuration contains only the initial Admin email. The component idempotently
+creates the singleton Organization, its `default` Workspace, and one bootstrap
+Invitation granting Organization Admin, then generates a single-use
+initialization link. Concurrent control or all-in-one replicas serialize the same
+bootstrap facts and cannot create another Organization or invitation identity.
+Worker-only and Connector-only processes never perform IAM bootstrap.
 
 SMTP delivery sends the link to the configured email and marks successful acceptance as email verification; without SMTP, the service emits the link once through the protected startup-log boundary and acceptance does not verify the email.
 
@@ -370,7 +382,7 @@ An Organization role applies only to a User. The last effective Organization Adm
 | Role key  | Permissions                                                                                                                                                                                                                                                                    |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `viewer`  | Read safe Workspace metadata, resources, managed Skill metadata/content, and histories; read Secret metadata but never Secret values                                                                                                                                           |
-| `runner`  | Viewer permissions; invoke every AgentPreset; steer and interrupt active Turns; retry eligible sealed Turns in the Workspace                                                                                                                                                   |
+| `runner`  | Viewer permissions; invoke every AgentPreset and Workspace Connector; steer and interrupt active Turns; retry eligible sealed Turns in the Workspace                                                                                                                           |
 | `builder` | Runner permissions; create, update, and archive AgentPresets and all Preset-owned configuration, including protocol metadata and policy; create, revise, delete, and bind Workspace Skills; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
 | `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                                                                |
 
@@ -386,6 +398,11 @@ RoleBindings.
 A Runner can invoke an AgentPreset that uses configured Secrets but cannot inspect a Secret value, change Secret metadata, or change a Preset-to-Secret binding. Secret plaintext is never a role permission.
 
 Direct AgentPreset RoleBindings reuse `viewer`, `runner`, and `builder` as resource-level permission bundles. At AgentPreset scope, Viewer grants Preset, Version, associated Turn and TurnAttempt reads, and exact steer-receipt reads; Runner adds invocation, active-Turn steering and interrupt, and eligible sealed-Turn retry; Builder adds Preset config, Publish, lifecycle, and Preset-owned configuration management. It grants no AgentPreset creation, Workspace Secret management, executable-code administration, or identity management. The common schema lets management surfaces restrict a Principal to selected Presets without introducing another authorization model.
+
+An AgentPreset-scoped Runner or Builder binding does not grant
+`connector.invoke`. Direct standard MCP invocation targets an independent
+Workspace Connector and therefore requires a Workspace Runner, Builder, Admin,
+or inherited Organization Admin grant.
 
 ## Authorization Contract
 

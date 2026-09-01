@@ -9,6 +9,11 @@ authority, or independently deployed proxy. Each adapter validates and maps its
 own wire protocol, then calls the same Foundation application commands,
 queries, and authorized subscription ports.
 
+The [Connector Service](23-connectors-connections-and-triggers.md) owns its
+separate standard and internal MCP protocol boundary on `connector` and `all`
+roles. Connector MCP is not a Protocol Gateway adapter and does not enter the
+Native `/api/v1` namespace.
+
 The Gateway does not own Agent execution, Turn scheduling, persistence, or
 authorization policy. The durable [`Session`, `Thread`, `Turn`, and
 `Item`](../interaction-model.md) model, current
@@ -40,8 +45,8 @@ mutation, and subscription selection.
 
 ## Protocol Surfaces
 
-Only `control` and `all` roles expose product protocols. A `worker` exposes no
-Native, AG-UI, A2A, browser, or product-stream route.
+Only `control` and `all` roles expose the protocols owned by this Gateway. A
+`worker` exposes no Native, AG-UI, A2A, browser, or product-stream route.
 
 | Surface      | Namespace                                                                | Availability                                                               | Primary callers                                  |
 | ------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------ |

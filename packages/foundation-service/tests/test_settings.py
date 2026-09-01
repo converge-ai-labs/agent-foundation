@@ -44,6 +44,21 @@ def test_connector_provider_trust_is_typed() -> None:
     assert settings.connector_providers[0].distribution_name == "a13n-connector-github"
 
 
+def test_connector_role_and_capability_signing_key_are_typed() -> None:
+    encoded = base64.b64encode(b"c" * 32).decode()
+    settings = ServiceSettings(
+        _env_file=None,
+        role="connector",
+        connector_capability_signing_key_base64=encoded,
+        connector_internal_auth_token="internal-token-0123456789abcdef0123456789",
+    )
+
+    assert settings.role is ServiceRole.connector
+    assert settings.connector_capability_codec() is not None
+    assert encoded not in repr(settings)
+    assert "internal-token" not in repr(settings)
+
+
 def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
     settings = ServiceSettings(
         _env_file=None,

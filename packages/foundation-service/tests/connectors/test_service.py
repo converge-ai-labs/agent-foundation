@@ -5,17 +5,14 @@ import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
-from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
 from a13n_service.connectors import (
     ConnectionService,
     ConnectionSetupService,
     ConnectionStatus,
     ConnectorError,
     ConnectorEventTriggerSource,
-    ConnectorManagedToolset,
     ConnectorProvider,
     ConnectorProviderAccount,
     ConnectorProviderCapabilities,
@@ -26,14 +23,13 @@ from a13n_service.connectors import (
     ConnectorProviderEventSourceResult,
     ConnectorProviderMetadata,
     ConnectorProviderRegistration,
+    ConnectorProviderRuntime,
     ConnectorProviderSecret,
     ConnectorProviderSetupResult,
     ConnectorProviderTool,
     ConnectorProviderToolResult,
     ConnectorReauthorizationRequired,
     ConnectorService,
-    ConnectorToolRuntime,
-    ConnectorTurnSelection,
     CreateConnector,
     CreateConnectorRevision,
     CreateTrigger,
@@ -1305,7 +1301,7 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
         actor=_actor(),
     )
     authorizer = _ToolAuthorizer()
-    runtime = ConnectorToolRuntime(sessions, providers, secrets, authorizer)
+    runtime = ConnectorProviderRuntime(sessions, providers, secrets, authorizer)
     context = ConnectorProviderContext(operation_id="op_tool", deadline=datetime.now(UTC) + timedelta(seconds=30))
 
     declaration = await runtime.create_declaration(
@@ -1317,58 +1313,49 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
         principal=_actor(),
         context=context,
     )
-    result = await runtime.call_tool(
+    selection = await runtime.prepare_turn_selection(
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
         declaration=declaration,
-        selection=ConnectorTurnSelection(
-            declaration_index=0,
-            connector_revision_id=created.revision.id,
-            connection_id=connection.id,
-        ),
+        declaration_index=0,
+        principal=_actor(),
+        context=context,
+    )
+    listed = await runtime.list_selected_tools(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        connector_id=created.connector.id,
+        connector_revision_id=selection.connector_revision_id,
+        connection_id=selection.connection_id,
+        effective_tools=selection.effective_tools,
+        provider_contract_version=selection.provider_contract_version,
+        principal=_actor(),
+        context=context,
+    )
+    result = await runtime.call_tool(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        connector_id=created.connector.id,
+        connector_revision_id=selection.connector_revision_id,
+        connection_id=selection.connection_id,
+        effective_tools=selection.effective_tools,
+        provider_contract_version=selection.provider_contract_version,
         provider_tool_name="create_issue",
         arguments={"title": "Runtime bug"},
         principal=_actor(),
         context=context,
     )
-    toolset = ConnectorManagedToolset(
-        runtime,
-        organization_id=ORG_ID,
-        workspace_id=WORKSPACE_ID,
-        principal=_actor(),
-        declarations=(declaration,),
-        selections=(
-            ConnectorTurnSelection(
-                declaration_index=0,
-                connector_revision_id=created.revision.id,
-                connection_id=connection.id,
-            ),
-        ),
-        context_factory=lambda tool_id: ConnectorProviderContext(
-            operation_id=f"op_{tool_id}",
-            deadline=datetime.now(UTC) + timedelta(seconds=30),
-        ),
-    )
-    projected_tools = await toolset.get_tools(cast(Any, None))
-    tool_name = declaration.tools[0].model_tool_name
-    projected_result = await toolset.call_tool(
-        tool_name,
-        {"title": "Projected call"},
-        cast(Any, None),
-        projected_tools[tool_name],
-    )
 
     provider = providers.require("test")
     assert isinstance(provider, _Provider)
-    assert declaration.tools[0].provider_tool_name == "create_issue"
-    assert declaration.tools[0].model_tool_name.endswith("_create_issue")
-    assert declaration.tools[0].parameters_json_schema["required"] == ["title"]
+    assert declaration.tools == ("create_issue",)
     assert declaration.provider_lock.contract_version == "1"
+    assert selection.effective_tools == ("create_issue",)
+    assert selection.provider_contract_version == "1"
+    assert listed[0].parameters_json_schema["required"] == ["title"]
     assert result.value == {"created": "Runtime bug"}
-    assert projected_result == {"created": "Projected call"}
-    assert HARNESS_TOOL_METADATA_KEY in projected_tools[tool_name].tool_def.metadata
     assert provider.last_call_had_secret is True
-    assert authorizer.calls == 3
+    assert authorizer.calls == 5
 
 
 @pytest.mark.anyio
@@ -1380,7 +1367,7 @@ async def test_connector_tool_dispatch_fails_closed_for_dependency_lock_change(
     created = await connector_service.create(_create_request())
     secrets = _Secrets()
     authorizer = _ToolAuthorizer()
-    runtime = ConnectorToolRuntime(sessions, providers, secrets, authorizer)
+    runtime = ConnectorProviderRuntime(sessions, providers, secrets, authorizer)
     context = ConnectorProviderContext(operation_id="op_tool", deadline=datetime.now(UTC) + timedelta(seconds=30))
     declaration = await runtime.create_declaration(
         organization_id=ORG_ID,
@@ -1401,12 +1388,11 @@ async def test_connector_tool_dispatch_fails_closed_for_dependency_lock_change(
         await runtime.call_tool(
             organization_id=ORG_ID,
             workspace_id=WORKSPACE_ID,
-            declaration=incompatible,
-            selection=ConnectorTurnSelection(
-                declaration_index=0,
-                connector_revision_id=created.revision.id,
-                connection_id=None,
-            ),
+            connector_id=created.connector.id,
+            connector_revision_id=created.revision.id,
+            connection_id=None,
+            effective_tools=("create_issue",),
+            provider_contract_version=incompatible.provider_lock.contract_version,
             provider_tool_name="create_issue",
             arguments={"title": "Runtime bug"},
             principal=_actor(),

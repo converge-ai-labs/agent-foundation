@@ -4,7 +4,13 @@
 
 Foundation Service is a modular monolith assembled explicitly at the executable boundary. A product distribution is the complete application composition embedded in one build artifact: it determines which APIs, role components, authorization contributions, configuration namespaces, relational models, and migration revisions exist in that service. The OSS distribution combines the common Foundation kernel with the capabilities accepted for OSS. EE and Cloud distributions combine the same common contracts with additional private capabilities without introducing edition conditionals into shared domain behavior or replacing the common authorization and durable Turn/TurnAttempt kernels.
 
-A distribution identifies the product release composition, not where or for whom one process runs. It is not a tenant resource, deployment environment, license decision, runtime plugin marketplace, row-level product plan, or process role. The distribution determines which capabilities exist; the runtime role determines whether one process runs the distribution's control components, worker components, or their `all` union. Package presence alone never changes the running service.
+A distribution identifies the product release composition, not where or for
+whom one process runs. It is not a tenant resource, deployment environment,
+license decision, runtime plugin marketplace, row-level product plan, or process
+role. The distribution determines which capabilities exist; the runtime role
+determines whether one process runs the distribution's control, worker, or
+connector components, or their `all` union. Package presence alone never changes
+the running service.
 
 ## Boundaries
 
@@ -47,7 +53,7 @@ flowchart TB
     Cloud --> Common
     EE --> EEFeatures[EE-owned capabilities]
     Cloud --> CloudFeatures[Cloud-owned capabilities]
-    OSS & EE & Cloud --> Roles[Runtime role: control, worker, or all]
+    OSS & EE & Cloud --> Roles[Runtime role: control, worker, connector, or all]
 ```
 
 ## Composition Contract
@@ -55,7 +61,7 @@ flowchart TB
 Before configuration parsing and runtime validation, the artifact's distribution descriptor declares one final set of:
 
 - product routers and browser surfaces by process role;
-- critical control and worker components;
+- critical control, worker, and connector components;
 - authorization actions, built-in grants, and accepted grant sources;
 - relational models and migration revision locations;
 - required storage and external capabilities;
@@ -66,7 +72,10 @@ The declaration is data used for deterministic assembly, not a service locator. 
 
 Duplicate route method and path pairs, component identities, authorization action keys, relational table names, model registrations, or migration revision identities fail composition before resources open. A capability cannot override another contribution by registration order.
 
-`all` receives the exact union of the artifact distribution's control and worker components. Composition deduplicates shared process resources and never constructs parallel schemas, authorizers, or domain models for the two roles.
+`all` receives the exact union of the artifact distribution's control, worker,
+and connector components. Composition deduplicates shared process resources and
+never constructs parallel schemas, authorizers, or domain models for those
+roles.
 
 ## OSS Composition
 
@@ -80,6 +89,12 @@ whether that adapter's routes and components are mounted. This operational
 setting neither installs a capability nor selects a distribution.
 
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
+
+The OSS composition includes the Connector management domain and the Connector
+Service role contribution. Its trusted ConnectorProvider entry-point selection
+remains deployment configuration inside that fixed capability; installing
+another package does not add a router, role component, action, schema, or
+Provider trust grant to the distribution.
 
 ## EE and Cloud Composition
 

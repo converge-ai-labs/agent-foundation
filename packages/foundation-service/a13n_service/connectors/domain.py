@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from a13n_service.iam.domain import ObjectId, PrincipalRef
 
@@ -98,18 +98,6 @@ class ConnectorRevisionCreateResult(DomainModel):
     created: bool
 
 
-class FrozenConnectorTool(DomainModel):
-    provider_tool_name: Annotated[str, Field(min_length=1, max_length=200)]
-    model_tool_name: Annotated[str, Field(min_length=1, max_length=256)]
-    tool_id: Annotated[str, Field(min_length=1, max_length=256)]
-    description: Annotated[str, Field(max_length=4_000)]
-    parameters_json_schema: dict[str, JsonValue]
-    effects: tuple[Literal["read", "write", "delete", "execute", "external_communication"], ...] = ()
-    credential_audiences: tuple[Annotated[str, Field(min_length=1, max_length=256)], ...] = ()
-    idempotency: Literal["none", "read_only", "provider_key"] = "none"
-    output_policy: dict[str, JsonValue]
-
-
 class ConnectorProviderContractLock(DomainModel):
     provider_key: str
     contract_version: str
@@ -118,14 +106,30 @@ class ConnectorProviderContractLock(DomainModel):
 class AgentConnectorDeclaration(DomainModel):
     connector_revision_id: str
     connection_id: str | None
-    tools: tuple[FrozenConnectorTool, ...]
+    tools: tuple[Annotated[str, Field(min_length=1, max_length=200)], ...] | None
     provider_lock: ConnectorProviderContractLock
+
+    @field_validator("tools")
+    @classmethod
+    def validate_tools(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is not None and (not value or len(value) != len(set(value))):
+            raise ValueError("tools must be a non-empty unique allowlist or null")
+        return value
 
 
 class ConnectorTurnSelection(DomainModel):
     declaration_index: Annotated[int, Field(ge=0)]
     connector_revision_id: str
     connection_id: str | None
+    effective_tools: tuple[Annotated[str, Field(min_length=1, max_length=200)], ...]
+    provider_contract_version: Annotated[str, Field(min_length=1, max_length=200)]
+
+    @field_validator("effective_tools")
+    @classmethod
+    def validate_effective_tools(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value or len(value) != len(set(value)):
+            raise ValueError("effective_tools must be a non-empty unique tuple")
+        return value
 
 
 class AcceptedTriggerSource(DomainModel):

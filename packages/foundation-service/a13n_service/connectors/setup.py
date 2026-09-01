@@ -26,13 +26,8 @@ from .domain import (
 )
 from .errors import ConnectorError
 from .models import ConnectionRecord, ConnectionSetupRecord, ConnectorRecord, ConnectorRevisionRecord
-from .provider import (
-    ConnectorConnectionProvider,
-    ConnectorProviderConnection,
-    ConnectorProviderConnectionResult,
-    ConnectorProviderContext,
-    invoke_provider,
-)
+from .operations import ConnectorProviderOperations, provider_operations
+from .provider import ConnectorProviderConnection, ConnectorProviderConnectionResult, ConnectorProviderContext
 from .registry import ConnectorProviderCatalog
 from .service import ConnectionSecretStore, _connection
 
@@ -57,7 +52,7 @@ class ConnectionSetupService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        providers: ConnectorProviderCatalog,
+        providers: ConnectorProviderOperations | ConnectorProviderCatalog,
         secrets: ConnectionSecretStore,
         protector: ConnectionSetupStateProtector,
         *,
@@ -66,7 +61,7 @@ class ConnectionSetupService:
         if not 60 <= lifetime_seconds <= 3_600:
             raise ValueError("Connection setup lifetime must be between 60 and 3600 seconds")
         self._sessions = sessions
-        self._providers = providers
+        self._providers = provider_operations(providers)
         self._secrets = secrets
         self._protector = protector
         self._lifetime = timedelta(seconds=lifetime_seconds)
@@ -105,12 +100,10 @@ class ConnectionSetupService:
             request.connector_revision_id,
         )
         target_connection = await self._load_reauthorization_target(request, revision)
-        provider = self._providers.require(revision.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider):
-            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
-        if not provider.metadata.capabilities.connections:
+        metadata = await self._providers.metadata(revision.provider_key)
+        if not metadata.capabilities.connections:
             raise ConnectorError("Connector Provider supports no Connections.", code="connection_incompatible")
-        if request.setup_mode not in provider.metadata.connection_setup_modes:
+        if request.setup_mode not in metadata.connection_setup_modes:
             raise ConnectorError("Connection setup mode is unsupported.", code="invalid_request")
         now = datetime.now(UTC)
         expires_at = now + self._lifetime
@@ -167,17 +160,15 @@ class ConnectionSetupService:
             else None
         )
         try:
-            result = await invoke_provider(
+            result = await self._providers.start_connection(
+                revision.provider_key,
                 context,
-                provider.start_connection(
-                    context,
-                    provider_config_version=revision.provider_config_version,
-                    config=revision.config,
-                    setup_mode=request.setup_mode,
-                    input=setup_input,
-                    callback_url=callback_url,
-                    callback_state=callback_state,
-                ),
+                provider_config_version=revision.provider_config_version,
+                config=revision.config,
+                setup_mode=request.setup_mode,
+                input=setup_input,
+                callback_url=callback_url,
+                callback_state=callback_state,
             )
         except ConnectorError:
             await self._fail(record.id, "connection_setup_failed")
@@ -239,24 +230,18 @@ class ConnectionSetupService:
         if revision is None:
             await self._fail(setup_id, "connection_setup_failed")
             raise ConnectorError("Connector revision was not found.", code="not_found")
-        provider = self._providers.require(current.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider):
-            await self._fail(setup_id, "connection_setup_failed")
-            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         effective_context = ConnectorProviderContext(
             operation_id=f"{current.operation_id}:complete",
             deadline=context.deadline,
         )
         try:
-            result = await invoke_provider(
+            result = await self._providers.complete_connection(
+                current.provider_key,
                 effective_context,
-                provider.complete_connection(
-                    effective_context,
-                    provider_config_version=revision.provider_config_version,
-                    config=revision.config,
-                    continuation_state=continuation,
-                    input=setup_input,
-                ),
+                provider_config_version=revision.provider_config_version,
+                config=revision.config,
+                continuation_state=continuation,
+                input=setup_input,
             )
         except ConnectorError:
             await self._fail(setup_id, "connection_setup_failed")
@@ -330,17 +315,14 @@ class ConnectionSetupService:
         if revision is None or connector is None or not connector.enabled:
             await self._fail(setup_id, "connector_disabled")
             raise ConnectorError("Connector is disabled or unavailable.", code="connector_disabled")
-        provider = self._providers.require(revision.provider_key)
-        if not isinstance(provider, ConnectorConnectionProvider):
-            await self._fail(setup_id, "connection_incompatible")
-            raise ConnectorError("Connector Provider exposes no Connections.", code="connection_incompatible")
         provider_connection = ConnectorProviderConnection(
             provider_state_version=result.provider_state_version,
             provider_state=result.provider_state,
             secrets=result.secrets,
         )
         try:
-            provider.validate_connection(
+            await self._providers.validate_connection(
+                revision.provider_key,
                 provider_config_version=revision.provider_config_version,
                 config=revision.config,
                 connection=provider_connection,
