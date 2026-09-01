@@ -153,6 +153,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         assert app.state.db_session_factory is storage.sessions
         assert isinstance(app.state.skill_selection_resolver, SkillSelectionResolver)
         assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
+        assert app.state.agent_plugin_selection_resolver is not None
         assert app.state.plugin_service is not None
         assert app.state.trace_query_service is not None
 

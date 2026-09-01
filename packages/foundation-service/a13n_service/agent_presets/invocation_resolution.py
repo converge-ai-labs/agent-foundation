@@ -54,6 +54,7 @@ from .errors import (
 )
 from .invocation import AgentRunSensitiveValues, MergedAgentRun, merge_agent_run_override
 from .models import AgentPresetRecord, AgentPresetRevisionRecord
+from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
 from .resolution import MAX_SUBAGENT_DEPTH, MAX_SUBAGENT_NODES
 
 
@@ -93,6 +94,7 @@ class PreparedAgentInvocation:
     merged: MergedAgentRun
     model: PreparedInvocationModel
     connectors: PreparedConnectorSelections | None
+    plugins: PreparedPluginSelections | None
     skills: tuple[PreparedInvocationSkill, ...]
     resolved_plugin_versions: tuple[ResolvedPluginVersion, ...]
     resolved_environment: EnvironmentExecutionConfig | None
@@ -119,11 +121,16 @@ class AgentPresetInvocationResolver:
         *,
         plugin_runtime_mode: PluginRuntimeMode,
         connector_resolver: AgentConnectorSelectionResolver | None = None,
+        plugin_resolver: AgentPluginSelectionResolver | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connector_resolver = connector_resolver
         self._plugin_runtime_mode = plugin_runtime_mode
+        self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
+            sessions,
+            runtime_mode=plugin_runtime_mode,
+        )
 
     async def prepare(
         self,
@@ -187,7 +194,20 @@ class AgentPresetInvocationResolver:
                     workspace_id=workspace_id,
                     selections=merged.config.skills,
                 )
-                resolved_plugins = _resolve_plugins(revision, merged)
+                plugins = None
+                if merged.config.plugins == revision.config.plugins:
+                    resolved_plugins = revision.resolved_plugin_versions
+                else:
+                    try:
+                        plugins = await self._plugin_resolver.prepare(
+                            session,
+                            actor=actor,
+                            workspace_id=workspace_id,
+                            selections=merged.config.plugins,
+                        )
+                    except PluginSelectionError as error:
+                        raise preset_revision_not_executable(error.reason) from error
+                    resolved_plugins = plugins.resolved
                 resolved_environment = _resolve_environment(revision, merged)
                 subagents = await self._prepare_subagents(
                     session,
@@ -253,6 +273,7 @@ class AgentPresetInvocationResolver:
             merged=merged,
             model=model,
             connectors=connectors,
+            plugins=plugins,
             skills=skills,
             resolved_plugin_versions=resolved_plugins,
             resolved_environment=resolved_environment,
@@ -329,12 +350,25 @@ class AgentPresetInvocationResolver:
                 )
             except ConnectorError as error:
                 raise preset_revision_not_executable(_connector_reason(error)) from error
+            try:
+                plugins = (
+                    await self._plugin_resolver.freeze_in_transaction(
+                        session,
+                        actor=prepared.actor,
+                        workspace_id=prepared.workspace_id,
+                        prepared=prepared.plugins,
+                    )
+                    if prepared.plugins is not None
+                    else prepared.resolved_plugin_versions
+                )
+            except PluginSelectionError as error:
+                raise preset_revision_not_executable(error.reason) from error
             subagents = await _freeze_subagents(session, prepared)
         except AuthorizationError as error:
             raise _authorization_error(error) from error
 
         resolved_subagents = tuple(item.edge for item in subagents)
-        runtime_lock_digest = _runtime_lock_digest(prepared, resolved_subagents)
+        runtime_lock_digest = _runtime_lock_digest(prepared, plugins, resolved_subagents)
         config_payload = {
             "schema_version": "1",
             "resolved_model": ResolvedAgentModelConfig(
@@ -342,7 +376,7 @@ class AgentPresetInvocationResolver:
                 settings=prepared.merged.config.model.settings,
                 characteristics=prepared.merged.config.model.characteristics,
             ),
-            "resolved_plugin_versions": prepared.resolved_plugin_versions,
+            "resolved_plugin_versions": plugins,
             "runtime_lock_digest": runtime_lock_digest,
             "resolved_skills": skills,
             "resolved_connectors": connectors,
@@ -591,17 +625,6 @@ async def _freeze_subagents(
     return tuple(result)
 
 
-def _resolve_plugins(
-    revision: AgentPresetRevision,
-    merged: MergedAgentRun,
-) -> tuple[ResolvedPluginVersion, ...]:
-    if merged.config.plugins == revision.config.plugins:
-        return revision.resolved_plugin_versions
-    if not merged.config.plugins:
-        return ()
-    raise preset_revision_not_executable("plugin_resolution_unavailable")
-
-
 def _resolve_environment(
     revision: AgentPresetRevision,
     merged: MergedAgentRun,
@@ -750,10 +773,11 @@ def _access_rank(access: str) -> int:
 
 def _runtime_lock_digest(
     prepared: PreparedAgentInvocation,
+    resolved_plugins: tuple[ResolvedPluginVersion, ...],
     resolved_subagents: tuple[ResolvedSubagentEdge, ...],
 ) -> str:
     if (
-        prepared.resolved_plugin_versions == prepared.revision.resolved_plugin_versions
+        resolved_plugins == prepared.revision.resolved_plugin_versions
         and resolved_subagents == prepared.revision.resolved_subagents
     ):
         return prepared.revision.runtime_lock_digest
@@ -764,7 +788,7 @@ def _runtime_lock_digest(
         {
             "schema_version": "1",
             "mode": prepared.revision.plugin_runtime_mode.value,
-            "plugins": [item.model_dump(mode="json") for item in prepared.resolved_plugin_versions],
+            "plugins": [item.model_dump(mode="json") for item in resolved_plugins],
             "child_locks": [child_digest_by_id[item.child_agent_preset_revision_id] for item in resolved_subagents],
         }
     )

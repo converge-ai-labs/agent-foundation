@@ -45,6 +45,7 @@ def actor(user_id: str = USER_ID) -> AuthenticatedActor:
 def preset_config(
     *,
     instructions: str = "Be helpful.",
+    plugins: list[object] | None = None,
     connectors: dict[str, object] | None = None,
     subagents: dict[str, object] | None = None,
 ) -> AgentPresetConfig:
@@ -57,7 +58,7 @@ def preset_config(
             },
             "instructions": instructions,
             "input_adapter": {"adapter_key": "native", "config": {}},
-            "plugins": [],
+            "plugins": plugins or [],
             "skills": [],
             "connectors": connectors or {},
             "environment": None,

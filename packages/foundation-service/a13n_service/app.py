@@ -15,6 +15,7 @@ from starlette.types import Receive, Scope, Send
 
 from a13n_service.agent_presets.connector_resolution import AgentConnectorSelectionResolver
 from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
+from a13n_service.agent_presets.plugin_resolution import AgentPluginSelectionResolver
 from a13n_service.agent_presets.references import AgentPresetConnectorReferenceChecker
 from a13n_service.agent_presets.resolution import AgentPresetResolver
 from a13n_service.agent_presets.router import router as agent_preset_router
@@ -98,6 +99,7 @@ class ServiceComponents:
     request_authenticator: RequestAuthenticator | None = None
     agent_preset_resolver: AgentPresetResolver | None = None
     agent_preset_invocation_resolver: AgentPresetInvocationResolver | None = None
+    agent_plugin_selection_resolver: AgentPluginSelectionResolver | None = None
     agent_connector_selection_resolver: AgentConnectorSelectionResolver | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
@@ -306,11 +308,19 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         app.state.connector_secret_store,
                     )
                 )
+                app.state.agent_plugin_selection_resolver = (
+                    app.state.components.agent_plugin_selection_resolver
+                    or AgentPluginSelectionResolver(
+                        storage.sessions,
+                        runtime_mode=settings.plugin_runtime_mode,
+                    )
+                )
                 app.state.agent_preset_resolver = app.state.components.agent_preset_resolver or AgentPresetResolver(
                     storage.sessions,
                     app.state.accepted_model_selector,
                     plugin_runtime_mode=settings.plugin_runtime_mode,
                     connector_resolver=app.state.agent_connector_selection_resolver,
+                    plugin_resolver=app.state.agent_plugin_selection_resolver,
                 )
                 app.state.agent_preset_service = AgentPresetService(
                     storage.sessions,
@@ -323,6 +333,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                         app.state.accepted_model_selector,
                         plugin_runtime_mode=settings.plugin_runtime_mode,
                         connector_resolver=app.state.agent_connector_selection_resolver,
+                        plugin_resolver=app.state.agent_plugin_selection_resolver,
                     )
                 )
                 app.state.model_config_service = ModelConfigService(

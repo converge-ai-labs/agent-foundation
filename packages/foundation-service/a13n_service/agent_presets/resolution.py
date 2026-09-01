@@ -32,6 +32,7 @@ from .domain import (
 )
 from .errors import AgentPresetError, preset_publish_failed
 from .models import AgentPresetRecord, AgentPresetRevisionRecord
+from .plugin_resolution import AgentPluginSelectionResolver, PluginSelectionError, PreparedPluginSelections
 
 MAX_SUBAGENT_DEPTH = 16
 MAX_SUBAGENT_NODES = 256
@@ -62,6 +63,7 @@ class PreparedRevisionResolution:
     config: AgentPresetConfig
     model: PreparedModelExecution
     connectors: PreparedConnectorSelections | None
+    plugins: PreparedPluginSelections
     skills: tuple[PreparedSkill, ...]
     subagents: tuple[PreparedSubagent, ...]
 
@@ -76,10 +78,15 @@ class AgentPresetResolver:
         *,
         plugin_runtime_mode: PluginRuntimeMode,
         connector_resolver: AgentConnectorSelectionResolver | None = None,
+        plugin_resolver: AgentPluginSelectionResolver | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connector_resolver = connector_resolver
+        self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
+            sessions,
+            runtime_mode=plugin_runtime_mode,
+        )
         self.plugin_runtime_mode = plugin_runtime_mode
 
     async def prepare(
@@ -106,6 +113,15 @@ class AgentPresetResolver:
                 agent_preset_id=agent_preset_id,
                 action=WorkspaceAction.agent_preset_publish,
             )
+            try:
+                plugins = await self._plugin_resolver.prepare(
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    selections=config.plugins,
+                )
+            except PluginSelectionError as error:
+                raise preset_publish_failed(error.reason, path=error.path) from error
             skills = await self._prepare_skills(
                 session,
                 actor=actor,
@@ -143,6 +159,7 @@ class AgentPresetResolver:
             config=config,
             model=model,
             connectors=connectors,
+            plugins=plugins,
             skills=skills,
             subagents=subagents,
         )
@@ -162,6 +179,15 @@ class AgentPresetResolver:
         )
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
         try:
+            plugins = await self._plugin_resolver.freeze_in_transaction(
+                session,
+                actor=prepared.actor,
+                workspace_id=prepared.workspace_id,
+                prepared=prepared.plugins,
+            )
+        except PluginSelectionError as error:
+            raise preset_publish_failed(error.reason, path=error.path) from error
+        try:
             connectors = (
                 await self._connector_resolver.freeze_in_transaction(session, prepared=prepared.connectors)
                 if self._connector_resolver is not None and prepared.connectors is not None
@@ -175,7 +201,7 @@ class AgentPresetResolver:
             {
                 "schema_version": "1",
                 "mode": self.plugin_runtime_mode.value,
-                "plugins": [],
+                "plugins": [item.model_dump(mode="json") for item in plugins],
                 "child_locks": [item.child_revision_digest for item in prepared.subagents],
             }
         )
@@ -185,6 +211,7 @@ class AgentPresetResolver:
                 settings=prepared.config.model.settings,
                 characteristics=prepared.config.model.characteristics,
             ),
+            resolved_plugin_versions=plugins,
             runtime_lock_digest=runtime_lock_digest,
             resolved_skills=skills,
             resolved_connectors=connectors,
@@ -194,8 +221,6 @@ class AgentPresetResolver:
     def _validate_local_config(self, config: AgentPresetConfig) -> None:
         if config.input_adapter.adapter_key != "native" or config.input_adapter.config:
             raise preset_publish_failed("input_adapter_unsupported", path="input_adapter")
-        if config.plugins:
-            raise preset_publish_failed("plugin_management_unavailable", path="plugins")
         if config.connectors and self._connector_resolver is None:
             raise preset_publish_failed("connector_resolution_unavailable", path="connectors")
         if config.environment is not None:
