@@ -81,9 +81,20 @@ def effective_execution_endpoint(snapshot: ModelExecutionSnapshot) -> str | None
 class PreparedModelExecution:
     organization_id: str
     workspace_id: str
+    invoking_principal: PrincipalRef
     resource: ModelConfig
     selection: ValidatedProviderSelection
     version: int
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedModelSnapshotExecution:
+    """Current eligibility evidence for one already frozen execution snapshot."""
+
+    organization_id: str
+    workspace_id: str
+    invoking_principal: PrincipalRef
+    snapshot: ModelExecutionSnapshot
 
 
 class AcceptedModelSelector:
@@ -150,9 +161,50 @@ class AcceptedModelSelector:
         return PreparedModelExecution(
             organization_id=organization_id,
             workspace_id=workspace_id,
+            invoking_principal=invoking_principal,
             resource=resource,
             selection=selection,
             version=resource.version,
+        )
+
+    async def prepare_snapshot(
+        self,
+        *,
+        organization_id: str,
+        workspace_id: str,
+        snapshot: ModelExecutionSnapshot,
+        invoking_principal: PrincipalRef,
+    ) -> PreparedModelSnapshotExecution:
+        """Revalidate a retained snapshot without consulting mutable ModelConfig content."""
+
+        async with short_session(self._sessions) as session:
+            await _require_runtime_credential_eligibility(
+                session,
+                principal=invoking_principal,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                credential=snapshot.credential,
+            )
+        try:
+            adapter_key, adapter_version = self._registry.execution_identity(snapshot.provider_type)
+            if snapshot.adapter_key != adapter_key or snapshot.adapter_version != adapter_version:
+                raise ValueError("accepted adapter compatibility identity is unavailable")
+            endpoint = effective_execution_endpoint(snapshot)
+            if endpoint is not None:
+                normalized = await self._endpoint_policy.validate(endpoint, resolve_dns=True)
+                if normalized != endpoint:
+                    raise ValueError("persisted endpoint is not normalized")
+        except ValueError as error:
+            raise ModelConfigError(
+                "invalid_model_configuration",
+                "The accepted model configuration is no longer executable.",
+                status_code=409,
+            ) from error
+        return PreparedModelSnapshotExecution(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            invoking_principal=invoking_principal,
+            snapshot=snapshot,
         )
 
     async def freeze_in_transaction(
@@ -178,12 +230,36 @@ class AcceptedModelSelector:
                 "The model configuration changed during Run acceptance.",
                 status_code=409,
             )
+        await _require_runtime_credential_eligibility(
+            session,
+            principal=prepared.invoking_principal,
+            organization_id=prepared.organization_id,
+            workspace_id=prepared.workspace_id,
+            credential=current.credential,
+        )
         selection = prepared.selection
         return ModelExecutionSnapshot.freeze(
             current,
             adapter_key=selection.adapter_key,
             adapter_version=selection.adapter_version,
         )
+
+    async def freeze_snapshot_in_transaction(
+        self,
+        session: AsyncSession,
+        *,
+        prepared: PreparedModelSnapshotExecution,
+    ) -> ModelExecutionSnapshot:
+        """Recheck current credential eligibility and preserve the exact snapshot."""
+
+        await _require_runtime_credential_eligibility(
+            session,
+            principal=prepared.invoking_principal,
+            organization_id=prepared.organization_id,
+            workspace_id=prepared.workspace_id,
+            credential=prepared.snapshot.credential,
+        )
+        return prepared.snapshot
 
 
 class NativeModelFactory:

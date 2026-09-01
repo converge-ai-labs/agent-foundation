@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 from starlette.types import Receive, Scope, Send
 
+from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.resolution import AgentPresetResolver
 from a13n_service.agent_presets.router import router as agent_preset_router
 from a13n_service.agent_presets.service import AgentPresetService
@@ -90,6 +91,7 @@ _CONNECTOR_ROLES = {ServiceRole.all, ServiceRole.connector}
 class ServiceComponents:
     request_authenticator: RequestAuthenticator | None = None
     agent_preset_resolver: AgentPresetResolver | None = None
+    agent_preset_invocation_resolver: AgentPresetInvocationResolver | None = None
     model_connection_tester: CandidateConnectionTester | None = None
     model_secret_resolver: RuntimeSecretValueResolver | None = None
     connector_provider_catalog: ConnectorProviderCatalog | None = None
@@ -285,6 +287,14 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 app.state.agent_preset_service = AgentPresetService(
                     storage.sessions,
                     app.state.agent_preset_resolver,
+                )
+                app.state.agent_preset_invocation_resolver = (
+                    app.state.components.agent_preset_invocation_resolver
+                    or AgentPresetInvocationResolver(
+                        storage.sessions,
+                        app.state.accepted_model_selector,
+                        plugin_runtime_mode=settings.plugin_runtime_mode,
+                    )
                 )
                 app.state.model_config_service = ModelConfigService(
                     storage.sessions,

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from a13n_service.agent_presets.domain import AgentPresetConfig, PluginRuntimeMode
+from a13n_service.agent_presets.invocation_resolution import AgentPresetInvocationResolver
 from a13n_service.agent_presets.resolution import AgentPresetResolver
 from a13n_service.agent_presets.service import AgentPresetService
 from a13n_service.database.metadata import service_metadata
@@ -209,3 +210,19 @@ async def agent_preset_service(
         plugin_runtime_mode=PluginRuntimeMode.on_demand,
     )
     yield AgentPresetService(agent_preset_sessions, resolver, clock=lambda: NOW)
+
+
+@pytest.fixture
+async def agent_preset_invocation_resolver(
+    agent_preset_sessions: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AgentPresetInvocationResolver]:
+    model_selector = AcceptedModelSelector(
+        agent_preset_sessions,
+        built_in_provider_registry(),
+        EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
+    )
+    yield AgentPresetInvocationResolver(
+        agent_preset_sessions,
+        model_selector,
+        plugin_runtime_mode=PluginRuntimeMode.on_demand,
+    )

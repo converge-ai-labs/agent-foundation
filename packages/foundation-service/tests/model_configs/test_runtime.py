@@ -276,6 +276,66 @@ async def test_run_acceptance_retries_when_model_changes_after_endpoint_validati
     assert captured.value.code == "model_configuration_changed"
 
 
+@pytest.mark.anyio
+async def test_retained_snapshot_revalidation_does_not_follow_mutable_model_config(
+    selector_database: tuple[AcceptedModelSelector, async_sessionmaker, AsyncEngine],
+) -> None:
+    selector, sessions, _ = selector_database
+    principal = PrincipalRef(principal_type="user", principal_id=USER_ID)
+    prepared_current = await selector.prepare(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        model_id=MODEL_ID,
+        invoking_principal=principal,
+    )
+    async with transaction(sessions) as session:
+        snapshot = await selector.freeze_in_transaction(session, prepared=prepared_current)
+    async with transaction(sessions) as session:
+        record = await session.get(ModelConfigRecord, MODEL_ID)
+        assert record is not None
+        record.model_name = "new-current-model"
+        record.version += 1
+
+    prepared_snapshot = await selector.prepare_snapshot(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        snapshot=snapshot,
+        invoking_principal=principal,
+    )
+    async with transaction(sessions) as session:
+        retained = await selector.freeze_snapshot_in_transaction(session, prepared=prepared_snapshot)
+
+    assert retained == snapshot
+    assert retained.model_name == "accepted-model"
+
+
+@pytest.mark.anyio
+async def test_model_credential_is_rechecked_in_final_acceptance_transaction(
+    selector_database: tuple[AcceptedModelSelector, async_sessionmaker, AsyncEngine],
+) -> None:
+    selector, sessions, _ = selector_database
+    principal = PrincipalRef(principal_type="user", principal_id=USER_ID)
+    prepared = await selector.prepare(
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        model_id=MODEL_ID,
+        invoking_principal=principal,
+    )
+    async with transaction(sessions) as session:
+        secret = await session.get(SecretRecord, SECRET_ID)
+        assert secret is not None
+        secret.ciphertext = None
+        secret.nonce = None
+        secret.encryption_key_id = None
+        secret.deleted_at = NOW
+
+    with pytest.raises(ModelConfigError) as captured:
+        async with transaction(sessions) as session:
+            await selector.freeze_in_transaction(session, prepared=prepared)
+
+    assert captured.value.code == "credential_not_eligible"
+
+
 def test_vertex_service_account_rejects_caller_controlled_token_uri() -> None:
     credential = json.dumps({"token_uri": "https://attacker.example.com/token"})
 
