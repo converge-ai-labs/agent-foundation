@@ -73,6 +73,9 @@ class ServiceSettings(BaseSettings):
     deployment_environment_name: str = Field(default="default", min_length=1, max_length=256)
     service_instance_id: str | None = Field(default=None, min_length=1, max_length=1024)
     plugin_runtime_mode: PluginRuntimeMode = PluginRuntimeMode.on_demand
+    plugin_max_wheel_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
+    plugin_max_expanded_bytes: int = Field(default=200 * 1024 * 1024, ge=1, le=4 * 1024 * 1024 * 1024)
+    plugin_max_archive_members: int = Field(default=20_000, ge=1, le=1_000_000)
     web_dist_dir: Path | None = None
     observability_tracing: bool = True
     observability_trace_content: TraceContent = TraceContent.none

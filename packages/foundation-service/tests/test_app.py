@@ -6,6 +6,7 @@ import httpx2
 import pytest
 from a13n_service.app import ServiceComponents, create_app
 from a13n_service.connectors import ConnectorProviderCatalog, LocalConnectorProviderOperations
+from a13n_service.database import DatabaseMigrator
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
 from a13n_service.skills import SkillRuntimePreparer, SkillSelectionResolver
@@ -44,7 +45,9 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
         "connector_internal_auth_token": "foundation-service-test-connector-token",
     }
     values.update(updates)
-    return ServiceSettings(**values)
+    settings = ServiceSettings(**values)
+    DatabaseMigrator(settings.database_config()).upgrade()
+    return settings
 
 
 def test_health_reports_process_role() -> None:
@@ -65,7 +68,15 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/healthz" not in document["paths"]
     assert "/readyz" not in document["paths"]
     schemas = document["components"]["schemas"]
-    assert {"Asset", "ModelConfig", "Skill", "SkillPackageManifest", "SkillRevision"} <= schemas.keys()
+    assert {
+        "Asset",
+        "ModelConfig",
+        "Plugin",
+        "PluginVersion",
+        "Skill",
+        "SkillPackageManifest",
+        "SkillRevision",
+    } <= schemas.keys()
     assert {"Observation", "TraceCollection", "TraceDetail", "TraceSummary"} <= schemas.keys()
     assert {
         "FoundationAgentSkillSelection",
@@ -79,6 +90,9 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert request(app, "/docs/oauth2-redirect").status_code == 404
     assert "/api/v1/workspaces/{workspace_id}/traces" in document["paths"]
     assert "/api/v1/workspaces/{workspace_id}/traces/{trace_id}" in document["paths"]
+    assert "/api/v1/plugins" in document["paths"]
+    assert "/api/v1/plugins/{plugin_id}/versions" in document["paths"]
+    assert "/api/v1/plugin-versions/{plugin_version_id}" in document["paths"]
 
 
 def test_web_application_serves_assets_and_browser_history(tmp_path: Path) -> None:
@@ -139,6 +153,7 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         assert app.state.db_session_factory is storage.sessions
         assert isinstance(app.state.skill_selection_resolver, SkillSelectionResolver)
         assert isinstance(app.state.skill_runtime_preparer, SkillRuntimePreparer)
+        assert app.state.plugin_service is not None
         assert app.state.trace_query_service is not None
 
         transport = httpx2.ASGITransport(app=app)

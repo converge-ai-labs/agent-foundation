@@ -60,6 +60,10 @@ from a13n_service.model_configs.service import (
     ModelConfigService,
 )
 from a13n_service.observability import build_observability_runtime
+from a13n_service.plugins.objects import PluginObjectStore
+from a13n_service.plugins.router import router as plugin_router
+from a13n_service.plugins.service import PluginService
+from a13n_service.plugins.staging import PluginStaging
 from a13n_service.settings import ServiceRole, ServiceSettings, get_settings
 from a13n_service.skills.catalog import SkillCatalogService
 from a13n_service.skills.credentials import DatabaseGitHubCredentialResolver
@@ -261,6 +265,17 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
             asset_objects = AssetObjectStore(storage.objects, asset_staging)
             asset_cleanup_reconciler: AssetCleanupReconciler | None = None
             if settings.role in _CONTROL_PLANE_ROLES:
+                plugin_staging = await PluginStaging.create(storage.files_root, limiter=storage.file_limiter)
+                app.state.plugin_service = PluginService(
+                    storage.sessions,
+                    PluginObjectStore(storage.objects),
+                    plugin_staging,
+                    runtime_mode=settings.plugin_runtime_mode,
+                    max_wheel_bytes=settings.plugin_max_wheel_bytes,
+                    max_expanded_bytes=settings.plugin_max_expanded_bytes,
+                    max_archive_members=settings.plugin_max_archive_members,
+                )
+                await app.state.plugin_service.ensure_runtime_mode()
                 github_acquirer = app.state.components.skill_github_acquirer or GitHubSkillAcquirer(github_http_client)
                 credential_resolver = app.state.components.skill_credential_resolver
                 if credential_resolver is None:
@@ -511,6 +526,7 @@ def create_app(settings: ServiceSettings | None = None, *, components: ServiceCo
         app.include_router(connector_router)
         app.include_router(asset_router)
         app.include_router(model_config_router)
+        app.include_router(plugin_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
 

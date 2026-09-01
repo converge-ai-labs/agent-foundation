@@ -72,8 +72,8 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
     "viewer": _READ_ACTIONS,
     "runner": _RUNNER_ACTIONS,
-    "builder": frozenset(WorkspaceAction),
-    "admin": frozenset(WorkspaceAction),
+    "builder": frozenset(WorkspaceAction) - {WorkspaceAction.plugin_manage, WorkspaceAction.plugin_runtime_manage},
+    "admin": frozenset(WorkspaceAction) - {WorkspaceAction.plugin_manage, WorkspaceAction.plugin_runtime_manage},
 }
 
 _DIRECT_AGENT_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {

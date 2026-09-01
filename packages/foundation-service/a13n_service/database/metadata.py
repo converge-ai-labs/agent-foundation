@@ -29,6 +29,7 @@ def service_metadata() -> MetaData:
     from a13n_service.durable_operations import models as durable_operations_models
     from a13n_service.iam import models as iam_models
     from a13n_service.model_configs import models as model_config_models
+    from a13n_service.plugins import models as plugin_models
     from a13n_service.secrets import models as secret_models
     from a13n_service.skills import models as skill_models
 
@@ -39,6 +40,7 @@ def service_metadata() -> MetaData:
         durable_operations_models,
         iam_models,
         model_config_models,
+        plugin_models,
         secret_models,
         skill_models,
     )

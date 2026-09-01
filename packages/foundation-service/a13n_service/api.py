@@ -13,6 +13,7 @@ from a13n_service.assets.errors import AssetError
 from a13n_service.connectors import ConnectorError
 from a13n_service.iam import AuthenticationError
 from a13n_service.model_configs.service import ModelConfigError
+from a13n_service.plugins import PluginError
 from a13n_service.skills.errors import SkillError
 from a13n_service.trace_query import TraceQueryError
 
@@ -41,6 +42,10 @@ def install_api_conventions(app: FastAPI) -> None:
 
     @app.exception_handler(ModelConfigError)
     async def model_config_error_handler(request: Request, error: ModelConfigError) -> JSONResponse:
+        return _error_response(request, error.status_code, error.code, error.message, error.details)
+
+    @app.exception_handler(PluginError)
+    async def plugin_error_handler(request: Request, error: PluginError) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message, error.details)
 
     @app.exception_handler(ConnectorError)
