@@ -643,6 +643,15 @@ def _select_tools(
         raise ConnectorError("A selected Connector tool was not found.", code="tool_not_found") from None
 
 
+def freeze_provider_tools(
+    tools: Sequence[ConnectorProviderTool],
+    selected_names: Sequence[str] | None,
+) -> tuple[ConnectorProviderTool, ...]:
+    """Validate Provider output and freeze one exact authoring-time tool selection."""
+
+    return _select_tools(_validate_provider_tools(tools), selected_names)
+
+
 def _validate_provider_tools(tools: Sequence[ConnectorProviderTool]) -> tuple[ConnectorProviderTool, ...]:
     values = tuple(tools)
     if len(values) > _MAX_TOOLS:

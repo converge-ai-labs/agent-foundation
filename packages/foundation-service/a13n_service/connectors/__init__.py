@@ -74,7 +74,7 @@ from .registry import (
     build_connector_provider_catalog,
     discover_connector_provider_references,
 )
-from .runtime import ConnectorInvocationAuthorizer, ConnectorProviderRuntime
+from .runtime import ConnectorInvocationAuthorizer, ConnectorProviderRuntime, freeze_provider_tools
 from .secrets import DatabaseConnectorSecretStore
 from .service import ConnectionSecretStore, ConnectionService, ConnectorService, resolve_connection
 from .setup import ConnectionSetupService, ConnectionSetupStateProtector
@@ -163,5 +163,6 @@ __all__ = [
     "build_connector_provider_catalog",
     "create_connector_provider_operations_app",
     "discover_connector_provider_references",
+    "freeze_provider_tools",
     "resolve_connection",
 ]

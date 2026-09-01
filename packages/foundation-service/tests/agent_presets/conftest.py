@@ -45,6 +45,7 @@ def actor(user_id: str = USER_ID) -> AuthenticatedActor:
 def preset_config(
     *,
     instructions: str = "Be helpful.",
+    connectors: dict[str, object] | None = None,
     subagents: dict[str, object] | None = None,
 ) -> AgentPresetConfig:
     return AgentPresetConfig.model_validate(
@@ -58,7 +59,7 @@ def preset_config(
             "input_adapter": {"adapter_key": "native", "config": {}},
             "plugins": [],
             "skills": [],
-            "connectors": {},
+            "connectors": connectors or {},
             "environment": None,
             "subagents": subagents or {},
             "client_tools": [],
