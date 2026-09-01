@@ -30,7 +30,6 @@ from .domain import (
     EnvironmentExecutionConfig,
     PluginRuntimeMode,
     ResolvedAgentModelConfig,
-    ResolvedConnectorSelection,
     ResolvedPluginVersion,
     ResolvedSkillSelection,
     ResolvedSubagentEdge,
@@ -40,7 +39,6 @@ _CONFIG_ADAPTER = TypeAdapter(AgentPresetConfig)
 _MODEL_ADAPTER = TypeAdapter(ResolvedAgentModelConfig)
 _PLUGINS_ADAPTER = TypeAdapter(tuple[ResolvedPluginVersion, ...])
 _SKILLS_ADAPTER = TypeAdapter(tuple[ResolvedSkillSelection, ...])
-_CONNECTORS_ADAPTER = TypeAdapter(tuple[ResolvedConnectorSelection, ...])
 _ENVIRONMENT_ADAPTER = TypeAdapter(EnvironmentExecutionConfig | None)
 _SUBAGENTS_ADAPTER = TypeAdapter(tuple[ResolvedSubagentEdge, ...])
 
@@ -151,7 +149,6 @@ class AgentPresetRevisionRecord(Base):
     resolved_plugin_versions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     runtime_lock_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     resolved_skills: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    resolved_connectors: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     resolved_environment: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     resolved_subagents: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -173,7 +170,6 @@ class AgentPresetRevisionRecord(Base):
             resolved_plugin_versions=_PLUGINS_ADAPTER.validate_python(self.resolved_plugin_versions),
             runtime_lock_digest=self.runtime_lock_digest,
             resolved_skills=_SKILLS_ADAPTER.validate_python(self.resolved_skills),
-            resolved_connectors=_CONNECTORS_ADAPTER.validate_python(self.resolved_connectors),
             resolved_environment=_ENVIRONMENT_ADAPTER.validate_python(self.resolved_environment),
             resolved_subagents=_SUBAGENTS_ADAPTER.validate_python(self.resolved_subagents),
             content_digest=self.content_digest,

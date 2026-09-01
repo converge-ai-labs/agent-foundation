@@ -8,7 +8,6 @@ from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.connectors import ConnectorError
 from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.iam import AuthenticatedActor, authorize_agent_preset, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
@@ -17,7 +16,6 @@ from a13n_service.skills.domain import SkillPackageManifest
 from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
 from a13n_service.storage import short_session
 
-from .connector_resolution import AgentConnectorSelectionResolver, PreparedConnectorSelections
 from .domain import (
     AgentPresetConfig,
     ChildEnvironmentPolicy,
@@ -64,7 +62,6 @@ class PreparedRevisionResolution:
     agent_preset_id: str
     config: AgentPresetConfig
     model: PreparedModelExecution
-    connectors: PreparedConnectorSelections | None
     environment: PreparedEnvironmentSelection | None
     plugins: PreparedPluginSelections
     skills: tuple[PreparedSkill, ...]
@@ -80,14 +77,12 @@ class AgentPresetResolver:
         model_selector: AcceptedModelSelector,
         *,
         plugin_runtime_mode: PluginRuntimeMode,
-        connector_resolver: AgentConnectorSelectionResolver | None = None,
         environment_resolver: AgentEnvironmentSelectionResolver | None = None,
         plugin_resolver: AgentPluginSelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
-        self._connector_resolver = connector_resolver
         self._environment_resolver = environment_resolver
         self._plugin_resolver = plugin_resolver or AgentPluginSelectionResolver(
             sessions,
@@ -145,19 +140,6 @@ class AgentPresetResolver:
                 agent_preset_id=agent_preset_id,
                 config=config,
             )
-        connectors = None
-        if config.connectors:
-            if self._connector_resolver is None:
-                raise preset_publish_failed("connector_resolution_unavailable", path="connectors")
-            try:
-                connectors = await self._connector_resolver.prepare_publication(
-                    actor=actor,
-                    organization_id=organization_id,
-                    workspace_id=workspace_id,
-                    selections=config.connectors,
-                )
-            except ConnectorError as error:
-                raise preset_publish_failed(_connector_reason(error), path="connectors") from error
         environment = None
         if config.environment is not None:
             if self._environment_resolver is None:
@@ -178,7 +160,6 @@ class AgentPresetResolver:
             agent_preset_id=agent_preset_id,
             config=config,
             model=model,
-            connectors=connectors,
             environment=environment,
             plugins=plugins,
             skills=skills,
@@ -208,14 +189,6 @@ class AgentPresetResolver:
             )
         except PluginSelectionError as error:
             raise preset_publish_failed(error.reason, path=error.path) from error
-        try:
-            connectors = (
-                await self._connector_resolver.freeze_in_transaction(session, prepared=prepared.connectors)
-                if self._connector_resolver is not None and prepared.connectors is not None
-                else ()
-            )
-        except ConnectorError as error:
-            raise preset_publish_failed(_connector_reason(error), path="connectors") from error
         skills = await self._freeze_skills(session, prepared)
         try:
             environment = (
@@ -244,7 +217,6 @@ class AgentPresetResolver:
             resolved_plugin_versions=plugins,
             runtime_lock_digest=runtime_lock_digest,
             resolved_skills=skills,
-            resolved_connectors=connectors,
             resolved_environment=environment,
             resolved_subagents=subagents,
         )
@@ -252,8 +224,6 @@ class AgentPresetResolver:
     def _validate_local_config(self, config: AgentPresetConfig) -> None:
         if config.input_adapter.adapter_key != "native" or config.input_adapter.config:
             raise preset_publish_failed("input_adapter_unsupported", path="input_adapter")
-        if config.connectors and self._connector_resolver is None:
-            raise preset_publish_failed("connector_resolution_unavailable", path="connectors")
         if config.environment is not None and self._environment_resolver is None:
             raise preset_publish_failed("environment_resolution_unavailable", path="environment")
         for index, skill in enumerate(config.skills):
@@ -532,19 +502,3 @@ def resolution_error(error: Exception) -> AgentPresetError:
     if isinstance(error, AgentPresetError):
         return error
     return preset_publish_failed("managed_resource_unavailable")
-
-
-def _connector_reason(error: ConnectorError) -> str:
-    return {
-        "not_found": "connector_revision_unavailable",
-        "connector_disabled": "connector_disabled",
-        "connection_required": "connector_connection_unavailable",
-        "connection_ambiguous": "connector_connection_ambiguous",
-        "tool_not_found": "connector_tool_unavailable",
-        "tool_contract_incompatible": "connector_tool_contract_invalid",
-        "provider_contract_changed": "connector_provider_incompatible",
-        "provider_capability_unavailable": "connector_provider_incompatible",
-        "provider_timeout": "connector_provider_timeout",
-        "connector_changed": "connector_changed",
-        "connection_changed": "connector_connection_changed",
-    }.get(error.code, "connector_resolution_failed")

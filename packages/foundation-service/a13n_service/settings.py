@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 from collections.abc import Collection
 from enum import StrEnum
 from functools import lru_cache
@@ -14,8 +12,6 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from a13n_service.agent_presets.domain import PluginRuntimeMode
-from a13n_service.connectors.capability import ConnectorCapabilityCodec
-from a13n_service.connectors.registry import ConnectorProviderTrust
 from a13n_service.database import MigrationConfig
 from a13n_service.observability import TraceContent
 from a13n_service.secrets import SecretProtectionError, SecretProtector
@@ -37,7 +33,7 @@ class ServiceRole(StrEnum):
     all = "all"
     control = "control"
     worker = "worker"
-    connector = "connector"
+    connectivity = "connectivity"
 
 
 class DatabaseBackend(StrEnum):
@@ -99,18 +95,6 @@ class ServiceSettings(BaseSettings):
         max_length=4096,
         repr=False,
     )
-    connector_providers: tuple[ConnectorProviderTrust, ...] = ()
-    connector_trigger_min_interval_seconds: int = Field(default=60, ge=1, le=86_400)
-    connector_capability_signing_key_base64: SecretStr | None = Field(default=None, repr=False)
-    connector_internal_auth_token: SecretStr | None = Field(
-        default=None,
-        min_length=32,
-        max_length=4_096,
-        repr=False,
-    )
-    connector_mcp_operation_timeout_seconds: float = Field(default=30, gt=0, le=300)
-    connector_service_base_url: str = "http://127.0.0.1:8000"
-
     database_backend: DatabaseBackend = DatabaseBackend.postgresql
     database_url: SecretStr | None = Field(
         default=SecretStr("postgresql+psycopg://foundation:foundation@127.0.0.1:5432/foundation"),
@@ -248,18 +232,6 @@ class ServiceSettings(BaseSettings):
             encoded_key=self.secret_master_key_base64.get_secret_value(),
             encryption_key_id=self.secret_encryption_key_id,
         )
-
-    def connector_capability_codec(self) -> ConnectorCapabilityCodec:
-        if self.connector_capability_signing_key_base64 is None:
-            raise ValueError("FOUNDATION_CONNECTOR_CAPABILITY_SIGNING_KEY_BASE64 is required")
-        try:
-            key = base64.b64decode(
-                self.connector_capability_signing_key_base64.get_secret_value(),
-                validate=True,
-            )
-        except (binascii.Error, ValueError):
-            raise ValueError("FOUNDATION_CONNECTOR_CAPABILITY_SIGNING_KEY_BASE64 is invalid") from None
-        return ConnectorCapabilityCodec(key)
 
     def validate_trace_query_configuration(
         self,

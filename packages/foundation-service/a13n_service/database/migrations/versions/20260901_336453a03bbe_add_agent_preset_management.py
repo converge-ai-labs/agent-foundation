@@ -100,7 +100,6 @@ def upgrade() -> None:
         sa.Column("resolved_plugin_versions", sa.JSON(), nullable=False),
         sa.Column("runtime_lock_digest", sa.String(length=64), nullable=False),
         sa.Column("resolved_skills", sa.JSON(), nullable=False),
-        sa.Column("resolved_connectors", sa.JSON(), nullable=False),
         sa.Column("resolved_environment", sa.JSON(none_as_null=True), nullable=True),
         sa.Column("resolved_subagents", sa.JSON(), nullable=False),
         sa.Column("content_digest", sa.String(length=64), nullable=False),

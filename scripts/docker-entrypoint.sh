@@ -34,7 +34,7 @@ if [ "${1:-}" = "foundation-service" ] && [ "${2:-}" = "serve" ]; then
                 foundation-service db current --check-heads
             fi
             ;;
-        worker | connector)
+        worker | connectivity)
             echo "$role role: checking schema heads without running migrations."
             foundation-service db current --check-heads
             ;;

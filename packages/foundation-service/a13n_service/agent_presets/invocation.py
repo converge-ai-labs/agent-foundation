@@ -11,7 +11,6 @@ from .domain import (
     AssetPublicationConfig,
     BoundedKey,
     ClientToolDefinition,
-    ConnectorSelection,
     EnvironmentOverride,
     InputAdapterConfig,
     OutputSpec,
@@ -34,7 +33,6 @@ class MergedAgentRunConfig(StrictModel):
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
-    connectors: dict[BoundedKey, ConnectorSelection] = Field(default_factory=dict, max_length=128)
     environment: EnvironmentOverride | None = None
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
@@ -58,8 +56,6 @@ class MergedAgentRunConfig(StrictModel):
 
 class AgentRunSensitiveValues(StrictModel):
     """Ephemeral sensitive leaves extracted before effective config is persisted."""
-
-    connector_headers: dict[BoundedKey, dict[str, str]] = Field(default_factory=dict, max_length=128, repr=False)
 
 
 class MergedAgentRun(StrictModel):
@@ -135,38 +131,6 @@ def merge_agent_run_override(
         present="client_tools" in fields,
         path="client_tools",
     )
-
-    connectors = dict(base.connectors)
-    connector_headers: dict[str, dict[str, str]] = {}
-    if "connectors" in fields:
-        if override.connectors is None:
-            connectors.clear()
-        else:
-            for name, patch in override.connectors.items():
-                if patch is None:
-                    connectors.pop(name, None)
-                    continue
-                patch_fields = patch.model_fields_set
-                current = connectors.get(name)
-                connector_revision_id = _required_patch_value(
-                    patch.connector_revision_id,
-                    present="connector_revision_id" in patch_fields,
-                    inherited=current.connector_revision_id if current is not None else None,
-                    path=f"connectors.{name}.connector_revision_id",
-                )
-                connection_id = (
-                    patch.connection_id
-                    if "connection_id" in patch_fields
-                    else (current.connection_id if current is not None else None)
-                )
-                tools = patch.tools if "tools" in patch_fields else (current.tools if current is not None else None)
-                connectors[name] = ConnectorSelection(
-                    connector_revision_id=connector_revision_id,
-                    connection_id=connection_id,
-                    tools=tools,
-                )
-                if "headers" in patch_fields and patch.headers:
-                    connector_headers[name] = dict(patch.headers)
 
     environment: EnvironmentOverride | None = base.environment
     if "environment" in fields:
@@ -254,7 +218,6 @@ def merge_agent_run_override(
             input_adapter=base.input_adapter,
             plugins=plugins,
             skills=skills,
-            connectors=connectors,
             environment=environment,
             subagents=subagents,
             client_tools=client_tools,
@@ -264,7 +227,7 @@ def merge_agent_run_override(
             asset_publication=base.asset_publication,
             protocol=base.protocol,
         ),
-        sensitive_values=AgentRunSensitiveValues(connector_headers=connector_headers),
+        sensitive_values=AgentRunSensitiveValues(),
     )
 
 
