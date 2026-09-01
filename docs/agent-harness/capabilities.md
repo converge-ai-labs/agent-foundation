@@ -104,13 +104,14 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `ShellReviewCapability`        | Optional model-backed risk review for `environment.shell_exec`                              | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
+| `Mem0Capability`               | One bounded automatic recall plus optional search, list, and explicit-add tools             | Borrowed `AsyncMemoryClient`, or `MEM0_API_KEY` per run        |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
 | `MediaCapability`              | Media-reading Toolset                                                                       | `MediaRunCapability`                                           |
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `DocumentsRunCapability`                                       |
 | `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebRunCapability` with current client and policy              |
 | `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
 | `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
-| `DelegationCapability`         | Blocking inline child delegation                                                            | Declared subagents and `DelegationRunCapability`               |
+| `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Definition-selected `SubagentOperator`                         |
 | `CodeActCapability`            | Restricted `run_code` and optional `run_program`                                            | Explicit eligible tools and Environment files for programs     |
 | `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical run                       | Current `AgentContext` supplied by the Harness                 |
 
@@ -144,6 +145,38 @@ All three have explicit byte, item, depth, or line bounds. Configure them to mat
 
 For context lifecycle features, Harness `AgentSpec.model_characteristics` can resolve model-relative defaults once at build time; callers supply it through the `model_characteristics` construction key. With a known context window, an otherwise unconfigured `HandoffCapability()` warns at 65% and `CompactionCapability()` compacts at 90%. Explicit token settings override these values, and the Capabilities remain opt-in.
 
+## Mem0 Long-Term Memory
+
+`mem0ai` is a default Harness dependency, so no package extra is required. The integration remains behaviorally opt-in: add `Mem0Capability` to an Agent definition and either configure `MEM0_API_KEY` (plus optional `MEM0_BASE_URL`) or pass a native `AsyncMemoryClient`. Environment-created clients defer the SDK's eager remote validation to the first bounded recall or memory-tool operation, so optional recall still fails open when authentication or the provider is unavailable.
+
+```python
+from a13n_harness.capabilities import Mem0Capability, Mem0Scope
+
+capabilities = (
+    Mem0Capability(
+        scope=Mem0Scope.USER,
+        auto_recall=True,
+        toolset=True,
+        recall_limit=5,
+    ),
+)
+```
+
+A fixed scope exposes `memory_search`, `memory_list`, and `memory_add` without an entity or scope argument. The Harness resolves `thread` from the current `thread_id`, `agent` from the `agent_id` identity claim, and `user` from the `user_id` claim. With `scope=None`, one automatic recall searches all available scopes and each memory tool accepts only the `thread`, `agent`, or `user` selector; the model never supplies the underlying ID.
+
+The first eligible input in each logical run performs at most one bounded recall. Recalled records enter only as an untrusted input preamble and are removed from exported history. Internal model recovery reuses the same result. `memory_add` stores exactly the supplied bounded text with Mem0 inference disabled; update and delete are not model-visible.
+
+When no client is supplied, the Harness constructs the native async client off the event loop and closes it at logical-run cleanup. A supplied client is borrowed and is never entered or closed by the Harness:
+
+```python
+from mem0 import AsyncMemoryClient
+
+mem0_client = AsyncMemoryClient(api_key="...")
+capabilities = (Mem0Capability(client=mem0_client, scope=Mem0Scope.USER),)
+```
+
+The Host owns the borrowed client's lifecycle. The Harness does not automatically write terminal transcripts to memory because a process-local result does not prove durable checkpoint acceptance. Applications that need extraction should enqueue it only after their own successful durable commit.
+
 ## Shell Command Review
 
 Shell review is off unless the Agent definition includes `ShellReviewCapability`. The declarative form is suitable for an `AgentSpec` loaded from JSON or YAML:
@@ -169,7 +202,7 @@ agent_spec = AgentSpec(
 
 The review applies only to `environment.shell_exec`; process wait, status, input, signal, and kill calls are not sent to the reviewer. It runs after typed argument validation, resource resolution, and the fresh invocation policy. A policy denial therefore avoids the review model call. Review happens before credentials, grants, or Environment dispatch and can only add an approval or denial; it never grants permission that policy withheld.
 
-The default reviewer receives the command, working directory, background flag, timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while a timeout, invalid result, or reviewer failure applies `on_error`. Both policy and review run again after native approval resume, so a fresh denial still wins. The Host still supplies a current `InvocationPolicyCapability` for managed Environment calls.
+The default reviewer receives the command, working directory, background flag, timeout, Environment alias, and sorted environment variable names. Environment values are never included. Risk order is `low < medium < high < extra_high`; a result at or above `risk_threshold` applies `on_flagged`, while a timeout, invalid result, or reviewer failure applies `on_error`. Both policy and review run again after native approval resume, so a fresh denial still wins. Without an explicit `InvocationPolicyCapability`, managed Environment calls use the Harness default allow decision with no dispatch retries; an explicit policy can only narrow or condition dispatch.
 
 Code-first definitions can supply a custom `ShellCommandReviewer` to `ShellReviewCapability` when review is implemented by a trusted in-process service rather than the default model-backed reviewer.
 
@@ -289,16 +322,16 @@ An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and di
 
 ## Background Processes
 
-`DynamicEnvironmentCapability` exposes background process control through the same six-tool shell surface as foreground execution. `shell_exec(background=True)` returns a portable `process-N` reference; `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, and `shell_kill` operate on that reference. The selected Environment provider owns the real process and retained output. The Harness stores only the exact provider process identity, unread output offsets, monotonic reference sequence, and last observation in `AgentContextState`; it does not emulate background execution with a local task or turn processes into a durable scheduler.
+`DynamicEnvironmentCapability` exposes background process control through the same six-tool shell surface as foreground execution when configured with a background-capable `ShellOperator`. `shell_exec(background=True)` returns a portable `process-N` reference; `shell_wait`, `shell_status`, `shell_input`, `shell_signal`, and `shell_kill` operate on that reference. The standard `ProcessManager` owns the real detached process and retained output access. The Harness stores only one opaque operator backend ID, unread output offsets, monotonic reference sequence, and bounded observations in `AgentContextState`; it does not emulate background execution with a local task or turn processes into a durable scheduler.
 
-During every entered root or child Turn, `ProcessManager` waits on the real provider process and can enqueue a bounded completion hint through native Pydantic AI input. A Host can configure reusable non-authoritative completion and observation-gap hooks directly with the definition-selected Capability when it builds the Agent:
+During every entered root or child Turn, `ProcessManager` waits on the real provider process and can enqueue a bounded completion hint through native Pydantic AI input. A Host can configure reusable non-authoritative completion and observation-gap hooks directly with the definition-selected Capability when it builds the Agent. In the example, `launch_process` is a Host callback implementing the public `ProcessLauncher` contract:
 
 ```python
 from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
 )
-from a13n_harness.toolsets import ProcessEvent
+from a13n_harness.capabilities import ProcessEvent, ProcessManager
 
 
 async def on_process_event(event: ProcessEvent) -> None:
@@ -307,19 +340,19 @@ async def on_process_event(event: ProcessEvent) -> None:
         run_id=event.run_id,
         agent_instance_id=event.agent_instance_id,
         process_id=event.process_id,
-        identity=event.identity,
+        backend_id=event.backend_id,
         kind=event.kind,
         status=event.status,
     )
 
 
+process_manager = ProcessManager(
+    launch_process,
+    event_hooks=(on_process_event,),
+)
 environment_capability = DynamicEnvironmentCapability(
-    DynamicEnvironmentConfiguration(
-        file_tools=True,
-        shell_tools=True,
-        max_reference_entries=1_024,
-    ),
-    process_event_hooks=(on_process_event,),
+    DynamicEnvironmentConfiguration(),
+    operator=process_manager,
 )
 
 executable = HarnessBuilder().build(
@@ -330,7 +363,7 @@ executable = HarnessBuilder().build(
 )
 ```
 
-`ProcessEvent` includes Thread, Run, and Agent-instance correlation so one definition-level hook can serve many Runs. Definition-level hooks are shared async callbacks and must be concurrency-safe; hook failures are isolated from process state. Ending the Turn cancels only Harness observation and never kills the provider process. Persisting `HarnessState` preserves `process-N` across a compatible Thread continuation, but the Host must retain or reconstruct the same Environment identity and generation. Completion outside an active Turn and process survival across a Host restart remain Host/provider responsibilities.
+`ProcessEvent` includes Thread, Run, Agent-instance, and immutable Host-reference correlation so one definition-level hook can serve many Runs. Definition-level hooks are shared async callbacks and must be concurrency-safe; hook failures are isolated from process state. Ending the Turn cancels only Harness observation and never kills Manager-owned work. Persisting `HarnessState` preserves `process-N` across a compatible Thread continuation only while the same operator can resolve its backend ID. The default Manager is process-local; a Host that requires restart survival supplies a custom operator with independently retained canonical state.
 
 ## Filters
 

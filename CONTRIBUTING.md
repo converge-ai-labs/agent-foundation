@@ -44,7 +44,7 @@ The repository selects Python 3.13 through `.python-version`. Python packages ar
 - database sessions never span streams, agent runs, external calls, waits, or background-task boundaries;
 - streaming FastAPI routes complete database-backed authentication and initial reads before constructing the response;
 - logging, process lifespan, role selection, image construction, and graceful shutdown use shared service infrastructure;
-- `foundation-service` uses one artifact for all-in-one, control, and worker deployment roles.
+- `foundation-service` uses one artifact for all-in-one, control, worker, and connector deployment roles.
 
 Keep transport handling, application orchestration, domain behavior, and infrastructure adapters separated. Update the accepted design in `spec/` when a change alters ownership, lifecycle, compatibility, security, or deployment semantics; do not use the development guide to introduce product architecture implicitly.
 

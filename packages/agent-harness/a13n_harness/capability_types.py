@@ -42,12 +42,6 @@ def _reserved_harness_capability_contract() -> tuple[
     tuple[type[AbstractCapability[AgentContext]], ...], frozenset[str]
 ]:
     from a13n_harness.capabilities.codeact import CODEACT_CAPABILITY_ID, CodeActCapability
-    from a13n_harness.capabilities.delegation import (
-        DELEGATION_CAPABILITY_ID,
-        DELEGATION_RUN_CAPABILITY_ID,
-        DelegationCapability,
-        DelegationRunCapability,
-    )
     from a13n_harness.capabilities.lifecycle import (
         LIFECYCLE_EVENT_CAPABILITY_ID,
         LifecycleEventCapability,
@@ -56,6 +50,7 @@ def _reserved_harness_capability_contract() -> tuple[
         SHELL_REVIEW_CAPABILITY_ID,
         ShellReviewCapability,
     )
+    from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
     from a13n_harness.environment.dynamic import (
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         DynamicEnvironmentCapability,
@@ -99,8 +94,7 @@ def _reserved_harness_capability_contract() -> tuple[
         CodeActCapability,
         DynamicEnvironmentCapability,
         ShellReviewCapability,
-        DelegationCapability,
-        DelegationRunCapability,
+        SubagentCapability,
     )
     names = frozenset(
         {
@@ -116,8 +110,7 @@ def _reserved_harness_capability_contract() -> tuple[
             CODEACT_CAPABILITY_ID,
             DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
             SHELL_REVIEW_CAPABILITY_ID,
-            DELEGATION_CAPABILITY_ID,
-            DELEGATION_RUN_CAPABILITY_ID,
+            SUBAGENT_CAPABILITY_ID,
         }
     )
     return capability_types, names

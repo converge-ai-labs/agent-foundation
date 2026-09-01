@@ -1,16 +1,12 @@
 """Configuration for the optional dynamic Environment projection."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class DynamicEnvironmentConfiguration(BaseModel):
-    """Definition-selected tool surfaces and finite run-local reference limits."""
+    """Configuration marker for the access-derived Environment tool surface."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-
-    file_tools: bool = True
-    shell_tools: bool = True
-    max_reference_entries: int = Field(gt=0, le=100_000)
 
 
 __all__ = ["DynamicEnvironmentConfiguration"]

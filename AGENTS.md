@@ -44,8 +44,8 @@ Follow these service invariants; the complete contract and rationale live in [DE
 - Never hold a database session or transaction across agent execution, external I/O, sleeps, background work, or a streaming response.
 - SSE, WebSocket, and other streaming routes must not receive a yielded database session through their FastAPI dependency graph. Finish authorization and initial reads in a closed short session; open fresh short sessions inside the stream only when needed.
 - Generate migration revisions through the repository Make target against disposable PostgreSQL, then review the generated operations and rollout safety. Never create a revision file from scratch.
-- Worker-only processes never migrate. The shared image lets compatible control or all-in-one replicas auto-migrate under bounded PostgreSQL advisory locking; deployments with a dedicated migration job disable replica auto migration.
-- Build one non-root service image for all-in-one, control, and worker roles; select the role at runtime.
+- Worker- and connector-only processes never migrate. The shared image lets compatible control or all-in-one replicas auto-migrate under bounded PostgreSQL advisory locking; deployments with a dedicated migration job disable replica auto migration.
+- Build one non-root service image for all-in-one, control, worker, and connector roles; select the role at runtime.
 - Keep identifiers that may reach model context or user-facing traces concise and kind-prefixed (for example, `process-1` or a short kind-prefixed hash). Do not shorten identifiers whose unpredictability or entropy is part of their security or protocol contract.
 
 ```bash

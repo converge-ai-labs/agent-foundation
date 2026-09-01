@@ -86,12 +86,7 @@ from a13n_harness.environment import (
 )
 
 capabilities = (
-    DynamicEnvironmentCapability(
-        DynamicEnvironmentConfiguration(
-            file_tools=True,
-            shell_tools=False,
-        )
-    ),
+    DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
 )
 ```
 

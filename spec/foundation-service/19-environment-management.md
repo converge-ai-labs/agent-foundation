@@ -14,17 +14,17 @@ While a RunAttempt is actively using an attachment, its connector may perform bo
 
 ## Boundaries
 
-| Concern                                                         | Owner                                        | Contract                                                                                     |
-| --------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Environment identity and immutable connection revisions         | Foundation                                   | Serializable non-secret connection configuration                                             |
-| Agent requirements and Run execution configuration              | Foundation                                   | Exact desired mount definitions, connector locks, Secret references, and permission ceilings |
-| External Sandbox or provider-resource lifecycle                 | User and external provider                   | Resource exists and is running before Foundation connects                                    |
-| Connector schema, connection, keep-alive, and local close       | Trusted Foundation Environment connector     | Produces one process-local canonical runtime attachment                                      |
-| Connector artifact trust and availability                       | Foundation distribution or operator boundary | Exact code lock; no Workspace authorization                                                  |
-| Workspace provider selection                                    | Foundation authorization                     | Enables one exact trusted connector lock                                                     |
-| Secret storage and current eligibility                          | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Environment data                            |
-| Current mount set, provider-neutral routing, and portable state | Harness                                      | Enters fresh mount candidates and stores portable Environment data                           |
-| EIP session and daemon enforcement                              | Agent-envd and its client                    | Daemon generation and bounded Environment operations                                         |
+| Concern                                                         | Owner                                        | Contract                                                                               |
+| --------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Environment identity and immutable connection revisions         | Foundation                                   | Serializable non-secret connection configuration                                       |
+| Agent requirements and Run execution configuration              | Foundation                                   | Exact desired mount definitions, connector locks, Secret references, and access levels |
+| External Sandbox or provider-resource lifecycle                 | User and external provider                   | Resource exists and is running before Foundation connects                              |
+| Connector schema, connection, keep-alive, and local close       | Trusted Foundation Environment connector     | Produces one process-local canonical runtime attachment                                |
+| Connector artifact trust and availability                       | Foundation distribution or operator boundary | Exact code lock; no Workspace authorization                                            |
+| Workspace provider selection                                    | Foundation authorization                     | Enables one exact trusted connector lock                                               |
+| Secret storage and current eligibility                          | [Secret Management](11-secret-management.md) | Resolves fresh values without persisting them in Environment data                      |
+| Current mount set, provider-neutral routing, and portable state | Harness                                      | Enters fresh mount candidates and stores portable Environment data                     |
+| EIP session and daemon enforcement                              | Agent-envd and its client                    | Daemon generation and bounded Environment operations                                   |
 
 Provider discovery, package upload, schema validity, or identifier possession does not authorize provider use. API input and stored data never supply an arbitrary Python import target.
 
@@ -105,6 +105,9 @@ class Environment:
     archived_at: datetime | None
 
 
+type EnvironmentAccess = Literal["read_only", "read_write", "full"]
+
+
 class EnvironmentRevision:
     id: EnvironmentRevisionId
     environment_id: EnvironmentId
@@ -114,15 +117,23 @@ class EnvironmentRevision:
     connector_package_revision_id: EnvironmentProviderPackageRevisionId | None
     connector_lock: DependencyLock
     credential_bindings: tuple[EnvironmentCredentialBinding, ...]
-    permission_ceiling: EnvironmentPermissionSet
+    access: EnvironmentAccess = "full"
     logical_digest_sha256: str
 ```
 
 `parameters` is validated by the connector catalog schema and can contain an external resource identifier, endpoint, region, or other non-secret connection data. For E2B it normally includes the existing Sandbox ID. The identifier is an opaque connection parameter, not a Foundation-managed resource identity.
 
-Creation atomically creates revision `1`; connection, credential-reference, or permission changes create a higher revision. Mutable display metadata changes do not. Restoring old configuration copies it into a new revision, and canonical semantic no-ops create nothing.
+Creation atomically creates revision `1`; connection, credential-reference, or
+access changes create a higher revision. Mutable display metadata changes do
+not. Restoring old configuration copies it into a new revision, and canonical
+semantic no-ops create nothing. Existing Runs retain their accepted revision
+or execution configuration; an access edit never mutates active or resumable
+work in place.
 
-Revision creation resolves the enabled Workspace selection, validates schemas and permissions, and captures the exact connector lock without importing code or performing external I/O. A revision contains no Secret value, provider resource state, lifecycle policy, attachment, EIP session, Python object, import target, or Harness state. A referenced revision cannot be deleted.
+Revision creation resolves the enabled Workspace selection, validates schemas and access, and captures the exact connector lock without importing code
+or performing external I/O. A revision contains no Secret value, provider
+resource state, lifecycle policy, attachment, EIP session, Python object,
+import target, or Harness state. A referenced revision cannot be deleted.
 
 ## Credential Bindings
 
@@ -151,7 +162,11 @@ class AgentEnvironmentRequirement:
     required: bool
 ```
 
-Mount names are unique and use the Harness mount-name syntax. An optional default mount names one requirement. Authoring may accept an `EnvironmentId`, but materialization stores its current revision. Runtime-selection policy controls whether a caller can replace or add desired mounts and the maximum mount count and permission ceilings it can select.
+Mount names are unique and use the Harness mount-name syntax. An optional default
+mount names one requirement. Authoring may accept an `EnvironmentId`, but
+materialization stores its current revision. Runtime-selection policy controls
+whether a caller can replace or add desired mounts and the maximum mount count
+and maximum access levels it can select.
 
 A permitted Run mount selection uses an exact revision, a mutable Environment resolved at acceptance, or inline configuration:
 
@@ -174,7 +189,7 @@ class EnvironmentRevisionSelection:
 class InlineEnvironmentSelection:
     connection_spec: EnvironmentConnectionSpec
     credential_bindings: tuple[EnvironmentCredentialBinding, ...]
-    permission_ceiling: EnvironmentPermissionSet
+    access: EnvironmentAccess = "full"
 
 
 class EnvironmentSelectionEntry:
@@ -183,7 +198,8 @@ class EnvironmentSelectionEntry:
     source: EnvironmentSourceSelection
 ```
 
-Inline entries pass the same selection, schema, credential-reference, permission, and authorization validation but create no reusable revision.
+Inline entries pass the same selection, schema, credential-reference,
+access, and authorization validation but create no reusable revision.
 
 Acceptance writes the complete non-secret configuration into the initial `state.json`:
 
@@ -196,7 +212,7 @@ class EnvironmentExecutionMount:
     connector_package_revision_id: EnvironmentProviderPackageRevisionId | None
     connector_lock: DependencyLock
     credential_bindings: tuple[EnvironmentCredentialBinding, ...]
-    permission_ceiling: EnvironmentPermissionSet
+    access: EnvironmentAccess
     logical_digest_sha256: str
 
 
@@ -229,12 +245,21 @@ An authorized revision-detail read can return its protected non-secret connectio
 
 Run acceptance performs no provider I/O. For each claimed RunAttempt, the Worker:
 
-1. reads the exact `EnvironmentExecutionConfig` from `state.json` and verifies schemas and connector locks;
-2. reauthorizes provider selection, Environment use, permission ceilings, principal eligibility, and every credential source;
+1. reads the exact `EnvironmentExecutionConfig` from `state.json` and verifies
+   schemas and connector locks;
+2. reauthorizes provider selection, Environment use, access levels,
+   principal eligibility, and every credential source;
 3. resolves fresh Secret values outside the authorization transaction;
-4. asks each exact connector to connect to the already-running resource and return one fresh attachment after validating EIP compatibility;
-5. adapts each attachment into a fresh `EnvironmentRuntimeMount`, constructs one `EnvironmentRuntime` with the complete desired initial mount mapping and default mount, retains that runtime, and supplies it through `RunBindings.environment`; and
-6. while the Harness run and attachment scopes are active, performs connector-defined bounded keep-alive and then closes process-local clients.
+4. asks each exact connector to connect to the already-running resource and
+   return one fresh attachment after validating EIP compatibility;
+5. derives the exact internal Harness action ceiling from `read_only`,
+   `read_write`, or `full`, intersects it with the attachment descriptor, adapts
+   each attachment into a fresh `EnvironmentRuntimeMount`, and constructs one
+   `EnvironmentRuntime` with the complete desired initial mount mapping and
+   default mount, retains that runtime, and supplies it through
+   `RunBindings.environment`; and
+6. while the Harness run and attachment scopes are active, performs
+   connector-defined bounded keep-alive and then closes process-local clients.
 
 Keep-alive may extend a provider timeout only while the current Attempt remains authorized to run. It stops promptly on attachment-scope close, cancellation, lease loss, or Worker shutdown. An extension already accepted by the provider is not rolled back or reconciled. Connector and deployment policy bound its interval and maximum extension; it never outlives the Run recovery deadline as an autonomous task.
 
@@ -260,7 +285,7 @@ After successful attachment, the connector may call E2B keep-alive to prevent th
 
 | Failure                                                 | Foundation outcome                                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Invalid schema, lock, desired mount set, or permission  | No Environment revision or Run is accepted                                                 |
+| Invalid schema, lock, desired mount set, or access      | No Environment revision or Run is accepted                                                 |
 | Archived, disabled, denied, or raced selection          | Acceptance or Attempt reconstruction fails closed without substitution                     |
 | Missing, inactive, or denied credential                 | Attempt records a bounded credential failure                                               |
 | Resource is missing, stopped, paused, or incompatible   | Attempt records a bounded connection or EIP compatibility failure                          |
@@ -271,7 +296,10 @@ After successful attachment, the connector may call E2B keep-alive to prevent th
 
 ## Security and Compatibility
 
-Connector publication, Workspace selection, Environment authoring, Environment use, Secret access, and Agent tool permission are separate authorities. A model cannot select connectors, revisions, Secrets, connection targets, or lifecycle actions.
+Connector publication, Workspace selection, Environment authoring, Environment
+use, Secret access, and Agent tool access are separate authorities. A model
+cannot select connectors, revisions, Secrets, connection targets, or lifecycle
+actions.
 
 Connector code is trusted in-process code with worker-role authority. Exact locks and operator-only publication do not sandbox it. Connection parameters, including external resource IDs and private endpoints, are protected tenant data. Secret values remain process-local.
 

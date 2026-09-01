@@ -21,6 +21,14 @@ class WorkspaceAction(StrEnum):
     models_manage = "models.manage"
     secrets_read = "secrets.read"
     secrets_manage = "secrets.manage"
+    connector_read = "connector.read"
+    connector_create = "connector.create"
+    connector_configure = "connector.configure"
+    connector_invoke = "connector.invoke"
+    connection_read = "connection.read"
+    connection_manage = "connection.manage"
+    trigger_read = "trigger.read"
+    trigger_configure = "trigger.configure"
     skill_read = "skill.read"
     skill_create = "skill.create"
     skill_update = "skill.update"
@@ -33,11 +41,16 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.asset_read,
         WorkspaceAction.models_read,
         WorkspaceAction.secrets_read,
+        WorkspaceAction.connector_read,
+        WorkspaceAction.connection_read,
+        WorkspaceAction.trigger_read,
         WorkspaceAction.skill_read,
     }
 )
 
-_RUNNER_ACTIONS = _READ_ACTIONS | frozenset({WorkspaceAction.asset_create, WorkspaceAction.asset_use})
+_RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
+    {WorkspaceAction.asset_create, WorkspaceAction.asset_use, WorkspaceAction.connector_invoke}
+)
 
 _WORKSPACE_ROLE_ACTIONS: dict[str, frozenset[WorkspaceAction]] = {
     "viewer": _READ_ACTIONS,

@@ -43,8 +43,11 @@ At execution time trusted installed adapters create:
 - native `AgentSpec` containing only concrete `HarnessModelCharacteristics`, concrete native `ModelSettings`, and, for code-first output, a process-local `OutputSpec`;
 - optional Model or logical model name;
 - Agent-bound Capabilities that own all function tools, Toolsets, guidance, settings, and hooks;
+- optional stable Host operator implementations passed to the exact Capabilities that own async subagent or background-process presentation;
 - optional direct concrete Harness plugin instances;
 - self-healing and semantic recovery policy.
+
+An operator is a trusted process-local interface object, not persisted Agent content or a Toolset contribution. The Capability fixes the model-visible mode and Toolset when the definition is reconstructed. The operator receives explicit current-run correlation on each call and owns canonical work without storing mutable current-run authority in the reusable Capability.
 
 Configured plugin instances are created by `HarnessBuilder` from an explicit `HarnessBuildContext` or the ambient source. The deployment switch remains false by default, while a trusted create-and-run or create-and-stream Host path can pass `configured_plugins_enabled=True` when constructing that operation's executable. They need not be reconstructed by a Host adapter, and the choice cannot change after Agent construction.
 
@@ -69,7 +72,7 @@ The Host supplies `AgentInstanceRef` as workload identity and policy correlation
 
 The Harness enters and activates the normalized Environment runtime for the complete logical run. An advanced Host retains that same `EnvironmentRuntime`; a reconciliation task can start before stream entry and await `runtime.wait_until_active()` without polling, then mount, replace, unmount, or select a default during input preparation, model attempts, tool work, or recovery backoff. The runtime is never put in metadata, `AgentContext`, a Capability namespace, a model tool, or a durable record, and its mutation methods reject every call after the run terminal fence.
 
-Provider specification validation, built-in and third-party factory selection, create/resume/pause/destroy behavior, resource state, and fresh attachment acquisition use the separate [Environment Provider contract](../agent-environment-provider/README.md). Provider availability and schema validity never authorize a run. Passing a Provider to the high-level API delegates one ephemeral Resource lifetime to the Harness. Passing an entered Resource borrows it: the Host retains its outer scope and can reuse it across runs while the Harness holds one fresh attachment only for each run. Durable Hosts use the borrowed form when the Resource must survive suspension or continuation. Provider resource state and import targets never enter `RunBindings` or `HarnessState`.
+Provider specification validation, built-in and third-party factory selection, create/resume/pause/destroy behavior, resource state, and fresh attachment acquisition use the separate [Environment Provider contract](../agent-environment-provider/README.md). Provider availability and schema validity never authorize a run. Passing a Provider to the high-level API explicitly selects one ephemeral Resource lifetime. Passing an entered Resource selects attachment only: the Host retains its outer scope and can reuse it across runs while the Harness holds one fresh attachment for each run and never selects pause or destroy. Durable Hosts use the entered Resource or advanced runtime form when the Resource must survive suspension or continuation. Provider resource state and import targets never enter `RunBindings` or `HarnessState`.
 
 A hosted model integration normally supplies an async callable satisfying `RunModelResolver`; it resolves its own trusted configuration, current policy, credentials, and route selection, then returns a native Model or raises. It reads `ModelResolutionContext.deps.thread_id` and derives or restores provider model-session and prompt-cache affinity from that State-owned value and the selected model/provider namespace. A Session or `AgentInstanceRef` routing key may remain broader, but it cannot replace the prompt-cache key for the root and all children because those Agents own different message histories. The Harness applies no special catalog role validation and, if a Host omits the resolver for a string model, uses Harness `infer_model()` with the builder's optional gateway Provider factory. A fail-closed hosted profile therefore requires its worker adapter to supply and test the resolver; this is a Host invariant, not a different Harness API.
 
@@ -111,11 +114,15 @@ Native Pydantic `DeferredToolRequests` end the Harness run as `status="suspended
 
 External calls and approvals remain distinct. A Host reconstructs exact tool surfaces from its own revision and pending attachment and verifies their identity before resume; those surfaces and the resume envelope are not encoded in `HarnessState`.
 
-## Asynchronous Children
+## Async Operators
 
-The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. A Host-defined Capability can use a fresh typed service collaborator to accept independent child work. The Host owns child Execution and workload identity, `ExecutionAttempt` generations, checkpointing, cancellation, result retention, and delivery. Each child Harness State owns its Thread ID, which the Host preserves by selecting that State for continuation.
+The executable-owned `SubagentCollection` is process-local topology and grants no scheduling authority. A first-party `SubagentCapability(execution="async", operator=...)` fixes the standard async Toolset and owns one parent Agent's compact references and portable projection. The configured `SubagentOperator` owns fresh child authority and canonical execution. The default `SubagentManager` retains tasks, streams, latest child state, steering, cancellation, and results in memory; a custom operator may map work to an independently managed real Thread.
 
-A successful asynchronous spawn is an ordinary tool result, not `DeferredToolRequests`. Child completion becomes later Host-selected semantic input and does not satisfy the original spawn tool call.
+A successful async spawn is an ordinary tool result, not `DeferredToolRequests`. While the parent Run is active, Harness enqueue tells the model to wait or inspect. Independently, the operator always dispatches stable Host hooks; after Run closure a Host may use the hook to wake the parent Thread. Completion does not satisfy the original spawn call, mutate an already selected continuation, or itself create another Harness Run. A later Run rebinds the opaque backend ID through the same operator or marks it lost. The parent projection stores no child `HarnessState`.
+
+`DynamicEnvironmentCapability` follows the same composition rule for shell work. Its configured `ShellOperator.supports_background` declaration fixes the shell Toolset. The default foreground operator uses the current Environment; `ProcessManager` owns detached in-memory background processes and stable hooks. No `RunBindings` field selects subagent mode, supplies either operator, or changes background shell availability.
+
+A Host requiring durable child or process executions, attempts, retries, checkpoints, result delivery, or wake-up owns those resources behind the operator interface. The Harness does not generalize them into a Job, Session child, or distributed workflow model.
 
 ## Events and Completion
 

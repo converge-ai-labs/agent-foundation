@@ -50,7 +50,7 @@ flowchart TB
     Attachment --> Client --> Envd
 ```
 
-For reusable or durable resources, the Host decides whether to provision, attach, keep, replace, or destroy a Resource. An Environment Provider performs the selected operation and returns typed observations. It never commits those observations durably. The Host stores a resource-state envelope only after its own authorization and fencing checks. For a high-level Provider input, the Harness temporarily becomes the lifecycle caller and owns create through destroy entirely inside one logical run.
+For reusable or durable resources, the Host decides whether to provision, attach, keep, replace, or destroy a Resource. An Environment Provider performs the selected operation and returns typed observations. It never commits those observations durably. The Host stores a resource-state envelope only after its own authorization and fencing checks. Resource-context exit closes only process-local responsibilities by default. A caller can explicitly select automatic destroy on scope exit; the Harness does so for a high-level Provider input entirely inside one logical run.
 
 ## Boundaries
 
@@ -130,7 +130,7 @@ Local Envd never falls back to Direct Local, and Docker/E2B never use vendor fil
 
 The package imports no Harness, Pydantic AI, Host implementation, database, or presentation type. It can depend on the low-level `a13n-envd-client`, Docker SDK, E2B SDK, Pydantic, AnyIO, and package-discovery support required by its public contracts.
 
-Both a resource-managing Host and `a13n-harness` depend on `a13n-environment-provider`. The Host selects and imports trusted provider plugins, validates specifications, constructs Providers, chooses durable lifecycle operations, retains resource state, and acquires attachments. The Harness never discovers provider plugins or resolves specifications, but it accepts an already constructed Provider as a high-level ephemeral source and invokes only its shared `ephemeral()` lifecycle; it also accepts an entered Host-owned Resource and borrows a fresh attachment. A third-party provider plugin depends on the provider package, not on Harness internals, so the same Provider and Resource contracts serve both paths.
+Both a resource-managing Host and `a13n-harness` depend on `a13n-environment-provider`. The Host selects and imports trusted provider plugins, validates specifications, constructs Providers, chooses durable lifecycle operations, retains resource state, and acquires attachments. The Harness never discovers provider plugins or resolves specifications, but it accepts an already constructed Provider as an explicit temporary source and invokes its `ephemeral()` lifecycle; it also accepts an entered Resource and acquires one fresh attachment without selecting pause or destroy. A third-party provider plugin depends on the provider package, not on Harness internals, so the same Provider and Resource contracts serve both paths.
 
 `a13n-environment-provider` belongs to the Harness release group with `a13n-harness` and `a13n-stream-protocol`. One Harness release assigns the same version to all three. Published Harness metadata requires the exact provider-package version, while the provider package selects a compatible independently released `a13n-envd-client` range. Package version does not replace EIP version negotiation.
 

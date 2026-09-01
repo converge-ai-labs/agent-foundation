@@ -6,26 +6,28 @@ The package owns:
 
 - credential-free `EnvironmentProviderSpec` envelopes and exact versioned provider configuration;
 - explicitly selected built-in and extension factory catalogs;
-- Host-facing `EnvironmentProvider` lifecycle, reconciliation, and `ephemeral()` contracts;
+- Host-facing `EnvironmentProvider` lifecycle, reconciliation, default-detach Resource scopes, and opt-in automatic destruction;
 - sensitive provider-owned `EnvironmentProviderResourceState` envelopes;
 - single-entry `EnvironmentResource` scopes and fresh runtime attachments;
 - typed provider errors with bounded safe projections;
 - the working `a13n.direct-local`, `a13n.local-envd`, and `a13n.docker` built-ins;
 - EIP attachment and reusable stdio-carrier values that publish only initialization- and readiness-confirmed Sessions and are shared with managed sandbox providers.
 
-The source type passed to Agent Harness defines ownership:
+The input selected by an Agent Harness caller defines only that call's cleanup behavior:
 
 ```python
-# Harness creates, enters, attaches, exits, and destroys one temporary Resource.
+# Passing a Provider explicitly requests one temporary create-through-destroy scope.
 result = await executable.run("Use a temporary workspace", environment=provider)
 
-# Host keeps an already entered Resource; Harness borrows one fresh attachment.
+# Passing an entered Resource requests attachment only; Harness never destroys it.
 async with resource:
     first = await executable.run("Start", environment=resource)
     second = await executable.run("Continue", environment=resource, previous_state=first.state)
 ```
 
-The package does not own durable storage, Host authorization or scheduling, Harness runs, model-facing tools, or provider-neutral Environment operations. A Host explicitly manages reusable resources and persists current provider state. The Harness owns a Provider input only through the bounded ephemeral lifecycle.
+`EnvironmentResource.close()` and ordinary context exit release only current process-local clients, maintenance, and attachment admission. A Host can call `provider.destroy(...)` at a later safe time or explicitly choose `provider.resource_scope(..., destroy_on_exit=True)` for a temporary resource. The package never infers ownership, reference counts, or global idleness.
+
+The package does not own durable storage, Host authorization or scheduling, Harness runs, model-facing tools, or provider-neutral Environment operations. A Host explicitly manages reusable resources and persists current provider state. The Harness invokes automatic destruction only for the Provider-input convenience path selected by its caller.
 
 Direct Local is a logical access scope over an existing Host directory. It never creates, deletes, tags, locks, or claims ownership of that directory. Local Envd launches one compatible Host-selected `agent-envd` process per entered Resource, validates startup through a provider-owned short-lived EIP readiness Session, and then uses readiness-confirmed sequential EIP Sessions over its private reusable stdio carrier. Docker manages one local container running the repository sandbox image and publishes only authenticated EIP attachments; it never uses Docker exec, archive, copy, or logs for Harness operations. E2B remains deferred to its planned provider phase. The catalog contains no placeholder factories or fallback provider selection.
 

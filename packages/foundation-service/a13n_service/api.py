@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from a13n_service.assets.errors import AssetError
+from a13n_service.connectors import ConnectorError
 from a13n_service.iam import AuthenticationError
 from a13n_service.model_configs.service import ModelConfigError
 from a13n_service.skills.errors import SkillError
@@ -35,6 +36,11 @@ def install_api_conventions(app: FastAPI) -> None:
     @app.exception_handler(ModelConfigError)
     async def model_config_error_handler(request: Request, error: ModelConfigError) -> JSONResponse:
         return _error_response(request, error.status_code, error.code, error.message, error.details)
+
+    @app.exception_handler(ConnectorError)
+    async def connector_error(request: Request, error: ConnectorError) -> JSONResponse:
+        status_code = _connector_status(error.code)
+        return _error_response(request, status_code, error.code, str(error), dict(error.details))
 
     @app.exception_handler(SkillError)
     async def skill_error_handler(request: Request, error: SkillError) -> JSONResponse:
@@ -82,3 +88,21 @@ def _error_response(
 
 def _safe_request_id(value: str) -> bool:
     return len(value) <= 128 and all(0x21 <= ord(character) <= 0x7E for character in value)
+
+
+def _connector_status(code: str) -> int:
+    if code in {"not_found", "provider_unavailable"}:
+        return 404
+    if code in {"permission_denied"}:
+        return 403
+    if code in {
+        "version_conflict",
+        "connector_in_use",
+        "connection_incompatible",
+        "trigger_in_use",
+        "trigger_not_disabled",
+    }:
+        return 409
+    if code in {"dependency_unavailable", "provider_load_failed"}:
+        return 503
+    return 400

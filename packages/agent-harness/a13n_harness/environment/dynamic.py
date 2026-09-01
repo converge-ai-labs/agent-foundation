@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.toolsets import AbstractToolset, CombinedToolset
+from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset
 
+from a13n_harness.capabilities.processes import ShellOperator
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import (
@@ -25,15 +25,32 @@ from a13n_harness.toolsets.file_media import (
     NativeInputMediaKind,
 )
 from a13n_harness.toolsets.files import FileToolset
-from a13n_harness.toolsets.process_manager import ProcessEventHook
 from a13n_harness.toolsets.shell import ShellToolset
 
 from ._dynamic_context import _DynamicEnvironmentContext
 from .configuration import DynamicEnvironmentConfiguration
+from .models import EnvironmentAction
 from .providers import BoundEnvironment
 
 DYNAMIC_ENVIRONMENT_CAPABILITY_ID = "a13n.dynamic-environment"
 FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID = "a13n.dynamic-environment.file-media-understanding.run"
+
+_FILE_READ_ACTIONS = frozenset(
+    {
+        EnvironmentAction.FILE_STAT,
+        EnvironmentAction.FILE_READ_TEXT,
+        EnvironmentAction.FILE_READ_BYTES,
+        EnvironmentAction.FILE_LIST,
+        EnvironmentAction.FILE_QUERY,
+        EnvironmentAction.FILE_SEARCH_TEXT,
+        EnvironmentAction.FILE_COPY_SOURCE,
+    }
+)
+_FILE_MUTATION_ACTIONS = frozenset(
+    action
+    for action in EnvironmentAction
+    if action.value.startswith("environment.file.") and action not in _FILE_READ_ACTIONS
+)
 
 
 @dataclass(kw_only=True)
@@ -62,15 +79,18 @@ class DynamicEnvironmentCapability(AbstractModelContextCapability):
         self,
         configuration: DynamicEnvironmentConfiguration,
         *,
-        process_event_hooks: Sequence[ProcessEventHook] = (),
+        operator: ShellOperator | None = None,
     ) -> None:
         if not isinstance(configuration, DynamicEnvironmentConfiguration):
             configuration = DynamicEnvironmentConfiguration.model_validate(configuration, strict=True)
-        hooks = tuple(process_event_hooks)
-        if not all(callable(hook) for hook in hooks):
-            raise TypeError("process_event_hooks must contain callables")
+        selected = operator or ShellOperator()
+        if not isinstance(selected, ShellOperator):
+            raise TypeError("operator must be a ShellOperator")
+        if type(selected.supports_background) is not bool:
+            raise TypeError("ShellOperator.supports_background must be a boolean declaration")
         self.configuration = configuration.model_copy(deep=True)
-        self.process_event_hooks = hooks
+        self.operator = selected
+        self._supports_background = selected.supports_background
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(DYNAMIC_ENVIRONMENT_CAPABILITY_ID)
@@ -83,9 +103,10 @@ class DynamicEnvironmentCapability(AbstractModelContextCapability):
             return existing
         replacement = _DynamicEnvironmentRunCapability(
             self.configuration,
+            operator=self.operator,
+            supports_background=self._supports_background,
             run_id=ctx.deps.run_id,
             environment=ctx.deps.environment,
-            process_event_hooks=self.process_event_hooks,
         )
         ctx.deps._record_run_capability(DYNAMIC_ENVIRONMENT_CAPABILITY_ID, replacement)
         return replacement
@@ -99,19 +120,18 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         self,
         configuration: DynamicEnvironmentConfiguration,
         *,
+        operator: ShellOperator,
+        supports_background: bool,
         run_id: str,
         environment: BoundEnvironment,
-        process_event_hooks: Sequence[ProcessEventHook],
     ) -> None:
-        super().__init__(configuration, process_event_hooks=process_event_hooks)
+        super().__init__(configuration, operator=operator)
+        self._supports_background = supports_background
         self._run_id = run_id
-        self._cleanup_registered = False
+        self._environment = environment
         self._shell_toolset = ShellToolset(
-            shell=environment.shell,
-            processes=environment.processes,
-            outputs=environment.outputs,
-            max_reference_entries=configuration.max_reference_entries,
-            process_event_hooks=process_event_hooks,
+            operator=operator,
+            supports_background=supports_background,
             resource_resolver=lambda tool_id: self._dynamic_context._resource_resolver(tool_id),
             execution_guard=lambda: self._dynamic_context._assert_authorized_fence(),
         )
@@ -119,7 +139,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
             configuration,
             run_id=run_id,
             environment=environment,
-            resolve_process_identity=self._shell_toolset.resolve_process_identity,
+            resolve_process_resource=self._shell_toolset.resolve_process_resource,
         )
         self._file_toolset = FileToolset(
             environment.files,
@@ -129,12 +149,41 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
             media_understanding=_resolve_file_media_understanding,
         )
 
+        self._toolset = DynamicToolset(
+            self._toolset_for_current_environment,
+            per_run_step=True,
+            id="a13n-dynamic-environment-tools",
+        )
+
+    def _toolset_for_current_environment(
+        self,
+        ctx: RunContext[AgentContext],
+    ) -> AbstractToolset[AgentContext] | None:
+        del ctx
+        mounts = self._environment.snapshot.mounts
+        operations = frozenset(action for mount in mounts for action in mount.permission_ceiling.operations)
+        has_file_reads = bool(operations & _FILE_READ_ACTIONS)
+        has_file_mutations = bool(operations & _FILE_MUTATION_ACTIONS)
+        has_full_access = EnvironmentAction.SHELL_EXEC in operations
+        shell_supersedes_mutations = (
+            len(mounts) == 1
+            and has_file_mutations
+            and EnvironmentAction.SHELL_EXEC in mounts[0].permission_ceiling.operations
+        )
+
         toolsets: list[AbstractToolset[AgentContext]] = []
-        if configuration.file_tools:
-            toolsets.append(self._file_toolset.get_toolset(shell_active=configuration.shell_tools))
-        if configuration.shell_tools:
+        if has_file_reads:
+            toolsets.append(
+                self._file_toolset.get_toolset(
+                    shell_active=shell_supersedes_mutations,
+                    include_mutations=has_file_mutations,
+                )
+            )
+        if has_full_access:
             toolsets.append(self._shell_toolset.get_toolset())
-        self._toolset = CombinedToolset(toolsets)
+        if not toolsets:
+            return None
+        return CombinedToolset(toolsets)
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps.run_id != self._run_id:
@@ -142,12 +191,6 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
                 "Dynamic Environment run replacement cannot cross logical runs.",
                 code="capability_scope_invalid",
             )
-        if not self._cleanup_registered:
-            ctx.deps._register_run_cleanup(
-                f"{DYNAMIC_ENVIRONMENT_CAPABILITY_ID}.processes",
-                self._shell_toolset.close,
-            )
-            self._cleanup_registered = True
         return self
 
     def get_toolset(self) -> AbstractToolset[AgentContext]:

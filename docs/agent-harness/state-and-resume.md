@@ -165,15 +165,15 @@ Unknown namespaces can remain opaque across a run. Only the owning Capability in
 Dynamic Environment uses one Capability namespace to preserve model-facing background-process continuation. It stores:
 
 - the `process-N` reference and monotonic next sequence;
-- exact `ProcessIdentity`: provider type, logical Environment ID, generation, and provider process ID;
+- one exact opaque operator backend ID;
 - independent next-unread stdout and stderr offsets;
 - last observed status, stdin state, produced-byte counts, and `backend_lost` correction.
 
-It does not store a live `BoundProcessHandle`, task, hook, output reference, provider cursor, credential, attachment, or authority. The Environment/provider remains the source of truth.
+It does not store a live `ManagedProcess`, `BoundProcessHandle`, task, hook, output buffer, provider cursor, credential, attachment, or authority. The configured operator remains the canonical source of truth.
 
-When the same `HarnessState` continues in a new Run, a fresh `ProcessManager` loads this namespace and lazily rebinds the exact identity through a current Environment attachment. The current mount name, default mount, and saved routing hint cannot retarget it. If no matching attachment exists, the mapping remains available for a later Run. A different generation or authoritative process-not-found result corrects it to `backend_lost`.
+When the same `HarnessState` continues in a new Run, the process projection asks the same configured operator to rebind the exact backend ID. A mount name, default mount, saved routing hint, native PID, or process enumeration cannot retarget it. If the operator no longer has that record, the projection becomes `backend_lost`.
 
-Persisting this namespace is necessary but not sufficient for process survival. The Host must separately retain or reconstruct the provider resource and output, attach the same logical Environment generation, and use provider events or polling if completion must schedule work while no Harness Turn is active. The built-in Direct Local entered provider ends managed processes when its scope closes and therefore does not continue them across Runs. EIP can continue them only when the same `agent-envd` resource and generation survive. See [Embedding in a Host](hosting.md#background-processes-across-turns-and-restarts).
+Persisting this namespace is necessary but not sufficient for process survival. The default `ProcessManager` must remain alive across those Runs and its launcher-returned `ManagedProcess` must retain the Environment resources it needs. Stable hooks can schedule later work. Process or Runner restart loses default-Manager records; a durable Host uses a custom operator and never places its storage authority in `HarnessState`. See [Embedding in a Host](hosting.md#background-processes-across-turns-and-restarts).
 
 ## Host Checkpointing
 

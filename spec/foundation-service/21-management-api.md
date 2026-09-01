@@ -144,7 +144,22 @@ Successful runner-profile Plugin runtime commands return a thin receipt containi
 
 The route catalog is stable across Plugin Runtime profiles so SDKs expose one surface. In `on_demand`, Upload, List, Get, Archive, and exact Preset bindings remain available, while Activate and Deactivate fail before dispatch with `409 plugin_runtime_mode_unsupported` and create no operation receipt.
 
-OAuth redirects terminate at `GET /api/v1/connector-callbacks/{provider_key}` and Connector event delivery terminates at `POST /api/v1/connector-events/{trigger_id}`. These are bounded external ingress protocols, not management resources. The callback requires the exact expiring setup state; the event route requires Provider verification and a stable Provider event identity. Path identifiers grant no authority. Success means setup committed, or the event occurrence was accepted or already known; it never waits for Agent execution.
+OAuth redirects terminate at Control through
+`GET /api/v1/connector-callbacks/{provider_key}`. This bounded external ingress
+protocol is part of Connection setup but is not a management resource. It
+requires the exact expiring setup state, performs replay protection, and asks the
+Connector Service to execute Provider-specific code exchange before Control
+commits the Connection and Managed Secrets. The callback path or Provider key
+grants no authority.
+
+Connector MCP and Connector-event delivery do not enter `/api/v1`. The
+`connector` or `all` role exposes those data-plane routes under the [Connector
+contract](23-connectors-connections-and-triggers.md#management-and-ingress-surfaces)
+and [HTTP ingress contract](05-http-ingress-and-request-contract.md#role-surfaces).
+They are absent from the Management API, its OpenAPI document, first-party
+Foundation SDKs, and the remote CLI. A Connector event acknowledgement means the
+occurrence was durably accepted or already known; it never waits for Agent
+execution.
 
 ## Read Models
 
@@ -159,7 +174,7 @@ Public resources expose stable product fields and safe references, not ORM objec
 - Asset exposes one immutable Workspace publication's safe filename, media type, byte size, content digest, creation source, and creation time; content uses its separately authorized binary route, and neither read exposes an object key or Environment path;
 - Run exposes lifecycle, wait reason, accepted input kind, its stable AgentPreset, exact AgentPresetVersion and Runtime-lock selection, effective Skill names, safe model observation, interaction lineage, `retry_of_run_id`, trigger correlation, cancellation intent, and timestamps;
 - RunAttempt exposes generation, worker-safe status, immutable Worker build identity, safe model observation, lease timing, Harness correlation, bounded Agent tool dispatch evidence, planned yield reason or bounded failure evidence, but no credential or process-private value;
-- Environment exposes safe metadata and its current immutable revision; an authorized EnvironmentRevision detail exposes its protected non-secret connection configuration, connector lock, credential requirements, and permission ceiling without Secret values or provider state;
+- Environment exposes safe metadata and its current immutable revision; an authorized EnvironmentRevision detail exposes its protected non-secret connection configuration, connector lock, credential requirements, and `read_only`, `read_write`, or `full` access without Secret values or provider state;
 - LifecycleEvent reads preserve event identity and type, schema version, owning-resource sequence, subject, actor when applicable, RunAttempt attribution, resource version, bounded payload, and commit time;
 - HookSubscription reads preserve version, active or paused status, exact Hook names, bounded resource filters, callback URL, managed signing-Secret reference, signature profile, and timestamps without URL credentials or signing Secret values;
 - UsageRecord reads preserve immutable identity and attribution.

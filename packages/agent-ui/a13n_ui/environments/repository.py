@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from sqlalchemy import select
@@ -45,7 +46,7 @@ async def seed_environment_resources(
                 session_id=session_id,
                 mount_name=mount.mount_name,
                 model_alias=mount.model_alias,
-                permission_ceiling_json=_json(sorted(mount.permission_ceiling)),
+                access=mount.access,
                 provider_key=mount.provider_key,
                 provider_schema_version=mount.provider_schema_version,
                 provider_spec_digest=spec_digest,
@@ -143,14 +144,14 @@ class EnvironmentRepository:
 
 def _resource_view(row: SessionEnvironmentResourceRecord) -> SessionEnvironmentResource:
     try:
-        ceiling = _load_json(row.permission_ceiling_json)
-        if not isinstance(ceiling, list) or not all(isinstance(item, str) for item in ceiling):
-            raise ValueError
         return SessionEnvironmentResource(
             session_id=row.session_id,
             mount_name=row.mount_name,
             model_alias=row.model_alias,
-            permission_ceiling=frozenset(ceiling),
+            access=TypeAdapter(Literal["read_only", "read_write", "full"]).validate_python(
+                row.access,
+                strict=True,
+            ),
             provider_key=row.provider_key,
             provider_schema_version=row.provider_schema_version,
             provider_spec_digest=row.provider_spec_digest,
