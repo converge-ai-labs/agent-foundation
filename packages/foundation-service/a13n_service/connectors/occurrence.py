@@ -1,4 +1,4 @@
-"""At-least-once Trigger ingress with at-most-once root Turn acceptance."""
+"""At-least-once Trigger ingress with at-most-once root Run acceptance."""
 
 from __future__ import annotations
 
@@ -32,42 +32,42 @@ from .template import expand_event_template, expand_schedule_template
 from .trigger import TriggerSecretStore
 
 
-class TriggerTurnAcceptor(Protocol):
-    """Common Turn-owned acceptance transaction used by Trigger occurrences."""
+class TriggerRunAcceptor(Protocol):
+    """Common Run-owned acceptance transaction used by Trigger occurrences."""
 
-    async def prepare_trigger_turn(
+    async def prepare_trigger_run(
         self,
         *,
         organization_id: str,
         workspace_id: str,
         principal: PrincipalRef,
-        agent_revision_id: str,
+        agent_preset_id: str,
         source: AcceptedTriggerSource,
         input: Mapping[str, JsonValue],
     ) -> object:
         """Authorize, resolve selections, and publish initial state outside a DB session."""
         ...
 
-    async def commit_trigger_turn(
+    async def commit_trigger_run(
         self,
         session: AsyncSession,
         *,
         prepared: object,
         source: AcceptedTriggerSource,
     ) -> str:
-        """Recheck acceptance facts and commit root Session, Thread, Turn, and events."""
+        """Recheck acceptance facts and commit root Session, Thread, Run, and events."""
         ...
 
 
 class TriggerIngressService:
-    """Verify Provider ingress and submit each unique occurrence to Turn."""
+    """Verify Provider ingress and submit each unique occurrence to Run."""
 
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
         providers: ConnectorProviderOperations | ConnectorProviderCatalog,
         trigger_secrets: TriggerSecretStore,
-        turns: TriggerTurnAcceptor,
+        runs: TriggerRunAcceptor,
         *,
         max_webhook_body_bytes: int = 1024 * 1024,
         max_webhook_headers: int = 64,
@@ -76,7 +76,7 @@ class TriggerIngressService:
         self._sessions = sessions
         self._providers = provider_operations(providers)
         self._trigger_secrets = trigger_secrets
-        self._turns = turns
+        self._runs = runs
         self._max_webhook_body_bytes = max_webhook_body_bytes
         self._max_webhook_headers = max_webhook_headers
         self._max_webhook_header_bytes = max_webhook_header_bytes
@@ -227,7 +227,7 @@ class TriggerIngressService:
             record.next_scheduled_at = next_scheduled_at
             if existing is not None:
                 return _receipt(existing, duplicate=True)
-            turn_id = await self._turns.commit_trigger_turn(
+            run_id = await self._runs.commit_trigger_run(
                 session,
                 prepared=prepared.value,
                 source=prepared.source,
@@ -235,7 +235,7 @@ class TriggerIngressService:
             occurrence = _new_occurrence(
                 record,
                 occurrence_key=occurrence_key,
-                accepted_turn_id=turn_id,
+                accepted_run_id=run_id,
                 received_at=now,
                 scheduled_for=scheduled_for,
             )
@@ -273,11 +273,11 @@ class TriggerIngressService:
             occurrence_key=_instant_key(scheduled_for),
         )
         input_value = expand_schedule_template(record.input_template, scheduled_at=scheduled_for)
-        prepared = await self._turns.prepare_trigger_turn(
+        prepared = await self._runs.prepare_trigger_run(
             organization_id=record.organization_id,
             workspace_id=record.workspace_id,
             principal=_principal(record),
-            agent_revision_id=record.agent_revision_id,
+            agent_preset_id=record.agent_preset_id,
             source=source,
             input=input_value,
         )
@@ -301,11 +301,11 @@ class TriggerIngressService:
             source_kind="connector_event",
             occurrence_key=occurrence_key,
         )
-        prepared = await self._turns.prepare_trigger_turn(
+        prepared = await self._runs.prepare_trigger_run(
             organization_id=snapshot.organization_id,
             workspace_id=snapshot.workspace_id,
             principal=snapshot.principal,
-            agent_revision_id=snapshot.agent_revision_id,
+            agent_preset_id=snapshot.agent_preset_id,
             source=accepted_source,
             input=input_value,
         )
@@ -320,7 +320,7 @@ class TriggerIngressService:
             existing = await _existing_occurrence(session, record.id, occurrence_key)
             if existing is not None:
                 return _receipt(existing, duplicate=True)
-            turn_id = await self._turns.commit_trigger_turn(
+            run_id = await self._runs.commit_trigger_run(
                 session,
                 prepared=prepared,
                 source=accepted_source,
@@ -328,7 +328,7 @@ class TriggerIngressService:
             occurrence = _new_occurrence(
                 record,
                 occurrence_key=occurrence_key,
-                accepted_turn_id=turn_id,
+                accepted_run_id=run_id,
                 received_at=received_at,
                 provider_event_id=event.event_id,
             )
@@ -369,7 +369,7 @@ class TriggerIngressService:
             provider_state=bounded_json_object(record.provider_state, field_name="provider_state"),
             event_cursor=record.event_cursor,
             principal=_principal(record),
-            agent_revision_id=record.agent_revision_id,
+            agent_preset_id=record.agent_preset_id,
             input_template=bounded_json_object(record.input_template, field_name="input_template"),
         )
 
@@ -397,7 +397,7 @@ class _EventTriggerSnapshot:
         provider_state: dict[str, JsonValue],
         event_cursor: str | None,
         principal: PrincipalRef,
-        agent_revision_id: str,
+        agent_preset_id: str,
         input_template: dict[str, JsonValue],
     ) -> None:
         self.trigger_id = trigger_id
@@ -410,7 +410,7 @@ class _EventTriggerSnapshot:
         self.provider_state = provider_state
         self.event_cursor = event_cursor
         self.principal = principal
-        self.agent_revision_id = agent_revision_id
+        self.agent_preset_id = agent_preset_id
         self.input_template = input_template
 
 
@@ -450,7 +450,7 @@ def _new_occurrence(
     trigger: TriggerRecord,
     *,
     occurrence_key: str,
-    accepted_turn_id: str,
+    accepted_run_id: str,
     received_at: datetime,
     provider_event_id: str | None = None,
     scheduled_for: datetime | None = None,
@@ -463,18 +463,18 @@ def _new_occurrence(
         occurrence_key=occurrence_key,
         provider_event_id=provider_event_id,
         scheduled_for=scheduled_for,
-        accepted_turn_id=accepted_turn_id,
+        accepted_run_id=accepted_run_id,
         received_at=received_at,
     )
 
 
 def _receipt(record: TriggerOccurrenceRecord, *, duplicate: bool) -> TriggerOccurrenceReceipt:
-    if record.accepted_turn_id is None:
+    if record.accepted_run_id is None:
         raise ConnectorError("Trigger occurrence is incomplete.", code="event_source_unavailable")
     return TriggerOccurrenceReceipt(
         trigger_id=record.trigger_id,
         occurrence_key=record.occurrence_key,
-        turn_id=record.accepted_turn_id,
+        run_id=record.accepted_run_id,
         duplicate=duplicate,
     )
 

@@ -16,7 +16,7 @@ from a13n_service.connectors import (
     ConnectorProviderRuntime,
     ConnectorProviderTool,
     ConnectorProviderToolResult,
-    ConnectorTurnSelection,
+    ConnectorRunSelection,
     PrincipalRef,
     build_connector_mcp_client,
 )
@@ -189,8 +189,8 @@ def test_connector_capability_is_signed_bounded_and_expires() -> None:
         connector_revision_id=REVISION_ID,
         connection_id=None,
         agent_preset_version_id="agpv_0000000000000001",
-        turn_id="turn_0000000000000001",
-        turn_attempt_id="attempt_0000000000000001",
+        run_id="run_0000000000000001",
+        run_attempt_id="attempt_0000000000000001",
         attempt_fence=3,
         declaration_index=0,
         effective_tools=("search",),
@@ -218,8 +218,8 @@ def test_connector_capability_is_signed_bounded_and_expires() -> None:
         )
 
 
-def test_worker_reconstructs_local_mcp_client_from_turn_selection() -> None:
-    selection = ConnectorTurnSelection(
+def test_worker_reconstructs_local_mcp_client_from_run_selection() -> None:
+    selection = ConnectorRunSelection(
         declaration_index=2,
         connector_revision_id=REVISION_ID,
         connection_id=None,

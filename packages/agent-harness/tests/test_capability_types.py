@@ -8,11 +8,13 @@ from typing import Any, cast
 import pytest
 from a13n_harness import (
     AgentContext,
-    CapabilityTypeCatalog,
-    CapabilityTypeRegistration,
     DefinitionError,
     HarnessBuilder,
     RunBindings,
+)
+from a13n_harness.capability_types import (
+    CapabilityTypeCatalog,
+    CapabilityTypeRegistration,
 )
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec

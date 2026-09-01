@@ -38,26 +38,23 @@ Provider state and Harness continuation state are different records. Persist `En
 
 ## Build an Environment-aware Agent
 
-Binding an Environment supplies runtime authority but does not automatically expose operations to the model. Build the executable with only the Environment tools the definition needs:
+Binding an Environment supplies runtime authority but does not automatically expose operations to the model. Add the dynamic Environment Capability; it derives the model-visible tools from each mount's effective access and Provider capabilities:
 
 ```python
 from a13n_harness import (
     AgentSpec,
+    HarnessBuilder,
+)
+from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
-    HarnessBuilder,
 )
 
 executable = HarnessBuilder().build(
     AgentSpec(model="openai-responses:gpt-5"),
     output_type=str,
     capabilities=(
-        DynamicEnvironmentCapability(
-            DynamicEnvironmentConfiguration(
-                file_tools=True,
-                max_reference_entries=1_024,
-            )
-        ),
+        DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
     ),
 )
 ```

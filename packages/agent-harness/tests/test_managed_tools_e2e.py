@@ -8,7 +8,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from a13n_harness import HarnessBuilder, HarnessEvent, RunBindings
+from a13n_harness import (
+    HarnessBuilder,
+    HarnessEvent,
+    RunBindings,
+)
 from a13n_harness.tools import (
     CanonicalResource,
     CredentialLease,

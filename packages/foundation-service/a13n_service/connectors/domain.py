@@ -117,7 +117,7 @@ class AgentConnectorDeclaration(DomainModel):
         return value
 
 
-class ConnectorTurnSelection(DomainModel):
+class ConnectorRunSelection(DomainModel):
     declaration_index: Annotated[int, Field(ge=0)]
     connector_revision_id: str
     connection_id: str | None
@@ -142,7 +142,7 @@ class AcceptedTriggerSource(DomainModel):
 class TriggerOccurrenceReceipt(DomainModel):
     trigger_id: str
     occurrence_key: str
-    turn_id: str
+    run_id: str
     duplicate: bool
 
 
@@ -252,7 +252,7 @@ class Trigger(DomainModel):
     name: str
     description: str | None
     principal_ref: PrincipalRef
-    agent_revision_id: str
+    agent_preset_id: str
     source: TriggerSource
     input_template: dict[str, JsonValue]
     status: TriggerStatus
@@ -269,7 +269,7 @@ class CreateTrigger(DomainModel):
     name: Name
     description: Description | None = None
     principal_ref: PrincipalRef
-    agent_revision_id: Annotated[str, Field(min_length=1, max_length=64)]
+    agent_preset_id: Annotated[str, Field(min_length=1, max_length=64)]
     source: TriggerSource
     input_template: dict[str, JsonValue]
     created_by: PrincipalRef
@@ -279,7 +279,7 @@ class UpdateTrigger(DomainModel):
     name: Name | None = None
     description: Description | None = None
     principal_ref: PrincipalRef | None = None
-    agent_revision_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    agent_preset_id: Annotated[str, Field(min_length=1, max_length=64)] | None = None
     source: TriggerSource | None = None
     input_template: dict[str, JsonValue] | None = None
     expected_version: Annotated[int, Field(ge=1)]
@@ -287,7 +287,7 @@ class UpdateTrigger(DomainModel):
     @model_validator(mode="after")
     def require_change(self) -> UpdateTrigger:
         if not self.model_fields_set.intersection(
-            {"name", "description", "principal_ref", "agent_revision_id", "source", "input_template"}
+            {"name", "description", "principal_ref", "agent_preset_id", "source", "input_template"}
         ):
             raise ValueError("at least one Trigger field must be supplied")
         return self
@@ -295,7 +295,7 @@ class UpdateTrigger(DomainModel):
     @property
     def changes_behavior(self) -> bool:
         return bool(
-            self.model_fields_set.intersection({"principal_ref", "agent_revision_id", "source", "input_template"})
+            self.model_fields_set.intersection({"principal_ref", "agent_preset_id", "source", "input_template"})
         )
 
 

@@ -4,7 +4,7 @@
 
 Agent UI configuration is a human- and agent-editable file-backed contract. It separates one strict YAML process-settings document from reusable YAML/JSON product definitions and accepts all definition sources as one validated configuration generation. External editors, WebUI, and CLI can change the same definition documents; `AgentUiHost` publishes a new generation only after the complete resource graph validates.
 
-SQLite is not the authority for desired configuration. It records accepted generation metadata, resource indexes, diagnostics, and references from durable Sessions, while immutable resolved snapshots preserve the exact content selected by existing Sessions. A source edit therefore changes the latest catalog without rewriting earlier revisions or active runtime objects.
+SQLite is not the authority for desired configuration. It records accepted generation metadata, resource indexes, diagnostics, and references from continuation-backed Sessions, while immutable resolved snapshots preserve the exact content selected by existing Sessions. A source edit therefore changes the latest catalog without rewriting earlier revisions or active runtime objects.
 
 ## Boundaries
 
@@ -39,7 +39,7 @@ configuration:
 
 The default directories are created only when the selected command needs them. An explicit missing settings path is an error rather than a request to create or merge another source.
 
-A definition root contains resources in these namespaces: A definition root contains resources in these namespaces:
+A definition root contains resources in these namespaces:
 
 - Models;
 - Prompts;
@@ -53,37 +53,19 @@ Models, Prompts, Plugin instances, Skill sources, Skills, Agents, and Environmen
 
 Source layers are ordered from lowest to highest precedence. Built-in resources form the lowest layer, followed by explicitly configured user roots and then an explicitly configured project root. Project-root policy is disabled by default, and Agent UI never discovers a project root from the current working directory. A higher layer can replace one lower-layer resource only by the same stable resource ID and compatible resource kind. Replacement selects different content in the candidate generation; it does not mutate or delete the lower revision. Two definitions of the same identity at the same precedence are an error.
 
-The process-settings YAML document selects the data root, definition roots, project-root policy, credential backends, provider/plugin allowlists, logging and telemetry exporters, concurrency limits, retention policy, runtime Runner bounds, Web transport settings, and an optional advanced Local Sandbox envd executable override. The retention policy includes the positive orphan-retention period used by automatic startup cleanup; age never expires an object that still has a durable reference. The complete process-settings document is activated once for a Host lifetime. Changes to that document take effect only when a later Host lifetime selects it; the running Host does not partially apply a new data root, source topology, listener, credential-store implementation, runtime bound, or logging setup. Runtime Runner restart refreshes process-local execution code and state but does not reload Host process settings. Definition-file reload remains independent and can publish a later accepted configuration generation without restarting the Host.
+The process-settings YAML document selects the data root, definition roots, project-root policy, process-owned local directory and executable aliases, credential backends, provider/plugin allowlists, logging and telemetry exporters, simple concurrency limits, runtime Runner bounds, Web transport settings, and an optional advanced Local Sandbox envd executable override. Native paths appear only in this Host-controlled document. Product resource documents use bounded alias objects and cannot introduce an absolute POSIX, UNC, or drive path.
+
+Direct Local `root` selects one `directory_id`. Each Direct Local shell profile selects one `executable_id`; the referenced executable alias resolves to one explicit absolute Host path and is unique by both ID and path. Candidate validation resolves these aliases before provider-spec validation, and immutable Environment snapshot construction resolves them again from the accepted process settings. A missing alias, malformed alias object, literal native path, non-absolute process setting, or directory selected as an executable fails explicitly. Alias resolution supplies provider parameters only; an ID or path does not bypass the Environment access ceiling or provider process policy.
+
+The complete process-settings document is activated once for a Host lifetime. Changes to that document take effect only when a later Host lifetime selects it; the running Host does not partially apply a new data root, source topology, listener, credential-store implementation, runtime bound, or logging setup. Runtime Runner restart refreshes process-local execution code and state but does not reload Host process settings. Definition-file reload remains independent and can publish a later accepted configuration generation without restarting the Host.
 
 ### Local Sandbox Runtime Selection
 
 The package owns a reviewed runtime manifest that selects one exact agent-envd release and one exact asset and hash set for each supported target. This manifest is release metadata, not editable product configuration. By default, Local Sandbox resolves only the matching managed executable under the Agent UI data root. Configuration reload, Direct Local, Docker, and E2B selection do not download a Host binary, and Agent UI never searches ambient `PATH`.
 
-An advanced process setting can replace the managed default with one explicit absolute executable path. Relative paths, command names, shell expressions, directories, and `PATH` lookup are invalid. Syntax validation occurs with configuration; actual availability remains a runtime fact. Before Local Sandbox provider creation, the Host requires the executable to report the package manifest's exact envd release identity, runs the production-equivalent required-isolation probe, and later requires compatible EIP initialization. The override changes location only, not the selected release. Failure leaves Local Sandbox unavailable and never substitutes Direct Local.
+An advanced process setting can replace the managed default with one explicit absolute executable path. Relative paths, command names, shell expressions, directories, and `PATH` lookup are invalid. Syntax validation occurs with configuration; actual availability remains a runtime fact. Before Local Sandbox provider creation, the selected Runner requires the executable to report the package manifest's exact envd release identity, runs the production-equivalent required-isolation probe, and later requires compatible EIP initialization. The override changes location only, not the selected release. Failure leaves Local Sandbox unavailable and never substitutes Direct Local.
 
 The override affects later Local Sandbox resource operations only. An already entered provider resource or active attachment retains its selected executable/process generation until its ordinary lifecycle closes. [Runtime, Subagents, and Surfaces](05-runtime-subagents-and-surfaces.md#local-sandbox-runtime-resolution) owns download, cache, validation, diagnostics, and provider handoff.
-
-### Source Transaction Manifest
-
-Application-owned atomic edits use a strict source transaction document:
-
-```python
-class SourceTransactionEntry(BaseModel):
-    relative_path: str
-    operation: Literal["replace", "delete"]
-    content_digest: str | None
-
-
-class SourceTransactionManifest(BaseModel):
-    schema_version: Literal["1"]
-    transaction_id: str
-    base_catalog_digest: str
-    entries: tuple[SourceTransactionEntry, ...]
-```
-
-Entries are unique, ordered, and confined to one authorized definition root. `replace` requires a staged file with the exact digest; `delete` has no content digest. `base_catalog_digest` provides optimistic conflict detection against the accepted generation from which the editor read. The application publishes the complete manifest by atomic replacement only after every replacement verifies. The loader applies all entries to that exact base as one candidate; a stale base, missing value, extra staged value, digest mismatch, or invalid resulting graph rejects the transaction without selecting any entry.
-
-The manifest is a local authoring commit boundary, not a resource revision, Session fact, package lock, or runtime authority. Once accepted, ordinary immutable resource snapshots and the configuration generation preserve the resulting content.
 
 ## Resource Identity and Revisions
 
@@ -200,7 +182,7 @@ class LocalSkillDiscoverySettings(BaseModel):
 
 Every `ordered_sources` entry names a `skill_source` resource exactly once. `directory` is a credential-free local directory selector authorized by current Host policy. Agent UI acquires one fresh Direct Local provider attachment for each configured existing directory, adapts the attachments into a single-use `EnvironmentRuntime`, and gives every source a unique mount name used by `/environment/{source-alias}/...` logical paths. `roots` are normalized beneath that mount. Agent UI then constructs explicit ordered Harness `FileSkillSource` values and calls `SkillManager.scan_environment(environment=...)` against the current mount set. That operation captures every configured root, scans and materializes through exact mount-incarnation-pinned `FileOperator` scopes, and reselects every configured root before returning a `BoundSkillCatalog`. The catalog carries exact bound paths and observed provider generations for its discovered items; Agent UI calls `require_current()` before consuming a bound logical path. It never reads a native path through a second Skill scanner.
 
-`BoundSkillCatalog`, `BoundSkillCatalogItem`, their bound `EnvironmentPath` values, captured mount incarnations, and observed provider generations are process-local evidence about one entered Environment. Agent UI never persists them as package, resource-revision, snapshot, or Session authority. Only the copied package manifest, payloads, and content digest become durable Agent UI authority; safe source provenance retained for refresh remains a non-authoritative hint.
+`BoundSkillCatalog`, `BoundSkillCatalogItem`, their bound `EnvironmentPath` values, captured mount incarnations, and observed provider generations are process-local evidence about one entered Environment. Agent UI never persists them as package, resource-revision, snapshot, or Session authority. Only the copied package manifest, payloads, and content digest become retained Agent UI authority; safe source provenance kept for refresh remains a non-authoritative hint.
 
 The scan uses the Harness contract exactly: each declared root can itself contain `SKILL.md`, each immediate child directory can contain one `SKILL.md`, and discovery does not recurse further. Source order and `conflict` select the final name catalog before import preview. `required=False` skips each individually missing, unroutable, or unsupported root; permission denial, invalid paths, malformed content, provider failure, catalog overflow, and every failure from a required root remain explicit diagnostics.
 
@@ -232,8 +214,8 @@ Import follows one explicit pipeline:
 2. use `SkillManager.scan_environment(environment=...)` to produce a conflict-resolved revision-bound metadata catalog;
 3. select one exact `BoundSkillCatalogItem`, call `catalog.require_current(environment)`, and call `environment.select_files(item.path)`;
 4. verify that the selection's `resolved_path` and `observed_generation` equal the bound item's directory and generation, enter `environment.open_files(selection)`, and keep that exact mount-incarnation-pinned scope open while enumerating and copying the package's bounded regular files;
-5. reject path escape, symlink escape, unsupported file kinds, duplicate normalized paths, and package limits, then copy the package into an application-managed source transaction;
-6. validate the copied package again and publish a new immutable Skill revision and package object.
+5. reject path escape, symlink escape, unsupported file kinds, duplicate normalized paths, and package-limit violations, then prepare ordinary file replacements under the selected writable definition root;
+6. apply the replacements, reload the complete configuration graph, and publish the new immutable Skill revision and package object only when validation succeeds.
 
 The internal scopes used by `scan_environment()` are closed before it returns. The import therefore opens its own exact scope from the selected bound item rather than attempting to reuse a scanner-owned `FileOperator`; a stale or mismatched selection fails the import before publication.
 
@@ -243,7 +225,7 @@ The immutable package object contains a canonical manifest and digest over every
 
 ### Agents and Environments
 
-Agent documents reference exact resource identities in the candidate generation and are owned in detail by [Agent Composition and Snapshots](02-agent-composition-and-snapshots.md). Environment documents wrap one or more provider specifications and Session lifecycle policy and are owned by [Sessions, Environments, and State](04-sessions-environments-and-state.md).
+Agent documents reference exact resource identities in the candidate generation and are owned in detail by [Agent Composition and Snapshots](02-agent-composition-and-snapshots.md). Environment documents wrap one or more provider specifications and an initial provisioning policy and are owned by [Sessions, Environments, and State](04-sessions-environments-and-state.md).
 
 ## Accepted Configuration Generation
 
@@ -277,7 +259,7 @@ sequenceDiagram
     Loader->>Resolver: strict documents and source provenance
     Resolver->>Resolver: validate references, locks, graphs, and policy
     Resolver->>Objects: publish missing immutable revision snapshots
-    Objects-->>Resolver: digests and durable object references
+    Objects-->>Resolver: digests and object references
     Resolver->>DB: atomically commit accepted generation and resource index
     DB-->>App: new generation available
     App-->>App: invalidate only generation-scoped caches
@@ -285,7 +267,7 @@ sequenceDiagram
 
 The loader reads a stable point-in-time candidate set after a bounded debounce and verifies each selected file did not change during that read. It retries an unstable read. Direct external edits to several independent files have no implicit author transaction, so a graph-valid intermediate point-in-time set can become an accepted generation. Generation atomicity governs validation and publication, not inferred editor intent.
 
-An application-owned multi-resource edit uses a source transaction manifest. The application stages all replacement files, records their exact relative paths and content digests in one versioned manifest, and atomically replaces the active manifest only after every staged value verifies. The loader accepts that transaction only when all manifest digests match; a missing, extra, or mismatched value rejects the transaction. A single-resource UI edit is the one-entry form of the same contract. External tools that require multi-file authoring atomicity publish the same manifest or invoke the application batch-edit command.
+Application edits use ordinary last-write-wins file replacement. A multi-resource edit replaces files one at a time; the loader publishes a generation only when the resulting complete graph validates. An invalid intermediate graph leaves the prior accepted generation active until later edits make the sources valid. Agent UI does not maintain a source transaction manifest, edit lease, or stale-editor conflict protocol.
 
 The new generation is visible atomically. Queries and commands capture one generation at entry and never mix resources from two accepted generations. Existing Sessions retain their pinned snapshots. Existing `ExecutableAgent` values and active Runs continue unchanged. New Sessions and explicit forks select from the latest accepted generation unless the caller names another retained exact revision.
 
@@ -299,7 +281,7 @@ Package discovery can participate in reload. A newly installed trusted plugin or
 | Local Skill source or discovery ordering                             | Later scans change; imported revisions and Sessions remain pinned          |
 | Model credential value behind the same `credential_ref`              | Resolved fresh for later Runs under current credential policy              |
 | Provider credential value behind a stable reference                  | Resolved fresh for later management operations                             |
-| Concurrency, retention, and safe display policy                      | Applies to later commands; cannot retroactively strengthen completed facts |
+| Concurrency and safe display policy                                  | Applies to later commands; cannot retroactively change completed facts     |
 | Plugin/provider installation metadata                                | Available only in a newly accepted catalog; no active module replacement   |
 | Data root, SQLite path, listener, TLS, credential backend            | Accepted as desired process setting and reported restart-bound             |
 | Explicit absolute Local Sandbox envd override                        | Applies only to later Local Sandbox resolution; active resources unchanged |
@@ -313,20 +295,20 @@ A configuration listing, export, diagnostic, snapshot, Session, AG-UI event, mod
 
 ## Failure Semantics
 
-| Failure                                                                    | Outcome                                                                                                                |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Malformed, oversized, or unstable source                                   | Candidate rejected; last accepted generation remains active                                                            |
-| Duplicate identity at equal precedence                                     | Entire candidate generation rejected                                                                                   |
-| Missing or wrong-kind reference                                            | Entire candidate generation rejected with bounded dependency diagnostics                                               |
-| Agent cycle, invalid plugin, unavailable adapter, or invalid provider spec | Candidate generation rejected before publication                                                                       |
-| Immutable snapshot publication failure                                     | No generation metadata points to the incomplete object                                                                 |
-| SQLite generation commit failure                                           | Published unreferenced objects remain cleanup-safe and expire through storage retention; old generation remains active |
-| External edit races a UI edit                                              | Version conflict or later reload; no silent merge                                                                      |
-| Multi-file manifest is incomplete or mismatched                            | Transaction candidate rejected; previous accepted generation remains active                                            |
-| Restart-bound setting changes                                              | Desired generation accepted with `restart_required`; active infrastructure is unchanged                                |
-| Credential lookup fails                                                    | Current runtime operation fails; configuration remains accepted                                                        |
-| Local Sandbox executable or isolation validation fails                     | Local Sandbox is unavailable with bounded diagnostics; no Direct Local fallback                                        |
-| File watcher loses events                                                  | Periodic reconciliation or explicit reload detects divergence; watcher delivery is not authority                       |
+| Failure                                                                    | Outcome                                                                                                       |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Malformed, oversized, or unstable source                                   | Candidate rejected; last accepted generation remains active                                                   |
+| Duplicate identity at equal precedence                                     | Entire candidate generation rejected                                                                          |
+| Missing or wrong-kind reference                                            | Entire candidate generation rejected with bounded dependency diagnostics                                      |
+| Agent cycle, invalid plugin, unavailable adapter, or invalid provider spec | Candidate generation rejected before publication                                                              |
+| Immutable snapshot publication failure                                     | No generation metadata points to the incomplete object                                                        |
+| SQLite generation commit failure                                           | Published unreferenced objects remain eligible for explicit garbage collection; old generation remains active |
+| External edit races a UI edit                                              | Last file replacement wins; the latest complete valid graph can be accepted                                   |
+| Multi-file edit leaves an invalid intermediate graph                       | Candidate rejected; previous accepted generation remains active until the graph validates                     |
+| Restart-bound setting changes                                              | Desired generation accepted with `restart_required`; active infrastructure is unchanged                       |
+| Credential lookup fails                                                    | Current runtime operation fails; configuration remains accepted                                               |
+| Local Sandbox executable or isolation validation fails                     | Local Sandbox is unavailable with bounded diagnostics; no Direct Local fallback                               |
+| File watcher loses events                                                  | Explicit reload rereads the current source set; watcher delivery is only a convenience                        |
 
 ## Compatibility
 
@@ -356,10 +338,11 @@ Separating credential values from revision content allows safe rotation and reau
 04. One command or query observes exactly one configuration generation.
 05. Dynamic reload never mutates an active Run, built executable, or existing Session snapshot.
 06. Every behavior-affecting resource revision has immutable normalized content and a digest.
-07. A source path, package installation, resource ID, or credential reference grants no runtime authority.
+07. A source path, package installation, resource ID, local path alias, or credential reference grants no runtime authority.
 08. Local Skill discovery uses explicit accepted sources and the Harness Environment-aware `scan_environment()` mount-incarnation-pinned boundary; Agent UI performs no ambient, direct-`scan(files=...)`, or native-path bypass scan.
 09. Imported Skill revisions own copied immutable package content and never depend on continued access to their discovery source.
-10. Credentials and live provider values never enter resource snapshots, Session history, AG-UI files, or default telemetry.
+10. Credentials and live provider values never enter resource snapshots, Session continuations, live AG-UI values, or default telemetry.
 11. Restart-bound settings are never partially applied to already-open infrastructure.
-12. UI edits and external file edits pass through the same validation and generation-publication path; multi-file authoring atomicity requires an explicit source transaction manifest.
+12. UI edits and external file edits pass through the same validation and generation-publication path and use last-write-wins file replacement.
 13. Local Sandbox defaults to the package-pinned managed envd executable; only an explicit absolute override can replace it, and ambient `PATH` is never executable authority.
+14. Product definitions contain no native Host path; Direct Local directory and executable paths resolve only through process-owned aliases before trusted provider construction.

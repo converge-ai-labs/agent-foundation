@@ -10,20 +10,20 @@ The function-tool wrapper is an Agent invocation boundary, not Python isolation.
 
 ## Boundary
 
-| Concern                                                            | Owner                                                    |
-| ------------------------------------------------------------------ | -------------------------------------------------------- |
-| Function-tool definition/validation, tool manager, deferred values | Pydantic AI                                              |
-| Optional Harness tool metadata and effective-surface resolution    | Harness                                                  |
-| Managed invocation wrapper and final tool-surface recording        | Harness                                                  |
-| Agent policy and credential decisions for managed tools            | Harness boundary plus fresh `InvocationPolicyCapability` |
-| Optional shell-command risk assessment                             | Definition-selected `ShellReviewCapability`              |
-| Remote operation and side-effect evidence                          | Tool provider                                            |
-| Grant signing and authenticated transport                          | Host security or provider adapter                        |
-| Direct I/O by trusted Python plugins                               | Plugin process trust boundary                            |
-| Client-side definition/run selection and Toolset composition       | Client Tools Capability                                  |
-| Client-side model schemas, instructions, and external deferral     | Client Tools Toolset and Pydantic AI                     |
-| Client-side execution, authorization, and result production        | External executor or Foundation Client                   |
-| Durable client-call waiting, delivery, and feedback correlation    | Host                                                     |
+| Concern                                                            | Owner                                                            |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| Function-tool definition/validation, tool manager, deferred values | Pydantic AI                                                      |
+| Optional Harness tool metadata and effective-surface resolution    | Harness                                                          |
+| Managed invocation wrapper and final tool-surface recording        | Harness                                                          |
+| Agent policy and credential decisions for managed tools            | Harness default plus optional fresh `InvocationPolicyCapability` |
+| Optional shell-command risk assessment                             | Definition-selected `ShellReviewCapability`                      |
+| Remote operation and side-effect evidence                          | Tool provider                                                    |
+| Grant signing and authenticated transport                          | Host security or provider adapter                                |
+| Direct I/O by trusted Python plugins                               | Plugin process trust boundary                                    |
+| Client-side definition/run selection and Toolset composition       | Client Tools Capability                                          |
+| Client-side model schemas, instructions, and external deferral     | Client Tools Toolset and Pydantic AI                             |
+| Client-side execution, authorization, and result production        | External executor or Foundation Client                           |
+| Durable client-call waiting, delivery, and feedback correlation    | Host                                                             |
 
 ## Tool Metadata
 
@@ -130,7 +130,7 @@ This registry is not Pydantic `ToolDefinition.metadata`, which describes one ass
 
 The Harness always installs exactly one code-owned `ToolExecutionBoundaryCapability`. Its `get_wrapper_toolset()` contribution is a `ToolExecutionBoundaryToolset` ordered outermost around the effective non-output Toolset after per-step preparation, mandatory surface resolution, and optional CodeAct composition; Host code cannot replace its preparation, dispatch, or textual-result algorithm. It declares `CapabilityOrdering(position="outermost", wraps=(AbstractCapability,))`, so it sorts before AgentSpec, definition, plugin, run, instrumentation, and other same-tier Capabilities regardless of contribution order. An incompatible Capability that attempts to wrap this boundary creates an ordering cycle and fails run setup before tool exposure rather than weakening the boundary. The wrapper therefore sees function, unapproved, and external definitions, branches on `ToolDefinition.kind`, and never intercepts output or provider-native tools. It normalizes managed function metadata, enforces final client-tool names, and delegates ordinary external deferral to Pydantic without calling an external function body.
 
-Current managed authority enters through exactly one fresh `InvocationPolicyCapability` in `RunBindings.capabilities`; feature-specific setup and dispatch require its documented public type and stable Capability ID and reject incompatible values before model exposure. The policy Capability can retain a typed evaluator, approval verifier, credential broker, and invocation-grant broker, but those grant nothing without the current run's Identity and invocation context. When no policy provider is supplied, managed metadata-aware tools are denied while unmanaged native tools retain their ordinary trusted semantics. An embedded caller that enables managed Environment tools supplies the same `InvocationPolicyCapability` with its explicit local evaluator; after that allow decision, the live `BoundEnvironment` independently narrows the call through captured Identity, binding ceilings, readiness, and provider policy. There is no specialized local-policy Capability, class-free role registry, serialized component bundle, or model-authored ID that can create this authority.
+A run supplies at most one fresh `InvocationPolicyCapability` through `RunBindings.capabilities`; feature-specific setup and dispatch require its documented public type and stable Capability ID and reject incompatible values before model exposure. The optional policy Capability can retain a typed evaluator, approval verifier, credential broker, and invocation-grant broker, but those grant nothing without the current run's Identity and invocation context. When no explicit policy is supplied, managed metadata-aware tools use the code-owned default allow decision with no dispatch retries, while credentials, approvals, grants, and Provider authorization remain independently required when applicable. An embedded caller that enables managed Environment tools therefore needs no local allow-policy boilerplate; the live `BoundEnvironment` still narrows every call through captured Identity, effective mount actions, readiness, and Provider policy. A supplied policy can only narrow or condition this default. There is no specialized local-policy Capability, class-free role registry, serialized component bundle, or model-authored ID that can create broader authority.
 
 ### Shell Command Review
 
@@ -188,7 +188,7 @@ The default `AgentShellCommandReviewer` owns one tool-free Pydantic AI Agent wit
 
 Risk order is `low < medium < high < extra_high`. An assessment at or above `risk_threshold` applies `on_flagged`; a reviewer exception, timeout, invalid result, or invalid marked projection applies `on_error`. The selected action either denies the invocation or requests native Pydantic approval. Review never produces an independent allow grant: an assessment below the threshold means only that shell review adds no restriction.
 
-The execution boundary evaluates the fresh `InvocationPolicyCapability` first. A policy denial skips shell review and its model cost. Otherwise, a marked invocation is reviewed before any credential lease, invocation grant, or provider dispatch. The final result is the strict merge `deny > approval_required > allow`; an already satisfied native approval satisfies the approval-required result, but review and fresh policy evaluation still run again on resume. When approval is first required, the single native `ApprovalRequired` metadata value carries bounded policy metadata and shell assessment metadata under separate reserved keys. A policy verifier receives only its policy-owned metadata. No shell-specific deferred result, stream event, approval protocol, durable review cache, or previous-review learning is introduced.
+The execution boundary evaluates the effective invocation policy first: either the fresh explicit `InvocationPolicyCapability` or the code-owned default allow policy. A denial skips shell review and its model cost. Otherwise, a marked invocation is reviewed before any credential lease, invocation grant, or Provider dispatch. The final result is the strict merge `deny > approval_required > allow`; an already satisfied native approval satisfies the approval-required result, but review and effective policy evaluation still run again on resume. When approval is first required, the single native `ApprovalRequired` metadata value carries bounded policy metadata and shell assessment metadata under separate reserved keys. A policy verifier receives only its policy-owned metadata. No shell-specific deferred result, stream event, approval protocol, durable review cache, or previous-review learning is introduced.
 
 Pydantic output tools remain part of output validation, not general side-effect dispatch, and provider-native server-side tools remain model/provider configuration. A deployment that needs Harness invocation policy for a provider-native operation exposes a metadata-aware function-tool adapter instead of pretending the function wrapper intercepts provider-internal execution.
 
@@ -279,7 +279,7 @@ class ToolInvocationContext(BaseModel):
 sequenceDiagram
     participant PAI as Pydantic AI Tool Manager
     participant Wrapper as Harness WrapperToolset
-    participant Policy
+    participant Policy as Selected or default policy
     participant Broker as Credential Broker
     participant Provider
 
@@ -307,6 +307,8 @@ sequenceDiagram
 ```
 
 Pydantic structural validation precedes every dispatch. Every locally executable function or unapproved tool return crosses the same outer result boundary. Managed metadata selects authorization, dispatch retry, events, strict JSON validation, and a per-tool `ToolOutputPolicy`; metadata-absent tools receive the finite code-owned default truncation policy for native JSON values and textual/JSON fields of `ToolReturn`, while arbitrary non-JSON return objects remain native. For a managed tool, the wrapper creates a bounded Pydantic JSON projection of the type-converted arguments for policy, digest, events, and state; a value that cannot be projected fails before authorization. Harness declaration-level bounds and the optional resource resolver then precede policy and provider work. The resolver sees the typed arguments, while `ToolInvocationContext.normalized_arguments` contains only their safe JSON projection. Resolver failure stops before authorization or dispatch. Providers remain responsible for canonicalization that depends on remote state; a central policy that requires such a canonical value uses an explicit provider resolution operation before its final decision. An unmanaged tool receives no implied Harness authorization, credential broker, idempotency, semantic retry, or invocation event; only the mandatory default text/JSON result boundary applies.
+
+When no fresh `InvocationPolicyCapability` is supplied, managed invocations use a Harness-owned allow decision with no dispatch retries. This default makes first-party managed tools usable out of the box; it does not supply credentials, approvals, grants, or Provider authority. A fresh explicit policy can only narrow or condition dispatch through deny, approval, credential, grant, strict-surface, or retry decisions. Provider and Environment enforcement still run for every dispatched operation.
 
 Approval is validated again on resume. Credentials resolve only after validation, authorization, and approval, immediately before dispatch. Live deny and cancellation are checked at that boundary.
 

@@ -6,28 +6,32 @@ from typing import Any
 
 import pytest
 from a13n_harness import (
-    CompactionCapability,
-    CompactionPolicy,
-    CreateTask,
     DefinitionError,
-    EmbeddedTaskStateCell,
-    FileChangeProjection,
-    FilesystemChangedValue,
-    HandoffCapability,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     HarnessState,
     RunBindings,
+)
+from a13n_harness.capabilities import (
+    CompactionCapability,
+    CompactionPolicy,
+    CreateTask,
+    EmbeddedTaskStateCell,
+    HandoffCapability,
     TaskMutation,
     TaskStateRunCapability,
-    ToolExtraEventPayload,
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
 from a13n_harness.capabilities.lifecycle import _safe_error_code
-from a13n_harness.events import ContextOperationCompletedPayload
+from a13n_harness.events import (
+    ContextOperationCompletedPayload,
+    FileChangeProjection,
+    FilesystemChangedValue,
+    ToolExtraEventPayload,
+)
 from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import UnexpectedModelBehavior

@@ -1,58 +1,48 @@
-"""Foreground Turn acceptance, Harness execution, continuation, and commit coordination."""
+"""Stable-Host coordination for Runner-owned foreground execution."""
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import cast
 from uuid import uuid4
 
-from a13n_harness import (
-    AgentIdentityRef,
-    DeferredToolResume,
-    ExecutableAgent,
-    HarnessRunResult,
-    HarnessRunResultEvent,
-    HarnessRunStream,
-    HarnessState,
-    RunBindings,
-    RunInputValue,
-    RunModelResolver,
-    SkillSelectionRunCapability,
-)
-from a13n_stream_protocol import HarnessAguiObserver
-from anyio import CancelScope, Lock
+from a13n_harness import HarnessState, RunInputValue
+from ag_ui.core import Event
+from anyio import Lock
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+from pydantic_ai.usage import RunUsage
 
-from a13n_ui.composition import CompositionService, ResolvedAgentSnapshot, ResolvedEnvironmentSnapshot
-from a13n_ui.configuration.models import canonical_json_value
+from a13n_ui.composition import CompositionService
 from a13n_ui.environments import EnvironmentService
-from a13n_ui.errors import AgentUiError, EventStoreError, RunCoordinationError, SessionError
-from a13n_ui.model_adapters import RunModelResolverFactory
-from a13n_ui.sessions.events import SessionEventStore
-from a13n_ui.sessions.models import (
-    LocalSession,
-    TurnState,
-    TurnView,
-    WaitingReason,
+from a13n_ui.errors import LivePresentationError, RunCoordinationError
+from a13n_ui.runtime_generations import RuntimeGenerationService
+from a13n_ui.runtime_generations.codecs import dump_deferred_results
+from a13n_ui.runtime_generations.wire import (
+    ExecuteRootRun,
+    ProviderStateUpdate,
+    RunnerAsyncWorkEvent,
+    RunnerContinuationCandidate,
+    SelectedEnvironmentResource,
 )
+from a13n_ui.sessions.events import SessionEventHub
+from a13n_ui.sessions.models import LocalSession, SessionRunResult, SessionRunStatus
 from a13n_ui.sessions.service import SessionService
-from a13n_ui.storage.objects import ObjectKind, ObjectRef
+from a13n_ui.storage import ObjectKind, ObjectRef
 
 
 @dataclass(frozen=True, slots=True)
 class _PreparedSession:
     session: LocalSession
-    agent: ResolvedAgentSnapshot
-    environment: ResolvedEnvironmentSnapshot
-    previous_state: HarnessState
-    executable: ExecutableAgent[object]
-    model_resolver: RunModelResolver
+    request: ExecuteRootRun
 
 
 class ForegroundRunCoordinator:
-    """Advance one durable root Thread through exactly one canonical Harness stream."""
+    """Serialize one Session's Runs while dispatching execution to selected Runners."""
 
     def __init__(
         self,
@@ -60,549 +50,378 @@ class ForegroundRunCoordinator:
         sessions: SessionService,
         composition: CompositionService,
         environments: EnvironmentService,
-        events: SessionEventStore,
-        model_resolver_factory: RunModelResolverFactory,
+        events: SessionEventHub,
+        runtime: RuntimeGenerationService,
     ) -> None:
         self._sessions = sessions
         self._composition = composition
         self._environments = environments
         self._events = events
-        self._model_resolver_factory = model_resolver_factory
-        self._active_lock = Lock()
-        self._active: dict[str, HarnessRunStream[object]] = {}
+        self._runtime = runtime
+        self._registry_lock = Lock()
+        self._session_locks: dict[str, Lock] = {}
+        self._active: dict[str, str] = {}
+        self._wake_tasks: dict[str, asyncio.Task[None]] = {}
+        self._wake_suppression: dict[str, int] = {}
+        self._async_usage: dict[str, dict[tuple[str, str], RunUsage]] = {}
+        self._closed = False
+        self._runtime.set_async_work_handler(self.handle_async_work)
 
-    async def run_turn(
-        self,
-        *,
-        session_id: str,
-        thread_id: str,
-        expected_thread_version: int,
-        input_value: RunInputValue,
-    ) -> TurnView:
-        """Accept and synchronously advance one new root Turn to a durable boundary."""
-
-        prepared = await self._prepare(
-            session_id=session_id,
-            thread_id=thread_id,
-            expected_thread_version=expected_thread_version,
-        )
-        turn_id = f"turn-{uuid4().hex}"
-        accepted = await self._sessions.repository.accept_turn(
-            session_id=session_id,
-            thread_id=thread_id,
-            expected_version=expected_thread_version,
-            turn_id=turn_id,
-            input_value=TypeAdapter(RunInputValue).dump_python(input_value, mode="json"),
-        )
-        try:
-            return await self._run_accepted(
-                prepared=prepared,
-                turn=accepted,
-                expected_thread_version=expected_thread_version + 1,
-                input_value=input_value,
-                deferred_resume=None,
+    async def run(self, *, session_id: str, input_value: RunInputValue) -> SessionRunResult:
+        lock = await self._session_lock(session_id)
+        async with lock:
+            prepared, deferred = await self._prepare(
+                session_id,
+                input_value=TypeAdapter(RunInputValue).dump_python(input_value, mode="json"),
+                deferred_results=None,
             )
-        except BaseException as exc:
-            await self._close_unstarted_after_failure(
-                turn_id=turn_id,
-                expected_thread_version=expected_thread_version + 1,
-                exc=exc,
+            if deferred is not None:
+                raise RunCoordinationError(
+                    "The selected Session continuation is suspended and requires deferred results.",
+                    code="session_suspended",
+                )
+            return await self._execute(prepared)
+
+    async def resume(self, *, session_id: str, results: DeferredToolResults) -> SessionRunResult:
+        lock = await self._session_lock(session_id)
+        async with lock:
+            prepared, deferred = await self._prepare(
+                session_id,
+                input_value=None,
+                deferred_results=dump_deferred_results(results),
             )
-            raise
+            if deferred is None:
+                raise RunCoordinationError(
+                    "The selected Session continuation has no deferred requests.",
+                    code="session_not_suspended",
+                )
+            return await self._execute(prepared)
 
-    async def resume_turn(
-        self,
-        *,
-        session_id: str,
-        turn_id: str,
-        expected_thread_version: int,
-        results: DeferredToolResults,
-    ) -> TurnView:
-        """Consume one exact pending deferred request and advance the same Turn."""
+    async def deferred_requests(self, session_id: str) -> DeferredToolRequests:
+        return await self._sessions.selected_deferred_requests(session_id)
 
-        session = await self._sessions.get(session_id)
-        if session.root.commit_version != expected_thread_version:
-            raise SessionError(
-                "The Thread commit version is stale.",
-                code="thread_version_conflict",
-                details={"current_version": session.root.commit_version},
-            )
-        turn = _turn(session, turn_id)
-        if (
-            turn.state is not TurnState.waiting
-            or turn.pending_deferred is None
-            or turn.selected_checkpoint is None
-            or turn.thread_id != session.root.thread_id
-        ):
-            raise RunCoordinationError(
-                "The selected Turn has no resumable deferred request.",
-                code="turn_not_resumable",
-            )
-        prepared = await self._prepare(
-            session_id=session_id,
-            thread_id=turn.thread_id,
-            expected_thread_version=expected_thread_version,
-            checkpoint=turn.selected_checkpoint,
-        )
-        requests = await self._sessions.load_deferred_requests(
-            session_id=session_id,
-            thread_id=turn.thread_id,
-            turn_id=turn_id,
-            agent_snapshot_digest=session.agent_snapshot.logical_digest,
-            reference=turn.pending_deferred,
-        )
-        resume = DeferredToolResume(requests=requests, results=results)
-        return await self._run_accepted(
-            prepared=prepared,
-            turn=turn,
-            expected_thread_version=expected_thread_version,
-            input_value=None,
-            deferred_resume=resume,
-        )
-
-    async def deferred_requests(
-        self,
-        *,
-        session_id: str,
-        turn_id: str,
-    ) -> DeferredToolRequests:
-        """Load the exact native pending request value selected by a waiting Turn."""
-
-        session = await self._sessions.get(session_id)
-        turn = _turn(session, turn_id)
-        if turn.state is not TurnState.waiting or turn.pending_deferred is None:
-            raise RunCoordinationError(
-                "The selected Turn has no pending deferred request.",
-                code="deferred_request_missing",
-            )
-        return await self._sessions.load_deferred_requests(
-            session_id=session_id,
-            thread_id=turn.thread_id,
-            turn_id=turn.turn_id,
-            agent_snapshot_digest=session.agent_snapshot.logical_digest,
-            reference=turn.pending_deferred,
-        )
-
-    async def cancel_turn(
-        self,
-        *,
-        session_id: str,
-        turn_id: str,
-        expected_thread_version: int,
-    ) -> TurnView:
-        """Request active cancellation or close accepted/waiting work immediately."""
-
-        session = await self._sessions.get(session_id)
-        if session.root.commit_version != expected_thread_version:
-            raise SessionError(
-                "The Thread commit version is stale.",
-                code="thread_version_conflict",
-                details={"current_version": session.root.commit_version},
-            )
-        turn = _turn(session, turn_id)
-        async with self._active_lock:
-            stream = self._active.get(turn_id)
-            if stream is not None:
-                stream.cancel()
-                return turn
-        if turn.state not in {TurnState.accepted, TurnState.waiting}:
-            raise RunCoordinationError("The selected Turn is not cancellable.", code="turn_not_cancellable")
-        return await self._sessions.repository.commit_unstarted_terminal(
-            turn_id=turn_id,
-            expected_thread_version=expected_thread_version,
-            state=TurnState.cancelled,
-            failure={"code": "run_cancelled", "message": "The Turn was cancelled before another Run."},
-        )
+    async def cancel(self, session_id: str) -> bool:
+        async with self._registry_lock:
+            request_id = self._active.get(session_id)
+        if request_id is None:
+            return False
+        return await self._runtime.cancel_root(request_id)
 
     async def cancel_all(self) -> None:
-        """Request cooperative cancellation for every process-local foreground Run."""
+        async with self._registry_lock:
+            request_ids = tuple(self._active.values())
+        for request_id in request_ids:
+            await self._runtime.cancel_root(request_id)
 
-        async with self._active_lock:
-            streams = tuple(self._active.values())
-        for stream in streams:
-            stream.cancel()
+    @asynccontextmanager
+    async def session_guard(
+        self,
+        session_id: str,
+        *,
+        cancel_active: bool = False,
+        suppress_wake: bool = False,
+    ) -> AsyncGenerator[None]:
+        """Serialize one Host lifecycle decision with root and wake Runs for a Session."""
+        if suppress_wake:
+            async with self._registry_lock:
+                self._wake_suppression[session_id] = self._wake_suppression.get(session_id, 0) + 1
+        try:
+            if cancel_active:
+                await self.cancel(session_id)
+            lock = await self._session_lock(session_id)
+            async with lock:
+                yield
+        finally:
+            if suppress_wake:
+                async with self._registry_lock:
+                    remaining = self._wake_suppression[session_id] - 1
+                    if remaining:
+                        self._wake_suppression[session_id] = remaining
+                    else:
+                        self._wake_suppression.pop(session_id, None)
+
+    async def handle_async_work(self, event: RunnerAsyncWorkEvent) -> None:
+        """Aggregate detached usage and wake an inactive Session from its latest continuation."""
+
+        identity = event.child_thread_id or event.reference
+        active_generation_id = (await self._runtime.status()).active_generation_id
+        async with self._registry_lock:
+            if event.kind == "completion":
+                usage = self._async_usage.setdefault(event.session_id, {})
+                usage[(event.source, identity)] = deepcopy(event.usage)
+            if (
+                self._closed
+                or event.generation_id != active_generation_id
+                or event.session_id in self._wake_suppression
+                or (event.harness_active and event.session_id in self._active)
+                or event.session_id in self._wake_tasks
+            ):
+                return
+            task = asyncio.create_task(
+                self._wake_session(event.session_id, event.generation_id),
+                name=f"async-wake-{event.session_id}",
+            )
+            self._wake_tasks[event.session_id] = task
+
+    async def async_usage(self, session_id: str) -> RunUsage:
+        """Return process-local usage for deduplicated asynchronous executions."""
+
+        async with self._registry_lock:
+            values = tuple(deepcopy(value) for value in self._async_usage.get(session_id, {}).values())
+        total = RunUsage()
+        for value in values:
+            total.incr(value)
+        return total
+
+    async def forget_session(self, session_id: str) -> None:
+        """Discard process-local coordination state after durable Session deletion."""
+        async with self._registry_lock:
+            wake = self._wake_tasks.pop(session_id, None)
+            self._async_usage.pop(session_id, None)
+            self._wake_suppression.pop(session_id, None)
+        if wake is not None:
+            wake.cancel()
+            await asyncio.gather(wake, return_exceptions=True)
+        async with self._registry_lock:
+            if session_id not in self._active:
+                self._session_locks.pop(session_id, None)
 
     async def close(self) -> None:
+        async with self._registry_lock:
+            self._closed = True
+            wake_tasks = tuple(self._wake_tasks.values())
+        for task in wake_tasks:
+            task.cancel()
+        if wake_tasks:
+            await asyncio.gather(*wake_tasks, return_exceptions=True)
         await self.cancel_all()
         await self._events.close()
 
+    async def _wake_session(self, session_id: str, generation_id: str) -> None:
+        task = asyncio.current_task()
+        try:
+            lock = await self._session_lock(session_id)
+            async with lock:
+                active_generation_id = (await self._runtime.status()).active_generation_id
+                async with self._registry_lock:
+                    if (
+                        self._closed
+                        or generation_id != active_generation_id
+                        or session_id in self._active
+                        or session_id in self._wake_suppression
+                    ):
+                        return
+                prepared, deferred = await self._prepare(
+                    session_id,
+                    input_value=None,
+                    deferred_results=None,
+                )
+                if deferred is not None:
+                    return
+                await self._execute(prepared)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Wake Runs are best-effort process-local delivery. A later user Run
+            # reconciles the same retained child/process projection.
+            return
+        finally:
+            async with self._registry_lock:
+                if task is not None and self._wake_tasks.get(session_id) is task:
+                    self._wake_tasks.pop(session_id, None)
+
     async def _prepare(
         self,
-        *,
         session_id: str,
-        thread_id: str,
-        expected_thread_version: int,
-        checkpoint: object | None = None,
-    ) -> _PreparedSession:
+        *,
+        input_value: JsonValue | None,
+        deferred_results: JsonValue | None,
+    ) -> tuple[_PreparedSession, DeferredToolRequests | None]:
         session = await self._sessions.get(session_id)
-        if session.root.thread_id != thread_id:
-            raise SessionError("The selected Thread does not exist in this Session.", code="thread_missing")
-        if session.root.commit_version != expected_thread_version:
-            raise SessionError(
-                "The Thread commit version is stale.",
-                code="thread_version_conflict",
-                details={"current_version": session.root.commit_version},
+        _state, deferred = await self._sessions.load_continuation(session.continuation)
+        await self._composition.agent(session.agent_snapshot)
+        await self._composition.environment(session.environment_snapshot)
+        resources = (await self._environments.availability(session_id)).resources
+        selected = tuple(
+            SelectedEnvironmentResource(
+                resource=resource,
+                provider_state=(
+                    ObjectRef(
+                        object_kind=ObjectKind.provider_state,
+                        object_schema_version="1",
+                        logical_digest=resource.provider_state_digest,
+                    )
+                    if resource.provider_state_digest is not None
+                    else None
+                ),
             )
-        selected = checkpoint or session.root.selected_checkpoint
-        if selected is None:
-            raise RunCoordinationError("The selected Thread has no complete checkpoint.", code="checkpoint_missing")
-        from a13n_ui.sessions import CheckpointRef
-
-        if not isinstance(selected, CheckpointRef):
-            raise TypeError("checkpoint must be a CheckpointRef")
-        agent = await self._composition.agent(session.agent_snapshot)
-        environment = await self._composition.environment(session.environment_snapshot)
-        executable = await self._composition.executable(
-            session.agent_snapshot,
-            session.environment_snapshot,
+            for resource in resources
         )
-        previous_state = await self._sessions.load_state(session_id, selected)
-        model_resolver = await self._model_resolver_factory(agent)
-        if not callable(model_resolver):
-            raise RunCoordinationError(
-                "The Host Model resolver factory returned an invalid resolver.",
-                code="model_resolver_invalid",
-            )
-        return _PreparedSession(
-            session=session,
-            agent=agent,
-            environment=environment,
-            previous_state=previous_state,
-            executable=executable,
-            model_resolver=model_resolver,
+        request = ExecuteRootRun(
+            request_id=f"request-{uuid4().hex}",
+            generation_id="runtime-pending",
+            session_id=session_id,
+            continuation=ObjectRef(
+                object_kind=ObjectKind.session_continuation,
+                object_schema_version="1",
+                logical_digest=session.continuation.object_digest,
+            ),
+            agent_snapshot=ObjectRef(
+                object_kind=ObjectKind.agent_snapshot,
+                object_schema_version="1",
+                logical_digest=session.agent_snapshot.object_digest,
+            ),
+            environment_snapshot=ObjectRef(
+                object_kind=ObjectKind.environment_snapshot,
+                object_schema_version="1",
+                logical_digest=session.environment_snapshot.object_digest,
+            ),
+            environment_resources=selected,
+            skill_selections=session.skill_selections,
+            input_value=input_value,
+            deferred_results=deferred_results,
         )
+        return _PreparedSession(session=session, request=request), deferred
 
-    async def _run_accepted(
-        self,
-        *,
-        prepared: _PreparedSession,
-        turn: TurnView,
-        expected_thread_version: int,
-        input_value: RunInputValue | None,
-        deferred_resume: DeferredToolResume | None,
-    ) -> TurnView:
-        executable = prepared.executable
-        model_resolver = prepared.model_resolver
-        capabilities = _run_capabilities(prepared.session, prepared.agent)
-        stream: HarnessRunStream[object] | None = None
-        started_version: int | None = None
-        terminal_observed = False
-        durable_committed = False
-        presentation_failure: EventStoreError | None = None
-        external_cancellation: asyncio.CancelledError | None = None
-        selected: TurnView | None = None
+    async def _execute(self, prepared: _PreparedSession) -> SessionRunResult:
+        session_id = prepared.session.session_id
+        request_id = prepared.request.request_id
+        await self._register(session_id, request_id)
         try:
-            async with self._environments.run_environment(
-                session_id=prepared.session.session_id,
-                snapshot=prepared.environment,
-            ) as environment:
-                bindings = RunBindings.embedded(
-                    identity=AgentIdentityRef(
-                        issuer="a13n.agent-ui",
-                        subject=prepared.session.session_id,
-                    ),
-                    environment=environment,
-                    model_resolver=model_resolver,
-                    capabilities=capabilities,
-                    metadata={
-                        "session_id": prepared.session.session_id,
-                        "turn_id": turn.turn_id,
-                        "agent_snapshot": prepared.session.agent_snapshot.logical_digest,
-                        "environment_snapshot": prepared.session.environment_snapshot.logical_digest,
-                    },
-                )
-                stream = executable.stream(
-                    input_value,
-                    bindings=bindings,
-                    previous_state=prepared.previous_state,
-                    deferred_resume=deferred_resume,
-                )
-                started_version = await self._sessions.repository.start_run(
-                    turn_id=turn.turn_id,
-                    expected_thread_version=expected_thread_version,
-                    run_id=stream.run_id,
-                    consume_deferred=deferred_resume is not None,
-                )
-                await self._register(turn.turn_id, stream)
-                try:
-                    terminal, presentation_failure, external_cancellation = await self._consume(
-                        prepared.session.session_id,
-                        turn,
-                        stream,
-                    )
-                    terminal_observed = True
-                finally:
-                    await self._unregister(turn.turn_id, stream)
-                with CancelScope(shield=True):
-                    selected = await self._commit_result(
-                        prepared=prepared,
-                        turn=turn,
-                        expected_thread_version=started_version,
-                        terminal=terminal,
-                    )
-                if selected is None:
-                    raise RunCoordinationError(
-                        "The terminal Run result was not durably selected.",
-                        code="run_commit_missing",
-                    )
-                durable_committed = True
-            try:
-                await self._environments.apply_idle_policy(
-                    prepared.session.session_id,
-                    prepared.environment,
-                )
-            except AgentUiError:
-                pass
-            if external_cancellation is not None:
-                raise external_cancellation
-            if presentation_failure is not None:
-                raise presentation_failure
-            return selected
-        except asyncio.CancelledError as exc:
-            if stream is not None:
-                stream.cancel()
-            if started_version is not None and not durable_committed and stream is not None:
-                await self._commit_running_failure(
-                    turn_id=turn.turn_id,
-                    expected_thread_version=started_version,
-                    run_id=stream.run_id,
-                    exc=exc,
-                    terminal_observed=terminal_observed,
-                )
-            raise
-        except BaseException as exc:
-            if started_version is not None and not durable_committed and stream is not None:
-                await self._commit_running_failure(
-                    turn_id=turn.turn_id,
-                    expected_thread_version=started_version,
-                    run_id=stream.run_id,
-                    exc=exc,
-                    terminal_observed=terminal_observed,
-                )
-            raise
+            terminal = await self._runtime.execute_root(
+                prepared.request,
+                on_event=lambda run_id, events: self._append_events(session_id, run_id, events),
+                on_provider_state=self._persist_provider_state,
+            )
+        finally:
+            await self._unregister(session_id, request_id)
+        if terminal.failure is not None:
+            raise RunCoordinationError(
+                "The runtime Runner could not execute the Harness Run.",
+                code=_failure_code(terminal.failure, "run_execution_failed"),
+                details={"failure": terminal.failure},
+            )
+        if terminal.candidate is None:
+            raise RunCoordinationError("The runtime Runner returned no Harness result.", code="run_result_missing")
+        result = await self._save_candidate(session_id, terminal.candidate)
+        if terminal.cleanup_failure is not None:
+            raise _cleanup_error(result, terminal.cleanup_failure)
+        return result
 
-    async def _consume(
+    async def _append_events(self, session_id: str, run_id: str, raw_events: tuple[JsonValue, ...]) -> None:
+        try:
+            events = tuple(TypeAdapter(Event).validate_python(item) for item in raw_events)
+            await self._events.append(session_id=session_id, run_id=run_id, events=events)
+        except LivePresentationError:
+            pass
+
+    async def _persist_provider_state(self, update: ProviderStateUpdate) -> None:
+        await self._environments.persist_runner_state(
+            session_id=update.session_id,
+            mount_name=update.mount_name,
+            provider_key=update.provider_key,
+            provider_spec_digest=update.provider_spec_digest,
+            state_version=update.state_version,
+            provider_state=update.provider_state,
+            status=update.status,
+        )
+
+    async def _save_candidate(
         self,
         session_id: str,
-        turn: TurnView,
-        stream: HarnessRunStream[object],
-    ) -> tuple[
-        HarnessRunResult[object],
-        EventStoreError | None,
-        asyncio.CancelledError | None,
-    ]:
-        observer = HarnessAguiObserver()
-        first_presentation_failure: EventStoreError | None = None
-        terminal: HarnessRunResult[object] | None = None
-        external_cancellation: asyncio.CancelledError | None = None
-        async with stream:
-            iterator = stream.__aiter__()
-
-            async def consume_next() -> bool:
-                nonlocal first_presentation_failure, terminal
-                try:
-                    item = await iterator.__anext__()
-                except StopAsyncIteration:
-                    return False
-                events = observer.observe(item)
-                if first_presentation_failure is None:
-                    try:
-                        await self._events.append(
-                            session_id=session_id,
-                            thread_id=turn.thread_id,
-                            turn_id=turn.turn_id,
-                            run_id=item.run_id,
-                            events=events,
-                        )
-                    except EventStoreError as exc:
-                        first_presentation_failure = exc
-                if isinstance(item, HarnessRunResultEvent):
-                    terminal = item.result
-                return True
-
-            try:
-                while await consume_next():
-                    pass
-            except asyncio.CancelledError as exc:
-                external_cancellation = exc
-                stream.cancel()
-                with CancelScope(shield=True):
-                    while await consume_next():
-                        pass
-        if terminal is None:
-            raise RunCoordinationError("The Harness stream ended without a terminal result.", code="run_result_missing")
-        return terminal, first_presentation_failure, external_cancellation
-
-    async def _commit_result(
-        self,
-        *,
-        prepared: _PreparedSession,
-        turn: TurnView,
-        expected_thread_version: int,
-        terminal: HarnessRunResult[object],
-    ) -> TurnView:
-        checkpoint = None
-        if terminal.state is not None:
-            checkpoint = await self._sessions.publish_turn_state(
-                session_id=prepared.session.session_id,
-                turn_id=turn.turn_id,
-                state=terminal.state,
+        candidate: RunnerContinuationCandidate,
+    ) -> SessionRunResult:
+        if candidate.status == "suspended" and (candidate.harness_state is None or candidate.deferred_requests is None):
+            raise RunCoordinationError(
+                "A suspended Harness result has no complete continuation and deferred requests.",
+                code="continuation_invalid",
             )
-        if terminal.status == "suspended":
-            assert checkpoint is not None
-            requests = terminal.deferred
-            assert requests is not None
-            deferred = await self._sessions.publish_deferred_requests(
-                session_id=prepared.session.session_id,
-                thread_id=turn.thread_id,
-                turn_id=turn.turn_id,
-                source_run_id=terminal.run_id,
-                agent_snapshot_digest=prepared.session.agent_snapshot.logical_digest,
-                requests=requests,
+        continuation = None
+        if candidate.harness_state is not None:
+            state = HarnessState.model_validate(candidate.harness_state, strict=True)
+            deferred = (
+                TypeAdapter(DeferredToolRequests).validate_python(candidate.deferred_requests)
+                if candidate.status == "suspended" and candidate.deferred_requests is not None
+                else None
             )
-            return await self._sessions.repository.commit_waiting(
-                turn_id=turn.turn_id,
-                expected_thread_version=expected_thread_version,
-                run_id=terminal.run_id,
-                checkpoint=checkpoint,
-                state_object=ObjectRef(
-                    object_kind=ObjectKind.harness_state,
-                    object_schema_version="1",
-                    logical_digest=checkpoint.state_object_digest,
-                ),
-                deferred=deferred,
-                waiting_reason=WaitingReason.deferred_tool,
+            continuation = await self._sessions.publish_continuation(state, deferred)
+            await self._sessions.select_continuation(session_id, continuation)
+        if candidate.status == "completed":
+            return SessionRunResult(
+                run_id=candidate.run_id,
+                status=SessionRunStatus.completed,
+                output=candidate.output,
+                continuation=continuation,
             )
-        if terminal.status == "completed":
-            assert checkpoint is not None
-            return await self._sessions.repository.commit_terminal(
-                turn_id=turn.turn_id,
-                expected_thread_version=expected_thread_version,
-                run_id=terminal.run_id,
-                state=TurnState.completed,
-                checkpoint=checkpoint,
-                terminal_projection=canonical_json_value(terminal.output),
-                failure=None,
+        if candidate.status == "suspended":
+            if continuation is None:
+                raise RunCoordinationError(
+                    "A suspended Harness result has no complete continuation.",
+                    code="continuation_missing",
+                )
+            return SessionRunResult(
+                run_id=candidate.run_id,
+                status=SessionRunStatus.suspended,
+                continuation=continuation,
             )
-        if terminal.status == "failed":
-            failure = terminal.failure
-            assert failure is not None
-            return await self._sessions.repository.commit_terminal(
-                turn_id=turn.turn_id,
-                expected_thread_version=expected_thread_version,
-                run_id=terminal.run_id,
-                state=TurnState.failed,
-                checkpoint=checkpoint,
-                terminal_projection=None,
-                failure=cast(JsonValue, failure.model_dump(mode="json", by_alias=True)),
+        if candidate.status == "failed":
+            return SessionRunResult(
+                run_id=candidate.run_id,
+                status=SessionRunStatus.failed,
+                failure=candidate.failure or {"code": "run_failed"},
+                continuation=continuation,
             )
-        return await self._sessions.repository.commit_terminal(
-            turn_id=turn.turn_id,
-            expected_thread_version=expected_thread_version,
-            run_id=terminal.run_id,
-            state=TurnState.cancelled,
-            checkpoint=None,
-            terminal_projection=None,
+        return SessionRunResult(
+            run_id=candidate.run_id,
+            status=SessionRunStatus.cancelled,
             failure={"code": "run_cancelled", "message": "The Harness Run was cancelled."},
+            continuation=continuation,
         )
 
-    async def _commit_running_failure(
-        self,
-        *,
-        turn_id: str,
-        expected_thread_version: int,
-        run_id: str,
-        exc: BaseException,
-        terminal_observed: bool,
-    ) -> None:
-        with CancelScope(shield=True):
-            try:
-                if terminal_observed:
-                    state = TurnState.interrupted
-                elif isinstance(exc, asyncio.CancelledError):
-                    state = TurnState.cancelled
-                else:
-                    state = TurnState.failed
-                await self._sessions.repository.commit_terminal(
-                    turn_id=turn_id,
-                    expected_thread_version=expected_thread_version,
-                    run_id=run_id,
-                    state=state,
-                    checkpoint=None,
-                    terminal_projection=None,
-                    failure=_safe_failure(exc, "run_execution_failed"),
+    async def _session_lock(self, session_id: str) -> Lock:
+        async with self._registry_lock:
+            return self._session_locks.setdefault(session_id, Lock())
+
+    async def _register(self, session_id: str, request_id: str) -> None:
+        async with self._registry_lock:
+            if session_id in self._active:
+                raise RunCoordinationError(
+                    "The Session already has an active Run in this Host.",
+                    code="session_run_active",
                 )
-            except SessionError:
-                pass
+            self._active[session_id] = request_id
 
-    async def _close_unstarted_after_failure(
-        self,
-        *,
-        turn_id: str,
-        expected_thread_version: int,
-        exc: BaseException,
-    ) -> None:
-        with CancelScope(shield=True):
-            try:
-                await self._sessions.repository.commit_unstarted_terminal(
-                    turn_id=turn_id,
-                    expected_thread_version=expected_thread_version,
-                    state=(TurnState.cancelled if isinstance(exc, asyncio.CancelledError) else TurnState.interrupted),
-                    failure=_safe_failure(exc, "run_not_started"),
-                )
-            except SessionError:
-                pass
-
-    async def _register(self, turn_id: str, stream: HarnessRunStream[object]) -> None:
-        async with self._active_lock:
-            if turn_id in self._active:
-                raise RunCoordinationError("The Turn already has an active Run.", code="turn_run_active")
-            self._active[turn_id] = stream
-
-    async def _unregister(self, turn_id: str, stream: HarnessRunStream[object]) -> None:
-        async with self._active_lock:
-            if self._active.get(turn_id) is stream:
-                self._active.pop(turn_id, None)
+    async def _unregister(self, session_id: str, request_id: str) -> None:
+        async with self._registry_lock:
+            if self._active.get(session_id) == request_id:
+                self._active.pop(session_id, None)
 
 
-def _turn(session: LocalSession, turn_id: str) -> TurnView:
-    for turn in session.root.turns:
-        if turn.turn_id == turn_id:
-            return turn
-    raise SessionError("The selected Turn does not exist.", code="turn_missing")
+def _failure_code(failure: JsonValue, default: str) -> str:
+    if isinstance(failure, dict):
+        code = failure.get("code")
+        if isinstance(code, str):
+            return code
+    return default
 
 
-def _run_capabilities(
-    session: LocalSession, snapshot: ResolvedAgentSnapshot
-) -> tuple[SkillSelectionRunCapability, ...]:
-    root = next(node for node in snapshot.resolved_agents if node.agent_revision == snapshot.root_agent)
-    selection = next(
-        (item for item in session.skill_selections if item.agent_node_id == root.agent_id),
-        None,
+def _cleanup_error(result: SessionRunResult, failure: JsonValue) -> RunCoordinationError:
+    continuation = result.continuation
+    selected = continuation is not None
+    return RunCoordinationError(
+        (
+            "The Harness result was saved, but runtime cleanup failed."
+            if selected
+            else "The Harness Run finished, but runtime cleanup failed."
+        ),
+        code="run_saved_cleanup_failed" if selected else "run_cleanup_failed",
+        details={
+            "run_id": result.run_id,
+            "status": result.status.value,
+            "continuation_object_digest": continuation.object_digest if continuation is not None else None,
+            "failure": cast(JsonValue, failure),
+        },
     )
-    if not root.skills:
-        return ()
-    if selection is not None and selection.mode == "exact":
-        names = frozenset(selection.names)
-    elif root.default_skill_names is not None:
-        names = frozenset(root.default_skill_names)
-    else:
-        return ()
-    return (SkillSelectionRunCapability(names=names),)
-
-
-def _safe_failure(exc: BaseException, fallback_code: str) -> JsonValue:
-    if isinstance(exc, AgentUiError):
-        return {
-            "code": exc.code,
-            "message": str(exc),
-            "details": canonical_json_value(exc.details),
-        }
-    return {
-        "code": fallback_code,
-        "message": "The foreground Run did not reach its selected durable boundary.",
-        "error_type": type(exc).__name__,
-    }
 
 
 __all__ = ["ForegroundRunCoordinator"]

@@ -39,7 +39,7 @@ class StoreIntegrityError(StoreError):
 
 
 class SessionError(AgentUiError):
-    """A Session, Thread, Turn, or checkpoint command is invalid or conflicted."""
+    """A Session or continuation operation is invalid."""
 
 
 class EnvironmentLifecycleError(AgentUiError):
@@ -47,11 +47,11 @@ class EnvironmentLifecycleError(AgentUiError):
 
 
 class RunCoordinationError(AgentUiError):
-    """A foreground Harness Run could not be accepted or committed safely."""
+    """A foreground Harness Run could not execute or save its result."""
 
 
-class EventStoreError(StoreError):
-    """Retained AG-UI history could not be published, verified, or replayed."""
+class LivePresentationError(AgentUiError):
+    """A process-local live presentation value is invalid."""
 
 
 class RuntimeResolutionError(AgentUiError):
@@ -71,8 +71,8 @@ __all__ = [
     "CompositionError",
     "ConfigurationError",
     "EnvironmentLifecycleError",
-    "EventStoreError",
     "HostStateError",
+    "LivePresentationError",
     "ObjectIntegrityError",
     "RunCoordinationError",
     "RuntimeGenerationError",

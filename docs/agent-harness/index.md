@@ -18,7 +18,10 @@ uv sync --locked --package a13n-harness
 import asyncio
 from collections.abc import AsyncIterator
 
-from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+)
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -38,9 +41,7 @@ async def main() -> None:
         model=FunctionModel(stream_function=respond),
     )
 
-    async with executable:
-        result = await executable.run("Say hello")
-
+    result = await executable.run("Say hello")
     print(result.output_or_raise())
 
 
@@ -56,7 +57,7 @@ This example is deterministic and needs no model credentials. The [Getting Start
 Pydantic AI remains responsible for models, messages, tools, Toolsets, Capabilities, output validation, deferred values, native events, and the Agent loop. The Harness adds reusable boundaries around that loop:
 
 - code-first `AgentDefinition` and `HarnessBuilder` construction;
-- one reusable `ExecutableAgent` with deterministic cleanup;
+- one immutable reusable `ExecutableAgent` whose runs have deterministic cleanup;
 - fresh typed run context and collaborators for each logical run;
 - one canonical event stream, terminal result, usage record, and correlation model;
 - portable `HarnessState`, continuation, forking, checkpoints, and deferred resume;

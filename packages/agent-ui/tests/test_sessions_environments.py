@@ -1,36 +1,36 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest.mock import AsyncMock
+from typing import Any, cast
 
 import pytest
 import yaml
-from a13n_environment_provider import EnvironmentPauseMode, EnvironmentProviderError
-from a13n_harness import RunModelResolver
-from a13n_ui.composition import ResolvedAgentSnapshot
-from a13n_ui.configuration import ConfigurationSettings, DefinitionRootSettings, LocalDirectorySettings
-from a13n_ui.environments import ProviderRuntimeResolver
-from a13n_ui.errors import EnvironmentLifecycleError, RuntimeResolutionError, SessionError, StoreIntegrityError
-from a13n_ui.host import open_agent_ui_host
-from a13n_ui.sessions import SessionLifecycleState, SessionUpdate, TurnState
-from a13n_ui.settings import AgentUiSettings, StorageSettings
-from a13n_ui.storage.database import transaction
-from a13n_ui.storage.models import (
-    EventSegmentRecord,
-    SessionEnvironmentAssignmentRecord,
-    SessionPresentationRecord,
-    ThreadCheckpointRecord,
+from a13n_environment_provider import build_environment_provider_factory_catalog
+from a13n_harness import HarnessState
+from a13n_ui.configuration import (
+    ConfigurationSettings,
+    DefinitionRootSettings,
+    LocalDirectorySettings,
+    LocalExecutableSettings,
 )
-from a13n_ui.storage.objects import ObjectKind, ObjectRef
-from anyio import create_task_group, fail_after
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
-from pydantic_ai.models.test import TestModel
-from sqlalchemy import func, select
-from sqlalchemy.pool.impl import AsyncAdaptedQueuePool
+from a13n_ui.environments import EnvironmentResourceStatus, ProviderRuntimeResolver
+from a13n_ui.errors import (
+    EnvironmentLifecycleError,
+    RuntimeGenerationError,
+    RuntimeResolutionError,
+    SessionError,
+    StoreError,
+)
+from a13n_ui.host import open_agent_ui_host
+from a13n_ui.runtime_generations.execution import _run_environment
+from a13n_ui.runtime_generations.wire import RunnerAsyncWorkEvent
+from a13n_ui.runtime_settings import RuntimeGenerationSettings
+from a13n_ui.sessions import SessionRunStatus, SessionUpdate
+from a13n_ui.settings import AgentUiSettings, EnvdRuntimeSettings, StorageSettings
+from a13n_ui.storage import ObjectKind
+from a13n_ui.storage.layout import StorageLayout
+from anyio import Event, create_task_group
 
 pytestmark = pytest.mark.anyio
 
@@ -40,72 +40,26 @@ def _write_yaml(path: Path, value: object) -> None:
     path.write_text(yaml.safe_dump(value, allow_unicode=True, sort_keys=True))
 
 
-def _settings(data_root: Path, definitions: Path, workspace: Path) -> AgentUiSettings:
+def _settings(
+    data_root: Path,
+    definitions: Path,
+    workspace: Path,
+    *,
+    executable: Path | None = None,
+) -> AgentUiSettings:
     return AgentUiSettings(
         storage=StorageSettings(data_root=data_root),
         configuration=ConfigurationSettings(
             definition_roots=(DefinitionRootSettings(root_id="root-user", path=definitions, writable=True),),
             local_directories=(LocalDirectorySettings(directory_id="directory-workspace", path=workspace),),
+            local_executables=(
+                (LocalExecutableSettings(executable_id="executable-shell", path=executable),)
+                if executable is not None
+                else ()
+            ),
             model_adapter_keys=("a13n.pydantic-ai",),
-            orphan_retention_seconds=60,
         ),
     )
-
-
-async def _test_model_resolver_factory(snapshot: ResolvedAgentSnapshot) -> RunModelResolver:
-    model_ids = {node.model.definition.model_id for node in snapshot.resolved_agents}
-    model = TestModel(custom_output_text="completed by test model")
-
-    async def resolve(_context, model_id: str):
-        assert model_id in model_ids
-        return model
-
-    return resolve
-
-
-async def _deferred_model_resolver_factory(snapshot: ResolvedAgentSnapshot) -> RunModelResolver:
-    model_ids = {node.model.definition.model_id for node in snapshot.resolved_agents}
-
-    async def stream(messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        returns = [
-            part
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        if not returns:
-            yield {
-                0: DeltaToolCall(
-                    name="ask_user_question",
-                    json_args=json.dumps(
-                        {
-                            "questions": [
-                                {
-                                    "header": "Scope",
-                                    "question": "Which scope should be used?",
-                                    "options": [
-                                        {"label": "Focused", "description": "Use focused scope."},
-                                        {"label": "Broad", "description": "Use broad scope."},
-                                    ],
-                                    "multiSelect": False,
-                                }
-                            ]
-                        }
-                    ),
-                    tool_call_id="question-1",
-                )
-            }
-        else:
-            yield f"answer:{returns[-1].content}"
-
-    model = FunctionModel(stream_function=stream)
-
-    async def resolve(_context, model_id: str):
-        assert model_id in model_ids
-        return model
-
-    return resolve
 
 
 def _write_composition(
@@ -113,7 +67,7 @@ def _write_composition(
     *,
     provision: str = "on_first_run",
     user_interaction: bool = False,
-    release: str = "retain",
+    delayed_input: str | None = None,
 ) -> None:
     _write_yaml(
         definitions / "models/model-main.yaml",
@@ -122,7 +76,19 @@ def _write_composition(
             "model_id": "model-main",
             "display_name": "Main Model",
             "provider_key": "a13n.pydantic-ai",
-            "model_name": "test-v1",
+            "model_name": "test",
+            "settings": (
+                {"test_deferred": True}
+                if user_interaction
+                else {
+                    "test_output": "completed by test model",
+                    **(
+                        {"test_delay_seconds": 30, "test_delayed_input": delayed_input}
+                        if delayed_input is not None
+                        else {}
+                    ),
+                }
+            ),
         },
     )
     _write_yaml(
@@ -134,7 +100,7 @@ def _write_composition(
             "system_prompt_blocks": [{"content": "Be concise."}],
         },
     )
-    agent = {
+    agent: dict[str, object] = {
         "schema_version": "1",
         "agent_id": "agent-main",
         "display_name": "Main Agent",
@@ -161,29 +127,205 @@ def _write_composition(
                         "environment_id": "local-main",
                         "root": {"directory_id": "directory-workspace", "read_only": False},
                     },
-                    "permission_ceiling": ["files"],
+                    "access": "read_write",
                 }
             ],
             "default_mount": "mount-main",
-            "lifecycle": {
-                "provision": provision,
-                "idle": "keep_running",
-                "release": release,
-            },
+            "provision": provision,
         },
     )
 
 
-async def test_local_envd_upstream_gate_is_explicit_and_never_falls_back() -> None:
-    resolver = ProviderRuntimeResolver()
+def _configure_background_shell(
+    definitions: Path,
+    *,
+    command: str,
+) -> None:
+    model_path = definitions / "models/model-main.yaml"
+    model = yaml.safe_load(model_path.read_text())
+    model["settings"] = {
+        "test_background_shell": True,
+        "test_wait_for_process": False,
+        "test_shell_command": command,
+    }
+    _write_yaml(model_path, model)
+    environment_path = definitions / "environments/environment-main.yaml"
+    environment = yaml.safe_load(environment_path.read_text())
+    environment["mounts"][0]["access"] = "full"
+    environment["mounts"][0]["provider_parameters"]["shell_profiles"] = [
+        {"profile_id": "default", "executable": {"executable_id": "executable-shell"}}
+    ]
+    _write_yaml(environment_path, environment)
 
+
+def _write_async_subagent_composition(
+    definitions: Path,
+    *,
+    wait_for_child: bool = True,
+    child_delay_seconds: float | None = None,
+    shared_environment: bool = False,
+) -> None:
+    _write_yaml(
+        definitions / "models/model-root.yaml",
+        {
+            "schema_version": "1",
+            "model_id": "model-root",
+            "display_name": "Root Model",
+            "provider_key": "a13n.pydantic-ai",
+            "model_name": "test",
+            "settings": {
+                "test_async_subagent": True,
+                "test_subagent_name": "child-worker",
+                "test_wait_for_subagent": wait_for_child,
+            },
+        },
+    )
+    _write_yaml(
+        definitions / "models/model-child.yaml",
+        {
+            "schema_version": "1",
+            "model_id": "model-child",
+            "display_name": "Child Model",
+            "provider_key": "a13n.pydantic-ai",
+            "model_name": "test",
+            "settings": {
+                "test_output": "completed by child model",
+                **({"test_delay_seconds": child_delay_seconds} if child_delay_seconds is not None else {}),
+            },
+        },
+    )
+    _write_yaml(
+        definitions / "prompts/prompt-main.yaml",
+        {
+            "schema_version": "1",
+            "prompt_id": "prompt-main",
+            "display_name": "Main Prompt",
+            "system_prompt_blocks": [{"content": "Be concise."}],
+        },
+    )
+    _write_yaml(
+        definitions / "agents/agent-child.yaml",
+        {
+            "schema_version": "1",
+            "agent_id": "agent-child",
+            "display_name": "Child Agent",
+            "model": {"kind": "model", "resource_id": "model-child"},
+            "prompt": {"kind": "prompt", "resource_id": "prompt-main"},
+            "async_subagents": {"tools": "disabled"},
+        },
+    )
+    _write_yaml(
+        definitions / "agents/agent-main.yaml",
+        {
+            "schema_version": "1",
+            "agent_id": "agent-main",
+            "display_name": "Main Agent",
+            "model": {"kind": "model", "resource_id": "model-root"},
+            "prompt": {"kind": "prompt", "resource_id": "prompt-main"},
+            "subagents": [
+                {
+                    "name": "child-worker",
+                    "description": "Complete child work.",
+                    "agent": {"kind": "agent", "resource_id": "agent-child"},
+                    "environment": (
+                        {"mode": "shared_root", "mounts": ["mount-main"]} if shared_environment else {"mode": "none"}
+                    ),
+                }
+            ],
+            "async_subagents": {
+                "tools": "standard",
+                "max_active_tasks": 2,
+                "max_tasks_per_run": 2,
+                "max_depth": 2,
+            },
+        },
+    )
+    _write_yaml(
+        definitions / "environments/environment-main.yaml",
+        {
+            "schema_version": "1",
+            "environment_id": "environment-main",
+            "display_name": "Main Environment",
+            "mounts": (
+                [
+                    {
+                        "mount_name": "mount-main",
+                        "model_alias": "workspace",
+                        "provider_key": "a13n.direct-local",
+                        "provider_schema_version": "1",
+                        "provider_parameters": {
+                            "environment_id": "local-main",
+                            "root": {"directory_id": "directory-workspace", "read_only": False},
+                        },
+                        "access": "read_write",
+                    }
+                ]
+                if shared_environment
+                else []
+            ),
+            "default_mount": "mount-main" if shared_environment else None,
+            "provision": "on_first_run",
+        },
+    )
+
+
+async def _create_session(application):
+    return await application.create_session(
+        agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
+        environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
+    )
+
+
+async def _wait_for_runner_execution(application, session_id: str) -> str:
+    async with asyncio.timeout(5):
+        while True:
+            runner = application._runtime._active
+            if runner is not None:
+                for request_id in runner.executions:
+                    if application._runs._active.get(session_id) == request_id:
+                        return request_id
+            await asyncio.sleep(0.01)
+
+
+async def _wait_for_new_generation(application, previous_generation_id: str) -> str:
+    async with asyncio.timeout(5):
+        while True:
+            generation_id = (await application.runtime_status()).active_generation_id
+            if generation_id is not None and generation_id != previous_generation_id:
+                return generation_id
+            await asyncio.sleep(0.01)
+
+
+async def _wait_for_runner_idle(application) -> None:
+    async with asyncio.timeout(5):
+        while True:
+            runner = application._runtime._active
+            if runner is not None and not runner.executions:
+                return
+            await asyncio.sleep(0.01)
+
+
+async def _wait_for_continuation_change(application, session_id: str, previous_digest: str) -> None:
+    async with asyncio.timeout(5):
+        while True:
+            session = await application.session(session_id)
+            if session.continuation.object_digest != previous_digest:
+                return
+            await asyncio.sleep(0.01)
+
+
+async def test_local_envd_upstream_gate_is_explicit_and_never_falls_back(tmp_path: Path) -> None:
+    resolver = ProviderRuntimeResolver(
+        layout=StorageLayout.from_root(tmp_path / "data"),
+        settings=EnvdRuntimeSettings(),
+        executable_override=None,
+    )
     with pytest.raises(RuntimeResolutionError) as raised:
         await resolver.resolve("a13n.local-envd")
+    assert raised.value.code == "envd_runtime_manifest_missing"
 
-    assert raised.value.code == "local_envd_provider_unavailable"
 
-
-async def test_session_baseline_and_direct_local_environment_survive_restart(tmp_path: Path) -> None:
+async def test_session_metadata_and_continuation_survive_restart(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -191,49 +333,29 @@ async def test_session_baseline_and_direct_local_environment_survive_restart(tmp
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        agent = await application.resolve_agent_snapshot("agent-main")
-        environment = await application.resolve_environment_snapshot("environment-main")
-        created = await application.create_session(
-            agent_snapshot=agent,
-            environment_snapshot=environment,
-            creation_request_id="create-session-main",
-            title="Main",
-        )
-        assert created.lifecycle_state is SessionLifecycleState.ready
-        assert created.root.selected_checkpoint is not None
-        assert created.root.selected_checkpoint.thread_id == created.root.thread_id
-        before = await application.session_environment(created.session_id)
-        assert before.ready is False
-        snapshot = await application.environment_snapshot(environment)
-        async with application._environments.run_environment(
-            session_id=created.session_id,
-            snapshot=snapshot,
-        ):
-            during = await application.session_environment(created.session_id)
-            assert during.ready is True
-            assert during.resources[0].selected_provider_state_digest is not None
+        created = await _create_session(application)
+        baseline = created.continuation
         updated = await application.update_session(
             created.session_id,
-            expected_version=created.control_version,
-            update=SessionUpdate(title="Renamed"),
+            update=SessionUpdate(title="Renamed", pinned=True),
         )
         session_id = created.session_id
-        checkpoint = updated.root.selected_checkpoint
+        assert updated.title == "Renamed"
+        assert updated.continuation == baseline
+        availability = await application.session_environment(session_id)
+        assert availability.ready is False
+        assert availability.resources[0].status is EnvironmentResourceStatus.unprovisioned
 
     async with open_agent_ui_host(settings) as restarted:
         retained = await restarted.session(session_id)
+        state = await restarted._sessions.selected_state(session_id)
         assert retained.title == "Renamed"
-        assert retained.root.selected_checkpoint == checkpoint
-        state = await restarted._sessions.load_state(session_id, checkpoint)
-        assert state.thread_id == retained.root.thread_id
-        availability = await restarted.session_environment(session_id)
-        assert availability.ready is True
-        snapshot = await restarted.environment_snapshot(retained.environment_snapshot)
-        async with restarted._environments.run_environment(session_id=session_id, snapshot=snapshot):
-            assert (await restarted.session_environment(session_id)).ready is True
+        assert retained.pinned is True
+        assert retained.continuation == baseline
+        assert state.message_history == ()
 
 
-async def test_eager_direct_local_session_is_ready_after_provider_state_selection(tmp_path: Path) -> None:
+async def test_eager_environment_persists_latest_provider_state(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -241,387 +363,323 @@ async def test_eager_direct_local_session_is_ready_after_provider_state_selectio
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
+        created = await _create_session(application)
         availability = await application.session_environment(created.session_id)
-
-    assert created.lifecycle_state is SessionLifecycleState.ready
-    assert availability.ready is True
-    assert availability.resources[0].lifecycle_state.value == "available"
-
-
-async def test_foreground_turn_persists_checkpoint_and_agui_replay_across_restart(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(
-        settings,
-        model_resolver_factory=_test_model_resolver_factory,
-    ) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        baseline = created.root.selected_checkpoint
-        turn = await application.run_session_turn(
-            created.session_id,
-            thread_id=created.root.thread_id,
-            expected_thread_version=created.root.commit_version,
-            input_value="hello",
-        )
-        replay = await application.session_events(created.session_id)
+        assert availability.ready is True
+        assert availability.resources[0].status is EnvironmentResourceStatus.available
+        initial_digest = availability.resources[0].provider_state_digest
+        assert initial_digest is not None
         session_id = created.session_id
 
-        assert turn.state is TurnState.completed
-        assert turn.terminal_projection == "completed by test model"
-        assert turn.selected_checkpoint is not None
-        assert turn.selected_checkpoint != baseline
-        assert len(turn.run_ids) == 1
-        assert replay
-        assert [item.stored.presentation_sequence for item in replay] == list(range(1, len(replay) + 1))
-        assert replay[-1].stored.event.type == "RUN_FINISHED"
-        assert {item.origin for item in replay} == {"replay"}
-
     async with open_agent_ui_host(settings) as restarted:
-        retained = await restarted.session(session_id)
-        replayed = await restarted.session_events(session_id)
+        retained = await restarted.session_environment(session_id)
+        assert retained.resources[0].provider_state_digest == initial_digest
 
-        assert retained.root.turns[-1].state is TurnState.completed
-        assert retained.root.selected_checkpoint == retained.root.turns[-1].selected_checkpoint
-        assert [item.stored.event_id for item in replayed] == [item.stored.event_id for item in replay]
+        destroyed = await restarted.destroy_session_environment(session_id, "mount-main")
+        assert destroyed.resources[0].status is EnvironmentResourceStatus.unprovisioned
+        assert destroyed.resources[0].provider_state_digest is None
 
-
-async def test_waiting_turn_resumes_from_exact_deferred_object(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions, user_interaction=True)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(
-        settings,
-        model_resolver_factory=_deferred_model_resolver_factory,
-    ) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        waiting = await application.run_session_turn(
-            created.session_id,
-            thread_id=created.root.thread_id,
-            expected_thread_version=created.root.commit_version,
-            input_value="clarify",
-        )
-
-        assert waiting.state is TurnState.waiting
-        assert waiting.pending_deferred is not None
-        assert waiting.selected_checkpoint is not None
-        requests = await application.session_deferred_requests(
-            created.session_id,
-            turn_id=waiting.turn_id,
-        )
-        call_id = requests.calls[0].tool_call_id
-        completed = await application.resume_session_turn(
-            created.session_id,
-            turn_id=waiting.turn_id,
-            expected_thread_version=(await application.session(created.session_id)).root.commit_version,
-            results=requests.build_results(
-                calls={
-                    call_id: {
-                        "answers": {"Which scope should be used?": "Focused"},
-                    }
-                }
-            ),
-        )
-
-        assert completed.state is TurnState.completed
-        assert "Focused" in str(completed.terminal_projection)
-        assert completed.pending_deferred is None
-        assert len(completed.run_ids) == 2
-        replay = await application.session_events(created.session_id)
-        assert sum(item.stored.event.type == "CUSTOM" for item in replay) >= 1
-        assert replay[-1].stored.event.type == "RUN_FINISHED"
+        available = await restarted.provision_session_environment(session_id)
+        assert available.ready is True
+        assert available.resources[0].status is EnvironmentResourceStatus.available
+        assert available.resources[0].provider_state_digest is not None
 
 
-async def test_event_subscription_has_gap_free_replay_to_live_cutover(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(
-        settings,
-        model_resolver_factory=_test_model_resolver_factory,
-    ) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        await application.run_session_turn(
-            created.session_id,
-            thread_id=created.root.thread_id,
-            expected_thread_version=created.root.commit_version,
-            input_value="first",
-        )
-
-        async with application.subscribe_session_events(created.session_id) as subscription:
-            replay = await application.session_events(
-                created.session_id,
-                through_sequence=subscription.replay_through,
-            )
-            retained = await application.session(created.session_id)
-            second = await application.run_session_turn(
-                created.session_id,
-                thread_id=created.root.thread_id,
-                expected_thread_version=retained.root.commit_version,
-                input_value="second",
-            )
-            live = []
-            with fail_after(5):
-                while not live or live[-1].stored.event.type != "RUN_FINISHED":
-                    live.append(await subscription.receive.receive())
-
-        assert second.state is TurnState.completed
-        assert replay[-1].stored.presentation_sequence == subscription.replay_through
-        assert {item.origin for item in replay} == {"replay"}
-        assert {item.origin for item in live} == {"live"}
-        combined = (*replay, *live)
-        assert [item.stored.presentation_sequence for item in combined] == list(
-            range(1, combined[-1].stored.presentation_sequence + 1)
-        )
-        assert len({item.stored.event_id for item in combined}) == len(combined)
-
-
-async def test_startup_does_not_claim_an_unregistered_event_segment(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(
-        settings,
-        model_resolver_factory=_test_model_resolver_factory,
-    ) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        await application.run_session_turn(
-            created.session_id,
-            thread_id=created.root.thread_id,
-            expected_thread_version=created.root.commit_version,
-            input_value="recover",
-        )
-        before = await application.session_events(created.session_id)
-        session_id = created.session_id
-
-        async with transaction(application._store.database.sessions) as database_session:
-            segment = (
-                await database_session.execute(
-                    select(EventSegmentRecord)
-                    .where(EventSegmentRecord.session_id == session_id)
-                    .order_by(EventSegmentRecord.first_sequence.desc())
-                    .limit(1)
-                )
-            ).scalar_one()
-            presentation = await database_session.get(SessionPresentationRecord, session_id)
-            assert presentation is not None
-            presentation.next_sequence = segment.first_sequence
-            presentation.last_segment_digest = segment.previous_segment_digest
-            await database_session.delete(segment)
-        retained_event_ids = [
-            item.stored.event_id for item in before if item.stored.presentation_sequence < segment.first_sequence
-        ]
-        orphan_path = application._store.layout.sessions / segment.relative_path
-
-    async with open_agent_ui_host(settings) as restarted:
-        retained = await restarted.session_events(session_id)
-        diagnostics = await restarted.recovery_diagnostics()
-
-        assert [item.stored.event_id for item in retained] == retained_event_ids
-        assert orphan_path.is_file()
-        assert not any(item.code == "event_segment_unselected" for item in diagnostics)
-
-
-async def test_terminal_commit_failure_closes_running_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(
-        settings,
-        model_resolver_factory=_test_model_resolver_factory,
-    ) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        monkeypatch.setattr(
-            application._sessions,
-            "publish_turn_state",
-            AsyncMock(
-                side_effect=StoreIntegrityError(
-                    "Synthetic checkpoint publication failure.",
-                    code="synthetic_checkpoint_failure",
-                )
-            ),
-        )
-
-        with pytest.raises(StoreIntegrityError, match="Synthetic checkpoint"):
-            await application.run_session_turn(
-                created.session_id,
-                thread_id=created.root.thread_id,
-                expected_thread_version=created.root.commit_version,
-                input_value="fail commit",
-            )
-
-        retained = await application.session(created.session_id)
-        assert retained.root.active_turn_id is None
-        assert retained.root.turns[-1].state is TurnState.interrupted
-        assert retained.root.turns[-1].failure == {
-            "code": "synthetic_checkpoint_failure",
-            "message": "Synthetic checkpoint publication failure.",
-            "details": {},
-        }
-
-
-async def test_provider_dispatch_then_host_commit_failure_is_unknown(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        snapshot = await application.environment_snapshot(created.environment_snapshot)
-        monkeypatch.setattr(
-            application._environments.repository,
-            "complete_state_operation",
-            AsyncMock(
-                side_effect=StoreIntegrityError(
-                    "Synthetic state commit failure.",
-                    code="synthetic_state_commit_failure",
-                )
-            ),
-        )
-
-        with pytest.raises(StoreIntegrityError, match="Synthetic state commit"):
-            async with application._environments.run_environment(
-                session_id=created.session_id,
-                snapshot=snapshot,
-            ):
-                pass
-
-        availability = await application.session_environment(created.session_id)
-        assert availability.resources[0].lifecycle_state.value == "unknown"
-        with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_environment(
-                session_id=created.session_id,
-                snapshot=snapshot,
-            ):
-                pass
-        assert raised.value.code == "environment_reconciliation_required"
-
-
-async def test_pause_waits_for_active_environment_attachment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-
-    async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        snapshot = await application.environment_snapshot(created.environment_snapshot)
-        pause_task: asyncio.Task[object]
-        async with application._environments.run_environment(
-            session_id=created.session_id,
-            snapshot=snapshot,
-        ):
-            availability = await application.session_environment(created.session_id)
-            resource_id = availability.resources[0].host_resource_id
-            live = application._environments._live[resource_id]
-            pause_mock = AsyncMock(return_value=live.resource.state)
-            monkeypatch.setattr(live.provider, "pause", pause_mock)
-            pause_task = asyncio.create_task(
-                application._environments.pause(resource_id, mode=EnvironmentPauseMode.FULL)
-            )
-            await asyncio.sleep(0)
-            assert pause_task.done() is False
-            pause_mock.assert_not_awaited()
-
-        paused = await pause_task
-        assert paused.lifecycle_state.value == "paused"
-        pause_mock.assert_awaited_once()
-
-
-async def test_delete_failure_retains_assignments_for_cleanup_retry(
+async def test_runner_rejects_environment_success_when_provider_state_is_not_saved(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    _write_composition(definitions, release="destroy_when_unreferenced")
+    _write_composition(definitions)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
+        created = await _create_session(application)
+        persist_state = application._persist_provider_state
+
+        async def reject_state(_update) -> None:
+            raise StoreError("provider state publication failed", code="test_provider_state_failed")
+
+        monkeypatch.setattr(application, "_persist_provider_state", reject_state)
+        with pytest.raises(EnvironmentLifecycleError) as raised:
+            await application.provision_session_environment(created.session_id)
+        assert raised.value.code == "environment_operation_failed"
+        failed = await application.session_environment(created.session_id)
+        assert failed.resources[0].status is EnvironmentResourceStatus.unprovisioned
+        assert failed.resources[0].provider_state_digest is None
+
+        monkeypatch.setattr(application, "_persist_provider_state", persist_state)
+        recovered = await application.provision_session_environment(created.session_id)
+        assert recovered.ready is True
+        assert recovered.resources[0].provider_state_digest is not None
+
+
+async def test_environment_reopen_uses_latest_acknowledged_provider_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        prepared, deferred = await application._runs._prepare(
+            created.session_id,
+            input_value=None,
+            deferred_results=None,
         )
-        snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_environment(
-            session_id=created.session_id,
-            snapshot=snapshot,
+        assert deferred is None
+        snapshot = await application._composition.environment(created.environment_snapshot)
+        catalog = build_environment_provider_factory_catalog(builtin_keys=("a13n.direct-local",))
+        original_create_provider = type(catalog).create_provider
+        lifecycle_calls: list[str] = []
+
+        def create_provider(self, spec, *, runtime):
+            provider = original_create_provider(self, spec, runtime=runtime)
+            original_create = provider.create
+            original_resume = provider.resume
+            original_pause = provider.pause
+            original_destroy = provider.destroy
+
+            async def create(*, operation):
+                lifecycle_calls.append("create")
+                return await original_create(operation=operation)
+
+            async def resume(state, *, operation):
+                lifecycle_calls.append("resume")
+                return await original_resume(state, operation=operation)
+
+            async def pause(environment, *, operation, mode):
+                lifecycle_calls.append("pause")
+                return await original_pause(environment, operation=operation, mode=mode)
+
+            async def destroy(state, *, operation):
+                lifecycle_calls.append("destroy")
+                return await original_destroy(state, operation=operation)
+
+            monkeypatch.setattr(provider, "create", create)
+            monkeypatch.setattr(provider, "resume", resume)
+            monkeypatch.setattr(provider, "pause", pause)
+            monkeypatch.setattr(provider, "destroy", destroy)
+            return provider
+
+        monkeypatch.setattr(type(catalog), "create_provider", create_provider)
+        acknowledged_provider_states = {}
+
+        class UnusedObjects:
+            async def provider_state(self, *_args, **_kwargs):
+                raise AssertionError("the acknowledged in-memory provider state should be used")
+
+        objects = cast(Any, UnusedObjects())
+        runtimes = ProviderRuntimeResolver(
+            layout=StorageLayout.from_root(settings.storage.data_root),
+            settings=settings.envd_runtime,
+            executable_override=settings.configuration.envd_executable_override,
+        )
+
+        async def persist_state(_update) -> None:
+            return None
+
+        async with _run_environment(
+            prepared.request,
+            snapshot,
+            objects=objects,
+            factories=catalog,
+            runtimes=runtimes,
+            persist_state=persist_state,
+            acknowledged_provider_states=acknowledged_provider_states,
         ):
-            pass
-        original_destroy = application._environments.destroy
-        monkeypatch.setattr(
-            application._environments,
-            "destroy",
-            AsyncMock(side_effect=RuntimeError("synthetic destroy failure")),
-        )
+            assert lifecycle_calls == ["create"]
+            async with _run_environment(
+                prepared.request,
+                snapshot,
+                objects=objects,
+                factories=catalog,
+                runtimes=runtimes,
+                persist_state=persist_state,
+                acknowledged_provider_states=acknowledged_provider_states,
+            ):
+                assert lifecycle_calls == ["create", "resume"]
+        assert lifecycle_calls == ["create", "resume"]
 
-        with pytest.raises(RuntimeError, match="synthetic destroy"):
-            await application.delete_session(
-                created.session_id,
-                expected_version=created.control_version,
-            )
 
-        pending = await application.session(created.session_id)
-        assert pending.lifecycle_state is SessionLifecycleState.cleanup_pending
-        assert (await application.session_environment(created.session_id)).assignments
+async def test_runner_executes_standard_async_subagent_end_to_end(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_async_subagent_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
 
-        monkeypatch.setattr(application._environments, "destroy", original_destroy)
-        await application.delete_session(
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="delegate")
+
+        assert result.status is SessionRunStatus.completed
+        assert result.output == "child:completed by child model"
+        assert result.continuation is not None
+        assert (await application.session(created.session_id)).continuation == result.continuation
+        await asyncio.sleep(0.1)
+        assert application._runs._wake_tasks == {}
+        assert (await application.session_async_usage(created.session_id)).requests == 1
+
+
+async def test_background_child_completion_wakes_inactive_session_and_deduplicates_usage(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_async_subagent_composition(
+        definitions,
+        wait_for_child=False,
+        child_delay_seconds=0.3,
+    )
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="delegate")
+        assert result.continuation is not None
+        await _wait_for_continuation_change(
+            application,
             created.session_id,
-            expected_version=pending.control_version,
+            result.continuation.object_digest,
         )
-        with pytest.raises(SessionError) as raised:
+        await _wait_for_runner_idle(application)
+
+        usage = await application.session_async_usage(created.session_id)
+        assert usage.requests == 1
+        assert application._runs._wake_tasks == {}
+
+
+async def test_background_shell_outlives_parent_and_wakes_from_latest_continuation(
+    tmp_path: Path,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    _configure_background_shell(definitions, command="sleep 0.3; printf async-shell-done")
+    settings = _settings(tmp_path / "data", definitions, workspace, executable=Path("/bin/sh"))
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="start process")
+        assert result.output == "process-started:process-1"
+        assert result.continuation is not None
+        await _wait_for_continuation_change(
+            application,
+            created.session_id,
+            result.continuation.object_digest,
+        )
+        await _wait_for_runner_idle(application)
+        state = await application._sessions.selected_state(created.session_id)
+        assert any("process:async-shell-done" in str(message) for message in state.message_history)
+
+
+async def test_session_delete_closes_background_work_before_destroying_environment(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    _configure_background_shell(definitions, command="sleep 30; printf should-not-complete")
+    settings = _settings(tmp_path / "data", definitions, workspace, executable=Path("/bin/sh"))
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="start process")
+        assert result.output == "process-started:process-1"
+
+        await application.delete_session(created.session_id)
+
+        with pytest.raises(SessionError, match="Session does not exist"):
             await application.session(created.session_id)
-        assert raised.value.code == "session_missing"
+        assert application._runs._wake_tasks == {}
+        assert created.session_id not in application._runs._async_usage
 
 
-async def test_hard_delete_removes_baseline_checkpoint_and_assignments(tmp_path: Path) -> None:
+async def test_session_delete_closes_async_work_without_environment_mounts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_async_subagent_composition(
+        definitions,
+        wait_for_child=False,
+        child_delay_seconds=30,
+    )
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="delegate")
+        assert result.output == "child-started:subagent-1"
+        closed_sessions: list[str] = []
+        original_close = application._runtime.close_session_work
+
+        async def close_session_work(session_id: str) -> None:
+            closed_sessions.append(session_id)
+            await original_close(session_id)
+
+        monkeypatch.setattr(application._runtime, "close_session_work", close_session_work)
+        await application.delete_session(created.session_id)
+
+        assert closed_sessions == [created.session_id]
+        assert application._runs._wake_tasks == {}
+        with pytest.raises(SessionError, match="Session does not exist"):
+            await application.session(created.session_id)
+
+
+async def test_background_shell_from_draining_generation_is_not_woken_or_restored(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    _configure_background_shell(definitions, command="sleep 30; printf drained-shell")
+    settings = _settings(tmp_path / "data", definitions, workspace, executable=Path("/bin/sh"))
+    settings = settings.model_copy(
+        update={
+            "runtime": RuntimeGenerationSettings(
+                startup_timeout_seconds=5,
+                command_timeout_seconds=2,
+                drain_timeout_seconds=0.1,
+                terminate_timeout_seconds=1,
+                kill_timeout_seconds=1,
+            )
+        }
+    )
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        previous_generation_id = (await application.runtime_status()).active_generation_id
+        assert previous_generation_id is not None
+
+        started = await application.run_session(created.session_id, input_value="start process")
+        assert started.output == "process-started:process-1"
+        assert started.continuation is not None
+        restart = asyncio.create_task(application.restart_runtime())
+        new_generation_id = await _wait_for_new_generation(application, previous_generation_id)
+        assert restart.done() is False
+        await asyncio.wait_for(restart, timeout=5)
+        await asyncio.sleep(0.1)
+
+        status = await application.runtime_status()
+        previous = next(item for item in status.generations if item.generation_id == previous_generation_id)
+        assert previous.exit_reason.value == "graceful"
+        assert any(item.code == "runtime_drain_failed" for item in status.diagnostics)
+        assert not any(item.code == "runtime_force_close_failed" for item in status.diagnostics)
+        assert (await application.session(created.session_id)).continuation == started.continuation
+        collected = await application.run_session(created.session_id, input_value="collect process")
+        assert collected.output == "process-lost"
+        assert (await application.runtime_status()).active_generation_id == new_generation_id
+
+
+async def test_harness_terminal_completion_queues_behind_host_request_cleanup(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -629,38 +687,43 @@ async def test_hard_delete_removes_baseline_checkpoint_and_assignments(tmp_path:
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
+        created = await _create_session(application)
+        generation_id = (await application.runtime_status()).active_generation_id
+        assert generation_id is not None
+        initial_continuation = created.continuation.object_digest
+        request_id = "request-terminal-cleanup"
+        lock = await application._runs._session_lock(created.session_id)
+        event = RunnerAsyncWorkEvent(
+            generation_id=generation_id,
+            session_id=created.session_id,
+            harness_active=True,
+            source="background_process",
+            kind="completion",
+            thread_id="thread-parent",
+            run_id="run-parent",
+            agent_instance_id="agent-parent",
+            reference="process-1",
+            status="exited",
         )
-        await application.delete_session(
-            created.session_id,
-            expected_version=created.control_version,
-        )
-        async with transaction(application._store.database.sessions) as database_session:
-            checkpoint_count = int(
-                (
-                    await database_session.execute(
-                        select(func.count())
-                        .select_from(ThreadCheckpointRecord)
-                        .where(ThreadCheckpointRecord.thread_id == created.root.thread_id)
-                    )
-                ).scalar_one()
+
+        async with lock:
+            await application._runs._register(created.session_id, request_id)
+            await application._runs.handle_async_work(event)
+            assert application._runs._wake_tasks == {}
+
+            await application._runs.handle_async_work(
+                event.model_copy(update={"harness_active": False, "reference": "process-2"})
             )
-            assignment_count = int(
-                (
-                    await database_session.execute(
-                        select(func.count())
-                        .select_from(SessionEnvironmentAssignmentRecord)
-                        .where(SessionEnvironmentAssignmentRecord.session_id == created.session_id)
-                    )
-                ).scalar_one()
-            )
-        assert checkpoint_count == 0
-        assert assignment_count == 0
+            wake = application._runs._wake_tasks[created.session_id]
+            await asyncio.sleep(0)
+            assert wake.done() is False
+            await application._runs._unregister(created.session_id, request_id)
+
+        await _wait_for_continuation_change(application, created.session_id, initial_continuation)
+        await _wait_for_runner_idle(application)
 
 
-async def test_startup_blocks_session_with_unreadable_selected_checkpoint(tmp_path: Path) -> None:
+async def test_host_lifecycle_guard_suppresses_async_wake(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -668,38 +731,214 @@ async def test_startup_blocks_session_with_unreadable_selected_checkpoint(tmp_pa
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
+        created = await _create_session(application)
+        generation_id = (await application.runtime_status()).active_generation_id
+        assert generation_id is not None
+        event = RunnerAsyncWorkEvent(
+            generation_id=generation_id,
+            session_id=created.session_id,
+            harness_active=False,
+            source="background_process",
+            kind="completion",
+            thread_id="thread-parent",
+            run_id="run-parent",
+            agent_instance_id="agent-parent",
+            reference="process-1",
+            status="cancelled",
         )
-        checkpoint = created.root.selected_checkpoint
-        assert checkpoint is not None
-        checkpoint_path = application._store.objects._path_for(
-            ObjectRef(
-                object_kind=ObjectKind.harness_state,
-                object_schema_version="1",
-                logical_digest=checkpoint.state_object_digest,
-            )
-        )
+
+        async with application._runs.session_guard(created.session_id, suppress_wake=True):
+            await application._runs.handle_async_work(event)
+            assert application._runs._wake_tasks == {}
+
+        await asyncio.sleep(0)
+        assert application._runs._wake_tasks == {}
+        assert (await application.session(created.session_id)).continuation == created.continuation
+
+
+async def test_concurrent_lifecycle_guards_retain_wake_suppression(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        second_entered = asyncio.Event()
+        release_second = asyncio.Event()
+
+        async def hold_guard(entered: asyncio.Event, release: asyncio.Event) -> None:
+            async with application._runs.session_guard(created.session_id, suppress_wake=True):
+                entered.set()
+                await release.wait()
+
+        first = asyncio.create_task(hold_guard(first_entered, release_first))
+        await first_entered.wait()
+        second = asyncio.create_task(hold_guard(second_entered, release_second))
+        async with asyncio.timeout(2):
+            while application._runs._wake_suppression.get(created.session_id) != 2:
+                await asyncio.sleep(0)
+
+        release_first.set()
+        await first
+        await second_entered.wait()
+        assert application._runs._wake_suppression[created.session_id] == 1
+
+        release_second.set()
+        await second
+        assert created.session_id not in application._runs._wake_suppression
+
+
+async def test_background_child_outlives_parent_and_runner_restart_drains_it(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_async_subagent_composition(
+        definitions,
+        wait_for_child=False,
+        child_delay_seconds=1.0,
+        shared_environment=True,
+    )
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        previous_generation_id = (await application.runtime_status()).active_generation_id
+        assert previous_generation_id is not None
+
+        result = await application.run_session(created.session_id, input_value="delegate")
+        assert result.status is SessionRunStatus.completed
+        assert isinstance(result.output, str)
+        assert result.output.startswith("child-started:subagent-")
+        restart = asyncio.create_task(application.restart_runtime())
+        new_generation_id = await _wait_for_new_generation(application, previous_generation_id)
+        assert restart.done() is False
+        restarted = await asyncio.wait_for(restart, timeout=5)
+
+        assert restarted.previous_generation_id == previous_generation_id
+        assert restarted.active.generation_id == new_generation_id
+
+
+async def test_run_selects_continuation_and_events_are_process_local(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        result = await application.run_session(created.session_id, input_value="hello")
+        retained = await application.session(created.session_id)
+        async with application.subscribe_session_events(created.session_id) as subscription:
+            buffered = subscription.buffered
         session_id = created.session_id
 
-    checkpoint_path.unlink()
+        assert result.status is SessionRunStatus.completed
+        assert result.output == "completed by test model"
+        assert result.continuation is not None
+        assert retained.continuation == result.continuation
+        assert retained.continuation != created.continuation
+        assert buffered
+        assert [item.event.sequence for item in buffered] == list(range(1, len(buffered) + 1))
+        assert {item.origin for item in buffered} == {"buffered"}
 
     async with open_agent_ui_host(settings) as restarted:
         retained = await restarted.session(session_id)
-        diagnostics = await restarted.recovery_diagnostics()
-        assert retained.lifecycle_state is SessionLifecycleState.blocked
-        assert retained.lifecycle_failure is not None
-        assert any(item.code == "session_authority_invalid" and session_id in item.detail for item in diagnostics)
-        with pytest.raises(StoreIntegrityError):
-            await restarted.retry_session_provisioning(
-                session_id,
-                expected_version=retained.control_version,
-            )
-        assert (await restarted.session(session_id)).lifecycle_state is SessionLifecycleState.blocked
+        assert retained.continuation == result.continuation
+        async with restarted.subscribe_session_events(session_id) as subscription:
+            assert subscription.buffered == ()
 
 
-async def test_startup_marks_unreadable_selected_provider_state_unknown(tmp_path: Path) -> None:
+async def test_restart_routes_new_runs_while_old_generation_drains_and_remains_cancellable(
+    tmp_path: Path,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions, delayed_input="slow")
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        slow_session = await _create_session(application)
+        fast_session = await _create_session(application)
+        previous_generation_id = (await application.runtime_status()).active_generation_id
+        assert previous_generation_id is not None
+
+        slow_run = asyncio.create_task(application.run_session(slow_session.session_id, input_value="slow"))
+        await _wait_for_runner_execution(application, slow_session.session_id)
+        restart = asyncio.create_task(application.restart_runtime())
+        new_generation_id = await _wait_for_new_generation(application, previous_generation_id)
+
+        fast_result = await application.run_session(fast_session.session_id, input_value="fast")
+        assert fast_result.status is SessionRunStatus.completed
+        assert restart.done() is False
+        assert await application.cancel_session(slow_session.session_id) is True
+        slow_result = await slow_run
+        restarted = await restart
+
+        assert slow_result.status is SessionRunStatus.cancelled
+        assert restarted.previous_generation_id == previous_generation_id
+        assert restarted.active.generation_id == new_generation_id
+
+
+async def test_cancelled_host_wait_keeps_runner_response_correlation_until_terminal(
+    tmp_path: Path,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions, delayed_input="slow")
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        cancelled_session = await _create_session(application)
+        next_session = await _create_session(application)
+        run = asyncio.create_task(application.run_session(cancelled_session.session_id, input_value="slow"))
+        await _wait_for_runner_execution(application, cancelled_session.session_id)
+
+        run.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await run
+        await _wait_for_runner_idle(application)
+
+        result = await application.run_session(next_session.session_id, input_value="fast")
+        assert result.status is SessionRunStatus.completed
+        assert (await application.runtime_status()).active_generation_id is not None
+
+
+async def test_runner_loss_preserves_the_previously_selected_continuation(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions, delayed_input="slow")
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        baseline = await application.run_session(created.session_id, input_value="fast")
+        assert baseline.continuation is not None
+
+        slow_run = asyncio.create_task(application.run_session(created.session_id, input_value="slow"))
+        await _wait_for_runner_execution(application, created.session_id)
+        runner = application._runtime._active
+        assert runner is not None
+        runner.process.kill()
+
+        with pytest.raises(RuntimeGenerationError) as raised:
+            await slow_run
+        assert raised.value.code == "runtime_runner_lost"
+        assert (await application.session(created.session_id)).continuation == baseline.continuation
+
+        await application.restart_runtime()
+        recovered = await application.run_session(created.session_id, input_value="fast")
+        assert recovered.status is SessionRunStatus.completed
+
+
+async def test_completed_run_uses_runner_owned_environment_runtime(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -707,130 +946,41 @@ async def test_startup_marks_unreadable_selected_provider_state_unknown(tmp_path
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_environment(
-            session_id=created.session_id,
-            snapshot=snapshot,
-        ):
-            pass
-        availability = await application.session_environment(created.session_id)
-        resource = availability.resources[0]
-        assert resource.selected_provider_state_digest is not None
-        provider_state_path = application._store.objects._path_for(
-            ObjectRef(
-                object_kind=ObjectKind.provider_state,
-                object_schema_version="1",
-                logical_digest=resource.selected_provider_state_digest,
-            )
-        )
-        session_id = created.session_id
+        created = await _create_session(application)
 
-    provider_state_path.unlink()
-
-    async with open_agent_ui_host(settings) as restarted:
-        availability = await restarted.session_environment(session_id)
-        diagnostics = await restarted.recovery_diagnostics()
-        assert availability.resources[0].lifecycle_state.value == "unknown"
-        assert any(
-            item.code == "provider_state_invalid" and resource.host_resource_id in item.detail for item in diagnostics
-        )
-
-
-async def test_external_task_cancellation_re_raises_after_durable_run_cleanup(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-    _write_composition(definitions)
-    settings = _settings(tmp_path / "data", definitions, workspace)
-    model_started = asyncio.Event()
-    never_complete = asyncio.Event()
-
-    async def resolver_factory(snapshot: ResolvedAgentSnapshot) -> RunModelResolver:
-        model_ids = {node.model.definition.model_id for node in snapshot.resolved_agents}
-
-        async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
-            model_started.set()
-            await never_complete.wait()
-            yield "unexpected"
-
-        model = FunctionModel(stream_function=stream)
-
-        async def resolve(_context, model_id: str):
-            assert model_id in model_ids
-            return model
-
-        return resolve
-
-    async with open_agent_ui_host(settings, model_resolver_factory=resolver_factory) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        task = asyncio.create_task(
-            application.run_session_turn(
-                created.session_id,
-                thread_id=created.root.thread_id,
-                expected_thread_version=created.root.commit_version,
-                input_value="cancel",
-            )
-        )
-        with fail_after(5):
-            await model_started.wait()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
+        assert not hasattr(application._environments, "run_environment")
+        result = await application.run_session(created.session_id, input_value="hello")
         retained = await application.session(created.session_id)
-        assert retained.root.active_turn_id is None
-        assert retained.root.turns[-1].state is TurnState.cancelled
+
+        assert result.status is SessionRunStatus.completed
+        assert result.continuation == retained.continuation
+        assert retained.continuation != created.continuation
 
 
-async def test_startup_blocks_waiting_turn_with_unreadable_deferred_authority(tmp_path: Path) -> None:
+async def test_suspended_run_uses_runner_owned_environment_runtime(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     _write_composition(definitions, user_interaction=True)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_agent_ui_host(
-        settings,
-        model_resolver_factory=_deferred_model_resolver_factory,
-    ) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        waiting = await application.run_session_turn(
-            created.session_id,
-            thread_id=created.root.thread_id,
-            expected_thread_version=created.root.commit_version,
-            input_value="wait",
-        )
-        pending = waiting.pending_deferred
-        assert pending is not None
-        deferred_path = application._store.objects._path_for(
-            ObjectRef(
-                object_kind=ObjectKind.deferred_requests,
-                object_schema_version="1",
-                logical_digest=pending.object_digest,
-            )
-        )
-        session_id = created.session_id
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
 
-    deferred_path.unlink()
+        assert not hasattr(application._environments, "run_environment")
+        result = await application.run_session(created.session_id, input_value="clarify")
+        retained = await application.session(created.session_id)
 
-    async with open_agent_ui_host(settings) as restarted:
-        retained = await restarted.session(session_id)
-        diagnostics = await restarted.recovery_diagnostics()
-        assert retained.lifecycle_state is SessionLifecycleState.blocked
-        assert any(item.code == "session_authority_invalid" and session_id in item.detail for item in diagnostics)
+        assert result.status is SessionRunStatus.suspended
+        assert result.continuation == retained.continuation
+        assert retained.continuation != created.continuation
+        assert (await application.session_deferred_requests(created.session_id)).calls
 
 
-async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_path: Path) -> None:
+async def test_continuation_publication_failure_keeps_the_selected_continuation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -838,143 +988,146 @@ async def test_known_failed_resource_is_not_reused_or_implicitly_recreated(tmp_p
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_environment(
-            session_id=created.session_id,
-            snapshot=snapshot,
-        ):
-            pass
-        resource_id = (await application.session_environment(created.session_id)).resources[0].host_resource_id
+        created = await _create_session(application)
+        original = application._store.publish_object
+        continuation_attempted = False
 
-        with pytest.raises(EnvironmentProviderError):
-            await application._environments.pause(resource_id, mode=EnvironmentPauseMode.FULL)
+        async def fail_continuation_publication(**kwargs):
+            nonlocal continuation_attempted
+            if kwargs["object_kind"] is ObjectKind.session_continuation:
+                continuation_attempted = True
+                raise StoreError("continuation publication failed", code="test_publication_failed")
+            return await original(**kwargs)
 
-        failed = await application.session_environment(created.session_id)
-        assert failed.resources[0].lifecycle_state.value == "failed"
-        with pytest.raises(EnvironmentLifecycleError) as raised:
-            async with application._environments.run_environment(
-                session_id=created.session_id,
-                snapshot=snapshot,
-            ):
-                pass
-        assert raised.value.code == "environment_resource_failed"
+        monkeypatch.setattr(application._store, "publish_object", fail_continuation_publication)
+        with pytest.raises(StoreError) as raised:
+            await application.run_session(created.session_id, input_value="hello")
+        assert raised.value.code == "test_publication_failed"
+        assert continuation_attempted is True
+        assert (await application.session(created.session_id)).continuation == created.continuation
 
 
-async def test_anyio_cancellation_restores_environment_borrow_invariants(tmp_path: Path) -> None:
+async def test_continuation_selection_failure_keeps_the_selected_continuation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     _write_composition(definitions)
     settings = _settings(tmp_path / "data", definitions, workspace)
-    model_started = asyncio.Event()
-    never_complete = asyncio.Event()
 
-    async def resolver_factory(snapshot: ResolvedAgentSnapshot) -> RunModelResolver:
-        model_ids = {node.model.definition.model_id for node in snapshot.resolved_agents}
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
 
-        async def stream(_messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
-            model_started.set()
-            await never_complete.wait()
-            yield "unexpected"
+        async def fail_selection(_session_id, _continuation):
+            raise SessionError("continuation selection failed", code="test_selection_failed")
 
-        model = FunctionModel(stream_function=stream)
+        monkeypatch.setattr(application._sessions, "select_continuation", fail_selection)
+        with pytest.raises(SessionError) as raised:
+            await application.run_session(created.session_id, input_value="hello")
+        assert raised.value.code == "test_selection_failed"
+        assert (await application.session(created.session_id)).continuation == created.continuation
 
-        async def resolve(_context, model_id: str):
-            assert model_id in model_ids
-            return model
 
-        return resolve
+async def test_suspended_continuation_resumes_from_embedded_deferred_requests(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions, user_interaction=True)
+    settings = _settings(tmp_path / "data", definitions, workspace)
 
-    async with open_agent_ui_host(settings, model_resolver_factory=resolver_factory) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
+    async with open_agent_ui_host(settings) as application:
+        created = await _create_session(application)
+        suspended = await application.run_session(created.session_id, input_value="clarify")
+        assert suspended.status is SessionRunStatus.suspended
+        requests = await application.session_deferred_requests(created.session_id)
+        call = requests.calls[0]
+        question = call.args_as_dict()["questions"][0]["question"]
+        completed = await application.resume_session(
+            created.session_id,
+            results=requests.build_results(calls={call.tool_call_id: {"answers": {question: "Focused"}}}),
         )
+        assert completed.status is SessionRunStatus.completed
+        with pytest.raises(SessionError) as missing:
+            await application.session_deferred_requests(created.session_id)
+        assert missing.value.code == "deferred_request_missing"
 
-        async def run() -> None:
-            await application.run_session_turn(
-                created.session_id,
-                thread_id=created.root.thread_id,
-                expected_thread_version=created.root.commit_version,
-                input_value="cancel scope",
-            )
+
+async def test_concurrent_hosts_leave_one_readable_last_write_wins_continuation(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as first, open_agent_ui_host(settings) as second:
+        created = await _create_session(first)
+        first_continuation = await first._sessions.publish_continuation(HarnessState.new())
+        second_continuation = await second._sessions.publish_continuation(HarnessState.new())
+
+        start = Event()
+
+        async def select(application, continuation) -> None:
+            await start.wait()
+            await application._sessions.select_continuation(created.session_id, continuation)
 
         async with create_task_group() as tasks:
-            tasks.start_soon(run)
-            with fail_after(5):
-                await model_started.wait()
-            tasks.cancel_scope.cancel()
+            tasks.start_soon(select, first, first_continuation)
+            tasks.start_soon(select, second, second_continuation)
+            start.set()
 
-        pool = application._store.database.engine.pool
-        assert isinstance(pool, AsyncAdaptedQueuePool)
-        assert pool.checkedout() == 0
-
-        availability = await application.session_environment(created.session_id)
-        resource_id = availability.resources[0].host_resource_id
-        assert application._environments._borrow_counts == {}
-        assert application._environments._lifecycle_pending == set()
-        with fail_after(5):
-            destroyed = await application._environments.destroy(resource_id)
-        assert destroyed.lifecycle_state.value == "destroyed"
+        retained = await first.session(created.session_id)
+        assert retained.continuation in {first_continuation, second_continuation}
+        await first._sessions.load_continuation(retained.continuation)
 
 
-async def test_cleanup_retry_reconciles_unknown_destroy_before_detach(
+async def test_delete_reports_environment_cleanup_failure_after_removing_the_session(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     definitions = tmp_path / "definitions"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    _write_composition(definitions, release="destroy_when_unreferenced")
+    _write_composition(definitions)
     settings = _settings(tmp_path / "data", definitions, workspace)
 
     async with open_agent_ui_host(settings) as application:
-        created = await application.create_session(
-            agent_snapshot=await application.resolve_agent_snapshot("agent-main"),
-            environment_snapshot=await application.resolve_environment_snapshot("environment-main"),
-        )
-        snapshot = await application.environment_snapshot(created.environment_snapshot)
-        async with application._environments.run_environment(
-            session_id=created.session_id,
-            snapshot=snapshot,
-        ):
-            pass
-        original_complete = application._environments.repository.complete_absent_operation
-        monkeypatch.setattr(
-            application._environments.repository,
-            "complete_absent_operation",
-            AsyncMock(
-                side_effect=StoreIntegrityError(
-                    "Synthetic destroy completion failure.",
-                    code="synthetic_destroy_completion_failure",
-                )
-            ),
-        )
+        created = await _create_session(application)
 
-        with pytest.raises(StoreIntegrityError, match="Synthetic destroy completion"):
-            await application.delete_session(
-                created.session_id,
-                expected_version=created.control_version,
-            )
-        pending = await application.session(created.session_id)
-        availability = await application.session_environment(created.session_id)
-        assert pending.lifecycle_state is SessionLifecycleState.cleanup_pending
-        assert availability.assignments
-        assert availability.resources[0].lifecycle_state.value == "unknown"
+        async def fail_cleanup(*args, **kwargs) -> None:
+            assert kwargs["action"] == "destroy"
+            raise RuntimeError("provider cleanup failed")
 
-        monkeypatch.setattr(
-            application._environments.repository,
-            "complete_absent_operation",
-            original_complete,
-        )
-        await application.delete_session(
-            created.session_id,
-            expected_version=pending.control_version,
-        )
-        with pytest.raises(SessionError) as raised:
+        monkeypatch.setattr(application, "_execute_environment_command", fail_cleanup)
+        with pytest.raises(EnvironmentLifecycleError) as raised:
+            await application.delete_session(created.session_id)
+        assert raised.value.code == "session_deleted_cleanup_failed"
+        with pytest.raises(SessionError) as missing:
             await application.session(created.session_id)
-        assert raised.value.code == "session_missing"
+        assert missing.value.code == "session_missing"
+
+
+async def test_fork_uses_selected_continuation_and_updates_are_last_write_wins(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        source = await _create_session(application)
+        await application.run_session(source.session_id, input_value="hello")
+        source = await application.session(source.session_id)
+        forked = await application.fork_session(source.session_id, title="Fork")
+        assert forked.parent_fork is not None
+        assert forked.parent_fork.source_continuation_digest == source.continuation.object_digest
+
+        await application.update_session(source.session_id, update=SessionUpdate(title="First"))
+        latest = await application.update_session(source.session_id, update=SessionUpdate(title="Second"))
+        assert latest.title == "Second"
+
+        await application.delete_session(forked.session_id)
+        with pytest.raises(SessionError) as missing:
+            await application.session(forked.session_id)
+        assert missing.value.code == "session_missing"

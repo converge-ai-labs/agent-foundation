@@ -39,15 +39,9 @@ from .output import (
     tool_output_size,
     tool_output_text,
 )
-from .process_manager import (
-    ManagedProcessState,
-    ProcessEvent,
-    ProcessEventHook,
-    ProcessEventKind,
-    ProcessManager,
-    ProcessManagerState,
-)
+from .process_manager import ManagedProcessState, ProcessManagerState
 from .shell import ShellToolset
+from .subagent_manager import ManagedSubagentState, SubagentManagerState, SubagentManagerToolset
 from .web import WebToolset
 from .working_state import WorkingStateToolset
 
@@ -73,18 +67,17 @@ __all__ = [
     "FileViewRule",
     "HandoffToolset",
     "ManagedProcessState",
+    "ManagedSubagentState",
     "MediaToolset",
     "MediaUnderstandingError",
     "MediaUnderstandingProvider",
     "MediaUnderstandingRequest",
     "MediaUnderstandingResult",
     "NativeInputMediaKind",
-    "ProcessEvent",
-    "ProcessEventHook",
-    "ProcessEventKind",
-    "ProcessManager",
     "ProcessManagerState",
     "ShellToolset",
+    "SubagentManagerState",
+    "SubagentManagerToolset",
     "ToolOutputDisclosure",
     "UserInteractionToolset",
     "WebToolset",

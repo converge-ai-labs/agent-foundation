@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from a13n_harness import AgentContext, HarnessBuilder, HarnessEvent, RunBindings
+from a13n_harness import (
+    AgentContext,
+    HarnessBuilder,
+    HarnessEvent,
+    RunBindings,
+)
 from a13n_harness.errors import DefinitionError
 from a13n_harness.tools import (
     ClientToolsCapability,
@@ -125,7 +130,33 @@ async def test_managed_tool_is_authorized_after_native_argument_validation() -> 
     assert items[-1].result.status == "completed"
 
 
-async def test_managed_tool_without_fresh_policy_is_denied_without_dispatch() -> None:
+async def test_managed_tool_without_fresh_policy_defaults_to_allow() -> None:
+    executed = False
+
+    def managed() -> str:
+        nonlocal executed
+        executed = True
+        return "executed"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_tool_model("managed", {}),
+        capabilities=(
+            Capability(
+                tools=[HarnessTool(managed, harness_metadata=_metadata("managed"))],
+                id="test-tools",
+            ),
+        ),
+    )
+    result = await executable.run("go", bindings=RunBindings.embedded())
+
+    assert executed is True
+    assert result.status == "completed"
+    assert "executed" in result.output_or_raise()
+
+
+async def test_explicit_invocation_policy_can_deny_managed_tool_dispatch() -> None:
     executed = False
 
     def dangerous() -> str:
@@ -144,11 +175,20 @@ async def test_managed_tool_without_fresh_policy_is_denied_without_dispatch() ->
             ),
         ),
     )
-    result = await executable.run("go", bindings=RunBindings.embedded())
+    result = await executable.run(
+        "go",
+        bindings=RunBindings.embedded(
+            capabilities=(
+                InvocationPolicyCapability(
+                    evaluator=_Policy(InvocationPolicyDecision.deny("blocked"), []),
+                ),
+            ),
+        ),
+    )
 
     assert executed is False
     assert result.status == "completed"
-    assert "authorization is unavailable" in result.output_or_raise()
+    assert "Managed tool invocation was denied." in result.output_or_raise()
 
 
 async def test_unmanaged_output_policy_defaults_to_truncate() -> None:

@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from a13n_harness import (
-    HarnessModelCharacteristics,
+from a13n_harness import HarnessModelCharacteristics
+from a13n_harness.models import (
     ModelCharacteristicsAlias,
     ModelCharacteristicsAliasCatalog,
     ModelSettingsAlias,

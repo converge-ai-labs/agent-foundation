@@ -6,15 +6,16 @@ from collections.abc import Mapping
 from dataclasses import replace
 from urllib.parse import urlparse
 
-from a13n_harness import AgentContext, ContextualMCP
+from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.mcp import ContextualMCP
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
 from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
 
-from .domain import ConnectorTurnSelection
+from .domain import ConnectorRunSelection
 from .errors import ConnectorError
 
 
@@ -22,10 +23,10 @@ def build_connector_mcp_client(
     connector_service_base_url: str,
     *,
     connector_id: str,
-    selection: ConnectorTurnSelection,
+    selection: ConnectorRunSelection,
     capability_token: str,
 ) -> ContextualMCP:
-    """Build one fresh local MCP capability for a fenced TurnAttempt."""
+    """Build one fresh local MCP capability for a fenced RunAttempt."""
 
     parsed = urlparse(connector_service_base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.query or parsed.fragment:

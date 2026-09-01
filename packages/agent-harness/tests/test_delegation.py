@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from decimal import Decimal
 from typing import Any
@@ -13,38 +14,41 @@ import a13n_harness.toolsets.delegation as delegation_toolset_module
 import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
-    AbstractModelCostCapability,
     AgentDefinition,
     AgentIdentityRef,
     AgentInstanceContext,
-    DelegationCapability,
-    DelegationConfiguration,
-    DelegationRunCapability,
-    DelegationState,
-    HandoffCapability,
-    HandoffConfiguration,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessRunResultEvent,
-    ModelCostInput,
-    ModelCostQuote,
     PluginError,
-    PluginRunExchange,
-    PluginRunNext,
-    PluginRunResponse,
     RunBindings,
     SubagentDefinition,
+)
+from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness.capabilities import (
+    HandoffCapability,
+    HandoffConfiguration,
+    InlineSubagentManagerState,
+    SubagentCapability,
+    SubagentManager,
     WorkingState,
     WorkingStateCapability,
 )
-from a13n_harness import (
-    AgentSpec as HarnessAgentSpec,
-)
-from a13n_harness.capabilities.delegation import DELEGATION_CAPABILITY_ID
+from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
 from a13n_harness.environment.advanced import (
     EmptyEnvironmentRuntime,
+)
+from a13n_harness.plugins import (
+    PluginRunExchange,
+    PluginRunNext,
+    PluginRunResponse,
+)
+from a13n_harness.pricing import (
+    AbstractModelCostCapability,
+    ModelCostInput,
+    ModelCostQuote,
 )
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
@@ -163,6 +167,37 @@ def _child_definition(
     )
 
 
+def _inline_subagents(
+    *,
+    usage_limits: UsageLimits | None = None,
+    observed_limits: list[UsageLimits | None] | None = None,
+    open_child: Any | None = None,
+    child_capabilities: Sequence[Any] = (),
+) -> SubagentCapability:
+    if open_child is None:
+
+        @asynccontextmanager
+        async def open_child(context, child, input, child_instance_id, continuation, child_limits):
+            del child, input, continuation
+            if observed_limits is not None:
+                observed_limits.append(child_limits)
+            yield RunBindings(
+                instance=AgentInstanceContext(
+                    identity=AgentIdentityRef(issuer="test", subject="child"),
+                    agent_instance_id=f"internal-{child_instance_id}",
+                    parent_agent_instance_id=context.instance.agent_instance_id,
+                    delegation_id=child_instance_id,
+                ),
+                environment=EmptyEnvironmentRuntime(),
+                capabilities=tuple(child_capabilities),
+            )
+
+    return SubagentCapability(
+        execution="inline",
+        operator=SubagentManager(open_child, usage_limits=usage_limits),
+    )
+
+
 def _parent_definition(
     child: AgentDefinition[str],
     model: FunctionModel,
@@ -170,6 +205,7 @@ def _parent_definition(
     working_state: bool = False,
     plugins: tuple[AbstractHarnessPlugin, ...] = (),
     capabilities: tuple[AbstractModelCostCapability, ...] = (),
+    subagent_capability: SubagentCapability | None = None,
 ):
     return AgentDefinition(
         agent=AgentSpec(),
@@ -177,7 +213,7 @@ def _parent_definition(
         definition_id="parent-definition-v1",
         model=model,
         capabilities=(
-            DelegationCapability(),
+            subagent_capability or _inline_subagents(),
             *((WorkingStateCapability(),) if working_state else ()),
             *capabilities,
         ),
@@ -196,25 +232,8 @@ def _parent_definition(
 def _bindings_factory(
     *,
     parent_instance_id: str = "parent-1",
-    host_limits: UsageLimits | None = None,
-    observed_limits: list[UsageLimits | None] | None = None,
     extra_capabilities: Sequence[Any] = (),
 ):
-    async def binder(child, input, child_instance_id, continuation, usage_limits):
-        del child, input, continuation
-        if observed_limits is not None:
-            observed_limits.append(usage_limits)
-        internal_id = f"internal-{child_instance_id}"
-        return RunBindings(
-            instance=AgentInstanceContext(
-                identity=AgentIdentityRef(issuer="test", subject="child"),
-                agent_instance_id=internal_id,
-                parent_agent_instance_id=parent_instance_id,
-                delegation_id=child_instance_id,
-            ),
-            environment=EmptyEnvironmentRuntime(),
-        )
-
     return RunBindings(
         instance=AgentInstanceContext(
             identity=AgentIdentityRef(issuer="test", subject="parent"),
@@ -223,7 +242,6 @@ def _bindings_factory(
         environment=EmptyEnvironmentRuntime(),
         capabilities=(
             InvocationPolicyCapability(evaluator=_allow),
-            DelegationRunCapability(binder=binder, usage_limits=host_limits),
             *extra_capabilities,
         ),
     )
@@ -282,7 +300,7 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
         output_type=str,
         definition_id="instruction-parent-v1",
         model=FunctionModel(stream_function=parent_stream),
-        capabilities=(DelegationCapability(),),
+        capabilities=(_inline_subagents(),),
         subagents=(
             SubagentDefinition(
                 name="reviewer",
@@ -387,6 +405,77 @@ async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspe
     assert "subagent_deferred_unsupported" in child_failures[0]
 
 
+async def test_inline_delegation_rejects_reused_child_authority_before_child_execution() -> None:
+    child_calls = 0
+
+    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal child_calls
+        del messages, info
+        child_calls += 1
+        yield "child-done"
+
+    child = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        definition_id="reused-authority-child-v1",
+        model=FunctionModel(stream_function=child_stream),
+    )
+
+    @asynccontextmanager
+    async def open_child(context, child, input, child_instance_id, continuation, child_limits):
+        del child, input, continuation, child_limits
+        yield RunBindings(
+            instance=AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="test", subject="child"),
+                agent_instance_id="reused-child-authority",
+                parent_agent_instance_id=context.instance.agent_instance_id,
+                delegation_id=child_instance_id,
+            ),
+            environment=EmptyEnvironmentRuntime(),
+        )
+
+    failures: list[str] = []
+
+    async def parent_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        turn = sum(isinstance(message, ModelResponse) for message in messages)
+        if turn < 2:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "reviewer", "task": f"inspect-{turn + 1}"}),
+                    tool_call_id=f"delegate-{turn + 1}",
+                )
+            }
+            return
+        failures.extend(
+            str(part.content)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, RetryPromptPart | ToolReturnPart)
+        )
+        yield "parent-recovered"
+
+    executable = HarnessBuilder().build(
+        _parent_definition(
+            child,
+            FunctionModel(stream_function=parent_stream),
+            subagent_capability=_inline_subagents(open_child=open_child),
+        )
+    )
+
+    result = await executable.run("delegate twice", bindings=_bindings_factory())
+
+    assert result.output_or_raise() == "parent-recovered"
+    assert child_calls == 1
+    assert failures
+    assert failures[-1] == "Inline delegation failed before a complete child result."
+
+
 async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
     async def parent_stream(
         messages: list[ModelMessage],
@@ -416,12 +505,13 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
         _parent_definition(
             _child_definition(),
             FunctionModel(stream_function=parent_stream),
+            subagent_capability=_inline_subagents(
+                usage_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
+                observed_limits=observed_limits,
+            ),
         )
     )
-    bindings = _bindings_factory(
-        host_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
-        observed_limits=observed_limits,
-    )
+    bindings = _bindings_factory()
 
     events = []
     async with executable.stream(
@@ -438,7 +528,9 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
 
     assert first.output_or_raise() == "parent-done"
     assert first.state is not None
-    restored = DelegationState.model_validate(first.state.agent_context_state.entries[DELEGATION_CAPABILITY_ID].data)
+    restored = InlineSubagentManagerState.model_validate(
+        first.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+    )
     child_id, child_record = next(iter(restored.children.items()))
     assert child_id.startswith("reviewer-")
     assert child_record.state.thread_id != first.state.thread_id
@@ -487,17 +579,16 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
 
     second = await executable.run(
         "continue",
-        bindings=_bindings_factory(
-            host_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
-            observed_limits=observed_limits,
-        ),
+        bindings=_bindings_factory(),
         previous_state=first.state,
         usage_limits=UsageLimits(request_limit=9, total_tokens_limit=100_000),
     )
     assert second.output_or_raise() == "parent-done"
     assert second.state is not None
     assert second.state.thread_id == first.state.thread_id
-    continued = DelegationState.model_validate(second.state.agent_context_state.entries[DELEGATION_CAPABILITY_ID].data)
+    continued = InlineSubagentManagerState.model_validate(
+        second.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+    )
     assert set(continued.children) == {child_id}
     assert continued.children[child_id].state.thread_id == child_record.state.thread_id
     assert continued.children[child_id].state.thread_id != second.state.thread_id
@@ -539,15 +630,16 @@ async def test_inline_delegation_intersects_child_agent_spec_usage_limits() -> N
         _parent_definition(
             child,
             FunctionModel(stream_function=parent_stream),
+            subagent_capability=_inline_subagents(
+                usage_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
+                observed_limits=observed_limits,
+            ),
         )
     )
 
     result = await executable.run(
         "delegate",
-        bindings=_bindings_factory(
-            host_limits=UsageLimits(request_limit=7, total_tokens_limit=60_000),
-            observed_limits=observed_limits,
-        ),
+        bindings=_bindings_factory(),
         usage_limits=UsageLimits(request_limit=9, total_tokens_limit=100_000),
     )
 
@@ -665,7 +757,11 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
         output_type=str,
         definition_id="nested-child-definition-v1",
         model=FunctionModel(stream_function=child_stream),
-        capabilities=(DelegationCapability(),),
+        capabilities=(
+            _inline_subagents(
+                child_capabilities=(InvocationPolicyCapability(evaluator=_allow),),
+            ),
+        ),
         subagents=(
             SubagentDefinition(
                 name="worker",
@@ -691,38 +787,16 @@ async def test_nested_inline_delegation_forwards_descendant_events() -> None:
             return
         yield "parent-done"
 
-    def nested_binder(parent_instance_id: str):
-        async def binder(child, input, child_instance_id, continuation, usage_limits):
-            del input, continuation, usage_limits
-            internal_id = f"internal-{child_instance_id}"
-            capabilities: list[Any] = [InvocationPolicyCapability(evaluator=_allow)]
-            if DELEGATION_CAPABILITY_ID in child.executable._definition_reserved_capability_ids:
-                capabilities.append(DelegationRunCapability(binder=nested_binder(internal_id)))
-            return RunBindings(
-                instance=AgentInstanceContext(
-                    identity=AgentIdentityRef(issuer="test", subject="nested-child"),
-                    agent_instance_id=internal_id,
-                    parent_agent_instance_id=parent_instance_id,
-                    delegation_id=child_instance_id,
-                ),
-                environment=EmptyEnvironmentRuntime(),
-                capabilities=tuple(capabilities),
-            )
-
-        return binder
-
-    executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
-    bindings = RunBindings(
-        instance=AgentInstanceContext(
-            identity=AgentIdentityRef(issuer="test", subject="parent"),
-            agent_instance_id="parent-1",
-        ),
-        environment=EmptyEnvironmentRuntime(),
-        capabilities=(
-            InvocationPolicyCapability(evaluator=_allow),
-            DelegationRunCapability(binder=nested_binder("parent-1")),
-        ),
+    executable = HarnessBuilder().build(
+        _parent_definition(
+            child,
+            FunctionModel(stream_function=parent_stream),
+            subagent_capability=_inline_subagents(
+                child_capabilities=(InvocationPolicyCapability(evaluator=_allow),),
+            ),
+        )
     )
+    bindings = _bindings_factory()
     events: list[HarnessEvent] = []
     async with executable.stream("start", bindings=bindings) as stream:
         parent_run_id = stream.run_id
@@ -782,14 +856,15 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
         _parent_definition(
             _child_definition(),
             FunctionModel(stream_function=parent_stream),
+            subagent_capability=_inline_subagents(
+                usage_limits=UsageLimits(count_tokens_before_request=True),
+            ),
         )
     )
     events: list[HarnessEvent] = []
     async with executable.stream(
         "start",
-        bindings=_bindings_factory(
-            host_limits=UsageLimits(count_tokens_before_request=True),
-        ),
+        bindings=_bindings_factory(),
     ) as stream:
         parent_run_id = stream.run_id
         async for item in stream:
@@ -951,8 +1026,8 @@ async def test_inline_delegation_cancellation_before_state_commit_leaves_no_chil
             await consumer
 
     state = await stream.context.state.read(
-        DELEGATION_CAPABILITY_ID,
-        DelegationState,
+        SUBAGENT_CAPABILITY_ID,
+        InlineSubagentManagerState,
         version="1",
     )
     assert state is None
@@ -975,32 +1050,27 @@ async def test_inline_delegation_retains_new_id_after_handled_dispatch_rejection
             return
         yield "handled"
 
-    async def rejecting_binder(child, input, child_instance_id, continuation, usage_limits):
-        del child, input, child_instance_id, continuation, usage_limits
+    @asynccontextmanager
+    async def rejecting_binder(context, child, input, child_instance_id, continuation, usage_limits):
+        del context, child, input, child_instance_id, continuation, usage_limits
         raise ToolFailed("Denied by current Host policy.")
+        yield RunBindings.embedded()
 
     executable = HarnessBuilder().build(
         _parent_definition(
             _child_definition(),
             FunctionModel(stream_function=parent_stream),
+            subagent_capability=_inline_subagents(open_child=rejecting_binder),
         )
     )
-    bindings = RunBindings(
-        instance=AgentInstanceContext(
-            identity=AgentIdentityRef(issuer="test", subject="parent"),
-            agent_instance_id="parent-1",
-        ),
-        environment=EmptyEnvironmentRuntime(),
-        capabilities=(
-            InvocationPolicyCapability(evaluator=_allow),
-            DelegationRunCapability(binder=rejecting_binder),
-        ),
-    )
+    bindings = _bindings_factory()
     result = await executable.run("start", bindings=bindings)
 
     assert result.output_or_raise() == "handled"
     assert result.state is not None
-    restored = DelegationState.model_validate(result.state.agent_context_state.entries[DELEGATION_CAPABILITY_ID].data)
+    restored = InlineSubagentManagerState.model_validate(
+        result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+    )
     child_id = next(iter(restored.children))
     returns = _returns_after_latest_user(result.all_messages())
     assert any(child_id in str(part.content) for part in returns if part.tool_name == "delegate")
@@ -1123,29 +1193,26 @@ async def test_inline_delegation_rejects_invalid_child_lineage_before_model_work
         else:
             yield "handled"
 
-    async def bad_binder(child, input, child_instance_id, continuation, usage_limits):
-        del child, input, child_instance_id, continuation, usage_limits
-        return RunBindings.embedded()
+    @asynccontextmanager
+    async def bad_binder(context, child, input, child_instance_id, continuation, usage_limits):
+        del context, child, input, child_instance_id, continuation, usage_limits
+        yield RunBindings.embedded()
 
-    executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
-    bindings = RunBindings(
-        instance=AgentInstanceContext(
-            identity=AgentIdentityRef(issuer="test", subject="parent"),
-            agent_instance_id="parent-1",
-        ),
-        environment=EmptyEnvironmentRuntime(),
-        capabilities=(
-            InvocationPolicyCapability(evaluator=_allow),
-            DelegationRunCapability(binder=bad_binder),
-        ),
+    executable = HarnessBuilder().build(
+        _parent_definition(
+            child,
+            FunctionModel(stream_function=parent_stream),
+            subagent_capability=_inline_subagents(open_child=bad_binder),
+        )
     )
+    bindings = _bindings_factory()
     result = await executable.run("start", bindings=bindings)
 
     assert result.output_or_raise() == "handled"
     assert child_calls == 0
 
 
-async def test_inline_delegation_reserves_new_child_capacity_before_dispatch() -> None:
+async def test_inline_delegation_allows_concurrent_children_selected_by_the_toolset() -> None:
     child_calls = 0
 
     async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -1189,78 +1256,22 @@ async def test_inline_delegation_reserves_new_child_capacity_before_dispatch() -
             output_type=str,
             definition_id="capacity-parent-v1",
             model=FunctionModel(stream_function=parent_stream),
-            capabilities=(DelegationCapability(DelegationConfiguration(max_children=1)),),
+            capabilities=(_inline_subagents(),),
             subagents=(SubagentDefinition(name="reviewer", description="Review.", agent=child),),
         )
     )
     result = await executable.run("start", bindings=_bindings_factory())
 
     assert result.output_or_raise() == "handled"
-    assert child_calls == 1
+    assert child_calls == 2
     assert result.state is not None
-    restored = DelegationState.model_validate(result.state.agent_context_state.entries[DELEGATION_CAPABILITY_ID].data)
-    assert len(restored.children) == 1
-
-
-async def test_inline_delegation_projects_state_budget_failure_before_completed_event() -> None:
-    async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages, info
-        yield "x" * (70 * 1024)
-
-    child = AgentDefinition(
-        agent=AgentSpec(),
-        output_type=str,
-        definition_id="large-state-child-v1",
-        model=FunctionModel(stream_function=child_stream),
+    restored = InlineSubagentManagerState.model_validate(
+        result.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
     )
-
-    async def parent_stream(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        if not _returns_after_latest_user(messages):
-            yield {
-                0: DeltaToolCall(
-                    name="delegate",
-                    json_args=json.dumps({"subagent": "reviewer", "task": "large"}),
-                    tool_call_id="delegate-large-state",
-                )
-            }
-            return
-        yield "handled"
-
-    executable = HarnessBuilder().build(
-        AgentDefinition(
-            agent=AgentSpec(),
-            output_type=str,
-            definition_id="large-state-parent-v1",
-            model=FunctionModel(stream_function=parent_stream),
-            capabilities=(
-                DelegationCapability(DelegationConfiguration(max_state_bytes=64 * 1024, max_output_bytes=1024 * 1024)),
-            ),
-            subagents=(SubagentDefinition(name="reviewer", description="Review.", agent=child),),
-        )
-    )
-    events: list[HarnessEvent] = []
-    async with executable.stream("start", bindings=_bindings_factory()) as stream:
-        async for item in stream:
-            if isinstance(item, HarnessEvent):
-                events.append(item)
-            else:
-                result = item.result
-
-    assert result.output_or_raise() == "handled"
-    delegation_events = [
-        event.event.payload
-        for event in events
-        if isinstance(event.event, HarnessExtensionEvent) and event.event.kind == "delegation"
-    ]
-    assert any(payload["action"] == "failed" and payload["status"] == "state_rejected" for payload in delegation_events)
-    assert not any(payload["action"] == "completed" for payload in delegation_events)
+    assert len(restored.children) == 2
 
 
-async def test_inline_delegation_output_policy_uses_configured_total_limit() -> None:
+async def test_inline_delegation_uses_standard_result_policy() -> None:
     async def child_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "unused"
@@ -1278,7 +1289,7 @@ async def test_inline_delegation_output_policy_uses_configured_total_limit() -> 
         assert delegate.metadata is not None
         metadata = normalize_harness_tool_metadata(delegate.metadata[HARNESS_TOOL_METADATA_KEY])
         assert metadata.output_policy.max_inline_bytes == 256 * 1024
-        assert metadata.output_policy.max_output_bytes == 1024 * 1024
+        assert metadata.output_policy.max_output_bytes == 4 * 1024 * 1024
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -1287,7 +1298,7 @@ async def test_inline_delegation_output_policy_uses_configured_total_limit() -> 
             output_type=str,
             definition_id="output-policy-parent-v1",
             model=FunctionModel(stream_function=parent_stream),
-            capabilities=(DelegationCapability(DelegationConfiguration(max_output_bytes=1024 * 1024)),),
+            capabilities=(_inline_subagents(),),
             subagents=(SubagentDefinition(name="reviewer", description="Review.", agent=child),),
         )
     )

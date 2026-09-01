@@ -5,7 +5,14 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import pytest
-from a13n_harness import DeferredToolResume, DefinitionError, HarnessBuilder, RunBindings, RunError
+from a13n_harness import (
+    DeferredToolResume,
+    DefinitionError,
+    HarnessBuilder,
+    RunBindings,
+    RunError,
+)
+from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_harness.tools import (
     HarnessTool,
     HarnessToolMetadata,
@@ -68,27 +75,36 @@ class _Policy:
         return self.decision
 
 
-def _build(executed: list[int], *, resolver=None, requires_approval: bool = True):
+def _build(
+    executed: list[int],
+    *,
+    resolver=None,
+    requires_approval: bool = True,
+    retain_inputs: bool = False,
+):
     def change(value: int) -> int:
         executed.append(value)
         return value
 
+    capabilities = [
+        Capability(
+            tools=[
+                HarnessTool(
+                    change,
+                    harness_metadata=_metadata(resolver),
+                    requires_approval=requires_approval,
+                )
+            ],
+            id="test-tools",
+        )
+    ]
+    if retain_inputs:
+        capabilities.append(CompactionCapability(CompactionPolicy(trigger_tokens=1_000_000)))
     return HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=_model(),
-        capabilities=(
-            Capability(
-                tools=[
-                    HarnessTool(
-                        change,
-                        harness_metadata=_metadata(resolver),
-                        requires_approval=requires_approval,
-                    )
-                ],
-                id="test-tools",
-            ),
-        ),
+        capabilities=tuple(capabilities),
     )
 
 
@@ -121,6 +137,30 @@ async def test_native_approval_suspends_and_resumes_with_fresh_authority() -> No
     assert second.status == "completed"
     assert executed == [1]
     assert fresh_policy.seen_values == [1]
+
+
+async def test_deferred_continuation_restores_the_retained_input_ledger() -> None:
+    executed: list[int] = []
+    executable = _build(executed, retain_inputs=True)
+    first = await _suspend(executable, _Policy(InvocationPolicyDecision.allow(), []))
+    assert first.state is not None and first.deferred is not None
+    first_retained = first.state.agent_context_state.entries["a13n.steering"].data["retained_requests"]
+    assert len(first_retained) == 1
+
+    requests = first.deferred
+    second = await executable.run(
+        bindings=RunBindings.embedded(
+            capabilities=(InvocationPolicyCapability(evaluator=_Policy(InvocationPolicyDecision.allow(), [])),)
+        ),
+        previous_state=first.state,
+        deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
+    )
+
+    assert second.status == "completed"
+    assert second.state is not None
+    second_retained = second.state.agent_context_state.entries["a13n.steering"].data["retained_requests"]
+    assert second_retained == first_retained
+    assert executed == [1]
 
 
 async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None:

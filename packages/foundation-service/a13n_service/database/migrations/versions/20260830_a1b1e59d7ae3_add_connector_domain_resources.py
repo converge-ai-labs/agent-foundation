@@ -1,7 +1,7 @@
 """add connector domain resources.
 
 Revision ID: a1b1e59d7ae3
-Revises: 916295e4a4e4
+Revises: 31693c93eded
 Create Date: 2026-08-30 14:48:22.544374+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a1b1e59d7ae3"
-down_revision: str | Sequence[str] | None = "916295e4a4e4"
+down_revision: str | Sequence[str] | None = "31693c93eded"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -213,7 +213,7 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("principal_type", sa.String(length=32), nullable=False),
         sa.Column("principal_id", sa.String(length=72), nullable=False),
-        sa.Column("agent_revision_id", sa.String(length=72), nullable=False),
+        sa.Column("agent_preset_id", sa.String(length=72), nullable=False),
         sa.Column("source_kind", sa.String(length=32), nullable=False),
         sa.Column("schedule_type", sa.String(length=32), nullable=True),
         sa.Column("schedule_expression", sa.String(length=200), nullable=True),
@@ -299,7 +299,7 @@ def upgrade() -> None:
         sa.Column("occurrence_key", sa.String(length=500), nullable=False),
         sa.Column("provider_event_id", sa.String(length=500), nullable=True),
         sa.Column("scheduled_for", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("accepted_turn_id", sa.String(length=72), nullable=False),
+        sa.Column("accepted_run_id", sa.String(length=72), nullable=False),
         sa.Column("received_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
             "(provider_event_id IS NOT NULL AND scheduled_for IS NULL) OR (provider_event_id IS NULL AND scheduled_for IS NOT NULL)",

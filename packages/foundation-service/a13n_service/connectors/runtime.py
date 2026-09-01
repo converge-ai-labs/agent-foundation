@@ -19,7 +19,7 @@ from a13n_service.storage import short_session
 from .domain import (
     AgentConnectorDeclaration,
     ConnectorProviderContractLock,
-    ConnectorTurnSelection,
+    ConnectorRunSelection,
     PrincipalRef,
     bounded_json_object,
     bounded_json_value,
@@ -159,7 +159,7 @@ class ConnectorProviderRuntime:
             ),
         )
 
-    async def prepare_turn_selection(
+    async def prepare_run_selection(
         self,
         *,
         organization_id: str,
@@ -168,7 +168,7 @@ class ConnectorProviderRuntime:
         declaration: AgentConnectorDeclaration,
         principal: PrincipalRef,
         context: ConnectorProviderContext,
-    ) -> ConnectorTurnSelection:
+    ) -> ConnectorRunSelection:
         connection_id = declaration.connection_id
         target = await self._load_target(
             organization_id=organization_id,
@@ -229,7 +229,7 @@ class ConnectorProviderRuntime:
                 declaration.tools,
             )
 
-        return ConnectorTurnSelection(
+        return ConnectorRunSelection(
             declaration_index=declaration_index,
             connector_revision_id=declaration.connector_revision_id,
             connection_id=connection_id,

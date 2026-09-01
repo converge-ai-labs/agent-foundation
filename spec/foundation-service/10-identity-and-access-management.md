@@ -8,16 +8,16 @@ IAM authorizes a caller to inspect, change, invoke, or administer Foundation res
 
 ## Boundaries
 
-| Concern                                                         | Owner                                                                  | Relationship                                                                     |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Organization, Workspace, User, and Service Account identity     | This document                                                          | Defines durable identity, ownership, and lifecycle                               |
-| Password, browser session, invitation, reset token, and API key | This document                                                          | Defines authentication and credential lifecycle                                  |
-| RoleBinding, built-in roles, and product authorization          | This document                                                          | Defines the only durable product grant model                                     |
-| Managed Secret value protection                                 | [Secret Management](11-secret-management.md)                           | Uses IAM scope and authorization without treating a Secret as a login credential |
-| AgentPreset, AgentPresetVersion, Turn, and TurnAttempt identity | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
-| Model-triggered tool and Environment authority                  | Harness run grants and providers                                       | Narrows an authorized invocation independently from product RBAC                 |
-| OSS, EE, and Cloud capability composition                       | [Distribution boundary](02-distribution-composition-and-extensions.md) | Adds capabilities without edition fields or bypassing common IAM checks          |
-| Native, Hosted AG-UI, and A2A authentication                    | [Protocol Gateway](28-protocol-gateway.md)                             | Maps protocol credentials to this document's Principals and authorizer           |
+| Concern                                                              | Owner                                                                  | Relationship                                                                     |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Organization, Workspace, User, and Service Account identity          | This document                                                          | Defines durable identity, ownership, and lifecycle                               |
+| Password, browser session, invitation, reset token, and API key      | This document                                                          | Defines authentication and credential lifecycle                                  |
+| RoleBinding, built-in roles, and product authorization               | This document                                                          | Defines the only durable product grant model                                     |
+| Managed Secret value protection                                      | [Secret Management](11-secret-management.md)                           | Uses IAM scope and authorization without treating a Secret as a login credential |
+| AgentPreset, AgentPresetVersion, Asset, Run, and RunAttempt identity | Their owning Foundation documents                                      | Remain authorization targets and audit subjects, not IAM Principals              |
+| Model-triggered tool and Environment authority                       | Harness run grants and providers                                       | Narrows an authorized invocation independently from product RBAC                 |
+| OSS, EE, and Cloud capability composition                            | [Distribution boundary](02-distribution-composition-and-extensions.md) | Adds capabilities without edition fields or bypassing common IAM checks          |
+| Native, Hosted AG-UI, and A2A authentication                         | [Protocol Gateway](28-protocol-gateway.md)                             | Maps protocol credentials to this document's Principals and authorizer           |
 
 The canonical resource hierarchy is:
 
@@ -26,7 +26,7 @@ flowchart TB
     Deployment[Foundation deployment]
     Organization[Organization]
     Workspace[Workspace]
-    Resource[AgentPreset, Secret, Session, Thread, Turn, TurnAttempt, Environment, or other resource]
+    Resource[AgentPreset, Asset, Secret, Session, Thread, Run, RunAttempt, Environment, or other resource]
 
     Deployment --> Organization --> Workspace --> Resource
 ```
@@ -45,13 +45,7 @@ The common relational model permits several Organizations so EE and Cloud can us
 
 OSS supplies local email-and-password authentication, invitations, browser sessions, Workspace-bound User and Service Account API keys, built-in roles, and direct User or Service Account RoleBindings. It does not supply SSO, OIDC, external identity records, Groups, custom roles, Organization-bound API keys, product quotas, billing, or platform-operator elevation.
 
-Native, Hosted AG-UI, and A2A use these same credential and Principal kinds.
-Hosted AG-UI can use the current browser session or bearer API key. A2A runtime
-security schemes resolve to a User or Service Account through the existing
-credential boundary. Foundation defines no AG-UI or A2A Principal, role, API
-key, or implicit Agent identity. Public A2A Agent Card reads are the deliberate
-anonymous discovery exception and return only the safe projection owned by the
-[A2A contract](31-a2a.md#agent-card-projection).
+Native, Hosted AG-UI, and A2A use these same credential and Principal kinds. Hosted AG-UI can use the current browser session or bearer API key. A2A runtime security schemes resolve to a User or Service Account through the existing credential boundary. Foundation defines no AG-UI or A2A Principal, role, API key, or implicit Agent identity. Public A2A Agent Card reads are the deliberate anonymous discovery exception and return only the safe projection owned by the [A2A contract](31-a2a.md#agent-card-projection).
 
 EE and Cloud distributions add capabilities through the explicit composition contract while preserving the identifiers, tenant fields, Principal meaning, credential boundary, and authorizer contract defined here. Core rows contain no `edition`, `plan`, `license`, or deployment-placement field.
 
@@ -68,7 +62,7 @@ Foundation recognizes exactly these OSS Principal kinds:
 - `user` is one platform-wide human identity;
 - `service_account` is one non-human identity owned by a Workspace.
 
-A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. AgentPreset, AgentPresetVersion, Session, Thread, Turn, TurnAttempt, credential, and Secret identities are not Principals. Product authorization targets the stable AgentPreset ID, while an accepted Turn selects the exact immutable AgentPresetVersion separately.
+A Principal receives authority only through current RoleBindings. A credential authenticates one Principal and can narrow its usable boundary; it never owns a role or expands that Principal's authority. AgentPreset, AgentPresetVersion, Session, Thread, Run, RunAttempt, credential, and Secret identities are not Principals. Product authorization targets the stable AgentPreset ID, while an accepted Run selects the exact immutable AgentPresetVersion separately.
 
 The conceptual references are:
 
@@ -297,30 +291,24 @@ invocation, authorizes the current RoleBindings and target resource again.
 
 ### `security_audit_events`
 
-| Column            | Durable meaning and constraint                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `id`              | Primary key; immutable event ID                                                           |
-| `organization_id` | Tenant for Organization or Workspace activity; null for platform identity activity        |
-| `workspace_id`    | Workspace for Workspace activity; otherwise null                                          |
-| `actor_type`      | `anonymous`, `user`, `service_account`, or `system`                                       |
-| `actor_id`        | Actor identity when known; otherwise null                                                 |
-| `action`          | Stable namespaced security action                                                         |
-| `resource_type`   | Affected resource kind when known                                                         |
-| `resource_id`     | Affected resource ID when known                                                           |
-| `auth_method`     | `password`, `session`, `api_key`, `bootstrap`, or `system`                                |
-| `credential_id`   | Safe credential ID when applicable; never secret material                                 |
-| `outcome`         | `success` or `failure`                                                                    |
-| `occurred_at`     | Immutable event time                                                                      |
-| `request_id`      | Safe request correlation ID when applicable                                               |
-| `details`         | Optional bounded action-specific safe JSON; never contains credentials or resource values |
+| Column            | Durable meaning and constraint                                                     |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `id`              | Primary key; immutable event ID                                                    |
+| `organization_id` | Tenant for Organization or Workspace activity; null for platform identity activity |
+| `workspace_id`    | Workspace for Workspace activity; otherwise null                                   |
+| `actor_type`      | `anonymous`, `user`, `service_account`, or `system`                                |
+| `actor_id`        | Actor identity when known; otherwise null                                          |
+| `action`          | Stable namespaced security action                                                  |
+| `resource_type`   | Affected resource kind when known                                                  |
+| `resource_id`     | Affected resource ID when known                                                    |
+| `auth_method`     | `password`, `session`, `api_key`, `bootstrap`, or `system`                         |
+| `credential_id`   | Safe credential ID when applicable; never secret material                          |
+| `outcome`         | `success` or `failure`                                                             |
+| `occurred_at`     | Immutable event time                                                               |
+| `request_id`      | Safe request correlation ID when applicable                                        |
+| `details`         | Optional bounded action-specific safe JSON under the rules below                   |
 
-Security audit events are append-only and distinct from Turn and TurnAttempt
-lifecycle events, application logs, traces, and UsageRecords. Login, password,
-email, User status, invitation, RoleBinding, API key, Service Account,
-Workspace, Secret, and ModelConfig security mutations and connection tests emit
-events. `details` uses an action-owned allowlist; a ModelConfig update can record
-only changed field names. Events contain no secret material, credential
-verifier, old or new resource value, endpoint, or raw provider error.
+Security audit events are append-only and distinct from Run and RunAttempt lifecycle events, application logs, traces, and UsageRecords. Login, password, email, User status, invitation, RoleBinding, API key, Service Account, Workspace, Secret, Skill, Asset, and ModelConfig security mutations and connection tests emit events. `details` uses an action-owned allowlist. It can record tenant-scoped related resource IDs, stable enum outcomes, and changed field names needed to correlate an operation; those identifiers grant no authority. A ModelConfig update can record only changed field names. Events contain no secret material, credential verifier, old or new resource value, endpoint, or raw provider error.
 
 A successful security-sensitive mutation commits its audit event in the same short transaction as the authoritative state change under [Durable Operations and Outbox](06-durable-operations-and-outbox.md#atomic-durable-commit). Authentication failures and denied attempts emit through a separate bounded path because no resource mutation transaction exists; audit unavailability never converts a denial into an allow.
 
@@ -379,25 +367,18 @@ An Organization role applies only to a User. The last effective Organization Adm
 
 ### Workspace roles
 
-| Role key  | Permissions                                                                                                                                                                                                                                                                    |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `viewer`  | Read safe Workspace metadata, resources, managed Skill metadata/content, and histories; read Secret metadata but never Secret values                                                                                                                                           |
-| `runner`  | Viewer permissions; invoke every AgentPreset and Workspace Connector; steer and interrupt active Turns; retry eligible sealed Turns in the Workspace                                                                                                                           |
-| `builder` | Runner permissions; create, update, and archive AgentPresets and all Preset-owned configuration, including protocol metadata and policy; create, revise, delete, and bind Workspace Skills; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
-| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                                                                |
+| Role key  | Permissions                                                                                                                                                                                                                                                                                   |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `viewer`  | Read safe Workspace metadata, resources, managed Skill and Asset metadata/content, and histories; read Secret metadata but never Secret values                                                                                                                                                |
+| `runner`  | Viewer permissions; invoke every AgentPreset and Workspace Connector; steer and interrupt active Runs; retry eligible sealed Runs in the Workspace; create Assets and use active Assets as Agent input                                                                                        |
+| `builder` | Runner permissions; create, update, and archive AgentPresets and all Preset-owned configuration, including protocol metadata and policy; create, revise, delete, and bind Workspace Skills; delete Assets; manage Workspace ModelConfigs; create, replace, delete, and bind Workspace Secrets |
+| `admin`   | Builder permissions; update Workspace settings; manage Workspace User RoleBindings and invitations; manage Service Accounts and their keys; inspect and revoke Personal API Keys; read Workspace security audit                                                                               |
 
-The role table does not decide whether Tool, Connector, Environment, or another
-Agent input is an independent Workspace resource. The [Skill Management
-contract](27-skill-management.md#authorization-and-audit) defines Skills as
-independent Workspace resources and contributes their exact actions. Other owning
-product contracts define their resources. Builder has complete
-AgentPreset-authoring and managed-Skill authority but cannot install executable
-code, expand deployment capability availability, manage identity, or change
-RoleBindings.
+The role table does not decide whether Tool, Connector, Environment, or another Agent input is an independent Workspace resource. The [Skill Management contract](27-skill-management.md#authorization-and-audit) defines Skills, and [Asset Management](37-asset-management.md#authorization-and-audit) defines immutable binary Assets and their exact actions. Other owning product contracts define their resources. Builder has complete AgentPreset-authoring, managed-Skill, and Asset-deletion authority but cannot install executable code, expand deployment capability availability, manage identity, or change RoleBindings.
 
 A Runner can invoke an AgentPreset that uses configured Secrets but cannot inspect a Secret value, change Secret metadata, or change a Preset-to-Secret binding. Secret plaintext is never a role permission.
 
-Direct AgentPreset RoleBindings reuse `viewer`, `runner`, and `builder` as resource-level permission bundles. At AgentPreset scope, Viewer grants Preset, Version, associated Turn and TurnAttempt reads, and exact steer-receipt reads; Runner adds invocation, active-Turn steering and interrupt, and eligible sealed-Turn retry; Builder adds Preset config, Publish, lifecycle, and Preset-owned configuration management. It grants no AgentPreset creation, Workspace Secret management, executable-code administration, or identity management. The common schema lets management surfaces restrict a Principal to selected Presets without introducing another authorization model.
+Direct AgentPreset RoleBindings reuse `viewer`, `runner`, and `builder` as resource-level permission bundles. At AgentPreset scope, Viewer grants Preset, Version, associated Run and RunAttempt reads, and exact steer-receipt reads; Runner adds invocation, active-Run steering and interrupt, and eligible sealed-Run retry; Builder adds Preset config, Publish, lifecycle, and Preset-owned configuration management. It grants no AgentPreset creation, Workspace Secret management, executable-code administration, or identity management. The common schema lets management surfaces restrict a Principal to selected Presets without introducing another authorization model.
 
 An AgentPreset-scoped Runner or Builder binding does not grant
 `connector.invoke`. Direct standard MCP invocation targets an independent
@@ -453,14 +434,11 @@ The code is semantic pseudocode. Implementations centralize these checks but use
 
 No credential contains a role snapshot. Identifier possession, an earlier allow, a cursor, an idempotency key, a queue message, or an existing Harness checkpoint never preserves authority for another operation.
 
-Persisted Hosted AG-UI `threadId`/`runId` bindings and A2A Context, Task,
-Message, Artifact, or push-configuration IDs are also non-authoritative
-selectors. Every operation and stream continuation resolves their owning
-Foundation resource and evaluates current authority again.
+Persisted Hosted AG-UI `threadId`/`runId` bindings and A2A Context, Task, Message, Artifact, or push-configuration IDs are also non-authoritative selectors. Every operation and stream continuation resolves their owning Foundation resource and evaluates current authority again.
 
 ## Product Authorization and Run Grants
 
-Product RBAC decides whether a User or Service Account may invoke an AgentPreset. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current AgentPreset invocation permission, the immutable AgentPresetVersion, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. Every newly claimed TurnAttempt and every accepted child or retry Turn obtains fresh authority instead of retaining a role snapshot.
+Product RBAC decides whether a User or Service Account may invoke an AgentPreset. Run grants separately constrain model-triggerable tool, Secret, and Environment operations. Effective run authority intersects the current AgentPreset invocation permission, the immutable AgentPresetVersion, and current provider grants; a product role never reveals Secret plaintext or directly grants a model side effect. Every newly claimed RunAttempt and every accepted child or retry Run obtains fresh authority instead of retaining a role snapshot.
 
 The [Connector contract](23-connectors-connections-and-triggers.md#management-and-ingress-surfaces) defines Connector, Connection, and Trigger actions. Workspace roles map those actions as specified above. Connector-backed Agent work and Trigger acceptance reauthorize the current Principal, resource eligibility, and required run grants; no role snapshot or role name enters Harness.
 

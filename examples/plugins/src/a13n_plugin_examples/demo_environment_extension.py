@@ -17,13 +17,15 @@ from a13n_environment_provider import (
 )
 from a13n_harness import (
     AgentSpec,
+    HarnessBuilder,
+    RunBindings,
+    RunPreparationContext,
+)
+from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentPermissionSet,
     EnvironmentRunExtensionFactoryCatalog,
     EnvironmentRunExtensionFactoryContext,
-    HarnessBuilder,
-    RunBindings,
-    RunPreparationContext,
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
@@ -116,7 +118,7 @@ async def _run_extension_demo(
     )
     resource = await manager.create(operation=operation)
     try:
-        async with executable, resource:
+        async with resource:
             async with resource.acquire_attachment() as attachment:
                 provider = create_environment_provider_binding(attachment)
                 environment_runtime = create_environment_runtime(

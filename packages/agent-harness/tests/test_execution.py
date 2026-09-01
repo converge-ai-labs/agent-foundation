@@ -12,7 +12,6 @@ import pytest
 from a13n_harness import (
     AgentDefinition,
     DefinitionError,
-    EnvironmentState,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -23,9 +22,8 @@ from a13n_harness import (
     RunError,
     SubagentDefinition,
 )
-from a13n_harness import (
-    AgentSpec as HarnessAgentSpec,
-)
+from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness.environment import EnvironmentState
 from a13n_harness.events import _RunEventEmitter
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
@@ -564,7 +562,7 @@ async def test_declarative_schema_build_still_supports_native_deferred_suspensio
     assert len(result.deferred.approvals) == 1
 
 
-async def test_builder_recursively_builds_and_owns_authored_subagents() -> None:
+async def test_builder_recursively_builds_reusable_authored_subagents() -> None:
     child_definition = AgentDefinition(
         agent=AgentSpec(name="child-agent"),
         output_type=str,
@@ -605,13 +603,10 @@ async def test_builder_recursively_builds_and_owns_authored_subagents() -> None:
         terminal = [item async for item in stream][-1]
         assert isinstance(terminal, HarnessRunResultEvent)
 
-    child_result = await child.executable.run("child", bindings=RunBindings.embedded())
-    assert child_result.output_or_raise() == "turn-1"
-
-    await executable.close()
-    with pytest.raises(RunError) as exc_info:
-        child.executable.stream("closed", bindings=RunBindings.embedded())
-    assert exc_info.value.code == "executable_closed"
+    first_child_result = await child.executable.run("child", bindings=RunBindings.embedded())
+    second_child_result = await child.executable.run("child again", bindings=RunBindings.embedded())
+    assert first_child_result.output_or_raise() == "turn-1"
+    assert second_child_result.output_or_raise() == "turn-1"
 
 
 async def test_duplicate_subagent_names_fail_before_build() -> None:
@@ -826,6 +821,53 @@ async def test_stream_steer_delivers_native_asap_input() -> None:
         with pytest.raises(RunError) as terminal_error:
             await stream.steer("too late")
         assert terminal_error.value.code == "run_not_active"
+
+
+async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[tuple[ModelMessage, ...]] = []
+
+    async def steering_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        calls.append(tuple(messages))
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+            yield "first response"
+        else:
+            yield "collected"
+
+    executable = _build(FunctionModel(stream_function=steering_stream))
+    async with executable.stream("initial", bindings=RunBindings.embedded()) as stream:
+        consumer = asyncio.create_task(_consume_stream(stream))
+        await started.wait()
+        enqueue_id = await stream.context._steering.notify(
+            "Background subagent subagent-1 has finished. Call wait_subagent.",
+            source="async_subagent",
+            references=("subagent-1",),
+        )
+        release.set()
+        items = await asyncio.wait_for(consumer, timeout=2)
+
+    assert enqueue_id
+    assert len(calls) == 2
+    assert "wait_subagent" in str(calls[1])
+    notifications = [
+        item.event
+        for item in items
+        if isinstance(item, HarnessEvent)
+        and isinstance(item.event, HarnessExtensionEvent)
+        and item.event.payload.get("type") == "steering_input_enqueued"
+    ]
+    assert len(notifications) == 1
+    assert notifications[0].kind == "lifecycle"
+    assert notifications[0].payload == {
+        "type": "steering_input_enqueued",
+        "enqueue_id": enqueue_id,
+        "source": "async_subagent",
+        "references": ["subagent-1"],
+    }
 
 
 async def test_stream_steer_requires_an_active_native_run() -> None:

@@ -231,7 +231,7 @@ async def selector_database(
 
 
 @pytest.mark.anyio
-async def test_turn_acceptance_freezes_current_model_in_owning_transaction(
+async def test_run_acceptance_freezes_current_model_in_owning_transaction(
     selector_database: tuple[AcceptedModelSelector, async_sessionmaker, AsyncEngine],
 ) -> None:
     selector, sessions, _ = selector_database
@@ -251,7 +251,7 @@ async def test_turn_acceptance_freezes_current_model_in_owning_transaction(
 
 
 @pytest.mark.anyio
-async def test_turn_acceptance_retries_when_model_changes_after_endpoint_validation(
+async def test_run_acceptance_retries_when_model_changes_after_endpoint_validation(
     selector_database: tuple[AcceptedModelSelector, async_sessionmaker, AsyncEngine],
 ) -> None:
     selector, sessions, _ = selector_database

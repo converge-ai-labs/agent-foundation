@@ -72,7 +72,7 @@ Authentication validates the exact presented credential and constructs an immuta
 
 The standard Connector MCP surface authenticates a Workspace-bound Personal or
 Service Account API Key and authorizes current `connector.invoke` authority. The
-internal Harness MCP surface authenticates a signed short-lived TurnAttempt
+internal Harness MCP surface authenticates a signed short-lived RunAttempt
 capability and rechecks its current fence. Connector event ingress authenticates
 the Provider-specific event source before an authenticated Connector Service
 operation submits its normalized occurrence to Control. These protocol
@@ -84,18 +84,12 @@ Authentication establishment routes such as login, invitation acceptance, and pa
 
 ## Errors and Diagnostics
 
-Every Native `/api` failure, including framework validation, unknown API routes,
-authentication failures, domain errors, dependency failures, and unexpected
-exceptions, uses the shared bounded error envelope from Platform API
-Conventions. Framework-native `detail` responses never escape the `/api`
-boundary. Hosted AG-UI and A2A failures use the bounded error representation
-owned by their selected protocol contracts while preserving the same request ID
-and non-disclosure rules.
+Every Native `/api` failure, including framework validation, unknown API routes, authentication failures, domain errors, dependency failures, and unexpected exceptions, uses the shared bounded error envelope from Platform API Conventions. Framework-native `detail` responses never escape the `/api` boundary. Hosted AG-UI and A2A failures use the bounded error representation owned by their selected protocol contracts while preserving the same request ID and non-disclosure rules.
 
 Connector MCP transport and JSON-RPC failures use the negotiated MCP protocol
 shape while preserving the same safe request correlation and non-disclosure
 rules. Connector event ingress returns only its bounded acknowledgement or safe
-protocol rejection and never returns Provider payload or Turn execution output.
+protocol rejection and never returns Provider payload or Run execution output.
 
 The stable error code and safe details come from the owning boundary. Unexpected failures use a generic code and message, retain the request ID, and log the exception once at the boundary that handles it. Responses and diagnostics never contain traceback text, SQL, credentials, authorization headers, cookies, private paths, raw prompts, model output, tool payloads, or provider-native secret data.
 
@@ -105,7 +99,7 @@ Operational probe failures use a smaller bounded operational representation and 
 
 SSE and WebSocket routes authenticate, authorize, and complete initial database reads in closed short sessions before constructing the streaming response. The stream receives immutable detached values and process-wide factories, never a yielded database session through its dependency graph.
 
-Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never interrupts a Turn unless the client separately submits the authorized interrupt command.
+Later database work opens a fresh short session for each bounded operation. Redis subscriptions, tasks, and other stream-owned resources are released in `finally`. Reauthorization occurs at the continuation boundary defined by the owning stream contract. Disconnect ends delivery but never interrupts a Run unless the client separately submits the authorized interrupt command.
 
 When the process begins draining, it rejects new streams, signals or closes existing streams according to their owning reconnect contract, and releases subscriptions within the drain deadline. A reconnect uses the owning durable cursor or reports an explicit replay gap; it does not treat a transport connection as execution authority.
 
@@ -125,7 +119,7 @@ The service does not keep accepting work that it cannot durably authorize or acc
 | Request validation fails                      | Shared `400` with safe field details  | No product mutation                                      |
 | Required dependency is unavailable            | Shared `503`; process is unready      | Previously committed work remains under its owner        |
 | Response is lost after commit                 | Client outcome is unknown             | Same idempotency key or authoritative read reconciles it |
-| Stream disconnects                            | Delivery stops                        | Turn and retained sources remain independent             |
+| Stream disconnects                            | Delivery stops                        | Run and retained sources remain independent              |
 | Unexpected exception                          | Shared generic `500` with request ID  | Transaction rollback or owning reconciliation applies    |
 
 ## Compatibility
@@ -141,11 +135,9 @@ A new common ingress check can be added when it rejects only requests outside th
 03. Untrusted forwarded headers never change client, host, or scheme identity.
 04. Production browser access is same-origin unless an exact cross-origin policy is selected.
 05. Middleware carries transport context and never owns resource authorization or a long-lived database session.
-06. Every `/api` error uses the shared bounded error envelope; Hosted AG-UI and
-    A2A use their owning bounded protocol errors, and framework-native error
-    bodies do not escape any product boundary.
+06. Every `/api` error uses the shared bounded error envelope; Hosted AG-UI and A2A use their owning bounded protocol errors, and framework-native error bodies do not escape any product boundary.
 07. Streaming responses receive no yielded database session.
-08. Client disconnect and transport delivery never define Turn cancellation or completion.
+08. Client disconnect and transport delivery never define Run cancellation or completion.
 09. Drain rejects new work before closing streams and ingress.
 10. An open HTTP socket does not make an unready process product-available.
 11. Internal network placement alone never authenticates an operator route, and internal routes never become public SDK or tenant-role surfaces.

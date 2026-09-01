@@ -11,8 +11,8 @@ from a13n_harness import (
     AgentSpec,
     HarnessBuilder,
     HarnessModelCharacteristics,
-    SelfHealingModelCapability,
 )
+from a13n_harness.models import SelfHealingModelCapability
 
 executable = HarnessBuilder().build(
     AgentSpec(
@@ -30,7 +30,10 @@ executable = HarnessBuilder().build(
 Use an explicit `AgentDefinition` when the definition is assembled or retained separately:
 
 ```python
-from a13n_harness import AgentDefinition, HarnessBuilder
+from a13n_harness import (
+    AgentDefinition,
+    HarnessBuilder,
+)
 
 agent_definition = AgentDefinition(
     agent=AgentSpec(),
@@ -162,7 +165,10 @@ executable = HarnessBuilder().build(
 Pass a concrete Pydantic AI Model through `model=` and leave `AgentSpec.model` unset. You can construct it yourself or use the optional Harness helper:
 
 ```python
-from a13n_harness import HarnessBuilder, infer_model
+from a13n_harness import (
+    HarnessBuilder,
+    infer_model,
+)
 
 model = infer_model(
     "openai-responses:gpt-5",
@@ -203,7 +209,7 @@ The factory receives `(gateway_name, provider_name)` and returns a Pydantic AI `
 For direct-provider model facts, the package includes a small immutable official catalog:
 
 ```python
-from a13n_harness import get_official_model_catalog
+from a13n_harness.model_catalog import get_official_model_catalog
 
 models = get_official_model_catalog()
 characteristics = models["anthropic:claude-sonnet-5"].characteristics
@@ -221,6 +227,8 @@ Use the two parallel resolvers when an authoring surface wants short, explicit n
 from a13n_harness import (
     AgentSpec,
     HarnessModelCharacteristics,
+)
+from a13n_harness.models import (
     resolve_model_characteristics,
     resolve_model_settings,
 )
@@ -324,7 +332,10 @@ Application code must not add a second mandatory boundary. Optional request/hist
 `RunBindings` carries current, trusted run inputs:
 
 ```python
-from a13n_harness import HarnessObservationContext, RunBindings
+from a13n_harness import (
+    HarnessObservationContext,
+    RunBindings,
+)
 
 bindings = RunBindings.embedded(
     environment=environment_binding,
@@ -384,9 +395,7 @@ result = await executable.run(
 `run()` consumes the canonical stream and returns its sole terminal result:
 
 ```python
-async with executable:
-    result = await executable.run("Do the work", bindings=bindings)
-
+result = await executable.run("Do the work", bindings=bindings)
 output = result.output_or_raise()
 ```
 
@@ -408,7 +417,10 @@ Use `raise_for_status()` when only completion is acceptable. Use `output_or_rais
 `stream()` is lazy, single-entry, and single-consumer:
 
 ```python
-from a13n_harness import HarnessEvent, HarnessRunResultEvent
+from a13n_harness import (
+    HarnessEvent,
+    HarnessRunResultEvent,
+)
 
 async with executable.stream("Do the work", bindings=bindings) as stream:
     async for item in stream:
@@ -466,7 +478,7 @@ Provider integrations can record stable non-model receipts through `AgentContext
 Model-cost valuation is enabled by default. `HarnessBuilder` inserts `CatalogModelCostCapability`, which uses an immutable catalog assembled from the pinned `genai-prices` snapshot plus Harness pricing replacements. Read or export the complete snapshot with `get_default_pricing_catalog()`:
 
 ```python
-from a13n_harness import get_default_pricing_catalog
+from a13n_harness.pricing import get_default_pricing_catalog
 
 pricing = get_default_pricing_catalog()
 entry = pricing["openai:gpt-5.5"]
@@ -476,7 +488,8 @@ exported = pricing.model_dump(mode="json")
 To replace prices, create complete `ModelPricingEntry` values and pass a shallow update dictionary. Each value replaces the entire entry at that `provider:model` key; nested fields are not merged:
 
 ```python
-from a13n_harness import CatalogModelCostCapability, HarnessBuilder
+from a13n_harness import HarnessBuilder
+from a13n_harness.pricing import CatalogModelCostCapability
 
 costs = CatalogModelCostCapability(
     pricing_updates={replacement.key: replacement},
@@ -502,6 +515,6 @@ Identifiers are observations and routing keys, not authority.
 
 ## Cleanup
 
-Use `async with executable` or call `await executable.close()` exactly when application ownership ends. Closing is idempotent and recursively closes built child executables. A closed executable cannot start another run.
+`ExecutableAgent` is immutable reusable build output and owns no entered Model, plugin, Capability, client, or child resource, so it has no `close()` method or async context-manager lifecycle. `run()` internally scopes and closes one `HarnessRunStream`. Callers that use `stream()` must enter that stream with `async with`; early exit then closes the run's temporary resources deterministically.
 
-A clean `HarnessRunResultEvent` means Harness-owned cleanup completed. It is still only a process-local candidate; a Host decides when to persist a checkpoint, commit durable completion, or deliver output externally.
+A clean `HarnessRunResultEvent` means Harness-owned run cleanup completed. It is still only a process-local candidate; a Host decides when to persist a checkpoint, commit durable completion, or deliver output externally.

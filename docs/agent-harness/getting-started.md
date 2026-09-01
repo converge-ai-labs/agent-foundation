@@ -25,7 +25,10 @@ Create `app.py`:
 import asyncio
 from collections.abc import AsyncIterator
 
-from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+)
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -45,9 +48,7 @@ async def main() -> None:
         model=FunctionModel(stream_function=respond),
     )
 
-    async with executable:
-        result = await executable.run("Say hello")
-
+    result = await executable.run("Say hello")
     print(result.output_or_raise())
 
 
@@ -85,7 +86,7 @@ flowchart LR
 - `FunctionModel` replaces an external provider in this example.
 - `run()` creates fresh embedded bindings when `bindings` is omitted.
 - `HarnessRunResult` normalizes completion, suspension, failure, cancellation, state, usage, and correlation.
-- `async with executable` closes recursively owned resources deterministically.
+- `ExecutableAgent` is immutable reusable build output; each `run()` owns and closes its temporary resources.
 
 The concrete model is trusted build input, so `AgentSpec.model` remains unset. Use exactly one model source: either put a model selection in `AgentSpec.model` or pass a concrete Pydantic AI `Model` through `model=`.
 
@@ -100,7 +101,10 @@ Use the Harness import in application code unless you intentionally need a Pydan
 Move the model selection into `AgentSpec`:
 
 ```python
-from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+)
 
 executable = HarnessBuilder().build(
     AgentSpec(
@@ -122,15 +126,14 @@ The application owns credentials, provider SDK configuration, HTTP clients, and 
 
 ## Build once and continue a Thread
 
-An executable is reusable until closed. Each call creates a new `run_id`; passing `previous_state` continues the same Harness Thread:
+An executable is reusable across calls. Each call creates a new `run_id`; passing `previous_state` continues the same Harness Thread:
 
 ```python
-async with executable:
-    first = await executable.run("Remember that the release is Friday.")
-    second = await executable.run(
-        "When is the release?",
-        previous_state=first.state,
-    )
+first = await executable.run("Remember that the release is Friday.")
+second = await executable.run(
+    "When is the release?",
+    previous_state=first.state,
+)
 ```
 
 Persist the complete returned `HarnessState` when continuation must survive a process restart. It is continuation data, not restored credentials, authorization, Environment resources, or durable execution ownership.
@@ -161,7 +164,10 @@ terminal.raise_for_status()
 The minimal Agent has mandatory Harness boundaries but no optional tools. Add stable behavior through definition-selected Capabilities:
 
 ```python
-from a13n_harness import RuntimeContextCapability, WorkingStateCapability
+from a13n_harness.capabilities import (
+    RuntimeContextCapability,
+    WorkingStateCapability,
+)
 
 executable = HarnessBuilder().build(
     AgentSpec(model="openai-responses:gpt-5"),

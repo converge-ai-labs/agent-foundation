@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
+from a13n_harness.environment import EnvironmentAccess, EnvironmentAction
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -67,6 +68,44 @@ def _serialized_collection_origin(annotation: object) -> object:
     return origin
 
 
+def legacy_environment_access(value: object) -> Literal["read_only", "read_write", "full"]:
+    """Map one safely representable schema-v1 permission ceiling to current access."""
+
+    if not isinstance(value, list | tuple | set | frozenset) or not all(isinstance(item, str) for item in value):
+        raise ValueError("legacy Environment permissions must be a collection of strings")
+    selected = frozenset(value)
+    families = selected & {"files", "shell", "processes", "ports", "outputs", "state"}
+    try:
+        actions = frozenset(EnvironmentAction(item) for item in selected - families)
+    except ValueError as exc:
+        raise ValueError("legacy Environment permissions contain unsupported values") from exc
+    if families & {"shell", "processes", "ports", "outputs"} or any(
+        not action.value.startswith(("environment.file.", "environment.state.")) for action in actions
+    ):
+        return "full"
+    file_actions = frozenset(action for action in actions if action.value.startswith("environment.file."))
+    if "files" in families:
+        return "read_write"
+    if not file_actions:
+        raise ValueError("legacy Environment permission ceiling cannot be mapped safely")
+    if file_actions <= EnvironmentAccess.READ_ONLY.permission_set().operations:
+        return "read_only"
+    return "read_write"
+
+
+def _without_legacy_defaults(value: object, defaults: dict[str, object]) -> object:
+    if not isinstance(value, dict):
+        return value
+    normalized = dict(value)
+    for name, expected in defaults.items():
+        if name not in normalized:
+            continue
+        actual = normalized.pop(name)
+        if type(actual) is not type(expected) or actual != expected:
+            raise ValueError(f"legacy {name} value has no compatible current behavior")
+    return normalized
+
+
 class ResourceKind(StrEnum):
     model = "model"
     prompt = "prompt"
@@ -102,6 +141,21 @@ class LocalDirectorySettings(StrictModel):
         return _normalize_absolute_path(value, "local directory")
 
 
+class LocalExecutableSettings(StrictModel):
+    """A process-only alias authorizing one native executable for providers."""
+
+    executable_id: _ID
+    path: Path
+
+    @field_validator("path")
+    @classmethod
+    def _absolute_path(cls, value: Path) -> Path:
+        path = _normalize_absolute_path(value, "local executable")
+        if path.exists() and path.is_dir():
+            raise ValueError("local executable path must not be a directory")
+        return path
+
+
 class ProjectRootPolicy(StrEnum):
     disabled = "disabled"
     explicit = "explicit"
@@ -115,6 +169,7 @@ class ConfigurationSettings(StrictModel):
     project_root_policy: ProjectRootPolicy = ProjectRootPolicy.disabled
     project_root: DefinitionRootSettings | None = None
     local_directories: tuple[LocalDirectorySettings, ...] = ()
+    local_executables: tuple[LocalExecutableSettings, ...] = ()
     skill_discovery: LocalSkillDiscoverySettings = Field(  # type: ignore[name-defined]
         default_factory=lambda: LocalSkillDiscoverySettings()
     )
@@ -125,19 +180,12 @@ class ConfigurationSettings(StrictModel):
     extension_provider_keys: tuple[_KEY, ...] = ()
     max_source_files: int = Field(default=4096, gt=0, le=100_000)
     max_source_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=64 * 1024 * 1024)
-    max_source_transaction_bytes: int = Field(
-        default=128 * 1024 * 1024,
-        ge=1024,
-        le=1024 * 1024 * 1024,
-    )
     max_yaml_nodes: int = Field(default=100_000, gt=0, le=1_000_000)
     max_document_depth: int = Field(default=64, gt=0, le=256)
     stable_read_attempts: int = Field(default=3, gt=0, le=10)
-    orphan_retention_seconds: int = Field(default=7 * 24 * 60 * 60, gt=0, le=365 * 24 * 60 * 60)
     max_skill_package_files: int = Field(default=4096, gt=0, le=100_000)
     max_skill_package_depth: int = Field(default=32, gt=0, le=256)
     max_skill_package_bytes: int = Field(default=64 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
-    reconciliation_interval_seconds: float = Field(default=5.0, gt=0, le=3600)
     envd_executable_override: Path | None = None
 
     @field_validator(
@@ -183,6 +231,10 @@ class ConfigurationSettings(StrictModel):
         directory_ids = [item.directory_id for item in self.local_directories]
         if len(directory_ids) != len(set(directory_ids)):
             raise ValueError("local directory IDs must be unique")
+        executable_ids = [item.executable_id for item in self.local_executables]
+        executable_paths = [item.path for item in self.local_executables]
+        if len(executable_ids) != len(set(executable_ids)) or len(executable_paths) != len(set(executable_paths)):
+            raise ValueError("local executables must have unique IDs and paths")
         if set(self.builtin_provider_keys) & set(self.extension_provider_keys):
             raise ValueError("built-in and extension provider selections must not overlap")
         return self
@@ -264,40 +316,6 @@ class ConfigurationGeneration(StrictModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("accepted_at must be timezone-aware")
         return value.astimezone(UTC)
-
-
-class SourceTransactionEntry(StrictModel):
-    relative_path: str = Field(min_length=1, max_length=1024)
-    operation: Literal["replace", "delete"]
-    content_digest: _DIGEST | None = None
-
-    @field_validator("relative_path")
-    @classmethod
-    def _relative(cls, value: str) -> str:
-        return _normalize_relative_path(value)
-
-    @model_validator(mode="after")
-    def _operation_shape(self) -> Self:
-        if (self.operation == "replace") != (self.content_digest is not None):
-            raise ValueError("replace requires content_digest and delete forbids it")
-        return self
-
-
-class SourceTransactionManifest(StrictModel):
-    schema_version: Literal["1"]
-    transaction_id: _ID
-    root_id: _ID
-    base_catalog_digest: _DIGEST
-    entries: tuple[SourceTransactionEntry, ...] = Field(min_length=1, max_length=10_000)
-
-    @model_validator(mode="after")
-    def _unique_ordered_entries(self) -> Self:
-        paths = tuple(entry.relative_path for entry in self.entries)
-        if len(paths) != len(set(paths)):
-            raise ValueError("source transaction paths must be unique")
-        if paths != tuple(sorted(paths)):
-            raise ValueError("source transaction entries must be ordered by relative_path")
-        return self
 
 
 class ModelDefinition(StrictModel):
@@ -461,7 +479,33 @@ class AgentSkillConfiguration(StrictModel):
 
 class EnvironmentMountRequirement(StrictModel):
     mount_name: _ID
-    required_operations: frozenset[str] = frozenset()
+    required_access: Literal["read_only", "read_write", "full"] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_required_operations(cls, value: object) -> object:
+        if not isinstance(value, dict) or "required_operations" not in value:
+            return value
+        normalized = dict(value)
+        if "required_access" in normalized:
+            raise ValueError("required_operations and required_access must not both be present")
+        operations = normalized.pop("required_operations")
+        if isinstance(operations, list | tuple | set | frozenset) and not operations:
+            normalized["required_access"] = None
+        elif (
+            isinstance(operations, list | tuple | set | frozenset)
+            and all(isinstance(item, str) for item in operations)
+            and frozenset(operations)
+            <= {
+                "state",
+                EnvironmentAction.STATE_EXPORT.value,
+                EnvironmentAction.STATE_RESTORE.value,
+            }
+        ):
+            normalized["required_access"] = "full"
+        else:
+            normalized["required_access"] = legacy_environment_access(operations)
+        return normalized
 
 
 class AgentEnvironmentRequirements(StrictModel):
@@ -502,7 +546,7 @@ class UsageLimitsSelection(StrictModel):
 
 
 class ChildEnvironmentPolicy(StrictModel):
-    mode: Literal["none", "dedicated", "shared_root", "serialized_root"] = "none"
+    mode: Literal["none", "dedicated", "shared_root"] = "none"
     mounts: tuple[_ID, ...] | None = None
 
     @field_validator("mounts")
@@ -521,9 +565,14 @@ class SubagentEdge(StrictModel):
     identity: SubagentIdentitySelection = SubagentIdentitySelection()
     usage_limits: UsageLimitsSelection | None = None
     environment: ChildEnvironmentPolicy = ChildEnvironmentPolicy()
-    lifetime: Literal["parent_scope", "session"] = "parent_scope"
-    steering: Literal["enabled", "disabled"] = "disabled"
-    continuation: Literal["enabled", "disabled"] = "disabled"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_runtime_controls(cls, value: object) -> object:
+        return _without_legacy_defaults(
+            value,
+            {"lifetime": "parent_scope", "steering": "disabled", "continuation": "disabled"},
+        )
 
     @model_validator(mode="after")
     def _agent_reference(self) -> Self:
@@ -533,9 +582,13 @@ class SubagentEdge(StrictModel):
 
 
 class DynamicEnvironmentCapabilityConfiguration(StrictModel):
-    file_tools: bool = True
-    shell_tools: bool = True
-    max_reference_entries: int = Field(default=1024, gt=0, le=100_000)
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_configuration(cls, value: object) -> object:
+        return _without_legacy_defaults(
+            value,
+            {"file_tools": True, "shell_tools": True, "max_reference_entries": 1024},
+        )
 
 
 class WorkingStateCapabilityConfiguration(StrictModel):
@@ -660,10 +713,9 @@ type FirstPartyCapabilitySelection = Annotated[
 
 class AsyncSubagentConfiguration(StrictModel):
     tools: Literal["standard", "disabled"] = "disabled"
-    max_active_jobs: int = Field(default=8, gt=0, le=1024)
-    max_jobs_per_run: int = Field(default=32, gt=0, le=10_000)
+    max_active_tasks: int = Field(default=8, gt=0, le=1024)
+    max_tasks_per_run: int = Field(default=32, gt=0, le=10_000)
     max_depth: int = Field(default=8, gt=0, le=64)
-    completion_delivery: Literal["active_or_next_run", "manual"] = "active_or_next_run"
 
 
 class AgentOutputSelection(StrictModel):
@@ -703,6 +755,7 @@ class AgentDefinitionDocument(StrictModel):
     plugins: tuple[ResourceRef, ...] = ()
     skills: AgentSkillConfiguration = AgentSkillConfiguration()
     capabilities: tuple[FirstPartyCapabilitySelection, ...] = ()
+    environment_tools: bool = True
     environment: AgentEnvironmentRequirements = AgentEnvironmentRequirements()
     subagents: tuple[SubagentEdge, ...] = ()
     async_subagents: AsyncSubagentConfiguration = AsyncSubagentConfiguration()
@@ -733,19 +786,24 @@ class EnvironmentMountDefinition(StrictModel):
     provider_key: _KEY
     provider_schema_version: _SCHEMA_VERSION
     provider_parameters: dict[str, JsonValue] = Field(default_factory=dict)
-    permission_ceiling: frozenset[str] = frozenset()
+    access: Literal["read_only", "read_write", "full"] = "full"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_permission_ceiling(cls, value: object) -> object:
+        if not isinstance(value, dict) or "permission_ceiling" not in value:
+            return value
+        normalized = dict(value)
+        if "access" in normalized:
+            raise ValueError("permission_ceiling and access must not both be present")
+        normalized["access"] = legacy_environment_access(normalized.pop("permission_ceiling"))
+        return normalized
 
     @model_validator(mode="after")
     def _credential_free(self) -> Self:
         _reject_secret_fields(self.provider_parameters)
         _reject_native_paths(self.provider_parameters)
         return self
-
-
-class SessionEnvironmentLifecyclePolicy(StrictModel):
-    provision: Literal["eager", "on_first_run"]
-    idle: Literal["keep_running", "pause_full", "pause_filesystem"]
-    release: Literal["retain", "destroy_when_unreferenced"]
 
 
 class EnvironmentDefinitionDocument(StrictModel):
@@ -755,7 +813,7 @@ class EnvironmentDefinitionDocument(StrictModel):
     description: str | None = Field(default=None, max_length=16 * 1024)
     mounts: tuple[EnvironmentMountDefinition, ...] = Field(max_length=1024)
     default_mount: _ID | None = None
-    lifecycle: SessionEnvironmentLifecyclePolicy
+    provision: Literal["eager", "on_first_run"] = "on_first_run"
 
     @model_validator(mode="after")
     def _mount_consistency(self) -> Self:
@@ -967,7 +1025,7 @@ def _reject_native_paths(value: JsonValue, *, depth: int = 0) -> None:
     elif isinstance(value, str):
         windows_drive = len(value) >= 3 and value[0].isalpha() and value[1:3] in {":/", ":\\"}
         if value.startswith(("/", "\\\\")) or windows_drive:
-            raise ValueError("native paths must use process-owned directory aliases")
+            raise ValueError("native paths must use process-owned aliases")
 
 
 def _require_finite_json(value: JsonValue, *, depth: int = 0) -> None:
@@ -997,6 +1055,7 @@ __all__ = [
     "EnvironmentMountDefinition",
     "FirstPartyCapabilitySelection",
     "LocalDirectorySettings",
+    "LocalExecutableSettings",
     "LocalSkillDiscoverySettings",
     "LocalSkillSourceDefinition",
     "ModelDefinition",
@@ -1012,13 +1071,10 @@ __all__ = [
     "ResourceRevision",
     "ResourceRevisionRef",
     "SafeSourceRef",
-    "SessionEnvironmentLifecyclePolicy",
     "SkillCompatibility",
     "SkillDefinition",
     "SkillImportProvenance",
     "SkillPackageSource",
-    "SourceTransactionEntry",
-    "SourceTransactionManifest",
     "UsageLimitsSelection",
     "canonical_digest",
     "canonical_json_value",

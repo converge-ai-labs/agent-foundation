@@ -21,7 +21,7 @@ These conventions do not replace an upstream or project-owned protocol. The Harn
 
 Foundation-owned product HTTP APIs use the `/api` namespace. The current public compatibility line places its versioned resource routes below `/api/v1`. Operational endpoints such as liveness and readiness are outside `/api` and are not public resource APIs.
 
-Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/turns/{id}/interrupt`; arbitrary verb-shaped RPC endpoints are not introduced when a resource or command expresses the operation directly.
+Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/runs/{id}/interrupt`; arbitrary verb-shaped RPC endpoints are not introduced when a resource or command expresses the operation directly.
 
 A successful single-resource, mutation, or command response returns that resource or receipt directly. There is no universal `data` envelope. Ordinary status meanings are:
 
@@ -36,11 +36,14 @@ An asynchronous acceptance never holds an HTTP request open until execution fini
 
 ## JSON Representations
 
-Resource, mutation, command, and error representations are UTF-8 JSON. An owning
-domain can define an explicit bounded content-transfer endpoint with one exact
-binary media type when encoding the bytes in JSON would defeat streaming or size
-safety. That endpoint returns JSON metadata or a receipt, accepts no ambiguous
-mixed representation, and does not turn storage keys or signed URLs into resource
+Resource, mutation, command, and error representations are UTF-8 JSON unless the
+owning domain defines the binary content-transfer exception below. A domain can
+define an explicit bounded content-transfer endpoint with one exact binary media
+type when encoding the bytes in JSON would defeat streaming or size safety. A
+binary upload accepts that media type as its request body and returns
+JSON metadata or a receipt; a binary download returns that media type directly.
+Failures still use the shared JSON error representation. Neither form accepts an
+ambiguous mixed representation or turns storage keys or signed URLs into resource
 authority. Object fields and query parameters use `snake_case`; enum values use
 stable lowercase `snake_case`. First-party SDKs use the idiomatic casing of their
 language while preserving the same concise domain meaning.
@@ -147,7 +150,7 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 
 ## Invariants
 
-1. Foundation-owned product HTTP APIs use the `/api` namespace, and current public resource routes share one `/api/v1` JSON contract.
+1. Foundation-owned product HTTP APIs use the `/api` namespace, and current public resource routes share one `/api/v1` contract.
 2. Single-resource responses are direct objects; collection responses use only `items` and `next_cursor` for pagination.
 3. JSON wire fields use `snake_case`, presence is explicit, timestamps are UTC, and scalar units appear in field names; an owning binary transfer route declares one exact bounded media type.
 4. Every collection read is bounded, deterministically ordered, and reauthorized; cursors are opaque and non-authoritative.

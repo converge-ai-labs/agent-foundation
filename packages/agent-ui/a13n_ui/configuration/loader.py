@@ -17,12 +17,11 @@ from typing import Any, cast
 import yaml
 from a13n_environment_provider import (
     EnvironmentLifecycleCapabilities,
-    EnvironmentPauseMode,
     EnvironmentProviderSpec,
     build_environment_provider_factory_catalog,
     discover_environment_provider_factory_references,
 )
-from a13n_harness import (
+from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
@@ -50,13 +49,11 @@ from .models import (
     ResourceRevisionRef,
     SafeSourceRef,
     SkillDefinition,
-    SourceTransactionManifest,
     canonical_digest,
     canonical_json_value,
     resource_identity,
     restart_settings_digest,
 )
-from .transactions import read_source_overlay
 
 _NAMESPACE_MODELS: dict[str, type[ResourceDocument]] = {
     "models": ModelDefinition,
@@ -85,7 +82,6 @@ class CatalogCandidate:
     revisions: tuple[ResourceRevision, ...]
     skill_packages: tuple[SkillPackageCandidate, ...]
     availability: tuple[DependencyLock, ...]
-    source_transactions: tuple[SourceTransactionManifest, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,21 +128,9 @@ async def load_catalog_candidate(
     loaded: list[_LoadedDocument] = []
     overlays: dict[str, Mapping[str, bytes | None]] = {}
     selected_overlays = source_overlays or {}
-    source_transactions: list[SourceTransactionManifest] = []
     source_count = 0
     for layer, root in enumerate(settings.ordered_roots):
-        if root.root_id in selected_overlays:
-            active_manifest = None
-            overlay = selected_overlays[root.root_id]
-        else:
-            active_manifest, overlay = await to_thread.run_sync(read_source_overlay, root.path)
-        if active_manifest is not None:
-            if active_manifest.root_id != root.root_id:
-                raise _error(
-                    "source_transaction_invalid",
-                    "The active source transaction selects the wrong definition root.",
-                )
-            source_transactions.append(active_manifest)
+        overlay = selected_overlays.get(root.root_id, {})
         overlays[root.root_id] = overlay
         documents = await to_thread.run_sync(partial(_discover_root, root.path, settings.max_source_files, overlay))
         source_count += len(documents)
@@ -217,8 +201,7 @@ async def load_catalog_candidate(
                 if lock is None:
                     raise _error("provider_factory_unavailable", "An Environment selects an unavailable provider.")
                 locks.append(lock)
-                capabilities = _validate_provider_mount(mount, settings)
-                _validate_environment_lifecycle(document.lifecycle.idle, capabilities)
+                _validate_provider_mount(mount, settings)
 
         package_payload: JsonValue | None = None
         normalized_value = cast(dict[str, JsonValue], canonical_json_value(document))
@@ -284,7 +267,6 @@ async def load_catalog_candidate(
         revisions=tuple(revisions),
         skill_packages=tuple(packages),
         availability=availability,
-        source_transactions=tuple(source_transactions),
     )
 
 
@@ -625,6 +607,33 @@ def _validate_provider_mount(
                 "read_only": bool(root.get("read_only", False)),
             },
         }
+        shell_profiles = parameters.get("shell_profiles")
+        if shell_profiles is not None:
+            if not isinstance(shell_profiles, list):
+                raise _error("provider_spec_invalid", "Direct Local shell profiles must be a list.")
+            executables = {item.executable_id: item.path for item in settings.local_executables}
+            normalized_profiles: list[dict[str, Any]] = []
+            for profile in shell_profiles:
+                if not isinstance(profile, dict):
+                    raise _error(
+                        "provider_spec_invalid",
+                        "Direct Local shell profiles must select an authorized executable alias.",
+                    )
+                executable = profile.get("executable")
+                if not isinstance(executable, dict) or set(executable) != {"executable_id"}:
+                    raise _error(
+                        "provider_spec_invalid",
+                        "Direct Local shell profiles must select an authorized executable alias.",
+                    )
+                executable_id = executable.get("executable_id")
+                executable_path = executables.get(executable_id) if isinstance(executable_id, str) else None
+                if executable_path is None:
+                    raise _error(
+                        "provider_spec_invalid",
+                        "Direct Local shell profiles must select an authorized executable alias.",
+                    )
+                normalized_profiles.append({**profile, "executable": str(executable_path)})
+            parameters["shell_profiles"] = normalized_profiles
     try:
         catalog = build_environment_provider_factory_catalog(
             builtin_keys=settings.builtin_provider_keys,
@@ -642,21 +651,6 @@ def _validate_provider_mount(
     return resolved.lifecycle_capabilities
 
 
-def _validate_environment_lifecycle(
-    idle_policy: str,
-    capabilities: EnvironmentLifecycleCapabilities,
-) -> None:
-    required_pause_mode = {
-        "pause_full": EnvironmentPauseMode.FULL,
-        "pause_filesystem": EnvironmentPauseMode.FILESYSTEM,
-    }.get(idle_policy)
-    if required_pause_mode is not None and required_pause_mode not in capabilities.pause_modes:
-        raise _error(
-            "environment_lifecycle_incompatible",
-            "An Environment lifecycle policy is unsupported by a selected provider.",
-        )
-
-
 def _validate_graph(revisions: list[ResourceRevision], identities: set[tuple[str, str]]) -> None:
     agent_edges: dict[str, set[str]] = {}
     for revision in revisions:
@@ -666,11 +660,6 @@ def _validate_graph(revisions: list[ResourceRevision], identities: set[tuple[str
             document = AgentDefinitionDocument.model_validate(revision.normalized_content, strict=True)
         except ValidationError as exc:
             raise _error("configuration_document_invalid", "An Agent revision is invalid.") from exc
-        if document.async_subagents.tools == "standard":
-            raise _error(
-                "capability_schema_unavailable",
-                "The async-subagent definition Capability is unavailable.",
-            )
         references = (
             document.model,
             document.prompt,

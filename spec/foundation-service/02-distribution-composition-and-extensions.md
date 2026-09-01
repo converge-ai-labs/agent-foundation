@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Foundation Service is a modular monolith assembled explicitly at the executable boundary. A product distribution is the complete application composition embedded in one build artifact: it determines which APIs, role components, authorization contributions, configuration namespaces, relational models, and migration revisions exist in that service. The OSS distribution combines the common Foundation kernel with the capabilities accepted for OSS. EE and Cloud distributions combine the same common contracts with additional private capabilities without introducing edition conditionals into shared domain behavior or replacing the common authorization and durable Turn/TurnAttempt kernels.
+Foundation Service is a modular monolith assembled explicitly at the executable boundary. A product distribution is the complete application composition embedded in one build artifact: it determines which APIs, role components, authorization contributions, configuration namespaces, relational models, and migration revisions exist in that service. The OSS distribution combines the common Foundation kernel with the capabilities accepted for OSS. EE and Cloud distributions combine the same common contracts with additional private capabilities without introducing edition conditionals into shared domain behavior or replacing the common authorization and durable Run/RunAttempt kernels.
 
 A distribution identifies the product release composition, not where or for
 whom one process runs. It is not a tenant resource, deployment environment,
@@ -17,7 +17,7 @@ the running service.
 | Concern                                                 | Common Foundation owner                | Distribution owner                                            |
 | ------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------- |
 | Resource identity, tenant fields, and lifecycle meaning | Owning common domain                   | Preserves existing meaning                                    |
-| Authorizer and durable Turn/TurnAttempt kernel          | Common Foundation                      | Uses without replacement                                      |
+| Authorizer and durable Run/RunAttempt kernel            | Common Foundation                      | Uses without replacement                                      |
 | Included product capabilities                           | Exposes cohesive capability contracts  | Selects an explicit set                                       |
 | Final configuration schema                              | Defines common sections                | Adds namespaced settings without reinterpreting common fields |
 | HTTP surfaces and role components                       | Domains declare contributions          | Assembles the final conflict-free set                         |
@@ -26,7 +26,7 @@ the running service.
 
 Distribution composition does not define generic extension hooks for arbitrary Python code. A common capability exposes a narrow port only where an accepted distribution difference exists. Internal classes, module discovery, installation order, and package naming are not part of the product contract.
 
-Foundation's [managed Harness plugin artifacts](26-harness-plugin-artifacts-and-runtime-loading.md) are a separate Host execution input. They can supply trusted Harness middleware selected by a Turn-pinned internal Runtime lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
+Foundation's [managed Harness plugin artifacts](26-harness-plugin-artifacts-and-runtime-loading.md) are a separate Host execution input. They can supply trusted Harness middleware selected by a Run-pinned internal Runtime lock, but they cannot contribute Foundation routers, authorization actions, relational models, migrations, role components, or configuration namespaces. Their presence therefore never changes the artifact-fixed product distribution.
 
 ## Dependency Direction
 
@@ -79,14 +79,11 @@ roles.
 
 ## OSS Composition
 
-The OSS distribution includes the common durable Turn/TurnAttempt kernel and the OSS capability set defined by the owning domain specifications. It presents the singleton Organization behavior, local password identity, built-in roles, and other OSS policy without adding an `edition` decision to shared rows or use cases.
+The OSS distribution includes the common durable Run/RunAttempt kernel and the OSS capability set defined by the owning domain specifications. It presents the singleton Organization behavior, local password identity, built-in roles, and other OSS policy without adding an `edition` decision to shared rows or use cases.
 
-The OSS capability set includes the complete
-[Protocol Gateway](28-protocol-gateway.md). Its `control` and `all` roles always
-compose Native and Hosted AG-UI routers. It also contains the A2A adapter; the
-common runtime's single default-on `gateway.a2a_enabled` setting determines
-whether that adapter's routes and components are mounted. This operational
-setting neither installs a capability nor selects a distribution.
+The OSS capability set includes the complete [Protocol Gateway](28-protocol-gateway.md). Its `control` and `all` roles always compose Native and Hosted AG-UI routers. It also contains the A2A adapter; the common runtime's single default-on `gateway.a2a_enabled` setting determines whether that adapter's routes and components are mounted. This operational setting neither installs a capability nor selects a distribution.
+
+The OSS capability set also includes [Asset Management](37-asset-management.md): its Native router, authorization actions and role grants, `assets` relational model and migration contribution, object-cleanup control component, Worker-side input resolver, and trusted `AssetCapability` reconstruction. Asset availability is not selected by plugin installation, tenant data, or an Agent-provided import target.
 
 The common package contains the OSS composition and common capability implementations. It contains no empty EE or Cloud package tree, placeholder feature, license branch, or generic plugin administration surface.
 
@@ -98,7 +95,7 @@ Provider trust grant to the distribution.
 
 ## EE and Cloud Composition
 
-EE and Cloud capabilities are additive vertical capabilities or implementations of an accepted narrow port. Typical variation boundaries include Organization lifecycle, external identity and grant sources, delivery providers, admission policy, usage processing, and distribution-operated control surfaces. An extension cannot reinterpret a common ID, weaken tenant predicates, replace Principal meaning, bypass the common authorizer, or mutate Turn or TurnAttempt state outside the common durable operation and fencing contracts.
+EE and Cloud capabilities are additive vertical capabilities or implementations of an accepted narrow port. Typical variation boundaries include Organization lifecycle, external identity and grant sources, delivery providers, admission policy, usage processing, and distribution-operated control surfaces. An extension cannot reinterpret a common ID, weaken tenant predicates, replace Principal meaning, bypass the common authorizer, or mutate Run or RunAttempt state outside the common durable operation and fencing contracts.
 
 Installed capability and tenant entitlement remain separate facts:
 
@@ -115,11 +112,7 @@ The artifact's distribution descriptor finalizes one typed configuration schema 
 
 Secrets supplied for an extension follow the same redaction and process-local handling as common secrets. Configuration never installs code, names an arbitrary import target, or enables a capability absent from the artifact distribution.
 
-A capability already fixed into the distribution can own an explicit
-operational surface setting. Such a setting can suppress that capability's
-routes and role components but cannot replace the distribution descriptor,
-introduce untrusted code, or change common domain meaning. The A2A total switch
-is one such common setting; no per-Agent protocol switch exists.
+A capability already fixed into the distribution can own an explicit operational surface setting. Such a setting can suppress that capability's routes and role components but cannot replace the distribution descriptor, introduce untrusted code, or change common domain meaning. The A2A total switch is one such common setting; no per-Agent protocol switch exists.
 
 ## Relational Composition
 
@@ -157,7 +150,7 @@ Explicit composition requires each distribution to enumerate its application sur
 01. Each executable artifact contains exactly one trusted distribution descriptor before configuration parsing or runtime resource construction.
 02. Common Foundation code never imports EE or Cloud code.
 03. Package installation alone never enables a capability or changes a schema.
-04. A distribution composes one authorizer, one durable Turn/TurnAttempt kernel, one metadata registry, and one migration graph.
+04. A distribution composes one authorizer, one durable Run/RunAttempt kernel, one metadata registry, and one migration graph.
 05. Duplicate contribution identities fail before startup.
 06. Common rows contain no edition, plan, license, or placement discriminator.
 07. Installed capability and tenant entitlement are separate facts.

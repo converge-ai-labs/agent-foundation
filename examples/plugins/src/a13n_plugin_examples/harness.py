@@ -9,10 +9,14 @@ from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
     HarnessEvent,
-    HarnessPluginFactory,
-    HarnessPluginFactoryContext,
     HarnessRunResult,
     PluginOrdering,
+)
+from a13n_harness.plugin_factories import (
+    HarnessPluginFactory,
+    HarnessPluginFactoryContext,
+)
+from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
     PluginRunResponse,

@@ -1,4 +1,4 @@
-"""Portable Agent process state and runtime operations over Environment processes."""
+"""Portable Agent process projections over fresh Host-managed operations."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ import re
 from collections import OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any, Literal, cast
@@ -16,25 +17,20 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_serializer, 
 from pydantic_ai import RunContext
 
 from a13n_harness._json import redact_json
-from a13n_harness.context import AgentContext
-from a13n_harness.environment.commands import (
-    BoundProcessHandle,
-    CommandRequest,
-    ProcessIdentity,
-    ProcessInfo,
-    ProcessStatus,
+from a13n_harness.capabilities.processes import (
+    ProcessBackendEventHook,
+    ProcessExecutionSnapshot,
+    ProcessOutputChunk,
+    ProcessOutputPage,
+    ShellOperator,
 )
+from a13n_harness.context import AgentContext
+from a13n_harness.environment.commands import CommandRequest, ProcessStatus
 from a13n_harness.environment.models import EnvironmentError
-from a13n_harness.environment.providers import BoundOutputOperations, BoundProcessOperations
-from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
+from a13n_harness.environment.retention import EnvironmentOutputCapture
 from a13n_harness.state import AgentContextState
 
-from .output import (
-    DEFAULT_TOOL_OUTPUT_CHARS,
-    acknowledge_tool_output,
-    continuation_disclosure,
-    tool_output_size,
-)
+from .output import DEFAULT_TOOL_OUTPUT_CHARS, acknowledge_tool_output, continuation_disclosure, tool_output_size
 from .shell_results import (
     OutputCaptureProjection,
     ProcessProjection,
@@ -50,26 +46,16 @@ _MAX_REFERENCE_ENTRIES = 100_000
 _PROCESS_RESULT_ENVELOPE_CHARS = 128
 _REFERENCE_PATTERN = re.compile(r"^process-([1-9][0-9]*)$")
 _TERMINAL_PHASES = frozenset({"exited", "signaled", "timed_out", "cancelled", "failed"})
-_MAX_NOTIFICATION_ITEMS = 16
-_PROCESS_STATE_VERSION = "1"
+_PROCESS_STATE_VERSION = "2"
 PROCESS_STATE_ID = "a13n.dynamic-environment.processes"
-_REBIND_OUTPUT_POLICY = EnvironmentOutputPolicy(
-    max_inline_bytes=64 * 1024,
-    max_output_bytes=_MAX_MODEL_OUTPUT_BYTES,
-    overflow="retain",
-)
-
-
-type ProcessEventKind = Literal["completion", "gap"]
 
 
 class ManagedProcessState(BaseModel):
-    """Portable Agent projection of one provider-owned process."""
+    """Portable parent-private projection of one Host-managed process."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
-    identity: ProcessIdentity
-    mount_id: str | None = Field(default=None, max_length=256)
+    backend_id: str = Field(min_length=1, max_length=512)
     stdout_offset: int = Field(default=0, ge=0)
     stderr_offset: int = Field(default=0, ge=0)
     status: ProcessStatus
@@ -80,19 +66,17 @@ class ManagedProcessState(BaseModel):
 
 
 class ProcessManagerState(BaseModel):
-    """Versioned process-N mapping stored in AgentContext State."""
+    """Versioned process-N mapping stored in the current Agent context."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    owner_thread_id: str = Field(min_length=1, max_length=256)
     next_sequence: int = Field(default=1, ge=1, le=_MAX_REFERENCE_ENTRIES + 1)
     processes: Mapping[str, ManagedProcessState] = Field(default_factory=dict)
 
     @field_validator("processes", mode="after")
     @classmethod
-    def _validate_processes(
-        cls,
-        value: Mapping[str, ManagedProcessState],
-    ) -> Mapping[str, ManagedProcessState]:
+    def _validate_processes(cls, value: Mapping[str, ManagedProcessState]) -> Mapping[str, ManagedProcessState]:
         copied = dict(value)
         if len(copied) > _MAX_REFERENCE_ENTRIES:
             raise ValueError("process state exceeds the finite reference limit")
@@ -101,162 +85,88 @@ class ProcessManagerState(BaseModel):
         return MappingProxyType(copied)
 
     @field_serializer("processes")
-    def _serialize_processes(
-        self,
-        value: Mapping[str, ManagedProcessState],
-    ) -> dict[str, ManagedProcessState]:
+    def _serialize_processes(self, value: Mapping[str, ManagedProcessState]) -> dict[str, ManagedProcessState]:
         return dict(value)
-
-
-@dataclass(frozen=True, slots=True)
-class ProcessEvent:
-    """Correlated non-authoritative process observation delivered to Host hooks."""
-
-    kind: ProcessEventKind
-    thread_id: str
-    run_id: str
-    agent_instance_id: str
-    process_id: str
-    identity: ProcessIdentity
-    status: ProcessStatus
-
-
-type ProcessEventHook = Callable[[ProcessEvent], Awaitable[None]]
 
 
 @dataclass(slots=True)
 class _ProcessEntry:
     process_id: str
     state: ManagedProcessState
-    handle: BoundProcessHandle | None = None
-    cleanup_info: ProcessInfo | None = field(default=None, repr=False)
-    drain_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
-    observer: asyncio.Task[None] | None = field(default=None, repr=False)
+    drain_lock: asyncio.Lock = dataclass_field(default_factory=asyncio.Lock)
 
 
-class ProcessManager:
-    """Operate portable Agent process state against the current Environment."""
+class _ProcessRunManager:
+    """Manage one parent Run's compact process projection over a stable operator."""
 
     def __init__(
         self,
         *,
-        processes: BoundProcessOperations,
-        outputs: BoundOutputOperations,
-        max_reference_entries: int,
-        process_event_hooks: Sequence[ProcessEventHook] = (),
+        operator: ShellOperator,
         execution_guard: Callable[[], None] | None = None,
     ) -> None:
-        if not 0 < max_reference_entries <= _MAX_REFERENCE_ENTRIES:
-            raise ValueError(f"max_reference_entries must be between 1 and {_MAX_REFERENCE_ENTRIES}")
-        hooks = tuple(process_event_hooks)
-        if not all(callable(hook) for hook in hooks):
-            raise TypeError("process_event_hooks must contain callables")
-        self._processes = processes
-        self._outputs = outputs
-        self._max_reference_entries = max_reference_entries
-        self._event_hooks = hooks
+        if not isinstance(operator, ShellOperator):
+            raise TypeError("operator must be a ShellOperator")
+        self._operator = operator
         self._execution_guard = execution_guard
         self._entries: OrderedDict[str, _ProcessEntry] = OrderedDict()
         self._next_sequence = 1
         self._state_store: AgentContextState | None = None
-        self._event_context: tuple[str, str, str] | None = None
+        self._owner_thread_id: str | None = None
         self._state_lock = asyncio.Lock()
         self._start_lock = asyncio.Lock()
         self._active_context: RunContext[AgentContext] | None = None
-        self._pending: OrderedDict[str, ProcessEventKind] = OrderedDict()
-        self._notified: dict[str, ProcessEventKind] = {}
         self._loaded = False
-        self._closed = False
+        self._observers: dict[str, ProcessBackendEventHook] = {}
 
     @asynccontextmanager
     async def active_run(self, ctx: RunContext[AgentContext]) -> AsyncGenerator[None]:
-        """Bind AgentContext State and enable Turn-scoped completion notices."""
-        if self._closed:
-            raise RuntimeError("ProcessManager is closed")
-        await self._load(ctx.deps.state)
-        event_context = (
-            ctx.deps.thread_id,
-            ctx.deps.run_id,
-            ctx.deps.instance.agent_instance_id,
-        )
-        if self._event_context is None:
-            self._event_context = event_context
-        elif self._event_context != event_context:
-            raise RuntimeError("ProcessManager cannot cross AgentContext run identities")
+        """Bind parent state and reconcile canonical Host snapshots for this run."""
+        await self._load(ctx.deps.state, owner_thread_id=ctx.deps.thread_id)
         owned = self._active_context is None
         if owned:
             self._active_context = ctx
-            for entry in tuple(self._entries.values()):
-                self._ensure_observer(entry)
-            self._flush_notifications()
+            await self._attach_nonterminal()
         try:
             yield
         finally:
             if owned and self._active_context is ctx:
                 self._active_context = None
-                await self._cancel_observers()
-
-    async def close(self) -> None:
-        """Stop observation and finish already-drained terminal cleanup."""
-        if self._closed:
-            return
-        self._closed = True
-        self._active_context = None
-        await self._cancel_observers()
-        cleanup_failed = False
-        for entry in tuple(self._entries.values()):
-            if entry.cleanup_info is None:
-                continue
-            async with entry.drain_lock:
-                if entry.cleanup_info is not None and not await self._finish_release(entry, entry.cleanup_info):
-                    cleanup_failed = True
-        self._pending.clear()
-        if cleanup_failed:
-            raise EnvironmentError(
-                "One or more drained terminal processes could not be released.",
-                code="environment_cleanup_failed",
-                retry_hint="dependency_change",
-            )
 
     async def start(self, request: CommandRequest, *, alias: str | None) -> ProcessProjection:
         self._guard_execution()
         self._require_loaded()
         async with self._start_lock:
-            if len(self._entries) >= self._max_reference_entries or self._next_sequence > self._max_reference_entries:
+            if len(self._entries) >= _MAX_REFERENCE_ENTRIES or self._next_sequence > _MAX_REFERENCE_ENTRIES:
                 raise EnvironmentError(
                     "Environment compact reference capacity is exhausted.",
                     code="environment_reference_exhausted",
                 )
-            result = await self._processes.start(request, alias=alias)
             process_id = f"process-{self._next_sequence}"
-            entry = _ProcessEntry(
-                process_id=process_id,
-                handle=result.process.handle,
-                state=self._state_from_info(result.process),
-            )
+            observer = self._event_callback(process_id)
+            self._observers[process_id] = observer
+            snapshot: ProcessExecutionSnapshot | None = None
             try:
-                projected = self._project_process(
-                    entry,
-                    result.process,
-                    consume_output=True,
-                    output_budget=request.output_policy.max_inline_bytes,
-                )
+                snapshot = await self._operator.start(self._context(), request, alias, process_id, observer)
+                _validate_snapshot(snapshot, snapshot.backend_id)
+                entry = _ProcessEntry(process_id=process_id, state=_state_from_snapshot(snapshot))
                 self._entries[process_id] = entry
                 self._next_sequence += 1
-                await self._persist()
+                try:
+                    await self._persist()
+                except BaseException:
+                    self._entries.pop(process_id, None)
+                    self._next_sequence -= 1
+                    raise
             except BaseException:
-                await asyncio.shield(self._cleanup_unexposed(result.process))
-                self._entries.pop(process_id, None)
+                self._observers.pop(process_id, None)
+                if snapshot is not None:
+                    await _kill_accepted_process(self._operator, self._context(), snapshot.backend_id)
                 raise
-        self._ensure_observer(entry)
-        self._mark_release_if_complete(entry, result.process)
-        return projected
+        return self._project_process(entry)
 
-    def identity(self, process_id: str) -> ProcessIdentity:
-        return self._entry(process_id).state.identity
-
-    async def resolve(self, process_id: str) -> BoundProcessHandle:
-        return await self._handle(await self._prepare_entry(process_id))
+    def resource_id(self, process_id: str) -> str:
+        return self._entry(process_id).state.backend_id
 
     async def wait(
         self,
@@ -267,25 +177,10 @@ class ProcessManager:
         max_output_bytes: int = _MAX_MODEL_OUTPUT_BYTES,
     ) -> ProcessReadOutputResult:
         self._guard_execution()
-        entry = await self._prepare_entry(process_id)
-        if timeout_seconds > 0:
-            try:
-                info = await self._invoke(
-                    entry,
-                    lambda current: self._processes.wait(
-                        current,
-                        condition="tree_cleaned",
-                        timeout_seconds=timeout_seconds,
-                    ),
-                )
-                await self._update_from_info(entry, info)
-            except EnvironmentError as exc:
-                if exc.code != "environment_timeout":
-                    await self._correct_missing(entry, exc)
-                    raise
+        entry = self._entry(process_id)
         return await self._drain(
             entry,
-            wait_seconds=0,
+            wait_seconds=timeout_seconds,
             max_inline_bytes=max_inline_bytes,
             max_output_bytes=max_output_bytes,
         )
@@ -297,32 +192,14 @@ class ProcessManager:
         selected = candidates[:limit]
         next_cursor = self._sequence(selected[-1].process_id) if len(candidates) > len(selected) and selected else None
         items: list[ProcessStatusItem] = []
-        for selected_entry in selected:
-            try:
-                entry = await self._prepare_entry(selected_entry.process_id)
-                async with entry.drain_lock:
-                    if not entry.state.backend_lost:
-                        info = await self._invoke(entry, self._processes.inspect)
-                        await self._update_from_info(entry, info)
-                        if self._mark_release_if_complete(entry, info):
-                            await self._finish_release(entry, info)
-                    if entry.process_id in self._entries:
-                        items.append(self._status_item(entry))
-            except EnvironmentError as exc:
-                if exc.code == "environment_reference_invalid":
-                    continue
-                entry = selected_entry
-                await self._correct_missing(entry, exc)
-                if entry.state.backend_lost:
-                    items.append(self._status_item(entry))
+        for entry in selected:
+            if not entry.state.backend_lost and entry.state.status.phase not in _TERMINAL_PHASES:
+                snapshot = await self._operator.inspect(self._context(), entry.state.backend_id)
+                if snapshot is None:
+                    await self._mark_lost(entry)
                 else:
-                    items.append(
-                        {
-                            "process_id": entry.process_id,
-                            "ok": False,
-                            "error": {"code": exc.code, "retry_hint": exc.retry_hint},
-                        }
-                    )
+                    await self._apply_snapshot(entry, snapshot)
+            items.append(self._status_item(entry))
         return {
             "ok": True,
             "processes": items,
@@ -333,28 +210,20 @@ class ProcessManager:
 
     async def write_input(self, process_id: str, data: str, *, close_stdin: bool) -> tuple[int, bool]:
         self._guard_execution()
-        entry = await self._prepare_entry(process_id)
-        encoded = data.encode("utf-8")
-        try:
-            if not encoded and close_stdin:
-                await self._invoke(entry, self._processes.close_stdin)
-                entry.state = entry.state.model_copy(update={"stdin_open": False})
-                await self._persist()
-                return 0, False
-            result = await self._invoke(
-                entry,
-                lambda current: self._processes.write_stdin(
-                    current,
-                    encoded,
-                    close_after_write=close_stdin,
-                ),
-            )
-        except EnvironmentError as exc:
-            await self._correct_missing(entry, exc)
-            raise
-        entry.state = entry.state.model_copy(update={"stdin_open": result.stdin_open})
-        await self._persist()
-        return result.accepted_bytes, result.stdin_open
+        entry = self._entry(process_id)
+        self._require_live(entry)
+        result = await self._operator.write_stdin(
+            self._context(),
+            entry.state.backend_id,
+            data.encode("utf-8"),
+            close_stdin,
+        )
+        if result is None:
+            await self._mark_lost(entry)
+            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
+        _validate_snapshot(result.snapshot, entry.state.backend_id)
+        await self._apply_snapshot(entry, result.snapshot)
+        return result.accepted_bytes, result.snapshot.stdin_open
 
     async def signal(
         self,
@@ -362,17 +231,15 @@ class ProcessManager:
         signal: Literal["interrupt", "terminate"],
     ) -> tuple[bool, ProcessProjection]:
         self._guard_execution()
-        entry = await self._prepare_entry(process_id)
-        try:
-            result = await self._invoke(
-                entry,
-                lambda current: self._processes.signal(current, signal),
-            )
-        except EnvironmentError as exc:
-            await self._correct_missing(entry, exc)
-            raise
-        await self._update_from_info(entry, result.process)
-        return result.accepted, self._project_process(entry, result.process)
+        entry = self._entry(process_id)
+        self._require_live(entry)
+        result = await self._operator.signal(self._context(), entry.state.backend_id, signal)
+        if result is None:
+            await self._mark_lost(entry)
+            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
+        _validate_snapshot(result.snapshot, entry.state.backend_id)
+        await self._apply_snapshot(entry, result.snapshot)
+        return result.accepted, self._project_process(entry)
 
     async def kill(
         self,
@@ -382,26 +249,13 @@ class ProcessManager:
         max_output_bytes: int = _MAX_MODEL_OUTPUT_BYTES,
     ) -> ProcessReadOutputResult:
         self._guard_execution()
-        entry = await self._prepare_entry(process_id)
-        try:
-            result = await self._invoke(entry, self._processes.kill)
-            await self._update_from_info(entry, result.process)
-            try:
-                info = await self._invoke(
-                    entry,
-                    lambda current: self._processes.wait(
-                        current,
-                        condition="tree_cleaned",
-                        timeout_seconds=5.0,
-                    ),
-                )
-                await self._update_from_info(entry, info)
-            except EnvironmentError as exc:
-                if exc.code != "environment_timeout":
-                    raise
-        except EnvironmentError as exc:
-            await self._correct_missing(entry, exc)
-            raise
+        entry = self._entry(process_id)
+        self._require_live(entry)
+        snapshot = await self._operator.kill(self._context(), entry.state.backend_id)
+        if snapshot is None:
+            await self._mark_lost(entry)
+            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
+        await self._apply_snapshot(entry, snapshot)
         return await self._drain(
             entry,
             wait_seconds=0,
@@ -409,22 +263,21 @@ class ProcessManager:
             max_output_bytes=max_output_bytes,
         )
 
-    async def _load(self, store: AgentContextState) -> None:
+    async def _load(self, store: AgentContextState, *, owner_thread_id: str) -> None:
         if self._loaded:
-            if self._state_store is not store:
-                raise RuntimeError("ProcessManager cannot cross AgentContext State coordinators")
+            if self._state_store is not store or self._owner_thread_id != owner_thread_id:
+                raise RuntimeError("Process run projection cannot cross Agent Contexts")
             return
-        restored = await store.read(
-            PROCESS_STATE_ID,
-            ProcessManagerState,
-            version=_PROCESS_STATE_VERSION,
-        )
-        state = restored or ProcessManagerState()
-        if len(state.processes) > self._max_reference_entries:
-            raise EnvironmentError(
-                "Restored process state exceeds the configured reference limit.",
-                code="environment_reference_exhausted",
+        restored = await store.read(PROCESS_STATE_ID, ProcessManagerState, version=_PROCESS_STATE_VERSION)
+        if restored is None:
+            state = ProcessManagerState(owner_thread_id=owner_thread_id)
+        elif restored.owner_thread_id != owner_thread_id:
+            state = ProcessManagerState(
+                owner_thread_id=owner_thread_id,
+                next_sequence=restored.next_sequence,
             )
+        else:
+            state = restored
         self._entries = OrderedDict(
             (process_id, _ProcessEntry(process_id=process_id, state=value))
             for process_id, value in sorted(state.processes.items(), key=lambda item: self._sequence(item[0]))
@@ -432,18 +285,50 @@ class ProcessManager:
         highest = max((self._sequence(process_id) for process_id in self._entries), default=0)
         self._next_sequence = max(state.next_sequence, highest + 1)
         self._state_store = store
+        self._owner_thread_id = owner_thread_id
         self._loaded = True
+        if restored is not None and restored.owner_thread_id != owner_thread_id:
+            await self._persist()
+
+    async def _attach_nonterminal(self) -> None:
+        for entry in tuple(self._entries.values()):
+            if entry.state.backend_lost or entry.state.status.phase in _TERMINAL_PHASES:
+                continue
+            try:
+                observer = self._event_callback(entry.process_id)
+                self._observers[entry.process_id] = observer
+                snapshot = await self._operator.rebind(
+                    self._context(),
+                    entry.state.backend_id,
+                    observer,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await self._notify(entry, "gap")
+                continue
+            if snapshot is None:
+                await self._mark_lost(entry)
+            else:
+                await self._apply_snapshot(entry, snapshot)
 
     async def _persist(self) -> None:
         store = self._state_store
         if store is None:
             raise RuntimeError("ProcessManager is not bound to AgentContext State")
         async with self._state_lock:
-            state = ProcessManagerState(
-                next_sequence=self._next_sequence,
-                processes={process_id: entry.state for process_id, entry in self._entries.items()},
+            owner_thread_id = self._owner_thread_id
+            if owner_thread_id is None:
+                raise RuntimeError("Process run projection has no owner Thread")
+            await store.write(
+                PROCESS_STATE_ID,
+                ProcessManagerState(
+                    owner_thread_id=owner_thread_id,
+                    next_sequence=self._next_sequence,
+                    processes={process_id: entry.state for process_id, entry in self._entries.items()},
+                ),
+                version=_PROCESS_STATE_VERSION,
             )
-            await store.write(PROCESS_STATE_ID, state, version=_PROCESS_STATE_VERSION)
 
     def _entry(self, process_id: str) -> _ProcessEntry:
         self._require_loaded()
@@ -454,19 +339,6 @@ class ProcessManager:
             raise EnvironmentError("Process reference is unknown.", code="environment_reference_invalid")
         return entry
 
-    async def _prepare_entry(self, process_id: str) -> _ProcessEntry:
-        entry = self._entry(process_id)
-        if entry.cleanup_info is None:
-            return entry
-        async with entry.drain_lock:
-            if entry.cleanup_info is not None and not await self._finish_release(entry, entry.cleanup_info):
-                raise EnvironmentError(
-                    "Process cleanup is pending.",
-                    code="environment_cleanup_pending",
-                    retry_hint="dependency_change",
-                )
-        return self._entry(process_id)
-
     @staticmethod
     def _sequence(process_id: str) -> int:
         match = _REFERENCE_PATTERN.fullmatch(process_id)
@@ -474,60 +346,30 @@ class ProcessManager:
             raise ValueError("invalid process reference")
         return int(match.group(1))
 
-    async def _handle(self, entry: _ProcessEntry) -> BoundProcessHandle:
-        if entry.state.backend_lost:
-            raise EnvironmentError("The provider process no longer exists.", code="environment_reference_stale")
-        if entry.handle is not None:
-            return entry.handle
-        try:
-            info = await self._processes.rebind(entry.state.identity, output_policy=_REBIND_OUTPUT_POLICY)
-        except EnvironmentError as exc:
-            await self._correct_missing(entry, exc)
-            raise
-        await self._update_from_info(entry, info)
-        return info.handle
+    def _event_callback(self, process_id: str) -> Callable[[ProcessExecutionSnapshot], Awaitable[None]]:
+        async def callback(snapshot: ProcessExecutionSnapshot) -> None:
+            entry = self._entries.get(process_id)
+            if entry is None:
+                return
+            _validate_snapshot(snapshot, entry.state.backend_id)
+            if self._active_context is not None:
+                await self._apply_snapshot(entry, snapshot)
 
-    async def _invoke[T](
-        self,
-        entry: _ProcessEntry,
-        operation: Callable[[BoundProcessHandle], Awaitable[T]],
-    ) -> T:
-        try:
-            return await operation(await self._handle(entry))
-        except EnvironmentError as exc:
-            if exc.code == "environment_stale_mount" and entry.handle is not None:
-                entry.handle = None
-                try:
-                    return await operation(await self._handle(entry))
-                except EnvironmentError as retry_error:
-                    await self._correct_missing(entry, retry_error)
-                    raise
-            await self._correct_missing(entry, exc)
-            raise
+        return callback
 
-    async def _update_from_info(self, entry: _ProcessEntry, info: ProcessInfo) -> None:
-        if info.handle.identity != entry.state.identity:
-            raise EnvironmentError(
-                "Environment provider retargeted a managed process.",
-                code="environment_provider_failure",
-            )
-        entry.handle = info.handle
-        entry.state = entry.state.model_copy(
-            update={
-                "mount_id": info.handle.mount_id,
-                "status": info.status,
-                "stdin_open": info.stdin_open,
-                "stdout_produced_bytes": info.output.stdout.produced_bytes,
-                "stderr_produced_bytes": info.output.stderr.produced_bytes,
-                "backend_lost": False,
-            }
-        )
-        await self._persist()
-
-    async def _correct_missing(self, entry: _ProcessEntry, error: EnvironmentError) -> None:
-        if error.code not in {"environment_not_found", "environment_process_generation_mismatch"}:
+    async def _apply_snapshot(self, entry: _ProcessEntry, snapshot: ProcessExecutionSnapshot) -> None:
+        _validate_snapshot(snapshot, entry.state.backend_id)
+        previous = entry.state.status.phase
+        if previous in _TERMINAL_PHASES:
             return
-        entry.handle = None
+        entry.state = _merge_snapshot(entry.state, snapshot)
+        await self._persist()
+        if entry.state.status.phase in _TERMINAL_PHASES:
+            await self._notify(entry, "completion")
+
+    async def _mark_lost(self, entry: _ProcessEntry) -> None:
+        if entry.state.backend_lost or entry.state.status.phase in _TERMINAL_PHASES:
+            return
         entry.state = entry.state.model_copy(
             update={
                 "status": ProcessStatus(
@@ -542,7 +384,7 @@ class ProcessManager:
             }
         )
         await self._persist()
-        await self._dispatch_event(entry, "completion")
+        await self._notify(entry, "gap")
 
     async def _drain(
         self,
@@ -553,126 +395,123 @@ class ProcessManager:
         max_output_bytes: int,
     ) -> ProcessReadOutputResult:
         async with entry.drain_lock:
-            aggregate_budget = min(max_inline_bytes, max_output_bytes)
-            try:
-                result = await self._invoke(
-                    entry,
-                    lambda current: self._processes.read_output(
-                        current,
-                        stdout_start_offset=entry.state.stdout_offset,
-                        stderr_start_offset=entry.state.stderr_offset,
-                        wait_seconds=wait_seconds,
-                        policy=EnvironmentOutputPolicy(
-                            max_inline_bytes=max(1, aggregate_budget),
-                            max_output_bytes=max_output_bytes,
-                            overflow="truncate",
-                        ),
-                    ),
-                )
-            except EnvironmentError as exc:
-                await self._correct_missing(entry, exc)
-                raise
-            stdout_start = entry.state.stdout_offset
-            stderr_start = entry.state.stderr_offset
-            stdout_available, _ = _materialize_segments(result.stdout.chunks, stdout_start)
-            stderr_available, _ = _materialize_segments(result.stderr.chunks, stderr_start)
-
-            def project(stdout_data: bytes, stderr_data: bytes) -> dict[str, JsonValue]:
-                projected: dict[str, JsonValue] = {
-                    "ok": True,
-                    **cast(dict[str, JsonValue], self._project_process(entry, result.process)),
-                    "stdout": cast(JsonValue, _project_capture(result.stdout.capture, stdout_data)),
-                    "stderr": cast(JsonValue, _project_capture(result.stderr.capture, stderr_data)),
-                }
-                if (
-                    stdout_start + len(stdout_data) < result.stdout.capture.available_end
-                    or stderr_start + len(stderr_data) < result.stderr.capture.available_end
-                ):
-                    projected["disclosure"] = cast(
-                        JsonValue,
-                        continuation_disclosure(
-                            projected,
-                            hint=(
-                                f"Call shell_wait with process_id={entry.process_id!r} and "
-                                "timeout_seconds=0 to read the next output page."
-                            ),
-                        ),
-                    )
-                return projected
-
-            stdout_data, stderr_data, projected = _fit_stream_projection(
-                stdout_available,
-                stderr_available,
-                raw_budget=aggregate_budget,
-                json_budget=DEFAULT_TOOL_OUTPUT_CHARS - _PROCESS_RESULT_ENVELOPE_CHARS,
-                project=project,
+            return await self._drain_unlocked(
+                entry,
+                wait_seconds=wait_seconds,
+                max_inline_bytes=max_inline_bytes,
+                max_output_bytes=max_output_bytes,
             )
-            _require_stream_progress(stdout_available, stderr_available, stdout_data, stderr_data)
-            entry.state = entry.state.model_copy(
-                update={
-                    "mount_id": result.process.handle.mount_id,
-                    "stdout_offset": stdout_start + len(stdout_data),
-                    "stderr_offset": stderr_start + len(stderr_data),
-                    "status": result.process.status,
-                    "stdin_open": result.process.stdin_open,
-                    "stdout_produced_bytes": result.process.output.stdout.produced_bytes,
-                    "stderr_produced_bytes": result.process.output.stderr.produced_bytes,
-                }
-            )
-            await self._persist()
-            self._mark_release_if_complete(entry, result.process)
-            return cast(ProcessReadOutputResult, acknowledge_tool_output(projected))
 
-    def _project_process(
+    async def _drain_unlocked(
         self,
         entry: _ProcessEntry,
-        process: ProcessInfo,
         *,
-        consume_output: bool = False,
-        output_budget: int = _MAX_MODEL_TEXT_BYTES,
-    ) -> ProcessProjection:
-        stdout_available = _capture_initial_bytes(process.output.stdout) if consume_output else b""
-        stderr_available = _capture_initial_bytes(process.output.stderr) if consume_output else b""
-        stdout_start = entry.state.stdout_offset
-        stderr_start = entry.state.stderr_offset
+        wait_seconds: float,
+        max_inline_bytes: int,
+        max_output_bytes: int,
+    ) -> ProcessReadOutputResult:
+        self._require_live(entry, allow_terminal=True)
+        aggregate_budget = min(max_inline_bytes, max_output_bytes)
+        page_budget = max(1, aggregate_budget)
+        stdout_offset = entry.state.stdout_offset
+        stderr_offset = entry.state.stderr_offset
+        stdout_produced_bytes = entry.state.stdout_produced_bytes
+        stderr_produced_bytes = entry.state.stderr_produced_bytes
+        page = await self._operator.read_output(
+            self._context(),
+            entry.state.backend_id,
+            stdout_offset,
+            stderr_offset,
+            wait_seconds,
+            page_budget,
+        )
+        if page is None:
+            await self._mark_lost(entry)
+            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
+        _validate_output_page(
+            page,
+            entry.state.backend_id,
+            stdout_offset=stdout_offset,
+            stderr_offset=stderr_offset,
+            max_bytes=page_budget,
+            minimum_stdout_produced_bytes=stdout_produced_bytes,
+            minimum_stderr_produced_bytes=stderr_produced_bytes,
+        )
+        stdout_available = page.stdout.data
+        stderr_available = page.stderr.data
+        merged_snapshot = _snapshot_from_state(_merge_snapshot(entry.state, page.snapshot))
+        producer_complete = merged_snapshot.status.phase in _TERMINAL_PHASES
 
-        def project(stdout_data: bytes, stderr_data: bytes) -> ProcessProjection:
-            projected: ProcessProjection = {
-                "process_id": entry.process_id,
-                "status": _project_status(process.status),
-                "stdin_open": process.stdin_open,
-                "stdout": _project_capture(process.output.stdout, stdout_data),
-                "stderr": _project_capture(process.output.stderr, stderr_data),
+        def project(stdout_data: bytes, stderr_data: bytes) -> dict[str, JsonValue]:
+            projected: dict[str, JsonValue] = {
+                "ok": True,
+                **cast(dict[str, JsonValue], self._project_process(entry, snapshot=merged_snapshot)),
+                "stdout": cast(
+                    JsonValue,
+                    _project_chunk(
+                        page.stdout,
+                        merged_snapshot.stdout_produced_bytes,
+                        stdout_data,
+                        producer_complete=producer_complete,
+                    ),
+                ),
+                "stderr": cast(
+                    JsonValue,
+                    _project_chunk(
+                        page.stderr,
+                        merged_snapshot.stderr_produced_bytes,
+                        stderr_data,
+                        producer_complete=producer_complete,
+                    ),
+                ),
             }
-            if consume_output and (
-                stdout_start + len(stdout_data) < process.output.stdout.available_end
-                or stderr_start + len(stderr_data) < process.output.stderr.available_end
-            ):
-                projected["disclosure"] = continuation_disclosure(
-                    cast(dict[str, JsonValue], projected),
-                    hint=(
-                        f"Call shell_wait with process_id={entry.process_id!r} and "
-                        "timeout_seconds=0 to read the next output page."
+            if len(stdout_data) < len(stdout_available) or len(stderr_data) < len(stderr_available):
+                projected["disclosure"] = cast(
+                    JsonValue,
+                    continuation_disclosure(
+                        projected,
+                        hint=(
+                            f"Call shell_wait with process_id={entry.process_id!r} and "
+                            "timeout_seconds=0 to read the next output page."
+                        ),
                     ),
                 )
             return projected
 
-        if not consume_output:
-            return project(b"", b"")
         stdout_data, stderr_data, projected = _fit_stream_projection(
             stdout_available,
             stderr_available,
-            raw_budget=output_budget,
+            raw_budget=aggregate_budget,
             json_budget=DEFAULT_TOOL_OUTPUT_CHARS - _PROCESS_RESULT_ENVELOPE_CHARS,
             project=project,
         )
-        entry.state = entry.state.model_copy(
+        _require_stream_progress(stdout_available, stderr_available, stdout_data, stderr_data)
+        previous = entry.state.status.phase
+        entry.state = _state_from_snapshot(merged_snapshot).model_copy(
             update={
-                "stdout_offset": stdout_start + len(stdout_data),
-                "stderr_offset": stderr_start + len(stderr_data),
+                "stdout_offset": page.stdout.start_offset + len(stdout_data),
+                "stderr_offset": page.stderr.start_offset + len(stderr_data),
             }
         )
-        return projected
+        await self._persist()
+        if previous not in _TERMINAL_PHASES and entry.state.status.phase in _TERMINAL_PHASES:
+            await self._notify(entry, "completion")
+        return cast(ProcessReadOutputResult, acknowledge_tool_output(projected))
+
+    def _project_process(
+        self,
+        entry: _ProcessEntry,
+        *,
+        snapshot: ProcessExecutionSnapshot | None = None,
+    ) -> ProcessProjection:
+        current = snapshot or _snapshot_from_state(entry.state)
+        return {
+            "process_id": entry.process_id,
+            "status": _project_status(current.status),
+            "stdin_open": current.stdin_open,
+            "stdout": _empty_capture(current.stdout_produced_bytes, current.status.phase in _TERMINAL_PHASES),
+            "stderr": _empty_capture(current.stderr_produced_bytes, current.status.phase in _TERMINAL_PHASES),
+        }
 
     def _status_item(self, entry: _ProcessEntry) -> ProcessStatusItem:
         return {
@@ -686,181 +525,158 @@ class ProcessManager:
             },
         }
 
-    async def _cancel_observers(self) -> None:
-        tasks = tuple(
-            entry.observer
-            for entry in self._entries.values()
-            if entry.observer is not None and not entry.observer.done()
-        )
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        for entry in self._entries.values():
-            entry.observer = None
-
-    def _ensure_observer(self, entry: _ProcessEntry) -> None:
-        if (
-            self._closed
-            or self._active_context is None
-            or entry.state.backend_lost
-            or entry.state.status.phase in _TERMINAL_PHASES
-            or (entry.observer is not None and not entry.observer.done())
-        ):
-            return
-        entry.observer = asyncio.create_task(self._observe(entry))
-
-    async def _observe(self, entry: _ProcessEntry) -> None:
-        try:
-            while True:
-                try:
-                    info = await self._invoke(
-                        entry,
-                        lambda current: self._processes.wait(
-                            current,
-                            condition="tree_cleaned",
-                            timeout_seconds=3600.0,
-                        ),
-                    )
-                except EnvironmentError as exc:
-                    if exc.code == "environment_timeout":
-                        continue
-                    await self._correct_missing(entry, exc)
-                    if not entry.state.backend_lost:
-                        await self._dispatch_event(entry, "gap")
-                    return
-                await self._update_from_info(entry, info)
-                await self._dispatch_event(entry, "completion")
-                return
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            await self._dispatch_event(entry, "gap")
-
-    async def _dispatch_event(self, entry: _ProcessEntry, kind: ProcessEventKind) -> None:
-        previous = self._notified.get(entry.process_id)
-        if previous == "completion" or previous == kind:
-            return
-        self._notified[entry.process_id] = kind
-        event_context = self._event_context
-        if event_context is None:
-            raise RuntimeError("ProcessManager is not bound to an AgentContext")
-        event = ProcessEvent(
-            kind=kind,
-            thread_id=event_context[0],
-            run_id=event_context[1],
-            agent_instance_id=event_context[2],
-            process_id=entry.process_id,
-            identity=entry.state.identity,
-            status=entry.state.status,
-        )
-        self._pending[entry.process_id] = kind
-        self._pending.move_to_end(entry.process_id)
-        self._flush_notifications()
-        for hook in self._event_hooks:
-            try:
-                await hook(event)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                continue
-
-    def _flush_notifications(self) -> None:
+    async def _notify(self, entry: _ProcessEntry, kind: Literal["completion", "gap"]) -> None:
         active = self._active_context
-        if active is None or not self._pending:
+        if active is None:
             return
-        pending = tuple(self._pending.items())
-        shown = pending[:_MAX_NOTIFICATION_ITEMS]
-        lines = ["Background process update:"]
-        for process_id, kind in shown:
-            if kind == "completion":
-                lines.append(f"- {process_id} completed; call shell_wait with timeout_seconds=0 for final output.")
-            else:
-                lines.append(f"- {process_id} completion observation is unavailable; use shell_status or shell_wait.")
-        if len(pending) > len(shown):
-            lines.append(f"- {len(pending) - len(shown)} more process updates are available through shell_status.")
-        enqueue_id = active.enqueue("\n".join(lines), priority="asap")
-        if enqueue_id is not None:
-            self._pending.clear()
-
-    def _mark_release_if_complete(self, entry: _ProcessEntry, info: ProcessInfo) -> bool:
-        complete = (
-            info.status.phase in _TERMINAL_PHASES
-            and info.status.cleanup != "pending"
-            and entry.state.stdout_offset >= info.output.stdout.available_end
-            and entry.state.stderr_offset >= info.output.stderr.available_end
+        if kind == "completion":
+            message = (
+                f"Background process {entry.process_id} has finished. "
+                f"Call shell_wait with process_id={entry.process_id!r} and timeout_seconds=0 "
+                "to collect its final output."
+            )
+        else:
+            message = (
+                f"Background process {entry.process_id} can no longer be observed by this backend. "
+                "Call shell_status to inspect its retained status."
+            )
+        await active.deps._steering.notify(
+            message,
+            source="background_process",
+            references=(entry.process_id,),
         )
-        if complete:
-            entry.cleanup_info = info
-        return complete
 
-    async def _finish_release(self, entry: _ProcessEntry, info: ProcessInfo) -> bool:
-        entry.cleanup_info = info
-        cleanup = asyncio.create_task(self._complete_release(entry, info))
-        error, cancellation = await _await_owned_cleanup(cleanup)
-        if cancellation is not None:
-            raise cancellation
-        return error is None
-
-    async def _complete_release(self, entry: _ProcessEntry, info: ProcessInfo) -> None:
-        await self._release_resources(info)
-        observer = entry.observer
-        if observer is not None and observer is not asyncio.current_task() and not observer.done():
-            observer.cancel()
-            await asyncio.gather(observer, return_exceptions=True)
-        entry.observer = None
-        self._entries.pop(entry.process_id, None)
-        try:
-            await self._persist()
-        except BaseException:
-            self._entries[entry.process_id] = entry
-            raise
-
-    async def _release_resources(self, info: ProcessInfo) -> None:
-        try:
-            await self._processes.release(info.handle)
-        except EnvironmentError as exc:
-            if exc.code != "environment_not_found":
-                raise
-        for capture in (info.output.stdout, info.output.stderr):
-            if capture.reference is None:
-                continue
-            try:
-                await self._outputs.release(reference=capture.reference)
-            except EnvironmentError as exc:
-                if exc.code != "environment_not_found":
-                    raise
-
-    async def _cleanup_unexposed(self, info: ProcessInfo) -> None:
-        try:
-            await self._processes.kill(info.handle)
-        except Exception:
-            pass
-        try:
-            await self._processes.wait(info.handle, condition="tree_cleaned", timeout_seconds=5.0)
-        except Exception:
-            pass
-        cleanup = asyncio.create_task(self._release_resources(info))
-        await _await_owned_cleanup(cleanup)
-
-    @staticmethod
-    def _state_from_info(info: ProcessInfo) -> ManagedProcessState:
-        return ManagedProcessState(
-            identity=info.handle.identity,
-            mount_id=info.handle.mount_id,
-            status=info.status,
-            stdin_open=info.stdin_open,
-            stdout_produced_bytes=info.output.stdout.produced_bytes,
-            stderr_produced_bytes=info.output.stderr.produced_bytes,
-        )
+    def _context(self) -> AgentContext:
+        active = self._active_context
+        if active is None:
+            raise RuntimeError("Process operation requires an active Harness Run")
+        return active.deps
 
     def _require_loaded(self) -> None:
         if not self._loaded:
-            raise RuntimeError("ProcessManager must be entered through ShellToolset.wrap_run")
+            raise RuntimeError("Process run projection must be entered through ShellToolset.wrap_run")
+
+    def _require_live(self, entry: _ProcessEntry, *, allow_terminal: bool = False) -> None:
+        if entry.state.backend_lost:
+            raise EnvironmentError("The Host process no longer exists.", code="environment_reference_stale")
+        if not allow_terminal and entry.state.status.phase in _TERMINAL_PHASES:
+            raise EnvironmentError("The Host process is not running.", code="environment_reference_stale")
 
     def _guard_execution(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()
+
+
+def _state_from_snapshot(snapshot: ProcessExecutionSnapshot) -> ManagedProcessState:
+    return ManagedProcessState(
+        backend_id=snapshot.backend_id,
+        status=snapshot.status,
+        stdin_open=snapshot.stdin_open,
+        stdout_produced_bytes=snapshot.stdout_produced_bytes,
+        stderr_produced_bytes=snapshot.stderr_produced_bytes,
+    )
+
+
+def _snapshot_from_state(state: ManagedProcessState) -> ProcessExecutionSnapshot:
+    return ProcessExecutionSnapshot(
+        backend_id=state.backend_id,
+        status=state.status,
+        stdin_open=state.stdin_open,
+        stdout_produced_bytes=state.stdout_produced_bytes,
+        stderr_produced_bytes=state.stderr_produced_bytes,
+    )
+
+
+def _merge_snapshot(state: ManagedProcessState, snapshot: ProcessExecutionSnapshot) -> ManagedProcessState:
+    status = state.status if state.status.phase in _TERMINAL_PHASES else snapshot.status
+    stdin_open = state.stdin_open if state.status.phase in _TERMINAL_PHASES else snapshot.stdin_open
+    return state.model_copy(
+        update={
+            "status": status,
+            "stdin_open": stdin_open,
+            "stdout_produced_bytes": max(state.stdout_produced_bytes, snapshot.stdout_produced_bytes),
+            "stderr_produced_bytes": max(state.stderr_produced_bytes, snapshot.stderr_produced_bytes),
+            "backend_lost": False,
+        }
+    )
+
+
+def _validate_snapshot(snapshot: ProcessExecutionSnapshot, backend_id: str) -> None:
+    if not isinstance(snapshot, ProcessExecutionSnapshot):
+        raise TypeError("process backend returned an invalid snapshot")
+    if snapshot.backend_id != backend_id:
+        raise EnvironmentError("Host backend retargeted a managed process.", code="environment_provider_failure")
+
+
+def _validate_output_page(
+    page: ProcessOutputPage,
+    backend_id: str,
+    *,
+    stdout_offset: int,
+    stderr_offset: int,
+    max_bytes: int,
+    minimum_stdout_produced_bytes: int,
+    minimum_stderr_produced_bytes: int,
+) -> None:
+    if not isinstance(page, ProcessOutputPage):
+        raise TypeError("process backend returned an invalid output page")
+    _validate_snapshot(page.snapshot, backend_id)
+    if (
+        page.snapshot.stdout_produced_bytes < minimum_stdout_produced_bytes
+        or page.snapshot.stderr_produced_bytes < minimum_stderr_produced_bytes
+    ):
+        raise EnvironmentError("Host process output counters moved backwards.", code="environment_provider_failure")
+    if len(page.stdout.data) + len(page.stderr.data) > max_bytes:
+        raise EnvironmentError("Host process exceeded the output page budget.", code="environment_provider_failure")
+    _validate_output_chunk(
+        page.stdout,
+        requested_offset=stdout_offset,
+        produced_bytes=page.snapshot.stdout_produced_bytes,
+    )
+    _validate_output_chunk(
+        page.stderr,
+        requested_offset=stderr_offset,
+        produced_bytes=page.snapshot.stderr_produced_bytes,
+    )
+
+
+def _validate_output_chunk(
+    chunk: ProcessOutputChunk,
+    *,
+    requested_offset: int,
+    produced_bytes: int,
+) -> None:
+    if requested_offset > produced_bytes or chunk.available_end != produced_bytes:
+        raise EnvironmentError(
+            "Host process returned inconsistent output offsets.", code="environment_provider_failure"
+        )
+    expected_start = max(requested_offset, chunk.available_start)
+    if chunk.start_offset != expected_start:
+        raise EnvironmentError(
+            "Host process returned a noncontiguous output page.", code="environment_provider_failure"
+        )
+
+
+async def _kill_accepted_process(
+    operator: ShellOperator,
+    context: AgentContext,
+    backend_id: str,
+) -> None:
+    task = asyncio.create_task(operator.kill(context, backend_id))
+    cancelled = False
+    while True:
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.cancelled():
+                break
+            cancelled = True
+            continue
+        except Exception:
+            break
+        break
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 def _project_status(status: ProcessStatus) -> ProcessStatusProjection:
@@ -870,6 +686,40 @@ def _project_status(status: ProcessStatus) -> ProcessStatusProjection:
         "exit_code": status.exit_code,
         "signal": status.signal,
         "cleanup": status.cleanup,
+    }
+
+
+def _empty_capture(produced_bytes: int, producer_complete: bool) -> OutputCaptureProjection:
+    return {
+        "kind": "empty" if produced_bytes == 0 else "retained",
+        "producer_complete": producer_complete,
+        "content_complete": produced_bytes == 0,
+        "produced_bytes": produced_bytes,
+        "captured_bytes": 0,
+        "dropped_bytes": 0,
+        "text": "",
+        "available_start": 0,
+        "available_end": produced_bytes,
+    }
+
+
+def _project_chunk(
+    chunk: ProcessOutputChunk,
+    produced_bytes: int,
+    data: bytes,
+    *,
+    producer_complete: bool = False,
+) -> OutputCaptureProjection:
+    return {
+        "kind": "empty" if produced_bytes == 0 else "retained",
+        "producer_complete": producer_complete or chunk.producer_complete,
+        "content_complete": chunk.content_complete and len(data) == chunk.available_end - chunk.start_offset,
+        "produced_bytes": produced_bytes,
+        "captured_bytes": len(data),
+        "dropped_bytes": chunk.available_start,
+        "text": data.decode("utf-8", errors="replace"),
+        "available_start": chunk.available_start,
+        "available_end": chunk.available_end,
     }
 
 
@@ -1000,29 +850,8 @@ def _require_stream_progress(
         )
 
 
-async def _await_owned_cleanup(
-    task: asyncio.Task[None],
-) -> tuple[BaseException | None, asyncio.CancelledError | None]:
-    cancellation: asyncio.CancelledError | None = None
-    while not task.done():
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError as exc:
-            if cancellation is None:
-                cancellation = exc
-        except BaseException:
-            break
-    if task.cancelled():
-        return asyncio.CancelledError("Process cleanup task was cancelled."), cancellation
-    return task.exception(), cancellation
-
-
 __all__ = [
     "PROCESS_STATE_ID",
     "ManagedProcessState",
-    "ProcessEvent",
-    "ProcessEventHook",
-    "ProcessEventKind",
-    "ProcessManager",
     "ProcessManagerState",
 ]

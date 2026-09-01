@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from typing import Any, ClassVar
 
 import pytest
-from a13n_harness import (
+from a13n_harness.environment import (
     EnvironmentError,
     EnvironmentRunExtensionFactory,
     EnvironmentRunExtensionFactoryContext,

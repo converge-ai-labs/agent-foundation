@@ -29,7 +29,7 @@ class CompositionService:
         self._repository = SnapshotRepository(store)
         self._resolver = SnapshotResolver(catalog, data_root=store.layout.root)
         self._cache = ExecutableCache()
-        self._reconstructor = AgentReconstructor(catalog, self._cache)
+        self._reconstructor = AgentReconstructor(self._skill_package, self._cache)
 
     async def resolve_agent(
         self,
@@ -98,7 +98,19 @@ class CompositionService:
         await self.executable(reference, environment_reference)
 
     async def close(self) -> None:
-        await self._cache.close()
+        """Release retained process-local executable build outputs."""
+
+        await self._cache.clear()
+
+    async def _skill_package(self, skill) -> Any:
+        package_reference = await self._catalog.skill_package_reference(skill.revision)
+        if package_reference.logical_digest != skill.package_object_digest:
+            raise CompositionError(
+                "A managed Skill package selection changed after snapshot publication.",
+                code="skill_package_mismatch",
+                details={"skill_id": skill.revision.resource_id},
+            )
+        return await self._catalog.skill_package(skill.revision)
 
     async def _generation(self, generation_id: str | None) -> ConfigurationGeneration:
         if generation_id is not None:

@@ -180,6 +180,22 @@ class InlineDelegationPayload(_FirstPartyPayload):
         return self
 
 
+class SteeringInputEnqueuedPayload(_FirstPartyPayload):
+    """One external steering input or Harness lifecycle notice accepted by the active Run."""
+
+    type: Literal["steering_input_enqueued"] = "steering_input_enqueued"
+    enqueue_id: str = Field(min_length=1, max_length=256)
+    source: Literal["external", "async_subagent", "background_process"]
+    references: tuple[str, ...] = Field(default=(), max_length=16)
+
+    @field_validator("references")
+    @classmethod
+    def _validate_references(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not reference or len(reference) > 128 for reference in value):
+            raise ValueError("steering references must be non-empty bounded strings")
+        return value
+
+
 class UsageReportPayload(_FirstPartyPayload):
     type: Literal["usage_report"] = "usage_report"
     report_id: str = Field(min_length=1, max_length=128)
@@ -281,6 +297,7 @@ type FirstPartyEventPayload = (
     | ContextOperationFailedPayload
     | TaskChangedPayload
     | InlineDelegationPayload
+    | SteeringInputEnqueuedPayload
     | UsageReportPayload
     | CodeActExecutionStartedPayload
     | CodeActToolCallStartedPayload

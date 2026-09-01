@@ -7,9 +7,10 @@ from pathlib import Path
 import a13n_ui.composition.reconstruction as reconstruction_module
 import pytest
 import yaml
-from a13n_harness import ContextualMCP
+from a13n_harness.environment import DynamicEnvironmentCapability
 from a13n_harness.environment.local.binding import _DirectLocalFilePolicy
 from a13n_harness.environment.local.files import LocalFileOperator
+from a13n_harness.mcp import ContextualMCP
 from a13n_ui.composition.reconstruction import SnapshotSkillMaterializer, _PackageFile
 from a13n_ui.configuration import (
     ConfigurationSettings,
@@ -48,7 +49,6 @@ def _settings(data_root: Path, definitions: Path, workspace: Path) -> AgentUiSet
                 ),
             ),
             model_adapter_keys=("a13n.pydantic-ai",),
-            orphan_retention_seconds=60,
         ),
     )
 
@@ -104,15 +104,11 @@ def _write_composition(definitions: Path, *, system_prompt: str = "Be concise.")
                             "read_only": False,
                         },
                     },
-                    "permission_ceiling": ["files"],
+                    "access": "read_write",
                 },
             ],
             "default_mount": "mount-main",
-            "lifecycle": {
-                "provision": "on_first_run",
-                "idle": "keep_running",
-                "release": "retain",
-            },
+            "provision": "on_first_run",
         },
     )
 
@@ -137,7 +133,9 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         )
         await application.validate_agent_executable(agent_reference)
         executable = await application._composition.executable(agent_reference)
+        retained_cache = application._composition._cache
 
+        assert retained_cache._entries
         assert executable.definition.agent.system_prompt == ["Be concise."]
         assert executable.definition.agent.instructions is None
         assert agent.root_agent.resource_id == "agent-main"
@@ -146,6 +144,12 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         assert agent.adapter_locks[0].distribution_name == "a13n-ui"
         assert agent.adapter_locks[0].distribution_version
         assert environment.environment_revision.resource_id == "environment-main"
+        assert environment.mounts[0].access == "read_write"
+        assert agent.resolved_agents[0].environment_tools is True
+        environment_capability = next(
+            item for item in executable.definition.capabilities if isinstance(item, DynamicEnvironmentCapability)
+        )
+        assert environment_capability.operator.supports_background is False
         assert environment.mounts[0].normalized_parameters["root"] == {
             "path": str(workspace),
             "read_only": False,
@@ -156,6 +160,25 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
             "attachment_concurrency": "shared",
         }
         assert compatibility.agent_snapshot_digest == agent.logical_agent_digest
+
+        legacy_environment = environment.model_dump(mode="python")
+        for mount in legacy_environment["definition"]["mounts"]:
+            mount["permission_ceiling"] = ["files"]
+            mount.pop("access")
+        for mount in legacy_environment["mounts"]:
+            mount["permission_ceiling"] = ["files"]
+            mount.pop("access")
+        legacy_behavior = {
+            key: value
+            for key, value in legacy_environment.items()
+            if key not in {"logical_environment_digest", "generation_id", "catalog_digest"}
+        }
+        legacy_environment["logical_environment_digest"] = canonical_digest(legacy_behavior)
+        restored_environment = type(environment).model_validate(
+            legacy_environment,
+            context={"legacy_snapshot_payload": legacy_environment},
+        )
+        assert restored_environment.mounts[0].access == "read_write"
 
         _write_composition(definitions, system_prompt="Be precise.")
         generation_two = await application.reload_configuration()
@@ -169,10 +192,59 @@ async def test_snapshots_reconstruct_and_survive_reload_and_restart(tmp_path: Pa
         )
         assert exact_reference == agent_reference
 
+    assert retained_cache._entries == {}
+
     async with open_agent_ui_host(settings) as restarted:
         assert await restarted.agent_snapshot(agent_reference) == agent
         assert await restarted.environment_snapshot(environment_reference) == environment
         await restarted.validate_agent_executable(agent_reference)
+
+
+async def test_environment_tools_can_be_disabled_with_one_agent_setting(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    agent_path = definitions / "agents/agent-main.yaml"
+    agent_document = yaml.safe_load(agent_path.read_text())
+    agent_document["environment_tools"] = False
+    _write_yaml(agent_path, agent_document)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    async with open_agent_ui_host(settings) as application:
+        reference = await application.resolve_agent_snapshot("agent-main")
+        snapshot = await application.agent_snapshot(reference)
+        executable = await application._composition.executable(reference)
+
+    assert snapshot.resolved_agents[0].environment_tools is False
+    assert not any(isinstance(item, DynamicEnvironmentCapability) for item in executable.definition.capabilities)
+
+
+async def test_host_shutdown_clears_executable_cache_after_prior_cleanup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    definitions = tmp_path / "definitions"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _write_composition(definitions)
+    settings = _settings(tmp_path / "data", definitions, workspace)
+
+    retained_cache = None
+
+    async def fail_environment_close() -> None:
+        raise RuntimeError("simulated Environment cleanup failure")
+
+    with pytest.raises(RuntimeError, match="simulated Environment cleanup failure"):
+        async with open_agent_ui_host(settings) as application:
+            agent_reference = await application.resolve_agent_snapshot("agent-main")
+            await application.validate_agent_executable(agent_reference)
+            retained_cache = application._composition._cache
+            assert retained_cache._entries
+            monkeypatch.setattr(application._runtime, "close", fail_environment_close)
+
+    assert retained_cache is not None
+    assert retained_cache._entries == {}
 
 
 async def test_reconstruction_rejects_a_changed_model_adapter_lock(
@@ -238,15 +310,20 @@ async def test_subagent_identity_policy_survives_snapshot_reconstruction(tmp_pat
 
     legacy_payload = snapshot.model_dump(mode="python")
     for node in legacy_payload["resolved_agents"]:
+        node.pop("environment_tools")
         for edge in node["subagents"]:
             edge.pop("identity")
+            edge.update(lifetime="parent_scope", steering="disabled", continuation="disabled")
     legacy_behavior = {
         key: value
         for key, value in legacy_payload.items()
         if key not in {"logical_agent_digest", "generation_id", "catalog_digest"}
     }
     legacy_payload["logical_agent_digest"] = canonical_digest(legacy_behavior)
-    restored = type(snapshot).model_validate(legacy_payload)
+    restored = type(snapshot).model_validate(
+        legacy_payload,
+        context={"legacy_snapshot_payload": legacy_payload},
+    )
     legacy_root = next(node for node in restored.resolved_agents if node.agent_id == "agent-main")
     assert legacy_root.subagents[0].identity.inherit_agent_id is False
 
@@ -374,7 +451,7 @@ async def test_skill_reconstruction_uses_the_selected_environment_alias(tmp_path
         "mounts": [
             {
                 "mount_name": "mount-main",
-                "required_operations": ["files"],
+                "required_access": "read_write",
             },
         ],
     }
@@ -451,7 +528,7 @@ async def test_compatibility_rejects_a_missing_required_binding(tmp_path: Path) 
         "mounts": [
             {
                 "mount_name": "mount-missing",
-                "required_operations": ["files"],
+                "required_access": "read_write",
             },
         ],
     }
@@ -470,7 +547,7 @@ async def test_compatibility_rejects_a_missing_required_binding(tmp_path: Path) 
     assert incompatible.value.code == "agent_environment_incompatible"
 
 
-async def test_reload_rejects_unsupported_environment_lifecycle_and_async_tools(
+async def test_reload_rejects_unknown_environment_idle_policy_and_accepts_async_tools(
     tmp_path: Path,
 ) -> None:
     definitions = tmp_path / "definitions"
@@ -485,11 +562,11 @@ async def test_reload_rejects_unsupported_environment_lifecycle_and_async_tools(
 
         environment_path = definitions / "environments/environment-main.yaml"
         environment = yaml.safe_load(environment_path.read_text())
-        environment["lifecycle"]["idle"] = "pause_full"
+        environment["idle"] = "pause"
         _write_yaml(environment_path, environment)
         with pytest.raises(ConfigurationError) as lifecycle_error:
             await application.reload_configuration()
-        assert lifecycle_error.value.code == "environment_lifecycle_incompatible"
+        assert lifecycle_error.value.code == "configuration_document_invalid"
         assert await application.current_configuration() == accepted
 
         _write_composition(definitions)
@@ -497,10 +574,10 @@ async def test_reload_rejects_unsupported_environment_lifecycle_and_async_tools(
         agent = yaml.safe_load(agent_path.read_text())
         agent["async_subagents"] = {"tools": "standard"}
         _write_yaml(agent_path, agent)
-        with pytest.raises(ConfigurationError) as capability_error:
-            await application.reload_configuration()
-        assert capability_error.value.code == "capability_schema_unavailable"
-        assert await application.current_configuration() == accepted
+        generation = await application.reload_configuration()
+        assert generation.generation_id != accepted.generation_id
+        reference = await application.resolve_agent_snapshot("agent-main")
+        await application.validate_agent_executable(reference)
 
 
 @pytest.mark.parametrize(
@@ -508,7 +585,6 @@ async def test_reload_rejects_unsupported_environment_lifecycle_and_async_tools(
     [
         ("dedicated", False),
         ("shared_root", True),
-        ("serialized_root", True),
     ],
 )
 async def test_child_environment_policy_uses_provider_lifecycle_capabilities(

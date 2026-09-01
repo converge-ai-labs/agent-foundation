@@ -4,7 +4,11 @@ from collections.abc import AsyncIterator
 from copy import deepcopy
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+    RunBindings,
+)
 from a13n_harness.execution import _reconcile_system_prompt
 from pydantic_ai.messages import (
     ModelMessage,

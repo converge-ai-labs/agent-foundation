@@ -5,9 +5,11 @@ import sys
 
 import pytest
 from a13n_harness import (
-    HarnessPluginFactoryContext,
     PluginError,
     RunBindings,
+)
+from a13n_harness.plugin_factories import (
+    HarnessPluginFactoryContext,
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
@@ -64,7 +66,6 @@ def test_harness_explicit_concrete_plugin_needs_no_metadata_scan(
     executable = build_direct_demo_agent(observations)
 
     assert executable.definition.plugins[0].plugin_id == "recorder-code"
-    asyncio.run(executable.close())
 
 
 @pytest.mark.parametrize("count_events", [1, "true"])
@@ -90,7 +91,6 @@ def test_harness_configuration_keeps_factory_objects_out_of_agent_definition() -
     executable = build_configured_demo_agent()
 
     assert executable.definition.plugins == ()
-    asyncio.run(executable.close())
 
 
 def test_harness_entrypoint_demo_runs_factory_plugin() -> None:
@@ -120,11 +120,10 @@ def test_harness_plugin_creates_isolated_state_for_concurrent_runs() -> None:
     executable = build_direct_demo_agent(observations)
 
     async def run_both() -> tuple[str, str]:
-        async with executable:
-            first, second = await asyncio.gather(
-                executable.run("first", bindings=RunBindings.embedded()),
-                executable.run("second", bindings=RunBindings.embedded()),
-            )
+        first, second = await asyncio.gather(
+            executable.run("first", bindings=RunBindings.embedded()),
+            executable.run("second", bindings=RunBindings.embedded()),
+        )
         return first.run_id, second.run_id
 
     run_ids = asyncio.run(run_both())

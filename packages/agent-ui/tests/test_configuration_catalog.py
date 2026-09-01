@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import hashlib
 import json
-import os
-from datetime import UTC, datetime
 from pathlib import Path
 
-import a13n_ui.configuration.service as configuration_service_module
 import pytest
 import yaml
 from a13n_ui.configuration import (
@@ -15,22 +11,20 @@ from a13n_ui.configuration import (
     DefinitionRootSettings,
     EnvironmentMountDefinition,
     LocalDirectorySettings,
+    LocalExecutableSettings,
     LocalSkillDiscoverySettings,
     ModelDefinition,
     PluginInstanceDefinition,
     ResourceKind,
     ResourceRef,
-    SourceTransactionEntry,
-    SourceTransactionManifest,
     load_envd_runtime_manifest,
 )
 from a13n_ui.configuration.loader import load_catalog_candidate
+from a13n_ui.configuration.models import DynamicEnvironmentCapabilityConfiguration, EnvironmentMountRequirement
 from a13n_ui.errors import ConfigurationError
 from a13n_ui.host import open_agent_ui_host
 from a13n_ui.settings import AgentUiSettings, StorageSettings
 from a13n_ui.storage import ObjectKind
-from a13n_ui.storage.database import transaction
-from a13n_ui.storage.models import ImmutableObjectRecord
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio
@@ -50,7 +44,6 @@ def _full_settings(data_root: Path, definition_root: Path, discovery_root: Path)
             definition_roots=(DefinitionRootSettings(root_id="root-user", path=definition_root, writable=True),),
             local_directories=(LocalDirectorySettings(directory_id="directory-skills", path=discovery_root),),
             model_adapter_keys=("a13n.pydantic-ai",),
-            orphan_retention_seconds=60,
         ),
     )
 
@@ -121,11 +114,7 @@ def _write_complete_tree(root: Path) -> dict[str, bytes]:
             "description": None,
             "mounts": [],
             "default_mount": None,
-            "lifecycle": {
-                "provision": "on_first_run",
-                "idle": "keep_running",
-                "release": "retain",
-            },
+            "provision": "on_first_run",
         },
     }
     return {relative: _write_yaml(root / relative, value) for relative, value in documents.items()}
@@ -152,7 +141,7 @@ async def test_model_adapter_selection_requires_a_real_builtin_registration() ->
     assert model_lock.distribution_version
 
 
-async def test_catalog_accepts_restarts_rejects_invalid_and_applies_batch(tmp_path: Path) -> None:
+async def test_catalog_accepts_restarts_rejects_invalid_and_reloads_file_edits(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     discovery = tmp_path / "discovery"
     discovery.mkdir()
@@ -177,28 +166,9 @@ async def test_catalog_accepts_restarts_rejects_invalid_and_applies_batch(tmp_pa
         model["model_name"] = "test-v2"
         prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
         prompt["system_prompt_blocks"] = [{"content": "Be precise.", "source": None}]
-        replacements = {
-            "models/model-main.yaml": yaml.safe_dump(model, sort_keys=True).encode(),
-            "prompts/prompt-main.yaml": yaml.safe_dump(prompt, sort_keys=True).encode(),
-        }
-        entries = tuple(
-            SourceTransactionEntry(
-                relative_path=path,
-                operation="replace",
-                content_digest=hashlib.sha256(content).hexdigest(),
-            )
-            for path, content in sorted(replacements.items())
-        )
-        generation_two = await application.apply_source_transaction(
-            SourceTransactionManifest(
-                schema_version="1",
-                transaction_id="transaction-batch-1",
-                root_id="root-user",
-                base_catalog_digest=generation_one.catalog_digest,
-                entries=entries,
-            ),
-            replacements,
-        )
+        _write_yaml(definitions / "models/model-main.yaml", model)
+        _write_yaml(definitions / "prompts/prompt-main.yaml", prompt)
+        generation_two = await application.reload_configuration()
         assert generation_two.generation_id == "config-2"
         assert generation_two.catalog_digest != generation_one.catalog_digest
 
@@ -328,81 +298,6 @@ async def test_skill_import_rejects_a_stale_bound_catalog(
         assert not (definitions / "skills/skill-example.yaml").exists()
 
 
-async def test_startup_removes_only_expired_unreferenced_objects(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    discovery.mkdir()
-    _write_complete_tree(definitions)
-    settings = _full_settings(tmp_path / "data", definitions, discovery)
-
-    async with open_agent_ui_host(settings) as application:
-        recent = await application._store.publish_object(
-            object_kind=ObjectKind.provider_state,
-            object_schema_version="1",
-            payload={"orphan": "recent"},
-        )
-        expired = await application._store.publish_object(
-            object_kind=ObjectKind.provider_state,
-            object_schema_version="1",
-            payload={"orphan": "expired"},
-        )
-        generation = await application.current_configuration()
-        assert generation is not None
-        skill_ref = next(item for item in generation.resources if item.kind is ResourceKind.skill)
-        package = await application._configuration._repository.skill_package_reference(skill_ref)
-        async with transaction(application._store.database.sessions) as session:
-            old = datetime(2000, 1, 1, tzinfo=UTC)
-            expired_record = await session.get(ImmutableObjectRecord, expired.logical_digest)
-            package_record = await session.get(ImmutableObjectRecord, package.logical_digest)
-            assert expired_record is not None and package_record is not None
-            expired_record.registered_at = old
-            package_record.registered_at = old
-
-    async with open_agent_ui_host(settings) as restarted:
-        assert (await restarted._store.read_object(recent)).payload == {"orphan": "recent"}
-        assert (await restarted._store.read_object(package)).object_kind is ObjectKind.skill_package
-        async with transaction(restarted._store.database.sessions) as session:
-            assert await session.get(ImmutableObjectRecord, expired.logical_digest) is None
-
-
-async def test_invalid_source_transaction_does_not_select_its_overlay(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    discovery.mkdir()
-    source = _write_complete_tree(definitions)
-    settings = _full_settings(tmp_path / "data", definitions, discovery)
-
-    agent = yaml.safe_load(source["agents/agent-main.yaml"])
-    agent["model"] = {"kind": "model", "resource_id": "model-missing"}
-    content = yaml.safe_dump(agent, sort_keys=True).encode()
-    manifest = SourceTransactionManifest(
-        schema_version="1",
-        transaction_id="transaction-invalid-1",
-        root_id="root-user",
-        base_catalog_digest="0" * 64,
-        entries=(
-            SourceTransactionEntry(
-                relative_path="agents/agent-main.yaml",
-                operation="replace",
-                content_digest=hashlib.sha256(content).hexdigest(),
-            ),
-        ),
-    )
-    async with open_agent_ui_host(settings) as application:
-        generation = await application.current_configuration()
-        assert generation is not None
-        manifest = manifest.model_copy(update={"base_catalog_digest": generation.catalog_digest})
-        with pytest.raises(ConfigurationError) as rejected:
-            await application.apply_source_transaction(
-                manifest,
-                {"agents/agent-main.yaml": content},
-            )
-        assert rejected.value.code == "configuration_reference_missing"
-        assert await application.current_configuration() == generation
-        assert not (definitions / ".a13n-transactions/active.json").exists()
-        assert await application.reload_configuration() == generation
-
-
 async def test_skill_package_content_changes_skill_revision(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     discovery = tmp_path / "discovery"
@@ -428,6 +323,97 @@ async def test_skill_package_content_changes_skill_revision(tmp_path: Path) -> N
         assert second_package.logical_digest != first_package.logical_digest
 
 
+def test_legacy_environment_configuration_maps_only_safe_defaults() -> None:
+    mount = EnvironmentMountDefinition.model_validate(
+        {
+            "mount_name": "mount-main",
+            "model_alias": "workspace",
+            "provider_key": "a13n.direct-local",
+            "provider_schema_version": "1",
+            "permission_ceiling": ["files"],
+        },
+        strict=True,
+    )
+    requirement = EnvironmentMountRequirement.model_validate(
+        {"mount_name": "mount-main", "required_operations": []},
+        strict=True,
+    )
+    state_requirement = EnvironmentMountRequirement.model_validate(
+        {"mount_name": "mount-main", "required_operations": ["state"]},
+        strict=True,
+    )
+    dynamic = DynamicEnvironmentCapabilityConfiguration.model_validate(
+        {"file_tools": True, "shell_tools": True, "max_reference_entries": 1024},
+        strict=True,
+    )
+
+    assert mount.access == "read_write"
+    assert requirement.required_access is None
+    assert state_requirement.required_access == "full"
+    assert dynamic.model_dump() == {}
+    with pytest.raises(ValidationError):
+        EnvironmentMountDefinition.model_validate(
+            {
+                "mount_name": "mount-main",
+                "model_alias": "workspace",
+                "provider_key": "a13n.direct-local",
+                "provider_schema_version": "1",
+                "permission_ceiling": [],
+            },
+            strict=True,
+        )
+    with pytest.raises(ValidationError):
+        DynamicEnvironmentCapabilityConfiguration.model_validate({"shell_tools": False}, strict=True)
+
+
+async def test_direct_local_shell_profiles_resolve_process_owned_executable_aliases(tmp_path: Path) -> None:
+    definitions = tmp_path / "definitions"
+    discovery = tmp_path / "discovery"
+    discovery.mkdir()
+    _write_complete_tree(definitions)
+    _write_yaml(
+        definitions / "environments/environment-main.yaml",
+        {
+            "schema_version": "1",
+            "environment_id": "environment-main",
+            "display_name": "Local Environment",
+            "description": None,
+            "mounts": [
+                {
+                    "mount_name": "mount-main",
+                    "model_alias": "workspace",
+                    "provider_key": "a13n.direct-local",
+                    "provider_schema_version": "1",
+                    "provider_parameters": {
+                        "environment_id": "local-main",
+                        "root": {"directory_id": "directory-skills"},
+                        "shell_profiles": [
+                            {
+                                "profile_id": "default",
+                                "executable": {"executable_id": "executable-shell"},
+                            }
+                        ],
+                    },
+                    "access": "full",
+                }
+            ],
+            "default_mount": "mount-main",
+            "provision": "on_first_run",
+        },
+    )
+    base = _full_settings(tmp_path / "data", definitions, discovery).configuration
+    settings = base.model_copy(
+        update={"local_executables": (LocalExecutableSettings(executable_id="executable-shell", path=Path("/bin/sh")),)}
+    )
+
+    candidate = await load_catalog_candidate(settings)
+    assert any(item.ref.resource_id == "environment-main" for item in candidate.revisions)
+
+    with pytest.raises(ConfigurationError) as error:
+        await load_catalog_candidate(base)
+    assert error.value.code == "provider_spec_invalid"
+
+
 def test_literal_credentials_are_rejected_from_generic_resource_configuration() -> None:
     with pytest.raises(ValidationError):
         PluginInstanceDefinition.model_validate(
@@ -450,7 +436,7 @@ def test_literal_credentials_are_rejected_from_generic_resource_configuration() 
                 "provider_key": "a13n.direct-local",
                 "provider_schema_version": "1",
                 "provider_parameters": {"accessToken": "literal-secret"},
-                "permission_ceiling": [],
+                "access": "full",
             },
             strict=True,
         )
@@ -661,103 +647,6 @@ async def test_refresh_replaces_removed_skill_package_files(tmp_path: Path) -> N
         assert (await application._store.read_object(first_package)).object_kind is ObjectKind.skill_package
 
 
-async def test_source_transaction_rolls_back_when_sources_race_manifest_selection(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    discovery.mkdir()
-    source = _write_complete_tree(definitions)
-    settings = _full_settings(tmp_path / "data", definitions, discovery)
-
-    async with open_agent_ui_host(settings) as application:
-        current = await application.current_configuration()
-        assert current is not None
-        prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
-        prompt["system_prompt_blocks"] = [{"content": "Transaction edit.", "source": None}]
-        content = yaml.safe_dump(prompt, sort_keys=True).encode()
-        manifest = SourceTransactionManifest(
-            schema_version="1",
-            transaction_id="transaction-selection-race",
-            root_id="root-user",
-            base_catalog_digest=current.catalog_digest,
-            entries=(
-                SourceTransactionEntry(
-                    relative_path="prompts/prompt-main.yaml",
-                    operation="replace",
-                    content_digest=hashlib.sha256(content).hexdigest(),
-                ),
-            ),
-        )
-        original_commit = configuration_service_module.commit_source_transaction
-
-        async def commit_then_race(prepared) -> None:
-            await original_commit(prepared)
-            model = yaml.safe_load(source["models/model-main.yaml"])
-            model["model_name"] = "external-race"
-            _write_yaml(definitions / "models/model-main.yaml", model)
-
-        monkeypatch.setattr(
-            configuration_service_module,
-            "commit_source_transaction",
-            commit_then_race,
-        )
-        with pytest.raises(ConfigurationError) as stale:
-            await application.apply_source_transaction(
-                manifest,
-                {"prompts/prompt-main.yaml": content},
-            )
-        assert stale.value.code == "source_transaction_stale"
-        assert await application.current_configuration() == current
-        assert not (definitions / ".a13n-transactions/active.json").exists()
-
-        reconciled = await application.reload_configuration()
-        prompt_ref = next(item for item in reconciled.resources if item.kind is ResourceKind.prompt)
-        prompt_revision = await application.configuration_resource(prompt_ref)
-        assert prompt_revision.normalized_content["system_prompt_blocks"] == [  # type: ignore[index]
-            {"content": "Be concise.", "source": None}
-        ]
-
-
-async def test_source_transaction_rejects_unreconciled_external_edits(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    discovery.mkdir()
-    source = _write_complete_tree(definitions)
-    settings = _full_settings(tmp_path / "data", definitions, discovery)
-
-    async with open_agent_ui_host(settings) as application:
-        current = await application.current_configuration()
-        assert current is not None
-        model = yaml.safe_load(source["models/model-main.yaml"])
-        model["model_name"] = "externally-edited"
-        _write_yaml(definitions / "models/model-main.yaml", model)
-        prompt = yaml.safe_load(source["prompts/prompt-main.yaml"])
-        prompt["system_prompt_blocks"] = [{"content": "Transaction edit.", "source": None}]
-        content = yaml.safe_dump(prompt, sort_keys=True).encode()
-        manifest = SourceTransactionManifest(
-            schema_version="1",
-            transaction_id="transaction-stale-base",
-            root_id="root-user",
-            base_catalog_digest=current.catalog_digest,
-            entries=(
-                SourceTransactionEntry(
-                    relative_path="prompts/prompt-main.yaml",
-                    operation="replace",
-                    content_digest=hashlib.sha256(content).hexdigest(),
-                ),
-            ),
-        )
-        with pytest.raises(ConfigurationError) as stale:
-            await application.apply_source_transaction(
-                manifest,
-                {"prompts/prompt-main.yaml": content},
-            )
-        assert stale.value.code == "source_transaction_stale"
-        assert not (definitions / ".a13n-transactions/active.json").exists()
-
-
 async def test_json_shapes_are_not_guessed_as_resource_references(tmp_path: Path) -> None:
     definitions = tmp_path / "definitions"
     discovery = tmp_path / "discovery"
@@ -771,29 +660,6 @@ async def test_json_shapes_are_not_guessed_as_resource_references(tmp_path: Path
         _write_yaml(definitions / "models/model-main.yaml", model)
         generation = await application.reload_configuration()
         assert generation.generation_id == "config-2"
-
-
-async def test_startup_removes_expired_unregistered_final_object(tmp_path: Path) -> None:
-    definitions = tmp_path / "definitions"
-    discovery = tmp_path / "discovery"
-    discovery.mkdir()
-    _write_complete_tree(definitions)
-    settings = _full_settings(tmp_path / "data", definitions, discovery)
-    settings = settings.model_copy(
-        update={"configuration": settings.configuration.model_copy(update={"orphan_retention_seconds": 1})}
-    )
-
-    async with open_agent_ui_host(settings) as application:
-        envelope = await application._store.objects.publish(
-            object_kind=ObjectKind.provider_state,
-            object_schema_version="1",
-            payload={"orphan": "unregistered"},
-        )
-        path = application._store.objects._path_for(envelope.ref)
-    os.utime(path, (0, 0))
-
-    async with open_agent_ui_host(settings):
-        assert not path.exists()
 
 
 async def test_optional_missing_skill_source_returns_an_empty_scan(tmp_path: Path) -> None:

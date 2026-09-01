@@ -32,14 +32,19 @@ async def main() -> int:
         if message_type == "ACTIVATE" and state == "ready":
             state = "active"
             await channel.send("ACTIVE", generation_id=generation_id)
-        elif message_type == "DRAIN" and state == "active" and behavior == "stall_drain":
-            if os.name != "nt":
-                signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            await asyncio.sleep(60)
+        elif message_type == "DRAIN" and state == "active" and behavior in {"stall_drain", "stall_force_close"}:
+            state = "draining"
         elif message_type == "DRAIN" and state == "active":
             state = "drained"
             await channel.send("DRAINED", generation_id=generation_id)
-        elif message_type == "SHUTDOWN" and state in {"ready", "drained"}:
+        elif message_type == "FORCE_CLOSE" and state == "draining" and behavior == "stall_force_close":
+            if os.name != "nt":
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            await asyncio.sleep(60)
+        elif message_type == "FORCE_CLOSE" and state == "draining":
+            state = "force_closed"
+            await channel.send("FORCE_CLOSED", generation_id=generation_id)
+        elif message_type == "SHUTDOWN" and state in {"ready", "drained", "force_closed"}:
             await channel.send("EXITING", generation_id=generation_id)
             await channel.close()
             return 0

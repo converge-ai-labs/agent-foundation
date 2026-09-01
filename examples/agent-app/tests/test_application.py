@@ -71,11 +71,10 @@ async def test_conversation_streams_multiple_turns_and_recovers_after_restart(
         state_path=state_path,
         environment=initial_environment,
     )
-    async with initial_application:
-        first_chunks = await _collect_turn(initial_application, "first message")
-        first_state = await initial_application.load_state()
-        second_chunks = await _collect_turn(initial_application, "second message")
-        second_state = await initial_application.load_state()
+    first_chunks = await _collect_turn(initial_application, "first message")
+    first_state = await initial_application.load_state()
+    second_chunks = await _collect_turn(initial_application, "second message")
+    second_state = await initial_application.load_state()
 
     assert first_chunks == ["initial:", "turn-1"]
     assert second_chunks == ["initial:", "turn-2"]
@@ -92,10 +91,9 @@ async def test_conversation_streams_multiple_turns_and_recovers_after_restart(
         state_path=state_path,
         environment=recovered_environment,
     )
-    async with recovered_application:
-        recovered_before_turn = await recovered_application.load_state()
-        third_chunks = await _collect_turn(recovered_application, "third message after restart")
-        recovered_after_turn = await recovered_application.load_state()
+    recovered_before_turn = await recovered_application.load_state()
+    third_chunks = await _collect_turn(recovered_application, "third message after restart")
+    recovered_after_turn = await recovered_application.load_state()
 
     assert third_chunks == ["recovered:", "turn-3"]
     assert recovered_before_turn == second_state
@@ -118,14 +116,12 @@ async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
         environment=environment,
     )
 
-    async with application:
-        async with application.stream_turn("abandoned turn") as stream:
-            assert await anext(stream) == "scoped:"
-            assert environment.lifecycle == ["create"]
+    async with application.stream_turn("abandoned turn") as stream:
+        assert await anext(stream) == "scoped:"
+        assert environment.lifecycle == ["create"]
 
-        assert environment.lifecycle == ["create", "destroy"]
-        assert await _collect_turn(application, "completed turn") == ["scoped:", "turn-1"]
-
+    assert environment.lifecycle == ["create", "destroy"]
+    assert await _collect_turn(application, "completed turn") == ["scoped:", "turn-1"]
     assert environment.lifecycle == ["create", "destroy", "create", "destroy"]
 
 
@@ -139,8 +135,7 @@ async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment
         state_path=state_path,
         environment=environment,
     )
-    async with completed_application:
-        await _collect_turn(completed_application, "completed turn")
+    await _collect_turn(completed_application, "completed turn")
     completed_payload = state_path.read_text(encoding="utf-8")
 
     async def fail_after_text(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -154,8 +149,7 @@ async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment
         environment=environment,
     )
     with pytest.raises(RunError) as exc_info:
-        async with failing_application:
-            await _collect_turn(failing_application, "failed turn")
+        await _collect_turn(failing_application, "failed turn")
 
     assert exc_info.value.code == "agent_run_failed"
     assert state_path.read_text(encoding="utf-8") == completed_payload

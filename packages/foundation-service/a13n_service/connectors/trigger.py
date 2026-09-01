@@ -55,7 +55,7 @@ class AgentTriggerTargetValidator(Protocol):
         *,
         organization_id: str,
         workspace_id: str,
-        agent_revision_id: str,
+        agent_preset_id: str,
         input_template: Mapping[str, JsonValue],
         principal: PrincipalRef,
     ) -> None: ...
@@ -124,7 +124,7 @@ class TriggerService:
         await self._agent_targets.validate_trigger_target(
             organization_id=request.organization_id,
             workspace_id=request.workspace_id,
-            agent_revision_id=request.agent_revision_id,
+            agent_preset_id=request.agent_preset_id,
             input_template=input_template,
             principal=request.principal_ref,
         )
@@ -142,7 +142,7 @@ class TriggerService:
             description=request.description,
             principal_type=request.principal_ref.principal_type,
             principal_id=request.principal_ref.principal_id,
-            agent_revision_id=request.agent_revision_id,
+            agent_preset_id=request.agent_preset_id,
             input_template=input_template,
             provider_state_version=None,
             provider_state=None,
@@ -201,7 +201,7 @@ class TriggerService:
             existing_status = existing.status
             current_source = _trigger_source(existing)
             current_principal = _principal(existing.principal_type, existing.principal_id)
-            current_agent_revision_id = existing.agent_revision_id
+            current_agent_preset_id = existing.agent_preset_id
             current_input_template = existing.input_template
         if request.changes_behavior and existing_status != "disabled":
             raise ConnectorError(
@@ -216,10 +216,10 @@ class TriggerService:
             if "principal_ref" in request.model_fields_set and request.principal_ref is not None
             else current_principal
         )
-        agent_revision_id = (
-            request.agent_revision_id
-            if "agent_revision_id" in request.model_fields_set and request.agent_revision_id is not None
-            else current_agent_revision_id
+        agent_preset_id = (
+            request.agent_preset_id
+            if "agent_preset_id" in request.model_fields_set and request.agent_preset_id is not None
+            else current_agent_preset_id
         )
         input_template = (
             validate_trigger_input_template(
@@ -238,7 +238,7 @@ class TriggerService:
             await self._agent_targets.validate_trigger_target(
                 organization_id=organization_id,
                 workspace_id=workspace_id,
-                agent_revision_id=agent_revision_id,
+                agent_preset_id=agent_preset_id,
                 input_template=input_template,
                 principal=principal,
             )
@@ -269,8 +269,8 @@ class TriggerService:
                     record.principal_type = principal.principal_type
                     record.principal_id = principal.principal_id
                     changed = True
-                if record.agent_revision_id != agent_revision_id:
-                    record.agent_revision_id = agent_revision_id
+                if record.agent_preset_id != agent_preset_id:
+                    record.agent_preset_id = agent_preset_id
                     changed = True
                 if record.input_template != input_template:
                     record.input_template = input_template
@@ -853,7 +853,7 @@ def _trigger(record: TriggerRecord) -> Trigger:
         name=record.name,
         description=record.description,
         principal_ref=_principal(record.principal_type, record.principal_id),
-        agent_revision_id=record.agent_revision_id,
+        agent_preset_id=record.agent_preset_id,
         source=_trigger_source(record),
         input_template=record.input_template,
         status=record.status,  # type: ignore[arg-type]

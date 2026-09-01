@@ -15,7 +15,7 @@ from .domain import (
     ConnectorProviderContractLock,
     ConnectorRevision,
     ConnectorRevisionCreateResult,
-    ConnectorTurnSelection,
+    ConnectorRunSelection,
     CreateConnector,
     CreateConnectorRevision,
     CreateTrigger,
@@ -42,7 +42,7 @@ from .mcp import (
     ConnectorMCPRequestAuthenticator,
     StandardConnectorMCPAuthenticator,
 )
-from .occurrence import TriggerIngressService, TriggerTurnAcceptor
+from .occurrence import TriggerIngressService, TriggerRunAcceptor
 from .operations import ConnectorProviderOperations, LocalConnectorProviderOperations
 from .provider import (
     ConnectorConnectionProvider,
@@ -135,9 +135,9 @@ __all__ = [
     "ConnectorReauthorizationRequired",
     "ConnectorRevision",
     "ConnectorRevisionCreateResult",
+    "ConnectorRunSelection",
     "ConnectorService",
     "ConnectorToolProvider",
-    "ConnectorTurnSelection",
     "ConnectorWebhookProvider",
     "CreateConnector",
     "CreateConnectorRevision",
@@ -152,10 +152,10 @@ __all__ = [
     "Trigger",
     "TriggerIngressService",
     "TriggerOccurrenceReceipt",
+    "TriggerRunAcceptor",
     "TriggerSecretStore",
     "TriggerService",
     "TriggerStatus",
-    "TriggerTurnAcceptor",
     "UpdateConnection",
     "UpdateConnector",
     "UpdateTrigger",

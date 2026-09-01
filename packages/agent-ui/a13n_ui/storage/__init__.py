@@ -1,9 +1,9 @@
-"""Agent UI local metadata and immutable object storage."""
+"""Agent UI local metadata and content-addressed object storage."""
 
 from .database import Database, check_database, open_database, short_session, transaction
 from .layout import StorageLayout
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
-from .runtime import LocalStore, StoreDiagnostic, open_local_store
+from .runtime import LocalStore, open_local_store
 
 __all__ = [
     "Database",
@@ -13,7 +13,6 @@ __all__ = [
     "ObjectKind",
     "ObjectRef",
     "StorageLayout",
-    "StoreDiagnostic",
     "check_database",
     "open_database",
     "open_local_store",

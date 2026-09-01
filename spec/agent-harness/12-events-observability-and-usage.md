@@ -6,13 +6,13 @@
 
 Pydantic AI public events remain the source for model output and tool execution, and `RunCancelled` is the source terminal signal for native cancellation. The Harness adds only bounded model-request boundary observations plus correlation, context, state, recovery, managed-invocation, delegation, usage-attribution, and diagnostic events that Pydantic AI does not own. Pydantic AI `RequestUsage`, `RunUsage`, and `UsageLimits` remain authoritative for model-request usage, accumulation, and supported limits. When semantic recovery starts another `ModelAttempt`, events already delivered by the earlier attempt remain observations in the same logical Harness stream and cannot be retracted.
 
-Durable event delivery, cross-run usage aggregation, valuation, billing, and lifecycle facts belong to the Host. [Harness Observation](19-observation-model.md) separately owns the OpenTelemetry hierarchy, fields, information boundary, and Host export profiles; telemetry never replaces this event or usage contract.
+Durable event delivery, cross-run usage aggregation, authoritative financial valuation, billing, and lifecycle facts belong to the Host. The Harness provides default-on deterministic process-local model-cost valuation for run usage; it does not make that quote durable accounting authority. [Harness Observation](19-observation-model.md) separately owns the OpenTelemetry hierarchy, fields, information boundary, and Host export profiles; telemetry never replaces this event or usage contract.
 
 Event behavior inside model, node, or tool execution uses Pydantic Capability hooks with `RunContext[AgentContext]`. A first-class Harness plugin can observe the outer canonical stream and result through `wrap_run`, but it does not install a background event broker, second public stream, usage accumulator, durable log, or broadcast system.
 
 ## Boundary
 
-The Harness does not define Host lifecycle events, a broker, SSE, webhook, durable replay, cross-process delivery guarantees, a telemetry backend, a universal resource taxonomy, a durable usage sink, a price catalog, invoices, or payment. OpenTelemetry ownership and exporter failure are defined by [Harness Observation](19-observation-model.md#sampling-export-and-lifecycle-failure).
+The Harness does not define Host lifecycle events, a broker, SSE, webhook, durable replay, cross-process delivery guarantees, a telemetry backend, a universal resource taxonomy, a durable usage sink, a live or authoritative pricing service, invoices, or payment. It does package one immutable pricing catalog for deterministic process-local valuation as defined below. OpenTelemetry ownership and exporter failure are defined by [Harness Observation](19-observation-model.md#sampling-export-and-lifecycle-failure).
 
 ## Event Model
 
@@ -114,6 +114,8 @@ The first Tool extra contract is `filesystem.changed`. Its value contains one to
 
 Event delivery failure never rolls back committed Capability state. These process-local observations retain the backpressure, middleware, redaction, payload-size, and non-durability rules of the enclosing event stream.
 
+Async subagent and background-process run observers are non-authoritative snapshots rather than canonical `HarnessEvent` values. While the exact parent Run is active, they can update current projection state and enqueue a concise notice to call the corresponding wait or info/status tool. They never mutate an already exported continuation or create another Run. Independently, each operator always dispatches stable Host hooks with bounded correlation and observed status; the Host may no-op while the parent is active or use the hook to wake it afterward. Hook or observer failure does not affect canonical work. [Delegation and Subagents](11-delegation-and-subagents.md#stable-hooks-and-active-run-steering) and [Environment Integration](08-environment-integration.md#command-and-background-process-operators) own reconciliation and loss semantics.
+
 The run-local Environment adapter reads the bound Environment's change journal from sequence zero and emits exactly one bounded Harness `context` extension for every committed mount change, in publication order. Changes committed during `RunInputFactory` remain observable after `AgentContext` and Capabilities bind. Adapter cancellation or emitter/plugin failure can suppress later process-local delivery but cannot consume another reader or roll back a committed mutation. Optional model-facing notification is a separate consumer delivered through native Pydantic enqueue or the next eligible public model-request hook; it can coalesce notices without coalescing Harness events. An enqueued notice remains observable through the ordinary `EnqueuedMessagesEvent`, while mount mutation never depends on event or notice delivery.
 
 `HarnessEventCapability` adapts Pydantic events and emits Harness extensions through the run-local emitter. Extensions cover:
@@ -124,7 +126,7 @@ The run-local Environment adapter reads the bound Environment's change journal f
 | `state`      | State import or export observation, not durable snapshot status                                                                             |
 | `recovery`   | Bounded inner-attempt interruption, backoff, restart, exhaustion, or normalized cancellation observation; never a durable Host retry fact   |
 | `invocation` | Managed-tool preparation, authorization, approval, dispatch, retry, result-safety, or unknown-outcome observation; never a grant or receipt |
-| `delegation` | Inline child or Host-managed asynchronous submission observation                                                                            |
+| `delegation` | Inline child observation inside the canonical Harness stream                                                                                |
 | `usage`      | One bounded mixed-source `usage_report` emitted at a model-request or terminal reporting boundary; not durable billing proof                |
 | `lifecycle`  | Bounded `ModelRequestNode` entry, completion, or safe failure observation; never provider transport or Host lifecycle authority             |
 | `tool`       | Toolset-owned semantic extra observation correlated to one native Tool call; never a duplicate call or result lifecycle                     |
@@ -189,7 +191,7 @@ Neither `RunUsage`, the attribution ledger, provider receipts, a pricing catalog
 
 ## Failure Boundary
 
-Missing provider usage is not fabricated. A handled failed, suspended, or cancelled result candidate snapshots the usage known at its outcome boundary; it becomes a delivered result only after run-scoped teardown succeeds. Pydantic AI `UsageLimitExceeded` is normalized as `status="failed"` with `SafeFailure.code="usage_limit_exceeded"`, `retry_hint="dependency_change"`, bounded normalized limit details, the terminal usage snapshot, and any latest complete state. Its output and deferred fields are absent. For inline delegation, `DelegationCapability` projects that failed child result through `pydantic_ai.exceptions.ToolFailed` with sanitized bounded content. External consumer cancellation still raises with ordinary async semantics; teardown does not invent usage. Consumer cancellation and early context exit follow the run-stream cleanup contract. OTel failure remains diagnostic.
+Missing provider usage is not fabricated. A handled failed, suspended, or cancelled result candidate snapshots the usage known at its outcome boundary; it becomes a delivered result only after run-scoped teardown succeeds. Pydantic AI `UsageLimitExceeded` is normalized as `status="failed"` with `SafeFailure.code="usage_limit_exceeded"`, `retry_hint="dependency_change"`, bounded normalized limit details, the terminal usage snapshot, and any latest complete state. Its output and deferred fields are absent. For inline delegation, `SubagentCapability(execution="inline")` projects that failed child result through `pydantic_ai.exceptions.ToolFailed` with sanitized bounded content. External consumer cancellation still raises with ordinary async semantics; teardown does not invent usage. Consumer cancellation and early context exit follow the run-stream cleanup contract. OTel failure remains diagnostic.
 
 Event delivery outside the process is a projection made by the single Harness stream consumer. A `CheckpointCapability` publishes an exported checkpoint candidate through its `CheckpointStore`; it never becomes authority for live `AgentContextState` or mutates another Capability's state.
 

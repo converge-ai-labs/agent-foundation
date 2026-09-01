@@ -1,4 +1,4 @@
-"""Signed short-lived Connector capabilities for one TurnAttempt."""
+"""Signed short-lived Connector capabilities for one RunAttempt."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .errors import ConnectorError
 
 
 class ConnectorCapabilityClaims(BaseModel):
-    """Immutable claims derived from durable Turn and TurnAttempt facts."""
+    """Immutable claims derived from durable Run and RunAttempt facts."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -26,8 +26,8 @@ class ConnectorCapabilityClaims(BaseModel):
     connector_revision_id: Annotated[str, Field(min_length=1, max_length=72)]
     connection_id: Annotated[str, Field(min_length=1, max_length=72)] | None
     agent_preset_version_id: Annotated[str, Field(min_length=1, max_length=72)]
-    turn_id: Annotated[str, Field(min_length=1, max_length=72)]
-    turn_attempt_id: Annotated[str, Field(min_length=1, max_length=72)]
+    run_id: Annotated[str, Field(min_length=1, max_length=72)]
+    run_attempt_id: Annotated[str, Field(min_length=1, max_length=72)]
     attempt_fence: Annotated[int, Field(ge=1)]
     declaration_index: Annotated[int, Field(ge=0)]
     effective_tools: tuple[Annotated[str, Field(min_length=1, max_length=200)], ...]

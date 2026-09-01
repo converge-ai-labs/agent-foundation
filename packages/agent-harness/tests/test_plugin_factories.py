@@ -9,13 +9,15 @@ from typing import Any, ClassVar
 
 import pytest
 from a13n_harness import (
-    HARNESS_PLUGIN_ENTRY_POINT_GROUP,
     AbstractHarnessPlugin,
-    HarnessBuildContext,
     HarnessBuilder,
+    PluginError,
+)
+from a13n_harness.plugin_configuration import HarnessBuildContext
+from a13n_harness.plugin_factories import (
+    HARNESS_PLUGIN_ENTRY_POINT_GROUP,
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
-    PluginError,
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
@@ -157,7 +159,8 @@ def test_new_builder_finds_completed_distribution_added_to_import_path(
     package = plugin_root / module_name
     package.mkdir()
     (package / "__init__.py").write_text(
-        f'''from a13n_harness import AbstractHarnessPlugin, HarnessPluginFactory
+        f'''from a13n_harness import AbstractHarnessPlugin
+from a13n_harness.plugin_factories import HarnessPluginFactory
 
 
 class RuntimeAddedPlugin(AbstractHarnessPlugin):

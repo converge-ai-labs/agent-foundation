@@ -7,18 +7,22 @@ from typing import Any, ClassVar
 
 import pytest
 from a13n_harness import (
+    AbstractHarnessPlugin,
+    AgentDefinition,
+    HarnessBuilder,
+    PluginError,
+    SubagentDefinition,
+)
+from a13n_harness.plugin_configuration import (
     DEFAULT_HARNESS_PLUGIN_CONFIG_FILE,
     HARNESS_PLUGIN_CONFIG_ENABLED_ENV,
     HARNESS_PLUGIN_CONFIG_FILE_ENV,
     HARNESS_PLUGIN_CONFIG_JSON_ENV,
-    AbstractHarnessPlugin,
-    AgentDefinition,
     HarnessBuildContext,
-    HarnessBuilder,
+)
+from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryContext,
-    PluginError,
-    SubagentDefinition,
 )
 from pydantic_ai.agent.spec import AgentSpec
 

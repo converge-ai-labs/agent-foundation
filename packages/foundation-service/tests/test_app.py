@@ -8,6 +8,7 @@ from a13n_service.app import ServiceComponents, create_app
 from a13n_service.connectors import ConnectorProviderCatalog, LocalConnectorProviderOperations
 from a13n_service.secret_management import SecretProtectionError
 from a13n_service.settings import ServiceRole, ServiceSettings
+from a13n_service.skill_management import AgentSkillLockResolver, FoundationSkillRuntimePreparer
 from fastapi import FastAPI
 
 
@@ -39,6 +40,7 @@ def local_settings(tmp_path: Path, **updates: object) -> ServiceSettings:
         "filesystem_root": tmp_path / "files",
         "secret_master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
         "secret_encryption_key_id": "foundation-service-test-key",
+        "connector_internal_auth_token": "foundation-service-test-connector-token",
     }
     values.update(updates)
     return ServiceSettings(**values)
@@ -122,6 +124,8 @@ async def test_lifespan_constructs_storage_once_and_readiness_uses_it(tmp_path: 
         assert len(app.state.connector_providers) == 0
         assert app.state.db_engine is storage.engine
         assert app.state.db_session_factory is storage.sessions
+        assert isinstance(app.state.agent_skill_lock_resolver, AgentSkillLockResolver)
+        assert isinstance(app.state.skill_runtime_preparer, FoundationSkillRuntimePreparer)
 
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
@@ -167,6 +171,19 @@ async def test_provider_code_is_loaded_only_by_connector_capable_roles(tmp_path:
         assert connector.state.connector_providers is catalog
         assert connector.state.connector_provider_runtime is not None
         assert connector.state.connector_mcp_gateway is not None
+
+
+@pytest.mark.anyio
+async def test_lifespan_wires_skill_components_only_to_their_process_roles(tmp_path: Path) -> None:
+    control = create_app(local_settings(tmp_path / "control", role=ServiceRole.control))
+    async with control.router.lifespan_context(control):
+        assert isinstance(control.state.agent_skill_lock_resolver, AgentSkillLockResolver)
+        assert not hasattr(control.state, "skill_runtime_preparer")
+
+    worker = create_app(local_settings(tmp_path / "worker", role=ServiceRole.worker))
+    async with worker.router.lifespan_context(worker):
+        assert not hasattr(worker.state, "agent_skill_lock_resolver")
+        assert isinstance(worker.state.skill_runtime_preparer, FoundationSkillRuntimePreparer)
 
 
 @pytest.mark.anyio

@@ -294,7 +294,7 @@ class ConnectorService:
                 .join(ConnectorRevisionRecord, TriggerRecord.connector_revision_id == ConnectorRevisionRecord.id)
                 .where(ConnectorRevisionRecord.connector_id == connector_id)
             )
-            agent_reference = await self._reference_checker.has_agent_revision_reference(
+            agent_reference = await self._reference_checker.has_agent_preset_reference(
                 session,
                 organization_id=organization_id,
                 workspace_id=workspace_id,
@@ -322,7 +322,7 @@ class ConnectorService:
 class ConnectorReferenceChecker(Protocol):
     """Agent-owned retained reference check required for safe Connector deletion."""
 
-    async def has_agent_revision_reference(
+    async def has_agent_preset_reference(
         self,
         session: AsyncSession,
         *,

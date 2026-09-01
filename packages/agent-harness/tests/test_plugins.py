@@ -10,26 +10,28 @@ import pytest
 from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
-    EnvironmentError,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessRunResult,
     PluginError,
     PluginOrdering,
-    PluginRunExchange,
-    PluginRunNext,
-    PluginRunResponse,
     RunBindings,
     RunCleanupError,
     RunError,
     SemanticRunInput,
 )
+from a13n_harness.environment import EnvironmentError
 from a13n_harness.environment.advanced import (
     BoundEnvironment,
     EnvironmentRuntime,
     EnvironmentRuntimeMount,
     create_empty_environment_runtime,
+)
+from a13n_harness.plugins import (
+    PluginRunExchange,
+    PluginRunNext,
+    PluginRunResponse,
 )
 from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec

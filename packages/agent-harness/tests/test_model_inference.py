@@ -6,7 +6,12 @@ from typing import Any, cast
 import a13n_harness.models.inference as inference_module
 import httpx2
 import pytest
-from a13n_harness import ModelHttpRetryConfig, RequestHeadersModel, create_model_http_client, infer_model
+from a13n_harness import infer_model
+from a13n_harness.models import (
+    ModelHttpRetryConfig,
+    RequestHeadersModel,
+    create_model_http_client,
+)
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel

@@ -16,8 +16,8 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
     RunError,
-    RuntimeContextCapability,
 )
+from a13n_harness.capabilities import RuntimeContextCapability
 from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from a13n_harness.tools import (
     ClientToolDefinition,

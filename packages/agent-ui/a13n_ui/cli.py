@@ -13,8 +13,8 @@ from a13n_logging import LogFormat, configure_logging
 from a13n_ui.errors import AgentUiError
 from a13n_ui.host import open_agent_ui_host
 from a13n_ui.settings_loader import ensure_default_directories, load_agent_ui_settings
-from a13n_ui.tui import print_runtime_status
-from a13n_ui.tui import run as run_tui
+from a13n_ui.terminal import print_runtime_status
+from a13n_ui.terminal import run as run_cli
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -25,7 +25,7 @@ def _parser() -> argparse.ArgumentParser:
         help="explicit Agent UI settings YAML (default: ~/.a13n-ui/settings.yaml)",
     )
     commands = parser.add_subparsers(dest="command")
-    commands.add_parser("tui", help="run the interactive terminal frontend")
+    commands.add_parser("cli", help="run the interactive terminal frontend")
     runtime = commands.add_parser("runtime", help="inspect the runtime Runner")
     runtime_commands = runtime.add_subparsers(dest="runtime_command", required=True)
     status = runtime_commands.add_parser("status")
@@ -59,7 +59,7 @@ async def _run(args: argparse.Namespace) -> None:
             status = await host.runtime_status()
             print_runtime_status(status.model_dump(mode="json"), output=output)
             return
-        await run_tui(host)
+        await run_cli(host)
 
 
 __all__ = ["main"]

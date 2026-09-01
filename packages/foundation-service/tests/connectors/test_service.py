@@ -263,13 +263,13 @@ class _TurnAcceptor:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    async def prepare_trigger_turn(self, **kwargs):
+    async def prepare_trigger_run(self, **kwargs):
         self.calls.append(kwargs)
-        return {"turn_id": f"turn_000000000000000{len(self.calls)}"}
+        return {"run_id": f"run_000000000000000{len(self.calls)}"}
 
-    async def commit_trigger_turn(self, session, *, prepared, source):
+    async def commit_trigger_run(self, session, *, prepared, source):
         del session, source
-        return prepared["turn_id"]
+        return prepared["run_id"]
 
 
 @pytest.fixture
@@ -926,7 +926,7 @@ async def test_schedule_trigger_is_created_disabled_and_uses_cas_lifecycle(
             workspace_id=WORKSPACE_ID,
             name="Daily report",
             principal_ref=_actor(),
-            agent_revision_id="agrev_1",
+            agent_preset_id="agp_1",
             source=ScheduleTriggerSource(type="interval", interval_seconds=60),
             input_template={"prompt": "generate report"},
             created_by=_actor(),
@@ -991,7 +991,7 @@ async def test_connector_event_trigger_activates_and_cleans_up_provider_source(
             workspace_id=WORKSPACE_ID,
             name="On push",
             principal_ref=_actor(),
-            agent_revision_id="agrev_1",
+            agent_preset_id="agp_1",
             source=ConnectorEventTriggerSource(
                 connector_revision_id=created.revision.id,
                 connection_id=connection.id,
@@ -1079,7 +1079,7 @@ async def test_disabling_unknown_activation_reconciles_original_operation_before
             workspace_id=WORKSPACE_ID,
             name="On push",
             principal_ref=_actor(),
-            agent_revision_id="agrev_1",
+            agent_preset_id="agp_1",
             source=ConnectorEventTriggerSource(
                 connector_revision_id=created.revision.id,
                 connection_id=connection.id,
@@ -1159,7 +1159,7 @@ async def test_connector_event_ingress_verifies_expands_and_deduplicates_turn(
             workspace_id=WORKSPACE_ID,
             name="On push",
             principal_ref=_actor(),
-            agent_revision_id="agrev_1",
+            agent_preset_id="agp_1",
             source=ConnectorEventTriggerSource(
                 connector_revision_id=connector.revision.id,
                 connection_id=connection.id,
@@ -1183,8 +1183,8 @@ async def test_connector_event_ingress_verifies_expands_and_deduplicates_turn(
         callback_url=f"https://foundation.example.test/api/v1/connector-events/{trigger.id}",
         actor=_actor(),
     )
-    turns = _TurnAcceptor()
-    ingress = TriggerIngressService(sessions, providers, trigger_secrets, turns)
+    runs = _TurnAcceptor()
+    ingress = TriggerIngressService(sessions, providers, trigger_secrets, runs)
     context = ConnectorProviderContext(
         operation_id="op_webhook",
         deadline=datetime.now(UTC) + timedelta(seconds=30),
@@ -1202,9 +1202,9 @@ async def test_connector_event_ingress_verifies_expands_and_deduplicates_turn(
 
     assert first[0].duplicate is False
     assert duplicate[0].duplicate is True
-    assert duplicate[0].turn_id == first[0].turn_id
-    assert len(turns.calls) == 1
-    assert turns.calls[0]["input"] == {"type": "push", "payload": {}}
+    assert duplicate[0].run_id == first[0].run_id
+    assert len(runs.calls) == 1
+    assert runs.calls[0]["input"] == {"type": "push", "payload": {}}
 
 
 @pytest.mark.anyio
@@ -1219,7 +1219,7 @@ async def test_schedule_ingress_accepts_only_latest_missed_instant(
             workspace_id=WORKSPACE_ID,
             name="Report",
             principal_ref=_actor(),
-            agent_revision_id="agrev_1",
+            agent_preset_id="agp_1",
             source=ScheduleTriggerSource(type="interval", interval_seconds=60),
             input_template={"scheduled_at": "{{ scheduled_at }}"},
             created_by=_actor(),
@@ -1238,8 +1238,8 @@ async def test_schedule_ingress_accepts_only_latest_missed_instant(
         callback_url="https://unused.example.test",
         actor=_actor(),
     )
-    turns = _TurnAcceptor()
-    ingress = TriggerIngressService(sessions, providers, _TriggerSecrets(), turns)
+    runs = _TurnAcceptor()
+    ingress = TriggerIngressService(sessions, providers, _TriggerSecrets(), runs)
     after_downtime = enabled_at + timedelta(seconds=250)
 
     receipts = await ingress.accept_due_schedules(now=after_downtime)
@@ -1248,8 +1248,8 @@ async def test_schedule_ingress_accepts_only_latest_missed_instant(
     assert active.status is TriggerStatus.active
     assert len(receipts) == 1
     assert repeated == ()
-    assert len(turns.calls) == 1
-    accepted_at = datetime.fromisoformat(turns.calls[0]["input"]["scheduled_at"])
+    assert len(runs.calls) == 1
+    accepted_at = datetime.fromisoformat(runs.calls[0]["input"]["scheduled_at"])
     assert after_downtime - timedelta(seconds=60) < accepted_at <= after_downtime
 
 
@@ -1267,7 +1267,7 @@ async def test_trigger_template_rejects_interpolation_and_wrong_source_placehold
                 workspace_id=WORKSPACE_ID,
                 name="Invalid",
                 principal_ref=_actor(),
-                agent_revision_id="agrev_1",
+                agent_preset_id="agp_1",
                 source=ScheduleTriggerSource(type="interval", interval_seconds=60),
                 input_template={"prompt": "run at {{ scheduled_at }}"},
                 created_by=_actor(),
@@ -1313,7 +1313,7 @@ async def test_connector_tools_freeze_provider_contract_and_dispatch_with_fresh_
         principal=_actor(),
         context=context,
     )
-    selection = await runtime.prepare_turn_selection(
+    selection = await runtime.prepare_run_selection(
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
         declaration=declaration,

@@ -111,7 +111,10 @@ class RoleBindingRecord(Base):
     __tablename__ = "role_bindings"
     __table_args__ = (
         CheckConstraint("principal_type IN ('user', 'service_account')", name="principal_type_valid"),
-        CheckConstraint("resource_type IN ('organization', 'workspace', 'agent')", name="resource_type_valid"),
+        CheckConstraint(
+            "resource_type IN ('organization', 'workspace', 'agent_preset')",
+            name="resource_type_valid",
+        ),
         CheckConstraint("role_key IN ('member', 'viewer', 'runner', 'builder', 'admin')", name="role_key_valid"),
         Index(
             "uq_role_bindings_principal_resource",

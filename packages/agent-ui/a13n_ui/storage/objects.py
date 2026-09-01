@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import stat
 from datetime import UTC, datetime
 from enum import StrEnum
 from functools import partial
@@ -37,8 +36,7 @@ class ObjectKind(StrEnum):
     environment_snapshot = "environment-snapshot"
     resource_revision = "resource-revision"
     skill_package = "skill-package"
-    harness_state = "harness-state"
-    deferred_requests = "deferred-requests"
+    session_continuation = "session-continuation"
     provider_state = "provider-state"
 
 
@@ -137,66 +135,26 @@ class ImmutableObjectStore:
 
         return await to_thread.run_sync(self._read_ref, reference)
 
-    async def remove(self, reference: ObjectRef) -> None:
-        """Remove one unreferenced object selected by the metadata owner."""
+    async def references(self) -> tuple[ObjectRef, ...]:
+        """List object files currently present in the local store."""
 
-        await to_thread.run_sync(self._remove_ref, reference)
+        return await to_thread.run_sync(self._references)
 
-    async def remove_expired_unregistered(
-        self,
-        registered_digests: set[str],
-        *,
-        cutoff: datetime,
-    ) -> int:
-        """Remove old final object files that were never registered in SQLite."""
-
-        return await to_thread.run_sync(self._remove_expired_unregistered, registered_digests, cutoff)
-
-    def _remove_ref(self, reference: ObjectRef) -> None:
-        path = self._path_for(reference)
-        try:
-            path.unlink(missing_ok=True)
-        except OSError as exc:
-            raise ObjectIntegrityError(
-                "An expired immutable object could not be removed.",
-                code="object_cleanup_failed",
-            ) from exc
-        if path.parent.exists():
-            self._sync_directory(path.parent)
-
-    def _remove_expired_unregistered(self, registered_digests: set[str], cutoff: datetime) -> int:
-        removed = 0
+    def _references(self) -> tuple[ObjectRef, ...]:
+        references: list[ObjectRef] = []
         for path in self._layout.objects.glob("*/*/*/*.json.zst"):
             try:
-                relative = path.relative_to(self._layout.objects)
-                kind, version, prefix, filename = relative.parts
-                digest = filename.removesuffix(".json.zst")
+                kind, version, prefix, filename = path.relative_to(self._layout.objects).parts
                 reference = ObjectRef(
                     object_kind=ObjectKind(kind),
                     object_schema_version=version,
-                    logical_digest=digest,
+                    logical_digest=filename.removesuffix(".json.zst"),
                 )
-                metadata = path.stat(follow_symlinks=False)
-            except (OSError, ValueError):
+            except ValueError:
                 continue
-            if (
-                reference.logical_digest in registered_digests
-                or prefix != reference.logical_digest[:2]
-                or self._path_for(reference) != path
-                or datetime.fromtimestamp(metadata.st_mtime, tz=UTC) >= cutoff
-            ):
-                continue
-            self._remove_ref(reference)
-            removed += 1
-        for path in self._layout.staging.glob("*.json.zst.tmp"):
-            try:
-                metadata = path.stat(follow_symlinks=False)
-            except OSError:
-                continue
-            if stat.S_ISREG(metadata.st_mode) and datetime.fromtimestamp(metadata.st_mtime, tz=UTC) < cutoff:
-                path.unlink(missing_ok=True)
-                removed += 1
-        return removed
+            if prefix == reference.logical_digest[:2] and self._path_for(reference) == path:
+                references.append(reference)
+        return tuple(references)
 
     def _publish(
         self,
@@ -253,8 +211,6 @@ class ImmutableObjectStore:
         try:
             with os.fdopen(descriptor, "wb", closefd=True) as stream:
                 stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
         except BaseException:
             path.unlink(missing_ok=True)
             raise
@@ -262,20 +218,9 @@ class ImmutableObjectStore:
     def _publish_stage(self, stage: Path, reference: ObjectRef) -> None:
         target = self._path_for(reference)
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        try:
-            os.link(stage, target)
-        except FileExistsError:
-            existing = self._read_path(target)
-            if existing.ref != reference:
-                raise ObjectIntegrityError(
-                    "An incompatible immutable object occupies a digest-derived path.",
-                    code="object_digest_collision",
-                    details={"logical_digest": reference.logical_digest},
-                ) from None
-        else:
-            if os.name != "nt":
-                target.chmod(0o600)
-            self._sync_publication_directories(target.parent)
+        os.replace(stage, target)
+        if os.name != "nt":
+            target.chmod(0o600)
         published = self._read_path(target)
         if published.ref != reference:
             raise ObjectIntegrityError(
@@ -365,23 +310,6 @@ class ImmutableObjectStore:
             / reference.logical_digest[:2]
             / f"{reference.logical_digest}.json.zst"
         )
-
-    def _sync_publication_directories(self, leaf: Path) -> None:
-        current = leaf
-        while True:
-            self._sync_directory(current)
-            if current == self._layout.objects:
-                return
-            current = current.parent
-
-    def _sync_directory(self, path: Path) -> None:
-        if os.name == "nt":
-            return
-        descriptor = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
 
 
 def _canonical_json(value: object) -> bytes:

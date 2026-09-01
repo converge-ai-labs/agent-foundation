@@ -4,10 +4,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 from a13n_harness import (
-    ContentFilterCapability,
-    ContentFilterConfiguration,
     HarnessBuilder,
     RunBindings,
+)
+from a13n_harness.filters import (
+    ContentFilterCapability,
+    ContentFilterConfiguration,
 )
 from pydantic_ai import BinaryContent, ImageUrl, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec

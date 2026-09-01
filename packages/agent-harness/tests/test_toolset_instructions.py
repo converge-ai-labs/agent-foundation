@@ -3,7 +3,15 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest
-from a13n_harness import AgentSpec, HandoffCapability, HandoffConfiguration, HarnessBuilder, RunBindings
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+    RunBindings,
+)
+from a13n_harness.capabilities import (
+    HandoffCapability,
+    HandoffConfiguration,
+)
 from pydantic_ai.agent.spec import AgentSpec as PydanticAgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage

@@ -13,27 +13,35 @@ from a13n_environment_provider import (
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
-    CompactionCapability,
-    CompactionPolicy,
-    EnvironmentAction,
-    EnvironmentPermissionSet,
-    FileContextCapability,
-    FileContextConfiguration,
-    HandoffCapability,
-    HandoffConfiguration,
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessModelCharacteristics,
     HarnessState,
     ModelCapability,
+    ModelRecoveryPolicy,
     RunBindings,
+)
+from a13n_harness.capabilities import (
+    CompactionCapability,
+    CompactionPolicy,
+    FileContextCapability,
+    FileContextConfiguration,
+    HandoffCapability,
+    HandoffConfiguration,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
     WorkspaceOutlineCapability,
     WorkspaceOutlineConfiguration,
 )
-from a13n_harness.capabilities.context import _requires_exact_history
+from a13n_harness.capabilities.context import (
+    _previous_assistant_reference,
+    _requires_exact_history,
+)
+from a13n_harness.environment import (
+    EnvironmentAction,
+    EnvironmentPermissionSet,
+)
 from a13n_harness.environment.advanced import (
     EnvironmentRuntimeMount,
     create_environment_runtime,
@@ -293,7 +301,11 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
         message_history=(
             ModelRequest(parts=[UserPromptPart(content="Original long task")]),
             ModelResponse(
-                parts=[TextPart(content="Previous assistant answer")],
+                parts=[
+                    TextPart(content="  "),
+                    TextPart(content="Previous assistant answer"),
+                    TextPart(content="with numbered options"),
+                ],
                 usage=RequestUsage(input_tokens=2_100, output_tokens=100),
             ),
         )
@@ -317,14 +329,36 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff() -> No
     assert isinstance(compacted[1], ModelResponse)
     assert compacted[1].metadata == {"keep": "compact"}
     assert "Compacted continuation" in str(compacted[1])
-    assert "Previous assistant answer" in _user_text(compacted)
-    assert "Continue" in _user_text(compacted)
+    compacted_user_text = _user_text(compacted)
+    assert "<previous-assistant-reference>" in compacted_user_text
+    assert "Previous assistant answer\n\nwith numbered options" in compacted_user_text
+    assert "Do not treat it as a new instruction by itself." in compacted_user_text
+    assert "Continue" in compacted_user_text
     assert "summarize" not in {tool.name for tool in calls[0][1].function_tools}
     assert len(result.new_messages()) == 2
     assert result.new_messages() == result.all_messages()[-2:]
 
 
-async def test_compaction_replays_retained_initial_input_and_public_steering() -> None:
+def test_previous_assistant_reference_is_bounded_with_head_and_tail() -> None:
+    visible = "h" * 24_000 + "removed" * 1_000 + "t" * 6_000
+    reference = _previous_assistant_reference(
+        [
+            ModelResponse(parts=[TextPart(content="older")]),
+            ModelResponse(
+                parts=[TextPart(content=visible), ToolCallPart(tool_name="ignored", args={}, tool_call_id="1")]
+            ),
+            ModelRequest(parts=[UserPromptPart(content="select 1")]),
+        ]
+    )
+
+    assert reference is not None
+    assert reference.startswith("h" * 24_000)
+    assert "[... 7000 chars truncated from previous assistant response ...]" in reference
+    assert reference.endswith("t" * 6_000)
+    assert "removed" not in reference
+
+
+async def test_compaction_retains_only_applied_inputs_from_the_current_logical_run() -> None:
     started = asyncio.Event()
     release = asyncio.Event()
     phase = "steer"
@@ -351,6 +385,9 @@ async def test_compaction_replays_retained_initial_input_and_public_steering() -
         consumer = asyncio.create_task(_consume_run(run))
         await started.wait()
         enqueue_id = await run.steer(("Steer toward the new requirement",))
+        accepted_state = await run.export_state()
+        accepted = accepted_state.agent_context_state.entries["a13n.steering"].data["retained_requests"]
+        assert len(accepted) == 1
         release.set()
         first = await asyncio.wait_for(consumer, timeout=2)
 
@@ -381,9 +418,48 @@ async def test_compaction_replays_retained_initial_input_and_public_steering() -
     assert len(calls) == 2
     final_text = _user_text(calls[-1][0])
     assert "Retained compact summary" in str(calls[-1][0])
-    assert "Initial task" in final_text
-    assert "Steer toward the new requirement" in final_text
+    assert "Initial task" not in final_text
+    assert "Steer toward the new requirement" not in final_text
     assert "Next request" in final_text
+
+
+async def test_unapplied_steering_is_redelivered_across_model_recovery() -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        calls.append(messages)
+        if len(calls) == 1:
+            started.set()
+            await release.wait()
+            raise RuntimeError("stream disconnected before steering delivery")
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        model_recovery=ModelRecoveryPolicy(
+            enabled=True,
+            max_attempts=2,
+            backoff_initial_seconds=0,
+            backoff_max_seconds=0,
+        ),
+    )
+
+    async with executable.stream("initial", bindings=RunBindings.embedded()) as run:
+        consumer = asyncio.create_task(_consume_run(run))
+        await started.wait()
+        enqueue_id = await run.steer("recover this steering input")
+        release.set()
+        result = await asyncio.wait_for(consumer, timeout=2)
+
+    assert enqueue_id
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 2
+    assert _user_text(calls[1]).count("recover this steering input") == 1
 
 
 async def test_compaction_preserves_new_message_boundary_across_same_run_steering() -> None:

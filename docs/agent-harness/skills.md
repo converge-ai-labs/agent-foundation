@@ -85,12 +85,12 @@ Follow the repository review workflow.
 Use direct scanning when the Host already owns a non-virtual FileOperator and controls its lifetime and retargeting. Roots are canonical absolute paths in that operator's namespace: repeated separators, traversal segments, and a trailing slash other than `/` are rejected. For example, a root-confined local operator whose `/` is the project directory uses `/.agents/skills`, not `/workspace/.agents/skills`:
 
 ```python
-from a13n_harness import (
+from a13n_harness.capabilities import (
     FileSkillSource,
-    FileOperator,
     SkillCatalogItem,
     SkillManager,
 )
+from a13n_harness.environment import FileOperator
 
 
 async def scan_cli_skills(
@@ -117,7 +117,11 @@ This mode operates directly in the supplied FileOperator namespace and has no En
 Use Environment-aware scanning when paths can route through `/workspace` or `/environment/{name}` and mounts can change while the Host is active:
 
 ```python
-from a13n_harness import BoundSkillCatalog, Environment, SkillManager
+from a13n_harness import Environment
+from a13n_harness.capabilities import (
+    BoundSkillCatalog,
+    SkillManager,
+)
 
 
 async def scan_environment_skills(
@@ -156,7 +160,10 @@ Do not persist `EnvironmentPath` values as durable authority. They describe one 
 Retain the canonical workspace source and append Host roots with normal later-source precedence:
 
 ```python
-from a13n_harness import FileSkillSource, SkillManager
+from a13n_harness.capabilities import (
+    FileSkillSource,
+    SkillManager,
+)
 
 manager = SkillManager.default(
     additional_sources=(
@@ -178,7 +185,7 @@ With `required=False`, each missing, unroutable, or unsupported root is skipped 
 A trusted Host adapter can implement `SkillMaterializer` to populate one declared source root before scanning:
 
 ```python
-from a13n_harness import FileOperator
+from a13n_harness.environment import FileOperator
 
 
 class ManagedSkillMaterializer:
@@ -198,8 +205,8 @@ class ManagedSkillMaterializer:
 Pass the manager to the definition-selected `SkillsCapability`. The Capability uses Environment-aware scanning, publishes exact `SkillPath` values, injects bounded routing instructions, observes ordinary `SKILL.md` reads, and fences the selected catalog at model and tool boundaries.
 
 ```python
-from a13n_harness import (
-    RunBindings,
+from a13n_harness import RunBindings
+from a13n_harness.capabilities import (
     SkillSelectionRunCapability,
     SkillsCapability,
 )

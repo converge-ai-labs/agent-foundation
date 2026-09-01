@@ -11,11 +11,11 @@ from typing import Literal
 from a13n_harness import (
     AbstractHarnessPlugin,
     ExecutableAgent,
-    HarnessBuildContext,
     HarnessBuilder,
     HarnessRunResultEvent,
     RunBindings,
 )
+from a13n_harness.plugin_configuration import HarnessBuildContext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -99,13 +99,12 @@ async def _run_demo(
     # construction or lookup to the Host.
     from a13n_plugin_examples.harness import RunRecorderPlugin
 
-    async with executable:
-        async with executable.stream(
-            "Return the deterministic offline response.",
-            bindings=RunBindings.embedded(),
-        ) as stream:
-            plugin = stream.context.plugins.require(plugin_id, RunRecorderPlugin)
-            items = [item async for item in stream]
+    async with executable.stream(
+        "Return the deterministic offline response.",
+        bindings=RunBindings.embedded(),
+    ) as stream:
+        plugin = stream.context.plugins.require(plugin_id, RunRecorderPlugin)
+        items = [item async for item in stream]
     terminal = items[-1]
     if not isinstance(terminal, HarnessRunResultEvent):
         raise RuntimeError("The Harness example did not produce a terminal result")
